@@ -17,15 +17,6 @@ public sealed record WorkspaceCoordinatorRecord(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc);
 
-public sealed record WorkspacePathClaimRecord(
-    string ClaimId,
-    string WorkspaceId,
-    string RunId,
-    string NormalizedPath,
-    WorkspacePathKind Kind,
-    string State,
-    DateTimeOffset LeaseExpiresAtUtc);
-
 public sealed record WorkspaceRunMembershipRecord(
     string MemberId,
     string WorkspaceId,
@@ -34,12 +25,6 @@ public sealed record WorkspaceRunMembershipRecord(
     string State,
     DateTimeOffset HeartbeatAtUtc,
     DateTimeOffset LeaseExpiresAtUtc);
-
-public sealed record WorkspaceClaimWriteResult(
-    bool Accepted,
-    string? ErrorCode,
-    IReadOnlyList<WorkspacePathClaimRecord> Claims,
-    IReadOnlyList<string> ConflictingPaths);
 
 public sealed record WorkspaceChangeRecord(
     string ChangeId,
@@ -51,20 +36,6 @@ public sealed record WorkspaceChangeRecord(
     string? AfterSha256,
     string Status,
     DateTimeOffset CreatedAtUtc);
-
-// Internal on purpose: the snapshot store keeps content bytes in plaintext and
-// has no production caller. Keeping the surface inside this assembly prevents a
-// future caller from mistaking it for an encrypted, supported API.
-internal sealed record WorkspaceFileSnapshotRecord(
-    string SnapshotId,
-    string WorkspaceId,
-    string RunId,
-    string NormalizedPath,
-    string Phase,
-    string Sha256,
-    byte[] Content,
-    string Encoding,
-    DateTimeOffset CapturedAtUtc);
 
 public sealed record WorkspaceChangeEnvelope(
     WorkspaceChangeRecord Change,
@@ -437,25 +408,6 @@ public sealed class WorkspaceCoordinatorStore
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
-    public async Task<int> ReleasePathClaimsAsync(
-        WorkspaceId workspaceId,
-        RunId runId,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE workspace_path_claims
-            SET state = 'released', lease_expires_at_utc = $now_utc
-            WHERE workspace_id = $workspace_id AND run_id = $run_id AND state = 'active'
-            """;
-        command.Parameters.AddWithValue("$now_utc", nowUtc.ToString("O"));
-        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-        command.Parameters.AddWithValue("$run_id", runId.Value);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     public async Task<WorkspaceReconciliationResult> ReconcileExpiredAsync(
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
@@ -515,128 +467,6 @@ public sealed class WorkspaceCoordinatorStore
         command.Parameters.AddWithValue("$run_id", runId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<WorkspaceClaimWriteResult> TryClaimPathsAsync(
-        WorkspaceId workspaceId,
-        RunId runId,
-        IReadOnlyList<WorkspacePathClaim> requestedClaims,
-        DateTimeOffset nowUtc,
-        TimeSpan leaseDuration,
-        CancellationToken cancellationToken)
-    {
-        _ = workspaceId.Value;
-        _ = runId.Value;
-        ArgumentNullException.ThrowIfNull(requestedClaims);
-        if (requestedClaims.Count == 0 || leaseDuration <= TimeSpan.Zero || leaseDuration > TimeSpan.FromMinutes(10))
-        {
-            throw new HarnessStoreException("invalid_workspace_claims");
-        }
-
-        var normalized = requestedClaims.Select(item => item.Normalize()).ToArray();
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = connection.BeginTransaction(deferred: false);
-        try
-        {
-            var coordinator = await ReadAsync(connection, transaction, workspaceId.Value, cancellationToken).ConfigureAwait(false)
-                ?? throw new HarnessStoreException("workspace_not_found");
-            await using (var expire = connection.CreateCommand())
-            {
-                expire.Transaction = transaction;
-                expire.CommandText = """
-                    UPDATE workspace_path_claims
-                    SET state = 'expired'
-                    WHERE workspace_id = $workspace_id
-                      AND state = 'active'
-                      AND lease_expires_at_utc <= $now_utc
-                    """;
-                expire.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-                expire.Parameters.AddWithValue("$now_utc", nowUtc.ToString("O"));
-                await expire.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            var existing = await ReadActiveClaimsAsync(connection, transaction, workspaceId.Value, null, cancellationToken).ConfigureAwait(false);
-            var conflicts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var workspaceBusy = false;
-            foreach (var incoming in normalized)
-            {
-                foreach (var claim in existing)
-                {
-                    if (string.Equals(claim.RunId, runId.Value, StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    var decision = WorkspaceConcurrencyDecision.EvaluateClaim(
-                        new WorkspacePathClaim(claim.NormalizedPath, claim.Kind),
-                        incoming);
-                    if (string.Equals(coordinator.Mode, "exclusive", StringComparison.Ordinal)
-                        && !string.Equals(claim.RunId, runId.Value, StringComparison.Ordinal)
-                        && decision != WorkspaceClaimDecision.NoOverlap)
-                    {
-                        conflicts.Add(incoming.NormalizedPath);
-                        workspaceBusy = true;
-                    }
-                    else if (decision == WorkspaceClaimDecision.BinaryConflict)
-                    {
-                        conflicts.Add(incoming.NormalizedPath);
-                    }
-                }
-            }
-
-            if (conflicts.Count > 0)
-            {
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return new WorkspaceClaimWriteResult(
-                    false,
-                    workspaceBusy ? "workspace_busy" : "concurrent_binary_conflict",
-                    [],
-                    conflicts.Order(StringComparer.OrdinalIgnoreCase).ToArray());
-            }
-
-            var expiresAt = nowUtc.Add(leaseDuration);
-            foreach (var claim in normalized)
-            {
-                if (existing.Any(item => string.Equals(item.RunId, runId.Value, StringComparison.Ordinal) && string.Equals(item.NormalizedPath, claim.NormalizedPath, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
-
-                await using var insert = connection.CreateCommand();
-                insert.Transaction = transaction;
-                insert.CommandText = """
-                    INSERT INTO workspace_path_claims(
-                        claim_id, workspace_id, run_id, normalized_path, path_kind,
-                        state, lease_expires_at_utc, created_at_utc)
-                    VALUES($claim_id, $workspace_id, $run_id, $normalized_path, $path_kind,
-                           'active', $lease_expires_at_utc, $created_at_utc)
-                    """;
-                insert.Parameters.AddWithValue("$claim_id", $"claim_{Guid.NewGuid():N}");
-                insert.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-                insert.Parameters.AddWithValue("$run_id", runId.Value);
-                insert.Parameters.AddWithValue("$normalized_path", claim.NormalizedPath);
-                insert.Parameters.AddWithValue("$path_kind", claim.Kind.ToString().ToLowerInvariant());
-                insert.Parameters.AddWithValue("$lease_expires_at_utc", expiresAt.ToString("O"));
-                insert.Parameters.AddWithValue("$created_at_utc", nowUtc.ToString("O"));
-                await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            var resultClaims = await ReadActiveClaimsAsync(connection, transaction, workspaceId.Value, null, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return new WorkspaceClaimWriteResult(true, null, resultClaims, []);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (HarnessStoreException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is SqliteException or IOException)
-        {
-            throw new HarnessStoreException("workspace_claim_store_failed", exception);
-        }
     }
 
     public async Task<IReadOnlyList<WorkspaceChangeRecord>> ListChangesAsync(
@@ -816,56 +646,6 @@ public sealed class WorkspaceCoordinatorStore
         {
             throw new HarnessStoreException("workspace_change_store_failed", exception);
         }
-    }
-
-    // Internal on purpose: see WorkspaceFileSnapshotRecord. Content is stored
-    // plaintext; a conflicting snapshot id is silently ignored today, so callers
-    // must not treat the returned record as proof the row now holds these bytes.
-    internal async Task<WorkspaceFileSnapshotRecord> CaptureSnapshotAsync(
-        WorkspaceId workspaceId,
-        RunId runId,
-        string snapshotId,
-        string normalizedPath,
-        string phase,
-        string sha256,
-        ReadOnlyMemory<byte> content,
-        string encoding,
-        DateTimeOffset capturedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        _ = workspaceId.Value;
-        _ = runId.Value;
-        if (string.IsNullOrWhiteSpace(snapshotId) || snapshotId.Length > 256
-            || string.IsNullOrWhiteSpace(normalizedPath) || Path.IsPathRooted(normalizedPath)
-            || phase is not ("base" or "before" or "after" or "merged")
-            || sha256.Length != 64 || !sha256.All(Uri.IsHexDigit)
-            || content.Length > 16 * 1024 * 1024
-            || string.IsNullOrWhiteSpace(encoding) || encoding.Length > 32)
-        {
-            throw new HarnessStoreException("invalid_workspace_snapshot");
-        }
-
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO workspace_file_snapshots(
-                snapshot_id, workspace_id, run_id, normalized_path, phase,
-                sha256, content, encoding, captured_at_utc)
-            VALUES($snapshot_id, $workspace_id, $run_id, $normalized_path, $phase,
-                   $sha256, $content, $encoding, $captured_at_utc)
-            ON CONFLICT(snapshot_id) DO NOTHING
-            """;
-        command.Parameters.AddWithValue("$snapshot_id", snapshotId);
-        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-        command.Parameters.AddWithValue("$run_id", runId.Value);
-        command.Parameters.AddWithValue("$normalized_path", normalizedPath.Replace('\\', '/'));
-        command.Parameters.AddWithValue("$phase", phase);
-        command.Parameters.AddWithValue("$sha256", sha256);
-        command.Parameters.AddWithValue("$content", content.ToArray());
-        command.Parameters.AddWithValue("$encoding", encoding);
-        command.Parameters.AddWithValue("$captured_at_utc", capturedAtUtc.ToString("O"));
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return new WorkspaceFileSnapshotRecord(snapshotId, workspaceId.Value, runId.Value, normalizedPath.Replace('\\', '/'), phase, sha256, content.ToArray(), encoding, capturedAtUtc);
     }
 
     public async Task<WorkspaceChangeRecord> AppendChangeAsync(
@@ -1068,45 +848,6 @@ public sealed class WorkspaceCoordinatorStore
             reader.GetInt64(8),
             DateTimeOffset.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
             DateTimeOffset.Parse(reader.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind));
-    }
-
-    private static async Task<IReadOnlyList<WorkspacePathClaimRecord>> ReadActiveClaimsAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        string workspaceId,
-        string? excludedRunId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"""
-            SELECT claim_id, workspace_id, run_id, normalized_path, path_kind,
-                   state, lease_expires_at_utc
-            FROM workspace_path_claims
-            WHERE workspace_id = $workspace_id
-              AND state = 'active'
-              {(excludedRunId is null ? string.Empty : "AND run_id <> $excluded_run_id")}
-            """;
-        command.Parameters.AddWithValue("$workspace_id", workspaceId);
-        if (excludedRunId is not null)
-        {
-            command.Parameters.AddWithValue("$excluded_run_id", excludedRunId);
-        }
-        var result = new List<WorkspacePathClaimRecord>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            result.Add(new WorkspacePathClaimRecord(
-                reader.GetString(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                Enum.TryParse<WorkspacePathKind>(reader.GetString(4), ignoreCase: true, out var kind) ? kind : WorkspacePathKind.Unknown,
-                reader.GetString(5),
-                DateTimeOffset.Parse(reader.GetString(6), null, System.Globalization.DateTimeStyles.RoundtripKind)));
-        }
-
-        return result;
     }
 
     private static async Task EnsureRunBelongsToWorkspaceAsync(

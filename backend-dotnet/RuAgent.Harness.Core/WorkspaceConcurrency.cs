@@ -1,64 +1,7 @@
 namespace RuAgent.Harness.Core;
 
-public enum WorkspacePathKind
-{
-    Text,
-    Binary,
-    Unknown,
-}
-
-public enum WorkspaceClaimDecision
-{
-    NoOverlap,
-    MergeableTextOverlap,
-    BinaryConflict,
-}
-
-public sealed record WorkspacePathClaim(string NormalizedPath, WorkspacePathKind Kind)
-{
-    public WorkspacePathClaim Normalize()
-    {
-        if (string.IsNullOrWhiteSpace(NormalizedPath) || Path.IsPathRooted(NormalizedPath))
-        {
-            throw new ArgumentException("Workspace claims must be non-empty relative paths.", nameof(NormalizedPath));
-        }
-
-        var segments = NormalizedPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Any(segment => segment is "." or ".."))
-        {
-            throw new ArgumentException("Workspace claims must not contain traversal segments.", nameof(NormalizedPath));
-        }
-
-        var normalized = string.Join('/', segments);
-        if (normalized.Length == 0)
-        {
-            throw new ArgumentException("Workspace claims must be non-empty relative paths.", nameof(NormalizedPath));
-        }
-
-        return this with { NormalizedPath = normalized };
-    }
-}
-
 public static class WorkspaceConcurrencyDecision
 {
-    public static WorkspaceClaimDecision EvaluateClaim(
-        WorkspacePathClaim existing,
-        WorkspacePathClaim incoming)
-    {
-        ArgumentNullException.ThrowIfNull(existing);
-        ArgumentNullException.ThrowIfNull(incoming);
-        var left = existing.Normalize();
-        var right = incoming.Normalize();
-        if (!string.Equals(left.NormalizedPath, right.NormalizedPath, StringComparison.OrdinalIgnoreCase))
-        {
-            return WorkspaceClaimDecision.NoOverlap;
-        }
-
-        return left.Kind == WorkspacePathKind.Text && right.Kind == WorkspacePathKind.Text
-            ? WorkspaceClaimDecision.MergeableTextOverlap
-            : WorkspaceClaimDecision.BinaryConflict;
-    }
-
     public static long NextCommitSequence(long current) => checked(current + 1);
 
     public static bool IsLeaseActive(DateTimeOffset nowUtc, DateTimeOffset leaseExpiresAtUtc) =>

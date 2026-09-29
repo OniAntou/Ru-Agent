@@ -14,7 +14,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -57,7 +57,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, transaction: null, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -68,7 +68,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 3)
@@ -77,7 +77,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 4)
@@ -86,7 +86,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 5)
@@ -95,7 +95,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 6)
@@ -104,7 +104,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 7)
@@ -112,7 +112,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 8)
@@ -120,7 +120,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 9)
@@ -128,7 +128,15 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionNineToTen,
+                    SchemaVersionNineToTen + SchemaVersionTenToEleven,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 10)
+            {
+                await ApplyMigrationAsync(
+                    connection,
+                    existingVersion,
+                    SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
@@ -145,7 +153,7 @@ public static class HarnessSqliteSchema
                     + SchemaVersionFiveToSix
                     + SchemaVersionSixToSeven
                     + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -515,18 +523,6 @@ public static class HarnessSqliteSchema
         CREATE INDEX IF NOT EXISTS ix_workspace_path_claims_active
             ON workspace_path_claims(workspace_id, normalized_path, state, lease_expires_at_utc);
 
-        CREATE TABLE IF NOT EXISTS workspace_file_snapshots (
-            snapshot_id TEXT PRIMARY KEY,
-            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
-            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
-            normalized_path TEXT NOT NULL CHECK(length(normalized_path) BETWEEN 1 AND 4096),
-            phase TEXT NOT NULL CHECK(phase IN ('base', 'before', 'after', 'merged')),
-            sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
-            content BLOB NOT NULL CHECK(length(content) <= 16777216),
-            encoding TEXT NOT NULL CHECK(length(encoding) BETWEEN 1 AND 32),
-            captured_at_utc TEXT NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS workspace_change_journal (
             change_id TEXT PRIMARY KEY,
             workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
@@ -797,5 +793,14 @@ public static class HarnessSqliteSchema
             ON agent_session_preset_snapshots(expires_at_utc);
         CREATE INDEX IF NOT EXISTS ix_agent_session_preset_snapshots_session
             ON agent_session_preset_snapshots(session_id, consumed_at_utc, expires_at_utc);
+        """;
+
+    // Version 11 drops workspace_file_snapshots. No production code ever read or
+    // wrote it (the internal CaptureSnapshotAsync had zero callers) and the table
+    // stored plaintext file bytes, so it looked like durable authority while
+    // serving nothing. It is dropped rather than kept so the schema keeps telling
+    // the truth about what the store uses.
+    private const string SchemaVersionTenToEleven = """
+        DROP TABLE IF EXISTS workspace_file_snapshots;
         """;
 }

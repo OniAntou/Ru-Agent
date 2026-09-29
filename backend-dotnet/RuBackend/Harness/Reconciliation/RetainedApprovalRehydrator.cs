@@ -102,11 +102,6 @@ public sealed class RetainedApprovalRehydrator
         return latest;
     }
 
-    public Task<RetainedApprovalStep?> TryRehydrateAsync(
-        RunId runId,
-        CancellationToken cancellationToken = default) =>
-        RehydrateAsync(runId, cancellationToken);
-
     private async Task<RetainedApprovalStep?> ValidateBatchAsync(
         RunId runId,
         IReadOnlyList<HarnessEvent> allEvents,

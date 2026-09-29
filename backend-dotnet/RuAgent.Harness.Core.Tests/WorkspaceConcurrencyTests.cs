@@ -5,19 +5,6 @@ namespace RuAgent.Harness.Core.Tests;
 public sealed class WorkspaceConcurrencyTests
 {
     [Fact]
-    public void Overlapping_binary_claim_is_rejected_but_text_claim_is_mergeable()
-    {
-        var existing = new WorkspacePathClaim("src/app.cs", WorkspacePathKind.Text);
-
-        Assert.Equal(
-            WorkspaceClaimDecision.MergeableTextOverlap,
-            WorkspaceConcurrencyDecision.EvaluateClaim(existing, new WorkspacePathClaim("src/app.cs", WorkspacePathKind.Text)));
-        Assert.Equal(
-            WorkspaceClaimDecision.BinaryConflict,
-            WorkspaceConcurrencyDecision.EvaluateClaim(existing, new WorkspacePathClaim("src/app.cs", WorkspacePathKind.Binary)));
-    }
-
-    [Fact]
     public void Sequence_increments_monotonically_and_overflow_fails_closed()
     {
         Assert.Equal(8, WorkspaceConcurrencyDecision.NextCommitSequence(7));
@@ -38,11 +25,8 @@ public sealed class WorkspaceConcurrencyTests
     }
 
     [Fact]
-    public void Traversal_aliases_are_rejected_before_claim_comparison()
+    public void Traversal_aliases_are_rejected_for_external_change_detection()
     {
-        var claim = new WorkspacePathClaim("src/../app.cs", WorkspacePathKind.Text);
-
-        Assert.Throws<ArgumentException>(() => claim.Normalize());
         Assert.Throws<ArgumentException>(() => WorkspaceExternalChangeDetector.Detect(
             "src/../app.cs",
             new string('a', 64),
@@ -50,15 +34,13 @@ public sealed class WorkspaceConcurrencyTests
     }
 
     [Fact]
-    public void Repeated_separators_are_canonicalized_for_claims_and_changes()
+    public void Repeated_separators_are_canonicalized_for_external_changes()
     {
-        var claim = new WorkspacePathClaim("src//app.cs", WorkspacePathKind.Text);
         var change = WorkspaceExternalChangeDetector.Detect(
             "src\\app.cs",
             new string('a', 64),
             new string('b', 64));
 
-        Assert.Equal("src/app.cs", claim.Normalize().NormalizedPath);
         Assert.Equal("src/app.cs", change.NormalizedPath);
     }
 }

@@ -117,7 +117,6 @@ internal static class HarnessSqliteSchemaValidator
             ["workspace_coordinators"] = ["workspace_id", "mode", "commit_sequence", "policy_json"],
             ["workspace_run_members"] = ["member_id", "workspace_id", "run_id", "lease_expires_at_utc"],
             ["workspace_path_claims"] = ["claim_id", "workspace_id", "run_id", "normalized_path", "state"],
-            ["workspace_file_snapshots"] = ["snapshot_id", "workspace_id", "normalized_path", "sha256", "content"],
             ["workspace_change_journal"] = ["change_id", "workspace_id", "commit_sequence", "protected_payload", "nonce", "authentication_tag"],
             // Versioned since 7; it used to be created lazily on first recovery write.
             ["agent_file_recovery"] = ["recovery_id", "run_id", "canonical_path", "content_sha256", "content_length", "created_at_utc", "consumed_at_utc"],

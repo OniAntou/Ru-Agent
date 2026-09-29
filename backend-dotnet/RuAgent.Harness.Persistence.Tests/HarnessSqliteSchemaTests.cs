@@ -21,7 +21,6 @@ public sealed class HarnessSqliteSchemaTests
         "workspace_coordinators",
         "workspace_run_members",
         "workspace_path_claims",
-        "workspace_file_snapshots",
         "workspace_change_journal",
         "agent_file_recovery",
     ];
@@ -49,7 +48,7 @@ public sealed class HarnessSqliteSchemaTests
             CancellationToken.None);
 
         Assert.True(second.IsAvailable);
-        Assert.Equal(10, second.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, second.SchemaVersion);
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
         await using var tableCommand = connection.CreateCommand();
@@ -65,9 +64,11 @@ public sealed class HarnessSqliteSchemaTests
         }
 
         Assert.All(RequiredTables, name => Assert.Contains(name, names));
-        // workspace_mutations was never read or written by production code; a
-        // fresh install must not create the table it was dropped from.
+        // workspace_mutations and workspace_file_snapshots were never read or
+        // written by production code; a fresh install must not create the tables
+        // they were dropped from.
         Assert.DoesNotContain("workspace_mutations", names);
+        Assert.DoesNotContain("workspace_file_snapshots", names);
         await using var indexCommand = connection.CreateCommand();
         indexCommand.CommandText =
             "SELECT name FROM sqlite_master WHERE type = 'index' AND (name LIKE '%agent_%' OR name LIKE '%workspace_%')";
@@ -109,7 +110,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var read = verify.CreateCommand();
@@ -145,7 +146,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(backupOptions, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using (var backup = new SqliteConnection($"Data Source={backupPath};Mode=ReadOnly;Pooling=False"))
         {
             await backup.OpenAsync();
@@ -185,7 +186,7 @@ public sealed class HarnessSqliteSchemaTests
         var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(migrated.IsAvailable, migrated.ErrorCode);
-        Assert.Equal(10, migrated.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, migrated.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         Assert.True(await ColumnExistsAsync(verify, "agent_events", "provider_call_id"));
@@ -211,7 +212,7 @@ public sealed class HarnessSqliteSchemaTests
         SqliteConnection.ClearAllPools();
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var table = verify.CreateCommand();
@@ -250,7 +251,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var migrated = fixture.CreateRawConnection();
         await migrated.OpenAsync();
         await using var read = migrated.CreateCommand();
@@ -342,7 +343,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var migrated = fixture.CreateRawConnection();
         await migrated.OpenAsync();
         await using var read = migrated.CreateCommand();
@@ -514,7 +515,7 @@ public sealed class HarnessSqliteSchemaTests
         var retried = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(retried.IsAvailable, retried.ErrorCode);
-        Assert.Equal(10, retried.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, retried.SchemaVersion);
         await using var migrated = fixture.CreateRawConnection();
         await migrated.OpenAsync();
         await using var migratedRows = migrated.CreateCommand();
@@ -576,6 +577,44 @@ public sealed class HarnessSqliteSchemaTests
         await migrated.OpenAsync();
         Assert.True(await TableExistsAsync(migrated, "agent_file_recovery"));
         Assert.False(await TableExistsAsync(migrated, "workspace_mutations"));
+    }
+
+    [Fact]
+    public async Task Migrating_from_ten_drops_the_dead_snapshot_table()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+
+        // Reproduce the pre-v11 shape: the snapshot table existed but no
+        // production code ever read or wrote it.
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                CREATE TABLE workspace_file_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    normalized_path TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    content BLOB NOT NULL,
+                    encoding TEXT NOT NULL,
+                    captured_at_utc TEXT NOT NULL
+                );
+                PRAGMA user_version = 10;
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await using var migrated = fixture.CreateRawConnection();
+        await migrated.OpenAsync();
+        Assert.False(await TableExistsAsync(migrated, "workspace_file_snapshots"));
     }
 
     [Fact]

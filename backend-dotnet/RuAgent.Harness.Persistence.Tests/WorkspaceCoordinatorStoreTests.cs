@@ -51,37 +51,6 @@ public sealed class WorkspaceCoordinatorStoreTests
     }
 
     [Fact]
-    public async Task Claim_paths_is_idempotent_for_the_same_run()
-    {
-        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
-        await fixture.RegisterWorkspaceAsync(43);
-        var run = fixture.NewRun(43, 43, 43);
-        var create = await fixture.CreateEventStore().TryCreateRunAsync(run, CancellationToken.None);
-        Assert.Equal(CreateRunOutcome.Created, create.Outcome);
-        var store = new WorkspaceCoordinatorStore(fixture.Options);
-        await store.GetOrCreateAsync(run.Run.WorkspaceId, CancellationToken.None);
-
-        var first = await store.TryClaimPathsAsync(
-            run.Run.WorkspaceId,
-            run.Run.RunId,
-            [new WorkspacePathClaim("src/app.cs", WorkspacePathKind.Text)],
-            DateTimeOffset.UtcNow,
-            TimeSpan.FromMinutes(1),
-            CancellationToken.None);
-        var replay = await store.TryClaimPathsAsync(
-            run.Run.WorkspaceId,
-            run.Run.RunId,
-            [new WorkspacePathClaim("src/app.cs", WorkspacePathKind.Text)],
-            DateTimeOffset.UtcNow,
-            TimeSpan.FromMinutes(1),
-            CancellationToken.None);
-
-        Assert.True(first.Accepted);
-        Assert.True(replay.Accepted);
-        Assert.Single(replay.Claims);
-    }
-
-    [Fact]
     public async Task Shared_mode_allows_two_runs_in_one_workspace_when_sessions_differ()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
@@ -294,14 +263,25 @@ public sealed class WorkspaceCoordinatorStoreTests
         await store.GetOrCreateAsync(run.Run.WorkspaceId, CancellationToken.None);
         var now = DateTimeOffset.UtcNow;
         await store.AcquireRunMembershipAsync(run.Run.WorkspaceId, run.Run.RunId, "ru_peer", now, TimeSpan.FromSeconds(5), CancellationToken.None);
-        var claim = await store.TryClaimPathsAsync(
-            run.Run.WorkspaceId,
-            run.Run.RunId,
-            [new WorkspacePathClaim("src/recovery.cs", WorkspacePathKind.Text)],
-            now,
-            TimeSpan.FromSeconds(5),
-            CancellationToken.None);
-        Assert.True(claim.Accepted);
+        // Path-claim acquisition has no production caller any more, so seed an
+        // active lease directly to keep the reconciliation sweep under test.
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                INSERT INTO workspace_path_claims(
+                    claim_id, workspace_id, run_id, normalized_path, path_kind,
+                    state, lease_expires_at_utc, created_at_utc)
+                VALUES ('claim_reconcile', $workspace_id, $run_id, 'src/recovery.cs', 'text',
+                        'active', $lease_expires_at_utc, $created_at_utc)
+                """;
+            seed.Parameters.AddWithValue("$workspace_id", run.Run.WorkspaceId.Value);
+            seed.Parameters.AddWithValue("$run_id", run.Run.RunId.Value);
+            seed.Parameters.AddWithValue("$lease_expires_at_utc", now.ToString("O"));
+            seed.Parameters.AddWithValue("$created_at_utc", now.ToString("O"));
+            await seed.ExecuteNonQueryAsync();
+        }
 
         var first = await store.ReconcileExpiredAsync(now.AddMinutes(1), CancellationToken.None);
         var second = await store.ReconcileExpiredAsync(now.AddMinutes(1), CancellationToken.None);

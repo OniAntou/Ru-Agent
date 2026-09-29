@@ -117,7 +117,7 @@ public sealed class WorkspaceStoreTests
             identity,
             AgentPermissionPreset.Standard,
             CancellationToken.None));
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         Assert.Null(await NullableStringAsync(
             fixture,
             "SELECT trust_decision FROM agent_workspaces WHERE workspace_id = $workspace_id",
@@ -144,7 +144,7 @@ public sealed class WorkspaceStoreTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         Assert.True(await ColumnExistsAsync(fixture, "agent_workspaces", "trust_source"));
         var response = new WorkspaceTrustResponse(
             HarnessStoreTestFixture.Trust(1),
@@ -177,7 +177,7 @@ public sealed class WorkspaceStoreTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(10, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         var response = new WorkspaceTrustResponse(
             HarnessStoreTestFixture.Trust(1),
             identity,

@@ -981,11 +981,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                             runId,
                             DateTimeOffset.UtcNow,
                             CancellationToken.None).ConfigureAwait(false);
-                        await _workspaceCoordinatorStore.ReleasePathClaimsAsync(
-                            run.WorkspaceId,
-                            runId,
-                            DateTimeOffset.UtcNow,
-                            CancellationToken.None).ConfigureAwait(false);
                     }
                 }
                 catch (Exception error)

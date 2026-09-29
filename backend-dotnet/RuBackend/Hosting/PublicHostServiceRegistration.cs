@@ -105,7 +105,6 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<WorkspaceCoordinatorStore>(services =>
             new WorkspaceCoordinatorStore(services.GetRequiredService<HarnessSqliteOptions>()));
         services.AddSingleton<WorkspaceExternalChangeMonitor>();
-        services.AddSingleton<WorkspaceCoordinatorService>();
         services.AddSingleton<WorkspaceTrustRequestStore>(services =>
             new WorkspaceTrustRequestStore(services.GetRequiredService<HarnessSqliteOptions>()));
         services.AddSingleton<WorkspaceTrustService>();

@@ -66,13 +66,20 @@ function Get-TextTail([string]$Path, [int]$MaxCharacters = 2000) {
     }
 }
 
-function Get-BridgeStderr {
+function Get-BridgeStderr([int]$WaitMilliseconds = 2000) {
     if ($null -eq $bridgeStderrTask) {
         return "(not captured)"
     }
 
     try {
-        $text = $bridgeStderrTask.GetAwaiter().GetResult()
+        # ReadToEndAsync only completes at stderr EOF. The timeout branch runs while
+        # the bridge is still alive, so the wait is bounded: diagnostics must never
+        # be the reason the FAIL path hangs.
+        if (-not $bridgeStderrTask.Wait($WaitMilliseconds)) {
+            return "(stderr still open)"
+        }
+
+        $text = $bridgeStderrTask.Result
         if ([string]::IsNullOrWhiteSpace($text)) {
             return "(empty)"
         }
@@ -245,11 +252,17 @@ try {
     New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
     $scriptPath = Join-Path $work "scripted.json"
     Copy-Item -LiteralPath $fixtureSource -Destination $scriptPath -Force
+
+    $scriptedRaw = Get-Content -LiteralPath $scriptPath -Raw
+    if ([string]::IsNullOrWhiteSpace($scriptedRaw) -or -not $scriptedRaw.TrimStart().StartsWith("[", [System.StringComparison]::Ordinal)) {
+        throw "the scripted-model fixture must be a JSON array of steps."
+    }
+
     try {
         # @() forces array semantics on both hosts: PowerShell 5.1 enumerates a
         # JSON array into the pipeline, PowerShell 7 unwraps a one-element array
         # to a bare object, and the count check below has to read the same either way.
-        $scripted = @((Get-Content -LiteralPath $scriptPath -Raw) | ConvertFrom-Json)
+        $scripted = @($scriptedRaw | ConvertFrom-Json)
     } catch {
         throw "the scripted-model fixture is not valid JSON: $($_.Exception.Message)"
     }
@@ -356,6 +369,10 @@ try {
     while ($null -eq $terminalEvent) {
         $remaining = [int]($deadline - (Get-Date)).TotalMilliseconds
         if ($remaining -lt 1) {
+            # The bridge is still alive here with stdin open. Closing stdin lets it
+            # shut down so the bounded stderr wait can drain instead of blocking on
+            # a pipe that stays open for the process's whole life.
+            try { $bridgeInput.Close() } catch { }
             throw "timed out after 60 s waiting for a terminal run.event (last run status: $lastRunStatus). stderr: $(Get-BridgeStderr)"
         }
 

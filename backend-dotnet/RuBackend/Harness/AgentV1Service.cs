@@ -16,7 +16,6 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
-using RuBackend.Agent;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Policy;
@@ -46,7 +45,6 @@ public sealed partial class AgentV1Service
     private readonly HarnessPolicySnapshotService? _policySnapshotService;
     private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
     private readonly ReconciliationInspectionGate? _inspectionGate;
-    private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
@@ -108,7 +106,6 @@ public sealed partial class AgentV1Service
         RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
         ReconciliationInspectionGate? inspectionGate = null,
         HarnessPolicySnapshotService? policySnapshotService = null,
-        IAgentBrokerClient? agentBrokerClient = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null,
@@ -132,7 +129,6 @@ public sealed partial class AgentV1Service
         _policySnapshotService = policySnapshotService;
         _snapshots = snapshots;
         _inspectionGate = inspectionGate;
-        _agentBrokerClient = agentBrokerClient;
         _brokerGateways = brokerGateways;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;

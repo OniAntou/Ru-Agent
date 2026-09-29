@@ -126,7 +126,7 @@ model, open a project folder, and start chatting.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,852 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 4,852 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -147,7 +147,7 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 
 - **Not ahead-of-time compiled.** `PublishReadyToRun` is on for Release and off for
   Debug; Native AOT is not enabled anywhere.
-- **No performance gate or resource baseline in CI.** `ci.yml` runs the 13 test projects,
+- **No performance gate or resource baseline in CI.** `ci.yml` runs the 12 test projects,
   the route contract and the repository guards; nothing measures CPU, memory or GPU
   of a published build yet (`scripts/measure_resources.ps1` exists and is verified).
 - **No installer.** The build produces a runnable folder, not an MSIX or an installer.

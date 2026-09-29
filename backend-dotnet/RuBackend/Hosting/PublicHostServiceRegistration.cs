@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http;
-using RuBackend.Agent;
 using RuBackend.Business;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
@@ -81,11 +80,6 @@ internal static class PublicHostServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
-        if (!string.IsNullOrWhiteSpace(brokerDescriptor))
-        {
-            services.AddSingleton<IAgentBrokerClient>(_ => new AgentBrokerClient(brokerDescriptor));
-        }
         services.AddSingleton<ISettingsStore, SettingsStore>();
         services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
         services.AddHttpClient("ProviderCatalog")

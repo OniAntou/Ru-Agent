@@ -6,8 +6,6 @@
     <Project Path="backend-dotnet/RuAgent.Cli/RuAgent.Cli.csproj" />
     <Project Path="backend-dotnet/RuAgent.Client.Tests/RuAgent.Client.Tests.csproj" />
     <Project Path="backend-dotnet/RuAgent.Client/RuAgent.Client.csproj" />
-    <Project Path="backend-dotnet/RuAgent.Connectors.Tests/RuAgent.Connectors.Tests.csproj" />
-    <Project Path="backend-dotnet/RuAgent.Connectors/RuAgent.Connectors.csproj" />
     <Project Path="backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj" />
     <Project Path="backend-dotnet/RuAgent.Harness.Core/RuAgent.Harness.Core.csproj" />
     <Project Path="backend-dotnet/RuAgent.Harness.Persistence.Tests/RuAgent.Harness.Persistence.Tests.csproj" />

@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
-using RuBackend.Agent;
 using RuBackend.Diagnostics;
 using RuBackend.Runtime;
 using RuBackend.Worker;
@@ -25,7 +24,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly DataPaths? _dataPaths;
     private readonly ICredentialStore? _credentialStore;
     private readonly ISettingsStore? _settingsStore;
-    private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
     private readonly bool _withInProcessBroker;
     private BrokerHostHost? _brokerHost;
@@ -36,7 +34,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         DataPaths? dataPaths = null,
         ICredentialStore? credentialStore = null,
         ISettingsStore? settingsStore = null,
-        IAgentBrokerClient? agentBrokerClient = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
         bool withInProcessBroker = false)
@@ -47,7 +44,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _dataPaths = dataPaths;
         _credentialStore = credentialStore;
         _settingsStore = settingsStore;
-        _agentBrokerClient = agentBrokerClient;
         _diagnosticEmitter = diagnosticEmitter;
         ModelStepRunnerOverride = modelStepRunner;
         _withInProcessBroker = withInProcessBroker;
@@ -103,12 +99,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<ISettingsStore>();
                 services.AddSingleton(_settingsStore);
-            }
-
-            if (_agentBrokerClient is not null)
-            {
-                services.RemoveAll<IAgentBrokerClient>();
-                services.AddSingleton(_agentBrokerClient);
             }
 
             if (_diagnosticEmitter is not null)

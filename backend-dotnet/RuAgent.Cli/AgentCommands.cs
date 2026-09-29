@@ -1,6 +1,5 @@
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +22,8 @@ public sealed class AgentCommands : IDisposable
     private readonly AgentSseClient _sseClient;
     private readonly SettingsApiClient _settingsClient;
     private readonly AgentSlashCommands _slashCommands;
+    private readonly RunStarter _runStarter;
+    private readonly RunStartCore _runStartCore;
 
     public AgentCommands(
         PublicHostSession session,
@@ -39,6 +40,8 @@ public sealed class AgentCommands : IDisposable
         _in = inReader ?? Console.In;
         _sessionClient = new SessionApiClient(session, httpClient);
         _agentClient = new AgentApiClient(session, httpClient);
+        _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err);
+        _runStartCore = _runStarter.Core;
         _sseClient = new AgentSseClient(session, sseHttpClient ?? httpClient);
         _settingsClient = new SettingsApiClient(session, httpClient);
         _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
@@ -66,365 +69,6 @@ public sealed class AgentCommands : IDisposable
         return new AgentCommands(session, httpClient, outWriter, errWriter);
     }
 
-    private const int PresetVersionRetryLimit = 3;
-
-    private static string CreateSnapshotToken()
-    {
-        Span<byte> bytes = stackalloc byte[16];
-        RandomNumberGenerator.Fill(bytes);
-        return $"sps_{Convert.ToHexString(bytes).ToLowerInvariant()}";
-    }
-
-    private sealed record SessionPresetUpdateResult(
-        string SessionId,
-        long Version,
-        string SnapshotToken);
-
-    private async Task<SessionPresetUpdateResult?> UpdateSessionPresetAsync(
-        string sessionId,
-        string preset,
-        bool interactive,
-        CancellationToken cancellationToken)
-    {
-        var snapshotToken = CreateSnapshotToken();
-        for (var expectedVersion = 0; expectedVersion <= PresetVersionRetryLimit; expectedVersion++)
-        {
-            try
-            {
-                var response = await _agentClient.SetSessionPresetAsync(
-                    sessionId,
-                    preset,
-                    expectedVersion,
-                    interactive,
-                    cancellationToken,
-                    snapshotToken).ConfigureAwait(false);
-                if (!response.TryGetProperty("version", out var versionElement)
-                    || versionElement.ValueKind != JsonValueKind.Number
-                    || !versionElement.TryGetInt64(out var version)
-                    || version <= 0
-                    || !response.TryGetProperty("session_id", out var sessionElement)
-                    || sessionElement.ValueKind != JsonValueKind.String
-                    || !string.Equals(sessionElement.GetString(), sessionId, StringComparison.Ordinal)
-                    || !response.TryGetProperty("preset", out var presetElement)
-                    || presetElement.ValueKind != JsonValueKind.String
-                    || !string.Equals(presetElement.GetString(), preset, StringComparison.Ordinal)
-                    || response.TryGetProperty("snapshot_token", out var tokenElement)
-                    && (tokenElement.ValueKind != JsonValueKind.String
-                        || !string.Equals(tokenElement.GetString(), snapshotToken, StringComparison.Ordinal)))
-                {
-                    await _err.WriteLineAsync("preset_update_failed: invalid preset update response.").ConfigureAwait(false);
-                    if (!await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                        .ConfigureAwait(false))
-                    {
-                        return null;
-                    }
-
-                    return null;
-                }
-
-                return new SessionPresetUpdateResult(sessionId, version, snapshotToken);
-            }
-            catch (AgentApiException ex) when (
-                IsDeterministicPresetVersionConflict(ex) &&
-                expectedVersion < PresetVersionRetryLimit)
-            {
-            }
-            catch (AgentApiException ex) when (IsDeterministicPresetVersionConflict(ex))
-            {
-                await _err.WriteLineAsync("preset_version_conflict: preset_version_conflict").ConfigureAwait(false);
-                return null;
-            }
-            catch (AgentApiException ex)
-            {
-                if (IsPreCommitPresetError(ex))
-                {
-                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                    return null;
-                }
-
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                    .ConfigureAwait(false))
-                {
-                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                    return null;
-                }
-
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return null;
-            }
-            catch (OperationCanceledException)
-            {
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                    .ConfigureAwait(false))
-                {
-                    throw;
-                }
-
-                throw;
-            }
-            catch (Exception ex)
-            {
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                    .ConfigureAwait(false))
-                {
-                    await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
-                    return null;
-                }
-
-                await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
-                return null;
-            }
-        }
-
-        return null;
-    }
-
-    private static bool IsDeterministicPresetVersionConflict(AgentApiException error)
-    {
-        return error.StatusCode == 409
-            && error.ErrorCode == "preset_version_conflict";
-    }
-
-    private static bool IsPreCommitPresetError(AgentApiException error)
-    {
-        return (error.StatusCode, error.ErrorCode) switch
-        {
-            (400, "invalid_request" or "invalid_kind" or "invalid_session_id" or "invalid_preset" or "invalid_preset_version" or "invalid_snapshot_token" or "unknown_field") => true,
-            (401, "unauthorized" or "policy_create_failed") => true,
-            (403, "forbidden" or "interactive_required" or "policy_create_failed") => true,
-            (404, "session_not_found") => true,
-            (409, "preset_version_conflict" or "preset_snapshot_token_conflict") => true,
-            (413, "request_too_large" or "payload_too_large" or "policy_create_failed") => true,
-            (503, "preset_snapshot_capacity_exceeded") => true,
-            _ => false,
-        };
-    }
-
-    private static bool IsValidRestoreResponse(JsonElement response, string expectedSessionId)
-    {
-        if (response.ValueKind != JsonValueKind.Object
-            || !response.TryGetProperty("status", out var statusElement)
-            || statusElement.ValueKind != JsonValueKind.String
-            || !string.Equals(statusElement.GetString(), "ok", StringComparison.Ordinal)
-            || !response.TryGetProperty("session_id", out var sessionElement)
-            || sessionElement.ValueKind != JsonValueKind.String
-            || !string.Equals(sessionElement.GetString(), expectedSessionId, StringComparison.Ordinal)
-            || !response.TryGetProperty("restored", out var restoredElement)
-            || restoredElement.ValueKind != JsonValueKind.True
-            || !response.TryGetProperty("replayed", out var replayedElement)
-            || replayedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
-            || !response.TryGetProperty("preset", out var presetElement)
-            || presetElement.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)
-            || !response.TryGetProperty("version", out var versionElement)
-            || versionElement.ValueKind != JsonValueKind.Number
-            || !versionElement.TryGetInt64(out var version)
-            || version < 0)
-        {
-            return false;
-        }
-
-        if (presetElement.ValueKind == JsonValueKind.Null)
-            return version == 0;
-
-        return version > 0
-            && presetElement.GetString() is "plan" or "standard" or "full_access";
-    }
-
-    private async Task<bool> RestoreSessionPresetAsync(
-        SessionPresetUpdateResult update,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 2; attempt++)
-        {
-            try
-            {
-                var response = await _agentClient.RestoreSessionPresetAsync(
-                    update.SessionId,
-                    update.SnapshotToken,
-                    cancellationToken).ConfigureAwait(false);
-                if (!IsValidRestoreResponse(response, update.SessionId))
-                {
-                    await _err.WriteLineAsync("preset_restore_failed: invalid restore response.").ConfigureAwait(false);
-                    return false;
-                }
-
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (AgentApiException ex) when (ex.ErrorCode == "invalid_response")
-            {
-                await _err.WriteLineAsync("preset_restore_failed: invalid restore response.").ConfigureAwait(false);
-                return false;
-            }
-            catch (AgentApiException ex) when (
-                attempt == 0
-                && (ex.StatusCode is null || ex.StatusCode >= 500))
-            {
-                await _err.WriteLineAsync($"preset_restore_retry: {ex.ErrorCode}").ConfigureAwait(false);
-            }
-            catch (AgentApiException ex)
-            {
-                await _err.WriteLineAsync($"preset_restore_failed: {ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return false;
-            }
-            catch (JsonException ex)
-            {
-                await _err.WriteLineAsync($"preset_restore_failed: {ex.Message}").ConfigureAwait(false);
-                return false;
-            }
-            catch (Exception ex) when (attempt == 0)
-            {
-                await _err.WriteLineAsync($"preset_restore_retry: {ex.GetType().Name}").ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await _err.WriteLineAsync($"preset_restore_failed: {ex.Message}").ConfigureAwait(false);
-                return false;
-            }
-        }
-
-        await _err.WriteLineAsync("preset_restore_failed: restore retry failed.").ConfigureAwait(false);
-        return false;
-    }
-
-    private async Task<bool> RestorePresetOrReportAsync(
-        SessionPresetUpdateResult update)
-    {
-        if (await RestoreSessionPresetAsync(update, CancellationToken.None).ConfigureAwait(false))
-        {
-            return true;
-        }
-
-        await _err.WriteLineAsync("preset_restore_failed: refusing to continue.").ConfigureAwait(false);
-        return false;
-    }
-
-    private static bool IsAcceptedTrustStatus(string? status)
-    {
-        if (string.IsNullOrWhiteSpace(status))
-        {
-            return false;
-        }
-
-        return status.Trim().ToLowerInvariant() is
-            "waiting_history" or
-            "waiting_history_user" or
-            "waiting_history_final" or
-            "running" or
-            "waiting_approval" or
-            "waiting_user" or
-            "reconciliation_required" or
-            "completed";
-    }
-
-    private static bool IsKnownCreateStatus(string? status)
-    {
-        return status?.Trim().ToLowerInvariant() is
-            "waiting_workspace_trust" or
-            "waiting_history" or
-            "waiting_history_user" or
-            "waiting_history_final" or
-            "running" or
-            "waiting_approval" or
-            "waiting_user" or
-            "reconciliation_required" or
-            "completed";
-    }
-
-    /// <summary>
-    /// Checks that a create response is really bound to this session and preset before
-    /// anything acts on it. Shared by the non-interactive trust path and the interactive
-    /// prompt, so the interactive path cannot skip the binding check to reach the prompt.
-    /// </summary>
-    private static bool IsCreateResponseBound(
-        CreateAgentRunResponse response,
-        string expectedSessionId,
-        string expectedPreset) =>
-        !string.IsNullOrWhiteSpace(response.RunId)
-        && !string.IsNullOrWhiteSpace(response.SessionId)
-        && !string.IsNullOrWhiteSpace(response.WorkspaceId)
-        && string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
-        && string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
-        && IsKnownCreateStatus(response.Status);
-
-    private async Task<bool> HandleWorkspaceTrustAsync(
-        CreateAgentRunResponse response,
-        string expectedSessionId,
-        string expectedPreset,
-        bool trustWorkspace,
-        bool json,
-        CancellationToken cancellationToken)
-    {
-        if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
-        {
-            await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
-            return false;
-        }
-
-        if (string.Equals(response.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!trustWorkspace)
-            {
-                await (json ? _err : _out).WriteLineAsync(
-                    $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.").ConfigureAwait(false);
-                return false;
-            }
-
-            var trustRequestId = response.TrustRequestId;
-            var displayHash = response.DisplayIdentityHash;
-            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
-            {
-                await _err.WriteLineAsync("workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
-                return false;
-            }
-
-            try
-            {
-                var trustResponse = await _agentClient.TrustAsync(
-                    response.RunId,
-                    new TrustAgentRunRequest(trustRequestId, displayHash, "approve"),
-                    cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(trustResponse.RunId, response.RunId, StringComparison.Ordinal)
-                    || !string.Equals(trustResponse.TrustRequestId, trustRequestId, StringComparison.Ordinal)
-                    || !IsAcceptedTrustStatus(trustResponse.Status))
-                {
-                    await _err.WriteLineAsync("workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
-                    return false;
-                }
-
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (AgentApiException ex)
-            {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
-                return false;
-            }
-        }
-
-        if (!IsAcceptedTrustStatus(response.Status))
-        {
-            await _err.WriteLineAsync("agent_create_failed: unsafe create response status.").ConfigureAwait(false);
-            return false;
-        }
-
-        return true;
-    }
-
     private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
     {
         if (settings.TryGetProperty("reasoning_effort", out var direct) && !string.IsNullOrWhiteSpace(direct.GetString()))
@@ -447,160 +91,33 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
     public async Task<int> RunAsync(RunCommand cmd, CancellationToken cancellationToken)
     {
-        if (cmd.Preset is not ("plan" or "standard" or "full_access"))
-        {
-            await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
-            return 1;
-        }
-
-        if (cmd.Preset == "full_access" && !cmd.ConfirmFullAccess)
-        {
-            await _err.WriteLineAsync("full_access_confirmation_required: --confirm-full-access is required.").ConfigureAwait(false);
-            return 1;
-        }
-
-        string canonicalWorkspace;
+        RunStartOutcome outcome;
         try
         {
-            canonicalWorkspace = Path.GetFullPath(cmd.WorkspacePath);
+            outcome = await _runStarter.StartAsync(
+                new RunStartRequest(cmd.WorkspacePath, cmd.Prompt, cmd.Preset, cmd.SessionId, cmd.TrustWorkspace, cmd.ConfirmFullAccess, cmd.Json),
+                async sessionId =>
+                {
+                    // --json owns stdout: human-facing ids go to stderr so the NDJSON
+                    // trace stays machine-parseable line by line.
+                    await (cmd.Json ? _err : _out).WriteLineAsync($"session_id: {sessionId}").ConfigureAwait(false);
+                },
+                cancellationToken,
+                async run =>
+                {
+                    await (cmd.Json ? _err : _out).WriteLineAsync($"session_id: {run.SessionId}").ConfigureAwait(false);
+                    await (cmd.Json ? _err : _out).WriteLineAsync($"run_id: {run.RunId}").ConfigureAwait(false);
+                }).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (RunStartException)
         {
-            await _err.WriteLineAsync($"invalid_workspace: {ex.Message}").ConfigureAwait(false);
-            return 1;
-        }
-        if (canonicalWorkspace.Length > AgentCliParser.MaxWorkspacePathLength)
-        {
-            await _err.WriteLineAsync("invalid_workspace: path too long").ConfigureAwait(false);
-            return 1;
-        }
-
-        string sessionId;
-        if (cmd.SessionId is not null)
-        {
-            sessionId = cmd.SessionId;
-        }
-        else
-        {
-            try
-            {
-                sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
-                // --json owns stdout: human-facing ids go to stderr so the NDJSON
-                // trace stays machine-parseable line by line.
-                await (cmd.Json ? _err : _out).WriteLineAsync($"session_id: {sessionId}").ConfigureAwait(false);
-            }
-            catch (AgentApiException ex)
-            {
-                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                return 1;
-            }
-        }
-
-        var presetUpdate = await UpdateSessionPresetAsync(
-            sessionId,
-            cmd.Preset,
-            cmd.ConfirmFullAccess,
-            cancellationToken).ConfigureAwait(false);
-        if (presetUpdate is null)
-        {
-            return 1;
-        }
-
-        var request = new CreateAgentRunRequest(
-            sessionId,
-            canonicalWorkspace,
-            cmd.Prompt,
-            cmd.Preset,
-            presetUpdate.Version,
-            Guid.NewGuid().ToString("N"));
-
-        CreateAgentRunResponse response;
-        try
-        {
-            response = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-        catch (AgentApiException ex)
-        {
-            // Both sides matter here: dev restores the preset a failed create left
-            // behind, and CliErrorText renders the server body as one bounded line
-            // instead of raw JSON.
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                return 1;
-            }
-
-            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-            return 1;
-        }
-        catch (OperationCanceledException)
-        {
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                throw;
-            }
-
-            throw;
-        }
-        catch (Exception ex)
-        {
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                await _err.WriteLineAsync($"agent_create_failed: {ex.Message}").ConfigureAwait(false);
-                return 1;
-            }
-
-            await _err.WriteLineAsync($"agent_create_failed: {ex.Message}").ConfigureAwait(false);
-            return 1;
-        }
-
-        bool trustAccepted;
-        try
-        {
-            var humanOut = cmd.Json ? _err : _out;
-            await humanOut.WriteLineAsync($"session_id: {response.SessionId}").ConfigureAwait(false);
-            await humanOut.WriteLineAsync($"run_id: {response.RunId}").ConfigureAwait(false);
-            trustAccepted = await HandleWorkspaceTrustAsync(
-                response,
-                sessionId,
-                cmd.Preset,
-                cmd.TrustWorkspace,
-                cmd.Json,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                throw;
-            }
-
-            throw;
-        }
-        catch (Exception ex)
-        {
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                await _err.WriteLineAsync($"agent_output_failed: {ex.Message}").ConfigureAwait(false);
-                return 1;
-            }
-
-            await _err.WriteLineAsync($"agent_output_failed: {ex.Message}").ConfigureAwait(false);
-            return 1;
-        }
-        if (!trustAccepted)
-        {
-            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
-            {
-                return 1;
-            }
-
+            // The core already wrote the exact operator line to the exact stream.
             return 1;
         }
 
         try
         {
-            await StreamEventsAsync(response.RunId, cmd.Json, cancellationToken).ConfigureAwait(false);
+            await StreamEventsAsync(outcome.RunId, cmd.Json, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -614,7 +131,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             try
             {
-                await _agentClient.CancelAsync(response.RunId, CancellationToken.None).ConfigureAwait(false);
+                await _agentClient.CancelAsync(outcome.RunId, CancellationToken.None).ConfigureAwait(false);
                 await (cmd.Json ? _err : _out).WriteLineAsync("cancelled").ConfigureAwait(false);
             }
             catch (Exception)
@@ -1814,7 +1331,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     .ConfigureAwait(false);
                 if (string.Equals(trustResponse.RunId, runId, StringComparison.Ordinal)
                     && string.Equals(trustResponse.TrustRequestId, trustRequestId, StringComparison.Ordinal)
-                    && IsAcceptedTrustStatus(trustResponse.Status))
+                    && RunStartCore.IsAcceptedTrustStatus(trustResponse.Status))
                 {
                     return true;
                 }
@@ -1874,7 +1391,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             bool json,
             CancellationToken trustToken)
         {
-            if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
+            if (!RunStartCore.IsCreateResponseBound(response, expectedSessionId, expectedPreset))
             {
                 await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
                 return (false, false);
@@ -2199,7 +1716,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
             }
-            var presetUpdate = await UpdateSessionPresetAsync(
+            var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
                 sessionId,
                 cmd.Preset,
                 cmd.ConfirmFullAccess,
@@ -2253,11 +1770,11 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 // prompt. Nothing is executing while the challenge is open, so answering it
                 // in place costs nothing and keeps trust an explicit human decision.
                 // --json never reaches the in-composer ask: it requires --trust-workspace,
-                // so the human notice stays on stderr through HandleWorkspaceTrustAsync.
+                // so the human notice stays on stderr through RunStartCore.HandleWorkspaceTrustAsync.
                 var trustDeclined = false;
                 var trusted = isTrustWait && !cmd.TrustWorkspace
                     ? await ResolveTrust().ConfigureAwait(false)
-                    : await HandleWorkspaceTrustAsync(
+                    : await _runStartCore.HandleWorkspaceTrustAsync(
                             resp,
                             sessionId,
                             cmd.Preset,
@@ -2297,7 +1814,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
                 if (!trusted)
                 {
-                    if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                    if (!await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                     {
                         await FinishTurnAsync().ConfigureAwait(false);
                         return 1;
@@ -2413,7 +1930,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             catch (OperationCanceledException)
             {
                 if (!presetCommitted
-                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                    && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
                     return 1;
@@ -2424,7 +1941,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
                 if (!presetCommitted
-                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                    && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
                     return 1;
@@ -2442,7 +1959,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             catch (Exception ex)
             {
                 if (!presetCommitted
-                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                    && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
                     return 1;

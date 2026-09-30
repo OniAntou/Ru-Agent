@@ -707,8 +707,11 @@ namespace RuApp.Views
             if (force)
             {
                 // Session replacement must not be blocked by another UI action
-                // already in flight; the old run still has to be closed first.
-                await (_agentController?.CancelAsync() ?? Task.CompletedTask);
+                // already in flight; the old run still has to be closed first. A
+                // parked run is the user's to resume, though: the switch detaches
+                // from it and leaves it parked on the host instead of cancelling
+                // work the switch did not mean to stop.
+                await (_agentController?.StopForSessionSwitchAsync() ?? Task.CompletedTask);
             }
             else
             {

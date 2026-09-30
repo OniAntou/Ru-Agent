@@ -18,6 +18,25 @@ public sealed class AgentRunControllerTests
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "running", "standard", "2026", "2026"));
 
+    private static AgentRunModel MakeRunWith(string status, string? historyWaitKind = null, long lastSequence = 0) =>
+        new(
+            RunId,
+            "sess_1",
+            "ws_1",
+            status,
+            historyWaitKind,
+            "standard",
+            2026,
+            "2026",
+            1,
+            lastSequence,
+            "2026",
+            "2026",
+            null,
+            null,
+            null,
+            null);
+
     private static AgentEventModel DurableEvent(long seq) =>
         new(
             EventId: "e" + seq,
@@ -998,23 +1017,7 @@ public sealed class AgentRunControllerTests
         // After a host restart the frame that parked the run is already behind its
         // cursor, so the durable status is the only signal that Continue is the way
         // out. The run carries no history wait kind, like the wire response.
-        var run = new AgentRunModel(
-            RunId,
-            "sess_1",
-            "ws_1",
-            "waiting_user",
-            null,
-            "standard",
-            2026,
-            "2026",
-            1,
-            5,
-            "2026",
-            "2026",
-            null,
-            null,
-            null,
-            null);
+        var run = MakeRunWith("waiting_user", lastSequence: 5);
         var fake = new FakeClient { Run = run };
         var controller = new AgentRunController(fake);
 
@@ -1028,23 +1031,7 @@ public sealed class AgentRunControllerTests
     [Fact]
     public async Task Adopt_subscribes_from_last_sequence_for_running()
     {
-        var run = new AgentRunModel(
-            RunId,
-            "sess_1",
-            "ws_1",
-            "running",
-            null,
-            "standard",
-            2026,
-            "2026",
-            1,
-            37,
-            "2026",
-            "2026",
-            null,
-            null,
-            null,
-            null);
+        var run = MakeRunWith("running", lastSequence: 37);
         var fake = new FakeClient { Run = run };
         var controller = new AgentRunController(fake);
 
@@ -1063,23 +1050,7 @@ public sealed class AgentRunControllerTests
         // The adopted run may still be live server-side; a stream or refresh failure
         // must leave Stop available and say so instead of surfacing as an unobserved
         // fault on the background follow.
-        var run = new AgentRunModel(
-            RunId,
-            "sess_1",
-            "ws_1",
-            "running",
-            null,
-            "standard",
-            2026,
-            "2026",
-            1,
-            3,
-            "2026",
-            "2026",
-            null,
-            null,
-            null,
-            null);
+        var run = MakeRunWith("running", lastSequence: 3);
         var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
         var controller = new AgentRunController(fake);
 
@@ -1093,23 +1064,7 @@ public sealed class AgentRunControllerTests
     [Fact]
     public async Task Adopt_reconciliation_offers_continue()
     {
-        var run = new AgentRunModel(
-            RunId,
-            "sess_1",
-            "ws_1",
-            "reconciliation_required",
-            null,
-            "standard",
-            2026,
-            "2026",
-            1,
-            9,
-            "2026",
-            "2026",
-            null,
-            null,
-            null,
-            null);
+        var run = MakeRunWith("reconciliation_required", lastSequence: 9);
         var fake = new FakeClient { Run = run };
         var controller = new AgentRunController(fake);
 
@@ -1117,6 +1072,80 @@ public sealed class AgentRunControllerTests
 
         Assert.True(controller.CanContinue);
         Assert.Contains("Run paused", controller.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Adopt_is_ignored_while_a_create_is_in_flight()
+    {
+        // Adoption racing an in-flight create must not cross the busy latch: the
+        // create owns the subscription, so adoption is a bounded no-op the caller's
+        // fail-soft path absorbs.
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateRunGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+        var createTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-adopt-vs-create"));
+
+        await controller.AdoptRunAsync(MakeRunWith("waiting_user", historyWaitKind: "waiting_user"));
+
+        Assert.Null(fake.SubscribeAfter);
+        Assert.Null(controller.CurrentRun);
+
+        fake.CreateRunGate.SetResult(true);
+        await createTask;
+    }
+
+    [Fact]
+    public async Task CreateAndRun_reads_waiting_user_from_the_status_when_history_kind_is_none()
+    {
+        // The backend maps a WaitingUser run's history_wait_kind to "none". The
+        // durable status is what keeps Continue available, on the create path too.
+        var fake = new FakeClient { Run = MakeRunWith("waiting_user", historyWaitKind: "none") };
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-waiting-none"));
+
+        Assert.True(controller.CanContinue);
+        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Switching_from_a_parked_run_detaches_without_cancel()
+    {
+        var fake = new FakeClient { Run = MakeRunWith("waiting_user", historyWaitKind: "waiting_user") };
+        var controller = new AgentRunController(fake);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-switch-parked"));
+        Assert.True(controller.CanContinue);
+
+        await controller.StopForSessionSwitchAsync();
+
+        // The parked run belongs to the session that parked it: the switch detaches
+        // and leaves it resumable on the host instead of silently cancelling it.
+        Assert.False(fake.CancelCalled);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.CanCancel);
+        Assert.False(controller.CanContinue);
+        Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
+    public async Task Switching_from_a_running_run_still_cancels()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var controller = new AgentRunController(fake);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-switch-running"));
+
+        await controller.StopForSessionSwitchAsync();
+
+        Assert.True(fake.CancelCalled);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.CanCancel);
     }
 
     private static AgentRunModel MakeWorkspaceTrustRun() =>

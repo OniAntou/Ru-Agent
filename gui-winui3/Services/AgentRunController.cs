@@ -320,10 +320,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         lock (_gate)
         {
-            if (_currentRunId is not null)
+            // A run already in hand -- or a create in flight that is about to set
+            // one -- owns the subscription; adoption is only for the idle controller
+            // a fresh session open starts from. A skipped adoption is a bounded
+            // no-op: the caller fail-softs and the session still opens.
+            if (_currentRunId is not null || _isBusy)
             {
-                // A run already in hand owns the subscription; adoption is only for
-                // the empty controller a fresh session open starts from.
                 return Task.CompletedTask;
             }
         }
@@ -368,22 +370,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public async Task CancelAsync(CancellationToken cancellationToken = default)
     {
-        string? runId;
-        lock (_gate)
-        {
-            runId = _currentRunId;
-        }
-
+        string? runId = BeginRunTeardown();
         if (runId is null)
         {
             return;
         }
 
-        lock (_gate)
-        {
-            _subscriptionCts?.Cancel();
-            _isCancelRequested = true;
-        }
         RunOnUi(() =>
         {
             _statusText = "Cancelling run...";
@@ -393,22 +385,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         try
         {
             await _client.CancelAsync(runId, cancellationToken).ConfigureAwait(false);
-            RunOnUi(() =>
-            {
-                if (string.Equals(_currentRunId, runId, StringComparison.Ordinal))
-                {
-                    _currentRunId = null;
-                    _waitKind = null;
-                    PendingApprovalId = null;
-                    PendingApprovalSummary = null;
-                    PendingApprovalCommand = null;
-                    CurrentRun = null;
-                }
-
-                _statusText = "Cancellation request sent.";
-                _isBusy = false;
-                RefreshCommands();
-            });
+            ReleaseCurrentRun(runId, "Cancellation request sent.");
         }
         catch (Exception ex)
         {
@@ -419,6 +396,98 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 RefreshCommands();
             });
         }
+    }
+
+    /// <summary>
+    /// Whether the run in hand is parked for the user to resume rather than being
+    /// actively driven. A session switch leaves such a run alone on the host.
+    /// </summary>
+    public bool IsCurrentRunParked
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _currentRunId is not null
+                    && (_waitKind == "waiting_user" || _waitKind == ReconciliationWaitKind);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ends this controller's involvement for a session switch: a parked run is left
+    /// parked on the host (it is the user's to resume from its transcript) and only
+    /// the follow is detached; a live run is still cancelled, which is what a session
+    /// switch always did.
+    /// </summary>
+    public Task StopForSessionSwitchAsync(CancellationToken cancellationToken = default) =>
+        IsCurrentRunParked ? DetachCurrentRunAsync() : CancelAsync(cancellationToken);
+
+    /// <summary>
+    /// Drops the current run without cancelling it on the host: the follow stream is
+    /// torn down, the run reference is cleared, and no cancel request is posted. The
+    /// run keeps its parked state server-side, so opening the session again adopts
+    /// it. The async shape matches <see cref="CancelAsync"/> for a session-switch
+    /// site that awaits the teardown.
+    /// </summary>
+    public Task DetachCurrentRunAsync()
+    {
+        string? runId = BeginRunTeardown();
+        if (runId is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        // The non-cancel half of CancelAsync's teardown: same clearing and same
+        // idle transition, minus the POST and with copy that says the run survives.
+        ReleaseCurrentRun(runId, "Run detached. It stays parked on the host.");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Starts tearing the current run down: the follow stream is cancelled and the
+    /// run is marked as no longer driven. Shared by cancel and detach; returns the
+    /// run id being torn down, or null when there is nothing to tear down.
+    /// </summary>
+    private string? BeginRunTeardown()
+    {
+        lock (_gate)
+        {
+            string? runId = _currentRunId;
+            if (runId is not null)
+            {
+                _subscriptionCts?.Cancel();
+                _isCancelRequested = true;
+            }
+
+            return runId;
+        }
+    }
+
+    /// <summary>
+    /// Clears the current run reference on the UI thread and returns the controller
+    /// to idle. Shared by cancel (the host no longer owns the run) and detach (the
+    /// run keeps running under the session that parked it). The run-id check keeps a
+    /// stale completion from clearing a newer run.
+    /// </summary>
+    private void ReleaseCurrentRun(string runId, string statusText)
+    {
+        RunOnUi(() =>
+        {
+            if (string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+            {
+                _currentRunId = null;
+                _waitKind = null;
+                PendingApprovalId = null;
+                PendingApprovalSummary = null;
+                PendingApprovalCommand = null;
+                CurrentRun = null;
+            }
+
+            _statusText = statusText;
+            _isBusy = false;
+            RefreshCommands();
+        });
     }
 
     public async Task ContinueAsync(CancellationToken cancellationToken = default)

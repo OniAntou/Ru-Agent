@@ -30,3 +30,6 @@ Amendment (2026-09-30): the Host no longer owns a Runtime Worker child. Model
 generation runs in the Host process behind `IModelStepRunner` (see
 [ADR 0012](0012-in-process-model-runner.md)), and the Host owns only the Broker
 child.
+
+Amendment (2026-09-30): the contract is 41 HTTP routes after the session-fork
+removal.

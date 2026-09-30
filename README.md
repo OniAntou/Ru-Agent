@@ -137,7 +137,7 @@ contention as a failure (exit code 75) rather than a flaky result.
 
 - [docs/README.md](docs/README.md) — the documentation index
 - [CONTEXT.md](CONTEXT.md) — the domain language
-- [docs/architecture.md](docs/architecture.md) — how the four processes fit together
+- [docs/architecture.md](docs/architecture.md) — how the four executables fit together
 - [CONTRIBUTING.md](CONTRIBUTING.md) — building, testing, and the rules
 - [AGENTS.md](AGENTS.md) — the same rules for AI coding agents
 

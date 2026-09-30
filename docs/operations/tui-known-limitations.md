@@ -41,6 +41,9 @@ Two traps that cost real time here:
 - **A models.dev model is not validated against the catalog.** The snapshot
   factory checks the model only for `openai`/`anthropic`, so a models.dev id that
   does not exist travels all the way to the provider and comes back as a 404.
+  `chat` and `run` now warn once at start when the id is missing from the live
+  catalog (`model_not_in_catalog`; `model_check_unavailable` when the catalog
+  cannot be read), but the run still proceeds because the catalog can be stale.
 
 ## Colour output
 
@@ -99,11 +102,13 @@ that reason.
 
 ### The models.dev cache on a developer machine can be stale
 
-### The models.dev cache on a developer machine can be stale
-
 A cached catalog with **no `:free` models at all** was observed here, which
 makes the `/model` picker look like it is hiding entries. The cache is the
 first thing to check when the picker's contents disagree with models.dev.
+The picker no longer hides the failure: when `GET /models` fails or returns an
+empty catalog it prints `catalog unavailable (<reason>) - showing configured
+models` and names the backend plus row count in the footer, so a short list is
+distinguishable from a failed fetch.
 
 ### Two launcher scripts, one committed
 
@@ -138,16 +143,49 @@ picks up an unregistered one. An
 adopted `running` run is only pointed at (`ru agent attach <run-id>`) and is
 never followed automatically.
 
-### An adopted `waiting_approval` run shows the running status
+### An adopted `waiting_approval` run cannot be re-armed
 
-Adoption reads a run summary, which carries no approval id, so a
-`waiting_approval` run adopted by the GUI renders the running status until an
-approval id arrives on the stream — the same source the created-run path uses.
-An approval requested before the restart is not re-delivered on the resumed
-cursor, so it cannot be answered from the adopted session and the run fails as
+Adoption reads a run summary, which carries no approval id, so the approval
+panel cannot be rebuilt. The GUI now says so instead of pretending the run is
+running: an adopted `waiting_approval` run reads
+`Waiting for approval: <run-id> — review the approval in the session (or cancel the run)`
+and keeps Stop enabled, without faking a pending-approval re-arm. An approval
+requested before the restart is not re-delivered on the resumed cursor, so it
+cannot be answered from the adopted session and the run fails as
 `approval_expired` once the 30-minute approval lifetime passes. The
 TUI does not adopt `waiting_approval` at all: only parked and running statuses
 are handled by `chat --session`.
+
+### Session delete and `--session` replay have limits
+
+`/delete [session-id]` refuses the **current** session — switch first, then
+delete it — because the transcript, status card, and parked-run tracking all
+point at it. With `--json` or no interactive picker it reports
+`interactive_required` and deletes nothing; the non-interactive route is the CLI
+`agent session delete <session-id> --yes`. Opening `chat --session <id>` replays
+only the newest 20 user/assistant text messages, each capped at 2000 characters;
+tool and thinking rows are never replayed, `--json` skips replay entirely, and
+the assistant header shows the replay time because session payloads carry no
+timestamp.
+
+### Session import bounds, and the `.db` path is CLI-only
+
+`agent session import` refuses a file above **16 MiB** before reading it and
+re-checks the cap while reading; for the opencode `.db` store the cap applies to
+the extracted session payload, not to the whole database. Only the CLI reads
+that `.db` store: the desktop picker imports `.jsonl` (Claude Code, Codex,
+Antigravity) and points opencode users at
+`ru agent session import <opencode.db> --harness opencode`.
+
+### RPC subscriptions can end without a terminal event
+
+`ru agent rpc` publishes `run.detached` when a subscription pump ends before the
+run is terminal. The reason is bounded to `stream_interrupted` or
+`subscription_ended`, and the SDK throws a bounded `BridgeTransportError` for it
+instead of waiting forever; `subscription_ended` does not distinguish "not
+terminal" from "could not confirm terminal", so a client that needs certainty
+must call `run.status`. A full outbound queue does not publish `run.detached` at
+all — that path already fails closed with `bridge.shutdown`.
 
 ## Debugging a live TUI
 

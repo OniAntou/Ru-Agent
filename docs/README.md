@@ -15,6 +15,8 @@ in the checkout indefinitely.
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
+- [The stdio RPC bridge](operations/rpc.md)
+- [TypeScript SDK for the bridge](../sdk/ru-agent/README.md)
 - [TUI known limitations and debugging](operations/tui-known-limitations.md)
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)

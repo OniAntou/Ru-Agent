@@ -32,7 +32,11 @@ _Avoid_: ModelRunner globals, backend core
 The stable authenticated surface of 41 HTTP method/path pairs with no WebSocket
 route (20 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
-the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
+the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
+external tool drives the same surface over stdio through the local JSON-RPC
+bridge (`ru agent rpc`), wrapped by the TypeScript SDK at
+[`sdk/ru-agent`](sdk/ru-agent/README.md); the bridge adds no HTTP route and
+opens no transport beyond stdin/stdout. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
 not a product mode switch.
 _Avoid_: Compatibility routes

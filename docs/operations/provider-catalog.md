@@ -43,9 +43,9 @@ OpenAI) in that stable order, plus one group per Models.dev provider, but only w
 selectable conversational/Agent model. Each catalog is refreshed independently, so one failed or
 slow provider never hides another provider's group. A failed group without
 retained data is hidden; same-identity stale data is kept and labeled
-`Dữ liệu cũ`. Search spans provider names and model IDs, is case-insensitive,
+`Stale data`. Search spans provider names and model IDs, is case-insensitive,
 and never mutates the cached catalog state; groups with no matching rows are
-hidden. Empty result sets show `Không có model khả dụng`.
+hidden. Empty result sets show `No available models`.
 
 Selecting a row saves one strict two-field payload (`backend_choice` plus
 `selected_model`) through the existing atomic `POST /settings` transition; the
@@ -54,7 +54,7 @@ persisted model field in the same runtime-load/save/rollback transaction.
 Cross-provider selection is intentional. A save failure keeps the previous
 pair and shows a bounded five-second error. A selected model that disappears
 from a successful non-empty catalog stays visible once, disabled and labeled
-`Không còn khả dụng`; it is never replaced automatically and no fallback
+`Unavailable`; it is never replaced automatically and no fallback
 provider, model, key or protocol is tried.
 
 Signing out is a separate, explicit action: `POST /settings/provider/remove`
@@ -93,9 +93,19 @@ alias, or credential account: the key stays `cloudflare-workers-ai_api_key`.
 
 ## TUI provider and model pickers
 
-The TUI has no catalog endpoint and cannot store a key, so it lists the models
-this machine has already been configured with instead of a fetched catalog. A
-provider that lost its credential stays selectable but is marked `· no key` in
+The TUI reads the same live `GET /models?backend=` catalog as the desktop
+client: current model first, then free models, then the rest A–Z, with
+unsupported rows dimmed and unselectable. The picker footer names the backend
+and the row count as `backend · N rows`. When the fetch fails or returns an
+empty catalog it falls back to the models configured on this machine and says
+so with a visible `catalog unavailable (<reason>) - showing configured models`
+line instead of a silently short list. `/backend` reads the live
+`GET /models-dev` provider list the same way.
+
+The TUI can store and remove keys itself: `/key <provider>` covers `openai`,
+`anthropic`, `custom`, `openrouter`, and `models.dev:<id>`, and
+`/key remove <provider>` signs out through `POST /settings/provider/remove`.
+A provider that lost its credential stays selectable but is marked `· no key` in
 the `/backend` and `/model` pickers, using the `has_*_key` flags of `/settings`.
 A run against a signed-out provider fails closed with `catalog_unauthorized`.
 

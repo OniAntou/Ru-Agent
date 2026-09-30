@@ -319,6 +319,13 @@ ordered native calls; text-selected calls remain exactly one JSON object.
 Text turns are authenticated Agent runs consumed through the durable Agent SSE
 stream. There is no public WebSocket and no second text-generation transport.
 
+External tools get a local-only stdio surface: `ru agent rpc` speaks JSON-RPC
+2.0 over stdin/stdout, resolving the same `runtime_descriptor.json` and bearer
+token and reusing the same HTTP/SSE clients as the CLI. It adds no HTTP route
+and opens no transport beyond stdio; the TypeScript SDK at
+[`sdk/ru-agent`](../sdk/ru-agent/README.md) wraps the bridge with typed session
+and run handles.
+
 ### Multimodal image attachments
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:

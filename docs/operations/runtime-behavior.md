@@ -45,6 +45,16 @@ cannot update a newer bubble. A disconnect marks the active run as a bounded
 retryable connection error; Ru does not automatically replay an ambiguous
 request and risk duplicate history.
 
+Opening a session adopts its newest non-terminal run, so a run that outlived
+the host is not invisible: WinUI re-arms Continue/Stop for it (`AdoptRunAsync`;
+a running run is subscribed from its durable `LastSequence`, a parked one waits
+for the typed Continue), the TUI adopts it when `chat --session` reopens the
+session (parked → the `/continue` path, running → an `ru agent attach` hint
+only), and switching sessions detaches a parked run instead of cancelling it.
+The Continue path is the same on both clients: a parked run
+(`waiting_user`, `reconciliation_required`) resumes only when the client
+continues or reconciles it.
+
 ### Token usage accounting
 
 Opening Ru does not call a model, so startup alone has no provider token usage.
@@ -212,7 +222,10 @@ path. Workspace trust is explicit once per canonical identity: the GUI shows a
 guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
 recreated identity requires trust again. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
-bounded Agent status remain inline above the input. While a run is active, the transcript
+bounded Agent status remain inline above the input. The terminal client keeps
+the same parked-run path: the status row reads `▲ run paused · <code>` and one
+notice carries `resume with /continue (or 'ru agent continue <run-id>')`,
+cleared when the resumed run moves again. While a run is active, the transcript
 may also show a separate transient activity feed above the assistant content,
 driven by typed `agent.activity` SSE frames. It renders only safe state,
 basename/line-range, symbol/count,
@@ -304,7 +317,11 @@ allows up to 128 model steps and 256 model-initiated tool calls through the
 Broker pipeline. Native batches may contain multiple calls; the scheduler caps
 read-only concurrency at eight and keeps mutations/terminal sequential. Receipts
 retain model order. Exhausting a window moves the run to `WaitingUser`; only an
-explicit Continue opens a fresh window. Native calls, text-selected JSON,
+explicit Continue opens a fresh window, and the TUI offers the same path: the
+parked run shows a `▲ run paused` row plus `resume with /continue (or 'ru
+agent continue <run-id>')`, and `/continue [run-id]` (or a bare `Continue`
+while a parked run is known) POSTs the resume and follows the run from its
+durable cursor. Native calls, text-selected JSON,
 arguments, and outputs never enter the visible transcript as execution markup,
 mood state, or public diagnostics.
 External-folder requests and terminal deletion or unknown-executable requests

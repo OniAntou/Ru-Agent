@@ -226,7 +226,9 @@ no client can resolve an older approval — the endpoint refuses it as
 roll back a side effect. A `409 workspace_busy` (or the session-scoped variant)
 names the run that owns the resource in `blocking_run_id`/`blocking_run_status`,
 so a client can point the operator at the exact run to cancel
-(`ru agent cancel <run-id>`) or attach to (`ru agent attach <run-id>`).
+(`ru agent cancel <run-id>`), attach to (`ru agent attach <run-id>`), or — when
+`blocking_run_status` is `waiting_user` or `reconciliation_required` — resume
+with `ru agent continue <run-id>`.
 
 While a run is actively driven, a dedicated heartbeat renews its workspace
 membership independently of model and tool step duration. A failed renewal

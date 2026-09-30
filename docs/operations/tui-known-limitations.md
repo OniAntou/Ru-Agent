@@ -110,6 +110,44 @@ first thing to check when the picker's contents disagree with models.dev.
 `bin/ruagent.cmd` duplicates `bin/ru.cmd` and is deliberately not committed.
 Edit `bin/ru.cmd`; the untracked copy is local convenience.
 
+### Interrupting a chat turn now cancels server-side — but best-effort
+
+Escape with an empty draft and `Ctrl+C` no longer only detach the local stream:
+both `POST` `/agent/v1/runs/{runId}/cancel` so the run releases its workspace
+lock. The POST is best-effort — on failure the TUI prints `run_cancel_failed`
+plus the manual `ru agent cancel <run-id>` fallback, and until that is run the
+server may still own the run. A first Escape with a non-empty draft only clears
+the draft; the next Escape cancels. A run that parked itself
+(`waiting_user`, `reconciliation_required`) is never cancelled by an interrupt:
+there is nothing to cancel and its notice already points at `/continue`.
+
+### A parked run is surfaced, and only the newest run is adopted
+
+`waiting_user` and `reconciliation_required` now stop the spinner: the status
+row reads `▲ run paused · <code>` and exactly one notice carries
+`resume with /continue (or 'ru agent continue <run-id>')`. `/continue [run-id]`
+(or a bare `Continue` while a parked run is known) follows the resumed run from
+its durable cursor, and a resumed run clears the paused row. Opening
+`chat --session <id>` adopts the session's newest non-terminal run, so a run
+left behind by a host restart is visible again. Remaining limits: older parked
+runs are not adopted and need an explicit `/continue <run-id>`, and a resumed
+`reconciliation_required` run needs the fixed recovery sweep
+(`HarnessRecoveryScanner` re-registering its runtime root) because the drive
+loop starts only a `Running` run and never picks up an unregistered one. An
+adopted `running` run is only pointed at (`ru agent attach <run-id>`) and is
+never followed automatically.
+
+### An adopted `waiting_approval` run shows the running status
+
+Adoption reads a run summary, which carries no approval id, so a
+`waiting_approval` run adopted by the GUI renders the running status until an
+approval id arrives on the stream — the same source the created-run path uses.
+An approval requested before the restart is not re-delivered on the resumed
+cursor, so it cannot be answered from the adopted session and the run fails as
+`approval_expired` once the 30-minute approval lifetime passes. The
+TUI does not adopt `waiting_approval` at all: only parked and running statuses
+are handled by `chat --session`.
+
 ## Debugging a live TUI
 
 `RU_TUI_DEBUG=<path>` writes a layout trace for diagnosing resize and redraw

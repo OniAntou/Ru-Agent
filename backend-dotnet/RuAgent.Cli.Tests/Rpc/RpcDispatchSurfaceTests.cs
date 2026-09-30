@@ -432,6 +432,26 @@ public sealed class RpcDispatchSurfaceTests
     }
 
     [Fact]
+    public async Task Run_reconcile_fails_bounded_on_an_oversized_response()
+    {
+        var runId = "run_" + new string('a', 32);
+        var hash = new string('c', 64);
+        var dispatcher = await CreateInitializedAsync(_ =>
+        {
+            var response = RpcTestHost.Json("{}");
+            response.Content.Headers.ContentLength = BoundedHttpResponseReader.MaximumBytes + 1;
+            return Task.FromResult(response);
+        });
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
+                CancellationToken.None));
+        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
+        Assert.Equal("response_too_large", ex.RuCode);
+        Assert.True(ex.Message.Length <= 200);
+    }
+
+    [Fact]
     public void MethodNames_matches_the_documented_v1_surface()
     {
         Assert.Equal(

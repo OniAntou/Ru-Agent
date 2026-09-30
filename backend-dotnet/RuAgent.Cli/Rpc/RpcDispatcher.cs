@@ -115,7 +115,7 @@ public sealed class RpcDispatcher
                 "session.list" => await SessionListAsync(cancellationToken).ConfigureAwait(false),
                 "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.start" => await RunStartAsync(request, cancellationToken).ConfigureAwait(false),
-                "run.attach" => await RunAttachAsync(request).ConfigureAwait(false),
+                "run.attach" => await RunAttachAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.detach" => RunDetach(request),
                 "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.approve" => await RunApproveAsync(request, cancellationToken).ConfigureAwait(false),
@@ -251,7 +251,7 @@ public sealed class RpcDispatcher
         }
     }
 
-    private async Task<JsonNode> RunAttachAsync(RpcRequest request)
+    private async Task<JsonNode> RunAttachAsync(RpcRequest request, CancellationToken ct)
     {
         var runId = RequireRunId(request);
         var afterSequence = OptionalLong(request, "afterSequence") ?? 0;
@@ -259,9 +259,9 @@ public sealed class RpcDispatcher
 
         // Preflight the run before starting a pump: an unknown or expired run id
         // must fail here with a JSON-RPC error, not as a subscription that never
-        // delivers an event. The probe stays uncancellable so a cancelled bridge
-        // cannot leave a half-started subscription behind.
-        await _agentClient.GetRunAsync(runId, CancellationToken.None).ConfigureAwait(false);
+        // delivers an event. The probe shares the dispatch token so a cancelled
+        // bridge aborts before a subscription is attached.
+        await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
 
         if (_runBridge is null)
         {
@@ -344,7 +344,7 @@ public sealed class RpcDispatcher
         }
 
         var data = Convert.ToBase64String(bytes);
-        if (data.Length > RpcProtocol.MaxFrameCharacters)
+        if (System.Text.Encoding.UTF8.GetByteCount(data) > RpcProtocol.MaxFrameBytes)
         {
             // The client rejects oversized frames, and a killed transport loses
             // every later event: fail this one call with a named code instead.
@@ -428,7 +428,7 @@ public sealed class RpcDispatcher
         };
         http.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
         using var response = await _httpClient.SendAsync(http, ct).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await BoundedHttpResponseReader.ReadAsync(response.Content, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             var (ruCode, message) = MapReconcileFailure(body);

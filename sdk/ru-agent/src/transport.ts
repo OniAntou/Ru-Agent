@@ -17,7 +17,9 @@ interface PendingRequest {
 
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void;
 
-const MAX_BUFFER_CHARS = 1024 * 1024 + 64 * 1024;
+// Matches the bridge's 1 MiB UTF-8 byte frame cap plus 64 KiB of slack for the
+// frame envelope and text-mode read chunks; measured in bytes, not JS chars.
+const MAX_BUFFER_BYTES = 1024 * 1024 + 64 * 1024;
 const STDERR_TAIL_CHARS = 8 * 1024;
 
 /**
@@ -149,7 +151,7 @@ export class BridgeTransport {
       if (line.length > 0) this.#handleLine(line);
       newline = this.#buffer.indexOf("\n");
     }
-    if (this.#buffer.length > MAX_BUFFER_CHARS) {
+    if (Buffer.byteLength(this.#buffer, "utf8") > MAX_BUFFER_BYTES) {
       this.#rejectAll(new BridgeTransportError("bridge emitted an oversized frame"));
       this.#child.kill();
     }

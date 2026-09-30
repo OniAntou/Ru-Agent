@@ -4,7 +4,10 @@ namespace RuAgent.Cli.Rpc;
 public static class RpcProtocol
 {
     public const int Version = 1;
-    public const int MaxFrameCharacters = 1024 * 1024;
+
+    /// <summary>The inbound NDJSON line cap, measured in UTF-8 bytes on the wire.</summary>
+    public const int MaxFrameBytes = 1024 * 1024;
+
     public const int MaxOutboundMessages = 4096;
     public const int MaxMethodLength = 64;
 

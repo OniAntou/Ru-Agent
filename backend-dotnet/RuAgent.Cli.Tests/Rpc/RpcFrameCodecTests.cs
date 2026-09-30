@@ -40,6 +40,40 @@ public sealed class RpcFrameCodecTests
     }
 
     [Fact]
+    public async Task ReadFrame_caps_the_line_in_utf8_bytes_not_characters()
+    {
+        // "é" is 2 UTF-8 bytes, so three of them are 6 bytes against a 4-byte cap.
+        using var reader = new StringReader("ééé\n{é}\n");
+        var first = await RpcFrameCodec.ReadFrameAsync(reader, 4, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.TooLarge, first.Status);
+        var second = await RpcFrameCodec.ReadFrameAsync(reader, 4, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.Line, second.Status);
+        Assert.Equal("{é}", second.Line);
+    }
+
+    [Fact]
+    public async Task ReadFrame_accepts_a_line_at_the_exact_byte_boundary()
+    {
+        using var reader = new StringReader("éé\n");
+        var result = await RpcFrameCodec.ReadFrameAsync(reader, 4, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.Line, result.Status);
+        Assert.Equal("éé", result.Line);
+    }
+
+    [Fact]
+    public async Task ReadFrame_counts_a_surrogate_pair_as_four_bytes()
+    {
+        using var tooSmall = new StringReader("😀\n");
+        var oversized = await RpcFrameCodec.ReadFrameAsync(tooSmall, 3, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.TooLarge, oversized.Status);
+
+        using var exact = new StringReader("😀\n");
+        var result = await RpcFrameCodec.ReadFrameAsync(exact, 4, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.Line, result.Status);
+        Assert.Equal("😀", result.Line);
+    }
+
+    [Fact]
     public async Task ReadFrame_handles_a_line_larger_than_the_read_buffer()
     {
         var line = "{\"method\":\"" + new string('m', 5000) + "\"}";

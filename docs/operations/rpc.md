@@ -19,14 +19,18 @@ session and run handles.
   `\r` from Windows text mode is stripped.
 - **stdout carries JSON-RPC only**; diagnostics are written to stderr. Nothing else
   may write to stdout while the bridge runs.
-- Inbound request lines are capped at **1 MiB**. An oversized line is answered with a
-  `request_too_large` error (`-32600`) and skipped; the bridge does not guess at content
-  it cannot read.
-- `run.output` enforces the same 1 MiB cap on the base64 `data` it returns, so a payload
-  that would not fit fails with `output_frame_exceeds_limit` (`-32000`) instead of
-  emitting a frame the client would reject; fetch those bytes with the CLI
+- Inbound request lines are capped at **1 MiB of UTF-8 bytes**, measured after CR/LF
+  stripping. An oversized line is answered with a `request_too_large` error (`-32600`)
+  and skipped (drained through its newline) instead of guessing at content it cannot
+  read.
+- `run.output` enforces the same 1 MiB UTF-8 byte cap on the base64 `data` it returns,
+  so a payload that would not fit fails with `output_frame_exceeds_limit` (`-32000`)
+  instead of emitting a frame the client would reject; fetch those bytes with the CLI
   `agent output` command. Every other outbound frame is bounded by its method-level
   parameter and result caps.
+- The TypeScript SDK additionally rejects its read buffer past **1 MiB + 64 KiB of
+  UTF-8 bytes** (frame cap plus envelope/read-chunk slack), then kills the child and
+  fails every pending request.
 - A line that is not valid JSON is answered with `parse_error` (`-32700`) and skipped.
 - Requests without an `id` are notifications and get no response.
 - `$/cancelRequest` is accepted and ignored: v1 requests are short-lived, so there is no

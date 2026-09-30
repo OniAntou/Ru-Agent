@@ -75,7 +75,7 @@ public sealed class RpcBridgeServer
         {
             while (true)
             {
-                var frame = await RpcFrameCodec.ReadFrameAsync(_input, RpcProtocol.MaxFrameCharacters, cancellationToken).ConfigureAwait(false);
+                var frame = await RpcFrameCodec.ReadFrameAsync(_input, RpcProtocol.MaxFrameBytes, cancellationToken).ConfigureAwait(false);
                 if (frame.Status == RpcFrameStatus.EndOfInput)
                 {
                     break;

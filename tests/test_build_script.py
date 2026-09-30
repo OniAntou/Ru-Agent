@@ -34,7 +34,7 @@ def _write_stub_commands(
             f'\\win-x64\\publish\\{missing_runtime}" >nul 2>&1\n'
         )
     omitted_path = {
-        "worker": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe",
+        "backend": r"backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe",
         "runtimeconfig": r"gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.runtimeconfig.json",
     }.get(missing_artifact)
     omit_artifact = (
@@ -48,11 +48,9 @@ def _write_stub_commands(
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
-        "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  echo broker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Broker.exe\"\n"
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
         "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
-        "  echo worker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Worker.exe\"\n"
         f"{gui_publish}"
         "  echo {\"runtimeOptions\":{\"includedFrameworks\":[{\"name\":\"Microsoft.NETCore.App\",\"version\":\"10.0.0\"}]}} > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\RuApp.runtimeconfig.json\"\n"
         f"{omit_artifact}"
@@ -91,14 +89,10 @@ def _run_build_script(
         artifact.write_text(f"compiled {relative}\n", encoding="utf-8")
     (build_root / "backend-dotnet" / "RuAgent.Broker").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuBackend").mkdir(parents=True)
-    (build_root / "backend-dotnet" / "RuAgent.Runtime.Worker").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj").write_text(
         "stub\n", encoding="utf-8"
     )
     (build_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj").write_text(
-        "stub\n", encoding="utf-8"
-    )
-    (build_root / "backend-dotnet" / "RuAgent.Runtime.Worker" / "RuAgent.Runtime.Worker.csproj").write_text(
         "stub\n", encoding="utf-8"
     )
     (build_root / "scripts").mkdir()
@@ -137,23 +131,24 @@ def test_publish_order_and_self_contained_gui_flags(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     commands = (tmp_path / "checkout/dotnet.invocations").read_text(encoding="utf-8").splitlines()
     publishes = [command for command in commands if command.startswith("publish ")]
-    worker = next(i for i, command in enumerate(publishes) if "RuAgent.Runtime.Worker.csproj" in command)
+    cli = next(i for i, command in enumerate(publishes) if "RuAgent.Cli.csproj" in command)
+    broker = next(i for i, command in enumerate(publishes) if "RuAgent.Broker.csproj" in command)
     backend = next(i for i, command in enumerate(publishes) if "RuBackend.csproj" in command)
-    assert worker < backend
+    assert cli < broker < backend
     gui = next(command for command in publishes if "RuApp.csproj" in command)
     assert all(flag in gui.split() for flag in (
         "-p:Platform=x64", "-p:RuntimeIdentifier=win-x64", "-p:SelfContained=true",
     ))
 
 
-@pytest.mark.parametrize("missing_artifact", ["worker", "runtimeconfig"])
+@pytest.mark.parametrize("missing_artifact", ["backend", "runtimeconfig"])
 def test_missing_runtime_publish_artifact_stops_release_build(
     tmp_path: Path, missing_artifact: str,
 ) -> None:
     result = _run_build_script(tmp_path, missing_artifact=missing_artifact)
     assert result.returncode != 0
     expected_diagnostic = {
-        "worker": "RuAgent.Runtime.Worker.exe was not created.",
+        "backend": "RuBackend.exe was not created.",
         "runtimeconfig": "RuApp.runtimeconfig.json was not created.",
     }[missing_artifact]
     assert expected_diagnostic in result.stdout
@@ -183,7 +178,6 @@ def test_release_flattens_every_executable_into_one_directory(tmp_path: Path) ->
     for executable in (
         "RuApp.exe",
         "RuBackend.exe",
-        "RuAgent.Runtime.Worker.exe",
         "RuAgent.Broker.exe",
         "RuAgent.Cli.exe",
     ):
@@ -295,18 +289,6 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
     )
     release.mkdir(parents=True)
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
-    worker = (
-        tmp_path
-        / "backend-dotnet"
-        / "RuAgent.Runtime.Worker"
-        / "bin"
-        / "Release"
-        / "net10.0"
-        / "win-x64"
-        / "publish"
-    )
-    worker.mkdir(parents=True)
-    (worker / "RuAgent.Runtime.Worker.exe").write_text("worker placeholder\n", encoding="utf-8")
     for project, executable in (
         ("RuBackend", "RuBackend.exe"),
         ("RuAgent.Broker", "RuAgent.Broker.exe"),
@@ -349,7 +331,9 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
     assert Path(working_directory).resolve() == tmp_path.resolve()
 
 
-def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
+def test_start_dev_accepts_a_layout_without_the_worker_publish(tmp_path: Path) -> None:
+    """The Worker executable no longer ships, so the four remaining publishes are
+    the whole preflight. This fails if the removed guard is reintroduced."""
     repo_root = Path(__file__).resolve().parents[1]
     script = tmp_path / "start_dev.bat"
     shutil.copy2(repo_root / "start_dev.bat", script)
@@ -364,6 +348,33 @@ def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
     )
     release.mkdir(parents=True)
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
+    for project, executable in (
+        ("RuBackend", "RuBackend.exe"),
+        ("RuAgent.Broker", "RuAgent.Broker.exe"),
+        ("RuAgent.Cli", "RuAgent.Cli.exe"),
+    ):
+        service = (
+            tmp_path
+            / "backend-dotnet"
+            / project
+            / "bin"
+            / "Release"
+            / "net10.0"
+            / "win-x64"
+            / "publish"
+        )
+        service.mkdir(parents=True)
+        (service / executable).write_text("service placeholder\n", encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "launch_gui.ps1").write_text(
+        "param([string]$ExecutablePath, [string]$WorkingDirectory, "
+        "[int]$StartupGracePeriodMilliseconds = 2000)\n"
+        "Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launcher-args.txt') "
+        "-Value $WorkingDirectory\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
 
     result = subprocess.run(
         ["cmd", "/d", "/c", str(script)],
@@ -373,5 +384,5 @@ def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
         check=False,
     )
 
-    assert result.returncode != 0
-    assert "Managed Worker publish output not found" in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (scripts / "launcher-args.txt").is_file()

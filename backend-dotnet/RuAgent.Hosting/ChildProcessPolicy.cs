@@ -33,7 +33,6 @@ public static class ChildProcessPolicy
 
     private static readonly IReadOnlySet<string> Roles = new HashSet<string>(
         [
-            "dotnet-agent-worker",
             "ru-agent-broker",
         ],
         StringComparer.Ordinal);
@@ -82,7 +81,7 @@ public static class ChildProcessPolicy
     /// How much of a child's output the summary keeps, in characters.
     /// </summary>
     /// <remarks>
-    /// The summary used to record only how much a child printed, which made a worker that
+    /// The summary used to record only how much a child printed, which made a process that
     /// died on startup undiagnosable after the fact: the entry said "140 lines" and the
     /// lines themselves were gone. The end of a stream is what explains an exit, so that is
     /// the part kept — bounded, so one chatty process cannot fill the log.

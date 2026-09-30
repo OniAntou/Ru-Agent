@@ -18,21 +18,17 @@ public sealed record WorkerBrokerProcessSpec(
 public sealed class WorkerBrokerLaunchPlan
 {
     private WorkerBrokerLaunchPlan(
-        int agentWorkerPort,
         int brokerPort,
         string brokerDescriptorPath,
         string brokerSessionRoot,
         IReadOnlyList<WorkerBrokerProcessSpec> children)
     {
-        AgentWorkerPort = agentWorkerPort;
         BrokerPort = brokerPort;
         BrokerDescriptorPath = brokerDescriptorPath;
         BrokerSessionRoot = brokerSessionRoot;
         Children = children;
     }
 
-    public int AgentWorkerPort { get; }
-    public int WorkerPort => AgentWorkerPort;
     public int BrokerPort { get; }
     public string BrokerDescriptorPath { get; }
     public string BrokerSessionRoot { get; }
@@ -52,7 +48,7 @@ public sealed class WorkerBrokerLaunchPlan
         var resolvedLogRoot = ResolveLogRoot(root, configuredLogRoot);
         var brokerSessionRoot = Path.Combine(resolvedLogRoot, "agent", "session");
         var selectedBrokerPort = startup.BrokerPort ?? FindFreeLoopbackPort();
-        ValidatePortSet(publicPort, startup.AgentWorkerPort, selectedBrokerPort);
+        ValidatePortSet(publicPort, selectedBrokerPort);
 
         // A distribution puts every executable beside the host; a repository checkout
         // keeps each one under its own project. RuAppLayout resolves both, preferring
@@ -76,46 +72,21 @@ public sealed class WorkerBrokerLaunchPlan
                 $"Published {RuAppLayout.BrokerExecutableName} was not found at '{publishedBroker}'. Run build.bat, or set RU_AGENT_BROKER_EXE.");
         }
 
-        var workerExecutable = RuAppLayout.ResolveWorkerExecutable(root, appBaseDirectory);
-        if (string.IsNullOrWhiteSpace(workerExecutable) || !File.Exists(workerExecutable))
-        {
-            throw new FileNotFoundException(
-                $"Published {RuAppLayout.WorkerExecutableName} was not found. Expected it beside the host at '{appBaseDirectory}' or under the repository at '{root}'. Run build.bat, or set RU_AGENT_WORKER_EXE.");
-        }
-
-        var providerBootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);
-        if (!File.Exists(providerBootstrapPath)
-            || !IsOwnedPath(brokerSessionRoot, providerBootstrapPath))
-        {
-            throw new ArgumentException("Provider bootstrap path must be an existing file below the owned session root.", nameof(startup));
-        }
-
         Directory.CreateDirectory(brokerSessionRoot);
         var descriptorPath = Path.Combine(brokerSessionRoot, "broker.json");
         var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
         Directory.CreateDirectory(bootstrapRoot);
-        var children = new List<WorkerBrokerProcessSpec>();
-        children.Add(new WorkerBrokerProcessSpec(
-            "dotnet-agent-worker",
-            workerExecutable,
-            $"--host 127.0.0.1 --port {startup.AgentWorkerPort}",
-            root,
-            CreateWorkerEnvironment(
-                ("RU_AGENT_WORKER_TOKEN", startup.AgentWorkerToken),
-                ("RU_AGENT_PROVIDER_BOOTSTRAP", providerBootstrapPath),
-                ("RU_PROJECT_ROOT", root),
-                ("RU_LOG_ROOT", resolvedLogRoot)),
-            Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
-            Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
-
-        children.Add(new WorkerBrokerProcessSpec(
-            "ru-agent-broker",
-            publishedBroker,
-            string.Empty,
-            root,
-            CreateBrokerEnvironment(descriptorPath, resolvedLogRoot, root),
-            Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
-            Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")));
+        var children = new List<WorkerBrokerProcessSpec>
+        {
+            new(
+                "ru-agent-broker",
+                publishedBroker,
+                string.Empty,
+                root,
+                CreateBrokerEnvironment(descriptorPath, resolvedLogRoot, root),
+                Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
+                Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")),
+        };
 
         var descriptor = new BrokerSessionDescriptor(
             $"http://127.0.0.1:{selectedBrokerPort}",
@@ -131,15 +102,15 @@ public sealed class WorkerBrokerLaunchPlan
             descriptorPath,
             JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
-        return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
+        return new WorkerBrokerLaunchPlan(selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
     }
 
-    private static void ValidatePortSet(int publicPort, int agentPort, int brokerPort)
+    private static void ValidatePortSet(int publicPort, int brokerPort)
     {
-        var ports = new[] { publicPort, 8001, agentPort, brokerPort };
+        var ports = new[] { publicPort, 8001, brokerPort };
         if (ports.Any(port => port is < 1024 or > 65_535) || ports.Distinct().Count() != ports.Length)
         {
-            throw new ArgumentException("Public, worker, and Broker ports must be distinct and valid.");
+            throw new ArgumentException("Public and Broker ports must be distinct and valid.");
         }
     }
 
@@ -172,14 +143,6 @@ public sealed class WorkerBrokerLaunchPlan
         return environment;
     }
 
-    private static bool IsOwnedPath(string root, string path)
-    {
-        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var fullPath = Path.GetFullPath(path);
-        return fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            && !((File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) != 0);
-    }
-
     private static string ResolveLogRoot(string projectRoot, string? configuredLogRoot)
     {
         var explicitLogRoot = !string.IsNullOrWhiteSpace(configuredLogRoot) ? configuredLogRoot.Trim() : Environment.GetEnvironmentVariable("RU_LOG_ROOT");
@@ -196,24 +159,6 @@ public sealed class WorkerBrokerLaunchPlan
         var logRoot = Path.Combine(localAppData, "Ru", "logs");
         Directory.CreateDirectory(logRoot);
         return logRoot;
-    }
-
-    private static Dictionary<string, string> CreateWorkerEnvironment(
-        params (string Key, string Value)[] entries)
-    {
-        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, value) in entries)
-        {
-            environment[key] = value;
-        }
-
-        var configuredDataRoot = Environment.GetEnvironmentVariable("RU_DATA_ROOT");
-        if (!string.IsNullOrWhiteSpace(configuredDataRoot))
-        {
-            environment["RU_DATA_ROOT"] = Path.GetFullPath(configuredDataRoot.Trim());
-        }
-
-        return environment;
     }
 
     private static int FindFreeLoopbackPort()

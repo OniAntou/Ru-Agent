@@ -83,7 +83,7 @@ public sealed class OwnedProcessTreeTests
         var scratch = Path.Combine(Path.GetTempPath(), "ru-susp-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratch);
         var spec = new WorkerBrokerProcessSpec(
-            "dotnet-agent-worker",
+            "ru-agent-broker",
             "powershell.exe",
             BuildChildArguments(scratch),
             scratch,

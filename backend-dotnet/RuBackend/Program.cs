@@ -28,8 +28,6 @@ using System.Net;
 using System.Net.Sockets;
 
 var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal);
-var isDeterministicHarness = !isManagedRuntime
-    && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("RU_HARNESS_WORKER_TOKEN"));
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -55,19 +53,14 @@ if (isManagedRuntime)
     }
 }
 
-var agentWorkerPort = bootstrap?.AgentWorkerPort ?? PublicHostRuntimeOptions.DefaultWorkerPort;
-var agentWorkerToken = bootstrap?.AgentWorkerToken ?? string.Empty;
-
 // DI composition groups (registration order matches the previous inline order).
 builder.Services
     .AddRuFoundation(
         builder.Configuration,
-        bootstrap?.PublicBearer,
-        agentWorkerPort,
-        agentWorkerToken)
+        bootstrap?.PublicBearer)
     .AddRuSettingsAndSessions(builder.Configuration)
     .AddRuHarnessStores()
-    .AddRuAgentRuntime(isDeterministicHarness, isManagedRuntime)
+    .AddRuAgentRuntime(isManagedRuntime)
     .AddRuActivityAndDiagnostics();
 // The Public Contract is a loopback-only surface guarded by a bearer token that
 // desktop clients read from local files. A misconfigured or edited BindUrl must
@@ -139,18 +132,18 @@ if (isManagedRuntime)
     var lifetime = app.Lifetime;
     bootstrap!.WorkerBrokerManager.Exited += (_, _) =>
     {
-        // The worker or broker is gone, and this host owns no fallback: it stops. Say why
+        // The broker is gone, and this host owns no fallback: it stops. Say why
         // before it does, because the alternative is an app that vanishes while the reader
-        // only sees turns failing with worker_unavailable and no explanation anywhere.
+        // only sees turns failing with no explanation anywhere.
         app.Logger.LogError(
-            "managed runtime child exited unexpectedly ({Reason}); stopping the host",
+            "managed runtime Broker exited unexpectedly ({Reason}); stopping the host",
             bootstrap.WorkerBrokerManager.LastError ?? "unknown");
         lifetime.StopApplication();
     };
     lifetime.ApplicationStopping.Register(() =>
     {
         try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
-        try { bootstrap.WorkerBrokerManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Worker/Broker dispose failed during shutdown."); }
+        try { bootstrap.WorkerBrokerManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Broker dispose failed during shutdown."); }
         try { bootstrap.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     });
 }

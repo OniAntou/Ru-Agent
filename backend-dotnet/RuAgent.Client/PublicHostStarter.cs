@@ -178,9 +178,9 @@ public sealed class PublicHostStarter : IDisposable
                 return Task.FromResult(false);
             }
 
-            // The host records this root and the worker derives its working directory
-            // from it. A flat install has no repository, so the application directory
-            // has to be an acceptable answer here rather than a null that stops startup.
+            // The host records this root and derives its working directory from it.
+            // A flat install has no repository, so the application directory has to
+            // be an acceptable answer here rather than a null that stops startup.
             var actualProjectRoot = projectRoot;
             if (!Directory.Exists(Path.Combine(actualProjectRoot, "backend-dotnet"))
                 && !File.Exists(Path.Combine(actualProjectRoot, "pyproject.toml")))
@@ -248,7 +248,7 @@ public sealed class PublicHostStarter : IDisposable
             if (_disposed) return;
             _disposed = true;
             // Host lifetime is shared by GUI/CLI. Release our handle, not the process.
-            // The Host owns its graceful shutdown and Worker/Broker cleanup.
+            // The Host owns its graceful shutdown and Broker cleanup.
             _startedProcess?.Dispose();
             _startedProcess = null;
         }

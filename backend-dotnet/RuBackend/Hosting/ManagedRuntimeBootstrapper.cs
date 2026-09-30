@@ -1,22 +1,15 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
-using RuAgent.Runtime.Adapters.Bootstrap;
-using RuBackend.Hosting;
-using RuBackend.Runtime;
 
 namespace RuBackend.Hosting;
 
 // Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, start Worker/Broker, publish
+// acquire single instance, generate credentials, start Broker, publish
 // descriptor. Moved verbatim from Program.cs so startup order is unchanged.
 internal sealed record ManagedRuntimeBootstrap(
     string? PublicBearer,
-    int AgentWorkerPort,
-    string AgentWorkerToken,
     WorkerBrokerProcessManager WorkerBrokerManager,
     RuntimeDescriptorWriter DescriptorWriter,
     PublicHostSingleInstance SingleInstance);
@@ -40,8 +33,6 @@ internal static class ManagedRuntimeBootstrapper
     internal static async Task<ManagedRuntimeBootstrap> StartAsync(IConfiguration configuration, string projectRoot)
     {
         string? managedPublicBearer = null;
-        var managedAgentWorkerToken = string.Empty;
-        var managedAgentWorkerPort = PublicHostRuntimeOptions.DefaultWorkerPort;
 
         var configDataRoot = configuration["RU_DATA_ROOT"] ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
         var configLogRoot = configuration["RU_LOG_ROOT"] ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
@@ -78,8 +69,6 @@ internal static class ManagedRuntimeBootstrapper
             }
         }
 
-        // Generate an independent private credential for the agent worker.
-        managedAgentWorkerToken = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
         managedPublicBearer = configuration["RU_DESKTOP_TOKEN"] ?? Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
         if (string.IsNullOrWhiteSpace(managedPublicBearer))
         {
@@ -94,59 +83,26 @@ internal static class ManagedRuntimeBootstrapper
         Environment.SetEnvironmentVariable("RU_LOG_ROOT", managedLogRoot);
         configuration["RU_LOG_ROOT"] = managedLogRoot;
 
-        // Resolve the worker port before creating the protected bootstrap. The
-        // manager uses the same log/session root and returns the final values
-        // after readiness succeeds.
-        managedAgentWorkerPort = ReadConfiguredPort(
-            configuration["RuBackend:AgentWorkerPort"]
-                ?? Environment.GetEnvironmentVariable("RU_BACKEND_AGENT_WORKER_PORT")
-                ?? Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT"),
-            PublicHostRuntimeOptions.DefaultWorkerPort);
-
-        var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
-        var providerBootstrapPath = await new ManagedProviderBootstrapFactory()
-            .CreateAsync(
-                bootstrapRoot,
-                CancellationToken.None)
-            .ConfigureAwait(false);
-
         // Web tool configuration is forwarded to the Broker process (the execution
-        // authority) through the environment before the children start.
+        // authority) through the environment before the child starts.
         // Web egress requires explicit approval by default: read-only risk class
         // alone must never auto-allow traffic outside the loopback boundary.
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", "true");
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
-        // Start Worker and Broker in one Job
+        // Start the Broker in its own Job
         var managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
         var startup = new WorkerBrokerStartupOptions(
-            managedAgentWorkerToken,
-            providerBootstrapPath,
-            managedAgentWorkerPort,
             null,
             Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
-        var workerStarted = await managedWorkerBrokerManager
+        var brokerStarted = await managedWorkerBrokerManager
             .StartAsync(projectRoot, startup)
             .ConfigureAwait(false);
-        if (!workerStarted)
+        if (!brokerStarted)
         {
-            if (!string.IsNullOrWhiteSpace(providerBootstrapPath))
-            {
-                try
-                {
-                    ProtectedProviderBootstrap.Delete(bootstrapRoot, providerBootstrapPath);
-                }
-                catch
-                {
-                    // Startup must still fail closed; do not expose cleanup details.
-                }
-            }
-
-            throw new HostStartupException($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}", 4);
+            throw new HostStartupException($"Broker start failed: {managedWorkerBrokerManager.LastError}", 4);
         }
-
-        managedAgentWorkerPort = managedWorkerBrokerManager.AgentWorkerPort;
 
         // Propagate broker descriptor to Host's env for Broker client
         var brokerDescriptorPath = managedWorkerBrokerManager.BrokerDescriptorPath;
@@ -156,7 +112,7 @@ internal static class ManagedRuntimeBootstrapper
             configuration["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath;
         }
 
-        // Publish ACL-restricted descriptor after children are running and before health is available
+        // Publish ACL-restricted descriptor after the Broker is running and before health is available
         var proc = Process.GetCurrentProcess();
         var descriptor = new RuntimeDescriptor(
             RuntimeDescriptor.CurrentProtocolVersion,
@@ -170,8 +126,6 @@ internal static class ManagedRuntimeBootstrapper
 
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,
-            managedAgentWorkerPort,
-            managedAgentWorkerToken,
             managedWorkerBrokerManager,
             managedDescriptorWriter,
             managedSingleInstance);
@@ -179,14 +133,4 @@ internal static class ManagedRuntimeBootstrapper
 
     private static bool IsPortOccupied(int port)
         => RuAgent.Hosting.PortProbe.IsLoopbackPortOccupied(port);
-
-    internal static int ReadConfiguredPort(string? raw, int fallback)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return fallback;
-        }
-
-        return int.TryParse(raw, out var parsed) ? parsed : fallback;
-    }
 }

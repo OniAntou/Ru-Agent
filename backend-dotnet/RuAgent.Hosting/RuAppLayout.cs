@@ -24,9 +24,6 @@ public static class RuAppLayout
     /// <summary>The host executable name shared by both layouts.</summary>
     public const string HostExecutableName = "RuBackend.exe";
 
-    /// <summary>The managed worker executable name shared by both layouts.</summary>
-    public const string WorkerExecutableName = "RuAgent.Runtime.Worker.exe";
-
     /// <summary>The broker executable name shared by both layouts.</summary>
     public const string BrokerExecutableName = "RuAgent.Broker.exe";
 
@@ -36,7 +33,6 @@ public static class RuAppLayout
     public static bool IsFlatLayout(string appBaseDirectory) =>
         !string.IsNullOrWhiteSpace(appBaseDirectory)
         && File.Exists(Path.Combine(appBaseDirectory, HostExecutableName))
-        && File.Exists(Path.Combine(appBaseDirectory, WorkerExecutableName))
         && File.Exists(Path.Combine(appBaseDirectory, BrokerExecutableName));
 
     /// <summary>
@@ -63,42 +59,6 @@ public static class RuAppLayout
         if (!string.IsNullOrWhiteSpace(projectRoot))
         {
             foreach (var candidate in RepoHostCandidates(projectRoot))
-            {
-                if (File.Exists(candidate))
-                {
-                    return Path.GetFullPath(candidate);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves the managed worker executable: an explicit override, then a sibling,
-    /// then the repository build output. A distribution has no repository, so the
-    /// sibling lookup is what makes a flat install work.
-    /// </summary>
-    public static string? ResolveWorkerExecutable(string? projectRoot, string appBaseDirectory)
-    {
-        var overridden = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_EXE");
-        if (!string.IsNullOrWhiteSpace(overridden) && File.Exists(overridden))
-        {
-            return Path.GetFullPath(overridden);
-        }
-
-        if (!string.IsNullOrWhiteSpace(appBaseDirectory))
-        {
-            var sibling = Path.Combine(appBaseDirectory, WorkerExecutableName);
-            if (File.Exists(sibling))
-            {
-                return Path.GetFullPath(sibling);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(projectRoot))
-        {
-            foreach (var candidate in RepoWorkerCandidates(projectRoot))
             {
                 if (File.Exists(candidate))
                 {
@@ -151,8 +111,8 @@ public static class RuAppLayout
     /// <remarks>
     /// A flat install has no repository, so the application directory itself becomes
     /// the root. That matters beyond path resolution: the host records the root and
-    /// the worker derives its working directory from it, and returning null there
-    /// makes the GUI refuse to start at all.
+    /// derives its working directory from it, and returning null there makes the GUI
+    /// refuse to start at all.
     /// </remarks>
     public static string ResolveWorkingRoot(string? projectRoot, string appBaseDirectory)
     {
@@ -173,12 +133,6 @@ public static class RuAppLayout
     {
         yield return Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "win-x64", "publish", HostExecutableName);
         yield return Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", HostExecutableName);
-    }
-
-    private static IEnumerable<string> RepoWorkerCandidates(string projectRoot)
-    {
-        yield return Path.Combine(projectRoot, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", WorkerExecutableName);
-        yield return Path.Combine(projectRoot, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", WorkerExecutableName);
     }
 
     private static IEnumerable<string> RepoBrokerCandidates(string projectRoot)

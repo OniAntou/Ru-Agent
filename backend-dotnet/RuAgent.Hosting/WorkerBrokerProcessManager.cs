@@ -27,7 +27,7 @@ public interface IWorkerBrokerJobFactory
 
 public interface IWorkerBrokerReadinessProbe
 {
-    Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken);
+    Task<bool> WaitUntilReadyAsync(int brokerPort, CancellationToken cancellationToken);
 }
 
 public sealed class WorkerBrokerProcessManager : IDisposable
@@ -55,8 +55,6 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         _readinessProbe = readinessProbe ?? new TcpReadinessProbe();
     }
 
-    public int AgentWorkerPort { get; private set; }
-    public int WorkerPort => AgentWorkerPort;
     public int BrokerPort { get; private set; }
     public string? BrokerDescriptorPath { get; private set; }
     public string? BrokerSessionRoot { get; private set; }
@@ -160,7 +158,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                     child.Resume();
                 }
 
-                if (await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false))
+                if (await _readinessProbe.WaitUntilReadyAsync(plan.BrokerPort, cancellationToken).ConfigureAwait(false))
                 {
                     break;
                 }
@@ -168,13 +166,13 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 var deadChild = startedChildren.Any(child => !IsAlive(child));
                 if (attempt == maxAttempts || !deadChild)
                 {
-                    // Children still alive but never listening is not a port
+                    // The child still alive but never listening is not a port
                     // collision, and a configured port has nothing to re-probe:
                     // surface the failure exactly as before.
-                    throw new InvalidOperationException("Worker/Broker did not become ready.");
+                    throw new InvalidOperationException("Broker did not become ready.");
                 }
 
-                LastError = "Worker/Broker lost a port race during startup; retrying with a freshly probed port.";
+                LastError = "Broker lost a port race during startup; retrying with a freshly probed port.";
                 Cleanup(startedChildren, job, plan);
                 startedChildren.Clear();
                 job = null;
@@ -185,7 +183,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             // Every loop exit that reaches here broke out of a successful attempt.
             if (plan is null || job is null)
             {
-                throw new InvalidOperationException("Worker/Broker did not become ready.");
+                throw new InvalidOperationException("Broker did not become ready.");
             }
 
             lock (_gate)
@@ -199,7 +197,6 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 _job = job;
                 _brokerDescriptorPath = plan.BrokerDescriptorPath;
                 _brokerSessionRoot = plan.BrokerSessionRoot;
-                AgentWorkerPort = plan.AgentWorkerPort;
                 BrokerPort = plan.BrokerPort;
                 BrokerDescriptorPath = plan.BrokerDescriptorPath;
                 BrokerSessionRoot = plan.BrokerSessionRoot;
@@ -216,7 +213,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         }
         catch (Exception ex)
         {
-            LastError = ex is FileNotFoundException ? ex.Message : $"Could not start Worker/Broker: {ex.Message}";
+            LastError = ex is FileNotFoundException ? ex.Message : $"Could not start Broker: {ex.Message}";
             Cleanup(startedChildren, job, plan);
             return false;
         }
@@ -248,7 +245,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                     _brokerSessionRoot = null;
                     BrokerDescriptorPath = null;
                     BrokerSessionRoot = null;
-                    LastError = "Worker/Broker exited unexpectedly.";
+                    LastError = "Broker exited unexpectedly.";
                 }
 
                 Cleanup(exitedChildren, job, descriptorPath, sessionRoot);
@@ -445,8 +442,8 @@ public sealed class WindowsWorkerBrokerJobFactory : IWorkerBrokerJobFactory
 }
 
 /// <summary>
-/// Probes both child endpoints with real TCP connects; the host must not publish a
-/// runtime descriptor while a child has died or never started listening.
+/// Probes the Broker endpoint with a real TCP connect; the host must not publish a
+/// runtime descriptor while the Broker has died or never started listening.
 /// </summary>
 public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
 {
@@ -454,14 +451,12 @@ public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
     private static readonly TimeSpan TotalBudget = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan PollGap = TimeSpan.FromMilliseconds(250);
 
-    public async Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken)
+    public async Task<bool> WaitUntilReadyAsync(int brokerPort, CancellationToken cancellationToken)
     {
         var budget = Stopwatch.StartNew();
         while (!cancellationToken.IsCancellationRequested && budget.Elapsed < TotalBudget)
         {
-            var agentOk = await CanConnectAsync(agentWorkerPort, cancellationToken).ConfigureAwait(false);
-            var brokerOk = await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false);
-            if (agentOk && brokerOk)
+            if (await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false))
             {
                 return true;
             }

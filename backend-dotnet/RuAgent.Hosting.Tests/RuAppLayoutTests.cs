@@ -13,7 +13,7 @@ namespace RuAgent.Hosting.Tests;
 public sealed class RuAppLayoutTests
 {
     [Fact]
-    public void Flat_layout_is_recognized_only_when_all_three_siblings_exist()
+    public void Flat_layout_is_recognized_only_when_both_siblings_exist()
     {
         using var flat = TempLayout.Create();
 
@@ -41,9 +41,6 @@ public sealed class RuAppLayoutTests
             Path.Combine(flat.Path, RuAppLayout.HostExecutableName),
             RuAppLayout.ResolveHostExecutable(projectRoot: null, flat.Path));
         Assert.Equal(
-            Path.Combine(flat.Path, RuAppLayout.WorkerExecutableName),
-            RuAppLayout.ResolveWorkerExecutable(projectRoot: null, flat.Path));
-        Assert.Equal(
             Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName),
             RuAppLayout.ResolveBrokerExecutable(projectRoot: null, flat.Path));
     }
@@ -56,7 +53,6 @@ public sealed class RuAppLayoutTests
         Assert.False(RuAppLayout.IsFlatLayout(repo.AppDirectory));
 
         Assert.Equal(repo.HostInRepo, RuAppLayout.ResolveHostExecutable(repo.Path, repo.AppDirectory));
-        Assert.Equal(repo.WorkerInRepo, RuAppLayout.ResolveWorkerExecutable(repo.Path, repo.AppDirectory));
         Assert.Equal(repo.BrokerInRepo, RuAppLayout.ResolveBrokerExecutable(repo.Path, repo.AppDirectory));
     }
 
@@ -72,8 +68,8 @@ public sealed class RuAppLayoutTests
             Path.Combine(flat.Path, RuAppLayout.HostExecutableName),
             RuAppLayout.ResolveHostExecutable(repo.Path, flat.Path));
         Assert.Equal(
-            Path.Combine(flat.Path, RuAppLayout.WorkerExecutableName),
-            RuAppLayout.ResolveWorkerExecutable(repo.Path, flat.Path));
+            Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName),
+            RuAppLayout.ResolveBrokerExecutable(repo.Path, flat.Path));
     }
 
     [Fact]
@@ -84,7 +80,6 @@ public sealed class RuAppLayoutTests
         try
         {
             Assert.Null(RuAppLayout.ResolveHostExecutable(projectRoot: null, empty));
-            Assert.Null(RuAppLayout.ResolveWorkerExecutable(projectRoot: null, empty));
             Assert.Null(RuAppLayout.ResolveBrokerExecutable(projectRoot: null, empty));
         }
         finally
@@ -119,18 +114,18 @@ public sealed class RuAppLayoutTests
     public void Environment_override_beats_both_layouts()
     {
         using var flat = TempLayout.Create();
-        var overrideFile = Path.Combine(flat.Path, "custom-worker.exe");
+        var overrideFile = Path.Combine(flat.Path, "custom-broker.exe");
         File.WriteAllText(overrideFile, "test");
 
-        var previous = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_EXE");
+        var previous = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE");
         try
         {
-            Environment.SetEnvironmentVariable("RU_AGENT_WORKER_EXE", overrideFile);
-            Assert.Equal(overrideFile, RuAppLayout.ResolveWorkerExecutable(projectRoot: null, flat.Path));
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_EXE", overrideFile);
+            Assert.Equal(overrideFile, RuAppLayout.ResolveBrokerExecutable(projectRoot: null, flat.Path));
         }
         finally
         {
-            Environment.SetEnvironmentVariable("RU_AGENT_WORKER_EXE", previous);
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_EXE", previous);
         }
     }
 
@@ -144,73 +139,56 @@ public sealed class RuAppLayoutTests
         using var flat = TempLayout.Create();
         using var project = TempLayout.CreateScratch();
 
-        var sessionRoot = Path.Combine(project.Path, "logs", "agent", "session");
-        Directory.CreateDirectory(sessionRoot);
-        var bootstrap = Path.Combine(sessionRoot, "provider-bootstrap.bin");
-        File.WriteAllText(bootstrap, "protected");
-
         var startup = new WorkerBrokerStartupOptions(
-            "agent-token-" + Guid.NewGuid().ToString("N"),
-            bootstrap,
-            18101,
-            18102,
+            BrokerPort: 18102,
             BrokerExecutable: null);
 
         var previousBroker = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE");
-        var previousWorker = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_EXE");
         try
         {
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_EXE", Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName));
-            Environment.SetEnvironmentVariable("RU_AGENT_WORKER_EXE", Path.Combine(flat.Path, RuAppLayout.WorkerExecutableName));
 
             var plan = WorkerBrokerLaunchPlan.Create(project.Path, startup, Path.Combine(project.Path, "logs"));
 
             Assert.Equal(
-                Path.Combine(flat.Path, RuAppLayout.WorkerExecutableName),
-                plan.Children[0].FileName);
-            Assert.Equal(
                 Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName),
-                plan.Children[1].FileName);
+                plan.Children[0].FileName);
         }
         finally
         {
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_EXE", previousBroker);
-            Environment.SetEnvironmentVariable("RU_AGENT_WORKER_EXE", previousWorker);
         }
     }
 
     internal sealed class TempLayout : IDisposable
     {
-        private TempLayout(string path, string appDirectory, string hostInRepo, string workerInRepo, string brokerInRepo)
+        private TempLayout(string path, string appDirectory, string hostInRepo, string brokerInRepo)
         {
             Path = path;
             AppDirectory = appDirectory;
             HostInRepo = hostInRepo;
-            WorkerInRepo = workerInRepo;
             BrokerInRepo = brokerInRepo;
         }
 
         public string Path { get; }
         public string AppDirectory { get; }
         public string HostInRepo { get; }
-        public string WorkerInRepo { get; }
         public string BrokerInRepo { get; }
 
-        /// <summary>A distribution: all three executables in one directory.</summary>
+        /// <summary>A distribution: both executables in one directory.</summary>
         public static TempLayout Create()
         {
             var root = NewRoot("ru-flat-");
             foreach (var name in new[]
                      {
                          RuAppLayout.HostExecutableName,
-                         RuAppLayout.WorkerExecutableName,
                          RuAppLayout.BrokerExecutableName,
                      })
             {
                 File.WriteAllText(System.IO.Path.Combine(root, name), "test");
             }
 
-            return new TempLayout(root, root, string.Empty, string.Empty, string.Empty);
+            return new TempLayout(root, root, string.Empty, string.Empty);
         }
 
         /// <summary>A build tree: each executable under its own project, plus markers.</summary>
@@ -224,14 +202,13 @@ public sealed class RuAppLayoutTests
             Directory.CreateDirectory(appDirectory);
 
             var host = WriteAt(root, "RuBackend", RuAppLayout.HostExecutableName);
-            var worker = WriteAt(root, "RuAgent.Runtime.Worker", RuAppLayout.WorkerExecutableName);
             var broker = WriteAt(root, "RuAgent.Broker", RuAppLayout.BrokerExecutableName);
 
-            return new TempLayout(root, appDirectory, host, worker, broker);
+            return new TempLayout(root, appDirectory, host, broker);
         }
 
         /// <summary>An empty scratch directory for plans that need a log root.</summary>
-        public static TempLayout CreateScratch() => new(NewRoot("ru-scratch-"), string.Empty, string.Empty, string.Empty, string.Empty);
+        public static TempLayout CreateScratch() => new(NewRoot("ru-scratch-"), string.Empty, string.Empty, string.Empty);
 
         private static string NewRoot(string prefix)
         {

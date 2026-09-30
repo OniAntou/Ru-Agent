@@ -10,7 +10,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     public ChildProcessPolicyTests() => Directory.CreateDirectory(_root);
 
     [Theory]
-    [InlineData("dotnet-agent-worker")]
+    [InlineData("ru-agent-broker")]
     public void Launch_plan_roles_are_accepted_by_child_policy(string role)
     {
         var spec = new WorkerBrokerProcessSpec(
@@ -61,9 +61,9 @@ public sealed class ChildProcessPolicyTests : IDisposable
             """;
         try
         {
-            // Use Hosting ChildProcessPolicy via factory helper that uses that policy internally
-            var spec = new WorkerBrokerProcessSpec(
-                "dotnet-agent-worker",
+        // Use Hosting ChildProcessPolicy via factory helper that uses that policy internally
+        var spec = new WorkerBrokerProcessSpec(
+            "ru-agent-broker",
                 "powershell.exe",
                 PowerShellArguments(script),
                 _root,
@@ -90,13 +90,13 @@ public sealed class ChildProcessPolicyTests : IDisposable
         const string secretStdout = "raw-stdout-secret-control";
         const string secretStderr = "raw-stderr-secret-control";
         var spec = new WorkerBrokerProcessSpec(
-            "dotnet-agent-worker",
+            "ru-agent-broker",
             "powershell.exe",
             PowerShellArguments($"[Console]::Out.WriteLine('{secretStdout}'); [Console]::Error.WriteLine('{secretStderr}')"),
             _root,
             new Dictionary<string, string>(),
-            Path.Combine(_root, "worker_out.jsonl"),
-            Path.Combine(_root, "worker_err.jsonl"));
+            Path.Combine(_root, "broker_out.jsonl"),
+            Path.Combine(_root, "broker_err.jsonl"));
 
         var psi = ChildProcessPolicy.CreateStartInfo(spec);
         using var process = System.Diagnostics.Process.Start(psi)!;
@@ -112,7 +112,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     {
         var path = Path.Combine(_root, "saturated.jsonl");
         using var reader = new StringReader("first\nsecond\nthird\n");
-        await ChildProcessPolicy.DrainToSummaryAsync(reader, path, "dotnet-agent-worker", "stdout", maxLineCount: 2, maxByteCount: 8);
+        await ChildProcessPolicy.DrainToSummaryAsync(reader, path, "ru-agent-broker", "stdout", maxLineCount: 2, maxByteCount: 8);
         Assert.Equal(-1, reader.Peek());
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         var summary = doc.RootElement;
@@ -124,18 +124,18 @@ public sealed class ChildProcessPolicyTests : IDisposable
     [Fact]
     public async Task A_drained_stream_keeps_the_end_of_what_the_child_printed()
     {
-        // Counts alone could not answer "why did the worker die": the entry said how much was
+        // Counts alone could not answer "why did the child die": the entry said how much was
         // printed and threw the text away. The end is where an exit explains itself, so that
         // is what is kept, and the same entry says a front was dropped.
         var path = Path.Combine(_root, "tail.jsonl");
-        string loud = new string('x', ChildProcessPolicy.TailCharacterLimit) + "\nboom: worker failed to start\n";
-        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader(loud), path, "dotnet-agent-worker", "stdout");
+        string loud = new string('x', ChildProcessPolicy.TailCharacterLimit) + "\nboom: child failed to start\n";
+        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader(loud), path, "ru-agent-broker", "stdout");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         var summary = doc.RootElement;
         string tail = summary.GetProperty("tail").GetString()!;
         Assert.True(summary.GetProperty("truncated").GetBoolean());
-        Assert.EndsWith("boom: worker failed to start\n", tail, StringComparison.Ordinal);
+        Assert.EndsWith("boom: child failed to start\n", tail, StringComparison.Ordinal);
         Assert.True(tail.Length <= ChildProcessPolicy.TailCharacterLimit);
     }
 
@@ -143,11 +143,11 @@ public sealed class ChildProcessPolicyTests : IDisposable
     public async Task A_short_stream_is_kept_whole_and_in_order()
     {
         var path = Path.Combine(_root, "tail-short.jsonl");
-        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader("worker ready\n"), path, "dotnet-agent-worker", "stdout");
+        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader("broker ready\n"), path, "ru-agent-broker", "stdout");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         var summary = doc.RootElement;
-        Assert.Equal("worker ready\n", summary.GetProperty("tail").GetString());
+        Assert.Equal("broker ready\n", summary.GetProperty("tail").GetString());
         Assert.False(summary.GetProperty("truncated").GetBoolean());
     }
 

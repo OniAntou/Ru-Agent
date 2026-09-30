@@ -43,21 +43,25 @@ public sealed class AgentPolicyProfileParityTests
     }
 
     [Fact]
-    public void Worker_contract_rejects_tampered_effective_policy_before_model_or_broker_execution()
+    public void Typed_prompt_context_binds_the_effective_policy_to_the_canonical_profile()
     {
-        var validStart = CreateWorkerStartPayload();
-        WorkerV2Contracts.ValidateStart(validStart);
-        var tamperedStart = (JsonObject)validStart.DeepClone();
-        var effectivePolicy = tamperedStart["system_prompt_context"]!["effective_policy"]!.AsObject();
-        var mutationRule = effectivePolicy["rules"]!.AsArray()
-            .Single(node => node!["subject"]!.GetValue<string>() == "workspace_mutation")!
-            .AsObject();
-        Assert.Equal("allow", mutationRule["decision"]!.GetValue<string>());
-        mutationRule["decision"] = "deny";
+        // The effective policy is not an independent input on the typed path: the
+        // context derives it from the preset through the catalog, so a tampered
+        // policy document has no channel to reach the model or the Broker.
+        var context = new SystemPromptContext(
+            SystemPromptContext.PromptContextSchemaVersion,
+            SystemPromptContext.RequiredAgentProfile,
+            "standard",
+            new PromptEnvironment("test-model", "windows", "en-US", "UTC", "2026-01-01", null),
+            Array.Empty<PromptInstructionBlock>(),
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+        var canonical = AgentPolicyProfileCatalog.Get("standard");
+        Assert.True(context.EffectivePolicy.HasSameSemanticsAs(canonical));
 
-        var error = Assert.Throws<AgentProtocolException>(() =>
-            WorkerV2Contracts.ValidateStart(tamperedStart));
-        Assert.Equal("invalid_request", error.Code);
+        var serialized = JsonNode.Parse(context.SerializeUtf8())!.AsObject();
+        var decoded = AgentPolicyProfileCatalog.ReadProfile(serialized["effective_policy"]!.AsObject());
+        Assert.True(decoded.HasSameSemanticsAs(canonical));
 
         using var workspace = new TemporaryWorkspace();
         var (lease, factory) = CreateFactory(workspace, "standard");
@@ -168,18 +172,6 @@ public sealed class AgentPolicyProfileParityTests
             DateTimeOffset.UtcNow.AddMinutes(5),
             snapshot);
         return (lease, new BrokerPolicy.PolicyContextFactory(lease));
-    }
-
-    private static JsonObject CreateWorkerStartPayload()
-    {
-        var context = JsonNode.Parse(SystemPromptContext.Empty.SerializeUtf8())!.AsObject();
-        return new JsonObject
-        {
-            ["prompt"] = "hello",
-            ["turns"] = new JsonArray(),
-            ["system_prompt_context"] = context,
-            ["settings"] = new JsonObject(),
-        };
     }
 
     private static string Describe(AgentPolicyDecision decision) => decision switch

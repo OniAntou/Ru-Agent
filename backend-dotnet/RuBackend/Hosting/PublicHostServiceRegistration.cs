@@ -47,9 +47,7 @@ internal static class PublicHostServiceRegistration
     internal static IServiceCollection AddRuFoundation(
         this IServiceCollection services,
         IConfiguration configuration,
-        string? managedPublicBearer,
-        int agentWorkerPort,
-        string agentWorkerToken)
+        string? managedPublicBearer)
     {
         services.Configure<BackendOptions>(options =>
         {
@@ -176,7 +174,6 @@ internal static class PublicHostServiceRegistration
 
     internal static IServiceCollection AddRuAgentRuntime(
         this IServiceCollection services,
-        bool isDeterministicHarness,
         bool isManagedRuntime)
     {
         services.AddSingleton<HarnessOutboxStore>();
@@ -223,9 +220,8 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(services =>
             new InProcessModelStepRunner(services.GetRequiredService<WorkerV2StepService>())
             {
-                CreateProviderBootstrapAsync = isDeterministicHarness
-                    ? null
-                    : (runId, ct) => services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, ct),
+                CreateProviderBootstrapAsync = (runId, ct) =>
+                    services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, ct),
                 LoadRunImagesAsync = async (runId, ct) =>
                 {
                     var store = services.GetRequiredService<HarnessPayloadStore>();

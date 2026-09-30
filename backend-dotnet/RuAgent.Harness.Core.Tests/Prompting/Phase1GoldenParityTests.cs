@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
-using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests.Prompting;
@@ -71,9 +70,8 @@ public sealed class Phase1GoldenParityTests
         var oneCallEntry = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
             item => item!["name"]!.GetValue<string>() == "step_done_tool_call")!;
 
-        WorkerV2Contracts.ValidateEnvelope(baselineEnvelope.AsObject());
-        WorkerV2Contracts.ValidateEnvelope(workerEnvelope.AsObject());
-        WorkerV2Contracts.ValidateEnvelope(oneCallEntry["envelope"]!.AsObject());
+        // The wire contract is gone with the worker transport; the golden fixtures
+        // still pin the step-done shape the in-process service must produce.
         AssertNativeMultiCall(baselineEnvelope["payload"]!);
         AssertNativeMultiCall(workerEnvelope["payload"]!);
         Assert.Equal(

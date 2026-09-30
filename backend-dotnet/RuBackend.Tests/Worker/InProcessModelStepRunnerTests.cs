@@ -44,6 +44,27 @@ public sealed class InProcessModelStepRunnerTests
     }
 
     [Fact]
+    public async Task A_usage_report_keeps_its_model_name_through_the_step()
+    {
+        // The report is written into a stored payload and looked up in a price
+        // table; the name has to survive the in-process hop instead of being
+        // flattened into the five counts.
+        var provider = new ScriptedProvider((_, _) => Deltas(
+            new ModelDelta(
+                "done", [], completed: true, finishReason: "stop",
+                usage: new ModelUsage(12, 5, 17, null, null, "vendor/paid"))));
+
+        var result = await Runner(provider).RunStepAsync(
+            Request(),
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal("vendor/paid", result.Usage!.Model);
+        Assert.Equal(12, result.Usage.InputTokens);
+        Assert.Equal(5, result.Usage.OutputTokens);
+    }
+
+    [Fact]
     public async Task Maps_provider_tool_calls_with_their_arguments()
     {
         var provider = new ScriptedProvider((_, _) => Deltas(

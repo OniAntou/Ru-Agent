@@ -265,60 +265,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 RefreshCommands();
             });
 
-            await _client.SubscribeEventsAsync(
-                    run.RunId,
-                    0,
-                    OnEventAsync,
-                    token,
-                    OnActivityAsync,
-                    OnSummaryAsync,
-                    OnAssistantDeltaAsync,
-                    OnToolOutputAsync)
-                .ConfigureAwait(false);
-            // The SSE stream ends after the terminal snapshot, but the create response
-            // may be stale (or the stream may have disconnected). Refresh the durable
-            // run before changing command state so Cancel is never left enabled for a
-            // completed run and a disconnect is not reported as success.
-            try
-            {
-                await RefreshAsync(token).ConfigureAwait(false);
-            }
-            catch (Exception) when (!token.IsCancellationRequested && TryApplyTerminalStreamSnapshot())
-            {
-                // The SSE stream already delivered the authoritative terminal
-                // snapshot. A follow-up GET can race backend shutdown/restart; do
-                // not turn a completed reply into a false client-side failure.
-            }
-
-            RunOnUi(() =>
-            {
-                var terminal = IsTerminalStatus(CurrentRun?.Status);
-                if (terminal)
-                {
-                    _currentRunId = null;
-                    _waitKind = null;
-                    PendingApprovalId = null;
-                    PendingApprovalSummary = null;
-                    PendingApprovalCommand = null;
-                    if (!_isCancelRequested
-                        && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
-                    {
-                        _statusText = string.Empty;
-                    }
-                }
-                else if (!_isCancelRequested)
-                {
-                    _statusText = _waitKind switch
-                    {
-                        "waiting_user" => "Waiting to continue. Type Continue to resume.",
-                        ReconciliationWaitKind => "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.",
-                        _ => "Event stream ended before run completed.",
-                    };
-                }
-
-                _isBusy = false;
-                RefreshCommands();
-            });
+            await FollowRunStreamAsync(run.RunId, 0, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -357,6 +304,66 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             cts.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Takes over a run this controller did not create. A host restart leaves a
+    /// session's newest run parked or live with no client following it; opening the
+    /// session must offer Continue or Stop for exactly that run instead of leaving
+    /// it invisible. The stream is followed from the run's durable cursor in the
+    /// background, so opening a session never waits on a run that may stay parked
+    /// indefinitely.
+    /// </summary>
+    public Task AdoptRunAsync(AgentRunModel run, CancellationToken externalCancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        lock (_gate)
+        {
+            if (_currentRunId is not null)
+            {
+                // A run already in hand owns the subscription; adoption is only for
+                // the empty controller a fresh session open starts from.
+                return Task.CompletedTask;
+            }
+        }
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
+        lock (_gate)
+        {
+            _subscriptionCts = cts;
+            // Hand the run id over before the first UI frame: the delta/activity
+            // handlers read it on the SSE thread, and a UI-queued assignment lets
+            // the opening frames arrive while it is still null and be dropped.
+            _currentRunId = run.RunId;
+        }
+
+        var token = cts.Token;
+        _isBusy = true;
+
+        RunOnUi(() =>
+        {
+            OnPropertyChanged(nameof(IsBusy));
+            _isCancelRequested = false;
+            _waitKind = WaitKindFor(run);
+            PendingApprovalId = null;
+            PendingApprovalSummary = null;
+            PendingApprovalCommand = null;
+            Events.Clear();
+            lock (_gate)
+            {
+                _assistantDeltaKeys.Clear();
+                _toolOutputKeys.Clear();
+                _streamTerminalStatus = null;
+            }
+
+            CurrentRun = run;
+            _statusText = AdoptedStatusText(run);
+            RefreshCommands();
+        });
+
+        _ = FollowAdoptedRunAsync(run.RunId, run.LastSequence, token, cts);
+        return Task.CompletedTask;
     }
 
     public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -959,10 +966,148 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// <summary>
     /// Derives the wait kind the command surface acts on from a durable run. A run
     /// parked on reconciliation is as resumable as one parked on WaitingUser, but
-    /// it carries no HistoryWaitKind, so the status string is the only signal.
+    /// it carries no HistoryWaitKind, and a WaitingUser run may report no history
+    /// kind either, so both are read from the status string; everything else falls
+    /// back to the outbox wait kind.
     /// </summary>
     private static string? WaitKindFor(AgentRunModel? run) =>
-        run?.Status == ReconciliationWaitKind ? ReconciliationWaitKind : run?.HistoryWaitKind;
+        run is null
+            ? null
+            : run.Status is "waiting_user" or ReconciliationWaitKind
+                ? run.Status
+                : run.HistoryWaitKind;
+
+    /// <summary>
+    /// The composer line for an adopted run: a parked run gets its resume copy, a
+    /// live one the same running line a created run shows.
+    /// </summary>
+    private static string AdoptedStatusText(AgentRunModel run)
+    {
+        if (string.Equals(run.Status, ReconciliationWaitKind, StringComparison.Ordinal))
+        {
+            return "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
+        }
+
+        if (string.Equals(run.Status, "waiting_user", StringComparison.Ordinal))
+        {
+            return "Waiting to continue. Type Continue to resume.";
+        }
+
+        return $"Running: {run.RunId}";
+    }
+
+    /// <summary>
+    /// Follows one run's event stream and settles the controller when the stream
+    /// ends. Shared by the create path and adoption so a run is followed by identical
+    /// logic either way. <paramref name="afterSequence"/> is the durable cursor to
+    /// resume from: a created run starts at 0, an adopted one at its LastSequence so
+    /// frames the session open already replayed are not delivered twice.
+    /// </summary>
+    private async Task FollowRunStreamAsync(string runId, long afterSequence, CancellationToken token)
+    {
+        await _client.SubscribeEventsAsync(
+                runId,
+                afterSequence,
+                OnEventAsync,
+                token,
+                OnActivityAsync,
+                OnSummaryAsync,
+                OnAssistantDeltaAsync,
+                OnToolOutputAsync)
+            .ConfigureAwait(false);
+        // The SSE stream ends after the terminal snapshot, but the create response
+        // may be stale (or the stream may have disconnected). Refresh the durable
+        // run before changing command state so Cancel is never left enabled for a
+        // completed run and a disconnect is not reported as success.
+        try
+        {
+            await RefreshAsync(token).ConfigureAwait(false);
+        }
+        catch (Exception) when (!token.IsCancellationRequested && TryApplyTerminalStreamSnapshot())
+        {
+            // The SSE stream already delivered the authoritative terminal
+            // snapshot. A follow-up GET can race backend shutdown/restart; do
+            // not turn a completed reply into a false client-side failure.
+        }
+
+        RunOnUi(() =>
+        {
+            var terminal = IsTerminalStatus(CurrentRun?.Status);
+            if (terminal)
+            {
+                _currentRunId = null;
+                _waitKind = null;
+                PendingApprovalId = null;
+                PendingApprovalSummary = null;
+                PendingApprovalCommand = null;
+                if (!_isCancelRequested
+                    && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
+                {
+                    _statusText = string.Empty;
+                }
+            }
+            else if (!_isCancelRequested)
+            {
+                _statusText = _waitKind switch
+                {
+                    "waiting_user" => "Waiting to continue. Type Continue to resume.",
+                    ReconciliationWaitKind => "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.",
+                    _ => "Event stream ended before run completed.",
+                };
+            }
+
+            _isBusy = false;
+            RefreshCommands();
+        });
+    }
+
+    /// <summary>
+    /// Runs the adopted run's stream in the background. Unlike the create path there
+    /// is no caller to surface a fault to, so every failure is settled into the
+    /// controller instead of being rethrown; the run reference is kept so Stop stays
+    /// available when the host may still own the run.
+    /// </summary>
+    private async Task FollowAdoptedRunAsync(
+        string runId,
+        long afterSequence,
+        CancellationToken token,
+        CancellationTokenSource cts)
+    {
+        try
+        {
+            await FollowRunStreamAsync(runId, afterSequence, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            RunOnUi(() =>
+            {
+                _statusText = "Event monitoring stopped.";
+                _isBusy = false;
+                RefreshCommands();
+            });
+        }
+        catch (Exception)
+        {
+            RunOnUi(() =>
+            {
+                _statusText = "Event stream ended unexpectedly. Use Stop to end the run, then send again.";
+                _isBusy = false;
+                RefreshCommands();
+            });
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_subscriptionCts, cts))
+                {
+                    _subscriptionCts = null;
+                }
+            }
+
+            cts.Dispose();
+        }
+    }
 
     private bool TryApplyTerminalStreamSnapshot()
     {

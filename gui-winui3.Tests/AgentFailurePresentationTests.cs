@@ -176,6 +176,36 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void A_busy_workspace_paused_for_reconciliation_points_at_continue()
+    {
+        // A reconciled run has no pending prompt to answer, and cancelling it loses
+        // the read-only inspection: Continue is the only move that keeps the work.
+        string rendered = AgentFailurePresentation.RenderStartFailure(
+            "workspace_busy",
+            message: "Workspace busy.",
+            blockingRunId: "run_abc",
+            blockingStatus: "reconciliation_required");
+
+        Assert.Equal(
+            "Run run_abc is paused for inspection. Send Continue to resume it (or cancel it), then try again.",
+            rendered);
+    }
+
+    [Fact]
+    public void A_busy_workspace_waiting_user_points_at_continue()
+    {
+        string rendered = AgentFailurePresentation.RenderStartFailure(
+            "workspace_busy",
+            message: null,
+            blockingRunId: "run_abc",
+            blockingStatus: "waiting_user");
+
+        Assert.Equal(
+            "Run run_abc is waiting to continue. Send Continue to resume it, then try again.",
+            rendered);
+    }
+
+    [Fact]
     public void A_busy_workspace_without_a_run_id_keeps_the_generic_sentence()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure("workspace_busy", message: null);

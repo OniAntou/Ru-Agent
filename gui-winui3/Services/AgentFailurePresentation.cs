@@ -127,9 +127,22 @@ internal static class AgentFailurePresentation
             && !string.IsNullOrWhiteSpace(blockingRunId))
         {
             // The server names the blocking run; repeat it so the operator can
-            // answer or cancel exactly that run instead of guessing.
+            // answer or cancel exactly that run instead of guessing. A parked run
+            // has no pending prompt: reconciliation needs a Continue (cancelling it
+            // would lose the inspection) and waiting_user only needs the Continue.
             var status = string.IsNullOrWhiteSpace(blockingStatus) ? "active" : blockingStatus.Trim();
-            return $"Run {blockingRunId.Trim()} ({status}) still owns this workspace. Answer its pending prompt, or cancel it and try again.";
+            string runId = blockingRunId.Trim();
+            if (string.Equals(status, "reconciliation_required", StringComparison.Ordinal))
+            {
+                return $"Run {runId} is paused for inspection. Send Continue to resume it (or cancel it), then try again.";
+            }
+
+            if (string.Equals(status, "waiting_user", StringComparison.Ordinal))
+            {
+                return $"Run {runId} is waiting to continue. Send Continue to resume it, then try again.";
+            }
+
+            return $"Run {runId} ({status}) still owns this workspace. Answer its pending prompt, or cancel it and try again.";
         }
 
         switch (code)

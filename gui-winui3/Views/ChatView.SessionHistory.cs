@@ -936,6 +936,11 @@ namespace RuApp.Views
                         }
                     }
                 }
+
+                // A run that outlived the host is invisible until it is adopted:
+                // re-arm Continue/Stop for this session's newest non-terminal run.
+                // Bounded and fail-soft; a read failure never fails the open.
+                await TryAdoptSessionRunAsync(sessionId, openToken);
             }
             catch (OperationCanceledException)
             {
@@ -966,6 +971,79 @@ namespace RuApp.Views
                 UpdateContextUsage(force: true);
             }
         }
+
+        /// <summary>
+        /// Adopts the session's newest non-terminal run when the controller is not
+        /// already tracking a run for it. After a host restart a parked run must
+        /// still offer Continue/Cancel; adoption re-arms exactly that run. Best
+        /// effort and bounded: any read failure leaves the open as it would have been.
+        /// </summary>
+        private async Task TryAdoptSessionRunAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            var controller = _agentController;
+            if (controller is null
+                || _apiService is null
+                || string.IsNullOrWhiteSpace(sessionId)
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // A live run in hand for this session already owns the command surface;
+            // the open path must not replace it with an older parked one.
+            if (controller.CurrentRun is { } tracked
+                && string.Equals(tracked.SessionId, sessionId, StringComparison.Ordinal)
+                && !IsTerminalStatus(tracked.Status))
+            {
+                return;
+            }
+
+            try
+            {
+                var runs = await _apiService.ListSessionRunIdsAsync(sessionId, cancellationToken);
+                if (runs is not { Count: > 0 } || cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                // The reader reverses the wire's newest-first order, so the newest
+                // run is the tail.
+                var newest = runs[^1];
+                if (newest.IsTerminal)
+                {
+                    return;
+                }
+
+                var run = await _apiService.GetRunAsync(newest.RunId, cancellationToken);
+                if (run is null
+                    || IsTerminalStatus(run.Status)
+                    || !string.Equals(run.SessionId, sessionId, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                await controller.AdoptRunAsync(run, cancellationToken);
+                // A live run needs the monitor so its terminal frame settles the
+                // transcript; a parked run waits for the typed Continue, whose own
+                // action starts the monitor.
+                if (!IsParkedRunStatus(run.Status))
+                {
+                    StartAgentMonitor();
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Could not adopt the session run: {ex.Message}");
+            }
+        }
+
+        private static bool IsParkedRunStatus(string status) =>
+            string.Equals(status, "waiting_user", StringComparison.Ordinal)
+            || string.Equals(status, "reconciliation_required", StringComparison.Ordinal);
 
         /// <summary>
         /// True while the attempt that started as <paramref name="generation"/> is still the

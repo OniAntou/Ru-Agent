@@ -51,6 +51,8 @@ public sealed class AgentRunControllerTests
         public bool DenyCalled;
         public bool ThrowOnGetRun;
         public bool ThrowOnSubscribe;
+        public string? SubscribeRunId;
+        public long? SubscribeAfter;
         public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
         public TaskCompletionSource<bool>? CreateRunGate;
@@ -133,6 +135,9 @@ public sealed class AgentRunControllerTests
             Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
             Func<AgentToolOutputModel, Task>? onToolOutput = null)
         {
+            SubscribeRunId = runId;
+            SubscribeAfter = after;
+
             if (ThrowOnSubscribe)
             {
                 throw new InvalidOperationException("stream_failed");
@@ -985,6 +990,133 @@ public sealed class AgentRunControllerTests
             "sess_1", "C:\\work", "do it", "standard", null, "idem-reconciliation"));
 
         Assert.True(controller.CanContinue);
+    }
+
+    [Fact]
+    public async Task Adopt_sets_status_and_continue_for_waiting_user()
+    {
+        // After a host restart the frame that parked the run is already behind its
+        // cursor, so the durable status is the only signal that Continue is the way
+        // out. The run carries no history wait kind, like the wire response.
+        var run = new AgentRunModel(
+            RunId,
+            "sess_1",
+            "ws_1",
+            "waiting_user",
+            null,
+            "standard",
+            2026,
+            "2026",
+            1,
+            5,
+            "2026",
+            "2026",
+            null,
+            null,
+            null,
+            null);
+        var fake = new FakeClient { Run = run };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        Assert.Equal(RunId, controller.CurrentRun?.RunId);
+        Assert.True(controller.CanContinue);
+        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Adopt_subscribes_from_last_sequence_for_running()
+    {
+        var run = new AgentRunModel(
+            RunId,
+            "sess_1",
+            "ws_1",
+            "running",
+            null,
+            "standard",
+            2026,
+            "2026",
+            1,
+            37,
+            "2026",
+            "2026",
+            null,
+            null,
+            null,
+            null);
+        var fake = new FakeClient { Run = run };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        // Resuming from the durable cursor instead of 0: the session open already
+        // replayed the frames before it, so replaying them again would duplicate the
+        // transcript the adoption is supposed to attach to.
+        Assert.Equal(RunId, fake.SubscribeRunId);
+        Assert.Equal(37L, fake.SubscribeAfter);
+    }
+
+    [Fact]
+    public async Task Adopt_keeps_stop_available_when_the_follow_fails()
+    {
+        // The adopted run may still be live server-side; a stream or refresh failure
+        // must leave Stop available and say so instead of surfacing as an unobserved
+        // fault on the background follow.
+        var run = new AgentRunModel(
+            RunId,
+            "sess_1",
+            "ws_1",
+            "running",
+            null,
+            "standard",
+            2026,
+            "2026",
+            1,
+            3,
+            "2026",
+            "2026",
+            null,
+            null,
+            null,
+            null);
+        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        Assert.True(controller.CanCancel);
+        Assert.False(controller.IsBusy);
+        Assert.Contains("Stop", controller.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Adopt_reconciliation_offers_continue()
+    {
+        var run = new AgentRunModel(
+            RunId,
+            "sess_1",
+            "ws_1",
+            "reconciliation_required",
+            null,
+            "standard",
+            2026,
+            "2026",
+            1,
+            9,
+            "2026",
+            "2026",
+            null,
+            null,
+            null,
+            null);
+        var fake = new FakeClient { Run = run };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        Assert.True(controller.CanContinue);
+        Assert.Contains("Run paused", controller.StatusText, StringComparison.Ordinal);
     }
 
     private static AgentRunModel MakeWorkspaceTrustRun() =>

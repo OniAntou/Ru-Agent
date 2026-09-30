@@ -91,6 +91,40 @@ namespace RuApp.Services
         }
 
         /// <summary>
+        /// One durable run state, or null when it cannot be read. Used by the session
+        /// open to adopt a run that outlived the host: any failure returns null so the
+        /// session still opens, just without a run in hand.
+        /// </summary>
+        public async Task<AgentRunModel?> GetRunAsync(string runId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}", cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                var payload = await JsonSerializer.DeserializeAsync<GetAgentRunResponse>(
+                    stream,
+                    cancellationToken: cancellationToken);
+                return payload is null ? null : AgentRunModel.FromGetResponse(payload);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetRunAsync", ex);
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Reads one ISO-8601 timestamp off a wire object, or null when the field is
         /// absent, null, or not a timestamp. A malformed value is a missing value: a
         /// run with an unreadable start time still has a real duration to report.

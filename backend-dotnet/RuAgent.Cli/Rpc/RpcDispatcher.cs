@@ -56,6 +56,7 @@ public sealed class RpcDispatcher
     [
         "run.event",
         "run.transient",
+        "run.detached",
         "bridge.shutdown",
     ];
 

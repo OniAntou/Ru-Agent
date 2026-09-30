@@ -15,6 +15,8 @@ namespace RuAgent.Cli.Rpc;
 public sealed class RpcRunBridge : IRunBridge, IDisposable
 {
     private const int MaxStreamResumes = 3;
+    internal const string DetachReasonStreamInterrupted = "stream_interrupted";
+    internal const string DetachReasonSubscriptionEnded = "subscription_ended";
     private static readonly TimeSpan StreamResumeDelay = TimeSpan.FromMilliseconds(500);
     private static readonly JsonSerializerOptions EnvelopeOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -88,6 +90,7 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
     private async Task PumpAsync(Subscription subscription, long afterSequence)
     {
         var resumes = 0;
+        string? detachReason = null;
         try
         {
             while (true)
@@ -106,6 +109,9 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
                         resumes = 0;
                         if (!PublishFrame(subscription, frame))
                         {
+                            // The outbound queue is full: the bridge is already
+                            // failing closed with bridge.shutdown, so there is no
+                            // room (and no point) in signalling this subscription.
                             return;
                         }
                     }
@@ -115,6 +121,7 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
                     resumes++;
                     if (resumes > MaxStreamResumes)
                     {
+                        detachReason = DetachReasonStreamInterrupted;
                         return;
                     }
 
@@ -122,17 +129,21 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
                     continue;
                 }
 
-                if (await IsRunTerminalAsync(subscription.RunId, subscription.Token).ConfigureAwait(false) != false)
+                var terminal = await IsRunTerminalAsync(subscription.RunId, subscription.Token).ConfigureAwait(false);
+                if (terminal == true)
                 {
+                    return;
+                }
+
+                if (terminal is null || resumes >= MaxStreamResumes)
+                {
+                    // The stream ended and the run is not known terminal: end the
+                    // subscription loudly instead of leaving consumers waiting.
+                    detachReason = DetachReasonSubscriptionEnded;
                     return;
                 }
 
                 resumes++;
-                if (resumes > MaxStreamResumes)
-                {
-                    return;
-                }
-
                 await Task.Delay(StreamResumeDelay, subscription.Token).ConfigureAwait(false);
             }
         }
@@ -142,18 +153,39 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
         catch (AgentApiException ex)
         {
             // A dead subscription must not fault the pump task into the void: the
-            // client can only recover if the failure is visible on stderr.
+            // failure must be visible on stderr and on the wire.
+            detachReason = DetachReasonStreamInterrupted;
             _log($"rpc run subscription ended: {ex.Message}");
         }
         catch (Exception ex)
         {
+            detachReason = DetachReasonStreamInterrupted;
             _log($"rpc run subscription ended: {ex.Message}");
         }
         finally
         {
+            PublishDetached(subscription, detachReason);
             _subscriptions.TryRemove(subscription.SubscriptionId, out _);
             subscription.Cancellation.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Announces a pump that ended before the run reached a terminal state. An
+    /// explicitly cancelled subscription (detach or shutdown) is not announced.
+    /// </summary>
+    private void PublishDetached(Subscription subscription, string? reason)
+    {
+        if (reason is null || subscription.Token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _publish(RpcMessage.Notification("run.detached", new JsonObject
+        {
+            ["subscription_id"] = subscription.SubscriptionId,
+            ["reason"] = reason,
+        }));
     }
 
     private bool PublishFrame(Subscription subscription, SseFrame frame)

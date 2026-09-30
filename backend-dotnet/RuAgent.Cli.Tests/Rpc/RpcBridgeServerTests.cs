@@ -113,6 +113,26 @@ public sealed class RpcBridgeServerTests
     }
 
     [Fact]
+    public async Task Publishing_after_the_writer_completed_does_not_terminate()
+    {
+        var terminated = new List<int>();
+        var (server, _) = CreateServer(
+            string.Empty,
+            _ => Task.FromResult(RpcTestHost.Json("{}")),
+            terminate: code => terminated.Add(code));
+        var exit = await server.RunAsync(CancellationToken.None);
+        Assert.Equal(0, exit);
+        var late = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["method"] = "run.detached",
+            ["params"] = new JsonObject { ["subscription_id"] = "sub_1" },
+        };
+        Assert.False(server.TryPublish(late));
+        Assert.Empty(terminated);
+    }
+
+    [Fact]
     public async Task Cancellation_returns_130_and_emits_shutdown()
     {
         var (server, output) = CreateServer(string.Empty, _ => Task.FromResult(RpcTestHost.Json("{}")));

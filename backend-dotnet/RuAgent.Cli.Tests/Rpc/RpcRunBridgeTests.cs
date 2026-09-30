@@ -30,6 +30,14 @@ public sealed class RpcRunBridgeTests
             "\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\"," +
             "\"terminal_at\":\"2026-09-29T00:00:01Z\",\"terminal_error_code\":null}")));
 
+    private static HttpClient RunningRun() =>
+        RpcTestHost.CreateClient(_ => Task.FromResult(RpcTestHost.Json(
+            "{\"run_id\":\"" + RunId + "\",\"session_id\":\"s1\",\"workspace_id\":\"w1\",\"status\":\"running\"," +
+            "\"history_wait_kind\":null,\"preset\":\"standard\",\"policy_snapshot_version\":1," +
+            "\"policy_snapshot_sha256\":\"x\",\"version\":2,\"last_sequence\":1," +
+            "\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\"," +
+            "\"terminal_at\":null,\"terminal_error_code\":null}")));
+
     [Fact]
     public async Task Attach_publishes_durable_events_with_the_subscription_id()
     {
@@ -53,6 +61,33 @@ public sealed class RpcRunBridgeTests
         Assert.Equal(1, parameters["sequence"]!.GetValue<long>());
         Assert.Equal("run.started", parameters["event_type"]!.GetValue<string>());
         Assert.DoesNotContain("prompt", runEvent.ToJsonString());
+        Assert.DoesNotContain(published, p => p["method"]!.GetValue<string>() == "run.detached");
+    }
+
+    [Fact]
+    public async Task A_stream_that_dies_before_terminal_publishes_run_detached()
+    {
+        var published = new List<JsonObject>();
+        using var bridge = new RpcRunBridge(
+            new AgentSseClient(
+                RpcTestHost.CreateSession(),
+                RpcTestHost.CreateClient(_ => Task.FromResult(RpcTestHost.Json(
+                    "{\"error_code\":\"sse_failed\",\"message\":\"stream is gone\"}",
+                    System.Net.HttpStatusCode.InternalServerError)))),
+            new AgentApiClient(RpcTestHost.CreateSession(), RunningRun()),
+            publish: notification =>
+            {
+                published.Add(notification);
+                return true;
+            });
+
+        var subscriptionId = bridge.Attach(RunId, 0, includeTransient: false);
+        await bridge.WaitForSubscriptionsAsync(TimeSpan.FromSeconds(5));
+
+        var detached = Assert.Single(published, p => p["method"]!.GetValue<string>() == "run.detached");
+        var parameters = detached["params"]!.AsObject();
+        Assert.Equal(subscriptionId, parameters["subscription_id"]!.GetValue<string>());
+        Assert.Equal("stream_interrupted", parameters["reason"]!.GetValue<string>());
     }
 
     [Fact]

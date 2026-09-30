@@ -101,4 +101,20 @@ describe("RuAgent", () => {
     },
     2_000,
   );
+
+  it(
+    "events_rejects_when_the_subscription_detaches",
+    async () => {
+      const ru = await start("detach-after-attach");
+      const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+      const drain = async (): Promise<void> => {
+        for await (const event of run.events()) {
+          void event;
+        }
+      };
+      await expect(drain()).rejects.toThrow(/detached before a terminal event.*stream_interrupted/);
+      await ru.close();
+    },
+    2_000,
+  );
 });

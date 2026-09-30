@@ -3,6 +3,13 @@ import type { ApprovalDecision, RunEvent, RunTransient } from "./types.js";
 import type { BridgeTransport } from "./transport.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "interrupted"]);
+const DETACH_REASON_MAX_CHARS = 64;
+
+function detachedError(params: Record<string, unknown>): BridgeTransportError {
+  const reason =
+    typeof params.reason === "string" && params.reason.length > 0 ? params.reason.slice(0, DETACH_REASON_MAX_CHARS) : "unknown";
+  return new BridgeTransportError(`run subscription detached before a terminal event (reason: ${reason})`);
+}
 
 export class Run {
   constructor(
@@ -40,6 +47,16 @@ export class Run {
         notify?.();
         return;
       }
+      if (method === "run.detached") {
+        if (subscriptionId === undefined) {
+          early.push({ method, params });
+          return;
+        }
+        if (params.subscription_id !== subscriptionId) return;
+        closeError ??= detachedError(params);
+        notify?.();
+        return;
+      }
       if (method !== "run.event" && method !== "run.transient") return;
       if (subscriptionId === undefined) {
         early.push({ method, params });
@@ -64,7 +81,9 @@ export class Run {
       });
       subscriptionId = attached.subscription_id;
       for (const buffered of early) {
-        if (buffered.params.subscription_id === subscriptionId) push(buffered.method, buffered.params);
+        if (buffered.params.subscription_id !== subscriptionId) continue;
+        if (buffered.method === "run.detached") closeError ??= detachedError(buffered.params);
+        else push(buffered.method, buffered.params);
       }
       early.length = 0;
 

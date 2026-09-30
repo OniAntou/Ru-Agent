@@ -457,6 +457,6 @@ public sealed class RpcDispatchSurfaceTests
                 "policy.remove",
             ],
             RpcDispatcher.MethodNames);
-        Assert.Equal(["run.event", "run.transient", "bridge.shutdown"], RpcDispatcher.NotificationNames);
+        Assert.Equal(["run.event", "run.transient", "run.detached", "bridge.shutdown"], RpcDispatcher.NotificationNames);
     }
 }

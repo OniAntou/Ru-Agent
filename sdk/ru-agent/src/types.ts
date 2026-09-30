@@ -18,6 +18,11 @@ export interface RunTransient {
   data: string;
 }
 
+export interface RunDetached {
+  subscription_id: string;
+  reason: string;
+}
+
 export interface RunHandleInfo {
   run_id: string;
   session_id: string;

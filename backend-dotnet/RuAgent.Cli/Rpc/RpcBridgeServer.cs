@@ -18,6 +18,7 @@ public sealed class RpcBridgeServer
     private readonly Channel<JsonObject> _outbound;
     private readonly Action<int> _terminate;
     private bool _backpressured;
+    private bool _writerCompleted;
 
     public RpcBridgeServer(
         TextReader input,
@@ -45,7 +46,7 @@ public sealed class RpcBridgeServer
     /// <summary>Backpressure hook for RpcRunBridge: never blocks the SSE pump.</summary>
     public bool TryPublish(JsonObject notification)
     {
-        if (_backpressured)
+        if (_backpressured || _writerCompleted)
         {
             return false;
         }
@@ -154,6 +155,9 @@ public sealed class RpcBridgeServer
                 exitCode = 3;
             }
 
+            // A pump that ends during shutdown must not be mistaken for a full
+            // queue: the channel is closing, so there is nothing left to fail.
+            _writerCompleted = true;
             _outbound.Writer.TryWrite(RpcMessage.Notification("bridge.shutdown", new JsonObject { ["reason"] = reason }));
             _outbound.Writer.TryComplete();
         }

@@ -53,7 +53,7 @@ The first request must be `initialize`:
 ```
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","bridge.shutdown"]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
 ```
 
 - `protocolVersion` must be `1`. Any other value is rejected with `-32000` and
@@ -157,6 +157,13 @@ Details that are easy to get wrong:
   never replayed and never buffered, so a reconnect starts without them.
   `transient.frames_dropped` is **not** one of these — it is a durable event and
   arrives as `run.event`.
+- **`run.detached`** — the subscription pump ended before the run reached a terminal
+  state. Params: `subscription_id`, `reason` (`stream_interrupted` when transport reads
+  failed past the retry budget or the SSE client failed, `subscription_ended` when the
+  stream ended cleanly and the run was not confirmed terminal). A client that called
+  `run.detach`, or a bridge that is shutting down, cancels the pump instead and gets no
+  notification. A full outbound queue skips it too: that path already fails closed with
+  `bridge.shutdown`. The reason set is bounded so clients can branch on it.
 - **`bridge.shutdown`** — written best-effort immediately before the process exits.
   Params: `reason` (`stdin_closed`, `backpressure`, or `cancelled`), matching the exit
   code.

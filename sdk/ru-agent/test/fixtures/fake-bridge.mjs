@@ -49,6 +49,10 @@ rl.on("line", (line) => {
       send({ jsonrpc: "2.0", method: "bridge.shutdown", params: { reason: "backpressure" } });
       return;
     }
+    if (mode === "detach-after-attach") {
+      send({ jsonrpc: "2.0", method: "run.detached", params: { subscription_id: "sub_1", reason: "stream_interrupted" } });
+      return;
+    }
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 1, event_type: "run.started", status: "running" } });
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 2, event_type: "run.completed", status: "completed" } });
     return;

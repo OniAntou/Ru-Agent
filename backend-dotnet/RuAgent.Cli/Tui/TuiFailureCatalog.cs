@@ -146,10 +146,12 @@ public static class TuiFailureCatalog
                 "Model unavailable",
                 "the provider does not serve this model id",
                 "the provider 404s this model · pick another with /model (a ':free' suffix only exists where the provider lists it)"),
+            // Historical codes: the model worker no longer runs as its own
+            // process, so the copy names the backend instead of a worker.
             "worker_unavailable" or "worker_failed" => new(
                 key,
-                "Model worker unreachable",
-                "the local worker process could not be reached; nothing about the request was wrong",
+                "Model backend unreachable",
+                "the model backend could not be reached; nothing about the request was wrong",
                 "send the message again — if it keeps happening, restart Ru"),
             "provider_failed" or "generation_failed" or "drive_failed" => new(
                 key,

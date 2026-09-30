@@ -81,11 +81,12 @@ internal static class AgentFailurePresentation
 
         if (string.Equals(trimmed, "worker_unavailable", StringComparison.Ordinal))
         {
-            // The model worker is its own process, and the run could not reach it. Nothing
-            // about the request was wrong, so the copy asks for a retry instead of a
-            // rephrase — and it says the code out loud, because the raw token used to reach
-            // the reader unchanged and read like a bug in whatever they had just done.
-            return "Ru could not reach the model worker process, so the turn did not start (worker_unavailable). Send the message again — if it keeps happening, restart Ru.";
+            // Historical code: the model worker used to be its own process, and the
+            // run could not reach it. Nothing about the request was wrong, so the copy
+            // asks for a retry instead of a rephrase — and it says the code out loud,
+            // because the raw token used to reach the reader unchanged and read like a
+            // bug in whatever they had just done.
+            return "Ru could not reach the model backend, so the turn did not start (worker_unavailable). Send the message again — if it keeps happening, restart Ru.";
         }
 
         if (trimmed.StartsWith("Error", StringComparison.OrdinalIgnoreCase)

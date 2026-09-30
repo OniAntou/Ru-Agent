@@ -6,9 +6,8 @@ using RuAgent.Runtime.Adapters.Models;
 namespace RuAgent.Runtime.Worker;
 
 /// <summary>
-/// Memory and shape bounds that used to live on the worker wire contract
-/// (<c>WorkerV2Contracts</c>). Values are unchanged; only the home moved to the
-/// typed step API.
+/// Memory and shape bounds for the typed model generation request. Values are
+/// unchanged from the retired worker wire contract.
 /// </summary>
 public static class ModelGenerationBounds
 {

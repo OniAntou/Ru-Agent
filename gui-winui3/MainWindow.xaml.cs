@@ -1019,7 +1019,7 @@ namespace RuApp
             // 1. .NET Backend status
             bool backendRunning = snapshot.BackendRunning;
 
-            // 2. Worker status
+            // 2. Backend status
             bool workerOk = snapshot.WorkerOk;
             string? workerError = snapshot.WorkerError;
 
@@ -1045,8 +1045,8 @@ namespace RuApp
                 {
                     StatusDot.Fill = warningBrush;
                     StatusText.Text = backendRunning && workerError != null
-                        ? $"AI Worker error ({workerError})"
-                        : "AI Worker starting or not ready yet";
+                        ? $"Backend error ({workerError})"
+                        : "Backend starting or not ready yet";
                 }
                 else
                 {

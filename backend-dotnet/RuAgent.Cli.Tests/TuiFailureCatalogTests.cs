@@ -104,8 +104,8 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [Fact]
     public void WorkerCodes_KeepWorkerAndProviderCausesApart()
     {
-        Assert.Contains("worker", TuiFailureCatalog.For("worker_unavailable").Cause, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("worker", TuiFailureCatalog.For("worker_failed").Cause, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("backend", TuiFailureCatalog.For("worker_unavailable").Cause, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("backend", TuiFailureCatalog.For("worker_failed").Cause, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("worker", TuiFailureCatalog.For("provider_failed").Cause, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -77,10 +77,10 @@ public sealed class AgentFailurePresentationTests
     [Fact]
     public void Worker_unavailable_explains_the_worker_instead_of_leaking_the_code_alone()
     {
-        // The model worker is a separate process and can be missing before any step runs.
-        // The raw token used to reach the reader and read like a fault in whatever they had
-        // just done, so the copy has to say which piece was missing and that a retry is the
-        // move. The code stays in the sentence: it is the only handle support has.
+        // Historical code: the model worker used to be its own process and could be missing
+        // before any step runs. The copy still names the piece that was unreachable and that
+        // a retry is the move, and it keeps the code in the sentence because the raw token
+        // used to reach the reader and read like a fault in whatever they had just done.
         string rendered = AgentFailurePresentation.Render("worker_unavailable");
 
         Assert.NotEqual("worker_unavailable", rendered);

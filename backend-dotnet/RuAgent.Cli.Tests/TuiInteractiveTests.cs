@@ -1460,7 +1460,9 @@ public sealed class TuiInteractiveTests
         var session = PublicHostSession.FromDescriptor(desc);
 
         var runId = "run_" + new string('a', 32);
+        var payloadRef = "payload_" + new string('e', 32);
         var cancelPosted = false;
+        var payloadFetchPosted = false;
 
         string RunJson(string status, long lastSequence, string? terminalAt) => JsonSerializer.Serialize(new
         {
@@ -1480,13 +1482,31 @@ public sealed class TuiInteractiveTests
             terminal_error_code = (string?)null,
         });
 
+        // A parked run that already produced model steps carries payload refs, so the
+        // turn's follow path reaches RecoverMissingAssistantTextAsync with the token the
+        // park already cancelled. That is the branch that must still not cancel the run:
+        // without a ref the stream ends cleanly and the guard is never exercised.
+        var stepCompleted = JsonSerializer.Serialize(new
+        {
+            protocol_version = 1,
+            event_id = "evt_step_1",
+            run_id = runId,
+            session_id = "sess_123",
+            sequence = 1,
+            event_type = "model.step_completed",
+            occurred_at = "2026-09-30T00:00:00Z",
+            status = "completed",
+            safe_summary = "step_done",
+            payload_ref = payloadRef,
+        });
+
         var parked = JsonSerializer.Serialize(new
         {
             protocol_version = 1,
             event_id = "evt_park_1",
             run_id = runId,
             session_id = "sess_123",
-            sequence = 1,
+            sequence = 2,
             event_type = "continue.requested",
             occurred_at = "2026-09-30T00:00:00Z",
             status = "waiting_user",
@@ -1519,9 +1539,24 @@ public sealed class TuiInteractiveTests
                 cancelPosted = true;
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
             }
+            if (req.Method == HttpMethod.Get && uri.Contains("/payloads/"))
+            {
+                payloadFetchPosted = true;
+                // The response headers arrive, then the body read blocks: the park already
+                // cancelled the turn token, so the read surfaces the OCE that the parked
+                // guard must survive. A pre-serialized body would complete synchronously
+                // and never exercise that branch.
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new ParkedStream(Array.Empty<byte>()))
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") },
+                    },
+                };
+            }
             if (req.Method == HttpMethod.Get && uri.Contains("/events"))
             {
-                var sse = $"id: 1\ndata: {parked}\n\n";
+                var sse = $"id: 1\ndata: {stepCompleted}\n\nid: 2\ndata: {parked}\n\n";
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StreamContent(new ParkedStream(Encoding.UTF8.GetBytes(sse)))
@@ -1536,7 +1571,7 @@ public sealed class TuiInteractiveTests
                 // stream was released -- not because the run finished on its own.
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent(RunJson("waiting_user", 1, null), Encoding.UTF8, "application/json"),
+                    Content = new StringContent(RunJson("waiting_user", 2, null), Encoding.UTF8, "application/json"),
                 };
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
@@ -1550,7 +1585,14 @@ public sealed class TuiInteractiveTests
 
         Assert.Equal(0, exit);
         Assert.False(cancelPosted, "a parked run is the user's to resume; the turn must not cancel it");
-        Assert.Contains("/continue", outWriter.ToString(), StringComparison.Ordinal);
+        var output = outWriter.ToString();
+        Assert.Contains("/continue", output, StringComparison.Ordinal);
+        // The payload-ref recovery is what forces the OCE-parked path: the fetch is
+        // dispatched and the body read observes the park's cancelled token.
+        Assert.True(payloadFetchPosted, "the model.step_completed payload ref must reach recovery");
+        // The transcript notice is the only parked guidance: the OCE-parked path must not
+        // print a second, near-duplicate line.
+        Assert.Equal(1, output.Split("run parked", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]

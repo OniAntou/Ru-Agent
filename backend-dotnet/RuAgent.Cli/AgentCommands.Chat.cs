@@ -921,28 +921,29 @@ public sealed partial class AgentCommands
             var userCancelled = turnCts?.IsCancellationRequested == true;
             await FinishTurnAsync().ConfigureAwait(false);
             var cancelRunId = userCancelled && parkedRunId is null ? activeRunId : null;
-            if (parkedRunId is not null)
+            if (cancelRunId is null)
             {
-                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn(
-                    $"Run parked · resume with /continue (or 'ru agent continue {parkedRunId}').")).ConfigureAwait(false);
-            }
-            else if (cancelRunId is null)
-            {
-                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
-            }
-            else
-            {
-                try
-                {
-                    await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
-                }
-                catch (Exception ex)
+                if (parkedRunId is null)
                 {
                     await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
                 }
+
+                // A parked run is the user's to resume: there is nothing to cancel, and the
+                // transcript already printed the single "run parked ... /continue" notice
+                // for it, so printing another line here only duplicated that guidance.
+                return;
+            }
+
+            try
+            {
+                await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
+                await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
             }
         }
 
@@ -976,6 +977,15 @@ public sealed partial class AgentCommands
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
             }
+            catch (Exception ex)
+            {
+                // A transport failure must not escape the REPL: report it bounded and keep
+                // the prompt (and the parked tracking) intact.
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                    $"continue_error: {CliErrorText.ShortMessage(ex.Message)}")).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
 
             if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
             {
@@ -1005,12 +1015,20 @@ public sealed partial class AgentCommands
 
             sessionRenderer.BeginTurn();
             activeRunId = targetRunId;
-            parkedRunId = null;
+            var wasParkedRun = string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal);
             assistantPayloadRefs.Clear();
 
             try
             {
                 await _agentClient.ContinueAsync(targetRunId, turnCts.Token).ConfigureAwait(false);
+                if (wasParkedRun)
+                {
+                    // Only a confirmed continue drops the parked tracking: a rejected POST
+                    // must leave bare "Continue" working for the same run. The run is
+                    // moving again now, so the follow's cancel guard may target it.
+                    parkedRunId = null;
+                }
+
                 await FollowRunAsync(targetRunId, run.LastSequence, turnCts.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }

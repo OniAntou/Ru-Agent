@@ -548,7 +548,7 @@ public sealed class AgentSlashCommands
                 // the card instead of a one-row picker.
                 if (candidates.Count > 1 && Picker is not null)
                 {
-                    var list = new Tui.ChoiceList("model", candidates, footer: candidatesFooter);
+                    var list = new Tui.ChoiceList("model", candidates, footer: candidatesFooter, showRowCount: true);
                     var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
                     if (picked is not null)
                     {

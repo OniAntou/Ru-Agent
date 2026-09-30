@@ -67,6 +67,14 @@ rl.on("line", (line) => {
     return;
   }
   if (request.method === "run.attach") {
+    if (mode === "detach-before-attach") {
+      // The ordering a real bridge can produce: the pump sees the stream end and
+      // announces the detach before the attach response has reached the SDK. No
+      // run.event follows: the subscription is gone.
+      send({ jsonrpc: "2.0", method: "run.detached", params: { subscription_id: "sub_1", reason: "stream_interrupted" } });
+      send({ jsonrpc: "2.0", id: request.id, result: { subscription_id: "sub_1", run_id: request.params.runId, include_transient: false } });
+      return;
+    }
     const attached = { jsonrpc: "2.0", id: request.id, result: { subscription_id: "sub_1", run_id: request.params.runId, include_transient: false } };
     if (mode === "die-after-attach") {
       send(attached, () => process.exit(9));

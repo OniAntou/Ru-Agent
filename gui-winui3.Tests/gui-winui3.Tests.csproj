@@ -18,5 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\gui-winui3\RuApp.csproj" />
+    <!-- The free-tier predicate is duplicated in the CLI TUI and the GUI picker;
+         the cross-pin test calls both real implementations. -->
+    <ProjectReference Include="..\backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj" />
   </ItemGroup>
 </Project>

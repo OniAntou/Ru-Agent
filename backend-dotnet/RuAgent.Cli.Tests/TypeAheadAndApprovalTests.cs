@@ -174,6 +174,17 @@ public sealed class ApprovalPromptTests
     }
 
     [Fact]
+    public void Render_KeepsTheFooterExactlyWithoutTheRowCount()
+    {
+        var prompt = Create(offerDirectory: true);
+
+        var text = string.Join("\n", prompt.Render(80).Select(TuiText.Strip));
+
+        Assert.Contains("↑↓ · 1-9 · enter · esc", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("rows", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_MarksTheSelectedChoice()
     {
         var prompt = Create(offerDirectory: true);

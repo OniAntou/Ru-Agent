@@ -657,7 +657,7 @@ public sealed class ChoiceListTests
             new ChoiceItem("m-1", "one", "m-1"),
             new ChoiceItem("m-2", "two", "m-2"),
             new ChoiceItem("m-3", "three", "m-3"),
-        ], footer: "openai");
+        ], footer: "openai", showRowCount: true);
 
         var unfiltered = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("openai", StringComparison.Ordinal));
         Assert.Contains("openai · 3 rows", unfiltered, StringComparison.Ordinal);
@@ -666,6 +666,20 @@ public sealed class ChoiceListTests
         var filtered = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("filter:", StringComparison.Ordinal));
         Assert.Contains("filter: m", filtered, StringComparison.Ordinal);
         Assert.DoesNotContain("rows", filtered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_LeavesACallerFooterAloneWithoutTheRowCountOptIn()
+    {
+        var list = new ChoiceList("approval", [
+            new ChoiceItem("a", "one", "a"),
+            new ChoiceItem("b", "two", "b"),
+        ], footer: "↑↓ · 1-9 · enter · esc");
+
+        var footer = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("esc", StringComparison.Ordinal));
+
+        Assert.Contains("↑↓ · 1-9 · enter · esc", footer, StringComparison.Ordinal);
+        Assert.DoesNotContain("rows", footer, StringComparison.Ordinal);
     }
 
     [Fact]

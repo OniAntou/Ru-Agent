@@ -167,15 +167,19 @@ public sealed class InProcessModelStepRunnerTests
     }
 
     [Fact]
-    public async Task Gives_up_after_bounded_retryable_failures_and_keeps_model_failed_classification()
+    public async Task Gives_up_after_bounded_retryable_failures_with_the_provider_code()
     {
+        // The base socket runner surfaced an exhausted transient through the
+        // stable carrier, so the run kept provider_rate_limited instead of
+        // collapsing to model_failed (WorkerV2ClientTests@71266c9a:1345-1349).
         var provider = new ScriptedProvider((_, _) =>
             Throws(new ModelProviderException("rate_limited", retryable: true)));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
             Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         Assert.Equal("provider_rate_limited", error.Code);
+        Assert.Equal("provider_rate_limited", error.StepErrorCode);
         Assert.True(error.Retryable);
         Assert.Equal(3, provider.Calls);
     }

@@ -105,7 +105,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                     // A rejected typed request is deterministic input the host
                     // assembled; report it as such instead of letting it fall
                     // through to the generic model-failure mapping.
-                    throw new WorkerProtocolException("invalid_request", error);
+                    throw new WorkerProtocolException("invalid_request", retryable: false, error);
                 }
 
                 // A retried attempt replaces the previous attempt's answer: tell the
@@ -154,6 +154,11 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                 && attempt + 1 < MaxModelStepAttempts
                 && !cancellationToken.IsCancellationRequested)
             {
+                // One line per retryable rejection keeps a run whose retried
+                // attempt also fails diagnosable, like the worker transport
+                // reported every error frame before the retry.
+                Console.Error.WriteLine(
+                    $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
                 var backoffs = StepRetryBackoffsOverride.Length == MaxModelStepAttempts - 1
                     ? StepRetryBackoffsOverride
                     : ModelStepRetryBackoffs;
@@ -165,17 +170,15 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             }
             catch (WorkerV2StepException error)
             {
-                // The run records one durable code, so the failure is logged here
-                // before the mapping below either preserves a stable code or lets
-                // an exhausted transient fall through to model_failed.
+                Console.Error.WriteLine(
+                    $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
+                // The step driver records one durable code, and the provider
+                // code must survive the wrap: the stable carrier keeps
+                // exhausted transients distinguishable instead of collapsing
+                // them into model_failed.
                 Console.Error.WriteLine(
                     $"ru.host step_failed code={error.Code} attempt={attempt} retryable={error.Retryable}");
-                if (!error.Retryable)
-                {
-                    throw new WorkerProtocolException(error.Code, error);
-                }
-
-                throw;
+                throw new WorkerProtocolException(error.Code, error.Retryable, error);
             }
             catch (WorkerProtocolException error)
             {
@@ -214,7 +217,8 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         {
             // A config failure already names itself (missing key or model);
             // collapsing it would send the reader after the provider instead.
-            throw new WorkerProtocolException(StableBootstrapCode(error) ?? "provider_bootstrap_failed", error);
+            throw new WorkerProtocolException(
+                StableBootstrapCode(error) ?? "provider_bootstrap_failed", retryable: false, error);
         }
     }
 
@@ -241,7 +245,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             // Attached images are part of the user's turn. Continuing without them
             // would let the model answer a question it never saw, and the user would
             // have no way to tell. Fail the step instead of silently dropping them.
-            throw new WorkerProtocolException("image_payload_unavailable", error);
+            throw new WorkerProtocolException("image_payload_unavailable", retryable: false, error);
         }
     }
 
@@ -267,7 +271,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             }
             catch (ArgumentException error)
             {
-                throw new WorkerProtocolException("invalid_request", error);
+                throw new WorkerProtocolException("invalid_request", retryable: false, error);
             }
         }
 
@@ -669,17 +673,15 @@ public sealed class WorkerProtocolException : Exception, IStableStepError
     }
 
     public WorkerProtocolException(string code, bool retryable)
-        : base(code)
+        : this(code, retryable, innerException: null)
     {
-        Code = code;
-        Retryable = retryable;
     }
 
-    public WorkerProtocolException(string code, Exception? innerException)
+    public WorkerProtocolException(string code, bool retryable, Exception? innerException)
         : base(code, innerException)
     {
         Code = code;
-        Retryable = false;
+        Retryable = retryable;
     }
 
     public string Code { get; }

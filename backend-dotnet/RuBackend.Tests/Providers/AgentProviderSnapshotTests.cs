@@ -55,7 +55,8 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, (_, _) => Task.FromResult(false));
         var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal(expectedCode, error.Code);
-        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));    }
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+    }
 
     [Fact]
     public async Task Missing_key_fails_fast_before_any_network_fetch()

@@ -526,7 +526,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Session_fork_and_rewind_endpoints_work_correctly()
+    public async Task Session_rewind_endpoint_works_correctly()
     {
         using var data = TemporaryBusinessData.Create();
         using var factory = CreateAspNetFactory(data.Paths);
@@ -535,14 +535,6 @@ public sealed class BusinessEndpointTests
         using var createdResponse = await client.PostAsync("/sessions/new", null);
         var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
         var sessionId = created.GetProperty("session_id").GetString()!;
-
-        using var forkResponse = await client.PostAsJsonAsync($"/sessions/{sessionId}/fork", new { up_to_message_index = 0, title = "Nhánh A" });
-        var forked = await forkResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("ok", forked.GetProperty("status").GetString());
-        var forkedId = forked.GetProperty("session").GetProperty("id").GetString();
-        Assert.NotEqual(sessionId, forkedId);
-        Assert.Equal("Nhánh A", forked.GetProperty("session").GetProperty("title").GetString());
-        Assert.Equal(sessionId, forked.GetProperty("session").GetProperty("parent_session_id").GetString());
 
         using var rewindResponse = await client.PostAsJsonAsync($"/sessions/{sessionId}/rewind", new { to_message_index = 0 });
         var rewound = await rewindResponse.Content.ReadFromJsonAsync<JsonElement>();

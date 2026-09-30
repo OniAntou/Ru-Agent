@@ -47,7 +47,7 @@ because a retry would hide a genuinely flaky test instead of getting it fixed.
 
 The Python guards protect the documentation and contracts: README counts
 (routes, tools, test projects), the live endpoint list versus
-`public-route-contract.json` (42 routes), the tool manifest digests, and the
+`public-route-contract.json` (41 routes), the tool manifest digests, and the
 permission vocabulary. CI runs both matrices on `windows-latest`.
 
 ## How we work
@@ -96,7 +96,7 @@ trustworthy. A change that weakens one is rejected even if every test passes.
 4. **The protocol is versioned and digest-bound.** The 12 tool definitions
    live only in `RuAgent.Protocol`. A Broker manifest that disagrees with its
    Protocol digest refuses to start.
-5. **Loopback and bearer only.** The Public Contract is the 42 loopback HTTP
+5. **Loopback and bearer only.** The Public Contract is the 41 loopback HTTP
    routes guarded by a bearer token. No new public transport; no WebSocket
    routes.
 6. **Permissions are session-scoped.** Approval tokens are single-use and

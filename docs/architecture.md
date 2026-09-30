@@ -260,8 +260,8 @@ temporary data/log root, two dynamically leased loopback ports, memory-only
 bearers, and one Broker and ASP.NET Core edge child. While the port
 leases are still held, it prebuilds Broker and edge sequentially; both are then
 started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
-during a cold build. It classifies all 42 HTTP contract entries
-(21 non-Agent plus 21 additive `/agent/v1/*`), uses deterministic fixtures for
+during a cold build. It classifies all 41 HTTP contract entries
+(20 non-Agent plus 21 additive `/agent/v1/*`), uses deterministic fixtures for
 safe mutations plus additive Agent v2 tracer fixtures (idempotency,
 workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
 identity, policy snapshots, SSE cursor, payload binding, file discovery/read
@@ -289,7 +289,7 @@ an existing RuApp instance and drives only the `agent-*` scenarios.
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own the Broker child. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 42 HTTP routes (21 non-Agent + 21 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`WorkerV2StepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 41 HTTP routes (20 non-Agent + 21 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`WorkerV2StepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, then validates the hash before capabilities. The Host and the Broker project the same twelve Protocol definitions: separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, and `skill` tools. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity`; the grant is lost on restart, never shared with new/forked sessions, and never authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. `files.apply_patch` is not advertised. The Broker has no public HTTP contract. |
 
 Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
@@ -299,7 +299,7 @@ route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-42 HTTP method/path pairs with no WebSocket route (21 `/agent/v1/*` and 21
+41 HTTP method/path pairs with no WebSocket route (21 `/agent/v1/*` and 20
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

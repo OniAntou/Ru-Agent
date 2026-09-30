@@ -12,7 +12,7 @@ Manager and your project never leaves your disk.
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-4%2C809%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
-[![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
+[![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#your-data-stays-local)
 
 </div>
 
@@ -86,7 +86,7 @@ or tool fallback bypasses a denial.
 ## Your data stays local
 
 - **Everything runs on your machine.** The app's entire surface is
-  **42 HTTP routes** (21 non-Agent plus 21 under `/agent/v1/*`) bound to
+  **41 HTTP routes** (20 non-Agent plus 21 under `/agent/v1/*`) bound to
   `127.0.0.1` behind a bearer token — nothing listens on the network.
 - **Keys** go into Windows Credential Manager (DPAPI) on your side of the
   glass. The GUI holds no credential.

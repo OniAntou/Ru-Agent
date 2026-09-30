@@ -74,12 +74,6 @@ public interface ISessionStore
         int maxTurns,
         CancellationToken cancellationToken);
 
-    Task<SessionDocument?> ForkAsync(
-        string sessionId,
-        int upToMessageIndex,
-        string? newTitle,
-        CancellationToken cancellationToken) => Task.FromResult<SessionDocument?>(null);
-
     Task<SessionDocument?> RewindAsync(
         string sessionId,
         int toMessageIndex,

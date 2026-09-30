@@ -40,7 +40,7 @@ product.
   over its configured engine plus three public HTML engines). That is one tool,
   one policy decision, one result contract: every request still passes
   `WebPolicy`, so it can never widen the network boundary or bypass a denial.
-- **Loopback + bearer only.** The Public Contract is the 42 routes in
+- **Loopback + bearer only.** The Public Contract is the 41 routes in
   `public-route-contract.json`. No new public transport, no WebSocket routes.
 - **Permissions are session-scoped.** Approval tokens are single-use,
   argument-bound, and survive nothing. Protected paths deny at every preset.

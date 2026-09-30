@@ -330,7 +330,7 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
-    public async Task New_and_forked_sessions_ask_again()
+    public async Task New_sessions_ask_again()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         var dataRoot = Path.GetDirectoryName(wsPath)!;
@@ -347,8 +347,6 @@ public sealed class AgentApprovalEndpointTests
             // never produce an approval event on the new run's stream.
             string externalArguments = JsonSerializer.Serialize(new { path = externalFile });
             var runner = new ScriptedRunner(
-                ToolCall("files.read", externalArguments),
-                FinalStep("done"),
                 ToolCall("files.read", externalArguments),
                 FinalStep("done"),
                 ToolCall("files.read", externalArguments),
@@ -381,18 +379,7 @@ public sealed class AgentApprovalEndpointTests
             Assert.Equal(HttpStatusCode.OK, otherApprovalResponse.StatusCode);
             Assert.True(
                 await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline),
-                "new session run did not finish before forked session run");
-
-            using var forkResp = await client.PostAsJsonAsync(
-                $"/sessions/{sessionId}/fork",
-                new { up_to_message_index = 999999 });
-            forkResp.EnsureSuccessStatusCode();
-            var forkedSessionId = (await forkResp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session").GetProperty("id").GetString()!;
-            Assert.NotEqual(sessionId, forkedSessionId);
-            var forkedCreated = await CreateRunAndTrustAsync(client, forkedSessionId, wsPath, "forked session asks");
-            var forkedRunId = forkedCreated.GetProperty("run_id").GetString()!;
-            var forkedApproval = await WaitForApprovalIdAsync(client, forkedRunId, StateDeadline);
-            Assert.NotNull(forkedApproval);
+                "new session run did not finish");
         }
         finally
         {

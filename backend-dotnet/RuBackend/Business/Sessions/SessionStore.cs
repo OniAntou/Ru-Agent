@@ -264,65 +264,6 @@ public sealed partial class SessionStore : ISessionStore
         }
     }
 
-    public async Task<SessionDocument?> ForkAsync(
-        string sessionId,
-        int upToMessageIndex,
-        string? newTitle,
-        CancellationToken cancellationToken)
-    {
-        if (!IsValidSessionId(sessionId))
-        {
-            return null;
-        }
-
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var original = await LoadUnlockedAsync(sessionId, cancellationToken).ConfigureAwait(false);
-            if (original is null)
-            {
-                return null;
-            }
-
-            var count = Math.Clamp(upToMessageIndex + 1, 0, original.Messages.Count);
-            var forkedMessages = original.Messages.Take(count).ToList();
-            var forkedId = Guid.NewGuid().ToString("N");
-            var now = _clock.GetUtcNow().ToUniversalTime();
-            var title = string.IsNullOrWhiteSpace(newTitle)
-                ? $"{original.Title} (Nhánh)"
-                : newTitle.Trim();
-            if (title.Length > 256)
-            {
-                title = title[..256];
-            }
-
-            var forkedDoc = new SessionDocument(
-                forkedId,
-                title,
-                now,
-                now,
-                forkedMessages,
-                original.SourceMessageLedger,
-                ParentSessionId: original.Id,
-                ForkedFromMessageId: forkedMessages.LastOrDefault()?.SourceMessageId);
-
-            await WriteUnlockedAsync(forkedDoc, cancellationToken).ConfigureAwait(false);
-            return forkedDoc;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
     public async Task<SessionDocument?> RewindAsync(
         string sessionId,
         int toMessageIndex,

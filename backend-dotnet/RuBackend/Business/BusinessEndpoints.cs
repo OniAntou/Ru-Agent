@@ -27,7 +27,6 @@ public static class BusinessEndpoints
         app.MapGet("/sessions", ListSessionsAsync);
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
-        app.MapPost("/sessions/{sessionId}/fork", ForkSessionAsync);
         app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
         app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
         app.MapGet("/activity-log", GetActivityAsync);
@@ -434,42 +433,8 @@ public static class BusinessEndpoints
         }
     }
 
-    public sealed record ForkSessionRequest(
-        [property: JsonPropertyName("up_to_message_index")] int UpToMessageIndex,
-        [property: JsonPropertyName("title")] string? Title = null,
-        [property: JsonPropertyName("new_title")] string? NewTitle = null)
-    {
-        public string? ResolvedTitle => !string.IsNullOrWhiteSpace(Title) ? Title : NewTitle;
-    }
-
     public sealed record RewindSessionRequest(
         [property: JsonPropertyName("to_message_index")] int ToMessageIndex);
-
-    private static async Task<IResult> ForkSessionAsync(
-        string sessionId,
-        ForkSessionRequest? request,
-        ISessionStore sessions,
-        ILoggerFactory loggers,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var upTo = request?.UpToMessageIndex ?? int.MaxValue;
-            var doc = await sessions.ForkAsync(sessionId, upTo, request?.ResolvedTitle, cancellationToken).ConfigureAwait(false);
-            return doc is null
-                ? Results.Ok(new { status = "error", message = "Không tìm thấy session để fork." })
-                : Results.Ok(new { status = "ok", session = doc });
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error)
-        {
-            LogFailure(loggers, "session fork", error);
-            return Results.Ok(new { status = "error", message = "Lỗi khi fork session." });
-        }
-    }
 
     private static async Task<IResult> RewindSessionAsync(
         string sessionId,

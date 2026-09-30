@@ -1094,6 +1094,34 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task Adopt_waiting_approval_says_where_to_review_and_keeps_stop()
+    {
+        // GET /runs/{id} carries no approval id, so adoption cannot re-arm the
+        // approval panel. The copy names the state and the two ways out instead of
+        // claiming the run is merely running. The subscription is held open: a live
+        // approval run keeps its stream, and the stream-end settlement owns the
+        // status line once it lets go.
+        var run = MakeRunWith("waiting_approval", lastSequence: 4);
+        var fake = new FakeClient
+        {
+            Run = run,
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        Assert.Contains($"Waiting for approval: {RunId}", controller.StatusText, StringComparison.Ordinal);
+        Assert.Contains("cancel the run", controller.StatusText, StringComparison.Ordinal);
+        Assert.False(controller.HasPendingApproval);
+        Assert.True(controller.CanCancel);
+
+        fake.SubscriptionGate.SetResult(true);
+        await WaitForAdoptSettleAsync(controller);
+    }
+
+    [Fact]
     public async Task Adopt_subscribes_from_last_sequence_for_running()
     {
         var run = MakeRunWith("running", lastSequence: 37);

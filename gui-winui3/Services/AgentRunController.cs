@@ -1085,6 +1085,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             return "Waiting to continue. Type Continue to resume.";
         }
 
+        if (string.Equals(run.Status, "waiting_approval", StringComparison.Ordinal))
+        {
+            // GET /runs/{id} carries no approval id, so adoption cannot re-arm the
+            // approval panel. Say where the approval actually is instead of claiming
+            // the run is merely running; Stop stays available from the same line.
+            return $"Waiting for approval: {run.RunId} — review the approval in the session (or cancel the run)";
+        }
+
         return $"Running: {run.RunId}";
     }
 

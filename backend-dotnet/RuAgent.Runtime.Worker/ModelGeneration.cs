@@ -16,9 +16,6 @@ public static class ModelGenerationBounds
     public const int MaxModelMessagesBytes = 512 * 1024;
     public const int MaxTextChars = 1_000_000;
     public const int MaxToolArgumentsBytes = 64 * 1024;
-    public const int MaxPromptContextBytes = 512 * 1024;
-    public const int MaxPromptReceiptBlocks = 32;
-    public const int MaxFrameBytes = 5 * 1024 * 1024;
 }
 
 /// <summary>

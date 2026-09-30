@@ -67,6 +67,9 @@ matching finish semantics. The Host persists the assistant call batch and typed
 tool results as one conversation unit. A text-selection provider still emits
 exactly one JSON selection for compatibility.
 
+> Amended: superseded in part by [ADR-0012](0012-in-process-model-runner.md)
+> (the worker process was merged into the host on 2026-09-30).
+
 The scheduler may run at most eight read-only executions concurrently while
 preserving model-order receipts. Mutation and terminal calls remain sequential
 barriers. The shared budget remains 256 model-initiated tool calls per window;

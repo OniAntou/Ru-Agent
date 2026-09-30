@@ -49,6 +49,9 @@ retired in 2026-09-04; the current pending-approval model exposes
   generation branch and the device/runtime v1 adapters it later carried are
   both removed; the managed Worker serves `/worker/v2` only.
 
+> Amended: superseded in part by [ADR-0012](0012-in-process-model-runner.md)
+> (the worker process was merged into the host on 2026-09-30).
+
 ## Superseded history
 
 The Standard / Full Access picker was a UI affordance that mapped to a

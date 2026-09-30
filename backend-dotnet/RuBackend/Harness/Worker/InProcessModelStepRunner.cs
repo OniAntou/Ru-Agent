@@ -254,9 +254,11 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         var images = new List<ModelImage>(dataUrls.Count);
         foreach (var dataUrl in dataUrls)
         {
-            // One data URL per stored image, decoded exactly as the worker wire
-            // decoder did: entries without a ";base64," marker are dropped, and an
-            // entry the image contract rejects fails the step as an invalid request.
+            // One data URL per stored image. The payload store only holds entries
+            // validated when the run was created, so an entry that no longer
+            // carries a ";base64," marker is skipped rather than failing the
+            // step; an entry the image contract rejects still fails the step as
+            // an invalid request.
             var separator = dataUrl.IndexOf(";base64,", StringComparison.Ordinal);
             if (separator < 5)
             {

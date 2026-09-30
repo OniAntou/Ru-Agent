@@ -19,29 +19,6 @@ namespace RuApp
 {
     public sealed partial class MainWindow
     {
-        private async void OnForkSessionMenuClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement elem && elem.Tag is string sessionId && _apiService != null)
-            {
-                var targetSession = Sessions.FirstOrDefault(s => s.Id == sessionId);
-                var branchTitle = targetSession != null ? $"{targetSession.Title} (Branch)" : "New Branch";
-                var forked = await _apiService.ForkSessionAsync(sessionId, int.MaxValue, branchTitle);
-                if (forked != null)
-                {
-                    await LoadSessionsAsync();
-                    var newSession = Sessions.FirstOrDefault(s => s.Id == forked.Id);
-                    if (newSession != null)
-                    {
-                        SidebarSessionList.SelectedItem = newSession;
-                        if (_chatView != null)
-                        {
-                            await _chatView.OpenSessionAsync(newSession.Id, newSession.Title);
-                        }
-                    }
-                }
-            }
-        }
-
         /// <summary>
         /// Hands a session to another coding agent, in that agent's own format and
         /// directory.

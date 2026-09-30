@@ -83,17 +83,6 @@
                   PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent" Padding="10,4">
                 <Grid.ContextFlyout>
                     <MenuFlyout>
-                        <MenuFlyoutItem Text="Fork New Branch" Click="OnForkSessionMenuClick" Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <!--
-                                  Segoe MDL2 Assets has no branch glyph, and the glyph used
-                                  here before (E8D8) is literally "DisableUpdates". SaveCopy
-                                  is the closest honest mark for what a fork does: keep a
-                                  copy of this conversation and continue in it.
-                                -->
-                                <FontIcon Glyph="&#xEA35;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
                         <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
                                         Text="Export as Claude Code"
                                         Click="OnExportSessionMenuClick"

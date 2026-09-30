@@ -1108,32 +1108,6 @@ namespace RuApp.Views
             }
         }
 
-        private async void OnForkFromMessageClick(object sender, RoutedEventArgs e)
-        {
-            if (_apiService == null) return;
-            if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg)
-            {
-                int index = Messages.IndexOf(msg);
-                if (index < 0) return;
-
-                try
-                {
-                    var branchTitle = $"{_activeSessionTitle} (branch @ {index + 1})";
-                    var forked = await _apiService.ForkSessionAsync(_activeSessionId, index, branchTitle);
-                    if (forked != null)
-                    {
-                        SessionForked?.Invoke(this, forked);
-                        await OpenSessionAsync(forked.Id, forked.Title);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error forking session: {ex.Message}");
-                    ShowAgentInlineStatus($"Could not fork the session: {ex.Message}");
-                }
-            }
-        }
-
         private async void OnRewindToMessageClick(object sender, RoutedEventArgs e)
         {
             if (_apiService == null) return;

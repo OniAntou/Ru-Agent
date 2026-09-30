@@ -102,7 +102,6 @@ namespace RuApp.Views
         private IReadOnlyList<TodoItemModel>? _latestTodos;
         private bool _todoPanelExpanded;
         private string _activeSessionTitle = "New Chat";
-        public event EventHandler<SessionInfo>? SessionForked;
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();

@@ -249,7 +249,6 @@ namespace RuApp
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
-                _chatView.SessionForked += OnChatSessionForked;
                 // A failure message that offers to open provider settings needs the
                 // window: the settings surface belongs to it, not to the transcript.
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
@@ -428,20 +427,6 @@ namespace RuApp
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
         {
             SyncSidebarSelection(e.SessionId);
-        }
-
-        private async void OnChatSessionForked(object? sender, SessionInfo forkedSession)
-        {
-            try
-            {
-                await LoadSessionsAsync();
-                SyncSidebarSelection(forkedSession.Id);
-            }
-            catch (Exception ex)
-            {
-                // async void: an unhandled exception here tears the process down.
-                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session fork refresh failed: {ex.Message}");
-            }
         }
 
         private void OnSettingsSaved(object? sender, EventArgs e)
@@ -824,7 +809,6 @@ namespace RuApp
             if (_chatView != null)
             {
                 _chatView.SessionOpened -= OnChatSessionOpened;
-                _chatView.SessionForked -= OnChatSessionForked;
                 DisposeSafely("chat view", _chatView.Dispose);
             }
 

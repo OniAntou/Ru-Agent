@@ -75,13 +75,6 @@
                                     <FontIcon Glyph="&#xE8C8;" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
-                            <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
-                                <MenuFlyoutItem.Icon>
-                                    <!-- E8D8 was "DisableUpdates"; SaveCopy keeps this item
-                                         distinct from the Copy item sharing this menu. -->
-                                    <FontIcon Glyph="&#xEA35;" />
-                                </MenuFlyoutItem.Icon>
-                            </MenuFlyoutItem>
                             <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
                                 <MenuFlyoutItem.Icon>
                                     <FontIcon Glyph="&#xE7A7;" />
@@ -396,13 +389,6 @@
                         <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
                             <MenuFlyoutItem.Icon>
                                 <FontIcon Glyph="&#xE8C8;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
-                            <MenuFlyoutItem.Icon>
-                                <!-- E8D8 was "DisableUpdates"; SaveCopy keeps this item
-                                     distinct from the Copy item sharing this menu. -->
-                                <FontIcon Glyph="&#xEA35;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">

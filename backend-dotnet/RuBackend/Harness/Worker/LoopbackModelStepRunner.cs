@@ -219,12 +219,12 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         var startPayload = new JsonObject
         {
             ["prompt"] = prompt,
-            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(request.PromptContext),
+            ["system_prompt_context"] = LoopbackPromptWire.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
         if (modelMessages is not null)
         {
-            startPayload["model_messages"] = WorkerV2PromptCodec.WriteModelMessages(modelMessages);
+            startPayload["model_messages"] = LoopbackPromptWire.WriteModelMessages(modelMessages);
         }
         else
         {
@@ -474,7 +474,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
                     try
                     {
-                        finalReceipt = WorkerV2PromptCodec.ReadReceipt(
+                        finalReceipt = LoopbackPromptWire.ReadReceipt(
                             payload["prompt_receipt"] as JsonObject
                             ?? throw new WorkerProtocolException("invalid_step"),
                             request.PromptContext);
@@ -817,7 +817,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         {
             return ClampConversationBlock(
                 string.Join("\n\n", pendingPromptBlocks),
-                WorkerV2Contracts.MaxPromptChars);
+                ModelGenerationBounds.MaxPromptChars);
         }
 
         if (messages.Count > 0 && messages[^1].Role == "tool")
@@ -849,8 +849,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 .ToArray();
             var candidateCount = candidateMessages.Length;
             var candidateBytes = ModelRequest.MeasureModelMessagesBytes(candidateMessages);
-            if (candidateCount > WorkerV2Contracts.MaxModelMessages
-                || candidateBytes > WorkerV2Contracts.MaxModelMessagesBytes)
+            if (candidateCount > ModelGenerationBounds.MaxModelMessages
+                || candidateBytes > ModelGenerationBounds.MaxModelMessagesBytes)
             {
                 if (selected.Count == 0)
                 {
@@ -895,7 +895,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         // The feedback note is the part the model must see, so the prompt body
         // is clamped first and the note is always appended inside the budget.
         var note = $"\n\n[harness] {feedback}";
-        var budget = Math.Max(1, WorkerV2Contracts.MaxPromptChars - note.Length);
+        var budget = Math.Max(1, ModelGenerationBounds.MaxPromptChars - note.Length);
         var body = prompt.Length <= budget ? prompt : ClampConversationBlock(prompt, budget);
         return body + note;
     }
@@ -991,7 +991,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 throw new WorkerProtocolException("unexpected_binary");
             }
 
-            if (ms.Length + result.Count > WorkerV2Contracts.MaxFrameBytes)
+            if (ms.Length + result.Count > ModelGenerationBounds.MaxFrameBytes)
             {
                 throw new WorkerProtocolException("message_too_large");
             }

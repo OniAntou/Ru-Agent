@@ -258,7 +258,7 @@ public sealed class LoopbackModelConversationTests
         var (_, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(context, hasImages: true);
         Assert.Equal(2, messages!.Count);
         Assert.Equal(limit, Encoding.UTF8.GetByteCount(
-            RuAgent.Runtime.Worker.WorkerV2PromptCodec.WriteModelMessages(messages).ToJsonString()));
+            LoopbackPromptWire.WriteModelMessages(messages).ToJsonString()));
 
         var oversized = Snapshot(
             ModelContextEntry.Assistant(
@@ -299,7 +299,7 @@ public sealed class LoopbackModelConversationTests
         Assert.Equal(3, exactMessages!.Count);
         Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(exactMessages));
         Assert.Equal(limit, Encoding.UTF8.GetByteCount(
-            RuAgent.Runtime.Worker.WorkerV2PromptCodec.WriteModelMessages(exactMessages).ToJsonString()));
+            LoopbackPromptWire.WriteModelMessages(exactMessages).ToJsonString()));
 
         var oversized = Snapshot(
             ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength + 1)),

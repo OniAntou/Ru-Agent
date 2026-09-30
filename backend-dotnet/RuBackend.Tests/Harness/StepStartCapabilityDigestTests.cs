@@ -8,7 +8,6 @@ using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Worker;
-using RuAgent.Runtime.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -52,7 +51,7 @@ public sealed class StepStartCapabilityDigestTests
             {
                 ["prompt"] = ".",
                 ["turns"] = new JsonArray(),
-                ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(context),
+                ["system_prompt_context"] = LoopbackPromptWire.WriteContext(context),
                 ["settings"] = LoopbackModelStepRunner.BuildSettingsForTests(context),
             };
             WorkerV2Contracts.ValidateStart(payload);
@@ -88,7 +87,7 @@ public sealed class StepStartCapabilityDigestTests
         {
             ["prompt"] = "hello",
             ["turns"] = new JsonArray(),
-            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(context),
+            ["system_prompt_context"] = LoopbackPromptWire.WriteContext(context),
             ["settings"] = LoopbackModelStepRunner.BuildSettingsForTests(context),
         };
         WorkerV2Contracts.ValidateStart(payload);

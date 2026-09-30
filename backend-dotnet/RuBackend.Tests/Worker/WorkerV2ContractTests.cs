@@ -6,7 +6,6 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
-using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
 using Xunit;
@@ -342,7 +341,7 @@ public sealed class WorkerV2ContractTests
         {
             ["prompt"] = "hello",
             ["turns"] = new JsonArray(),
-            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(PromptContextFixture.Create()),
+            ["system_prompt_context"] = LoopbackPromptWire.WriteContext(PromptContextFixture.Create()),
             ["settings"] = new JsonObject { ["allow_web_search"] = false },
         };
         var envelope = new JsonObject
@@ -449,7 +448,7 @@ public sealed class WorkerV2ContractTests
     {
         var context = PromptContextFixture.Create();
 
-        var payload = WorkerV2PromptCodec.WriteContext(context);
+        var payload = LoopbackPromptWire.WriteContext(context);
 
         Assert.Equal(
             ["schema_version", "agent_profile", "preset", "effective_policy", "environment", "instruction_blocks", "capabilities", "runtime_context"],
@@ -474,9 +473,9 @@ public sealed class WorkerV2ContractTests
         var context = PromptContextFixture.Create();
         var receipt = PromptContextFixture.Receipt(context);
 
-        var parsed = WorkerV2PromptCodec.ReadReceipt(receipt, context);
+        var parsed = LoopbackPromptWire.ReadReceipt(receipt, context);
         Assert.Equal("2.0.0", parsed.ComposerVersion);
-        Assert.DoesNotContain("text", WorkerV2PromptCodec.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("text", LoopbackPromptWire.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
 
         var unknown = (JsonObject)receipt.DeepClone();
         unknown["unexpected"] = true;
@@ -496,7 +495,7 @@ public sealed class WorkerV2ContractTests
         var uppercase = (JsonObject)receipt.DeepClone();
         uppercase["prompt_sha256"] = new string('A', 64);
         AssertInvalidReceipt(uppercase, context);
-        Assert.Throws<AgentProtocolException>(() => WorkerV2PromptCodec.ReadReceipt(null, context));
+        Assert.Throws<AgentProtocolException>(() => LoopbackPromptWire.ReadReceipt(null, context));
     }
 
     private static JsonObject ValidStepDone(
@@ -536,7 +535,7 @@ public sealed class WorkerV2ContractTests
         // The shared codec is protocol-owned, so it raises the protocol exception;
         // LoopbackModelStepRunner maps it to the host WorkerProtocolException.
         var error = Assert.Throws<AgentProtocolException>(() =>
-            WorkerV2PromptCodec.ReadReceipt(receipt, context));
+            LoopbackPromptWire.ReadReceipt(receipt, context));
         Assert.Equal("invalid_step", error.Code);
     }
 

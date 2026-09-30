@@ -84,11 +84,11 @@ namespace RuApp
                 SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
             };
 
-            // The host reads Claude Code and Codex JSONL transcripts, Antigravity's
-            // transcript.jsonl, and opencode's .db store. The picker only decides what may
-            // be chosen; the host still validates the content, and its refusal is shown.
+            // Only the JSONL formats the desktop app can decode. opencode keeps its
+            // sessions inside a SQLite database, which this app cannot read; offering the
+            // .db file here would advertise an import that always fails, so the hint below
+            // points at the CLI instead.
             picker.FileTypeFilter.Add(".jsonl");
-            picker.FileTypeFilter.Add(".db");
             WinRT.Interop.InitializeWithWindow.Initialize(
                 picker,
                 WinRT.Interop.WindowNative.GetWindowHandle(this));
@@ -104,33 +104,35 @@ namespace RuApp
             {
                 await ShowNoticeAsync(
                     "Cannot tell which agent wrote this file",
-                    $"Ru recognises {SessionFileLayout.ClaudeCodeId} transcripts, named after their session id, {SessionFileLayout.CodexId} rollouts, named rollout-<when>-<thread>, Antigravity's transcript.jsonl, and opencode's .db store.");
+                    $"Ru recognises {SessionFileLayout.ClaudeCodeId} transcripts, named after their session id, {SessionFileLayout.CodexId} rollouts, named rollout-<when>-<thread>, and Antigravity's transcript.jsonl. opencode stores sessions in a SQLite database the desktop app cannot read: import those with 'ru agent session import <opencode.db> --harness opencode'.");
                 return;
             }
 
-            // Checked before reading: the import cap has to refuse the file without
-            // pulling it into memory first, and without the generic failure a 413 from the
-            // host would otherwise produce.
-            var properties = await file.GetBasicPropertiesAsync();
-            if (properties.Size > (ulong)SessionInterchangeLimits.MaxImportContentBytes)
-            {
-                await ShowNoticeAsync(
-                    "Session file too large",
-                    $"This file is {properties.Size} bytes. Imports are limited to {SessionInterchangeLimits.MaxImportContentBytes / (1024 * 1024)} MiB.");
-                return;
-            }
-
-            string content;
+            // The size check and the read share one try: a file that disappears between
+            // the picker and the stat must end as a bounded dialog, not as an exception
+            // thrown out of an async void handler.
+            ulong? size = null;
+            string? content = null;
             try
             {
-                content = await Windows.Storage.FileIO.ReadTextAsync(file);
+                size = (await file.GetBasicPropertiesAsync()).Size;
+                if (size <= (ulong)SessionInterchangeLimits.MaxImportContentBytes)
+                {
+                    content = await Windows.Storage.FileIO.ReadTextAsync(file);
+                }
             }
             catch (Exception ex)
             {
-                // A binary store (opencode's .db) can fail to decode as text; that is a
-                // refusal with a reason, not a crash.
                 var message = ex.Message.Length > 400 ? ex.Message[..400] + "…" : ex.Message;
                 await ShowNoticeAsync("Could not read this file", message);
+                return;
+            }
+
+            if (content is null)
+            {
+                await ShowNoticeAsync(
+                    "Session file too large",
+                    $"This file is {size} bytes. Imports are limited to {SessionInterchangeLimits.MaxImportContentBytes / (1024 * 1024)} MiB.");
                 return;
             }
 

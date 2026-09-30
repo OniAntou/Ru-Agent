@@ -61,8 +61,17 @@ public static class ModelPrecheck
             return null;
         }
 
-        var shown = selected.Length <= MaxModelIdChars ? selected : selected[..MaxModelIdChars] + "…";
-        return $"model_not_in_catalog: {shown} - it may fail with a 404; choose another with /model";
+        return $"model_not_in_catalog: {SingleLine(selected)} - it may fail with a 404; choose another with /model";
+    }
+
+    /// <summary>
+    /// Flattens and caps the id so the warning stays one bounded line, the same
+    /// guarantee <see cref="CliErrorText"/> gives server text.
+    /// </summary>
+    private static string SingleLine(string text)
+    {
+        var flat = text.Replace("\r", " ").Replace("\n", " ");
+        return flat.Length <= MaxModelIdChars ? flat : flat[..(MaxModelIdChars - 1)] + "…";
     }
 
     /// <summary>

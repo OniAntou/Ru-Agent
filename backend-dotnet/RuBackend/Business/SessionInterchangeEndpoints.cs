@@ -22,13 +22,12 @@ namespace RuBackend.Business;
 /// from the other side: Ru's own tool rows are not in the message list either, so a
 /// session leaves with its turns and without its tool traffic.
 ///
-/// The request body limit is the route-specific interchange bound
-/// (<c>BackendOptions.SessionImportMaxRequestBodyBytes</c>, derived from
-/// <see cref="SessionInterchangeLimits"/>), sized above the 16 MiB content cap so the
-/// JSON envelope's escaping cannot push a file that passed the CLI's or GUI's pre-check
-/// past a transport rejection. A longer session is refused as <c>import_too_large</c>
-/// before it is parsed, and the decoded content is checked against the content cap again
-/// after parsing.
+/// The request body bounds are layered (Kestrel above the route's declared bound, the
+/// route above the endpoint's reader), and <see cref="SessionInterchangeLimits.MaxImportBodyBytes"/>
+/// is sized for the worst case of the JSON encoder — non-ASCII and HTML-sensitive
+/// characters travel as six-byte <c>\uXXXX</c> escapes. A session longer than the 16 MiB
+/// content cap is refused as <c>import_too_large</c>: before parsing when the body is
+/// over the transport bound, and after parsing when the decoded content is over the cap.
 /// </remarks>
 public static class SessionInterchangeEndpoints
 {

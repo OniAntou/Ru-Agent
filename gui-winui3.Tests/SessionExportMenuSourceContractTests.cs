@@ -59,9 +59,11 @@ public sealed class SessionExportMenuSourceContractTests
     }
 
     /// <summary>
-    /// The picker offers every format the host reads, and the size cap runs before the
-    /// file is pulled into memory — an oversized import has to be refused with a bounded
-    /// dialog, not a generic failure after the read.
+    /// The picker offers the formats the desktop app can decode, and the size cap runs
+    /// before the file is pulled into memory — an oversized import has to be refused with
+    /// a bounded dialog, not a generic failure after the read. opencode's SQLite store is
+    /// deliberately absent: the app cannot read it, so the dialog points at the CLI
+    /// command instead of advertising an import that always fails.
     /// </summary>
     [Fact]
     public void The_import_picker_reads_the_hosts_formats_and_caps_the_file_before_reading()
@@ -69,7 +71,8 @@ public sealed class SessionExportMenuSourceContractTests
         var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnImportSessionMenuClick");
 
         Assert.Contains("FileTypeFilter.Add(\".jsonl\")", body, StringComparison.Ordinal);
-        Assert.Contains("FileTypeFilter.Add(\".db\")", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileTypeFilter.Add(\".db\")", body, StringComparison.Ordinal);
+        Assert.Contains("ru agent session import", body, StringComparison.Ordinal);
         Assert.Contains("SessionInterchangeLimits.MaxImportContentBytes", body, StringComparison.Ordinal);
         Assert.Contains("GetBasicPropertiesAsync", body, StringComparison.Ordinal);
 

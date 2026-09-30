@@ -86,6 +86,14 @@ if (!IsLoopbackBindUrl(bindUrl))
 
 builder.WebHost.UseUrls(bindUrl);
 
+// Body-bound layering, outermost first: Kestrel -> RequestSizeMiddleware (per route) ->
+// the endpoint's own bounded reader. Kestrel's default (30,000,000 bytes) sits below the
+// import route's declared bound, so an oversized import was refused by Kestrel with a
+// generic 413 before the endpoint could answer import_too_large. This bound stays above
+// every application cap; the application caps remain the source of truth.
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = BackendLimits.KestrelMaxRequestBodyBytes);
+
 static bool IsLoopbackBindUrl(string value)
 {
     if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)

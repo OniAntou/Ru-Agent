@@ -22,7 +22,8 @@ public sealed class BackendOptions
     /// <summary>
     /// Declared-body bound for <c>POST /sessions/import</c>, set just above the
     /// endpoint's own <see cref="SessionInterchangeLimits.MaxImportBodyBytes"/> so the
-    /// endpoint answers oversized imports with <c>import_too_large</c>.
+    /// endpoint answers oversized imports with <c>import_too_large</c>. Kestrel's
+    /// transport bound sits above this one (<see cref="BackendLimits.KestrelMaxRequestBodyBytes"/>).
     /// </summary>
     public long SessionImportMaxRequestBodyBytes { get; set; } = SessionInterchangeLimits.MaxImportRouteBodyBytes;
 }

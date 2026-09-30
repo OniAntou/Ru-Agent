@@ -759,9 +759,11 @@ public sealed class BusinessEndpointTests
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
-        // Just over the cap the CLI and GUI measure before reading. The body itself is
-        // below the transport bound, so the endpoint's own content check must be the one
-        // that answers.
+        // Just over the 16 MiB content cap the CLI and GUI measure before reading, and
+        // far below the endpoint's transport bound (sized for worst-case JSON escaping)
+        // and the route/Kestrel bounds above it. The endpoint's own content check must be
+        // the layer that answers, with the interchange envelope rather than the generic
+        // transport body.
         var oversized = new string('a', RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes + 1);
         using var response = await client.PostAsJsonAsync(
             "/sessions/import",
@@ -769,6 +771,8 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("error", payload.GetProperty("status").GetString());
+        Assert.False(payload.TryGetProperty("detail", out _));
         Assert.Contains(
             "import_too_large",
             payload.GetProperty("message").GetString()!,

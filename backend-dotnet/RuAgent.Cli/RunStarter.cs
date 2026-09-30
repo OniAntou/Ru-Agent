@@ -489,8 +489,9 @@ public sealed class RunStarter
             && await ModelPrecheck.CheckCurrentAsync(_settingsClient, cancellationToken).ConfigureAwait(false) is { } modelWarning)
         {
             // One warning, once per run start: a models.dev id missing from the catalog
-            // would otherwise only surface mid-run as model_unavailable. The run never
-            // waits on this check.
+            // would otherwise only surface mid-run as model_unavailable. The check is
+            // awaited before the session is created — one settings read and, for
+            // models.dev, one catalog read — not a per-model-step cost.
             await (request.Json ? _err : _out).WriteLineAsync(modelWarning).ConfigureAwait(false);
         }
 

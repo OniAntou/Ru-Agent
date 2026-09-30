@@ -18,17 +18,26 @@ public static class SessionInterchangeLimits
     public const int MaxImportContentBytes = 16 * 1024 * 1024;
 
     /// <summary>
-    /// Transport bound for the import request body. JSON string escaping can double the
-    /// content's size, so the body is allowed twice the content cap; the content cap is
-    /// enforced again after parsing.
+    /// Transport bound for the import request body, sized for the worst-case JSON escaping
+    /// of a full-cap content.
     /// </summary>
-    public const int MaxImportBodyBytes = MaxImportContentBytes * 2 + (1024 * 1024);
+    /// <remarks>
+    /// The client serializes with <c>System.Text.Json</c>'s default encoder, which writes
+    /// HTML-sensitive, non-ASCII and most control characters as <c>\uXXXX</c> — six ASCII
+    /// bytes per UTF-16 char. A char never carries fewer than one UTF-8 byte, so a content
+    /// of N UTF-8 bytes can serialize to at most 6N plus the envelope. Any content the CLI
+    /// and GUI accept (≤ <see cref="MaxImportContentBytes"/> UTF-8 bytes) therefore fits
+    /// below this bound, and a body above it is refused before parsing rather than by a
+    /// lower layer with a generic error.
+    /// </remarks>
+    public const int MaxImportBodyBytes = (MaxImportContentBytes * 6) + (1024 * 1024);
 
     /// <summary>
-    /// Declared-body bound for the <c>POST /sessions/import</c> route, set above
+    /// Declared-body bound for the <c>POST /sessions/import</c> route, set one MiB above
     /// <see cref="MaxImportBodyBytes"/> so the request reaches the endpoint and the
     /// endpoint's own bounded reader answers with <c>import_too_large</c> rather than the
-    /// generic transport rejection.
+    /// generic transport rejection. Kestrel's own bound is layered above this one
+    /// (<c>BackendLimits.KestrelMaxRequestBodyBytes</c>).
     /// </summary>
     public const int MaxImportRouteBodyBytes = MaxImportBodyBytes + (1024 * 1024);
 }

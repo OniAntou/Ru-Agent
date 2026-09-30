@@ -137,13 +137,55 @@ public sealed class SessionInterchangeApiClient
 
         if (!response.IsSuccessStatusCode)
         {
+            // A 413 or a bounded validation failure carries the useful sentence in its
+            // body; flattening it to "HTTP 413" would throw that away.
             throw new AgentApiException(
                 "session_interchange_failed",
-                $"HTTP {(int)response.StatusCode}",
+                await ReadRefusalAsync(response, cancellationToken).ConfigureAwait(false),
                 (int)response.StatusCode);
         }
 
         return await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The host's own words for a non-success response, read through the bounded reader
+    /// and reduced to one line; the status is the fallback when the body has none.
+    /// </summary>
+    private static async Task<string> ReadRefusalAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        const int MaxRefusalChars = 200;
+        try
+        {
+            var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in new[] { "message", "error_code", "detail" })
+                    {
+                        if (document.RootElement.TryGetProperty(property, out var value)
+                            && value.ValueKind == JsonValueKind.String
+                            && !string.IsNullOrWhiteSpace(value.GetString()))
+                        {
+                            var text = value.GetString()!;
+                            return text.Length <= MaxRefusalChars ? text : text[..(MaxRefusalChars - 1)] + "…";
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // No usable body; the status below is still bounded.
+        }
+
+        return $"HTTP {(int)response.StatusCode}";
     }
 
     private static JsonDocument Parse(string body)

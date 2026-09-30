@@ -72,6 +72,49 @@ public sealed class ModelPrecheckWarningTests
     }
 
     [Fact]
+    public async Task Chat_flattens_a_model_id_that_carries_a_newline_before_warning()
+    {
+        var handler = new FakeHandler(request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            if (request.Method == HttpMethod.Get && uri.Contains("/settings", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(new
+                {
+                    status = "ok",
+                    backend = "models.dev:openrouter",
+                    model = "missing\nmodel",
+                }));
+            }
+
+            if (request.Method == HttpMethod.Get && uri.Contains("/models?backend=", StringComparison.Ordinal))
+            {
+                return Json("{\"status\":\"ok\",\"catalog\":[]}");
+            }
+
+            return Json("{}", HttpStatusCode.NotFound);
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(
+            Session(),
+            new HttpClient(handler),
+            outWriter,
+            new StringWriter(),
+            new StringReader("/exit\n"));
+
+        var exit = await commands.ChatAsync(
+            new ChatCommand("C:\\workspace", "sess_123", "standard", Json: false),
+            CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        var output = outWriter.ToString();
+        Assert.Contains("model_not_in_catalog: missing model", output, StringComparison.Ordinal);
+        Assert.Equal(1, output.Split("model_not_in_catalog", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("missing\nmodel", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Chat_stays_silent_when_the_model_is_in_the_catalog()
     {
         var handler = new FakeHandler(request =>

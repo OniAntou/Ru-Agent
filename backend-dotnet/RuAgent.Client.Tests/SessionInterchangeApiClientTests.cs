@@ -115,6 +115,20 @@ public sealed class SessionInterchangeApiClientTests
     }
 
     [Fact]
+    public async Task Import_surfaces_the_import_too_large_413_instead_of_only_the_status()
+    {
+        var handler = new StubHandler(
+            HttpStatusCode.RequestEntityTooLarge,
+            """{"status":"error","message":"import_too_large: session files are limited to 16 MiB."}""");
+        var client = new SessionInterchangeApiClient(Session(), new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.ImportAsync("claude-code", "{}"));
+
+        Assert.Equal(413, error.StatusCode);
+        Assert.Contains("import_too_large", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_rejected_bearer_is_reported_as_a_rejected_bearer()
     {
         var handler = new StubHandler(HttpStatusCode.Forbidden, string.Empty);

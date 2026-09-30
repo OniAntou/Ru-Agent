@@ -6,22 +6,22 @@ using RuBackend.Business.Settings;
 
 namespace RuBackend.Providers;
 
-/// <summary>Pins the provider choice for a run, writes a single-use DPAPI handoff per step.</summary>
+/// <summary>Pins the provider choice for a run and hands the snapshot to the in-process step runner.</summary>
 public sealed class AgentProviderSnapshotFactory(
     ISettingsStore settings, ICredentialStore credentials, ProviderCatalogService catalog,
-    string bootstrapRoot, Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable
+    Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<RunId, ProviderBootstrapData> _runs = [];
     private bool _disposed;
 
-    public async Task<string> CreateAsync(ModelStepRequest request, CancellationToken ct)
+    public async Task<ProviderBootstrapData> GetAsync(RunId runId, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_runs.TryGetValue(request.RunId, out var snapshot))
+            if (!_runs.TryGetValue(runId, out var snapshot))
             {
                 foreach (var id in _runs.Keys.ToArray())
                     if (await isTerminal(id, ct).ConfigureAwait(false)) _runs.Remove(id);
@@ -31,7 +31,7 @@ public sealed class AgentProviderSnapshotFactory(
                 var key = selected.Account is null ? "" : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
                 // Fail fast before any network fetch: without its credential or model
                 // a run can never produce a reply, so report it now instead of
-                // after connect/receive timeouts and retry backoffs.
+                // after provider backoffs and retries.
                 if (selected.RequiresCredential && string.IsNullOrWhiteSpace(key))
                     throw new ProviderCatalogException("catalog_unauthorized");
                 if ((selected.Alias is "openai" or "anthropic") && string.IsNullOrWhiteSpace(selected.Model))
@@ -53,10 +53,10 @@ public sealed class AgentProviderSnapshotFactory(
                 {
                     snapshot = new(selected.Backend, selected.Protocol, selected.CompletionUri, selected.Model, key, options, null);
                 }
-                _runs.Add(request.RunId, snapshot);
+                _runs.Add(runId, snapshot);
             }
             ct.ThrowIfCancellationRequested();
-            return ProtectedProviderBootstrap.Write(bootstrapRoot, snapshot);
+            return snapshot;
         }
         finally { _gate.Release(); }
     }

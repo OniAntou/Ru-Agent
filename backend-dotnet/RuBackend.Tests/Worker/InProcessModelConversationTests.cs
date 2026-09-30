@@ -1,17 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Harness.Worker;
-using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Worker;
 
-public sealed class LoopbackModelConversationTests
+public sealed class InProcessModelConversationTests
 {
     [Fact]
     public void First_step_uses_typed_messages_without_history()
@@ -19,7 +17,7 @@ public sealed class LoopbackModelConversationTests
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Tao file robots.txt roi tra loi DONE."));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Tao file robots.txt roi tra loi DONE.", prompt);
         Assert.Null(turns);
@@ -34,7 +32,7 @@ public sealed class LoopbackModelConversationTests
             AssistantStepEntry("src-2", 2, "provider_write_1", "write", "{\"op\":\"write\",\"path\":\"robots.txt\"}"),
             ToolResultEntry("src-3", 3, "internal_call_1", "provider_write_1", "{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}"));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
@@ -69,7 +67,7 @@ public sealed class LoopbackModelConversationTests
             ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
             ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\"}"));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
@@ -94,7 +92,7 @@ public sealed class LoopbackModelConversationTests
             ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_a", "{\"path\":\"b.txt\"}"));
 
         var error = Assert.Throws<WorkerProtocolException>(() =>
-            LoopbackModelStepRunner.BuildConversationForTests(context));
+            InProcessModelStepRunner.BuildConversationForTests(context));
 
         Assert.Equal("model_history_invalid", error.Code);
     }
@@ -110,7 +108,7 @@ public sealed class LoopbackModelConversationTests
                 [new ContextEntryRange("history-a", 1, 1)]),
             ModelContextEntry.Text("src-2", 2, ModelContextRole.User, "tiep tuc"));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Contains("previously we wrote robots.txt", prompt, StringComparison.Ordinal);
         Assert.Contains("tiep tuc", prompt, StringComparison.Ordinal);
@@ -135,7 +133,7 @@ public sealed class LoopbackModelConversationTests
                 3,
                 new AssistantStep("answer", [], AssistantFinishReason.Stop, 2)));
 
-        var (_, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.NotNull(messages);
         Assert.Equal(["user", "user", "assistant"], messages.Select(message => message.Role));
@@ -156,7 +154,7 @@ public sealed class LoopbackModelConversationTests
                 4,
                 new AssistantStep("Da doc xong.", [], AssistantFinishReason.Stop, 8)));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("doc file", prompt);
         Assert.Null(turns);
@@ -178,7 +176,7 @@ public sealed class LoopbackModelConversationTests
                 "provider_read_1",
                 "{\"path\":\"big.txt\",\"content\":\"" + new string('x', 40_000) + "\"}"));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
@@ -205,7 +203,7 @@ public sealed class LoopbackModelConversationTests
                 new AssistantStep(null, [], AssistantFinishReason.Stop, 0))
             : ModelContextEntry.Text("src-4", 4, ModelContextRole.User, ""));
 
-        var (prompt, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
+        var (prompt, _, messages) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Equal("tool", messages![^1].Role);
@@ -214,36 +212,13 @@ public sealed class LoopbackModelConversationTests
     [Fact]
     public void Native_history_budget_counts_exact_array_bytes_at_limit_and_over()
     {
-        var emptyWire = new JsonArray
+        var emptyMessages = new ModelTurn[]
         {
-            new JsonObject
-            {
-                ["role"] = "assistant",
-                ["content"] = "",
-                ["tool_calls"] = new JsonArray
-                {
-                    new JsonObject
-                    {
-                        ["id"] = "provider_read_1",
-                        ["type"] = "function",
-                        ["function"] = new JsonObject
-                        {
-                            ["name"] = "read",
-                            ["arguments"] = "{}",
-                        },
-                    },
-                },
-            },
-            new JsonObject
-            {
-                ["role"] = "tool",
-                ["content"] = "r",
-                ["tool_call_id"] = "provider_read_1",
-                ["tool_result_code"] = "ok",
-            },
+            new("assistant", "", [new ModelFunctionCall("provider_read_1", "read", Json("{}"))]),
+            new("tool", "r", toolCallId: "provider_read_1", toolResultCode: "ok"),
         };
         const int limit = 512 * 1024;
-        var contentLength = limit - Encoding.UTF8.GetByteCount(emptyWire.ToJsonString());
+        var contentLength = limit - (int)ModelRequest.MeasureModelMessagesBytes(emptyMessages);
         var context = Snapshot(
             ModelContextEntry.Assistant(
                 "src-1",
@@ -255,10 +230,9 @@ public sealed class LoopbackModelConversationTests
                     1)),
             ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
 
-        var (_, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(context, hasImages: true);
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context, hasImages: true);
         Assert.Equal(2, messages!.Count);
-        Assert.Equal(limit, Encoding.UTF8.GetByteCount(
-            LoopbackPromptWire.WriteModelMessages(messages).ToJsonString()));
+        Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(messages));
 
         var oversized = Snapshot(
             ModelContextEntry.Assistant(
@@ -271,7 +245,7 @@ public sealed class LoopbackModelConversationTests
                     1)),
             ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
         var error = Assert.Throws<WorkerProtocolException>(() =>
-            LoopbackModelStepRunner.BuildConversationForTests(oversized, hasImages: true));
+            InProcessModelStepRunner.BuildConversationForTests(oversized, hasImages: true));
         Assert.Equal("model_history_too_large", error.Code);
     }
 
@@ -279,13 +253,17 @@ public sealed class LoopbackModelConversationTests
     public void Multi_message_history_uses_n_minus_one_separators_at_exact_budget()
     {
         const int limit = 512 * 1024;
-        var emptyWire = new JsonArray
-        {
-            new JsonObject { ["role"] = "user", ["content"] = "" },
-            new JsonObject { ["role"] = "user", ["content"] = "new" },
-            new JsonObject { ["role"] = "assistant", ["content"] = "done" },
-        };
-        var oldLength = limit - Encoding.UTF8.GetByteCount(emptyWire.ToJsonString());
+        // A user message cannot be empty, so the baseline is measured with a
+        // one-character placeholder and the old block is grown to fit the budget.
+        var placeholder = Snapshot(
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, "o"),
+            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
+            ModelContextEntry.Assistant(
+                "done",
+                3,
+                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
+        var (_, _, placeholderMessages) = InProcessModelStepRunner.BuildConversationForTests(placeholder);
+        var oldLength = limit - (int)ModelRequest.MeasureModelMessagesBytes(placeholderMessages!) + 1;
 
         var exact = Snapshot(
             ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength)),
@@ -294,12 +272,10 @@ public sealed class LoopbackModelConversationTests
                 "done",
                 3,
                 new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
-        var (_, _, exactMessages) = LoopbackModelStepRunner.BuildConversationForTests(exact);
+        var (_, _, exactMessages) = InProcessModelStepRunner.BuildConversationForTests(exact);
 
         Assert.Equal(3, exactMessages!.Count);
         Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(exactMessages));
-        Assert.Equal(limit, Encoding.UTF8.GetByteCount(
-            LoopbackPromptWire.WriteModelMessages(exactMessages).ToJsonString()));
 
         var oversized = Snapshot(
             ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength + 1)),
@@ -308,7 +284,7 @@ public sealed class LoopbackModelConversationTests
                 "done",
                 3,
                 new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
-        var (_, _, trimmedMessages) = LoopbackModelStepRunner.BuildConversationForTests(oversized);
+        var (_, _, trimmedMessages) = InProcessModelStepRunner.BuildConversationForTests(oversized);
 
         Assert.Equal(["user", "assistant"], trimmedMessages!.Select(message => message.Role));
         var retainedUser = trimmedMessages!.First(message => message.Role == "user");
@@ -341,7 +317,7 @@ public sealed class LoopbackModelConversationTests
         entries.Add(AssistantStepEntry("src-new-a", sequence++, "provider_fresh", "read", "{\"path\":\"fresh.txt\"}"));
         entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
 
-        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
+        var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
@@ -390,7 +366,7 @@ public sealed class LoopbackModelConversationTests
         var context = Snapshot(ToolResultEntry("src-1", 1, "internal_call_1", "provider_orphan", "orphan"));
 
         var error = Assert.Throws<WorkerProtocolException>(() =>
-            LoopbackModelStepRunner.BuildConversationForTests(context));
+            InProcessModelStepRunner.BuildConversationForTests(context));
 
         Assert.Equal("model_history_invalid", error.Code);
     }

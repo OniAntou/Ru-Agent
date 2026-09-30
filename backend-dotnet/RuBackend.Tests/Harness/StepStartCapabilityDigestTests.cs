@@ -4,7 +4,6 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
-using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Worker;
@@ -14,13 +13,14 @@ namespace RuBackend.Tests.Harness;
 
 /// <summary>
 /// The composer writes capability digests with the key-sorted hash while the
-/// wire JSON keeps declaration order, so validation must compare against the
-/// same sorted hash. A document-order comparison rejects every real tool.
+/// capability JSON keeps declaration order, so the model-tool projection must
+/// compare against the same sorted hash. A document-order comparison rejects
+/// every real tool.
 /// </summary>
 public sealed class StepStartCapabilityDigestTests
 {
     [Fact]
-    public async Task Production_like_context_passes_validate_start()
+    public async Task Production_like_context_passes_the_model_tool_projection()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-step-digest-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -47,14 +47,8 @@ public sealed class StepStartCapabilityDigestTests
 
             var context = await provider.BuildAsync(run, snapshot, CancellationToken.None);
             Assert.Equal(12, context.Capabilities.Count);
-            var payload = new JsonObject
-            {
-                ["prompt"] = ".",
-                ["turns"] = new JsonArray(),
-                ["system_prompt_context"] = LoopbackPromptWire.WriteContext(context),
-                ["settings"] = LoopbackModelStepRunner.BuildSettingsForTests(context),
-            };
-            WorkerV2Contracts.ValidateStart(payload);
+            var projected = InProcessModelStepRunner.BuildSettingsForTests(context);
+            Assert.Equal(12, projected["model_tools"]!.AsArray().Count);
         }
         finally
         {
@@ -63,7 +57,7 @@ public sealed class StepStartCapabilityDigestTests
     }
 
     [Fact]
-    public void Every_catalog_definition_survives_validate_start()
+    public void Every_catalog_definition_survives_the_model_tool_projection()
     {
         var options = new JsonSerializerOptions { WriteIndented = false };
         var capabilities = AgentToolDefinitionCatalog.Get().Select(definition => new PromptCapability(
@@ -71,8 +65,8 @@ public sealed class StepStartCapabilityDigestTests
             definition.ToolVersion,
             definition.Description,
             definition.Scope,
-            // The one wire form: CanonicalSchemaJson is what every capability serializes
-            // through, so the string and its digest describe the same bytes.
+            // The one JSON form: CanonicalSchemaJson is what every capability uses,
+            // so the string and its digest describe the same bytes.
             AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema),
             AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
             definition.ExampleArguments?.ToJsonString(options),
@@ -83,14 +77,8 @@ public sealed class StepStartCapabilityDigestTests
             Array.Empty<PromptInstructionBlock>(),
             capabilities,
             new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
-        var payload = new JsonObject
-        {
-            ["prompt"] = "hello",
-            ["turns"] = new JsonArray(),
-            ["system_prompt_context"] = LoopbackPromptWire.WriteContext(context),
-            ["settings"] = LoopbackModelStepRunner.BuildSettingsForTests(context),
-        };
-        WorkerV2Contracts.ValidateStart(payload);
+        var projected = InProcessModelStepRunner.BuildSettingsForTests(context);
+        Assert.Equal(capabilities.Length, projected["model_tools"]!.AsArray().Count);
     }
 
     private sealed class StubSettingsStore(SettingsSnapshot snapshot) : ISettingsStore

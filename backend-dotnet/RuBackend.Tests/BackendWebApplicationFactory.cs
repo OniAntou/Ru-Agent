@@ -12,7 +12,6 @@ using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Diagnostics;
 using RuBackend.Runtime;
-using RuBackend.Worker;
 using RuBackend.Tests.Fakes;
 using BrokerHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 

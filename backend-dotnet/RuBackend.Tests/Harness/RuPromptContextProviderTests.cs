@@ -149,7 +149,7 @@ public sealed class RuPromptContextProviderTests
             TestRun(),
             new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
             CancellationToken.None);
-        var settings = LoopbackModelStepRunner.BuildSettingsForTests(context);
+        var settings = InProcessModelStepRunner.BuildSettingsForTests(context);
         var promptIds = context.Capabilities.Select(capability => capability.Id).ToArray();
         var workerIds = settings["model_tools"]!.AsArray()
             .Select(node => node!["tool_id"]!.GetValue<string>())
@@ -273,7 +273,7 @@ public sealed class RuPromptContextProviderTests
             [new PromptCapability("files.read", "1.0.0", "Read", "workspace.read", schema, new string('0', 64), null, "enabled")],
             new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
 
-        var error = Assert.Throws<AgentProtocolException>(() => LoopbackModelStepRunner.BuildSettingsForTests(context));
+        var error = Assert.Throws<AgentProtocolException>(() => InProcessModelStepRunner.BuildSettingsForTests(context));
         Assert.Equal("tool_contract_mismatch", error.Code);
     }
 

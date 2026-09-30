@@ -10,7 +10,6 @@ using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
 using RuBackend.Tests.Fakes;
-using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Business;

@@ -14,7 +14,6 @@ using RuBackend.Hosting;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
-using RuBackend.Worker;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;

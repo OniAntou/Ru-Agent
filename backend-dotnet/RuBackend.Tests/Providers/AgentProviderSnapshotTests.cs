@@ -1,6 +1,5 @@
 using System.Net;
 using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Context;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
@@ -22,7 +21,7 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         await store.SaveAsync(ProviderReasoningPreferences.Save(initial, "high", ProviderSelection.From(initial)), default);
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, (_, _) => Task.FromResult(false));
 
         var first = await ReadAsync(factory, "run-a");
         Assert.Equal("a", first.Model);
@@ -53,11 +52,10 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         await store.SaveAsync(ProviderReasoningPreferences.Save(settings, effort, ProviderSelection.From(settings)), default);
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
-        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, (_, _) => Task.FromResult(false));
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal(expectedCode, error.Code);
-        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
-    }
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));    }
 
     [Fact]
     public async Task Missing_key_fails_fast_before_any_network_fetch()
@@ -66,9 +64,9 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         await store.SaveAsync((await store.ReadAsync(default)) with
         { Backend = "OpenAI", OpenAiModel = "gpt-4o" }, default);
         var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new EmptyCredentials(), TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(store, new EmptyCredentials(), catalog, _root, (_, _) => Task.FromResult(false));
+        using var factory = new AgentProviderSnapshotFactory(store, new EmptyCredentials(), catalog, (_, _) => Task.FromResult(false));
 
-        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal("catalog_unauthorized", error.Code);
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
@@ -80,9 +78,9 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         await store.SaveAsync((await store.ReadAsync(default)) with
         { Backend = "OpenAI", OpenAiModel = "" }, default);
         var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new KeyedCredentials(), TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(store, new KeyedCredentials(), catalog, _root, (_, _) => Task.FromResult(false));
+        using var factory = new AgentProviderSnapshotFactory(store, new KeyedCredentials(), catalog, (_, _) => Task.FromResult(false));
 
-        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal("model_unavailable", error.Code);
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
@@ -114,9 +112,9 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         var credentials = new KeyedCredentials();
         var catalog = new ProviderCatalogService(
             new HttpClient(new FailingCatalogHandler(status)), credentials, TimeProvider.System, cacheFile);
-        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, (_, _) => Task.FromResult(false));
 
-        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal(expectedCode, error.Code);
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
@@ -139,9 +137,9 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         { Backend = "models.dev:openrouter", Model = "stepfun/step-3.7-flash:free" }, default);
         var credentials = new KeyedCredentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System, cacheFile);
-        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, (_, _) => Task.FromResult(false));
 
-        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(RunId("run-a"), default));
         Assert.Equal("model_unavailable", error.Code);
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
@@ -167,15 +165,12 @@ public sealed class AgentProviderSnapshotTests : IDisposable
             Task.FromResult(new HttpResponseMessage(status));
     }
 
-    private async Task<ProviderBootstrapData> ReadAsync(AgentProviderSnapshotFactory factory, string run)
+    private static async Task<ProviderBootstrapData> ReadAsync(AgentProviderSnapshotFactory factory, string run)
     {
-        var path = await factory.CreateAsync(Request(run), default);
-        return ProtectedProviderBootstrap.ReadAndDelete(_root, path);
+        return await factory.GetAsync(RunId(run), default);
     }
 
-    private static ModelStepRequest Request(string run) => new(
-        new RunId("run_" + new string(run.EndsWith('a') ? 'a' : 'b', 32)), new ModelStepId("step_" + Guid.NewGuid().ToString("N")),
-        new ModelContextSnapshot([], ReadOnlyMemory<byte>.Empty), AgentPermissionPreset.Standard, 1, new string('a', 64));
+    private static RunId RunId(string run) => new("run_" + new string(run.EndsWith('a') ? 'a' : 'b', 32));
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
 

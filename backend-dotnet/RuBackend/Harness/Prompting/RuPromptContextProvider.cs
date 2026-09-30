@@ -188,7 +188,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     {
         // Tool output keeps its full-fidelity channel here as untrusted data;
         // the model conversation additionally carries the exchange history
-        // (see LoopbackModelStepRunner.BuildConversation) so the model knows
+        // (see InProcessModelStepRunner.BuildConversation) so the model knows
         // which calls already ran.
         //
         // Each reference is fitted to the bound a reference accepts. A reference over it is

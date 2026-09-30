@@ -1059,12 +1059,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
         // Terminal codes must satisfy AgentRun/HarnessEventIntent validation:
         // 1..64 chars, starts [a-z], rest [a-z0-9_.]. Never embed raw messages.
-        if (error is RuBackend.Worker.WorkerUnavailableException)
+        if (error is RuBackend.Harness.Worker.WorkerUnavailableException)
         {
             return "worker_unavailable";
         }
 
-        if (error is RuBackend.Worker.WorkerProtocolException wpe)
+        if (error is RuBackend.Harness.Worker.WorkerProtocolException wpe)
         {
             var candidate = string.IsNullOrWhiteSpace(wpe.Code) ? wpe.Message : wpe.Code;
             if (IsStableTerminalCode(candidate))

@@ -20,7 +20,6 @@ using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
-using RuBackend.Worker;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Tools.Web;
 using RuAgent.Harness.Core;
@@ -36,6 +35,8 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Models;
+using RuAgent.Runtime.Worker;
 
 namespace RuBackend.Hosting;
 
@@ -61,10 +62,6 @@ internal static class PublicHostServiceRegistration
             }
         });
         services.AddSingleton(BuildDataPaths(configuration));
-        services.AddSingleton(BuildAgentWorkerClientOptions(
-            configuration,
-            agentWorkerPort,
-            agentWorkerToken));
         services.AddSingleton<AgentReplyPolicy>();
         services.AddSingleton<IAgentReplyPolicy>(services =>
             services.GetRequiredService<AgentReplyPolicy>());
@@ -197,13 +194,38 @@ internal static class PublicHostServiceRegistration
         // this service keeps the dozen optional collaborators DI already supplies.
         services.AddSingleton<IPostConfigureOptions<AgentV1Service>, AgentV1CatalogVisionConfigurator>();
 
-        // Harness Core adapters: Worker v2 and ToolGateway via factory
-        services.AddSingleton<LoopbackModelStepRunner>(services =>
-            new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>())
+        // Harness Core adapters: the typed in-process model step service. One
+        // HttpClient with an infinite timeout governs every request: HttpClient.Timeout
+        // would cancel the response stream itself once the whole request/response exceeds
+        // it, cutting a healthy long SSE generation at 100 seconds. The step token governs
+        // the request: the Host cancels a silent step, and the caller cancels the run.
+        services.AddSingleton(_ => new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
+        services.AddSingleton<IModelProviderResolver>(services =>
+        {
+            var modelHttpClient = services.GetRequiredService<HttpClient>();
+            return new ModelProviderResolver(new Dictionary<string, IModelProvider>
+            {
+                ["chat_completions"] = new OpenAiCompatibleModelProvider(modelHttpClient),
+                ["openai_responses"] = new OpenAiResponsesModelProvider(modelHttpClient),
+                ["anthropic_messages"] = new AnthropicMessagesModelProvider(modelHttpClient),
+            });
+        });
+        services.AddSingleton(services => new WorkerV2StepService(
+            services.GetRequiredService<IModelProviderResolver>()));
+        services.AddSingleton(services => new AgentProviderSnapshotFactory(
+            services.GetRequiredService<ISettingsStore>(), services.GetRequiredService<ICredentialStore>(),
+            services.GetRequiredService<ProviderCatalogService>(),
+            async (runId, ct) =>
+            {
+                var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
+                return run is null || run.TerminalAt.HasValue;
+            }));
+        services.AddSingleton(services =>
+            new InProcessModelStepRunner(services.GetRequiredService<WorkerV2StepService>())
             {
                 CreateProviderBootstrapAsync = isDeterministicHarness
                     ? null
-                    : services.GetRequiredService<AgentProviderSnapshotFactory>().CreateAsync,
+                    : (runId, ct) => services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, ct),
                 LoadRunImagesAsync = async (runId, ct) =>
                 {
                     var store = services.GetRequiredService<HarnessPayloadStore>();
@@ -223,18 +245,9 @@ internal static class PublicHostServiceRegistration
                     return list;
                 },
             });
-        services.AddSingleton(services => new AgentProviderSnapshotFactory(
-            services.GetRequiredService<ISettingsStore>(), services.GetRequiredService<ICredentialStore>(),
-            services.GetRequiredService<ProviderCatalogService>(),
-            Path.Combine(services.GetRequiredService<DataPaths>().LogRoot, "agent", "session"),
-            async (runId, ct) =>
-            {
-                var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
-                return run is null || run.TerminalAt.HasValue;
-            }));
-        // A scripted model replaces the worker connection entirely when requested, so the
-        // whole product can be exercised without a provider key. Registered before the
-        // loopback runner because the last registration wins, and this one has to win.
+        // A scripted model replaces the in-process provider call entirely when requested,
+        // so the whole product can be exercised without a provider key. Registered before
+        // the in-process runner because the last registration wins, and this one has to win.
         var scriptedRunner = RuBackend.Harness.ScriptedModelStepRunner.FromEnvironment();
         if (scriptedRunner is not null)
         {
@@ -242,7 +255,7 @@ internal static class PublicHostServiceRegistration
         }
         else
         {
-            services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
+            services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<InProcessModelStepRunner>());
         }
         if (isManagedRuntime)
         {
@@ -334,28 +347,6 @@ internal static class PublicHostServiceRegistration
         }
 
         return new KnownSecretRedactor(secrets);
-    }
-
-    private static AgentWorkerClientOptions BuildAgentWorkerClientOptions(
-        IConfiguration configuration,
-        int managedPort,
-        string managedToken)
-    {
-        var configuredUrl = configuration["RuBackend:AgentWorkerUrl"];
-        var workerUrl = !string.IsNullOrWhiteSpace(managedToken)
-            ? $"ws://127.0.0.1:{managedPort}/worker/v2"
-            : configuredUrl;
-        var workerToken = !string.IsNullOrWhiteSpace(managedToken)
-            ? managedToken
-            : configuration["RU_AGENT_WORKER_TOKEN"]
-                ?? Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
-                ?? string.Empty;
-
-        return new AgentWorkerClientOptions(
-            string.IsNullOrWhiteSpace(workerUrl)
-                ? new Uri("ws://127.0.0.1:8005/worker/v2")
-                : new Uri(workerUrl, UriKind.Absolute),
-            workerToken);
     }
 }
 

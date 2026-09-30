@@ -7,8 +7,8 @@ and does not repeat it.
 ## What this repository is
 
 Ru is a native Windows coding agent: WinUI 3 desktop app (`gui-winui3`),
-terminal TUI (`RuAgent.Cli`), ASP.NET Core Public Host (`RuBackend`), Runtime
-Worker, and Broker. Pure .NET 10. Python under `tests/`, `scripts/`, `tools/`
+terminal TUI (`RuAgent.Cli`), ASP.NET Core Public Host (`RuBackend`), and
+Broker. Pure .NET 10. Python under `tests/`, `scripts/`, `tools/`
 is repository tooling only — never add Python, Node, or any interpreter to the
 product.
 

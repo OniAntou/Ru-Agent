@@ -1,14 +1,14 @@
 # Verification
 
-> **The table below is the current state; entries under it are history.** Its numbers were last checked against the code when the 42-route contract and the 13-project matrix were confirmed, and they are maintained by hand. Run the scripts for the authoritative figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
-> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the live numbers are the table above (42 routes, 12 tools, Worker v2 only).
+> **The table below is the current state; entries under it are history.** Its numbers were last checked against the code when the 42-route contract and the 12-project matrix were confirmed, and they are maintained by hand. Run the scripts for the authoritative figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the live numbers are the table above (42 routes, 12 tools, in-process model runner only).
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 21 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **4,894 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
-| Python suite | **148 passed**, 0 failed. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
-| Release build | `build.bat` runs **13/13** stages and publishes self-contained output: `RuApp.exe`, `RuBackend.exe`, the managed Worker (one listener), the Broker, and `RuAgent.Cli.exe`, flattened into one directory. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **4,796 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| Python suite | **162 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
+| Release build | `build.bat` runs **12/12** stages and publishes self-contained output: `RuApp.exe`, `RuBackend.exe`, the Broker, and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | A published build starts under isolated `RU_DATA_ROOT`/`RU_LOG_ROOT`, answers `/status` 200 to the correct bearer, opens all listeners, and closes the process tree on `POST /host/shutdown` with no surviving children. Re-run it against the current build before a release; the last dated run stays below. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
@@ -19,7 +19,7 @@ The focused contract for the shipped autonomy boundary is:
 
 ```powershell
 dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~Phase1GoldenParityTests"
-dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV2PromptContractTests|FullyQualifiedName~WorkerV2ContractTests.Golden_valid_envelopes_round_trip|FullyQualifiedName~WorkerV2ContractTests.Golden_invalid_raw_envelopes_reject_with_expected_code"
+dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~InProcessModelStepRunnerTests|FullyQualifiedName~StepStartCapabilityDigestTests|FullyQualifiedName~WorkerV2ContractTests"
 .\.venv\Scripts\python.exe -m pytest -q tests\test_current_documentation.py tests\test_readme_counts.py tests\test_ci_contract.py tests\test_aspnetcore_route_matrix.py
 ```
 
@@ -28,9 +28,9 @@ profile-before-instruction block order, the exact prompt/block digests, and the
 private-marker exclusion contract. The protocol fixtures retain one-call and
 text-selection examples and include a narration + three-call native batch whose
 ordered provider IDs are `call-1`, `call-2`, and `call-3` and whose finish reason
-is `tool_calls`. The actual Worker contract command above runs
-`WorkerV2PromptContractTests` and both golden protocol consumers from
-`RuBackend.Tests`.
+is `tool_calls`. The actual runner command above runs
+`InProcessModelStepRunnerTests`, `StepStartCapabilityDigestTests`, and
+`WorkerV2ContractTests` from `RuBackend.Tests`.
 
 The current session-scoped matrix is: `plan` auto workspace read + Web and denies
 terminal/mutation; `standard` auto bounded-local in-workspace mutation and asks

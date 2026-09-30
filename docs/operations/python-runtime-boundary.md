@@ -38,10 +38,12 @@ Current boundary classes are:
 The scan roots are `scripts`, `tools`, `tests`, `backend-dotnet`, `gui-winui3`,
 `gui-winui3.Tests`, and `gui-winui3.Harness`.
 
-The managed runtime is the C# Agent Worker: one process that serves
-`/worker/v2` on one loopback port with a single-use DPAPI-protected provider
-bootstrap. There is no device v1 graph, no OmniVoice process, no shared lease
-coordinator, and no provider credential written to disk. Media adapters
+The managed model runtime is the Host's in-process typed model step
+(`WorkerV2StepService` behind `IModelStepRunner`): there is no worker process,
+loopback port, wire protocol, or provider bootstrap file, and the only managed
+child process is `RuAgentBroker` (ADR-0012). There is no device v1 graph, no
+OmniVoice process, no shared lease coordinator, and no provider credential
+written to disk. Media adapters
 (voice, STT, VTS, observation) and their Python counterparts are gone; this
 inventory is classification evidence, not evidence that the separate
 OS-enforced filesystem/network sandbox project is complete.

@@ -3,7 +3,7 @@
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
 when started as `RuBackend.exe --managed-runtime` and owns all 42 HTTP routes
 (21 non-Agent routes plus 21 additive
-`/agent/v1/*`). Text turns use the current Worker v2-backed Agent HTTP/SSE
+`/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
 Harness construction, but it is not a product mode switch and cannot re-enable
@@ -16,13 +16,14 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         v
 ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
-        | \-- owned managed Worker and Broker in one kill-on-close Job Object
-        |      |-- C# Worker process
-        |      |     `-- `/worker/v2` :8005 (managed provider adapter, one-step AssistantStep, single-use DPAPI bootstrap)
-        |      `-- private RuAgentBroker (leased loopback endpoint, profile-scoped file/terminal tools)
+        | \-- in-process typed model step (WorkerV2StepService behind IModelStepRunner)
+        |     `-- bounded provider adapters + one-step AssistantStep
+        |
+        |-- owned private RuAgentBroker in one kill-on-close Job Object
+        |     `-- leased loopback endpoint, profile-scoped file/terminal tools
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
-Public Host owns Worker/Broker in one Job Object; RuApp/CLI only own the
+Public Host owns the Broker child in one Job Object; RuApp/CLI only own the
 Public Host descriptor lease and long-lived SSE client leases.
 ```
 
@@ -36,19 +37,20 @@ dependency-free test fixture. Git commit
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions and their message history, activity, Agent run ordering,
-metadata filtering, and every public endpoint contract. Agent generation uses
-the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol.
+metadata filtering, and every public endpoint contract. Agent generation runs
+in process through the typed `WorkerV2StepService`; the only managed child is
+the private Broker.
 
 Session deletion uses the stable `DELETE /sessions/{sessionId}` route and an
 application envelope. Only `status: "ok"` means that the deletion coordinator
 removed the session and its owned Harness artifacts; missing or failed deletes
 return a bounded `status: "error"` envelope even when the HTTP status is 200.
 
-- runtime transitions (Agent model steps use the typed C# `/worker/v2` adapter);
+- runtime transitions (Agent model steps use the typed in-process step service);
 - `GET /status` and `GET /models` served directly from the host settings store
   and the provider catalog.
 
-The worker is private implementation code, not another public framework. Agent
+The model runner is private implementation code, not another public framework. Agent
 replies, history,
 activity, and logs keep private marker metadata out of visible and
 persistent text.
@@ -58,30 +60,26 @@ persistent text.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST clients. |
-| `RU_AGENT_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the C# Agent Worker v2. |
-| `RU_BACKEND_AGENT_WORKER_PORT` | `8005` | Private Agent Worker loopback port. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
-| `RuBackend__AgentWorkerUrl` | `ws://127.0.0.1:8005/worker/v2` standalone | Private Agent Worker protocol URL. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
 
-Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
-desktop and Agent Worker secrets, writes a single-use
-DPAPI-protected provider bootstrap for the managed C# Worker, starts one C#
-Worker serving v2 plus RuAgentBroker before serving public traffic,
-assigns all owned children to one kill-on-close Windows Job Object, publishes an
+Public Host (`RuBackend.exe --managed-runtime`) generates a 256-bit
+desktop secret, starts the private RuAgentBroker before serving public traffic,
+assigns the owned child to one kill-on-close Windows Job Object, publishes an
 ACL-restricted loopback descriptor for
 `RuAgent.Client` start-or-attach,
-probes public readiness, and terminates the owned Worker/Broker tree on
-shutdown or failure. `RuApp` and `RuAgent.Cli` never start Worker/Broker
+probes Broker and public readiness, and terminates the owned Broker tree on
+shutdown or failure. `RuApp` and `RuAgent.Cli` never start the Broker
 directly; they validate the descriptor and `GET /status` bearer, and poll for a
 valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
 `v1`; the setting remains accepted by compatibility Harness construction but is
-not a product mode switch and cannot re-enable Chat. Agent v2 (`/worker/v2`
-one-step, `/agent/v1/*` 21 routes, SSE reconnect with durable `id:<sequence>`
+not a product mode switch and cannot re-enable Chat. Agent v2 (in-process
+one-step model generation, `/agent/v1/*` 21 routes, SSE reconnect with durable
+`id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 `agent_harness.db` + AES-GCM payloads, workspace trust, session permissions,
-and encrypted policy snapshots) is the current path. Worker v2 performs
-exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
+and encrypted policy snapshots) is the current path. A model step performs
+exactly one provider generation per typed request and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
 the same twelve tools in the single Agent profile: `read`, `list`, `grep`, `glob`,
 `help`, `todo_write` and `skill` (one purpose each; `read` takes `offset`/`limit`,
@@ -121,10 +119,10 @@ refusal on dirty user index state.
 
 The retired Python deterministic Harness is not used for route verification,
 so managed route tests run directly against the published C# composition. The
-managed composition binds the Agent step route to the C# Worker v2 handler and
-serves `GET /status`/`GET /models` directly from the host settings store and the
-provider catalog; the media adapters (voice, STT, VTS, observation) and the raw
-route fallback no longer exist.
+managed composition binds the Agent step route to the in-process model runner
+and serves `GET /status`/`GET /models` directly from the host settings store
+and the provider catalog; the media adapters (voice, STT, VTS, observation)
+and the raw route fallback no longer exist.
 
 ## Session interchange
 

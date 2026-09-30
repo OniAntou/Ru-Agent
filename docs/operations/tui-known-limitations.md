@@ -121,7 +121,7 @@ To run the TUI reliably while iterating:
 - `bin/ru.cmd` (and `ruagent.cmd`) resolve to the shared publish output under
   `gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/`, so a
   rebuilt `RuAgent.Cli.exe` has to be published **and** copied there.
-- **Kill `RuAgent.Cli`, `RuBackend`, and `RuAgent.Runtime.Worker` first.**
+- **Kill `RuAgent.Cli`, `RuBackend`, and `RuAgent.Broker` first.**
   Windows locks the running image, so the copy silently fails otherwise.
 - Launch it in its own console window. Started from a parent with no console
   the process runs but has nowhere to draw, and nothing appears.
@@ -132,7 +132,7 @@ Two separate defects — a turn that rendered nothing, and a successful turn wit
 no footer — were both **green tests sitting on a dead code path**:
 
 - `AgentAssistantDeltaModel` accepted only `true`/`false` for `reset`, but the
-  worker serializes an explicit `"reset":null`, so every delta frame was
+  Host serializes an explicit `"reset":null`, so every delta frame was
   dropped. `null` now means an ordinary delta.
 - `TuiTranscript` waited for `run.completed`, an event the protocol does not
   have. Runs really end with `run.state_changed` carrying

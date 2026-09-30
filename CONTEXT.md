@@ -10,13 +10,17 @@ were removed on 2026-09-13.
 **Public Host**:
 The ASP.NET Core process that exclusively owns RuApp's authenticated HTTP and
 SSE contract and, when launched as `RuBackend.exe --managed-runtime`,
-owns Worker/Broker children in one Job Object (RuApp/CLI start-or-attach via descriptor).
+owns the Broker child in one Job Object and runs Agent model generation
+in process (ADR-0012; RuApp/CLI start-or-attach via descriptor).
 _Avoid_: Edge, proxy, FastAPI backend
 
 **Runtime Worker**:
-The authenticated loopback managed C# process that serves Agent v2 on
-`/worker/v2`. There is no device v1 boundary, no Python Worker startup, and no
-media adapter graph.
+The retired private model-generation process. It was an authenticated loopback
+managed C# process that served Agent v2 on `/worker/v2`; model generation now
+runs inside the Public Host through the typed `WorkerV2StepService` behind
+`IModelStepRunner`, so no worker process, port, or protocol exists (ADR-0012).
+There is no device v1 boundary, no Python Worker startup, and no media adapter
+graph.
 _Avoid_: Python backend, upstream server
 
 **Generation Kernel**:
@@ -27,15 +31,17 @@ _Avoid_: ModelRunner globals, backend core
 **Public Contract**:
 The stable authenticated surface of 42 HTTP method/path pairs with no WebSocket
 route (21 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
-the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
+the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
 not a product mode switch.
 _Avoid_: Compatibility routes
 
 **Worker Contract**:
-The versioned typed commands, events, ordering, cancellation, limits, errors,
-and capabilities exchanged with the managed C# Runtime Worker.
+The retired versioned typed commands, events, ordering, cancellation, limits,
+errors, and capabilities that the Host exchanged with the managed C# Runtime
+Worker over `/worker/v2`. In-process model steps are typed calls; the only
+private transport left is the Broker lease (ADR-0012).
 _Avoid_: Runtime HTTP relay
 
 **Agent Session**:
@@ -53,8 +59,9 @@ success status alone is not deletion proof.
 _Avoid_: treating an HTTP 200 response as a successful delete
 
 **RuAgentBroker**:
-The private, process-isolated .NET service that validates tool manifests,
-session scopes, approval state, and adapter execution before a local action.
+The private, process-isolated .NET service — the Host's only managed child
+process — that validates tool manifests, session scopes, approval state, and
+adapter execution before a local action.
 _Avoid_: public API route, unrestricted shell
 
 **Execution Authority**:
@@ -74,7 +81,7 @@ _Avoid_: dynamically constructed tool ID
 The immutable Protocol-owned declaration of a tool's ID/version, model-facing
 description, canonical scope, exposure flags, strict proposal schema, example,
 and stable ordering. The Host runtime projection selects enabled
-`ModelVisible` definitions for both the prompt and Worker `model_tools`.
+`ModelVisible` definitions for both the prompt and the model-step `model_tools`.
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
 **Skill Manifest**:
@@ -131,7 +138,7 @@ for external structured files and risky terminal intent. `full_access` allows
 external structured files and risky/arbitrary terminal intent, but structured
 protected paths and hard-invalid requests remain denied. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
-`--confirm-full-access`. The model-visible Worker v2 list remains the runtime projection of
+`--confirm-full-access`. The model-visible tool list remains the runtime projection of
 twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
 `list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
@@ -223,7 +230,7 @@ most 2048px on client, validated against strict MIME and size bounds (max 4
 images, 4 MB decoded per image, 20 MB total decoded), persisted atomically in
 SQLite `agent_payloads` under kind `UserImage` (value 11) with dual audience
 `AuthenticatedClient | ModelContext`, and projected to vision-capable model
-providers through Worker v2 and `ModelRequest.Images`.
+providers through the typed model step and `ModelRequest.Images`.
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 **Protected User Data**:

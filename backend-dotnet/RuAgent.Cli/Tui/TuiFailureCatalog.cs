@@ -161,7 +161,7 @@ public static class TuiFailureCatalog
             "provider_bootstrap_failed" => new(
                 key,
                 "Provider setup failed",
-                "the worker could not start the provider session",
+                "the model backend could not start the provider session",
                 "check the API key and model, then retry"),
             "provider_auth" => new(
                 key,
@@ -188,10 +188,12 @@ public static class TuiFailureCatalog
                 "Capability unavailable",
                 "the requested tool capability is not advertised",
                 "rephrase your request and send it again"),
+            // Historical code: the model step no longer crosses a worker
+            // protocol, so the copy names the backend instead of a worker.
             "protocol_failure" => new(
                 key,
-                "Worker protocol failure",
-                "the model worker exchanged a malformed message",
+                "Model protocol failure",
+                "the model backend exchanged a malformed message",
                 "retry the turn; if it repeats, restart Ru"),
             "runtime_drive_failed" => new(
                 key,

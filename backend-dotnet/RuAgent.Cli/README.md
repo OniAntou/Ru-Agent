@@ -71,7 +71,7 @@ agent policy remove <rule-id>
 - `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. The command writes the payload bytes exactly as the host returns them; `--json` is accepted for symmetry with the other commands but adds no envelope, because the payload is already the answer.
 ## Current model tool surface
 
-The Agent Worker v2 advertisement contains the twelve Protocol definitions:
+The Agent model-step advertisement contains the twelve Protocol definitions:
 `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, standalone
 `web_search`/`web_fetch`, and `skill`. A provider-native model step may return
@@ -131,7 +131,8 @@ transport (`timeout` / `transport_error`), provider errors
 (`catalog_malformed` / `catalog_too_large` / `catalog_configuration_error`),
 `response_too_large`, `vision_unsupported`, `empty_model_reply`,
 `model_failed` / `model_timeout` / `prompt_too_large` / `model_unavailable`,
-worker reachability (`worker_unavailable` / `worker_failed`, kept apart from
+model-backend reachability (historical `worker_unavailable` / `worker_failed`
+codes, kept apart from
 `provider_failed` / `generation_failed` / `drive_failed` execution failures),
 run lifecycle (`repeated_tool_call`, `prompt_contract_invalid`,
 `run_not_runnable`, `workspace_busy`, `reconciliation_required`,

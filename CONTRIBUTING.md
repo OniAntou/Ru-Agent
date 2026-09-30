@@ -7,7 +7,7 @@ trustworthy. For how the system works, read [README.md](README.md),
 [docs/architecture.md](docs/architecture.md).
 
 Ru is a native Windows coding agent: a WinUI 3 desktop app, a terminal TUI, an
-ASP.NET Core Public Host, a Runtime Worker, and a Broker — four processes, one
+ASP.NET Core Public Host, and a private Broker child — four executables, one
 directory, nothing to install. The product is pure .NET 10. Python exists in
 this repository for tooling and guards only, never as part of the product.
 
@@ -25,7 +25,7 @@ this repository for tooling and guards only, never as part of the product.
 .\start_dev.bat      # development launch
 ```
 
-`build.bat` runs 13 stages and ends with a runnable folder:
+`build.bat` runs 12 stages and ends with a runnable folder:
 
 ```powershell
 gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
@@ -34,7 +34,7 @@ gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # the full .NET suite, 13 projects
+.\scripts\test_dotnet.ps1 -Configuration Debug   # the full .NET suite, 12 projects
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

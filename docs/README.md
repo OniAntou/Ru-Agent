@@ -34,7 +34,7 @@ in the checkout indefinitely.
 
 - [Architecture decision records](adr/)
 - [ASP.NET Core Public Host](adr/0001-aspnet-core-public-host.md)
-- [Typed Worker protocol v2](adr/0002-typed-worker-protocol-v2.md)
+- [Typed Worker protocol v2 (superseded by 0012)](adr/0002-typed-worker-protocol-v2.md)
 - [ADR 0003 reserved](adr/0003-reserved.md)
 - [Canonical Ru data location](adr/0004-canonical-ru-data-location.md)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
@@ -44,6 +44,7 @@ in the checkout indefinitely.
 - [Broker execution authority](adr/0009-broker-execution-authority.md)
 - [Product logic outside WinUI code-behind](adr/0010-product-logic-outside-winui-code-behind.md)
 - [Model autonomy and workspace trust boundary](adr/0011-model-autonomy-and-workspace-trust-boundary.md)
+- [In-process model runner](adr/0012-in-process-model-runner.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 

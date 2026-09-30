@@ -36,7 +36,7 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", Log
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
 // Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, start Worker/Broker, publish
+// acquire single instance, generate credentials, start Broker, publish
 // descriptor. The manager uses the same log/session root and returns the final
 // values after readiness succeeds.
 ManagedRuntimeBootstrap? bootstrap = null;

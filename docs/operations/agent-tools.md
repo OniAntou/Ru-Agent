@@ -12,7 +12,7 @@ Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
 is tested infrastructure but is not production-composed; connector libraries are
 not advertised Agent tools.
 
-> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract.
+> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract. The managed Runtime Worker it describes was retired on 2026-09-30: model generation runs in the Host process ([ADR 0012](../adr/0012-in-process-model-runner.md)) and the Host's only managed child is the Broker.
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. There is no device/runtime v1 boundary; Agent
@@ -162,7 +162,7 @@ for patch application does not create a public model capability.
 
 ## Model-first selection and native batches
 
-The Host advertises the same canonical tool definitions to the prompt and Worker.
+The Host advertises the same canonical tool definitions to the prompt and the model step.
 On a provider-native path, one model generation may emit optional narration and
 one or more ordered tool calls. On the compatibility text-selection path, the
 model emits exactly one JSON object with `tool_id`, `tool_version`, and
@@ -199,10 +199,10 @@ Agent text and voice turns share the same execution ownership chain:
 ```text
 WinUI authenticated Agent composer
         -> ASP.NET Core Public Host and session grant
-        -> managed C# Worker model and tool selection
+        -> in-process typed model step (WorkerV2StepService)
         -> private RuAgentBroker policy and canonical binding
         -> bounded adapter plus readback verification
-        -> typed receipt back to Worker
+        -> typed receipt back to the Host
         -> visible reply
 ```
 
@@ -244,7 +244,7 @@ Web bindings through the Broker gateway. Workspace `SKILL.md` roots are
 prompt guidance and grant nothing by themselves. WinUI renders a received grant;
 it does not infer workspace, terminal, Web, connector, or skill access.
 
-The Worker may return one or more native calls in a step and preserves their
+A model step may return one or more native calls, and the Host preserves their
 provider IDs and order. The Host sends only bounded enabled capabilities, exact
 tool versions, and typed arguments; narration is display text, never execution.
 The scheduler allows at most eight overlapping read-only executions, keeps
@@ -559,11 +559,6 @@ ID/version, terminal status, stable error code, duration, verification state,
 the fixed endpoint role, and an ephemeral endpoint hash. They must not contain
 arguments, output values, prompts, replies, paths, scripts, stdout/stderr,
 credentials, device names, or native exception text.
-
-Pre-dispatch intent diagnostics use only `tool.intent.resolved`,
-`tool.intent.clarification`, or `tool.intent.rejected` plus bounded status and
-reason metadata. They never record prompt text, parsed arguments, requested or
-observed levels, output, device identity, or exception details.
 
 See [Verification](verification.md) for the separate contract, adapter, and
 explicit opt-in native evidence classes. Deterministic evidence does not prove

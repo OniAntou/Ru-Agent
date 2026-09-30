@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, updated 2026-09-24.
+Status: operating contract for the current main branch, updated 2026-09-30.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -49,8 +49,8 @@ request and risk duplicate history.
 
 Opening Ru does not call a model, so startup alone has no provider token usage.
 For an actual model step, adapters preserve provider-reported input, output,
-total, cache-read, and cache-write counts through the private Worker v2 done
-envelope. The Host persists those counts as a `ModelUsage` payload alongside a
+total, cache-read, and cache-write counts through the typed model step
+result. The Host persists those counts as a `ModelUsage` payload alongside a
 final reply and inside an `AssistantStep` for tool turns. The payload is a
 sidecar record for authenticated telemetry consumers; the current chat bubble
 fetches it from the durable `model.usage_recorded` event and renders the
@@ -59,29 +59,26 @@ object means the provider did not report counts; it is not converted to zero.
 Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
 for backward compatibility and remains an estimate, not a billing record.
 
-The managed C# Worker is the Agent v2 generation boundary; the device v1
-runtime/voice/STT/VTS/observation protocol was removed with the media surfaces.
-Agent generation runs through the managed v2 step protocol on one private
-loopback port and token. The v2 graph receives no provider credential; each
-step receives a separate protected handoff.
+Agent generation runs inside the Public Host process through the typed
+`WorkerV2StepService` behind `IModelStepRunner`; the device v1
+runtime/voice/STT/VTS/observation protocol was removed with the media surfaces,
+and the managed C# worker process, its loopback port, and its wire protocol
+were retired (ADR-0012). No model step crosses a process boundary, and no
+provider credential is written to disk.
 
-Managed startup launches one `RuAgent.Runtime.Worker.exe` with
-`ws://127.0.0.1:8005/worker/v2`, followed
-by the private Broker. A neutral single-use DPAPI startup handoff composes the
-C# v2 graph without reading or retaining a provider credential. Each Agent
-step requires a separate protected handoff containing
-the run-pinned provider selection, bounded protocol
+Managed startup starts only the private `RuAgentBroker` child. Each Agent
+step resolves a fresh in-memory provider snapshot pinned to the run: the
+bounded protocol
 (`chat_completions`/`openai_responses`/`anthropic_messages`), verified native
 reasoning options, and for Anthropic the bounded `max_tokens`; changes to
 settings apply to the next run, not a continuation of the active run.
-Each handoff is deleted after consumption. The Worker dispatches exactly the
-pinned protocol through one of three focused adapters; unknown or mismatched
-protocols fail closed before HTTP. Managed startup is unconditional.
+The step dispatches exactly the pinned protocol through one of three focused
+adapters; unknown or mismatched protocols fail closed before HTTP. Managed startup is unconditional.
 
 ### Agent system-prompt composition
 
 Every accepted Agent model step—typed text, coding, native tool selection, and
-continuation—rebuilds a fresh prompt context before the Worker request. The
+continuation—rebuilds a fresh prompt context before the model step. The
 private Generation Kernel emits exactly one `system` message with composer
 `2.0.0` from seven ordered blocks: neutral Ru Agent runtime contract, Agent
 execution contract, environment, profile plus canonical effective policy,
@@ -141,7 +138,7 @@ loads one SKILL.md body as untrusted guidance; neither executes tools or grants
 anything. `RuAgentBroker` remains the sole authority for path
 canonicalization, capability policy, approvals, and tool execution.
 
-The Worker returns a typed `AssistantStep(text, tool_calls, finish_reason)`
+The model step returns a typed `AssistantStep(text, tool_calls, finish_reason)`
 together with a schema-validated, versioned prompt receipt. Core validates the
 receipt against the exact context before committing model completion or
 dispatching tools, then stores the receipt as an `InternalOnly` payload. Public
@@ -260,7 +257,7 @@ looped or filled with an earlier response.
 
 The WinUI 3 desktop client connects to the shared local Public Host via loopback IPC.
 `ManagedRuBackendSessionProvider` tracks the Host process lifecycle and coordinates runtime liveness:
-- Liveness detection: `HealthStatusService` probes loopback status with a bounded 3-second timeout via `CheckHealthDetailedAsync`, distinguishing genuine Host offline state (`HttpRequestException` or connection refused) from worker initialization or readiness. Stale or disconnected sessions accurately mark `.NET Backend: Error`.
+- Liveness detection: `HealthStatusService` probes loopback status with a bounded 3-second timeout via `CheckHealthDetailedAsync`, distinguishing genuine Host offline state (`HttpRequestException` or connection refused) from backend startup or readiness. Stale or disconnected sessions accurately mark `.NET Backend: Error`.
 - Exit detection: `ManagedRuBackendSessionProvider` hooks the Host process `Exited` event, clearing the active session and firing `BackendExited`.
 - Backoff & auto-reconnect: When the backend stops or becomes unreachable, high-frequency polling timers (catalog, sessions) are stopped to prevent UI thread socket storms. A gentle reconnect timer probes for backend recovery every 3 seconds, re-attaching or restarting the backend and reinitializing active views and controllers without requiring a GUI restart.
 - Single-instance activation: Multiple instances detect existing instances via process enumeration and native WinUI class queries, bringing the existing window to the foreground cleanly.
@@ -282,7 +279,8 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise twelve tools, one purpose each: `read`, `list`,
+The typed model-step settings advertise twelve tools, one purpose each:
+`read`, `list`,
 `grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` and `web_fetch`. The canonical matrix is: `plan` allows workspace
@@ -323,7 +321,7 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
-The twelve Worker v2 tools above are the model surface. `read`, `list`, `grep`,
+The twelve tools above are the model surface. `read`, `list`, `grep`,
 `glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
 their own schemas, alongside `todo_write`, `skill`, `web_search`, and
 `web_fetch`. Managed startup constructs an enabled WebOptions instance with
@@ -412,10 +410,10 @@ credentials, bearer values, request bodies, user/session identifiers,
 transcripts, or private marker metadata.
 
 Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
-`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, managed-worker, test-fixture,
-and WinUI writers. The HTTP boundary records fixed route categories and durations; the
+`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, test-fixture, and WinUI
+writers. The HTTP boundary records fixed route categories and durations; the
 diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
-Activity Timeline writes continue through the private worker outbox and
+Activity Timeline writes continue through the durable activity outbox and
 ASP.NET ingestion path, with read-time re-sanitization for older records.
 
 ## Acceptance boundary

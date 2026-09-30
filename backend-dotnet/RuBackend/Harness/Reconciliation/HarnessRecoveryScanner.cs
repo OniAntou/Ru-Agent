@@ -625,10 +625,16 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
             try
             {
                 var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-                if (run is null || run.State.IsTerminal() || run.State == HarnessRunState.ReconciliationRequired)
+                if (run is null || run.State.IsTerminal())
                 {
                     continue;
                 }
+
+                // Parked runs (WaitingUser, ReconciliationRequired) are registered too:
+                // Continue moves them to Running, and the drive loop can only pick up a
+                // run whose root this process holds (AgentRuntimeLoopService.StepOnceAsync
+                // drives _roots.Snapshot()). Registering a parked run does not start it:
+                // DriveRunIfRunningAsync skips every state but Running/WaitingApproval.
 
                 var storedWorkspace = await _workspaceStore
                     .GetAsync(run.WorkspaceId, cancellationToken)

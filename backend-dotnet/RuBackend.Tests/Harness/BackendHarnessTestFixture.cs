@@ -5,19 +5,23 @@ using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
+using RuBackend.Harness.Policy;
+using RuBackend.Harness.Workspace;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
 internal sealed class BackendHarnessTestFixture : IAsyncDisposable
 {
+    private readonly FakeKeyStore _keyStore = new();
+
     private BackendHarnessTestFixture(string rootPath)
     {
         RootPath = rootPath;
         Options = new HarnessSqliteOptions(Path.Combine(rootPath, "agent_harness.db"));
         PayloadStore = new HarnessPayloadStore(
             Options,
-            new HarnessPayloadCryptography(new FakeKeyStore()),
+            new HarnessPayloadCryptography(_keyStore),
             KnownSecretRedactor.Empty);
         EventStore = new SqliteHarnessEventStore(Options, PayloadStore);
     }
@@ -32,6 +36,12 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
     public HarnessPayloadStore PayloadStore { get; }
 
     public SqliteHarnessEventStore EventStore { get; }
+
+    /// <summary>
+    /// The AES key payloads and workspace roots are protected with. Shared so a test can
+    /// decrypt the same durable rows the production services would.
+    /// </summary>
+    public IHarnessKeyStore KeyStore => _keyStore;
 
     public static async Task<BackendHarnessTestFixture> CreateAsync()
     {
@@ -90,6 +100,58 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
                 HarnessEventKind.RunStateChanged)],
             payloads ?? [],
             outbox ?? [],
+            new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));
+        var result = await EventStore.TryCreateRunAsync(request, CancellationToken.None);
+        Assert.Equal(CreateRunOutcome.Created, result.Outcome);
+        return request;
+    }
+
+    /// <summary>
+    /// Seeds a run whose workspace is a real temp directory: the canonical root is
+    /// encrypted with <see cref="KeyStore"/> exactly like production, and the run's
+    /// policy contract matches the snapshot the loader recomputes after a restart.
+    /// The startup recovery rehydrator only registers such a run, so a fixture with a
+    /// placeholder ciphertext can never exercise that path.
+    /// </summary>
+    public async Task<NewAgentRun> SeedRunWithEncryptedWorkspaceAsync(
+        HarnessRunStatus status,
+        string runId,
+        string sessionId)
+    {
+        var workspaceRoot = Path.Combine(RootPath, "workspace-" + runId);
+        Directory.CreateDirectory(workspaceRoot);
+        var resolver = new WindowsWorkspaceIdentityResolver();
+        var trustService = new WorkspaceTrustService(
+            resolver,
+            new SqliteWorkspaceStore(Options),
+            new WorkspaceTrustRequestStore(Options),
+            _keyStore);
+        await trustService.EnsureTrustRequestAsync(workspaceRoot, CancellationToken.None);
+        var identity = await resolver.ResolveAsync(workspaceRoot, CancellationToken.None);
+        var snapshot = await new HarnessPolicySnapshotService(Options, _keyStore, new SystemTimeProvider())
+            .LoadAsync(identity, AgentPermissionPreset.Standard, new RunId(runId), CancellationToken.None);
+        var run = new AgentRun(
+            new RunId(runId),
+            new SessionId(sessionId),
+            identity.WorkspaceId,
+            status,
+            0,
+            1,
+            1,
+            0,
+            0,
+            AgentPermissionPreset.Standard,
+            snapshot.Version,
+            snapshot.Sha256,
+            Timestamp,
+            Timestamp);
+        var request = new NewAgentRun(
+            run,
+            [new HarnessEventIntent(
+                new EventId($"evt_{Guid.NewGuid():N}"),
+                HarnessEventKind.RunStateChanged)],
+            [],
+            [],
             new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));
         var result = await EventStore.TryCreateRunAsync(request, CancellationToken.None);
         Assert.Equal(CreateRunOutcome.Created, result.Outcome);

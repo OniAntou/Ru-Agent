@@ -12,6 +12,12 @@ namespace RuAgent.Cli;
 
 public sealed partial class AgentCommands
 {
+    /// <summary>How many of a reopened session's newest messages a chat replay may show.</summary>
+    private const int SessionReplayMessageLimit = 20;
+
+    /// <summary>Per-message character cap for a chat replay; longer text is shortened with a marker.</summary>
+    private const int SessionReplayMaxChars = 2000;
+
     private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
     {
         if (settings.TryGetProperty("reasoning_effort", out var direct) && !string.IsNullOrWhiteSpace(direct.GetString()))
@@ -789,7 +795,33 @@ public sealed partial class AgentCommands
             ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
             ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
-        RenderLandingScreen();
+        if (cmd.Json || string.IsNullOrWhiteSpace(cmd.SessionId))
+        {
+            RenderLandingScreen();
+        }
+        else
+        {
+            // A reopened session shows where the conversation stopped; a fresh session
+            // (or one whose replay cannot be read) keeps the landing screen.
+            var replay = await LoadSessionReplayAsync(sessionId).ConfigureAwait(false);
+            if (replay.Messages.Count > 0)
+            {
+                landingScreenVisible = false;
+                RenderSessionReplay(sessionId, replay);
+            }
+            else
+            {
+                RenderLandingScreen();
+                if (replay.Error is not null)
+                {
+                    sessionRenderer.Note(
+                        $"session_replay_unavailable: {replay.Error}",
+                        Tui.TuiToken.Warn);
+                    sessionRenderer.Flush();
+                }
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(cmd.SessionId))
         {
             // Only an explicit --session reopens someone else's session; a fresh session
@@ -1121,6 +1153,131 @@ public sealed partial class AgentCommands
             }
 
             await _out.FlushAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Loads the bounded replay for a session reopened with --session. The wire payload
+        /// (POST /sessions/{id}/activate) carries user/ai text only -- tool rows and thinking
+        /// belong to runs and never travel in the session document -- so only those roles are
+        /// kept. The newest <see cref="SessionReplayMessageLimit"/> messages are considered and
+        /// each kept message is capped at <see cref="SessionReplayMaxChars"/> characters.
+        /// Fail-soft: a read fault returns the bounded one-line reason and no messages.
+        /// </summary>
+        async Task<(List<(string Role, string Text)> Messages, int Hidden, int Shortened, string? Error)>
+            LoadSessionReplayAsync(string targetSessionId)
+        {
+            JsonElement root;
+            try
+            {
+                root = await _sessionClient.GetSessionAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return ([], 0, 0, CliErrorText.ShortMessage(ex.Message));
+            }
+
+            var all = new List<(string Role, string Text)>();
+            if (root.TryGetProperty("session", out var sessionElement)
+                && sessionElement.ValueKind == JsonValueKind.Object
+                && sessionElement.TryGetProperty("messages", out var messagesElement)
+                && messagesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var message in messagesElement.EnumerateArray())
+                {
+                    var role = message.TryGetProperty("role", out var roleElement) && roleElement.ValueKind == JsonValueKind.String
+                        ? roleElement.GetString()!.Trim().ToLowerInvariant()
+                        : string.Empty;
+                    var content = message.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
+                        ? contentElement.GetString() ?? string.Empty
+                        : string.Empty;
+                    if (string.IsNullOrWhiteSpace(content))
+                    {
+                        continue;
+                    }
+
+                    all.Add((role, content.Trim()));
+                }
+            }
+
+            var tail = all.Count > SessionReplayMessageLimit
+                ? all.GetRange(all.Count - SessionReplayMessageLimit, SessionReplayMessageLimit)
+                : all;
+
+            var messages = new List<(string Role, string Text)>(tail.Count);
+            var hidden = 0;
+            var shortened = 0;
+            foreach (var (role, text) in tail)
+            {
+                if (role is not ("user" or "ai" or "assistant"))
+                {
+                    // Tool/thinking/other rows are not replayed; the count is marked once.
+                    hidden++;
+                    continue;
+                }
+
+                var bounded = text;
+                if (bounded.Length > SessionReplayMaxChars)
+                {
+                    bounded = bounded[..SessionReplayMaxChars].TrimEnd() + " …";
+                    shortened++;
+                }
+
+                messages.Add((role, bounded));
+            }
+
+            return (messages, hidden, shortened, null);
+        }
+
+        /// <summary>
+        /// Reprints the loaded replay through the same renderer a live turn uses: the prompt
+        /// echo for user rows and the streaming/markdown assistant path for replies. Nothing
+        /// is invented here, so a replay row reads exactly like the row the turn produced.
+        /// </summary>
+        void RenderSessionReplay(
+            string targetSessionId,
+            (List<(string Role, string Text)> Messages, int Hidden, int Shortened, string? Error) replay)
+        {
+            sessionRenderer.Note(
+                $"↺ replayed the last {replay.Messages.Count} messages from session {targetSessionId}",
+                Tui.TuiToken.Meta);
+            foreach (var (role, text) in replay.Messages)
+            {
+                if (string.Equals(role, "user", StringComparison.Ordinal))
+                {
+                    sessionRenderer.Surface.WriteLine(
+                        Tui.InteractiveLineReader.BuildSubmitEcho(text, width: sessionRenderer.Width));
+                }
+                else
+                {
+                    sessionRenderer.Transcript.AppendAssistant(text);
+                    sessionRenderer.Flush();
+                    // The streaming path leaves the reply row open for the next delta;
+                    // a replay message is final, so the row must end before the next one.
+                    sessionRenderer.Surface.Line();
+                }
+            }
+
+            if (replay.Shortened > 0 || replay.Hidden > 0)
+            {
+                var parts = new List<string>();
+                if (replay.Shortened > 0)
+                {
+                    parts.Add($"{replay.Shortened} shortened");
+                }
+
+                if (replay.Hidden > 0)
+                {
+                    parts.Add($"{replay.Hidden} tool/other rows hidden");
+                }
+
+                sessionRenderer.Note("… " + string.Join(", ", parts), Tui.TuiToken.Meta);
+            }
+
+            sessionRenderer.Flush();
         }
 
         /// <summary>

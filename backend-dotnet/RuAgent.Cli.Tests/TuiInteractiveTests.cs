@@ -1887,6 +1887,94 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public async Task ChatWithSession_replays_recent_history()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var activateCalls = 0;
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/sess_123/activate", StringComparison.Ordinal))
+            {
+                activateCalls++;
+                var messages = Enumerable.Range(0, 25)
+                    .Select(index => new { role = index % 2 == 0 ? "user" : "ai", content = $"history-marker-{index:00}" })
+                    .ToArray();
+                var payload = JsonSerializer.Serialize(new
+                {
+                    status = "ok",
+                    session = new { id = "sess_123", title = "reopened", messages },
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
+            {
+                var items = JsonSerializer.Serialize(new { items = Array.Empty<object>(), next_cursor = (string?)null });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(items, Encoding.UTF8, "application/json") };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, new StringWriter(), new StringReader("/exit\n"));
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.Equal(1, activateCalls);
+        var output = outWriter.ToString();
+        Assert.Contains("replayed the last 20 messages from session sess_123", output, StringComparison.Ordinal);
+        // The replay is the tail: marker 05 is the oldest of the last 20, marker 04 is out.
+        Assert.Contains("history-marker-24", output, StringComparison.Ordinal);
+        Assert.Contains("history-marker-05", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("history-marker-04", output, StringComparison.Ordinal);
+        var replayedLines = output.Split('\n').Count(line => line.Contains("history-marker-", StringComparison.Ordinal));
+        Assert.Equal(20, replayedLines);
+    }
+
+    [Fact]
+    public async Task ChatWithSession_replay_failure_is_bounded_notice()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/sess_123/activate", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{}") };
+            if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
+            {
+                var items = JsonSerializer.Serialize(new { items = Array.Empty<object>(), next_cursor = (string?)null });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(items, Encoding.UTF8, "application/json") };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, new StringWriter(), new StringReader("/exit\n"));
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        // Fail-soft: one bounded notice, then the REPL still starts and exits normally.
+        Assert.Equal(0, exit);
+        var output = outWriter.ToString();
+        Assert.Contains("session_replay_unavailable", output, StringComparison.Ordinal);
+        Assert.Equal(1, output.Split('\n').Count(line => line.Contains("session_replay_unavailable", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task ChatAsync_SlashContinue_WithoutParkedRun_PrintsNotice()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();

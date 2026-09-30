@@ -1252,6 +1252,113 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public async Task ChatAsync_CancelDuringStream_PostsCancelForTheRun()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runId = "run_" + new string('a', 32);
+        var cancelUris = new List<string>();
+
+        var handler = new FakeHandler(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
+            {
+                var runJson = JsonSerializer.Serialize(new
+                {
+                    run_id = runId,
+                    session_id = "sess_123",
+                    workspace_id = "ws_test",
+                    status = "running",
+                    preset = "standard",
+                    created_at = DateTimeOffset.UtcNow.ToString("O"),
+                    updated_at = DateTimeOffset.UtcNow.ToString("O"),
+                });
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(runJson, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/cancel"))
+            {
+                cancelUris.Add(uri);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                var content = new StreamContent(new BlockingStream());
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("hello\n"));
+
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(150);
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
+
+        Assert.Equal(0, exit);
+        var cancelUri = Assert.Single(cancelUris);
+        Assert.EndsWith($"/agent/v1/runs/{runId}/cancel", cancelUri, StringComparison.Ordinal);
+        Assert.Contains("interrupted", outWriter.ToString(), StringComparison.Ordinal);
+        Assert.Contains(runId, outWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatAsync_CancelBeforeRunCreated_DoesNotPostCancel()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runCreateStarted = false;
+        var cancelPosted = false;
+
+        using var cts = new CancellationTokenSource();
+        var handler = new FakeHandler(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.EndsWith("/cancel"))
+            {
+                runCreateStarted = true;
+                cts.Cancel();
+                await Task.Delay(Timeout.Infinite, cts.Token).ConfigureAwait(false);
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/cancel"))
+            {
+                cancelPosted = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), new StringWriter(), new StringReader("hello\n"));
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
+
+        Assert.True(runCreateStarted);
+        Assert.False(cancelPosted, "cancelling while the create request is in flight must not cancel a run that was never created");
+        Assert.Equal(0, exit);
+    }
+
+    [Fact]
     public async Task AttachAsync_ResumesStream_AfterTransportBreak()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
@@ -1343,6 +1450,34 @@ public sealed class TuiInteractiveTests
         Assert.Contains("second-chunk", outStr, StringComparison.Ordinal);
         Assert.DoesNotContain("run_error", errWriter.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("stream_interrupted", errWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    private sealed class BlockingStream : System.IO.Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            Thread.Sleep(Timeout.Infinite);
+            return 0;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
     }
 
     private sealed class BreakingStream : MemoryStream

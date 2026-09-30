@@ -146,6 +146,8 @@ public sealed partial class AgentCommands
         };
         string? queuedLine = null;
         CancellationTokenSource? turnCts = null;
+        string? activeRunId = null;
+        string? parkedRunId = null;
         CancellationTokenSource? typeAheadCts = null;
         Task? typeAheadLoop = null;
         bool typeAheadLive = false;
@@ -929,7 +931,9 @@ public sealed partial class AgentCommands
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: sessionRenderer.Width));
                 }
                 sessionRenderer.BeginTurn();
+                activeRunId = null;
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
+                activeRunId = resp.RunId;
 
                 var isTrustWait = string.Equals(
                     resp.Status,
@@ -1102,6 +1106,10 @@ public sealed partial class AgentCommands
             }
             catch (OperationCanceledException)
             {
+                // The token only stops local streaming; the run must be cancelled server-side
+                // too, like one-shot `agent run` and the GUI Stop, or it keeps the workspace
+                // lock. Read the flag before FinishTurnAsync disposes the source.
+                var userCancelled = turnCts?.IsCancellationRequested == true;
                 if (!presetCommitted
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
@@ -1109,7 +1117,25 @@ public sealed partial class AgentCommands
                     return 1;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                var cancelRunId = userCancelled && parkedRunId is null ? activeRunId : null;
+                if (cancelRunId is null)
+                {
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                }
+                else
+                {
+                    try
+                    {
+                        await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
+                    }
+                }
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {

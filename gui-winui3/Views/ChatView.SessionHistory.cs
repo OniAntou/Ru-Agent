@@ -943,7 +943,7 @@ namespace RuApp.Views
                 // A run that outlived the host is invisible until it is adopted:
                 // re-arm Continue/Stop for this session's newest non-terminal run.
                 // Bounded and fail-soft; a read failure never fails the open.
-                await TryAdoptSessionRunAsync(sessionId, openToken);
+                await TryAdoptSessionRunAsync(sessionId, openToken, generation);
             }
             catch (OperationCanceledException)
             {
@@ -981,7 +981,7 @@ namespace RuApp.Views
         /// still offer Continue/Cancel; adoption re-arms exactly that run. Best
         /// effort and bounded: any read failure leaves the open as it would have been.
         /// </summary>
-        private async Task TryAdoptSessionRunAsync(string sessionId, CancellationToken cancellationToken)
+        private async Task TryAdoptSessionRunAsync(string sessionId, CancellationToken cancellationToken, long generation)
         {
             var controller = _agentController;
             if (controller is null
@@ -1004,7 +1004,9 @@ namespace RuApp.Views
             try
             {
                 var runs = await _apiService.ListSessionRunIdsAsync(sessionId, cancellationToken);
-                if (runs is not { Count: > 0 } || cancellationToken.IsCancellationRequested)
+                if (runs is not { Count: > 0 }
+                    || !IsCurrentOpen(generation)
+                    || cancellationToken.IsCancellationRequested)
                 {
                     return;
                 }
@@ -1025,7 +1027,23 @@ namespace RuApp.Views
                     return;
                 }
 
-                await controller.AdoptRunAsync(run, cancellationToken);
+                // The open may have been superseded while the run read was in flight:
+                // latching the old session's run here would follow a run the new
+                // session never asked for, and its reference would keep the new
+                // session from adopting its own.
+                if (!IsCurrentOpen(generation) || cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                var adopted = await controller.AdoptRunAsync(run, cancellationToken);
+                if (!adopted
+                    || !IsCurrentOpen(generation)
+                    || cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 // A live run needs the monitor so its terminal frame settles the
                 // transcript; a parked run waits for the typed Continue, whose own
                 // action starts the monitor.

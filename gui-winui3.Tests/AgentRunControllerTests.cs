@@ -53,6 +53,31 @@ public sealed class AgentRunControllerTests
             TransientSequence: null,
             TransientData: null);
 
+    private static AgentEventModel ContinueRequestedEvent(long seq, string status) =>
+        new(
+            EventId: "e" + seq,
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "continue.requested",
+            OccurredAt: "2026",
+            Status: status,
+            SafeSummary: "continue",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: seq,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null);
+
+    private static async Task WaitForAdoptSettleAsync(AgentRunController controller)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (controller.IsBusy && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+    }
+
     private sealed class FakeClient : IAgentRunClient
     {
         public AgentRunModel? Run;
@@ -166,6 +191,8 @@ public sealed class AgentRunControllerTests
             {
                 await SubscriptionGate.Task.ConfigureAwait(false);
             }
+
+            ct.ThrowIfCancellationRequested();
 
             foreach (var e in Stream)
             {
@@ -1012,6 +1039,44 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task Continue_requested_with_running_status_does_not_park_the_run()
+    {
+        // The backend commits the continue twice: the park frame (waiting_user) and
+        // the "continued" commit that flips the run back to running. Keying every
+        // frame to waiting_user left a live run looking parked until the monitor
+        // refreshed -- Continue earned a 409 and a session switch detached a run
+        // nobody followed. The refresh is forced to fail so the assertions read the
+        // event handling, not the follow-up status read.
+        var run = MakeRunWith("running", lastSequence: 3);
+        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
+        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user"));
+        fake.Stream.Add(ContinueRequestedEvent(2, "running"));
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        await WaitForAdoptSettleAsync(controller);
+        Assert.False(controller.CanContinue);
+        Assert.False(controller.IsCurrentRunParked);
+        Assert.True(controller.CanCancel);
+    }
+
+    [Fact]
+    public async Task Continue_requested_with_waiting_user_status_parks_the_run()
+    {
+        var run = MakeRunWith("running", lastSequence: 3);
+        var fake = new FakeClient { Run = run, ThrowOnGetRun = true };
+        fake.Stream.Add(ContinueRequestedEvent(1, "waiting_user"));
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        await WaitForAdoptSettleAsync(controller);
+        Assert.True(controller.CanContinue);
+        Assert.True(controller.IsCurrentRunParked);
+    }
+
+    [Fact]
     public async Task Adopt_sets_status_and_continue_for_waiting_user()
     {
         // After a host restart the frame that parked the run is already behind its
@@ -1096,6 +1161,60 @@ public sealed class AgentRunControllerTests
 
         fake.CreateRunGate.SetResult(true);
         await createTask;
+    }
+
+    [Fact]
+    public async Task Adopt_with_already_cancelled_token_does_not_latch()
+    {
+        // The user switched sessions while the run read was still in flight: the
+        // open token is already cancelled when adoption is attempted. The latch must
+        // stay untouched or the new session's parked run can never be adopted.
+        var run = MakeRunWith("running", lastSequence: 3);
+        var fake = new FakeClient { Run = run };
+        var controller = new AgentRunController(fake);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var adopted = await controller.AdoptRunAsync(run, cts.Token);
+
+        Assert.False(adopted);
+        Assert.Null(controller.CurrentRun);
+        Assert.Null(fake.SubscribeRunId);
+        Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
+    public async Task Adopt_cancelled_before_any_frame_releases_the_latch()
+    {
+        // Cancellation lands after the latch was taken but before the run delivers a
+        // single frame. The follow dies on the cancelled token; the stale reference
+        // must go, or the next session's adoption no-ops and its run stays invisible.
+        var run = MakeRunWith("running", lastSequence: 3);
+        var fake = new FakeClient
+        {
+            Run = run,
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+        using var cts = new CancellationTokenSource();
+
+        var adopted = await controller.AdoptRunAsync(run, cts.Token);
+        Assert.True(adopted);
+
+        cts.Cancel();
+        fake.SubscriptionGate.SetResult(true);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (controller.CurrentRun is not null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.Equal(RunId, fake.SubscribeRunId);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.IsBusy);
+        Assert.False(controller.CanContinue);
     }
 
     [Fact]

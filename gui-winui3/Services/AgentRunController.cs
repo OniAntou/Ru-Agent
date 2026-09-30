@@ -312,11 +312,22 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// session must offer Continue or Stop for exactly that run instead of leaving
     /// it invisible. The stream is followed from the run's durable cursor in the
     /// background, so opening a session never waits on a run that may stay parked
-    /// indefinitely.
+    /// indefinitely. Returns <c>true</c> when this call latched the run and started
+    /// its follow; <c>false</c> when adoption was skipped because another run
+    /// already owns the controller or the open token was already cancelled.
     /// </summary>
-    public Task AdoptRunAsync(AgentRunModel run, CancellationToken externalCancellation = default)
+    public Task<bool> AdoptRunAsync(AgentRunModel run, CancellationToken externalCancellation = default)
     {
         ArgumentNullException.ThrowIfNull(run);
+
+        // A session open already cancelled (the user switched away) must not latch
+        // a run: the follow would die on the cancelled token while the reference
+        // kept the next session from adopting its own run. Checked before the latch
+        // so a skipped adoption leaves the controller exactly as it was.
+        if (externalCancellation.IsCancellationRequested)
+        {
+            return Task.FromResult(false);
+        }
 
         lock (_gate)
         {
@@ -326,7 +337,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             // no-op: the caller fail-softs and the session still opens.
             if (_currentRunId is not null || _isBusy)
             {
-                return Task.CompletedTask;
+                return Task.FromResult(false);
             }
         }
 
@@ -365,7 +376,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         });
 
         _ = FollowAdoptedRunAsync(run.RunId, run.LastSequence, token, cts);
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public async Task CancelAsync(CancellationToken cancellationToken = default)
@@ -727,7 +738,19 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             if (!model.IsTransient
                 && model.EventType == "continue.requested")
             {
-                _waitKind = "waiting_user";
+                // The frame's status decides, exactly like the TUI: the park commit
+                // carries waiting_user, while the "continued" commit flips the run
+                // back to running. Keying every frame to waiting_user left a live run
+                // parked in the client until the monitor's next refresh -- Continue
+                // earned a 409, and a session switch detached a run nobody followed.
+                if (string.Equals(model.Status, "waiting_user", StringComparison.Ordinal))
+                {
+                    _waitKind = "waiting_user";
+                }
+                else if (string.Equals(model.Status, "running", StringComparison.Ordinal))
+                {
+                    _waitKind = null;
+                }
             }
 
             // The host parks a run in ReconciliationRequired after an ambiguous
@@ -1071,18 +1094,45 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// logic either way. <paramref name="afterSequence"/> is the durable cursor to
     /// resume from: a created run starts at 0, an adopted one at its LastSequence so
     /// frames the session open already replayed are not delivered twice.
+    /// <paramref name="onFrame"/> fires for every inbound frame so the adopted follow
+    /// can tell "cancelled before anything arrived" from "cancelled after the run
+    /// already materialized".
     /// </summary>
-    private async Task FollowRunStreamAsync(string runId, long afterSequence, CancellationToken token)
+    private async Task FollowRunStreamAsync(
+        string runId,
+        long afterSequence,
+        CancellationToken token,
+        Action? onFrame = null)
     {
         await _client.SubscribeEventsAsync(
                 runId,
                 afterSequence,
-                OnEventAsync,
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnEventAsync(model);
+                },
                 token,
-                OnActivityAsync,
-                OnSummaryAsync,
-                OnAssistantDeltaAsync,
-                OnToolOutputAsync)
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnActivityAsync(model);
+                },
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnSummaryAsync(model);
+                },
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnAssistantDeltaAsync(model);
+                },
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnToolOutputAsync(model);
+                })
             .ConfigureAwait(false);
         // The SSE stream ends after the terminal snapshot, but the create response
         // may be stale (or the stream may have disconnected). Refresh the durable
@@ -1142,18 +1192,30 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         CancellationToken token,
         CancellationTokenSource cts)
     {
+        var sawFrame = false;
         try
         {
-            await FollowRunStreamAsync(runId, afterSequence, token).ConfigureAwait(false);
+            await FollowRunStreamAsync(runId, afterSequence, token, () => sawFrame = true).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            RunOnUi(() =>
+            // A cancelled session open kills the follow before the run ever produced
+            // anything: the latch must release so the session now opening can adopt
+            // its own run instead of being blocked by this stale reference forever.
+            // Once a frame arrived the run did materialize, so Stop must stay.
+            if (!sawFrame && string.Equals(_currentRunId, runId, StringComparison.Ordinal))
             {
-                _statusText = "Event monitoring stopped.";
-                _isBusy = false;
-                RefreshCommands();
-            });
+                ReleaseCurrentRun(runId, "Event monitoring stopped.");
+            }
+            else
+            {
+                RunOnUi(() =>
+                {
+                    _statusText = "Event monitoring stopped.";
+                    _isBusy = false;
+                    RefreshCommands();
+                });
+            }
         }
         catch (Exception)
         {

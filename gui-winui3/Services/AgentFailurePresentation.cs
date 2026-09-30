@@ -66,6 +66,14 @@ internal static class AgentFailurePresentation
             return "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request and send it again.";
         }
 
+        if (string.Equals(trimmed, "invalid_request", StringComparison.Ordinal))
+        {
+            // The runner rejected the assembled request before the provider was
+            // called (a malformed history or a bad image payload), so the model
+            // never saw the turn: retrying the same turn can repeat it.
+            return "Ru could not assemble the model request, so the run was stopped. Please send the request again — if it keeps happening, start a new chat.";
+        }
+
         if (string.Equals(trimmed, "empty_model_reply", StringComparison.Ordinal))
         {
             return "The model returned an empty reply. Please try again, or select another model.";

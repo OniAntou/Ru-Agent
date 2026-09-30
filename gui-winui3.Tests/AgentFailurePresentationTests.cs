@@ -56,6 +56,19 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void Invalid_request_stays_visible_with_guidance_copy()
+    {
+        // The runner rejected the assembled request before dispatch; the raw code
+        // must not reach the reader, and the copy must say the turn can be retried.
+        Assert.True(AgentFailurePresentation.ShouldKeepVisible(
+            "failed",
+            "invalid_request"));
+        Assert.Equal(
+            "Ru could not assemble the model request, so the run was stopped. Please send the request again — if it keeps happening, start a new chat.",
+            AgentFailurePresentation.Render("invalid_request"));
+    }
+
+    [Fact]
     public void Reconciliation_required_renders_recovery_copy_instead_of_the_raw_code()
     {
         // A run parked on reconciliation is not terminal: the status bar must

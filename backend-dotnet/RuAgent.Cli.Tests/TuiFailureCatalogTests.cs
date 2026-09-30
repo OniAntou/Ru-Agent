@@ -28,6 +28,7 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [InlineData("repeated_tool_call")]
     [InlineData("invalid_selection")]
     [InlineData("prompt_contract_invalid")]
+    [InlineData("invalid_request")]
     [InlineData("run_not_runnable")]
     [InlineData("run_failed")]
     [InlineData("workspace_busy")]

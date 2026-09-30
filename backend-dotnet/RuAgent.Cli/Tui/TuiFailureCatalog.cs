@@ -225,6 +225,11 @@ public static class TuiFailureCatalog
                 "Prompt contract invalid",
                 "the composed prompt failed validation",
                 "retry the turn; if it repeats, restart Ru"),
+            "invalid_request" => new(
+                key,
+                "Request rejected",
+                "the host could not assemble the model request from this turn",
+                "send the request again; if it repeats, fork a fresh session"),
             "run_not_runnable" => new(
                 key,
                 "Run not runnable",

@@ -83,7 +83,12 @@ namespace RuApp
             {
                 SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
             };
+
+            // The host reads Claude Code and Codex JSONL transcripts, Antigravity's
+            // transcript.jsonl, and opencode's .db store. The picker only decides what may
+            // be chosen; the host still validates the content, and its refusal is shown.
             picker.FileTypeFilter.Add(".jsonl");
+            picker.FileTypeFilter.Add(".db");
             WinRT.Interop.InitializeWithWindow.Initialize(
                 picker,
                 WinRT.Interop.WindowNative.GetWindowHandle(this));
@@ -99,11 +104,36 @@ namespace RuApp
             {
                 await ShowNoticeAsync(
                     "Cannot tell which agent wrote this file",
-                    $"Ru recognises {SessionFileLayout.ClaudeCodeId} transcripts, named after their session id, and {SessionFileLayout.CodexId} rollouts, named rollout-<when>-<thread>.");
+                    $"Ru recognises {SessionFileLayout.ClaudeCodeId} transcripts, named after their session id, {SessionFileLayout.CodexId} rollouts, named rollout-<when>-<thread>, Antigravity's transcript.jsonl, and opencode's .db store.");
                 return;
             }
 
-            var content = await Windows.Storage.FileIO.ReadTextAsync(file);
+            // Checked before reading: the import cap has to refuse the file without
+            // pulling it into memory first, and without the generic failure a 413 from the
+            // host would otherwise produce.
+            var properties = await file.GetBasicPropertiesAsync();
+            if (properties.Size > (ulong)SessionInterchangeLimits.MaxImportContentBytes)
+            {
+                await ShowNoticeAsync(
+                    "Session file too large",
+                    $"This file is {properties.Size} bytes. Imports are limited to {SessionInterchangeLimits.MaxImportContentBytes / (1024 * 1024)} MiB.");
+                return;
+            }
+
+            string content;
+            try
+            {
+                content = await Windows.Storage.FileIO.ReadTextAsync(file);
+            }
+            catch (Exception ex)
+            {
+                // A binary store (opencode's .db) can fail to decode as text; that is a
+                // refusal with a reason, not a crash.
+                var message = ex.Message.Length > 400 ? ex.Message[..400] + "…" : ex.Message;
+                await ShowNoticeAsync("Could not read this file", message);
+                return;
+            }
+
             var outcome = await _apiService.ImportSessionAsync(harness, content);
             if (!outcome.Ok)
             {

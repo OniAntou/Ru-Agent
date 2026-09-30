@@ -106,6 +106,14 @@ public static class SessionFileLayout
             return AntigravityId;
         }
 
+        // opencode's store is a SQLite database, so the extension is what names it. The
+        // database is not the payload the format reads, but the name is what lets a picker
+        // offer it instead of turning the choice away.
+        if (string.Equals(System.IO.Path.GetExtension(name), ".db", StringComparison.OrdinalIgnoreCase))
+        {
+            return OpenCodeId;
+        }
+
         return Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(name), out _) ? ClaudeCodeId : null;
     }
 

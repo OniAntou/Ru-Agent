@@ -59,6 +59,26 @@ public sealed class SessionExportMenuSourceContractTests
     }
 
     /// <summary>
+    /// The picker offers every format the host reads, and the size cap runs before the
+    /// file is pulled into memory — an oversized import has to be refused with a bounded
+    /// dialog, not a generic failure after the read.
+    /// </summary>
+    [Fact]
+    public void The_import_picker_reads_the_hosts_formats_and_caps_the_file_before_reading()
+    {
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnImportSessionMenuClick");
+
+        Assert.Contains("FileTypeFilter.Add(\".jsonl\")", body, StringComparison.Ordinal);
+        Assert.Contains("FileTypeFilter.Add(\".db\")", body, StringComparison.Ordinal);
+        Assert.Contains("SessionInterchangeLimits.MaxImportContentBytes", body, StringComparison.Ordinal);
+        Assert.Contains("GetBasicPropertiesAsync", body, StringComparison.Ordinal);
+
+        var sizeCheck = body.IndexOf("GetBasicPropertiesAsync", StringComparison.Ordinal);
+        var read = body.IndexOf("ReadTextAsync", StringComparison.Ordinal);
+        Assert.True(sizeCheck >= 0 && read > sizeCheck, "the size check must precede the read");
+    }
+
+    /// <summary>
     /// The hover controls are deliberately not tab stops, so the row menu is the
     /// keyboard path to the same two actions. Without them a keyboard user cannot
     /// delete a chat or open its usage at all.

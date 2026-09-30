@@ -62,6 +62,8 @@ public sealed class SessionFileLayoutTests
     [InlineData(@"C:\Users\Someone\.codex\sessions\2026\09\07\rollout-2026-09-07T22-13-44-01a07c6e-aff5-7fa3-b7f6-9e7cd8096ae4.jsonl", "codex")]
     [InlineData(@"C:\Users\Someone\.claude\projects\D--LLM\75127d8e-65c4-4981-88ba-3048fbf0d494.jsonl", "claude-code")]
     [InlineData(@"C:\Users\Someone\.gemini\antigravity\brain\c64adfae-1c56-4daa-8693-58b8d5401900\.system_generated\logs\transcript.jsonl", "antigravity")]
+    [InlineData(@"C:\Users\Someone\.local\share\opencode\opencode.db", "opencode")]
+    [InlineData("opencode.db", "opencode")]
     [InlineData("session.jsonl", null)]
     [InlineData("", null)]
     [InlineData(null, null)]

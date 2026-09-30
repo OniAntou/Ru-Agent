@@ -150,7 +150,12 @@ public partial class ApiService
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                return new SessionImportOutcome(false, null, 0, 0, $"HTTP {(int)response.StatusCode}");
+                return new SessionImportOutcome(
+                    false,
+                    null,
+                    0,
+                    0,
+                    await ReadRefusalAsync(response, cancellationToken).ConfigureAwait(false));
             }
 
             var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
@@ -173,5 +178,43 @@ public partial class ApiService
             LogApiError("ImportSessionAsync", ex);
             return new SessionImportOutcome(false, null, 0, 0, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The host's own words for a non-success response, so an oversized import or a
+    /// bounded refusal is not flattened into "HTTP 413". Falls back to the status when
+    /// the body carries no usable message.
+    /// </summary>
+    private static async Task<string> ReadRefusalAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in new[] { "message", "error_code", "detail" })
+                    {
+                        if (document.RootElement.TryGetProperty(property, out var value)
+                            && value.ValueKind == JsonValueKind.String
+                            && !string.IsNullOrWhiteSpace(value.GetString()))
+                        {
+                            var text = value.GetString()!;
+                            return text.Length > 400 ? text[..400] + "…" : text;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // No usable body; the status line below is still bounded.
+        }
+
+        return $"HTTP {(int)response.StatusCode}";
     }
 }

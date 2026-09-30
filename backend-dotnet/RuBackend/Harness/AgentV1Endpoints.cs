@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol.Harness;
+using RuBackend.Security;
 
 namespace RuBackend.Harness;
 
@@ -15,7 +16,6 @@ public static class AgentV1Endpoints
     // envelope. The service-level 4MB/20MB image caps are only reachable when the
     // transport cap is at least this large.
     private const int MaxJsonBodyBytesAgentRun = 24 * 1024 * 1024;
-    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     public static void Map(WebApplication app)
     {
@@ -851,40 +851,15 @@ public static class AgentV1Endpoints
 
     private static async Task<string?> ReadBoundedBodyTextAsync(HttpRequest request, CancellationToken cancellationToken, int maxBodyBytes = MaxJsonBodyBytesDefault)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (request.ContentLength is > 0 && request.ContentLength > maxBodyBytes)
+        var (read, text) = await BoundedRequestBodyReader
+            .ReadTextAsync(request, maxBodyBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (!read)
         {
             throw new RequestBodyTooLargeException();
         }
 
-        using var buffer = new MemoryStream(
-            request.ContentLength is >= 0 and <= int.MaxValue && request.ContentLength <= maxBodyBytes
-                ? checked((int)request.ContentLength.Value)
-                : 0);
-        var chunk = new byte[8 * 1024];
-        while (true)
-        {
-            var read = await request.Body.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (buffer.Length > maxBodyBytes - read)
-            {
-                throw new RequestBodyTooLargeException();
-            }
-
-            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-        }
-
-        if (buffer.Length == 0)
-        {
-            return null;
-        }
-
-        var text = StrictUtf8.GetString(buffer.GetBuffer(), 0, checked((int)buffer.Length));
-        return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
+        return text;
     }
 
     private sealed class RequestBodyTooLargeException : Exception;

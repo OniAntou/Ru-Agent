@@ -188,10 +188,32 @@ public sealed partial class AgentCommands
                 }
 
                 content = RuAgent.SessionInterchange.OpenCodeDatabase.ReadSessionPayload(cmd.FilePath, openCodeSessionId);
+                if (Encoding.UTF8.GetByteCount(content) > RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes)
+                {
+                    await _err.WriteLineAsync(ImportTooLargeLine(cmd.FilePath)).ConfigureAwait(false);
+                    return 1;
+                }
             }
             else
             {
-                content = await File.ReadAllTextAsync(cmd.FilePath, cancellationToken).ConfigureAwait(false);
+                // The size is checked before the read so an oversized file never becomes a
+                // string; the read itself is bounded too, because the file can grow
+                // between the check and the read.
+                if (new FileInfo(cmd.FilePath).Length > RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes)
+                {
+                    await _err.WriteLineAsync(ImportTooLargeLine(cmd.FilePath)).ConfigureAwait(false);
+                    return 1;
+                }
+
+                try
+                {
+                    content = await ReadBoundedSessionFileAsync(cmd.FilePath, cancellationToken).ConfigureAwait(false);
+                }
+                catch (SessionImportTooLargeException)
+                {
+                    await _err.WriteLineAsync(ImportTooLargeLine(cmd.FilePath)).ConfigureAwait(false);
+                    return 1;
+                }
             }
             var interchange = new SessionInterchangeApiClient(_session, _httpClient);
             var result = await interchange.ImportAsync(harness, content, cancellationToken).ConfigureAwait(false);
@@ -287,6 +309,58 @@ public sealed partial class AgentCommands
             return 1;
         }
     }
+
+    /// <summary>One bounded line naming the cap an oversized import crossed.</summary>
+    private static string ImportTooLargeLine(string path) =>
+        $"import_too_large: '{path}' is larger than the {RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes / (1024 * 1024)} MiB import limit.";
+
+    /// <summary>
+    /// Reads a session file as text without ever buffering more than the import cap.
+    /// </summary>
+    /// <remarks>
+    /// The caller pre-checks the length, but that check and the read are not atomic: a
+    /// file can grow between them, so the bound is enforced again while bytes arrive. The
+    /// bytes are decoded as UTF-8 with BOM detection, matching what
+    /// <see cref="File.ReadAllTextAsync(string, CancellationToken)"/> used to do.
+    /// </remarks>
+    /// <exception cref="SessionImportTooLargeException">The file outgrew the cap mid-read.</exception>
+    private static async Task<string> ReadBoundedSessionFileAsync(string path, CancellationToken cancellationToken)
+    {
+        const int MaxBytes = RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes;
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var buffer = new MemoryStream(stream.Length <= MaxBytes ? checked((int)stream.Length) : 0);
+        var chunk = new byte[64 * 1024];
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (buffer.Length > MaxBytes - read)
+            {
+                throw new SessionImportTooLargeException();
+            }
+
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        using var reader = new StreamReader(
+            new MemoryStream(buffer.GetBuffer(), 0, checked((int)buffer.Length), writable: false),
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>The session file grew past the import cap while it was being read.</summary>
+    private sealed class SessionImportTooLargeException : Exception;
 
     /// <summary>
     /// The one --json output shape: every command emits {"v":1,"type":...} so a

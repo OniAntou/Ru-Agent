@@ -1,6 +1,9 @@
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using RuAgent.SessionInterchange;
 using RuBackend.Business.Sessions;
+using RuBackend.Security;
 
 namespace RuBackend.Business;
 
@@ -19,9 +22,13 @@ namespace RuBackend.Business;
 /// from the other side: Ru's own tool rows are not in the message list either, so a
 /// session leaves with its turns and without its tool traffic.
 ///
-/// The request body limit is the host's (<c>BackendOptions.MaxRequestBodyBytes</c>,
-/// 8 MiB by default). A session longer than that cannot be posted back in one piece;
-/// that is a real bound, not a theoretical one, for a long coding session.
+/// The request body limit is the route-specific interchange bound
+/// (<c>BackendOptions.SessionImportMaxRequestBodyBytes</c>, derived from
+/// <see cref="SessionInterchangeLimits"/>), sized above the 16 MiB content cap so the
+/// JSON envelope's escaping cannot push a file that passed the CLI's or GUI's pre-check
+/// past a transport rejection. A longer session is refused as <c>import_too_large</c>
+/// before it is parsed, and the decoded content is checked against the content cap again
+/// after parsing.
 /// </remarks>
 public static class SessionInterchangeEndpoints
 {
@@ -102,13 +109,38 @@ public static class SessionInterchangeEndpoints
     }
 
     private static async Task<IResult> ImportSessionAsync(
-        ImportSessionRequest? request,
+        HttpContext context,
         ISessionStore sessions,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
         try
         {
+            // Bounded before parsing: a body above the transport bound never becomes a
+            // string, let alone a transcript. The endpoint's own bound sits below the
+            // route's declared bound so this answer, not the middleware's, is the 413.
+            var (read, body) = await BoundedRequestBodyReader
+                .ReadTextAsync(context.Request, SessionInterchangeLimits.MaxImportBodyBytes, cancellationToken)
+                .ConfigureAwait(false);
+            if (!read)
+            {
+                return ImportTooLarge();
+            }
+
+            ImportSessionRequest? request;
+            try
+            {
+                request = string.IsNullOrWhiteSpace(body)
+                    ? null
+                    : JsonSerializer.Deserialize<ImportSessionRequest>(body);
+            }
+            catch (JsonException)
+            {
+                return Results.Json(
+                    new { status = "error", message = "invalid_request" },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             if (SessionFormatCatalog.Find(request?.Harness ?? string.Empty) is not { } format)
             {
                 return Results.Ok(new
@@ -118,15 +150,24 @@ public static class SessionInterchangeEndpoints
                 });
             }
 
-            if (string.IsNullOrWhiteSpace(request?.Content))
+            var content = request?.Content;
+            if (string.IsNullOrWhiteSpace(content))
             {
                 return Results.Ok(new { status = "error", message = "Cần nội dung file session để import." });
+            }
+
+            // JSON escaping can inflate the body past the content it carries. The cap the
+            // CLI and GUI measured before reading is enforced again on the decoded
+            // content, so all three surfaces agree on what "too large" means.
+            if (Encoding.UTF8.GetByteCount(content) > SessionInterchangeLimits.MaxImportContentBytes)
+            {
+                return ImportTooLarge();
             }
 
             SessionTranscript transcript;
             try
             {
-                transcript = format.Read(request.Content);
+                transcript = format.Read(content);
             }
             catch (InvalidDataException error)
             {
@@ -269,6 +310,15 @@ public static class SessionInterchangeEndpoints
 
         return messages;
     }
+
+    private static IResult ImportTooLarge() =>
+        Results.Json(
+            new
+            {
+                status = "error",
+                message = $"import_too_large: session files are limited to {SessionInterchangeLimits.MaxImportContentBytes / (1024 * 1024)} MiB.",
+            },
+            statusCode: StatusCodes.Status413PayloadTooLarge);
 
     private static string KnownFormats() =>
         string.Join(", ", SessionFormatCatalog.All.Select(format => format.Id));

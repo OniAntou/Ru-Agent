@@ -69,6 +69,41 @@ public sealed class SessionInterchangeCommandsTests
         }
     }
 
+    [Fact]
+    public async Task Session_import_refuses_an_oversized_file_before_reading_or_posting_it()
+    {
+        var directory = Directory.CreateTempSubdirectory("ru-cli-import").FullName;
+        var path = Path.Combine(
+            directory,
+            "rollout-2026-09-20T09-30-00-11111111-1111-7111-8111-111111111111.jsonl");
+        try
+        {
+            using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
+            {
+                // Sparse: the file is over the cap without writing those bytes.
+                stream.SetLength(RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes + 1L);
+            }
+
+            var handler = new CountingHandler();
+            var errors = new StringWriter();
+            var commands = new AgentCommands(Session(), new HttpClient(handler), new StringWriter(), errors);
+
+            var exit = await commands.SessionImportAsync(
+                new SessionImportCommand(path, null, null, Json: false),
+                CancellationToken.None);
+
+            Assert.Equal(1, exit);
+            Assert.Contains("import_too_large", errors.ToString(), StringComparison.Ordinal);
+            // The rejection happens at the size check: the file is never read into a
+            // string and the host is never asked to parse it.
+            Assert.Equal(0, handler.Calls);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static RuAgent.Client.PublicHostSession Session()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
@@ -96,5 +131,23 @@ public sealed class SessionInterchangeCommandsTests
             {
                 Content = new StringContent(_body, Encoding.UTF8, "application/json"),
             });
+    }
+
+    /// <summary>Counts requests and answers with an empty ok envelope, so a request that
+    /// should never have been made is visible rather than fatal.</summary>
+    private sealed class CountingHandler : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+            });
+        }
     }
 }

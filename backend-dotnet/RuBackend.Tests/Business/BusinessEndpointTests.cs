@@ -753,6 +753,29 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Session_import_rejects_content_above_the_shared_cap_with_a_413()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        // Just over the cap the CLI and GUI measure before reading. The body itself is
+        // below the transport bound, so the endpoint's own content check must be the one
+        // that answers.
+        var oversized = new string('a', RuAgent.SessionInterchange.SessionInterchangeLimits.MaxImportContentBytes + 1);
+        using var response = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "claude-code", content = oversized });
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains(
+            "import_too_large",
+            payload.GetProperty("message").GetString()!,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Session_interchange_names_the_formats_it_knows_instead_of_failing_silently()
     {
         using var data = TemporaryBusinessData.Create();

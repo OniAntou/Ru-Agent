@@ -786,6 +786,13 @@ public sealed partial class AgentCommands
             ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
         RenderLandingScreen();
+        if (!string.IsNullOrWhiteSpace(cmd.SessionId))
+        {
+            // Only an explicit --session reopens someone else's session; a fresh session
+            // has no run to adopt and must not spend the round trip.
+            await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
+        }
+
         string prompt = Tui.TuiPalette.BoldPaint("❯ ");
         string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
@@ -1056,6 +1063,75 @@ public sealed partial class AgentCommands
             }
 
             await _out.FlushAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Takes over the session's newest run when the session was reopened with
+        /// --session. After a host restart a parked run is invisible otherwise: the CLI
+        /// claims no parked run, so bare Continue would send an ordinary prompt and the
+        /// run would sit parked forever. The newest run only is adopted, matching the
+        /// GUI. Fail-soft: a read fault prints nothing and never breaks the REPL start.
+        /// </summary>
+        async Task AdoptSessionRunAsync(string targetSessionId)
+        {
+            try
+            {
+                var runIds = await _agentClient
+                    .ListSessionRunIdsAsync(targetSessionId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (runIds.Count == 0)
+                {
+                    return;
+                }
+
+                // The client reverses the wire's newest-first order, so the tail is newest.
+                var newestRunId = runIds[^1];
+                var run = await _agentClient.GetRunAsync(newestRunId, cancellationToken).ConfigureAwait(false);
+                if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
+                {
+                    return;
+                }
+
+                if (IsParkedRunStatus(run.Status))
+                {
+                    // Bare Continue and /continue act on this run immediately: the parked
+                    // path the operator would otherwise have to discover by run id.
+                    parkedRunId = newestRunId;
+                    var notice = Tui.TuiTranscript.FormatParkedNotice(newestRunId, run.Status);
+                    if (cmd.Json)
+                    {
+                        await _err.WriteLineAsync(Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        sessionRenderer.Note(notice, Tui.TuiToken.Warn);
+                    }
+                }
+                else if (string.Equals(run.Status, "running", StringComparison.OrdinalIgnoreCase))
+                {
+                    // An in-flight run is only pointed at: following it here would hijack
+                    // the composer with output the operator did not ask to watch.
+                    var notice = Tui.TuiTranscript.FormatAttachNotice(newestRunId);
+                    if (cmd.Json)
+                    {
+                        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        sessionRenderer.Note(notice, Tui.TuiToken.Meta);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Adoption is best effort: an unreachable list/read must not break the
+                // REPL start, and an explicit '/continue <run-id>' still works.
+                Tui.TuiDebug.Log("adopt", $"session run adoption failed: {CliErrorText.ShortMessage(ex.Message)}");
+            }
         }
 
         try

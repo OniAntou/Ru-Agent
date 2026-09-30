@@ -1714,6 +1714,173 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public async Task ChatWithSession_parkedRun_SetsContinuePath()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runId = "run_" + new string('d', 32);
+        var continuePosts = new List<string>();
+        var eventUris = new List<string>();
+        var runGets = 0;
+
+        string RunJson(string status, long lastSequence, string? terminalAt) => JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_123",
+            workspace_id = "ws_test",
+            status,
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 1L,
+            last_sequence = lastSequence,
+            created_at = "2026-09-30T00:00:00Z",
+            updated_at = "2026-09-30T00:00:00Z",
+            terminal_at = terminalAt,
+            terminal_error_code = (string?)null,
+        });
+
+        string Durable(int seq, string eventType, string status, string summary) => JsonSerializer.Serialize(new
+        {
+            protocol_version = 1,
+            event_id = $"evt_{seq}",
+            run_id = runId,
+            session_id = "sess_123",
+            sequence = seq,
+            event_type = eventType,
+            occurred_at = "2026-09-30T00:00:00Z",
+            status,
+            safe_summary = summary,
+        });
+
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
+            {
+                var items = JsonSerializer.Serialize(new
+                {
+                    items = new[] { new { run_id = runId } },
+                    next_cursor = (string?)null,
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(items, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue"))
+            {
+                continuePosts.Add(uri);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventUris.Add(uri);
+                var sse =
+                    $"id: 2\ndata: {Durable(2, "continue.requested", "running", "continued")}\n\n"
+                    + $"id: 3\ndata: {Durable(3, "run.completed", "completed", "done")}\n\n";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") };
+            }
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
+            {
+                runGets++;
+                // 1: session-open adoption; 2: the continue cursor read; 3: the resumed
+                // stream's terminal check.
+                return runGets switch
+                {
+                    1 => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(RunJson("waiting_user", 1, null), Encoding.UTF8, "application/json") },
+                    2 => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(RunJson("waiting_user", 1, null), Encoding.UTF8, "application/json") },
+                    _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(RunJson("completed", 3, "2026-09-30T00:00:02Z"), Encoding.UTF8, "application/json") },
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("Continue\n/exit\n"));
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        // The adopted parked run is what bare Continue resumes; the notice names the
+        // same fallback the live park prints.
+        var output = outWriter.ToString();
+        Assert.Contains("run parked", output, StringComparison.Ordinal);
+        Assert.Contains("/continue", output, StringComparison.Ordinal);
+        Assert.Contains($"ru agent continue {runId}", output, StringComparison.Ordinal);
+        Assert.Single(continuePosts);
+        Assert.EndsWith($"/agent/v1/runs/{runId}/continue", continuePosts[0], StringComparison.Ordinal);
+        Assert.Contains(eventUris, uri => uri.Contains("after_sequence=1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ChatWithSession_runningRun_SuggestsAttach()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runId = "run_" + new string('e', 32);
+        var posts = new List<string>();
+
+        var running = JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_123",
+            workspace_id = "ws_test",
+            status = "running",
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 2L,
+            last_sequence = 4L,
+            created_at = "2026-09-30T00:00:00Z",
+            updated_at = "2026-09-30T00:00:01Z",
+            terminal_at = (string?)null,
+            terminal_error_code = (string?)null,
+        });
+
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
+            {
+                var items = JsonSerializer.Serialize(new
+                {
+                    items = new[] { new { run_id = runId } },
+                    next_cursor = (string?)null,
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(items, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(running, Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post)
+            {
+                posts.Add(uri);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, new StringWriter(), new StringReader("/exit\n"));
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        var output = outWriter.ToString();
+        Assert.Contains($"ru agent attach {runId}", output, StringComparison.Ordinal);
+        // Adoption points at a live run; it never follows, cancels or continues it.
+        Assert.DoesNotContain(posts, uri => uri.EndsWith("/continue", StringComparison.Ordinal) || uri.EndsWith("/cancel", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ChatAsync_SlashContinue_WithoutParkedRun_PrintsNotice()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();

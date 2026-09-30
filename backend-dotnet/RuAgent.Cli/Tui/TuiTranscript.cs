@@ -706,6 +706,24 @@ public sealed class TuiTranscript
         || string.Equals(status, "reconciliation_required", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The one parked-run line: the safe code plus both resume paths. Static so the
+    /// session-open adoption prints the exact same copy a live park does instead of a
+    /// near-duplicate that only looks right.
+    /// </summary>
+    public static string FormatParkedNotice(string runId, string? summary = null)
+    {
+        var code = string.IsNullOrWhiteSpace(summary) ? "waiting_user" : summary;
+        return $"run parked · {code} · resume with /continue (or 'ru agent continue {runId}')";
+    }
+
+    /// <summary>
+    /// The one line for a run this session already has in flight: the operator can
+    /// watch it, but the CLI never attaches on its own.
+    /// </summary>
+    public static string FormatAttachNotice(string runId) =>
+        $"run running · follow it with 'ru agent attach {runId}'";
+
+    /// <summary>
     /// Records a run parked on the operator: the live row stops spinning, carries the
     /// bounded safe code plus the resume path, and the transcript prints exactly one
     /// notice per park. Redundant frames for the same park (the backend commits both
@@ -728,9 +746,7 @@ public sealed class TuiTranscript
 
         _paused = true;
         _pausedRunId = envelope.RunId;
-        Notice(
-            $"run parked · {summary} · resume with /continue (or 'ru agent continue {envelope.RunId}')",
-            TuiToken.Warn);
+        Notice(FormatParkedNotice(envelope.RunId, summary), TuiToken.Warn);
     }
 
     private void ClearPaused()

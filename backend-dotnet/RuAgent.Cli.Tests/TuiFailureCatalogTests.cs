@@ -109,4 +109,18 @@ public sealed class TuiFailureCatalogTests : IDisposable
         Assert.Contains("backend", TuiFailureCatalog.For("worker_failed").Cause, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("worker", TuiFailureCatalog.For("provider_failed").Cause, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData("process_timed_out", "timed out")]
+    [InlineData("policy_denied", "policy")]
+    [InlineData("context_limit_reached", "context")]
+    [InlineData("workspace_changed", "changed")]
+    public void NewlyCatalogedCodes_GetTheirOwnCopyInsteadOfTheFallback(string code, string marker)
+    {
+        var info = TuiFailureCatalog.For(code);
+
+        Assert.Equal(code, info.Code);
+        Assert.NotEqual("Error", info.Title);
+        Assert.Contains(marker, $"{info.Title} {info.Cause} {info.Fix}", StringComparison.OrdinalIgnoreCase);
+    }
 }

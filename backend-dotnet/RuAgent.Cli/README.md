@@ -120,7 +120,8 @@ Interrupting a chat turn is server-side, not just a local detach: Escape with an
 ## Failure catalog
 
 Failed turns print a three-line card: title plus code, cause, and fix
-(`TuiFailureCatalog`, the single source of failure copy for the terminal).
+(`TuiFailureCatalog`, which resolves the shared `AgentFailureCopy` table in
+`RuAgent.Client`; the desktop client resolves the same table).
 Covered families: provider auth/key/model (`catalog_unauthorized`,
 `provider_not_active`, `provider_configuration_changed`, `forbidden`),
 rate limits (`catalog_rate_limited` / `rate_limited`, HTTP 429),
@@ -136,7 +137,22 @@ codes, kept apart from
 run lifecycle (`repeated_tool_call`, `prompt_contract_invalid`,
 `run_not_runnable`, `workspace_busy`, `reconciliation_required`,
 `reconcile_stale`, approvals, `tool_failed`, store/preset/session/workspace
-failures, `compact_failed`, `command_invalid` / `command_unknown`).
+failures, `compact_failed`, `command_invalid` / `command_unknown`),
+budget and context (`policy_denied`, `context_limit_reached`,
+`model_step_budget_exhausted`, `tool_call_budget_exhausted`,
+`commit_conflict`, `unverified_after_tool_failure`), tool execution
+(`workspace_changed`, `process_timed_out`, `git_timed_out`,
+`invalid_terminal_write_set`), web tools (`web_response_too_large`,
+`web_search_parse_failed`, `web_redirect_limit`, `web_redirect_invalid`,
+`web_content_type_not_supported`, `web_json_invalid`, `web_encoding_invalid`,
+`web_uri_not_allowed`, `web_private_host`, `web_connect_failed`,
+`web_disabled`, `web_uri_invalid`, `web_search_endpoint_not_allowed`),
+recovery and approvals (`permission_profile_changed`, `recovery_pre_dispatch`,
+`recovery_read_only_incomplete`, `broker_gateway_unavailable`,
+`approval_authorization_failed`), and client/backend lifecycle
+(`invalid_preset`, `full_access_confirmation_required`, `trust_failed`,
+`run_not_parked`, `output_frame_exceeds_limit`, `unsupported_protocol`,
+`unsupported_protocol_version`, `reconcile_failed`).
 Codes outside the table still name themselves and point at
 `%LOCALAPPDATA%\Ru\logs` plus `/status` instead of rendering bare.
 The TUI cannot store keys yet: on a `models.dev:*` backend the `/model` card

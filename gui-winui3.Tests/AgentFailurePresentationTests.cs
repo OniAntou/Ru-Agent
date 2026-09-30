@@ -1,3 +1,4 @@
+using RuAgent.Client;
 using RuApp.Services;
 using Xunit;
 
@@ -99,6 +100,35 @@ public sealed class AgentFailurePresentationTests
         Assert.NotEqual("worker_unavailable", rendered);
         Assert.Contains("worker_unavailable", rendered, StringComparison.Ordinal);
         Assert.Contains("again", rendered, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("process_timed_out", "Command timed out. Raise the timeout or split the command, then retry.")]
+    [InlineData("policy_denied", "Blocked by policy. Switch preset or rephrase the request, then retry.")]
+    [InlineData("context_limit_reached", "Context limit reached. Run /compact or start a fresh session, then retry.")]
+    [InlineData("workspace_changed", "Workspace changed. Re-read the file and retry the change.")]
+    public void Newly_copied_codes_render_the_shared_copy_instead_of_the_raw_token(string code, string expected)
+    {
+        Assert.Equal(expected, AgentFailurePresentation.Render(code));
+    }
+
+    [Fact]
+    public void Every_desktop_override_code_is_in_the_shared_table()
+    {
+        // Parity: the only codes the desktop still renders with copy of its own
+        // must be the ones the shared table also knows, so neither surface can
+        // drift into a code the other one would show raw.
+        Assert.NotEmpty(AgentFailurePresentation.OverrideCodes);
+        foreach (string code in AgentFailurePresentation.OverrideCodes)
+        {
+            Assert.True(AgentFailureCopy.TryGet(code, out _), code);
+        }
+    }
+
+    [Fact]
+    public void An_unknown_code_still_reaches_the_reader_unchanged()
+    {
+        Assert.Equal("some_future_code", AgentFailurePresentation.Render("some_future_code"));
     }
 
     [Fact]

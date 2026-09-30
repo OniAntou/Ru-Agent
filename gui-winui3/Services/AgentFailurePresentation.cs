@@ -1,3 +1,5 @@
+using RuAgent.Client;
+
 namespace RuApp.Services;
 
 internal static class AgentFailurePresentation
@@ -12,6 +14,39 @@ internal static class AgentFailurePresentation
     /// so a message can describe what it offers without holding a view.
     /// </summary>
     internal const string OpenProviderSettingsAction = "open_provider_settings";
+
+    /// <summary>
+    /// Copy for codes whose desktop wording is pinned by tests and product copy.
+    /// Everything else resolves from <see cref="AgentFailureCopy.Table"/> and is
+    /// composed into one line. These stay outside the shared table only because
+    /// the desktop sentence differs from the shared terminal wording; the code
+    /// set itself is checked against the table by the parity test.
+    /// </summary>
+    private static readonly Dictionary<string, string> DesktopOverrides = new(StringComparer.Ordinal)
+    {
+        ["provider_rate_limited"] = "Model is rate-limited. Please select another model and try again.",
+        ["workspace_busy"] = "Coding Agent is already running. Please complete or stop the current turn first.",
+        ["repeated_tool_call"] = "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request and send it again.",
+        ["invalid_selection"] = "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request and send it again.",
+        // The runner rejected the assembled request before the provider was
+        // called (a malformed history or a bad image payload), so the model
+        // never saw the turn: retrying the same turn can repeat it.
+        ["invalid_request"] = "Ru could not assemble the model request, so the run was stopped. Please send the request again — if it keeps happening, start a new chat.",
+        ["empty_model_reply"] = "The model returned an empty reply. Please try again, or select another model.",
+        // Parked, not failed. The host stops driving the run until a
+        // reconciliation decision arrives; Continue is that decision, and it
+        // resumes with a read-only inspection in front of further mutations.
+        ["reconciliation_required"] = "The last action was interrupted, so its result is unverified. Ru is paused — send Continue to resume with a read-only inspection, or Stop to end the run.",
+        // Historical code: the model worker used to be its own process, and the
+        // run could not reach it. Nothing about the request was wrong, so the copy
+        // asks for a retry instead of a rephrase — and it says the code out loud,
+        // because the raw token used to reach the reader unchanged and read like a
+        // bug in whatever they had just done.
+        ["worker_unavailable"] = "Ru could not reach the model backend, so the turn did not start (worker_unavailable). Send the message again — if it keeps happening, restart Ru.",
+    };
+
+    /// <summary>The codes the desktop surface renders with copy of its own; kept for the parity test.</summary>
+    internal static IReadOnlyCollection<string> OverrideCodes => DesktopOverrides.Keys;
 
     internal static bool ShouldKeepVisible(string? runStatus, string? safeStatus) =>
         string.Equals(runStatus, "failed", StringComparison.Ordinal)
@@ -39,62 +74,22 @@ internal static class AgentFailurePresentation
     }
 
     internal static string Render(string? status)
-    {        if (string.IsNullOrWhiteSpace(status)
+    {
+        if (string.IsNullOrWhiteSpace(status)
             || string.Equals(status.Trim(), "Run ended.", StringComparison.OrdinalIgnoreCase))
         {
             return string.Empty;
         }
 
         string trimmed = status.Trim();
-        if (string.Equals(trimmed, "provider_rate_limited", StringComparison.Ordinal))
+        if (DesktopOverrides.TryGetValue(trimmed, out var pinned))
         {
-            return "Model is rate-limited. Please select another model and try again.";
+            return pinned;
         }
 
-        if (string.Equals(trimmed, "workspace_busy", StringComparison.Ordinal))
+        if (AgentFailureCopy.TryGet(trimmed, out var copy))
         {
-            return "Coding Agent is already running. Please complete or stop the current turn first.";
-        }
-
-        if (string.Equals(trimmed, "repeated_tool_call", StringComparison.Ordinal))
-        {
-            return "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request and send it again.";
-        }
-
-        if (string.Equals(trimmed, "invalid_selection", StringComparison.Ordinal))
-        {
-            return "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request and send it again.";
-        }
-
-        if (string.Equals(trimmed, "invalid_request", StringComparison.Ordinal))
-        {
-            // The runner rejected the assembled request before the provider was
-            // called (a malformed history or a bad image payload), so the model
-            // never saw the turn: retrying the same turn can repeat it.
-            return "Ru could not assemble the model request, so the run was stopped. Please send the request again — if it keeps happening, start a new chat.";
-        }
-
-        if (string.Equals(trimmed, "empty_model_reply", StringComparison.Ordinal))
-        {
-            return "The model returned an empty reply. Please try again, or select another model.";
-        }
-
-        if (string.Equals(trimmed, "reconciliation_required", StringComparison.Ordinal))
-        {
-            // Parked, not failed. The host stops driving the run until a
-            // reconciliation decision arrives; Continue is that decision, and it
-            // resumes with a read-only inspection in front of further mutations.
-            return "The last action was interrupted, so its result is unverified. Ru is paused — send Continue to resume with a read-only inspection, or Stop to end the run.";
-        }
-
-        if (string.Equals(trimmed, "worker_unavailable", StringComparison.Ordinal))
-        {
-            // Historical code: the model worker used to be its own process, and the
-            // run could not reach it. Nothing about the request was wrong, so the copy
-            // asks for a retry instead of a rephrase — and it says the code out loud,
-            // because the raw token used to reach the reader unchanged and read like a
-            // bug in whatever they had just done.
-            return "Ru could not reach the model backend, so the turn did not start (worker_unavailable). Send the message again — if it keeps happening, restart Ru.";
+            return ComposeSingleLine(copy);
         }
 
         if (trimmed.StartsWith("Error", StringComparison.OrdinalIgnoreCase)
@@ -103,9 +98,39 @@ internal static class AgentFailurePresentation
             return "Coding Agent encountered an error. Open Tools → Activity Log to check status.";
         }
 
-        string normalized = trimmed.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return normalized.Length <= 256 ? normalized : normalized[..256] + "…";
+        return Bound(trimmed.Replace('\r', ' ').Replace('\n', ' ').Trim());
     }
+
+    /// <summary>
+    /// Renders the shared title/cause/fix copy as the desktop one-liner: the
+    /// failure title followed by the actionable fix. The cause line stays in the
+    /// terminal card, where the three-line shape has room for it.
+    /// </summary>
+    private static string ComposeSingleLine(FailureCopy copy)
+    {
+        string title = copy.Title.Trim();
+        string fix = copy.Fix.Trim();
+        string sentence = fix.Length == 0
+            ? title
+            : char.IsLetter(fix[0])
+                ? char.ToUpperInvariant(fix[0]) + fix[1..]
+                : fix;
+
+        string composed = title.Length == 0 ? sentence : $"{title}. {sentence}";
+        composed = composed.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (composed.Length > 0
+            && !composed.EndsWith('.')
+            && !composed.EndsWith('!')
+            && !composed.EndsWith('?'))
+        {
+            composed += ".";
+        }
+
+        return Bound(composed);
+    }
+
+    private static string Bound(string text) =>
+        text.Length <= 256 ? text : text[..256] + "…";
 
     /// <summary>
     /// Copy for a failure that stopped the turn before a run existed: the host

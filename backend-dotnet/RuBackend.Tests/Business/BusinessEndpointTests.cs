@@ -616,6 +616,43 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Session_list_projects_legacy_branch_metadata()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var sessionId = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        Directory.CreateDirectory(data.Paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(data.Paths.SessionDirectory, sessionId + ".json"),
+            JsonSerializer.Serialize(new
+            {
+                id = sessionId,
+                title = "legacy branch",
+                created_at = now,
+                updated_at = now,
+                messages = Array.Empty<object>(),
+                parent_session_id = "parent-session",
+                forked_from_message_id = "msg-2",
+            }));
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var listed = await client.GetFromJsonAsync<JsonElement>("/sessions");
+        JsonElement? entry = null;
+        foreach (var element in listed.GetProperty("sessions").EnumerateArray())
+        {
+            if (element.GetProperty("id").GetString() == sessionId)
+            {
+                entry = element;
+            }
+        }
+
+        Assert.NotNull(entry);
+        Assert.Equal("parent-session", entry.Value.GetProperty("parent_session_id").GetString());
+        Assert.Equal("msg-2", entry.Value.GetProperty("forked_from_message_id").GetString());
+    }
+
+    [Fact]
     public async Task Activity_routes_preserve_existing_response_shapes()
     {
         using var data = TemporaryBusinessData.Create();

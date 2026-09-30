@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using RuBackend.Business;
 using RuBackend.Business.Sessions;
 using Xunit;

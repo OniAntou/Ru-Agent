@@ -18,7 +18,11 @@ public sealed class RpcBridgeServer
     private readonly Channel<JsonObject> _outbound;
     private readonly Action<int> _terminate;
     private bool _backpressured;
-    private bool _writerCompleted;
+
+    // Written by the reader thread when the channel is closing (RunAsync's finally)
+    // and read by the SSE pump thread in TryPublish; volatile so a pump thread
+    // cannot miss a clean shutdown and misfire the fail-closed terminate.
+    private volatile bool _writerCompleted;
 
     public RpcBridgeServer(
         TextReader input,

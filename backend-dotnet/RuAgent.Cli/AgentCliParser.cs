@@ -22,6 +22,7 @@ public enum CliCommandKind
     Chat,
     SessionList,
     SessionRewind,
+    SessionDelete,
     SessionExport,
     SessionImport,
     Rpc,
@@ -138,6 +139,14 @@ public sealed record SessionRewindCommand(
     string SessionId,
     int ToMessageIndex,
     bool Json) : AgentCommand(CliCommandKind.SessionRewind, Json);
+
+/// <summary>
+/// `agent session delete <session-id> [--yes]`. Without <c>--yes</c> the command asks the
+/// terminal operator to confirm; the flag is the explicit non-interactive consent.
+/// </summary>
+public sealed record SessionDeleteCommand(
+    string SessionId,
+    bool Yes) : AgentCommand(CliCommandKind.SessionDelete, Json: false);
 
 /// <summary>Writes one of Ru's sessions out in another agent's format.</summary>
 public sealed record SessionExportCommand(

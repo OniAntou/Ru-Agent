@@ -78,6 +78,41 @@ public sealed class SessionApiClientTests
             "{\"status\":\"ok\",\"session_id\":\"session-é\"}"));
     }
 
+    [Fact]
+    public async Task DeleteAsyncIssuesDeleteToTheSessionPath()
+    {
+        var session = CreateSession();
+        HttpRequestMessage? seen = null;
+        var handler = new FakeHandler(req =>
+        {
+            seen = req;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\"}") };
+        });
+        var client = new SessionApiClient(session, new HttpClient(handler));
+
+        await client.DeleteAsync("sess_1");
+
+        Assert.Equal(HttpMethod.Delete, seen!.Method);
+        Assert.EndsWith("/sessions/sess_1", seen.RequestUri!.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DeleteAsyncSurfacesPartialCleanupInsteadOfTreatingHttp200AsSuccess()
+    {
+        var session = CreateSession();
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"status\":\"error\",\"message\":\"Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại.\"}"),
+        });
+        var client = new SessionApiClient(session, new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<AgentApiException>(() => client.DeleteAsync("sess_1"));
+
+        Assert.Contains("artifacts", ex.Message, StringComparison.Ordinal);
+        Assert.Equal("session_delete_failed", ex.ErrorCode);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

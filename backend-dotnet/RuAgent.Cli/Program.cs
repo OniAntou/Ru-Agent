@@ -88,6 +88,7 @@ public static class Program
                 RpcCommand rpc => await commands.RpcAsync(rpc, cts.Token).ConfigureAwait(false),
                 SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
+                SessionDeleteCommand sdelete => await commands.SessionDeleteAsync(sdelete, cts.Token).ConfigureAwait(false),
                 SessionExportCommand sexport => await commands.SessionExportAsync(sexport, cts.Token).ConfigureAwait(false),
                 SessionImportCommand simport => await commands.SessionImportAsync(simport, cts.Token).ConfigureAwait(false),
                 _ => 1
@@ -156,6 +157,7 @@ public static class Program
         Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
         Console.Error.WriteLine("  agent session list [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
+        Console.Error.WriteLine("  agent session delete <session-id> [--yes]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
         Console.Error.WriteLine("  agent approve <run-id> <approval-id>");

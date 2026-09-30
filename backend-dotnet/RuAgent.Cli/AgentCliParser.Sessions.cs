@@ -16,17 +16,50 @@ public static partial class AgentCliParser
     private static AgentCliParseResult ParseSession(string[] args, int startIndex)
     {
         if (args.Length <= startIndex)
-            return Fail("missing_subcommand", "Missing session subcommand. Expected list|rewind.");
+            return Fail("missing_subcommand", "Missing session subcommand. Expected list|rewind|delete.");
 
         var sub = args[startIndex];
         return sub switch
         {
             "list" => ParseSessionList(args, startIndex + 1),
             "rewind" => ParseSessionRewind(args, startIndex + 1),
+            "delete" => ParseSessionDelete(args, startIndex + 1),
             "export" => ParseSessionExport(args, startIndex + 1),
             "import" => ParseSessionImport(args, startIndex + 1),
-            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|rewind|export|import.")
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|rewind|delete|export|import.")
         };
+    }
+
+    private static AgentCliParseResult ParseSessionDelete(string[] args, int startIndex)
+    {
+        string? sessionId = null;
+        bool yes = false;
+        bool yesSeen = false;
+
+        for (var i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--yes")
+            {
+                if (yesSeen) return Fail("duplicate_switch", "Duplicate --yes.");
+                yes = true;
+                yesSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session delete.");
+
+            if (sessionId is not null)
+                return Fail("too_many_arguments", $"Unexpected argument '{token}' for session delete.");
+            if (!SessionIdLooseRegex.IsMatch(token))
+                return Fail("invalid_session_id", "Session id contains invalid characters.");
+            sessionId = token;
+        }
+
+        if (sessionId is null)
+            return Fail("missing_session_id", "Missing required <session-id> for session delete.");
+
+        return Success(new SessionDeleteCommand(sessionId, yes));
     }
 
     private static AgentCliParseResult ParseSessionList(string[] args, int startIndex)

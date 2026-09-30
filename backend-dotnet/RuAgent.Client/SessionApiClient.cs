@@ -158,6 +158,33 @@ public sealed class SessionApiClient
         return root;
     }
 
+    /// <summary>
+    /// Deletes one session (<c>DELETE /sessions/{id}</c>). A partial cleanup arrives as an
+    /// HTTP 200 envelope with <c>status:"error"</c> after the session file is already gone,
+    /// so the envelope is checked instead of the status code: the backend message reaches
+    /// the caller bounded rather than the deletion reading as success.
+    /// </summary>
+    public async Task<JsonElement> DeleteAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var url = new Uri(_session.BaseUri, $"sessions/{Uri.EscapeDataString(sessionId)}");
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_delete_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement.Clone();
+        EnsureOkEnvelope(root, "session_delete_failed");
+        return root;
+    }
+
     private static void EnsureOkEnvelope(JsonElement root, string operation)
     {
         if (root.ValueKind != JsonValueKind.Object

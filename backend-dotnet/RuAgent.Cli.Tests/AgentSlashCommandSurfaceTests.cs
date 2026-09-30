@@ -57,6 +57,19 @@ public sealed class AgentSlashCommandSurfaceTests
         Content = new StringContent(body, Encoding.UTF8, "application/json"),
     };
 
+    private static AgentSlashCommands CreateWithSessions(
+        StringWriter output,
+        Func<HttpRequestMessage, HttpResponseMessage> respond)
+    {
+        var client = new SettingsApiClient(
+            Session(),
+            new HttpClient(new FakeHandler(respond)));
+        var sessions = new SessionApiClient(
+            Session(),
+            new HttpClient(new FakeHandler(respond)));
+        return new AgentSlashCommands(client, sessions, output, new StringWriter()) { PanelWidth = 80 };
+    }
+
     [Fact]
     public async Task Help_RendersTheCommandPanel()
     {
@@ -816,6 +829,82 @@ public sealed class AgentSlashCommandSurfaceTests
         var body = Assert.Single(posted);
         Assert.Contains("backend_choice", body, StringComparison.Ordinal);
         Assert.Contains("Signed out.", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Delete_RefusesTheCurrentSession()
+    {
+        var output = new StringWriter();
+        var deletes = new List<string>();
+        var commands = CreateWithSessions(output, request =>
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                deletes.Add(request.RequestUri!.AbsolutePath);
+            }
+
+            return Json("{\"status\":\"ok\"}");
+        });
+        commands.Picker = (_, _) => Task.FromResult<string?>("delete");
+
+        // The bare form targets the current session, and so does the explicit id.
+        Assert.True(await commands.TryHandleAsync("/delete", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+        Assert.True(await commands.TryHandleAsync("/delete", "sess_1", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(deletes);
+        Assert.Contains("current session", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Delete_ConfirmsBeforeDeletingAnotherSession()
+    {
+        var output = new StringWriter();
+        var deletes = new List<string>();
+        var commands = CreateWithSessions(output, request =>
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                deletes.Add(request.RequestUri!.AbsolutePath);
+            }
+
+            return Json("{\"status\":\"ok\"}");
+        });
+        ChoiceList? offered = null;
+        commands.Picker = (list, _) =>
+        {
+            offered = list;
+            return Task.FromResult<string?>("delete");
+        };
+
+        Assert.True(await commands.TryHandleAsync("/delete", "sess_2", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.NotNull(offered);
+        // Enter or Escape on the untouched confirm list must keep the session.
+        Assert.Equal("keep", offered!.Items[offered.Selected].Value);
+        Assert.Equal("/sessions/sess_2", Assert.Single(deletes));
+        Assert.Contains("Deleted session sess_2", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Delete_DeclinedConfirm_DeletesNothing()
+    {
+        var output = new StringWriter();
+        var deletes = new List<string>();
+        var commands = CreateWithSessions(output, request =>
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                deletes.Add(request.RequestUri!.AbsolutePath);
+            }
+
+            return Json("{\"status\":\"ok\"}");
+        });
+        commands.Picker = (_, _) => Task.FromResult<string?>(null);
+
+        Assert.True(await commands.TryHandleAsync("/delete", "sess_2", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(deletes);
+        Assert.Contains("not deleted", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

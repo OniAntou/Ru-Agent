@@ -22,6 +22,7 @@ public sealed class InteractiveLineReader
         new("/status", "Show session status and preset", "/status"),
         new("/rewind", "Rewind to an earlier message", "/rewind <index>"),
         new("/continue", "Resume a parked run", "/continue [run-id]"),
+        new("/delete", "Delete another session", "/delete [session-id]"),
         new("/history", "Show entered prompt history", "/history"),
         new("/clear", "Clear the screen", "/clear"),
         new("/help", "Show every command", "/help"),

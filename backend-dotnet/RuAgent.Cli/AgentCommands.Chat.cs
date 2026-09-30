@@ -1015,6 +1015,18 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            // An explicit target that is not parked (running, waiting_approval,
+            // waiting_workspace_trust) is being driven elsewhere or waits on another
+            // decision: the resume POST could only earn a 409. Bare Continue targets
+            // the tracked parked run and keeps its existing behavior.
+            if (runIdArg is not null && !IsParkedRunStatus(run.Status))
+            {
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                    $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
             turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);

@@ -1260,6 +1260,9 @@ public sealed class TuiInteractiveTests
 
         var runId = "run_" + new string('a', 32);
         var cancelUris = new List<string>();
+        // Signalled when the first /events request is handled: the deterministic
+        // point to cancel, instead of a wall-clock window.
+        var eventsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var handler = new FakeHandler(async req =>
         {
@@ -1289,6 +1292,7 @@ public sealed class TuiInteractiveTests
             }
             if (req.Method == HttpMethod.Get && uri.Contains("/events"))
             {
+                eventsStarted.TrySetResult();
                 var content = new StreamContent(new BlockingStream());
                 content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
@@ -1301,9 +1305,11 @@ public sealed class TuiInteractiveTests
         var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("hello\n"));
 
         using var cts = new CancellationTokenSource();
-        cts.CancelAfter(150);
 
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
+        var chat = commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
+        await eventsStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        cts.Cancel();
+        var exit = await chat;
 
         Assert.Equal(0, exit);
         var cancelUri = Assert.Single(cancelUris);
@@ -1948,6 +1954,59 @@ public sealed class TuiInteractiveTests
         Assert.Equal(0, exit);
         Assert.Equal(0, continuePosts);
         Assert.Contains("run_not_runnable", errWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatAsync_SlashContinue_RunningRunId_ReportsRunNotParked()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runId = "run_" + new string('c', 32);
+        var continuePosts = 0;
+
+        var running = JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_123",
+            workspace_id = "ws_test",
+            status = "running",
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 1L,
+            last_sequence = 4L,
+            created_at = "2026-09-30T00:00:00Z",
+            updated_at = "2026-09-30T00:00:03Z",
+            terminal_at = (string?)null,
+            terminal_error_code = (string?)null,
+        });
+
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue"))
+            {
+                continuePosts++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(running, Encoding.UTF8, "application/json") };
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), errWriter, new StringReader($"/continue {runId}\n"));
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.Equal(0, continuePosts);
+        Assert.Contains("run_not_parked", errWriter.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

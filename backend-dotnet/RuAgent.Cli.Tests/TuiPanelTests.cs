@@ -651,6 +651,24 @@ public sealed class ChoiceListTests
     }
 
     [Fact]
+    public void Render_NamesTheFooterAndTheRowCountUntilFilteringTakesOver()
+    {
+        var list = new ChoiceList("model", [
+            new ChoiceItem("m-1", "one", "m-1"),
+            new ChoiceItem("m-2", "two", "m-2"),
+            new ChoiceItem("m-3", "three", "m-3"),
+        ], footer: "openai");
+
+        var unfiltered = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("openai", StringComparison.Ordinal));
+        Assert.Contains("openai · 3 rows", unfiltered, StringComparison.Ordinal);
+
+        list.TryAppendFilter('m');
+        var filtered = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("filter:", StringComparison.Ordinal));
+        Assert.Contains("filter: m", filtered, StringComparison.Ordinal);
+        Assert.DoesNotContain("rows", filtered, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Filter_IsCappedSoALongTypingRunCannotGrowTheQueryForever()
     {
         var list = Providers();

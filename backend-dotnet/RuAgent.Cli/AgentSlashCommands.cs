@@ -507,22 +507,36 @@ public sealed class AgentSlashCommands
 
                 var keyStates = await ReadAllKeyStatesAsync(root, cancellationToken).ConfigureAwait(false);
                 IReadOnlyList<Tui.ChoiceItem>? candidates = null;
-                string? candidatesFooter = null;
+                string? catalogError = null;
                 try
                 {
                     var catalog = await _settingsClient.GetModelsAsync(backend, cancellationToken).ConfigureAwait(false);
                     if (catalog.Count > 0)
                     {
                         candidates = Tui.TuiSurfaces.ModelCatalogChoices(backend, ReadModel(root, backend), catalog, keyStates);
-                        candidatesFooter = backend;
+                    }
+                    else
+                    {
+                        catalogError = "model list empty";
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Live catalog is best-effort; configured models still answer.
+                    // Live catalog is best-effort; configured models still answer. The
+                    // reason is kept so a short fallback list cannot read as a live catalog.
+                    catalogError = CliErrorText.ShortMessage(ex.Message);
                 }
 
                 candidates ??= Tui.TuiSurfaces.ModelChoices(backend, configured, keyStates);
+                if (catalogError is not null)
+                {
+                    await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
+                        $"  catalog unavailable ({catalogError}) - showing configured models")).ConfigureAwait(false);
+                }
+
+                // The footer names the backend and the row count on both paths, so the
+                // picker never looks clipped; null backend stays on the default hint.
+                var candidatesFooter = string.IsNullOrWhiteSpace(backend) ? null : backend;
 
                 // Fewer than two candidates means there is nothing to choose between: show
                 // the card instead of a one-row picker.

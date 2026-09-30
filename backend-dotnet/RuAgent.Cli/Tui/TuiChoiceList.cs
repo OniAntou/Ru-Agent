@@ -227,9 +227,14 @@ public sealed class ChoiceList
             .Select(item => new DropdownItem(item.Label, item.Detail, null, item.Enabled))
             .ToList();
 
+        // The filter ratio owns the footer while filtering; otherwise a caller-supplied
+        // footer (the model picker names its backend) carries the row count, so a short
+        // list is distinguishable from a clipped one.
         var footer = Filter.Length > 0
             ? $"filter: {Filter} · {MatchedCount}/{TotalCount}"
-            : Footer ?? "↑↓ · enter";
+            : string.IsNullOrWhiteSpace(Footer)
+                ? "↑↓ · enter"
+                : $"{Footer} · {TotalCount} rows";
         return SlashDropdown.Compose(width, Title, items, Selected, maxVisible, footer);
     }
 }

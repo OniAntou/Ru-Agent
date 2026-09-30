@@ -508,16 +508,18 @@ public sealed class AgentSlashCommandSurfaceTests
 
             return Json("{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\",\"model\":\"b-model\"}");
         });
-        IReadOnlyList<ChoiceItem>? offered = null;
-        commands.Picker = (list, _) => { offered = list.Items; return Task.FromResult<string?>("a-model"); };
+        ChoiceList? offered = null;
+        commands.Picker = (list, _) => { offered = list; return Task.FromResult<string?>("a-model"); };
 
         Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         Assert.NotNull(offered);
-        Assert.Equal("b-model", offered[0].Value);
-        Assert.Contains("current", offered[0].Detail, StringComparison.Ordinal);
-        Assert.Contains(offered, i => i.Value == "a-model" && i.Enabled);
-        Assert.Contains(offered, i => i.Value == "old-model" && !i.Enabled);
+        Assert.Equal("b-model", offered!.Items[0].Value);
+        Assert.Contains("current", offered.Items[0].Detail, StringComparison.Ordinal);
+        Assert.Contains(offered.Items, i => i.Value == "a-model" && i.Enabled);
+        Assert.Contains(offered.Items, i => i.Value == "old-model" && !i.Enabled);
+        // The footer names the backend and the row count, per the README promise.
+        Assert.Contains("models.dev:openrouter · 3 rows", string.Join("\n", offered.Render(80)), StringComparison.Ordinal);
         Assert.Contains("Switched active model to: a-model", output.ToString(), StringComparison.Ordinal);
     }
 
@@ -534,6 +536,8 @@ public sealed class AgentSlashCommandSurfaceTests
         var text = output.ToString();
         Assert.Contains("╭─ model", text, StringComparison.Ordinal);
         Assert.Contains("b-model", text, StringComparison.Ordinal);
+        // The silent fallback was the bug: the operator must see why the live catalog is missing.
+        Assert.Contains("catalog unavailable (HTTP 500) - showing configured models", text, StringComparison.Ordinal);
     }
 
     [Fact]

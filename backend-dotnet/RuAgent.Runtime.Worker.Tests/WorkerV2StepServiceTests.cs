@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Worker;
@@ -663,6 +664,29 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Agent_protocol_error_from_request_assembly_stays_a_non_retryable_protocol_failure()
+    {
+        // The old worker server caught an AgentProtocolException escaping step
+        // handling and sent a protocol_failure error frame. An assistant turn
+        // naming a tool the advertised settings never contained is exactly that
+        // shape: deterministic host-side input, so it must fail closed before
+        // dispatch instead of spending the bounded retry budget.
+        var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
+        var request = Request(
+            includeTool: true,
+            bootstrap: Bootstrap("anthropic_messages", maximumOutputTokens: 8192),
+            modelMessages: NativeMessagesWithUnknownTool());
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(request, CancellationToken.None));
+
+        Assert.Equal("protocol_failure", error.Code);
+        Assert.False(error.Retryable);
+        Assert.IsType<AgentProtocolException>(error.InnerException);
+        Assert.Empty(provider.Requests);
+    }
+
+    [Fact]
     public async Task Step_service_observes_cancellation_and_does_not_release_a_running_provider_early()
     {
         using var cancellation = new CancellationTokenSource();
@@ -823,6 +847,34 @@ public sealed class WorkerV2StepServiceTests
         Assert.DoesNotContain(privatePrompt, error.ToString(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("timeout", false, "provider_timeout", true)]
+    [InlineData("auth_failed", false, "provider_auth", false)]
+    [InlineData("forbidden", false, "provider_auth", false)]
+    [InlineData("rate_limited", false, "provider_rate_limited", true)]
+    [InlineData("server_error", false, "provider_server_error", true)]
+    [InlineData("transport_error", false, "provider_transport_error", true)]
+    [InlineData("malformed_payload", false, "protocol_failure", true)]
+    [InlineData("response_too_large", false, "protocol_failure", false)]
+    [InlineData("unmapped_provider_code", false, "generation_failed", false)]
+    [InlineData("unmapped_provider_code", true, "generation_failed", true)]
+    public async Task Provider_failure_table_maps_code_and_retryability_exactly(
+        string providerCode,
+        bool providerRetryable,
+        string expectedCode,
+        bool expectedRetryable)
+    {
+        // Pins the whole MapProviderException table: renames or a flipped retry
+        // flag reach the Host's durable code, so they must not go unnoticed.
+        var provider = new ThrowingProvider(new ModelProviderException(providerCode, providerRetryable));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None));
+
+        Assert.Equal(expectedCode, error.Code);
+        Assert.Equal(expectedRetryable, error.Retryable);
+    }
+
     [Fact]
     public void Typed_request_rejects_a_model_history_over_the_message_cap()
     {
@@ -934,6 +986,14 @@ public sealed class WorkerV2StepServiceTests
             "I will inspect.",
             [new ModelFunctionCall("call_1", "files.read", Json("{\"path\":\"a.txt\"}"))]),
         new ModelTurn("tool", "untrusted result", toolCallId: "call_1", toolResultCode: "ok"),
+    ];
+
+    private static IReadOnlyList<ModelTurn> NativeMessagesWithUnknownTool() =>
+    [
+        new ModelTurn(
+            "assistant",
+            "I will inspect.",
+            [new ModelFunctionCall("call_1", "files.teleport", Json("{}"))]),
     ];
 
     private static JsonElement Json(string value) => JsonDocument.Parse(value).RootElement.Clone();

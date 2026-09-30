@@ -119,6 +119,15 @@ public sealed class WorkerV2StepService
         {
             throw;
         }
+        catch (AgentProtocolException error)
+        {
+            // The retired worker server translated an AgentProtocolException from
+            // step assembly into a protocol_failure error frame, and the input is
+            // still deterministic (an assistant turn naming a tool the settings
+            // never advertised, or an unprojectable policy decision), so it keeps
+            // that code here instead of escaping to the generic mapping.
+            throw new WorkerV2StepException("protocol_failure", retryable: false, error);
+        }
         catch (ArgumentException error) when (error.ParamName == "turns")
         {
             throw new WorkerV2StepException("model_history_invalid", retryable: false, error);

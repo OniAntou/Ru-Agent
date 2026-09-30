@@ -24,7 +24,7 @@ public static class ModelGenerationBounds
 
 /// <summary>
 /// The typed form of the per-step <c>settings</c> the Host used to send in the
-/// start frame: the advertised model tools and the requested output cap.
+/// start frame: the advertised model tools and the wire <c>max_tokens</c> value.
 /// </summary>
 public sealed record ModelGenerationSettings
 {
@@ -56,6 +56,11 @@ public sealed record ModelGenerationSettings
 
     public JsonArray? ModelTools { get; }
 
+    /// <summary>
+    /// The wire <c>max_tokens</c> value, mapped for parity and validated on the
+    /// way in. The step service strips it before dispatch: only
+    /// <see cref="ProviderBootstrapData.MaximumOutputTokens"/> reaches a provider.
+    /// </summary>
     public int? MaxOutputTokens { get; }
 }
 

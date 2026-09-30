@@ -317,9 +317,8 @@ public sealed class WorkerV2StepService
     /// Builds the metadata-only trace line for a tool-call assembly failure. The line
     /// carries counts, flags, lengths and generated ids only -- never user content,
     /// prompts, arguments or model text -- so emitting it to the process stderr log is
-    /// safe. The step runs out of process today, so this stderr line (drained by the
-    /// host into the per-role log file) is the only way to tell the three
-    /// <c>protocol_failure</c> branches apart after the fact.
+    /// safe. The step now runs in process, so this stderr line is the bounded record
+    /// that tells the three <c>protocol_failure</c> branches apart after the fact.
     /// </summary>
     private static string ToolCallTrace(string site, string modelStepId, string fields) =>
         $"ru_worker_step_trace site={site} step={modelStepId} code=protocol_failure {fields}";

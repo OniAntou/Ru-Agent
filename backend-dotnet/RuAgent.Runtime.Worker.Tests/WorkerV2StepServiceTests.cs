@@ -774,6 +774,56 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Provider_auth_failure_maps_to_a_bounded_error_without_credentials()
+    {
+        // Ported from the worker-wire integration test that was deleted with the
+        // transport: the mapping it covered is the living provider->step contract.
+        const string privatePrompt = "integration prompt must stay private";
+        const string providerCredential = "integration-provider-secret";
+        var provider = new ThrowingProvider(
+            new ModelProviderException("auth_failed", retryable: false));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(
+                Request(
+                    prompt: privatePrompt,
+                    bootstrap: new ProviderBootstrapData(
+                        "Test",
+                        ProviderProtocols.ChatCompletions,
+                        new Uri("https://step-provider.invalid/v1"),
+                        "model-a",
+                        providerCredential)),
+                CancellationToken.None));
+
+        Assert.Equal("provider_auth", error.Code);
+        Assert.False(error.Retryable);
+        Assert.DoesNotContain(providerCredential, error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(privatePrompt, error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("http_error", false)]
+    [InlineData("http_error", true)]
+    [InlineData("vision_unsupported", false)]
+    [InlineData("empty_model_reply", false)]
+    public async Task Provider_codes_reach_the_typed_step_unchanged(string code, bool retryable)
+    {
+        // Ported from the worker-wire integration test that was deleted with the
+        // transport: these codes pass through with their own name and retry flag.
+        const string privatePrompt = "integration prompt must stay private";
+        var provider = new ThrowingProvider(new ModelProviderException(code, retryable));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(
+                Request(prompt: privatePrompt),
+                CancellationToken.None));
+
+        Assert.Equal(code, error.Code);
+        Assert.Equal(retryable, error.Retryable);
+        Assert.DoesNotContain(privatePrompt, error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Typed_request_rejects_a_model_history_over_the_message_cap()
     {
         var messages = Enumerable.Range(0, ModelGenerationBounds.MaxModelMessages + 1)
@@ -905,6 +955,16 @@ public sealed class WorkerV2StepServiceTests
                 yield return delta;
             }
         }
+    }
+
+    private sealed class ThrowingProvider : IModelProvider
+    {
+        private readonly ModelProviderException _error;
+
+        public ThrowingProvider(ModelProviderException error) => _error = error;
+
+        public IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, CancellationToken cancellationToken) =>
+            throw _error;
     }
 
     private sealed class BlockingProvider : IModelProvider

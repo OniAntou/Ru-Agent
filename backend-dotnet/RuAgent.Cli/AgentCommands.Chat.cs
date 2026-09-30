@@ -95,6 +95,7 @@ public sealed partial class AgentCommands
         {
             // Build stamp is diagnostics-only.
         }
+        string? modelWarning = null;
         try
         {
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
@@ -112,6 +113,15 @@ public sealed partial class AgentCommands
         catch (Exception)
         {
             // Settings backend unreachable; the header reports it as unknown.
+        }
+
+        if (backendName is not null)
+        {
+            // Best-effort and once per chat: a models.dev id that is not in the catalog
+            // would otherwise only surface mid-turn as model_unavailable.
+            modelWarning = await ModelPrecheck
+                .CheckAsync(_settingsClient, backendName, activeModel, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         backendName ??= "(provider unknown)";
@@ -819,6 +829,20 @@ public sealed partial class AgentCommands
                         Tui.TuiToken.Warn);
                     sessionRenderer.Flush();
                 }
+            }
+        }
+
+        if (modelWarning is not null)
+        {
+            if (cmd.Json)
+            {
+                // Nothing human may land on the NDJSON stdout.
+                await _err.WriteLineAsync(modelWarning).ConfigureAwait(false);
+            }
+            else
+            {
+                sessionRenderer.Note(modelWarning, Tui.TuiToken.Warn);
+                sessionRenderer.Flush();
             }
         }
 

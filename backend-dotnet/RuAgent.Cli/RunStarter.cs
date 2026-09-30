@@ -429,13 +429,20 @@ public sealed class RunStarter
     private readonly RunStartCore _core;
     private readonly RecordingWriter _out;
     private readonly RecordingWriter _err;
+    private readonly SettingsApiClient? _settingsClient;
 
-    public RunStarter(SessionApiClient sessionClient, AgentApiClient agentClient, TextWriter outWriter, TextWriter errWriter)
+    public RunStarter(
+        SessionApiClient sessionClient,
+        AgentApiClient agentClient,
+        TextWriter outWriter,
+        TextWriter errWriter,
+        SettingsApiClient? settingsClient = null)
     {
         _sessionClient = sessionClient ?? throw new ArgumentNullException(nameof(sessionClient));
         _agentClient = agentClient ?? throw new ArgumentNullException(nameof(agentClient));
         _out = new RecordingWriter(outWriter ?? throw new ArgumentNullException(nameof(outWriter)));
         _err = new RecordingWriter(errWriter ?? throw new ArgumentNullException(nameof(errWriter)));
+        _settingsClient = settingsClient;
         _core = new RunStartCore(sessionClient, agentClient, _out, _err);
     }
 
@@ -476,6 +483,15 @@ public sealed class RunStarter
         {
             await _err.WriteLineAsync("invalid_workspace: path too long").ConfigureAwait(false);
             throw new RunStartException("invalid_workspace", "invalid_workspace: path too long");
+        }
+
+        if (_settingsClient is not null
+            && await ModelPrecheck.CheckCurrentAsync(_settingsClient, cancellationToken).ConfigureAwait(false) is { } modelWarning)
+        {
+            // One warning, once per run start: a models.dev id missing from the catalog
+            // would otherwise only surface mid-run as model_unavailable. The run never
+            // waits on this check.
+            await (request.Json ? _err : _out).WriteLineAsync(modelWarning).ConfigureAwait(false);
         }
 
         string sessionId;

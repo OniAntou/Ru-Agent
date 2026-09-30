@@ -41,10 +41,10 @@ public sealed partial class AgentCommands : IDisposable
         _in = inReader ?? Console.In;
         _sessionClient = new SessionApiClient(session, httpClient);
         _agentClient = new AgentApiClient(session, httpClient);
-        _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err);
+        _settingsClient = new SettingsApiClient(session, httpClient);
+        _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err, _settingsClient);
         _runStartCore = _runStarter.Core;
         _sseClient = new AgentSseClient(session, sseHttpClient ?? httpClient);
-        _settingsClient = new SettingsApiClient(session, httpClient);
         _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
     }
 

@@ -229,32 +229,6 @@ public sealed partial class AgentCommands
         }
     }
 
-    public async Task<int> SessionForkAsync(SessionForkCommand cmd, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var element = await _sessionClient.ForkAsync(cmd.SessionId, cmd.UpToMessageIndex, cmd.NewTitle, cancellationToken).ConfigureAwait(false);
-            if (cmd.Json)
-            {
-                await _out.WriteLineAsync(JsonEnvelope("session_fork", element)).ConfigureAwait(false);
-                return 0;
-            }
-
-            if (element.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
-            {
-                await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Successfully forked session to: {newId.GetString()}")).ConfigureAwait(false);
-                return 0;
-            }
-            await _err.WriteLineAsync("session_fork_failed: invalid server response").ConfigureAwait(false);
-            return 1;
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"session_fork_error: {ex.Message}").ConfigureAwait(false);
-            return 1;
-        }
-    }
-
     public async Task<int> SessionRewindAsync(SessionRewindCommand cmd, CancellationToken cancellationToken)
     {
         try

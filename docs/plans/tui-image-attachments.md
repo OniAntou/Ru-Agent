@@ -14,11 +14,11 @@ Invariants chạm tới và cách giữ:
 - **Fail closed** — ảnh sai mime/size/count/model non-vision → bounded code có sẵn (`image_limit_exceeded`, `invalid_image_mime`, `invalid_image_base64`, `image_too_large`, `vision_unsupported`), không nới bất kỳ cap nào để test xanh.
 - **One execution authority** — không đụng: ảnh chỉ là payload của `POST /agent/v1/runs`, tool vẫn chạy duy nhất trong Broker qua `IToolGateway`.
 - **No fallbacks** — vision_unsupported surface nguyên code, không tự đổi model hay strip ảnh rồi gửi tiếp.
-- **Loopback + bearer, 42 routes** — không thêm route/transport nào. Ảnh đi trong body run-create hiện có. Guards `tests/` đếm 42 routes / 12 tools phải vẫn xanh.
-- **Session-scoped** — pending attachments sống theo session/chat hiện tại, clear sau khi gửi, không persist, không share qua fork. Protected paths deny mọi preset (ảnh ngoài workspace vẫn cần grant như file tools).
+- **Loopback + bearer, 41 routes** — không thêm route/transport nào. Ảnh đi trong body run-create hiện có. Guards `tests/` đếm 41 routes / 12 tools phải vẫn xanh.
+- **Session-scoped** — pending attachments sống theo session/chat hiện tại, clear sau khi gửi, không persist, không share giữa các session. Protected paths deny mọi preset (ảnh ngoài workspace vẫn cần grant như file tools).
 - **Bounded everything** — giữ nguyên mọi cap backend (`AgentV1Service.Runs.cs:48-50`): 4 ảnh, mỗi ảnh decode ≤ 4MB, tổng ≤ 20MB, data URL ≤ 5_600_000 chars. Client đọc file cap 10MB như GUI.
 - **Working rules** — minimal changes (sửa file hiện có, chỉ tạo module Images mới vì có need rõ ràng), đọc code xung quanh trước, tên bool `is/has/should`, named constants, hàm nhỏ, early return, không comment thừa, async nào cũng honour cancellation.
-- **Docs là một phần của change** — CHANGELOG entry (user-visible), CLI README + help panel; README/CONTEXT/contract không đổi số (42 routes, 12 tools) nên guards giữ nguyên.
+- **Docs là một phần của change** — CHANGELOG entry (user-visible), CLI README + help panel; README/CONTEXT/contract không đổi số (41 routes, 12 tools) nên guards giữ nguyên.
 - **Verify** — một matrix một lúc (lock exit 75, không retry, không chạy song song với app đang mở):
   `dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug`,
   `.\scripts\test_dotnet.ps1 -Configuration Debug`,
@@ -64,7 +64,7 @@ Sửa luồng hiện có:
 
 - `AgentCliParser.cs` — `RunCommand` thêm `IReadOnlyList<string> Images`, parse `--image` repeatable theo style `Fail(dup/missing_value/...)` hiện có; `ChatCommand` thêm images mở sẵn pending.
 - `AgentCommands.cs:RunAsync` — đọc `--image` qua pipeline, truyền `ImageAttachments` vào `CreateAgentRunRequest`.
-- `AgentCommands.cs:ChatAsync` — `_pending` per session; hook `/attach /attachments /detach` cạnh `/fork /rewind`; hook `Ctrl+V` vào key loop `InteractiveLineReader` (`ReadKey intercept`); submit build `imagePayloads` y hệt GUI rồi `CreateRunAsync`.
+- `AgentCommands.cs:ChatAsync` — `_pending` per session; hook `/attach /attachments /detach` cạnh `/rewind`; hook `Ctrl+V` vào key loop `InteractiveLineReader` (`ReadKey intercept`); submit build `imagePayloads` y hệt GUI rồi `CreateRunAsync`.
 - `InteractiveLineReader.cs:12` + `TuiSurfaces.cs:33` — thêm command vào help/dropdown.
 - `TuiTranscript.cs` + `TuiEventRenderer.cs` — render `[image n: name]`, map 5 code lỗi ảnh thành copy 1 dòng.
 - Vision pre-check (best-effort): đọc settings qua `SettingsApiClient`, check `ModelImage.IsVisionModel` (copy ~20 dòng sang CLI vì CLI không ref Adapters). Fail sớm "model X chưa hỗ trợ vision, đổi bằng /model".
@@ -83,7 +83,7 @@ Không làm v1: preview pixel (Sixel/Kitty), paste từ SSH, attach text-file ki
 
 - `dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug`
 - `.\scripts\test_dotnet.ps1 -Configuration Debug` (một matrix một lúc, CLI suite ~562 tests)
-- `.venv\Scripts\python.exe -m pytest tests -q` (guard 42 routes phải xanh)
+- `.venv\Scripts\python.exe -m pytest tests -q` (guard 41 routes phải xanh)
 - Manual trên Windows Terminal thật: attach 1 png, paste từ Snipping Tool, gửi trên model vision và non-vision (2 nhánh).
 - Docs: `RuAgent.Cli/README.md` + help panel + entry CHANGELOG (Keep a Changelog). Không đụng README/CONTEXT counts.
 

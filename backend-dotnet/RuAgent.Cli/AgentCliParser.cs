@@ -21,7 +21,6 @@ public enum CliCommandKind
     Command,
     Chat,
     SessionList,
-    SessionFork,
     SessionRewind,
     SessionExport,
     SessionImport,
@@ -134,12 +133,6 @@ public sealed record ChatCommand(
 
 public sealed record SessionListCommand(
     bool Json) : AgentCommand(CliCommandKind.SessionList, Json);
-
-public sealed record SessionForkCommand(
-    string SessionId,
-    int UpToMessageIndex,
-    string? NewTitle,
-    bool Json) : AgentCommand(CliCommandKind.SessionFork, Json);
 
 public sealed record SessionRewindCommand(
     string SessionId,

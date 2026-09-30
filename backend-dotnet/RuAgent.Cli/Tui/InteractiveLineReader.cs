@@ -15,7 +15,6 @@ public sealed class InteractiveLineReader
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
-        new("/fork", "Branch this conversation", "/fork [title]"),
         new("/tree", "Show the session tree", "/tree"),
         new("/stats", "Show token and session stats", "/stats"),
         new("/tokens", "Show detailed token usage", "/tokens"),

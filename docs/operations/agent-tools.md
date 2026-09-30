@@ -7,7 +7,7 @@ It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
-(`bash` with `mode=run` or `mode=shell`), session branching/fork/rewind, managed
+(`bash` with `mode=run` or `mode=shell`), session rewind, managed
 Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
 is tested infrastructure but is not production-composed; connector libraries are
 not advertised Agent tools.
@@ -149,7 +149,7 @@ cancellation, redaction, and process-tree cleanup still apply.
 An explicit absolute structured-file path outside the trusted root asks for
 `external_directory_required` under `standard`. Approval records a
 session-scoped `CanonicalDirectoryIdentity` for structured descendants; it is
-not shared with another/forked session, lost on restart, and never authorizes
+not shared with another session, lost on restart, and never authorizes
 terminal intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
 Structured protected paths remain denied in every preset, and canonical,

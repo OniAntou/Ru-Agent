@@ -62,8 +62,6 @@ export class RuAgent {
         return result.session_id;
       },
       list: (): Promise<Record<string, unknown>> => this.#transport.request<Record<string, unknown>>("session.list", {}),
-      fork: (sessionId: string, index: number, title?: string): Promise<Record<string, unknown>> =>
-        this.#transport.request<Record<string, unknown>>("session.fork", { sessionId, index, ...(title ? { title } : {}) }),
       rewind: (sessionId: string, index: number): Promise<Record<string, unknown>> =>
         this.#transport.request<Record<string, unknown>>("session.rewind", { sessionId, index }),
     };

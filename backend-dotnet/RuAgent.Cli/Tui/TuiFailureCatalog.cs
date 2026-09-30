@@ -229,7 +229,7 @@ public static class TuiFailureCatalog
                 key,
                 "Request rejected",
                 "the host could not assemble the model request from this turn",
-                "send the request again; if it repeats, fork a fresh session"),
+                "send the request again; if it repeats, start a fresh session"),
             "run_not_runnable" => new(
                 key,
                 "Run not runnable",
@@ -314,7 +314,7 @@ public static class TuiFailureCatalog
                 key,
                 "Compaction failed",
                 "the context compaction step failed",
-                "retry; if it repeats, fork a fresh session"),
+                "retry; if it repeats, start a fresh session"),
             "command_invalid" or "command_unknown" => new(
                 key,
                 "Unknown command",

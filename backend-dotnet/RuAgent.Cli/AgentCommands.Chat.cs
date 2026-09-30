@@ -853,32 +853,6 @@ public sealed partial class AgentCommands
                     await UpdateLegendAsync().ConfigureAwait(false);
                     continue;
                 }
-                if (slashCmd is "/fork")
-                {
-                    try
-                    {
-                        var forked = await _sessionClient.ForkAsync(sessionId, 999999, arg, cancellationToken).ConfigureAwait(false);
-                        if (forked.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
-                        {
-                            sessionId = newId.GetString()!;
-                            await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            await _err.WriteLineAsync("fork_failed: unable to create branch").ConfigureAwait(false);
-                        }
-                    }
-                    catch (AgentApiException ex)
-                    {
-                        await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        await _err.WriteLineAsync($"fork_error: {ex.Message}").ConfigureAwait(false);
-                    }
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    continue;
-                }
                 if (slashCmd is "/rewind")
                 {
                     if (arg is null || !int.TryParse(arg, out var toIndex))

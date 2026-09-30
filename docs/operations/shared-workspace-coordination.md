@@ -12,7 +12,7 @@ canonical root must receive one explicit trust decision for its
 `WorkspaceIdentity`; the GUI confirms it and CLI `run`/`chat` use
 `--trust-workspace`. A moved or recreated root is a new identity and must be
 trusted again. Session-scoped folder grants and preset selections are not shared
-with another/forked session, while the explicit trust decision follows the
+with another session, while the explicit trust decision follows the
 canonical identity. Full Access additionally requires the GUI gate or CLI
 `--confirm-full-access`.
 

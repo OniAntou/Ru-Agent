@@ -23,7 +23,7 @@ public sealed class InteractiveLineReaderTests
     [Fact]
     public void AutoComplete_ReturnsNull_WhenAmbiguousOrNoMatch()
     {
-        var candidates = new[] { "/fork", "/format" };
+        var candidates = new[] { "/format", "/filter" };
 
         // Ambiguous prefix
         var ambiguous = InteractiveLineReader.AutoComplete("/f", candidates);

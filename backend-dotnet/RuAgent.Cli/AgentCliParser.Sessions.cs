@@ -16,17 +16,16 @@ public static partial class AgentCliParser
     private static AgentCliParseResult ParseSession(string[] args, int startIndex)
     {
         if (args.Length <= startIndex)
-            return Fail("missing_subcommand", "Missing session subcommand. Expected list|fork|rewind.");
+            return Fail("missing_subcommand", "Missing session subcommand. Expected list|rewind.");
 
         var sub = args[startIndex];
         return sub switch
         {
             "list" => ParseSessionList(args, startIndex + 1),
-            "fork" => ParseSessionFork(args, startIndex + 1),
             "rewind" => ParseSessionRewind(args, startIndex + 1),
             "export" => ParseSessionExport(args, startIndex + 1),
             "import" => ParseSessionImport(args, startIndex + 1),
-            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|fork|rewind|export|import.")
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|rewind|export|import.")
         };
     }
 
@@ -129,63 +128,6 @@ public static partial class AgentCliParser
             return Fail("missing_file", "Missing required <file> for session import.");
 
         return Success(new SessionImportCommand(filePath, harness, sessionId, json));
-    }
-
-    private static AgentCliParseResult ParseSessionFork(string[] args, int startIndex)
-    {
-        string? sessionId = null;
-        int upToIndex = -1;
-        string? newTitle = null;
-        bool json = false;
-        bool jsonSeen = false;
-        bool indexSeen = false;
-        bool titleSeen = false;
-
-        for (int i = startIndex; i < args.Length; i++)
-        {
-            var token = args[i];
-            if (token == "--json")
-            {
-                if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
-                json = true;
-                jsonSeen = true;
-                continue;
-            }
-            if (token == "--index")
-            {
-                if (indexSeen) return Fail("duplicate_switch", "Duplicate --index.");
-                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out upToIndex))
-                    return Fail("missing_value", "Missing integer value for --index.");
-                indexSeen = true;
-                i++;
-                continue;
-            }
-            if (token == "--title")
-            {
-                if (titleSeen) return Fail("duplicate_switch", "Duplicate --title.");
-                if (i + 1 >= args.Length) return Fail("missing_value", "Missing value for --title.");
-                newTitle = args[i + 1];
-                titleSeen = true;
-                i++;
-                continue;
-            }
-            if (token.StartsWith("-", StringComparison.Ordinal))
-                return Fail("unknown_switch", $"Unknown switch '{token}' for session fork.");
-
-            if (sessionId is null)
-            {
-                if (!SessionIdLooseRegex.IsMatch(token))
-                    return Fail("invalid_session_id", "Session id contains invalid characters.");
-                sessionId = token;
-                continue;
-            }
-            return Fail("too_many_arguments", $"Unexpected argument '{token}' for session fork.");
-        }
-
-        if (sessionId is null)
-            return Fail("missing_session_id", "Missing required <session-id> for session fork.");
-
-        return Success(new SessionForkCommand(sessionId, upToIndex, newTitle, json));
     }
 
     private static AgentCliParseResult ParseSessionRewind(string[] args, int startIndex)

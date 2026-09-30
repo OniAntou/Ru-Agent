@@ -53,7 +53,7 @@ The first request must be `initialize`:
 ```
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.fork","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","bridge.shutdown"]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","bridge.shutdown"]}}
 ```
 
 - `protocolVersion` must be `1`. Any other value is rejected with `-32000` and
@@ -78,7 +78,6 @@ truncating it.
 | `host.status` | — | `{ "ready": true, "base_url": "http://127.0.0.1:..." }` | `GET /settings` |
 | `session.create` | — | `{ "session_id": "..." }` | `POST /sessions/new` |
 | `session.list` | — | session list (passthrough) | `GET /sessions` |
-| `session.fork` | `sessionId`, `index`, `title`? | fork payload (passthrough) | `POST /sessions/{sessionId}/fork` |
 | `session.rewind` | `sessionId`, `index` | rewind payload (passthrough) | `POST /sessions/{sessionId}/rewind` |
 | `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`? | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
 | `run.attach` | `runId`, `afterSequence`?, `includeTransient`? | `{ "subscription_id", "run_id", "include_transient" }` | `GET /agent/v1/runs/{runId}/events` (SSE) |

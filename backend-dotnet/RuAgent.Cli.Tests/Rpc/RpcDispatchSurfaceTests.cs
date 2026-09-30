@@ -63,35 +63,6 @@ public sealed class RpcDispatchSurfaceTests
     }
 
     [Fact]
-    public async Task Session_fork_posts_the_index_and_title()
-    {
-        string? body = null;
-        List<string> seen = [];
-        var dispatcher = await CreateInitializedAsync(async request =>
-        {
-            body = await request.Content!.ReadAsStringAsync();
-            return RpcTestHost.Json("{\"status\":\"ok\"}");
-        }, seen);
-        await dispatcher.DispatchAsync(
-            Req("session.fork", "{\"sessionId\":\"sess_1\",\"index\":2,\"title\":\"branch\"}"),
-            CancellationToken.None);
-        Assert.Contains("POST /sessions/sess_1/fork", seen);
-        Assert.Contains("\"up_to_message_index\":2", body);
-        Assert.Contains("\"new_title\":\"branch\"", body);
-    }
-
-    [Fact]
-    public async Task Session_fork_without_index_is_rejected()
-    {
-        List<string> seen = [];
-        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")), seen);
-        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
-            () => dispatcher.DispatchAsync(Req("session.fork", "{\"sessionId\":\"sess_1\"}"), CancellationToken.None));
-        Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
-        Assert.Empty(seen);
-    }
-
-    [Fact]
     public async Task Policy_remove_requires_explicit_confirmation()
     {
         List<string> seen = [];
@@ -469,7 +440,6 @@ public sealed class RpcDispatchSurfaceTests
                 "host.status",
                 "session.create",
                 "session.list",
-                "session.fork",
                 "session.rewind",
                 "run.start",
                 "run.attach",

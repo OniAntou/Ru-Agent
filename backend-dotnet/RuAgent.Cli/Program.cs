@@ -87,7 +87,6 @@ public static class Program
                 ChatCommand chat => await commands.ChatAsync(chat, cts.Token).ConfigureAwait(false),
                 RpcCommand rpc => await commands.RpcAsync(rpc, cts.Token).ConfigureAwait(false),
                 SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
-                SessionForkCommand sfork => await commands.SessionForkAsync(sfork, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
                 SessionExportCommand sexport => await commands.SessionExportAsync(sexport, cts.Token).ConfigureAwait(false),
                 SessionImportCommand simport => await commands.SessionImportAsync(simport, cts.Token).ConfigureAwait(false),
@@ -156,7 +155,6 @@ public static class Program
         Console.Error.WriteLine("  --confirm-full-access: terminal runs as the current Windows user and may access data outside the workspace.");
         Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
         Console.Error.WriteLine("  agent session list [--json]");
-        Console.Error.WriteLine("  agent session fork <session-id> [--index <n>] [--title <title>] [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");

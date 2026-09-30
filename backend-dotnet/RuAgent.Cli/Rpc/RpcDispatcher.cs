@@ -35,7 +35,6 @@ public sealed class RpcDispatcher
         "host.status",
         "session.create",
         "session.list",
-        "session.fork",
         "session.rewind",
         "run.start",
         "run.attach",
@@ -113,7 +112,6 @@ public sealed class RpcDispatcher
                 "host.status" => await HostStatusAsync(cancellationToken).ConfigureAwait(false),
                 "session.create" => await SessionCreateAsync(cancellationToken).ConfigureAwait(false),
                 "session.list" => await SessionListAsync(cancellationToken).ConfigureAwait(false),
-                "session.fork" => await SessionForkAsync(request, cancellationToken).ConfigureAwait(false),
                 "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.start" => await RunStartAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.attach" => await RunAttachAsync(request).ConfigureAwait(false),
@@ -190,15 +188,6 @@ public sealed class RpcDispatcher
     private async Task<JsonNode> SessionListAsync(CancellationToken ct)
     {
         var result = await _sessionClient.ListAsync(ct).ConfigureAwait(false);
-        return JsonNode.Parse(result.GetRawText())!;
-    }
-
-    private async Task<JsonNode> SessionForkAsync(RpcRequest request, CancellationToken ct)
-    {
-        var sessionId = RequireString(request, "sessionId", 64);
-        var index = RequireInt(request, "index");
-        var title = OptionalString(request, "title", 200);
-        var result = await _sessionClient.ForkAsync(sessionId, index, title, ct).ConfigureAwait(false);
         return JsonNode.Parse(result.GetRawText())!;
     }
 

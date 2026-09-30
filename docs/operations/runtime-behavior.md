@@ -291,7 +291,7 @@ structured protected paths and hard-invalid requests remain denied.
 Repository cleanliness never changes the decision.
 
 Standard structured-file access outside the trusted root may create a
-session-scoped canonical folder grant; it is not shared with a new/forked
+session-scoped canonical folder grant; it is not shared with a new
 session, lost on restart, and never authorizes terminal. Full Access uses an
 ephemeral structured root per external call. Full-access terminal runs as the
 current Windows user, can read or change data outside the workspace, and can

@@ -387,14 +387,6 @@ public sealed class TuiInteractiveTests
         var cmdList = Assert.IsType<SessionListCommand>(resList.Command);
         Assert.True(cmdList.Json);
 
-        // session fork
-        var resFork = AgentCliParser.Parse(["agent", "session", "fork", "sess_parent_123", "--index", "3", "--title", "Feature Branch"]);
-        Assert.True(resFork.Success);
-        var cmdFork = Assert.IsType<SessionForkCommand>(resFork.Command);
-        Assert.Equal("sess_parent_123", cmdFork.SessionId);
-        Assert.Equal(3, cmdFork.UpToMessageIndex);
-        Assert.Equal("Feature Branch", cmdFork.NewTitle);
-
         // session rewind
         var resRewind = AgentCliParser.Parse(["session", "rewind", "sess_parent_123", "--index", "1"]);
         Assert.True(resRewind.Success);
@@ -407,7 +399,7 @@ public sealed class TuiInteractiveTests
     public void Parser_FailsOnInvalidSessionCommands()
     {
         // missing session id
-        var res1 = AgentCliParser.Parse(["session", "fork"]);
+        var res1 = AgentCliParser.Parse(["session", "rewind"]);
         Assert.False(res1.Success);
         Assert.Equal("missing_session_id", res1.ErrorCode);
 
@@ -425,7 +417,7 @@ public sealed class TuiInteractiveTests
     [Fact]
     public void InteractiveLineReader_AutoCompletes_NewSlashCommands()
     {
-        string[] cmds = ["/help", "/model", "/backend", "/fork", "/rewind", "/tree", "/stats", "/tokens", "/export", "/status", "/history", "/clear", "/exit", "/quit"];
+        string[] cmds = ["/help", "/model", "/backend", "/rewind", "/tree", "/stats", "/tokens", "/export", "/status", "/history", "/clear", "/exit", "/quit"];
         Assert.Equal("/tree", InteractiveLineReader.AutoComplete("/tr", cmds));
         Assert.Null(InteractiveLineReader.AutoComplete("/stat", cmds)); // ambiguous with /status
         Assert.Equal("/stats", InteractiveLineReader.AutoComplete("/stats", cmds));

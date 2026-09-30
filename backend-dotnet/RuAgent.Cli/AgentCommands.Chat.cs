@@ -154,6 +154,10 @@ public sealed partial class AgentCommands
         bool typeAheadLive = false;
 
         // Slash-command surfaces: the pickers run through the same key loop as the composer.
+        // --json owns stdout, so every human-facing line a slash command prints goes to
+        // stderr and picker-only commands refuse instead of prompting.
+        _slashCommands.HumanOut = humanOut;
+        _slashCommands.Json = cmd.Json;
         _slashCommands.PanelWidth = Tui.TuiViewport.Width();
         _slashCommands.Picker = (list, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
@@ -822,6 +826,40 @@ public sealed partial class AgentCommands
                 if (cmd.Json)
                 {
                     NdjsonEventRenderer.RenderFrame(frame, _out);
+
+                    // --json never prompts for an approval: there is no composer to ask in,
+                    // and reading stdin here would consume the scripted consumer's next
+                    // prompt. The run stays waiting server-side and the operator answers
+                    // out of band, so this notice goes to stderr and the streaming turn
+                    // ends instead of spinning on a stream that will not advance.
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
+                    {
+                        HarnessSafeEventEnvelope? approvalEnvelope = null;
+                        try
+                        {
+                            var candidate = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (candidate is { EventType: "approval.requested" } && !string.IsNullOrEmpty(candidate.ApprovalId))
+                            {
+                                approvalEnvelope = candidate;
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            // Non-conforming frame payload; the NDJSON line above already
+                            // carried the event and there is no id to point the operator at.
+                        }
+
+                        if (approvalEnvelope is not null)
+                        {
+                            var targetRunId = !string.IsNullOrEmpty(approvalEnvelope.RunId) ? approvalEnvelope.RunId : runId;
+                            await _err.WriteLineAsync(
+                                    $"approval_required: run {targetRunId} is waiting for approval {approvalEnvelope.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {approvalEnvelope.ApprovalId}' or deny it with 'ru agent deny {targetRunId} {approvalEnvelope.ApprovalId}'.")
+                                .ConfigureAwait(false);
+                            await _out.FlushAsync().ConfigureAwait(false);
+                            await _err.FlushAsync().ConfigureAwait(false);
+                            throw new RunWaitingApprovalException(targetRunId, approvalEnvelope.ApprovalId!);
+                        }
+                    }
                 }
                 else
                 {
@@ -1063,6 +1101,14 @@ public sealed partial class AgentCommands
             {
                 await ReportInterruptionAsync().ConfigureAwait(false);
             }
+            catch (RunWaitingApprovalException)
+            {
+                // The --json approval escape: the notice is already on stderr and the
+                // run stays waiting server-side. Wind the turn down and let the caller
+                // exit the chat instead of settling for a "continue_error" line.
+                await FinishTurnAsync().ConfigureAwait(false);
+                throw;
+            }
             catch (AgentApiException ex)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
@@ -1151,7 +1197,7 @@ public sealed partial class AgentCommands
             while (!cancellationToken.IsCancellationRequested)
         {
             // A prompt typed while the previous turn streamed is sent without a second Enter.
-            var line = queuedLine ?? await lineReader.ReadLineWithContinuationAsync(_in, _out, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            var line = queuedLine ?? await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
             queuedLine = null;
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
@@ -1238,7 +1284,16 @@ public sealed partial class AgentCommands
                 }
                 if (slashCmd is "/continue")
                 {
-                    await ContinueParkedRunAsync(arg).ConfigureAwait(false);
+                    try
+                    {
+                        await ContinueParkedRunAsync(arg).ConfigureAwait(false);
+                    }
+                    catch (RunWaitingApprovalException)
+                    {
+                        // Same escape as a fresh turn: an approval under --json ends the
+                        // chat rather than reading a prompt it must not answer.
+                        return 0;
+                    }
                     continue;
                 }
                 await _err.WriteLineAsync($"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
@@ -1254,7 +1309,14 @@ public sealed partial class AgentCommands
                 {
                     await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
                 }
-                await ContinueParkedRunAsync(null).ConfigureAwait(false);
+                try
+                {
+                    await ContinueParkedRunAsync(null).ConfigureAwait(false);
+                }
+                catch (RunWaitingApprovalException)
+                {
+                    return 0;
+                }
                 continue;
             }
 
@@ -1385,6 +1447,16 @@ public sealed partial class AgentCommands
                 await FollowRunAsync(resp.RunId, 0, turnCts.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }
+            catch (RunWaitingApprovalException)
+            {
+                // --json approval escape: the bounded notice already went to stderr, and
+                // the run is deliberately left waiting server-side (never auto-denied).
+                // Ending the chat hands control back to the scripted consumer, which
+                // answers it with `ru agent approve` instead of this process reading a
+                // prompt it must not consume.
+                await FinishTurnAsync().ConfigureAwait(false);
+                return 0;
+            }
             catch (OperationCanceledException)
             {
                 // The token only stops local streaming; the run must be cancelled server-side
@@ -1433,8 +1505,11 @@ public sealed partial class AgentCommands
         finally
         {
             await StopTypeAheadAsync().ConfigureAwait(false);
-            sticky.Exit();
-            sessionRenderer.Surface.Repaint(w => w.Write("\u001b[r"));
+            if (!cmd.Json)
+            {
+                sticky.Exit();
+                sessionRenderer.Surface.Repaint(w => w.Write("\u001b[r"));
+            }
         }
 
         return 0;
@@ -1523,5 +1598,25 @@ public sealed partial class AgentCommands
 
         runId = envelope.RunId;
         return true;
+    }
+
+    /// <summary>
+    /// Signals that a --json chat turn stopped following a run that is waiting for an
+    /// operator approval. The run is left waiting server-side (never auto-approved or
+    /// auto-denied); the chat exits so the scripted consumer can answer it with
+    /// <c>ru agent approve</c>.
+    /// </summary>
+    private sealed class RunWaitingApprovalException : Exception
+    {
+        public RunWaitingApprovalException(string runId, string approvalId)
+            : base($"run {runId} is waiting for approval {approvalId}")
+        {
+            RunId = runId;
+            ApprovalId = approvalId;
+        }
+
+        public string RunId { get; }
+
+        public string ApprovalId { get; }
     }
 }

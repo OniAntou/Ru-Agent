@@ -12,9 +12,26 @@ namespace RuAgent.Cli;
 public sealed class AgentSlashCommands
 {
     private readonly SettingsApiClient _settingsClient;
-    private readonly TextWriter _out;
+    private TextWriter _humanOut;
     private readonly TextWriter _err;
     private readonly SessionApiClient? _sessionClient;
+
+    /// <summary>
+    /// Writer for human-facing text. Defaults to the construction writer; the chat REPL
+    /// repoints it at stderr when --json owns stdout, so no panel ever lands on stdout.
+    /// </summary>
+    public TextWriter HumanOut
+    {
+        get => _humanOut;
+        set => _humanOut = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    /// <summary>
+    /// True when --json owns stdout. Human text still renders (on <see cref="HumanOut"/>),
+    /// but commands whose bare form needs a picker or a secret entry refuse with a bounded
+    /// <c>interactive_required</c> on stderr instead of prompting or reading stdin.
+    /// </summary>
+    public bool Json { get; set; }
 
     /// <summary>
     /// Runs an interactive picker under the composer. Wired by the CLI to the line reader;
@@ -50,7 +67,7 @@ public sealed class AgentSlashCommands
     {
         _settingsClient = settingsClient ?? throw new ArgumentNullException(nameof(settingsClient));
         _sessionClient = sessionClient;
-        _out = outWriter ?? throw new ArgumentNullException(nameof(outWriter));
+        _humanOut = outWriter ?? throw new ArgumentNullException(nameof(outWriter));
         _err = errWriter ?? throw new ArgumentNullException(nameof(errWriter));
     }
 
@@ -99,7 +116,7 @@ public sealed class AgentSlashCommands
         if (slashCmd is "/help")
         {
             WriteHelpPanel();
-            await _out.FlushAsync().ConfigureAwait(false);
+            await _humanOut.FlushAsync().ConfigureAwait(false);
             return true;
         }
 
@@ -217,6 +234,14 @@ public sealed class AgentSlashCommands
 
     private async Task HandleBackendAsync(string? arg, CancellationToken cancellationToken)
     {
+        if (Json && string.IsNullOrWhiteSpace(arg))
+        {
+            // The bare form is a picker; --json must not prompt or read stdin, and
+            // picking for the user would mutate settings they never chose.
+            await _err.WriteLineAsync("interactive_required: /backend needs a picker; pass '/backend <name>' or run without --json.").ConfigureAwait(false);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(arg))
         {
             // No argument: offer the picker instead of making the operator recall the names.
@@ -239,7 +264,7 @@ public sealed class AgentSlashCommands
                     WriteBackendPanel(current, keyStates, providers);
                 }
 
-                await _out.FlushAsync().ConfigureAwait(false);
+                await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -260,12 +285,12 @@ public sealed class AgentSlashCommands
     {
         if (providers is not null)
         {
-            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
                 $"  {providers.Count} providers from models.dev")).ConfigureAwait(false);
             return;
         }
 
-        await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+        await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
             $"  models.dev list unavailable ({error}) - showing the known providers only")).ConfigureAwait(false);
     }
 
@@ -276,6 +301,14 @@ public sealed class AgentSlashCommands
     /// </summary>
     private async Task HandleReasoningAsync(string? arg, CancellationToken cancellationToken)
     {
+        if (Json && string.IsNullOrWhiteSpace(arg))
+        {
+            // The bare form is a picker; --json must not prompt or read stdin, and
+            // picking for the user would update settings they never chose.
+            await _err.WriteLineAsync("interactive_required: /reasoning needs a picker; pass '/reasoning <effort>' or run without --json.").ConfigureAwait(false);
+            return;
+        }
+
         ModelReasoningSnapshot snapshot;
         try
         {
@@ -300,9 +333,9 @@ public sealed class AgentSlashCommands
         {
             if (choices.Count == 0)
             {
-                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint(
                     $"  {snapshot.SelectedModel ?? "(no model)"} offers no reasoning effort ({snapshot.State}).")).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
+                await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -332,10 +365,10 @@ public sealed class AgentSlashCommands
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "reasoning", [new Tui.PanelSection(snapshot.SelectedModel, rows)], "/reasoning <effort>"))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
 
-        _out.Flush();
+        _humanOut.Flush();
     }
 
     private async Task SaveReasoningAsync(
@@ -372,8 +405,8 @@ public sealed class AgentSlashCommands
                 ["reasoning_identity"] = snapshot.Identity,
             };
             await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ reasoning effort: {effort}")).ConfigureAwait(false);
-            await _out.FlushAsync().ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ reasoning effort: {effort}")).ConfigureAwait(false);
+            await _humanOut.FlushAsync().ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -400,7 +433,7 @@ public sealed class AgentSlashCommands
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "backend", [new Tui.PanelSection(null, rows)], "/backend <name>"))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
     }
 
@@ -422,7 +455,7 @@ public sealed class AgentSlashCommands
 
             var saveBody = new JsonObject { ["backend"] = targetBackend };
             await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched backend to: {targetBackend}")).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched backend to: {targetBackend}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -433,7 +466,7 @@ public sealed class AgentSlashCommands
             await _err.WriteLineAsync($"backend_error: {ex.Message}").ConfigureAwait(false);
         }
 
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task<JsonElement?> TryReadSettingsAsync(CancellationToken cancellationToken)
@@ -450,6 +483,14 @@ public sealed class AgentSlashCommands
 
     private async Task HandleModelAsync(string? arg, CancellationToken cancellationToken)
     {
+        if (Json && string.IsNullOrWhiteSpace(arg))
+        {
+            // The bare form offers the model picker; --json must not prompt or read
+            // stdin, and picking for the user would update settings they never chose.
+            await _err.WriteLineAsync("interactive_required: /model needs a picker; pass '/model <name>' or run without --json.").ConfigureAwait(false);
+            return;
+        }
+
         try
         {
             if (string.IsNullOrWhiteSpace(arg))
@@ -492,13 +533,13 @@ public sealed class AgentSlashCommands
                     if (picked is not null)
                     {
                         await SetModelAsync(root, backend, picked, cancellationToken).ConfigureAwait(false);
-                        await _out.FlushAsync().ConfigureAwait(false);
+                        await _humanOut.FlushAsync().ConfigureAwait(false);
                         return;
                     }
                 }
 
                 WriteModelCard(root, backend);
-                await _out.FlushAsync().ConfigureAwait(false);
+                await _humanOut.FlushAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -514,14 +555,14 @@ public sealed class AgentSlashCommands
             await _err.WriteLineAsync($"settings_error: {ex.Message}").ConfigureAwait(false);
         }
 
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task SetModelAsync(JsonElement settings, string? backend, string model, CancellationToken cancellationToken)
     {
         var saveBody = new JsonObject { [ModelFieldFor(backend)] = model };
         await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched active model to: {model}")).ConfigureAwait(false);
+        await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched active model to: {model}")).ConfigureAwait(false);
     }
 
     private void WriteModelCard(JsonElement settings, string? backend)
@@ -545,7 +586,7 @@ public sealed class AgentSlashCommands
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>"))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
     }
 
@@ -558,7 +599,16 @@ public sealed class AgentSlashCommands
         }
 
         var parts = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length == 2 && string.Equals(parts[0], "remove", StringComparison.OrdinalIgnoreCase))
+        var isRemove = parts.Length == 2 && string.Equals(parts[0], "remove", StringComparison.OrdinalIgnoreCase);
+        if (Json && !isRemove)
+        {
+            // /key <provider> opens the masked secret panel; --json never prompts and
+            // never reads stdin. Signing out stays available: it needs no secret.
+            await _err.WriteLineAsync("interactive_required: /key needs a terminal to enter the secret; run without --json or use '/key remove <provider>'.").ConfigureAwait(false);
+            return;
+        }
+
+        if (isRemove)
         {
             await RemoveKeyAsync(parts[1], cancellationToken).ConfigureAwait(false);
             return;
@@ -604,7 +654,7 @@ public sealed class AgentSlashCommands
 
         if (secret is null)
         {
-            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  no key entered — key unchanged.")).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  no key entered — key unchanged.")).ConfigureAwait(false);
             return;
         }
 
@@ -624,7 +674,7 @@ public sealed class AgentSlashCommands
             }
 
             await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.DisplayName}")).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.DisplayName}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -635,7 +685,7 @@ public sealed class AgentSlashCommands
             await _err.WriteLineAsync($"key_error: {ex.Message}").ConfigureAwait(false);
         }
 
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task RemoveKeyAsync(string providerArg, CancellationToken cancellationToken)
@@ -650,7 +700,7 @@ public sealed class AgentSlashCommands
         try
         {
             var message = await _settingsClient.RemoveProviderAsync(provider.Choice, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ {message}")).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ {message}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -661,7 +711,7 @@ public sealed class AgentSlashCommands
             await _err.WriteLineAsync($"key_error: {ex.Message}").ConfigureAwait(false);
         }
 
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task WriteKeyStatusAsync(CancellationToken cancellationToken)
@@ -712,10 +762,10 @@ public sealed class AgentSlashCommands
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "keys", [new Tui.PanelSection(null, rows)], "/key <provider> · /key remove <provider>"))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
 
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task HandleTreeAsync(string? currentSessionId, CancellationToken cancellationToken)
@@ -731,7 +781,7 @@ public sealed class AgentSlashCommands
             var listJson = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
             if (!listJson.TryGetProperty("sessions", out var sessionsProp) || sessionsProp.ValueKind != JsonValueKind.Array)
             {
-                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
+                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
                 return;
             }
 
@@ -747,11 +797,11 @@ public sealed class AgentSlashCommands
 
             if (sessions.Count == 0)
             {
-                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
+                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
                 return;
             }
 
-            await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Accent("Session Tree (DAG):"))).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Accent("Session Tree (DAG):"))).ConfigureAwait(false);
 
             var sessionMap = sessions.ToDictionary(s => s.Id);
             var childrenMap = new Dictionary<string, List<SessionTreeNode>>();
@@ -783,7 +833,7 @@ public sealed class AgentSlashCommands
                 var titleText = string.IsNullOrWhiteSpace(node.Title) ? "Untitled" : node.Title;
 
                 var line = $"{indent}{marker}{Tui.TuiPalette.BoldPaint(shortId)} - {titleText} ({node.MessageCount} msgs){currentTag}";
-                _out.WriteLine(line);
+                _humanOut.WriteLine(line);
 
                 if (childrenMap.TryGetValue(node.Id, out var children))
                 {
@@ -808,7 +858,7 @@ public sealed class AgentSlashCommands
         {
             await _err.WriteLineAsync($"tree_error: {ex.Message}").ConfigureAwait(false);
         }
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task HandleStatsAsync(string? currentSessionId, string? preset, string? workspacePath, CancellationToken cancellationToken)
@@ -824,7 +874,7 @@ public sealed class AgentSlashCommands
         }
 
         WriteStatusCard(currentSessionId, preset, workspacePath, settings);
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -851,7 +901,7 @@ public sealed class AgentSlashCommands
 
         foreach (var line in Tui.TuiSurfaces.Status(PanelWidth, card))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
     }
 
@@ -859,7 +909,7 @@ public sealed class AgentSlashCommands
     {
         foreach (var line in Tui.TuiSurfaces.Help(PanelWidth))
         {
-            _out.WriteLine(line);
+            _humanOut.WriteLine(line);
         }
     }
 
@@ -921,7 +971,7 @@ public sealed class AgentSlashCommands
             }
 
             await File.WriteAllTextAsync(exportPath, sb.ToString(), cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Conversation exported to: {exportPath}")).ConfigureAwait(false);
+            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Conversation exported to: {exportPath}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -931,7 +981,7 @@ public sealed class AgentSlashCommands
         {
             await _err.WriteLineAsync($"export_error: {ex.Message}").ConfigureAwait(false);
         }
-        await _out.FlushAsync().ConfigureAwait(false);
+        await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
     private sealed record SessionTreeNode(string Id, string Title, string? ParentId, int MessageCount);

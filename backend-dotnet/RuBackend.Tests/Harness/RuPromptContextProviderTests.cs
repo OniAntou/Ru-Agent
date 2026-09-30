@@ -17,7 +17,7 @@ public sealed class RuPromptContextProviderTests
     public async Task Builds_fresh_root_bound_context_and_keeps_tool_results_untrusted()
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
-        File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "root guidance", new System.Text.UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "root guidance", new System.Text.UTF8Encoding(false));
         var skills = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "reloadable")).FullName;
         File.WriteAllText(Path.Combine(skills, "SKILL.md"), "# Reloadable\n\nfirst skill body", new System.Text.UTF8Encoding(false));
         var settings = new StubSettingsStore(Settings());
@@ -49,10 +49,10 @@ public sealed class RuPromptContextProviderTests
         var run = TestRun();
 
         var first = await provider.BuildAsync(run, snapshot, CancellationToken.None);
-        File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "changed guidance", new System.Text.UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "changed guidance", new System.Text.UTF8Encoding(false));
         var second = await provider.BuildAsync(run, snapshot, CancellationToken.None);
 
-        Assert.Equal(new[] { "root:Ru.md", "skill:reloadable" }, first.InstructionBlocks.Select(block => block.SourceId));
+        Assert.Equal(new[] { "root:AGENTS.md", "skill:reloadable" }, first.InstructionBlocks.Select(block => block.SourceId));
         File.WriteAllText(Path.Combine(skills, "SKILL.md"), "# Reloadable\n\nchanged skill body", new System.Text.UTF8Encoding(false));
         var third = await provider.BuildAsync(run, snapshot, CancellationToken.None);
         var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");

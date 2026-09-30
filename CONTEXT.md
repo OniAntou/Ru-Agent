@@ -160,7 +160,7 @@ barriers. A text-selection provider path still emits exactly one JSON selection.
 _Avoid_: one-call-per-step rule, reissuing approved calls
 
 **Agent Persona Source**:
-The root-selected `Ru.md` instruction is the sole Agent persona/style source.
+The root-selected `AGENTS.md` instruction is the sole Agent persona/style source.
 The built-in prompt is a neutral execution contract. Root instructions may
 guide persona and workflow but cannot grant tools, folders, network access, or
 override Broker policy.

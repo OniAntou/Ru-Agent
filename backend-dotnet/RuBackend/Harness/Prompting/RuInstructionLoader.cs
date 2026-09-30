@@ -28,7 +28,7 @@ public sealed class RuInstructionLoadResult
 }
 
 /// <summary>
-/// Loads only the fixed Ru instruction files below a trusted run root.
+/// Loads only the fixed workspace instruction files below a trusted run root.
 /// No model-provided path or recursive discovery is accepted here.
 /// </summary>
 public sealed class RuInstructionLoader
@@ -40,7 +40,7 @@ public sealed class RuInstructionLoader
 
     private static readonly (string SourceId, string RelativePath, string DisplayName)[] Candidates =
     [
-        ("root:Ru.md", "Ru.md", "Ru.md"),
+        ("root:AGENTS.md", "AGENTS.md", "AGENTS.md"),
         ("ru:AGENTS.md", Path.Combine(".ru", "AGENTS.md"), ".ru/AGENTS.md"),
         ("ru:CONTEXT.md", Path.Combine(".ru", "CONTEXT.md"), ".ru/CONTEXT.md"),
     ];

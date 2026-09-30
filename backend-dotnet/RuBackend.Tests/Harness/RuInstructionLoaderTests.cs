@@ -12,17 +12,17 @@ public sealed class RuInstructionLoaderTests
     public void Loads_only_root_candidates_in_stable_order_and_normalizes_content()
     {
         using var fixture = TempRoot.Create();
-        File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "root guidance\r\n", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "root guidance\r\n", new UTF8Encoding(false));
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), "agent guidance", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), "context guidance", new UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(fixture.Parent, "Ru.md"), "parent must not load", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Parent, "AGENTS.md"), "parent must not load", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, "notes.md"), "arbitrary must not load", new UTF8Encoding(false));
 
         var result = new RuInstructionLoader().Load(fixture.Root);
 
         Assert.Equal(
-            new[] { "root:Ru.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
+            new[] { "root:AGENTS.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal("root guidance", result.Blocks[0].Content);
         Assert.Equal(
@@ -37,7 +37,7 @@ public sealed class RuInstructionLoaderTests
     {
         using var fixture = TempRoot.Create();
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
-        File.WriteAllBytes(Path.Combine(fixture.Root, "Ru.md"), new byte[] { 0xff, 0xfe });
+        File.WriteAllBytes(Path.Combine(fixture.Root, "AGENTS.md"), new byte[] { 0xff, 0xfe });
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), new string('x', 64 * 1024 + 1), new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), "contains\0nul", new UTF8Encoding(false));
 
@@ -78,7 +78,7 @@ public sealed class RuInstructionLoaderTests
     public void Appends_markdown_skills_after_fixed_roots_in_precedence_order_and_marks_origins()
     {
         using var fixture = TempRoot.Create();
-        File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "root guidance", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "root guidance", new UTF8Encoding(false));
         var workspaceSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
         var ruSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru", "skills")).FullName;
         var userSkills = Directory.CreateDirectory(Path.Combine(fixture.UserDataRoot, "Ru", "skills")).FullName;
@@ -90,7 +90,7 @@ public sealed class RuInstructionLoaderTests
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
         Assert.Equal(
-            new[] { "root:Ru.md", "skill:alpha", "skill:beta", "skill:gamma" },
+            new[] { "root:AGENTS.md", "skill:alpha", "skill:beta", "skill:gamma" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[0].Origin);
         Assert.All(result.Blocks.Skip(1), block => Assert.Equal(PromptInstructionOrigin.ExternalSkill, block.Origin));
@@ -121,7 +121,7 @@ public sealed class RuInstructionLoaderTests
     {
         using var fixture = TempRoot.Create();
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
-        File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), new string('r', 64 * 1024), new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), new string('r', 64 * 1024), new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), new string('a', 64 * 1024), new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), new string('c', 64 * 1024), new UTF8Encoding(false));
         var skills = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;

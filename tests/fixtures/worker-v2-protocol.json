@@ -59,8 +59,8 @@
             },
             "instruction_blocks": [
               {
-                "source_id": "root:Ru.md",
-                "display_name": "Ru.md",
+                "source_id": "root:AGENTS.md",
+                "display_name": "AGENTS.md",
                 "content": "root guidance",
                 "content_sha256": "9be3ca7b30ed9ac2b18b1c72ac9562e051667e37f4dcb5748bf802886acfb8e0"
               }

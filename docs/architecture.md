@@ -201,7 +201,7 @@ records which instruction bytes the step was composed against; it is not an
 attestation of the rendered system message (see the in-process model runner
 note above).
 
-The instruction loader reads the fixed `Ru.md`, `.ru/AGENTS.md`, and
+The instruction loader reads the fixed `AGENTS.md`, `.ru/AGENTS.md`, and
 `.ru/CONTEXT.md` files below the selected run root, then discovers direct-child
 skill directories from these roots in precedence order:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
@@ -230,7 +230,7 @@ and are never automatically read or executed. The typed context has bounded
 references (32 KiB each), and a 512 KiB serialized-context
 cap.
 
-`Ru.md` remains the sole persona/style source. Skills are rendered as
+`AGENTS.md` remains the sole persona/style source. Skills are rendered as
 `ExternalSkill` untrusted guidance. Their `allowed-tools` metadata is
 descriptive only and cannot add capabilities, grants, paths, network access,
 or approvals. Workspace `SKILL.md` bodies are prompt guidance only and never

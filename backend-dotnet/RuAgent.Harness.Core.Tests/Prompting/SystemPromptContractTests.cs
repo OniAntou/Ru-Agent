@@ -18,7 +18,7 @@ public sealed class SystemPromptContractTests
         Assert.Equal("ru-agent", context.AgentProfile);
         Assert.Equal("standard", context.Preset);
         Assert.Single(context.InstructionBlocks);
-        Assert.Equal("root:Ru.md", context.InstructionBlocks[0].SourceId);
+        Assert.Equal("root:AGENTS.md", context.InstructionBlocks[0].SourceId);
         Assert.Equal(PromptInstructionOrigin.Workspace, context.InstructionBlocks[0].Origin);
         Assert.Contains("\"origin\":\"Workspace\"", Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() =>
@@ -101,8 +101,8 @@ public sealed class SystemPromptContractTests
                 new[]
                 {
                     new PromptInstructionBlock(
-                        "root:Ru.md",
-                        "Ru.md",
+                        "root:AGENTS.md",
+                        "AGENTS.md",
                         "root guidance",
                         "9be3ca7b30ed9ac2b18b1c72ac9562e051667e37f4dcb5748bf802886acfb8e0"),
                 },
@@ -120,7 +120,7 @@ public sealed class SystemPromptContractTests
                 "ru-agent",
                 "standard",
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
-                new[] { new PromptInstructionBlock("root:Ru.md", "Ru.md", content, "a".PadRight(64, 'a')) },
+                new[] { new PromptInstructionBlock("root:AGENTS.md", "AGENTS.md", content, "a".PadRight(64, 'a')) },
                 Array.Empty<PromptCapability>(),
                 new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
         }
@@ -138,7 +138,7 @@ public sealed class SystemPromptContractTests
                     new PromptBlockDigest("agent.contract", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("environment", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("profile", "b".PadRight(64, 'b')),
-                    new PromptBlockDigest("instruction.root:Ru.md", context.InstructionBlocks[0].ContentSha256),
+                    new PromptBlockDigest("instruction.root:AGENTS.md", context.InstructionBlocks[0].ContentSha256),
                     new PromptBlockDigest("capabilities", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("runtime", "b".PadRight(64, 'b')),
                 });

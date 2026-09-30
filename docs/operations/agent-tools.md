@@ -310,7 +310,7 @@ Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
 only: it never grants a tool, scope, path, network permission, approval, or
 Broker capability.
 
-`Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
+`AGENTS.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
 the selected run root, not repo templates. Minimal format:
 
 ```markdown

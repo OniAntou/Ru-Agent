@@ -129,7 +129,7 @@ public sealed class AgentPromptReceiptTests
                 "Asia/Bangkok",
                 "2026-08-29",
                 "LLM"),
-            [new PromptInstructionBlock("root:Ru.md", "Ru.md", content, digest)],
+            [new PromptInstructionBlock("root:AGENTS.md", "AGENTS.md", content, digest)],
             [new PromptCapability(
                 "files.read",
                 "1.0.0",
@@ -159,7 +159,7 @@ public sealed class AgentPromptReceiptTests
                 new PromptBlockDigest("environment", zero),
                 new PromptBlockDigest("profile", zero),
                 new PromptBlockDigest(
-                    "instruction.root:Ru.md",
+                    "instruction.root:AGENTS.md",
                     instructionDigest ?? context.InstructionBlocks[0].ContentSha256),
                 new PromptBlockDigest("capabilities", zero),
                 new PromptBlockDigest("runtime", zero),

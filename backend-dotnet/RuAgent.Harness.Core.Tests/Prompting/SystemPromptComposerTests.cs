@@ -21,7 +21,7 @@ public sealed class SystemPromptComposerTests
                 "agent.contract",
                 "environment",
                 "profile",
-                "instruction.root:Ru.md",
+                "instruction.root:AGENTS.md",
                 "capabilities",
                 "runtime",
             },
@@ -38,7 +38,7 @@ public sealed class SystemPromptComposerTests
         var snapshot = SystemPromptComposer.Compose(context);
 
         var profileIndex = snapshot.Text.IndexOf("## profile", StringComparison.Ordinal);
-        var instructionIndex = snapshot.Text.IndexOf("## instruction.root:Ru.md", StringComparison.Ordinal);
+        var instructionIndex = snapshot.Text.IndexOf("## instruction.root:AGENTS.md", StringComparison.Ordinal);
         Assert.True(profileIndex >= 0);
         Assert.True(instructionIndex >= 0);
         Assert.True(profileIndex < instructionIndex);
@@ -248,8 +248,8 @@ public sealed class SystemPromptComposerTests
             IReadOnlyList<PromptCapability>? capabilities = null,
             string instruction = "root guidance",
             PromptRuntimeContext? runtime = null,
-            string sourceId = "root:Ru.md",
-            string displayName = "Ru.md",
+            string sourceId = "root:AGENTS.md",
+            string displayName = "AGENTS.md",
             PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace,
             string preset = "standard",
             int schemaVersion = SystemPromptContext.PromptContextSchemaVersion) =>

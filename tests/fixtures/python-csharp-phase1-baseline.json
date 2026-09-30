@@ -20,7 +20,7 @@
             "sha256": "1eaa0d4be6f6c2138608676c7f346ff1b0070b62903585961e163791006d3d80"
           },
           {
-            "block_id": "instruction.root:Ru.md",
+            "block_id": "instruction.root:AGENTS.md",
             "sha256": "bce56d097302d30b7e72962ed8db4586cd0a70418836de6acdecaa644a261ec4"
           },
           {
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "990402f917a6b46b89e0301f4d45ac2d4f4c9951c5ff5442a5bbb03576b482f7"
+        "prompt_sha256": "9efa798ba83bb48d233c48389c1b6053ab80c86752bac35d0da81f6326020e2b"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -74,8 +74,8 @@
           {
             "content": "Root guidance for the reference context.\nLine two.",
             "content_sha256": "bce56d097302d30b7e72962ed8db4586cd0a70418836de6acdecaa644a261ec4",
-            "display_name": "Ru.md",
-            "source_id": "root:Ru.md"
+            "display_name": "AGENTS.md",
+            "source_id": "root:AGENTS.md"
           }
         ],
         "preset": "standard",

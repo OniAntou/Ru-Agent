@@ -4,6 +4,29 @@ import readline from "node:readline";
 const mode = process.env.FAKE_BRIDGE_MODE ?? "echo";
 const rl = readline.createInterface({ input: process.stdin });
 
+const METHODS = [
+  "initialize",
+  "host.status",
+  "session.create",
+  "session.list",
+  "session.rewind",
+  "run.start",
+  "run.attach",
+  "run.detach",
+  "run.trust",
+  "run.approve",
+  "run.cancel",
+  "run.continue",
+  "run.status",
+  "run.command",
+  "run.reconcile",
+  "run.output",
+  "policy.list",
+  "policy.import",
+  "policy.remove",
+];
+const NOTIFICATIONS = ["run.event", "run.transient", "run.detached", "bridge.shutdown"];
+
 function send(message, callback) {
   process.stdout.write(JSON.stringify(message) + "\n", callback);
 }
@@ -22,7 +45,12 @@ rl.on("line", (line) => {
     return;
   }
   if (request.method === "initialize") {
-    send({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: 1, methods: ["initialize"], notifications: [] } });
+    const methods = METHODS.filter((method) => method !== process.env.FAKE_BRIDGE_DROP_METHOD);
+    send({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: 1, methods, notifications: NOTIFICATIONS } });
+    return;
+  }
+  if (request.method === "anything") {
+    send({ jsonrpc: "2.0", id: request.id, result: { echoed: request.params ?? {} } });
     return;
   }
   if (request.method === "run.event.test") {
@@ -61,7 +89,20 @@ rl.on("line", (line) => {
     send({ jsonrpc: "2.0", id: request.id, result: { detached: request.params.subscriptionId } });
     return;
   }
-  send({ jsonrpc: "2.0", id: request.id, result: { echoed: request.params ?? {} } });
+  if (request.method === "run.approve") {
+    send({ jsonrpc: "2.0", id: request.id, result: { ok: true, approvalId: request.params.approvalId, decision: request.params.decision } });
+    return;
+  }
+  if (request.method === "run.cancel") {
+    send({ jsonrpc: "2.0", id: request.id, result: { cancelled: request.params.runId } });
+    return;
+  }
+  if (request.method === "run.output") {
+    const data = Buffer.from("hello", "utf8");
+    send({ jsonrpc: "2.0", id: request.id, result: { encoding: "base64", data: data.toString("base64"), byte_length: data.length } });
+    return;
+  }
+  send({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "method_not_found: " + request.method } });
 });
 
 rl.on("close", () => process.exit(0));

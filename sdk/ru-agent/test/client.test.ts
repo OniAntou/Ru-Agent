@@ -117,4 +117,44 @@ describe("RuAgent", () => {
     },
     2_000,
   );
+
+  it("approves with the requested decision", async () => {
+    const ru = await start();
+    const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+    const result = await run.approve("apr_" + "b".repeat(32), "allow_always");
+    expect(result.decision).toBe("allow_always");
+    await ru.close();
+  });
+
+  it("cancels through run.cancel", async () => {
+    const ru = await start();
+    const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+    await expect(run.cancel()).resolves.toBeUndefined();
+    await ru.close();
+  });
+
+  it("decodes run.output base64 into a Buffer", async () => {
+    const ru = await start();
+    const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+    const bytes = await run.output("payload_" + "b".repeat(32));
+    expect(Buffer.isBuffer(bytes)).toBe(true);
+    expect(bytes.toString("utf8")).toBe("hello");
+    await ru.close();
+  });
+
+  it("accepts a bridge that advertises every required method", async () => {
+    const ru = await start();
+    await ru.close();
+  });
+
+  it("rejects a bridge handshake that is missing a required method", async () => {
+    await expect(
+      RuAgent.start({
+        command: process.execPath,
+        args: [fixture],
+        agentArgs: [],
+        env: { FAKE_BRIDGE_MODE: "echo", FAKE_BRIDGE_DROP_METHOD: "run.output" },
+      }),
+    ).rejects.toThrow(/missing required method\(s\): run\.output/);
+  });
 });

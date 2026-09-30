@@ -234,5 +234,9 @@ await ru.close();
 ```
 
 The SDK spawns the bridge, manages request ids and cancellation, and surfaces
-`data.ruCode` as a typed error field. See
+`data.ruCode` as a typed error field. `RuAgent.start()` also checks the
+`methods` handshake list against what the wrapper can call and rejects with
+`bridge_method_missing` on drift. `run.events()` ends on a terminal event and
+throws a bounded `BridgeTransportError` if the subscription ends first
+(`run.detached`) or the bridge shuts down/exits, instead of waiting forever. See
 [`sdk/ru-agent/README.md`](../../sdk/ru-agent/README.md) for the full API.

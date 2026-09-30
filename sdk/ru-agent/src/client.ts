@@ -1,8 +1,36 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { BridgeTransport } from "./transport.js";
+import { RuRpcError } from "./errors.js";
 import { Run } from "./run.js";
 import type { RunHandleInfo, RuAgentStartOptions } from "./types.js";
+
+const REQUIRED_BRIDGE_METHODS = [
+  "initialize",
+  "session.create",
+  "session.list",
+  "session.rewind",
+  "run.start",
+  "run.attach",
+  "run.detach",
+  "run.approve",
+  "run.cancel",
+  "run.continue",
+  "run.status",
+  "run.output",
+] as const;
+
+const HANDSHAKE_ERROR_MAX_CHARS = 256;
+
+function assertBridgeHandshake(handshake: Record<string, unknown>): void {
+  const advertised = new Set(
+    Array.isArray(handshake.methods) ? handshake.methods.filter((method): method is string => typeof method === "string") : [],
+  );
+  const missing = REQUIRED_BRIDGE_METHODS.filter((method) => !advertised.has(method));
+  if (missing.length === 0) return;
+  const message = `bridge is missing required method(s): ${missing.join(", ")}`.slice(0, HANDSHAKE_ERROR_MAX_CHARS);
+  throw new RuRpcError(message, -32601, "bridge_method_missing");
+}
 
 /**
  * Resolves the command used to spawn the bridge: an explicit `command` wins,
@@ -44,10 +72,11 @@ export class RuAgent {
     });
     const agent = new RuAgent(transport);
     try {
-      await transport.request("initialize", {
+      const handshake = await transport.request<Record<string, unknown>>("initialize", {
         protocolVersion: 1,
         clientInfo: { name: "@ru/agent-sdk", version: "0.1.0" },
       });
+      assertBridgeHandshake(handshake);
     } catch (error) {
       await transport.close().catch(() => undefined);
       throw error;

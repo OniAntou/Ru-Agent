@@ -29,9 +29,12 @@ await ru.close();
 ```
 
 `RuAgent.start` accepts `command`, `args`, `agentArgs`, `cwd`, and `env` to
-control how the bridge process is spawned. `run.events()` can also stream
-transient events (`{ includeTransient: true }`) and replay from a sequence
-number (`{ afterSequence: n }`).
+control how the bridge process is spawned, and rejects the handshake if the
+bridge does not advertise every method the wrapper can call. `run.events()` can
+also stream transient events (`{ includeTransient: true }`) and replay from a
+sequence number (`{ afterSequence: n }`). It ends on a terminal event; if the
+bridge detaches the subscription first (`run.detached`) or shuts down, the
+iterator throws a bounded `BridgeTransportError` instead of hanging.
 
 ## Protocol
 

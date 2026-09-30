@@ -84,9 +84,9 @@ public sealed partial class AgentCommands : IDisposable
     private async Task StreamRunEventsResumedAsync(
         string runId,
         Func<SseFrame, CancellationToken, Task> onFrameAsync,
-        CancellationToken ct)
+        CancellationToken ct,
+        long afterSequence = 0)
     {
-        var afterSequence = 0L;
         var resumes = 0;
         while (true)
         {

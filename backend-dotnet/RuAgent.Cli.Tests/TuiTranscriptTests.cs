@@ -19,6 +19,15 @@ public sealed class TuiTranscriptTests
         return (new TuiTranscript(surface, status) { Width = 80 }, writer.GetStringBuilder());
     }
 
+    private static (TuiTranscript Transcript, TuiStatusLine Status, StringBuilder Output) CreateWithStatus()
+    {
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new StringWriter();
+        var surface = new TuiSurface(writer);
+        var status = new TuiStatusLine(surface);
+        return (new TuiTranscript(surface, status) { Width = 80 }, status, writer.GetStringBuilder());
+    }
+
     /// <summary>Transcript rows as plain lines: carriage-return repaints normalized away.</summary>
     private static IReadOnlyList<string> Rows(StringBuilder output) =>
         output.ToString()
@@ -828,5 +837,75 @@ public sealed class TuiTranscriptTests
         Assert.True(
             text.IndexOf("◆ Ru", StringComparison.Ordinal) < text.IndexOf("Hello there!", StringComparison.Ordinal),
             "the assistant header must sit between the settled tool and the prose");
+    }
+
+    [Fact]
+    public void ContinueRequested_WaitingUser_PrintsParkedNoticeAndContinuePath()
+    {
+        var (transcript, status, output) = CreateWithStatus();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("continue.requested", "waiting_user", "model_step_budget_exhausted"));
+
+        var rows = Rows(output);
+        Assert.Equal(TuiRunState.Paused, status.State);
+        Assert.Contains(rows, row => row.Contains("run parked", StringComparison.Ordinal));
+        Assert.Contains(
+            rows,
+            row => row.Contains("model_step_budget_exhausted", StringComparison.Ordinal)
+                && row.Contains("/continue", StringComparison.Ordinal)
+                && row.Contains("ru agent continue run_1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RunStateChanged_WaitingUser_SetsPausedRow()
+    {
+        var (transcript, status, output) = CreateWithStatus();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("run.state_changed", "waiting_user", "waiting_user"));
+
+        var row = TuiText.Strip(status.Compose(80));
+        Assert.Equal(TuiRunState.Paused, status.State);
+        Assert.Contains("run paused", row, StringComparison.Ordinal);
+
+        // The backend commits continue.requested and run.state_changed together for the
+        // same park; the second frame must refresh the row without a second notice.
+        transcript.ApplyDurable(Durable("continue.requested", "waiting_user", "model_step_budget_exhausted", sequence: 6));
+
+        Assert.Single(Rows(output), candidate => candidate.Contains("run parked", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ReconciliationRequired_SetsPausedAndContinueNotice()
+    {
+        var (transcript, status, output) = CreateWithStatus();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("reconciliation.required", "reconciliation_required", "recovery_ambiguous"));
+
+        Assert.Equal(TuiRunState.Paused, status.State);
+        Assert.Contains(
+            Rows(output),
+            row => row.Contains("run parked", StringComparison.Ordinal)
+                && row.Contains("recovery_ambiguous", StringComparison.Ordinal)
+                && row.Contains("/continue", StringComparison.Ordinal));
+
+        // The paired state_changed frame for the same park must not repeat the notice.
+        transcript.ApplyDurable(Durable("run.state_changed", "reconciliation_required", "reconciliation_required", sequence: 6));
+
+        Assert.Single(Rows(output), candidate => candidate.Contains("run parked", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Continued_ReturnsToRunning_ClearsPaused()
+    {
+        var (transcript, status, output) = CreateWithStatus();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("continue.requested", "waiting_user", "model_step_budget_exhausted"));
+        Assert.Equal(TuiRunState.Paused, status.State);
+
+        transcript.ApplyDurable(Durable("continue.requested", "running", "continued", sequence: 6));
+
+        Assert.NotEqual(TuiRunState.Paused, status.State);
+        // The continue commit itself stays silent: only the park prints.
+        Assert.DoesNotContain(Rows(output), row => row.Contains("continued", StringComparison.Ordinal));
     }
 }

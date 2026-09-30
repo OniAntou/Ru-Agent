@@ -148,6 +148,7 @@ public sealed partial class AgentCommands
         CancellationTokenSource? turnCts = null;
         string? activeRunId = null;
         string? parkedRunId = null;
+        var assistantPayloadRefs = new List<string>();
         CancellationTokenSource? typeAheadCts = null;
         Task? typeAheadLoop = null;
         bool typeAheadLive = false;
@@ -788,6 +789,249 @@ public sealed partial class AgentCommands
         string prompt = Tui.TuiPalette.BoldPaint("❯ ");
         string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
+        /// <summary>
+        /// Follows one run to its terminal frame, rendering every durable and transient
+        /// event and recovering a lost assistant head once it ends. <paramref name="afterSequence"/>
+        /// is the durable cursor to resume from: an interactive turn starts at 0, while a
+        /// continued run starts at the parked run's LastSequence so the resume never
+        /// replays output the terminal already printed.
+        /// </summary>
+        async Task FollowRunAsync(string runId, long afterSequence, CancellationToken ct)
+        {
+            async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // A parked run emits no further driving frames; the server holds the SSE
+                // stream open, which used to read as an eternally spinning "Thinking" row.
+                // Release the stream instead: the catch treats a set parkedRunId as a
+                // pause, not a user interruption, so no cancel is posted.
+                if (TryReadParkedTransition(frame, out var parkedRun))
+                {
+                    parkedRunId = parkedRun;
+                    turnCts?.Cancel();
+                }
+
+                if (cmd.Json)
+                {
+                    NdjsonEventRenderer.RenderFrame(frame, _out);
+                }
+                else
+                {
+                    // No per-frame cursor restore: the surface tracks the transcript
+                    // append point across footer repaints, and rewinding to the row
+                    // start here would overwrite a partially streamed row.
+                    sessionRenderer.RenderFrame(frame);
+                    if (sticky.Active && typeAheadLive)
+                    {
+                        PaintStickyFooter();
+                    }
+
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
+                            {
+                                var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
+                                var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
+
+                                if (decision == Tui.ApprovalPrompt.Deny)
+                                {
+                                    await _agentClient.DenyAsync(targetRunId, envelope.ApprovalId, frameCt).ConfigureAwait(false);
+                                    sessionRenderer.Note("denied · this tool call aborts", Tui.TuiToken.Err);
+                                }
+                                else
+                                {
+                                    await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, decision, frameCt).ConfigureAwait(false);
+                                    var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session"
+                                        : decision == Tui.ApprovalPrompt.AllowAlways ? "remembered for this project"
+                                        : "once";
+                                    sessionRenderer.Note("approved · " + scope, Tui.TuiToken.Ok);
+                                }
+
+                                await _out.FlushAsync().ConfigureAwait(false);
+                            }
+                        }
+                        catch (OperationCanceledException) when (frameCt.IsCancellationRequested)
+                        {
+                            // The operator cancelled the turn while the approval was open.
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            await _err.WriteLineAsync($"inline_approval_error: {ex.Message}").ConfigureAwait(false);
+                        }
+                    }
+
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"model.step_completed\"", StringComparison.Ordinal))
+                    {
+                        // Remember every step's durable assistant payload so a lost
+                        // delta tail can be recovered once the run finishes.
+                        try
+                        {
+                            var stepEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (stepEnvelope is { EventType: "model.step_completed" }
+                                && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
+                            {
+                                assistantPayloadRefs.Add(stepEnvelope.PayloadRef);
+                            }
+                        }
+                        catch (System.Text.Json.JsonException)
+                        {
+                            // Non-conforming frame payload; the recovery falls back to
+                            // whatever steps were already recorded.
+                        }
+                    }
+
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var usageEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (usageEnvelope?.TotalTokens is { } total)
+                            {
+                                lastTotalTokens = total;
+                                sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                            }
+                        }
+                        catch (System.Text.Json.JsonException)
+                        {
+                            // Non-conforming frame payload; token tally keeps its last value.
+                        }
+                    }
+                }
+                await _out.FlushAsync().ConfigureAwait(false);
+            }
+
+            await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
+            sessionRenderer.Flush();
+            await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Shared wind-down for a cancelled turn: distinguishes a user interruption (the
+        /// server run is cancelled so it releases the workspace lock) from a run that
+        /// parked itself (nothing is executing; the user resumes it explicitly).
+        /// </summary>
+        async Task ReportInterruptionAsync()
+        {
+            var userCancelled = turnCts?.IsCancellationRequested == true;
+            await FinishTurnAsync().ConfigureAwait(false);
+            var cancelRunId = userCancelled && parkedRunId is null ? activeRunId : null;
+            if (parkedRunId is not null)
+            {
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn(
+                    $"Run parked · resume with /continue (or 'ru agent continue {parkedRunId}').")).ConfigureAwait(false);
+            }
+            else if (cancelRunId is null)
+            {
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+            }
+            else
+            {
+                try
+                {
+                    await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resumes a parked run the way the GUI's typed Continue does: read the parked
+        /// run's durable cursor, post the continue, then follow the run from that cursor
+        /// as if it were a fresh turn. Without a parked run and without an explicit run
+        /// id this is informational, never an error.
+        /// </summary>
+        async Task ContinueParkedRunAsync(string? runIdArg)
+        {
+            var targetRunId = string.IsNullOrWhiteSpace(runIdArg) ? parkedRunId : runIdArg.Trim();
+            if (string.IsNullOrWhiteSpace(targetRunId))
+            {
+                await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("no parked run · nothing to continue")).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
+            // The parked turn already rendered durable frames up to LastSequence; the
+            // continue call's own "continued" event is the first frame after it. Resuming
+            // from 0 would replay the whole turn into a terminal that cannot unprint.
+            GetAgentRunResponse run;
+            try
+            {
+                run = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AgentApiException ex)
+            {
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
+            {
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                    $"run_not_runnable: run {targetRunId} is {run.Status} and cannot be continued.")).ConfigureAwait(false);
+                if (string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal))
+                {
+                    parkedRunId = null;
+                }
+
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
+            turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            sessionRenderer.Width = Tui.TuiViewport.Width();
+            sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            if (ApplyFooterLayout(repaint: true))
+            {
+                await StartTypeAheadAsync().ConfigureAwait(false);
+            }
+
+            if (sticky.Active)
+            {
+                sticky.RestoreTranscriptCursor();
+            }
+
+            sessionRenderer.BeginTurn();
+            activeRunId = targetRunId;
+            parkedRunId = null;
+            assistantPayloadRefs.Clear();
+
+            try
+            {
+                await _agentClient.ContinueAsync(targetRunId, turnCts.Token).ConfigureAwait(false);
+                await FollowRunAsync(targetRunId, run.LastSequence, turnCts.Token).ConfigureAwait(false);
+                await FinishTurnAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await ReportInterruptionAsync().ConfigureAwait(false);
+            }
+            catch (AgentApiException ex)
+            {
+                await FinishTurnAsync().ConfigureAwait(false);
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await FinishTurnAsync().ConfigureAwait(false);
+                await _err.WriteLineAsync(Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
+            }
+
+            await _out.FlushAsync().ConfigureAwait(false);
+        }
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -878,7 +1122,25 @@ public sealed partial class AgentCommands
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
+                if (slashCmd is "/continue")
+                {
+                    await ContinueParkedRunAsync(arg).ConfigureAwait(false);
+                    continue;
+                }
                 await _err.WriteLineAsync($"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                continue;
+            }
+
+            // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
+            // that literal when a parked run is known: otherwise it is an ordinary prompt.
+            if (parkedRunId is not null
+                && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!cmd.Json)
+                {
+                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                }
+                await ContinueParkedRunAsync(null).ConfigureAwait(false);
                 continue;
             }
 
@@ -910,11 +1172,15 @@ public sealed partial class AgentCommands
                 presetUpdate.Version,
                 idempotencyKey);
             var presetCommitted = false;
-            var assistantPayloadRefs = new List<string>();
 
             try
             {
                 turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
+                // guard can never POST a cancel against a park left over from a prior turn.
+                activeRunId = null;
+                parkedRunId = null;
+                assistantPayloadRefs.Clear();
                 sessionRenderer.Width = Tui.TuiViewport.Width();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                 if (ApplyFooterLayout(repaint: true))
@@ -931,7 +1197,6 @@ public sealed partial class AgentCommands
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: sessionRenderer.Width));
                 }
                 sessionRenderer.BeginTurn();
-                activeRunId = null;
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
                 activeRunId = resp.RunId;
 
@@ -1003,139 +1268,21 @@ public sealed partial class AgentCommands
 
                 presetCommitted = true;
 
-                async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (cmd.Json)
-                    {
-                        NdjsonEventRenderer.RenderFrame(frame, _out);
-                    }
-                    else
-                    {
-                        // No per-frame cursor restore: the surface tracks the transcript
-                        // append point across footer repaints, and rewinding to the row
-                        // start here would overwrite a partially streamed row.
-                        sessionRenderer.RenderFrame(frame);
-                        if (sticky.Active && typeAheadLive)
-                        {
-                            PaintStickyFooter();
-                        }
-
-                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
-                        {
-                            try
-                            {
-                                var envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                                if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
-                                {
-                                    var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : resp.RunId;
-                                    var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
-
-                                    if (decision == Tui.ApprovalPrompt.Deny)
-                                    {
-                                        await _agentClient.DenyAsync(targetRunId, envelope.ApprovalId, frameCt).ConfigureAwait(false);
-                                        sessionRenderer.Note("denied · this tool call aborts", Tui.TuiToken.Err);
-                                    }
-                                    else
-                                    {
-                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, decision, frameCt).ConfigureAwait(false);
-                                        var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session"
-                                            : decision == Tui.ApprovalPrompt.AllowAlways ? "remembered for this project"
-                                            : "once";
-                                        sessionRenderer.Note("approved · " + scope, Tui.TuiToken.Ok);
-                                    }
-
-                                    await _out.FlushAsync().ConfigureAwait(false);
-                                }
-                            }
-                            catch (OperationCanceledException) when (frameCt.IsCancellationRequested)
-                            {
-                                // The operator cancelled the turn while the approval was open.
-                                throw;
-                            }
-                            catch (Exception ex)
-                            {
-                                await _err.WriteLineAsync($"inline_approval_error: {ex.Message}").ConfigureAwait(false);
-                            }
-                        }
-
-                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"model.step_completed\"", StringComparison.Ordinal))
-                        {
-                            // Remember every step's durable assistant payload so a lost
-                            // delta tail can be recovered once the run finishes.
-                            try
-                            {
-                                var stepEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                                if (stepEnvelope is { EventType: "model.step_completed" }
-                                    && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
-                                {
-                                    assistantPayloadRefs.Add(stepEnvelope.PayloadRef);
-                                }
-                            }
-                            catch (System.Text.Json.JsonException)
-                            {
-                                // Non-conforming frame payload; the recovery falls back to
-                                // whatever steps were already recorded.
-                            }
-                        }
-
-                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
-                        {
-                            try
-                            {
-                                var usageEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                                if (usageEnvelope?.TotalTokens is { } total)
-                                {
-                                    lastTotalTokens = total;
-                                    sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
-                                }
-                            }
-                            catch (System.Text.Json.JsonException)
-                            {
-                                // Non-conforming frame payload; token tally keeps its last value.
-                            }
-                        }
-                    }
-                    await _out.FlushAsync().ConfigureAwait(false);
-                }
-                await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, turnCts.Token).ConfigureAwait(false);
-                sessionRenderer.Flush();
-                await RecoverMissingAssistantTextAsync(resp.RunId, assistantPayloadRefs, turnCts.Token).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
+                await FollowRunAsync(resp.RunId, 0, turnCts.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 // The token only stops local streaming; the run must be cancelled server-side
                 // too, like one-shot `agent run` and the GUI Stop, or it keeps the workspace
-                // lock. Read the flag before FinishTurnAsync disposes the source.
-                var userCancelled = turnCts?.IsCancellationRequested == true;
+                // lock -- unless the run parked itself, which makes it the user's to resume.
                 if (!presetCommitted
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
                     return 1;
                 }
-                await FinishTurnAsync().ConfigureAwait(false);
-                var cancelRunId = userCancelled && parkedRunId is null ? activeRunId : null;
-                if (cancelRunId is null)
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
-                }
-                else
-                {
-                    try
-                    {
-                        await _agentClient.CancelAsync(cancelRunId, CancellationToken.None).ConfigureAwait(false);
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.Warn($"Run interrupted by user · cancelled {cancelRunId}.")).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.Err($"run_cancel_failed: {ex.Message}")).ConfigureAwait(false);
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"run {cancelRunId} may still be running; release it with 'ru agent cancel {cancelRunId}'.")).ConfigureAwait(false);
-                    }
-                }
+                await ReportInterruptionAsync().ConfigureAwait(false);
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
@@ -1196,7 +1343,71 @@ public sealed partial class AgentCommands
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
         await _err.WriteLineAsync(Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
-        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint($"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.")).ConfigureAwait(false);
+        var hint = IsParkedRunStatus(status)
+            ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."
+            : $"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.";
+        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint(hint)).ConfigureAwait(false);
         await _err.FlushAsync().ConfigureAwait(false);
+    }
+
+    private static bool IsTerminalRunStatus(string? status) =>
+        status is not null
+        && (status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("failed", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("interrupted", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsParkedRunStatus(string? status) =>
+        string.Equals(status, "waiting_user", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "reconciliation_required", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when a durable frame transitions the run into a parked state. Keyed on the
+    /// envelope Status (the authoritative run state) rather than the event name, because
+    /// the same event types also carry the resume and are silent then.
+    /// </summary>
+    private static bool TryReadParkedTransition(SseFrame frame, out string? runId)
+    {
+        runId = null;
+        if (frame.IsTransient || frame.Data is null)
+        {
+            return false;
+        }
+
+        if (!frame.Data.Contains("\"continue.requested\"", StringComparison.Ordinal)
+            && !frame.Data.Contains("\"run.state_changed\"", StringComparison.Ordinal)
+            && !frame.Data.Contains("\"reconciliation.required\"", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        HarnessSafeEventEnvelope? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (envelope is null || string.IsNullOrEmpty(envelope.RunId))
+        {
+            return false;
+        }
+
+        var parked = envelope.EventType switch
+        {
+            "continue.requested" => string.Equals(envelope.Status, "waiting_user", StringComparison.OrdinalIgnoreCase),
+            "run.state_changed" or "reconciliation.required" => IsParkedRunStatus(envelope.Status),
+            _ => false,
+        };
+        if (!parked)
+        {
+            return false;
+        }
+
+        runId = envelope.RunId;
+        return true;
     }
 }

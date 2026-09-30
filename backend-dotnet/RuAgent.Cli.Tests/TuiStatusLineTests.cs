@@ -70,6 +70,28 @@ public sealed class TuiStatusLineTests
     }
 
     [Fact]
+    public void Paused_row_does_not_spin_or_count_up()
+    {
+        var status = Create();
+        status.IsLive = true;
+        status.SetState(TuiRunState.Paused);
+        status.SetDetail("model_step_budget_exhausted · /continue");
+        // A parked run is waiting on the operator, not on the model: a spinner frame and
+        // a running clock would read as work in flight.
+        status.SetElapsed(937.4);
+
+        var row = TuiText.Strip(status.Compose(80));
+
+        Assert.Contains("run paused", row);
+        Assert.Contains("model_step_budget_exhausted", row);
+        Assert.Contains("/continue", row);
+        Assert.DoesNotContain("937.4s", row);
+        Assert.DoesNotContain("Thinking", row);
+        Assert.DoesNotContain("⠋", row);
+        Assert.Equal(80, TuiText.VisibleWidth(status.Compose(80)));
+    }
+
+    [Fact]
     public void LiveRow_IsSuppressedInsideTheStickyFooter()
     {
         var status = Create();

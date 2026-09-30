@@ -7,6 +7,7 @@ public enum TuiRunState
     Tool,
     WaitingApproval,
     WaitingTrust,
+    Paused,
     Failed,
 }
 
@@ -149,6 +150,18 @@ public sealed class TuiStatusLine
                 }
 
                 return trust;
+            case TuiRunState.Paused:
+                // A parked run has no work in flight: the server holds the run until an
+                // explicit Continue. Spinning here read as a slow model over a run that
+                // was in fact waiting on the operator, so the row names the pause and
+                // the resume path instead.
+                var paused = TuiPalette.Paint("▲ ", TuiToken.Warn) + TuiPalette.Paint("run paused", TuiToken.Warn);
+                if (!string.IsNullOrWhiteSpace(_detail))
+                {
+                    paused += TuiPalette.Paint(" · " + _detail, TuiToken.Line);
+                }
+
+                return paused;
             case TuiRunState.Failed:
                 return TuiPalette.Paint("✗ ", TuiToken.Err) + TuiPalette.Paint("last run failed", TuiToken.Err);
             default:

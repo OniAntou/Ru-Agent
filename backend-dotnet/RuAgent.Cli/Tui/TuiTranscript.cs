@@ -55,6 +55,8 @@ public sealed class TuiTranscript
     private string? _terminalCode;
     private string? _summaryDetail;
     private bool _sawCompletion;
+    private bool _paused;
+    private string? _pausedRunId;
 
     /// <summary>
     /// The raw assistant text this turn actually received as deltas, before markdown
@@ -164,6 +166,8 @@ public sealed class TuiTranscript
         _terminalCode = null;
         _summaryDetail = null;
         _sawCompletion = false;
+        _paused = false;
+        _pausedRunId = null;
         _pendingTools.Clear();
         _retained.Clear();
         _markdown.Reset();
@@ -609,6 +613,33 @@ public sealed class TuiTranscript
             if (string.Equals(envelope.Status, "completed", StringComparison.OrdinalIgnoreCase))
             {
                 _sawCompletion = true;
+                ClearPaused();
+            }
+            else if (IsParkedStatus(envelope.Status))
+            {
+                ParkRun(envelope);
+            }
+            else if (string.Equals(envelope.Status, "running", StringComparison.OrdinalIgnoreCase))
+            {
+                // The run resumed (approval resolved, reconciliation applied): a pause
+                // recorded earlier in this turn no longer holds.
+                ClearPaused();
+            }
+
+            return;
+        }
+
+        if (type == "continue.requested")
+        {
+            if (IsParkedStatus(envelope.Status))
+            {
+                ParkRun(envelope);
+            }
+            else if (string.Equals(envelope.Status, "running", StringComparison.OrdinalIgnoreCase))
+            {
+                // The "continued" commit flips the run back to Running: the parked row
+                // must clear, and the frame stays silent like every other internal event.
+                ClearPaused();
             }
 
             return;
@@ -616,7 +647,7 @@ public sealed class TuiTranscript
 
         if (type is "model.step_started" or "model.step_completed"
             or "prompt_receipt" or "model.usage_recorded" or "model.reasoning_recorded"
-            or "tool.proposed" or "continue.requested")
+            or "tool.proposed")
         {
             return;
         }
@@ -648,7 +679,11 @@ public sealed class TuiTranscript
                 return;
 
             case "reconciliation.required":
+                ParkRun(envelope);
+                return;
+
             case "reconciliation.resolved":
+                ClearPaused();
                 Notice("reconciliation · " + summary, TuiToken.Brand2);
                 return;
 
@@ -664,6 +699,51 @@ public sealed class TuiTranscript
                 Notice($"[{envelope.Sequence}] {type}: {summary}", TuiToken.Line);
                 return;
         }
+    }
+
+    private static bool IsParkedStatus(string? status) =>
+        string.Equals(status, "waiting_user", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "reconciliation_required", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Records a run parked on the operator: the live row stops spinning, carries the
+    /// bounded safe code plus the resume path, and the transcript prints exactly one
+    /// notice per park. Redundant frames for the same park (the backend commits both
+    /// <c>reconciliation.required</c> and <c>run.state_changed</c>) must not repeat it.
+    /// </summary>
+    private void ParkRun(HarnessSafeEventEnvelope envelope)
+    {
+        var summary = Escape(envelope.SafeSummary);
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            summary = "waiting_user";
+        }
+
+        _status.SetState(TuiRunState.Paused);
+        _status.SetDetail(summary + " · /continue");
+        if (_paused && string.Equals(_pausedRunId, envelope.RunId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _paused = true;
+        _pausedRunId = envelope.RunId;
+        Notice(
+            $"run parked · {summary} · resume with /continue (or 'ru agent continue {envelope.RunId}')",
+            TuiToken.Warn);
+    }
+
+    private void ClearPaused()
+    {
+        if (!_paused)
+        {
+            return;
+        }
+
+        _paused = false;
+        _pausedRunId = null;
+        _status.SetDetail(null);
+        _status.SetState(TuiRunState.Thinking);
     }
 
     private void SettleTool(HarnessSafeEventEnvelope envelope)

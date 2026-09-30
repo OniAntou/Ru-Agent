@@ -920,7 +920,15 @@ public sealed partial class AgentCommands
         {
             var userCancelled = turnCts?.IsCancellationRequested == true;
             await FinishTurnAsync().ConfigureAwait(false);
-            var cancelRunId = userCancelled && parkedRunId is null ? activeRunId : null;
+            // Only the run actually being followed may be cancelled. An earlier park can
+            // still be tracked (parkedRunId is kept for bare Continue when the user resumes
+            // a different run), so "some run is parked" must not suppress the cancel for a
+            // different active run.
+            var cancelRunId = userCancelled
+                && activeRunId is not null
+                && !string.Equals(activeRunId, parkedRunId, StringComparison.Ordinal)
+                    ? activeRunId
+                    : null;
             if (cancelRunId is null)
             {
                 if (parkedRunId is null)

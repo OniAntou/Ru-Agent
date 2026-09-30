@@ -1783,6 +1783,147 @@ public sealed class TuiInteractiveTests
         Assert.Contains("run_not_runnable", errWriter.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ChatAsync_ContinueOtherRun_ThenCancel_PostsCancelForThatRun()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runA = "run_" + new string('a', 32);
+        var runB = "run_" + new string('b', 32);
+        var payloadRef = "payload_" + new string('e', 32);
+        var cancelPosts = new List<string>();
+        var continuePosts = new List<string>();
+
+        string RunJson(string runId, string status, long lastSequence, string? terminalAt) => JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_123",
+            workspace_id = "ws_test",
+            status,
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 1L,
+            last_sequence = lastSequence,
+            created_at = "2026-09-30T00:00:00Z",
+            updated_at = "2026-09-30T00:00:00Z",
+            terminal_at = terminalAt,
+            terminal_error_code = (string?)null,
+        });
+
+        string Durable(string runId, int seq, string eventType, string status, string summary, string? payloadRefValue = null) => JsonSerializer.Serialize(new
+        {
+            protocol_version = 1,
+            event_id = $"evt_{runId[^1]}_{seq}",
+            run_id = runId,
+            session_id = "sess_123",
+            sequence = seq,
+            event_type = eventType,
+            occurred_at = "2026-09-30T00:00:00Z",
+            status,
+            safe_summary = summary,
+            payload_ref = payloadRefValue,
+        });
+
+        // Signalled once the /continue POST for B is in flight, so the test can cancel the
+        // outer token while B's resumed stream is still being followed.
+        var continuePosted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var handler = new FakeHandler(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runB}/continue"))
+            {
+                continuePosts.Add(uri);
+                continuePosted.TrySetResult();
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.EndsWith("/cancel"))
+            {
+                var created = JsonSerializer.Serialize(new
+                {
+                    run_id = runA,
+                    session_id = "sess_123",
+                    workspace_id = "ws_test",
+                    status = "running",
+                    preset = "standard",
+                    created_at = DateTimeOffset.UtcNow.ToString("O"),
+                    updated_at = DateTimeOffset.UtcNow.ToString("O"),
+                });
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(created, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/cancel"))
+            {
+                cancelPosts.Add(uri);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/payloads/"))
+            {
+                // A's parked turn carries a payload ref: the recovery fetch blocks and the
+                // park-cancelled token surfaces the OCE-parked branch (no cancel for A).
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new ParkedStream(Array.Empty<byte>()))
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") },
+                    },
+                };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                if (uri.Contains($"/runs/{runA}/events"))
+                {
+                    var sse =
+                        $"id: 1\ndata: {Durable(runA, 1, "model.step_completed", "completed", "step_done", payloadRef)}\n\n"
+                        + $"id: 2\ndata: {Durable(runA, 2, "continue.requested", "waiting_user", "model_step_budget_exhausted")}\n\n";
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StreamContent(new ParkedStream(Encoding.UTF8.GetBytes(sse)))
+                        {
+                            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") },
+                        },
+                    };
+                }
+
+                // B's resumed tail has no frames yet; hold the stream open.
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new ParkedStream(Array.Empty<byte>()))
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") },
+                    },
+                };
+            }
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runA, StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(RunJson(runA, "waiting_user", 2, null), Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runB, StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(RunJson(runB, "waiting_user", 5, null), Encoding.UTF8, "application/json") };
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        using var cts = new CancellationTokenSource();
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader($"hello\n/continue {runB}\n"));
+
+        var chat = commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
+        await continuePosted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        cts.Cancel();
+        var exit = await chat;
+
+        Assert.Equal(0, exit);
+        Assert.Single(continuePosts);
+        var cancelUri = Assert.Single(cancelPosts);
+        Assert.EndsWith($"/agent/v1/runs/{runB}/cancel", cancelUri, StringComparison.Ordinal);
+    }
+
     private sealed class BlockingStream : System.IO.Stream
     {
         public override bool CanRead => true;

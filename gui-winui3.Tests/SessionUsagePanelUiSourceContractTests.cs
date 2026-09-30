@@ -46,9 +46,10 @@ public sealed class SessionUsagePanelUiSourceContractTests
         string code = GuiSource.ViewText("MainWindow");
         string open = GuiSource.MethodBody(code, "OnSessionUsageClick");
 
-        // The session comes off the button that was clicked, never off "the session
-        // on screen": the whole point is asking about a row that may not be open.
-        Assert.Contains("button.Tag", open, StringComparison.Ordinal);
+        // The session comes off the element that was clicked — the hover button or the
+        // row menu item — never off "the session on screen": the whole point is asking
+        // about a row that may not be open.
+        Assert.Contains("item.Tag", open, StringComparison.Ordinal);
         Assert.Contains("OpenSessionUsageAsync", open, StringComparison.Ordinal);
 
         string show = GuiSource.MethodBody(code, "OpenSessionUsageAsync");

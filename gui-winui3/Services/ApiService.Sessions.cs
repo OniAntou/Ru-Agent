@@ -117,26 +117,58 @@ namespace RuApp.Services
             return null;
         }
 
-        public async Task<bool> DeleteSessionAsync(string sessionId)
+        /// <summary>
+        /// How a delete ended: whether the session file is gone, whether only leftover
+        /// artifacts remain, and the host's own message when it reported a problem.
+        /// </summary>
+        public sealed record SessionDeletionOutcome(bool Deleted, bool Partial, string? Message);
+
+        /// <summary>
+        /// The host's word for the one partial state: the session file is already gone,
+        /// its artifacts are not. The body carries no machine code for it, so this
+        /// sentence is what tells that state apart from an undeleted session.
+        /// </summary>
+        private const string PartialCleanupMessage =
+            "Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại.";
+
+        public async Task<SessionDeletionOutcome> DeleteSessionAsync(string sessionId)
         {
             try
             {
                 using var response = await _httpClient.DeleteAsync($"{_baseUrl}/sessions/{sessionId}");
                 if (!response.IsSuccessStatusCode)
                 {
-                    return false;
+                    return new SessionDeletionOutcome(false, false, $"HTTP {(int)response.StatusCode}");
                 }
 
                 var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
-                return payload.ValueKind == JsonValueKind.Object
-                    && payload.TryGetProperty("status", out var status)
-                    && status.ValueKind == JsonValueKind.String
-                    && string.Equals(status.GetString(), "ok", StringComparison.Ordinal);
+                if (payload.ValueKind != JsonValueKind.Object)
+                {
+                    return new SessionDeletionOutcome(false, false, null);
+                }
+
+                var status = payload.TryGetProperty("status", out var statusProp)
+                    && statusProp.ValueKind == JsonValueKind.String
+                        ? statusProp.GetString()
+                        : null;
+                if (string.Equals(status, "ok", StringComparison.Ordinal))
+                {
+                    return new SessionDeletionOutcome(true, false, null);
+                }
+
+                var message = payload.TryGetProperty("message", out var messageProp)
+                    && messageProp.ValueKind == JsonValueKind.String
+                        ? messageProp.GetString()
+                        : null;
+                return new SessionDeletionOutcome(
+                    Deleted: false,
+                    Partial: string.Equals(message, PartialCleanupMessage, StringComparison.Ordinal),
+                    Message: message);
             }
             catch (Exception ex)
             {
                 LogApiError("DeleteSessionAsync", ex);
-                return false;
+                return new SessionDeletionOutcome(false, false, null);
             }
         }
 

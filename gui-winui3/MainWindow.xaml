@@ -107,6 +107,27 @@
                                 <FontIcon Glyph="&#xE8E5;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <!-- The same two row actions as the hover controls, for the
+                             keyboard: those controls are deliberately not tab stops,
+                             so this menu is the path that reaches them without a
+                             pointer. -->
+                        <MenuFlyoutItem x:Name="SessionUsageItem"
+                                        Text="Session usage"
+                                        Click="OnSessionUsageClick"
+                                        Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE712;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="DeleteSessionItem"
+                                        Text="Delete chat"
+                                        Click="OnDeleteSessionClick"
+                                        Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE74D;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
                     </MenuFlyout>
                 </Grid.ContextFlyout>
                 <Grid.ColumnDefinitions>

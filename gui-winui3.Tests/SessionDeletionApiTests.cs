@@ -9,16 +9,49 @@ namespace RuApp.Tests;
 public sealed class SessionDeletionApiTests
 {
     [Fact]
+    public async Task DeleteSessionAsync_reports_partial_cleanup_as_deleted_with_the_backend_message()
+    {
+        // The backend answers HTTP 200 with status:"error" once the session file is
+        // already gone and only artifacts remain. The old boolean read that as a
+        // failed delete and told the user the chat was still there.
+        const string partialMessage = "Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại.";
+        using var server = new SessionDeleteServer(
+            "{\"status\":\"error\",\"message\":\"" + partialMessage + "\"}");
+        using var api = new ApiService("test-secret", server.Port);
+
+        var outcome = await api.DeleteSessionAsync("11111111111111111111111111111111");
+
+        Assert.False(outcome.Deleted);
+        Assert.True(outcome.Partial);
+        Assert.Equal(partialMessage, outcome.Message);
+        await server.RequestHandled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task DeleteSessionAsync_rejects_an_application_error_returned_with_http_200()
     {
         using var server = new SessionDeleteServer(
             "{\"status\":\"error\",\"message\":\"session delete failed\"}");
         using var api = new ApiService("test-secret", server.Port);
 
-        bool deleted = await api.DeleteSessionAsync(
-            "11111111111111111111111111111111");
+        var outcome = await api.DeleteSessionAsync("11111111111111111111111111111111");
 
-        Assert.False(deleted);
+        Assert.False(outcome.Deleted);
+        Assert.False(outcome.Partial);
+        Assert.Equal("session delete failed", outcome.Message);
+        await server.RequestHandled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_reports_the_ok_envelope_as_deleted()
+    {
+        using var server = new SessionDeleteServer("{\"status\":\"ok\"}");
+        using var api = new ApiService("test-secret", server.Port);
+
+        var outcome = await api.DeleteSessionAsync("11111111111111111111111111111111");
+
+        Assert.True(outcome.Deleted);
+        Assert.False(outcome.Partial);
         await server.RequestHandled.Task.WaitAsync(TimeSpan.FromSeconds(2));
     }
 

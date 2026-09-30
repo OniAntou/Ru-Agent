@@ -161,15 +161,15 @@ namespace RuApp
                     }
                 }
 
-                bool deleted = await _apiService.DeleteSessionAsync(sessionId);
-                if (!deleted)
+                var outcome = await _apiService.DeleteSessionAsync(sessionId);
+                if (!outcome.Deleted && !outcome.Partial)
                 {
                     if (ShellRoot.XamlRoot != null)
                     {
                         var errorDialog = new ContentDialog
                         {
                             Title = "Could not delete chat",
-                            Content = "Backend failed to delete this chat. Please try again later.",
+                            Content = outcome.Message ?? "Backend failed to delete this chat. Please try again later.",
                             CloseButtonText = "Close",
                             DefaultButton = ContentDialogButton.Close,
                             XamlRoot = ShellRoot.XamlRoot
@@ -205,6 +205,72 @@ namespace RuApp
                 {
                     OnNewChatClick(this, new RoutedEventArgs());
                 }
+
+                // A partial result still deleted the chat: the session file is gone and
+                // only its artifacts are left. The old boolean read the "error" envelope
+                // as a failed delete and told the user the chat was still there.
+                if (outcome.Partial)
+                {
+                    await OfferSessionArtifactRetryAsync(sessionId, outcome.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The chat is already gone; the host could not remove its artifacts. Says so
+        /// and offers the retry the host itself asked for, without ever calling the
+        /// chat undeleted.
+        /// </summary>
+        /// <remarks>
+        /// Retrying only ever re-issues the same DELETE. Once the session file is gone
+        /// the host can no longer report "partial" — it answers "Session không tồn tại"
+        /// whether the artifacts were reclaimed or not — so a retry that is not partial
+        /// ends as unconfirmed cleanup rather than as success or as another failed
+        /// delete. The leftovers are reclaimed on expiry regardless.
+        /// </remarks>
+        private async Task OfferSessionArtifactRetryAsync(string sessionId, string? message)
+        {
+            if (_apiService is null)
+            {
+                return;
+            }
+
+            while (ShellRoot.XamlRoot != null)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "Chat deleted, cleanup incomplete",
+                    Content = (string.IsNullOrWhiteSpace(message)
+                            ? "The chat was deleted, but its leftover artifacts could not be removed."
+                            : message)
+                        + "\n\nRetry the cleanup now?",
+                    PrimaryButtonText = "Retry cleanup",
+                    CloseButtonText = "Close",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = ShellRoot.XamlRoot
+                };
+
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                var retry = await _apiService.DeleteSessionAsync(sessionId);
+                if (retry.Deleted)
+                {
+                    return;
+                }
+
+                if (!retry.Partial)
+                {
+                    await ShowNoticeAsync(
+                        "Cleanup not confirmed",
+                        "The chat was deleted. The cleanup ran again, but the host could not confirm the artifacts were removed."
+                            + "\n\nLeftover artifacts are reclaimed automatically when they expire.");
+                    return;
+                }
+
+                message = retry.Message;
             }
         }
 
@@ -274,14 +340,20 @@ namespace RuApp
         /// </summary>
         private async void OnSessionUsageClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not Button button
-                || button.Tag is not string sessionId
+            if (sender is not FrameworkElement item
+                || item.Tag is not string sessionId
                 || string.IsNullOrWhiteSpace(sessionId))
             {
                 return;
             }
 
-            await OpenSessionUsageAsync(sessionId, (button.DataContext as SessionInfo)?.Title);
+            // The id always comes off the clicked element; the title is only decoration
+            // for the panel. A hover button carries the row as its DataContext, but a
+            // flyout item does not reliably inherit one, so the list is the fallback.
+            var title = (item.DataContext as SessionInfo)?.Title
+                ?? Sessions.FirstOrDefault(session => string.Equals(session.Id, sessionId, StringComparison.OrdinalIgnoreCase))?.Title;
+
+            await OpenSessionUsageAsync(sessionId, title);
         }
 
         private bool _isSessionUsageOpen;

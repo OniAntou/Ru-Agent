@@ -59,6 +59,37 @@ public sealed class SessionExportMenuSourceContractTests
     }
 
     /// <summary>
+    /// The hover controls are deliberately not tab stops, so the row menu is the
+    /// keyboard path to the same two actions. Without them a keyboard user cannot
+    /// delete a chat or open its usage at all.
+    /// </summary>
+    [Fact]
+    public void The_row_menu_reaches_the_two_hover_actions()
+    {
+        var document = GuiSource.Xml("MainWindow.xaml");
+
+        var usage = GuiSource.Require(document, "SessionUsageItem");
+        Assert.Equal("OnSessionUsageClick", GuiSource.AttributeValue(usage, "Click"));
+        Assert.Equal("{x:Bind Id}", GuiSource.AttributeValue(usage, "Tag"));
+
+        var delete = GuiSource.Require(document, "DeleteSessionItem");
+        Assert.Equal("OnDeleteSessionClick", GuiSource.AttributeValue(delete, "Click"));
+        Assert.Equal("{x:Bind Id}", GuiSource.AttributeValue(delete, "Tag"));
+
+        // Both sit in the same context menu as the export/import items, so
+        // right-clicking a row offers what the hover controls carry.
+        var menu = GuiSource.Require(document, "ExportCodexItem").Parent!;
+        Assert.True(GuiSource.IsDescendantOf(usage, menu));
+        Assert.True(GuiSource.IsDescendantOf(delete, menu));
+
+        // The menu items name handlers on the window; a missing one silently leaves
+        // the action unreachable.
+        string code = GuiSource.ViewText("MainWindow");
+        Assert.True(GuiSource.HasMember(code, "OnSessionUsageClick"));
+        Assert.True(GuiSource.HasMember(code, "OnDeleteSessionClick"));
+    }
+
+    /// <summary>
     /// The GUI writes where the shared layout says, not where it guesses: the same pure
     /// resolver the CLI uses places the files, so the two surfaces cannot drift into
     /// writing one session to two different directories.

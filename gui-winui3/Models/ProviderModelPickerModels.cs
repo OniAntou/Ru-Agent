@@ -21,7 +21,8 @@ public sealed record ProviderModelPickerRow(
     bool IsEnabled,
     bool IsStale,
     string Annotation,
-    int? ContextLength = null);
+    int? ContextLength = null,
+    bool IsFree = false);
 
 public sealed record ProviderModelPickerGroup(
     ProviderGroupDefinition Provider,
@@ -34,9 +35,20 @@ public sealed record ProviderModelPickerProjection(
 {
     public const string StaleAnnotation = "Stale data";
     public const string UnavailableAnnotation = "Unavailable";
+    public const string FreeAnnotation = "free";
     public const string NoUsableModelsText = "No available models";
     public const string NoMatchText = "No model matches";
     public const string TriggerPlaceholderText = "Model...";
+
+    /// <summary>OpenRouter marks free-tier models with a <c>:free</c> id suffix.</summary>
+    /// <remarks>
+    /// Ported verbatim from the TUI's <c>TuiSurfaces.IsFreeModel</c>: the two surfaces
+    /// tag the same models, and a second, slightly different rule here would label the
+    /// same model free in one place and paid in the other.
+    /// </remarks>
+    public static bool IsFreeModel(string? id) =>
+        !string.IsNullOrWhiteSpace(id)
+        && id.Trim().EndsWith(":free", StringComparison.OrdinalIgnoreCase);
 
     public static string RowAutomationText(ProviderModelPickerRow row)
     {
@@ -47,13 +59,14 @@ public sealed record ProviderModelPickerProjection(
             : row.IsSelected ? "selected"
             : "available";
 
-        // The context figure is spoken, not just drawn. It is the number a user picks a
-        // model by, and it is the one part of the row that sighted and screen-reader
-        // users would otherwise reach different conclusions about.
+        // The context figure and the free tag are spoken, not just drawn: they are part
+        // of what the row is chosen by, and the automation text is the only version of
+        // the row a screen reader gets.
         var context = string.IsNullOrWhiteSpace(row.ContextLabel)
             ? string.Empty
             : $", {row.ContextLabel} context";
-        return $"{row.ProviderName}, {row.ModelId}{context}, {state}";
+        var free = row.IsFree ? ", free" : string.Empty;
+        return $"{row.ProviderName}, {row.ModelId}{free}{context}, {state}";
     }
 
     public static string TriggerDisplay(string backend, string model)
@@ -244,5 +257,6 @@ public sealed record ProviderModelPickerProjection(
             // the same sentence N times and, on a long model id, put it behind the
             // ellipsis where it was never read.
             string.Empty,
-            ContextLength: model.ContextLength);
+            ContextLength: model.ContextLength,
+            IsFree: IsFreeModel(model.Id));
 }

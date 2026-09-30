@@ -434,19 +434,44 @@ namespace RuApp.Views
             Grid.SetColumn(nameText, 0);
             nameCell.Children.Add(nameText);
 
+            var tags = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (row.IsFree)
+            {
+                // Informational, not a fault: the same muted ink the context column
+                // uses, so the free tag cannot read as an error.
+                tags.Children.Add(new TextBlock
+                {
+                    Text = ProviderModelPickerProjection.FreeAnnotation,
+                    FontFamily = _brushes.FontFamily,
+                    FontSize = 10,
+                    Foreground = _brushes.Muted,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(row.Annotation))
             {
-                var state = new TextBlock
+                tags.Children.Add(new TextBlock
                 {
                     Text = row.Annotation,
                     FontFamily = _brushes.FontFamily,
                     FontSize = 10,
                     Foreground = _brushes.Danger,
-                    Margin = new Thickness(8, 0, 0, 0),
+                    Margin = new Thickness(row.IsFree ? 6 : 0, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
-                };
-                Grid.SetColumn(state, 1);
-                nameCell.Children.Add(state);
+                });
+            }
+
+            if (tags.Children.Count > 0)
+            {
+                Grid.SetColumn(tags, 1);
+                nameCell.Children.Add(tags);
             }
 
             Grid.SetColumn(nameCell, 1);

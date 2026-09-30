@@ -269,6 +269,55 @@ public sealed class ProviderModelPickerProjectionTests
         Assert.Equal("128K", ModelContextSpecs.GetContextSpec(row.ModelId, null).DisplayText);
     }
 
+    /// <summary>
+    /// Free-tier models carry the same tag the TUI gives them: OpenRouter's
+    /// <c>:free</c> suffix is the provider's own marker, and the picker is where a
+    /// user sees it before ever reaching the price.
+    /// </summary>
+    [Fact]
+    public void A_free_model_carries_the_free_tag_and_a_paid_one_does_not()
+    {
+        var openrouter = State(
+            "models.dev:openrouter",
+            catalog:
+            [
+                CatalogModel("cohere/north-mini-code:free"),
+                CatalogModel("openai/gpt-4o"),
+            ]);
+        var definitions = ProviderGroupDefinitions.WithModelsDev(
+            [new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        var projection = ProviderModelPickerProjection.Create(
+            groups: [openrouter],
+            selectedBackend: "models.dev:openrouter",
+            selectedModel: "cohere/north-mini-code:free",
+            searchText: string.Empty,
+            definitions: definitions);
+
+        var rows = Assert.Single(projection.Groups).Rows;
+        var free = Assert.Single(rows, row => row.ModelId == "cohere/north-mini-code:free");
+        var paid = Assert.Single(rows, row => row.ModelId == "openai/gpt-4o");
+        Assert.True(free.IsFree);
+        Assert.False(paid.IsFree);
+
+        // The tag is spoken, not just drawn: the automation name is the whole row a
+        // screen reader gets.
+        Assert.Contains(", free", ProviderModelPickerProjection.RowAutomationText(free), StringComparison.Ordinal);
+        Assert.DoesNotContain(", free", ProviderModelPickerProjection.RowAutomationText(paid), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("x:free", true)]
+    [InlineData("x:FREE", true)]
+    [InlineData("  x:free  ", true)]
+    [InlineData("x-model", false)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    public void The_free_rule_matches_the_tui_suffix_rule(string? id, bool expected)
+    {
+        Assert.Equal(expected, ProviderModelPickerProjection.IsFreeModel(id));
+    }
+
     [Fact]
     public void A_row_announces_its_context_to_a_screen_reader()
     {

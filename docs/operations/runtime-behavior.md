@@ -223,8 +223,8 @@ guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
 recreated identity requires trust again. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
 bounded Agent status remain inline above the input. The terminal client keeps
-the same parked-run path: the status row reads `▲ run paused · <code>` and one
-notice carries `resume with /continue (or 'ru agent continue <run-id>')`,
+the same parked-run path: the status row reads `▲ run paused · <code> · /continue`
+and one notice carries `resume with /continue (or 'ru agent continue <run-id>')`,
 cleared when the resumed run moves again. While a run is active, the transcript
 may also show a separate transient activity feed above the assistant content,
 driven by typed `agent.activity` SSE frames. It renders only safe state,

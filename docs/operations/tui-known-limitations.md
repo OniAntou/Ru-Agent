@@ -124,7 +124,7 @@ there is nothing to cancel and its notice already points at `/continue`.
 ### A parked run is surfaced, and only the newest run is adopted
 
 `waiting_user` and `reconciliation_required` now stop the spinner: the status
-row reads `▲ run paused · <code>` and exactly one notice carries
+row reads `▲ run paused · <code> · /continue` and exactly one notice carries
 `resume with /continue (or 'ru agent continue <run-id>')`. `/continue [run-id]`
 (or a bare `Continue` while a parked run is known) follows the resumed run from
 its durable cursor, and a resumed run clears the paused row. Opening
@@ -133,7 +133,8 @@ left behind by a host restart is visible again. Remaining limits: older parked
 runs are not adopted and need an explicit `/continue <run-id>`, and a resumed
 `reconciliation_required` run needs the fixed recovery sweep
 (`HarnessRecoveryScanner` re-registering its runtime root) because the drive
-loop starts only a `Running` run and never picks up an unregistered one. An
+loop starts `Running` runs and rehydrates `WaitingApproval` runs, but never
+picks up an unregistered one. An
 adopted `running` run is only pointed at (`ru agent attach <run-id>`) and is
 never followed automatically.
 

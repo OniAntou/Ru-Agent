@@ -19,6 +19,12 @@ public static class FileToolLimits
     public const int MaxRecoveryBytes = 4 * 1024 * 1024;
     public const int HardMaxRecoveryBytes = MaxRecoveryBytes;
 
+    /// <summary>
+    /// How far into the ordered grep results a page may start. Skipping is
+    /// cheap (no re-scan), so the bound only guards absurd values.
+    /// </summary>
+    public const int MaxOffset = 10000;
+
     public static int ValidateRecoveryBytes(int value)
     {
         if (value < 1 || value > HardMaxRecoveryBytes)

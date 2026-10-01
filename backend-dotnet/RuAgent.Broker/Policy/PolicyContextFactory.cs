@@ -191,6 +191,18 @@ public sealed class PolicyContextFactory
                 case "edit":
                     op = "edit";
                     break;
+                case "bash":
+                    // Only the spool read reaches this branch: run/shell classify
+                    // as Terminal above. Anything else claiming Read is rejected.
+                    if (!IsSpoolRead(arguments))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "bash mode must be \"run\" (executable plus arguments), \"shell\" (script), or \"read_output\" (execution_id).");
+                    }
+
+                    op = "read_output";
+                    break;
                 case "grep":
                     op = "grep";
                     break;
@@ -333,10 +345,16 @@ public sealed class PolicyContextFactory
         "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
         "edit" => PolicyOperationClasses.Edit,
-        "bash" => PolicyOperationClasses.Terminal,
+        // A spool read executes nothing: it pages back output the same session
+        // already received, so it classifies as a read and inherits read policy
+        // (profile allows, explicit deny rules still match by tool id).
+        "bash" => IsSpoolRead(arguments) ? PolicyOperationClasses.Read : PolicyOperationClasses.Terminal,
         "web_search" or "web_fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
+
+    private static bool IsSpoolRead(JsonObject arguments) =>
+        string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);
 
     private static string WriteOpClass(string? op) => op switch
     {
@@ -349,7 +367,11 @@ public sealed class PolicyContextFactory
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId == "help"
         || toolId == "todo_write"
-        || toolId is "web_search" or "web_fetch";
+        || toolId is "web_search" or "web_fetch"
+        // A spool read names a session-scoped output id, not a path; the
+        // execution leg still fails closed on unknown or foreign ids.
+        || (string.Equals(toolId, "bash", StringComparison.Ordinal)
+            && string.Equals(op, "read_output", StringComparison.Ordinal));
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>
         toolId is "read" or "write" ? OptionalText(arguments, "op") : null;

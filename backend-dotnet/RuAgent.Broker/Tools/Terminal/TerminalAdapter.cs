@@ -118,7 +118,8 @@ public sealed class TerminalAdapter
         PolicyGrant grant,
         TerminalRunRequest request,
         bool confineWorkspace,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? retainOutput = null)
     {
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
@@ -180,13 +181,14 @@ public sealed class TerminalAdapter
             }
         }
 
-        return ExecuteIntentAsync(intent, cancellationToken);
+        return ExecuteIntentAsync(intent, cancellationToken, retainOutput);
     }
 
     public async Task<StreamingProcessResult> RunApprovedShellAsync(
         TerminalShellRequest request,
         bool confineWorkspace,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? retainOutput = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
@@ -214,13 +216,14 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 intent.TimeoutMs,
                 256 * 1024),
-            onDelta: null,
+            WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<StreamingProcessResult> ExecuteIntentAsync(
         CanonicalCommandIntent intent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? retainOutput = null)
     {
         if (ManagedCommitService.IsManagedCommitInvocation(intent.ResolvedExecutable, intent.Arguments))
         {
@@ -235,8 +238,27 @@ public sealed class TerminalAdapter
                 _environment.ChildEnvironment,
                 intent.TimeoutMs,
                 256 * 1024),
-            onDelta: null,
+            WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Funnels redacted output frames into full-text retention. The runner
+    /// already bounds total frames by the output limit and redacts before
+    /// emitting, so the spool inherits both properties without new trust.
+    /// </summary>
+    private static TerminalOutputDeltaHandler? WrapRetain(Action<string>? retainOutput)
+    {
+        if (retainOutput is null)
+        {
+            return null;
+        }
+
+        return (stream, sequence, text, redacted, emitToken) =>
+        {
+            retainOutput(text);
+            return ValueTask.CompletedTask;
+        };
     }
 
     private async Task<StreamingProcessResult> ExecuteManagedCommitAsync(

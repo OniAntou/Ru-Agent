@@ -44,6 +44,12 @@ public sealed class FileSearchAdapter
         }
         var maxResults = arguments["max_results"] is JsonValue max && max.TryGetValue<int>(out var maxValue) ? maxValue : FileToolLimits.MaxResults;
         if (maxResults < 1 || maxResults > FileToolLimits.MaxResults) throw new ArgumentException("invalid_max_results");
+        var offset = arguments["offset"] is JsonValue off && off.TryGetValue<int>(out var offValue) ? offValue : 0;
+        if (offset < 0 || offset > FileToolLimits.MaxOffset) throw new ArgumentException("invalid_offset");
+        // Collect enough per file that the global page stays complete: a file
+        // capped at max_results would hide matches belonging to later pages.
+        // Both inputs are range-checked above, so the sum cannot overflow.
+        var collectLimit = offset + maxResults;
         var fileGlobRegex = fileGlob is null ? null : GlobToRegex(fileGlob);
         var baseResolved = ResolveChecked(basePath);
         var stopwatch = Stopwatch.StartNew();
@@ -129,17 +135,17 @@ public sealed class FileSearchAdapter
         await Parallel.ForEachAsync(
             candidates,
             new ParallelOptions { MaxDegreeOfParallelism = _maxSearchConcurrency, CancellationToken = cancellationToken },
-            async (candidate, token) => outcomes.Add(await SearchCandidateAsync(candidate.Path, candidate.Relative, query, queryRegex, caseSensitive, maxResults, token).ConfigureAwait(false))).ConfigureAwait(false);
+            async (candidate, token) => outcomes.Add(await SearchCandidateAsync(candidate.Path, candidate.Relative, query, queryRegex, caseSensitive, collectLimit, token).ConfigureAwait(false))).ConfigureAwait(false);
 
         var results = outcomes.SelectMany(outcome => outcome.Matches).OrderBy(result => result["path"]!.GetValue<string>(), StringComparer.Ordinal).ThenBy(result => result["line"]!.GetValue<int>()).ToList();
-        var final = results.Take(maxResults).ToList();
-        var truncated = traversalCapped || results.Count >= maxResults || candidates.Count >= FileToolLimits.MaxEntries * 32 || stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
+        var final = results.Skip(offset).Take(maxResults).ToList();
+        var truncated = traversalCapped || results.Count >= collectLimit || candidates.Count >= FileToolLimits.MaxEntries * 32 || stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
         stopwatch.Stop();
         var arr = new JsonArray(final.Select(result => (JsonNode)result).ToArray());
         return new JsonObject { ["results"] = arr, ["count"] = final.Count, ["truncated"] = truncated, ["scanned_files"] = candidates.Count, ["scanned_directories"] = visited.Count, ["skipped"] = outcomes.Count(outcome => outcome.Skipped), ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds };
     }
 
-    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int maxResults, CancellationToken cancellationToken)
+    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, CancellationToken cancellationToken)
     {
         try
         {
@@ -174,7 +180,7 @@ public sealed class FileSearchAdapter
                 }
 
                 var index = queryRegex is null ? line.IndexOf(query, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase) : (match!.Success ? match.Index : -1);
-                if (index >= 0 && matches.Count < maxResults)
+                if (index >= 0 && matches.Count < collectLimit)
                 {
                     var preview = line.Length > 512 ? line[..512] : line;
                     matches.Add(new JsonObject { ["path"] = relative, ["line"] = lineNumber, ["column"] = index + 1, ["preview"] = preview, ["line_text"] = preview });

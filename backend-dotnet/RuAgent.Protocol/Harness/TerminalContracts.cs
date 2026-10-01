@@ -38,4 +38,21 @@ public static class TerminalLimits
     public const int MaxScriptChars = 16_000;
     public const int MaxExecutableChars = 2048;
     public const int MaxWorkingDirectoryChars = 2048;
+
+    /// <summary>
+    /// Full redacted output retained per terminal call for later paging.
+    /// Matches the runner's total retention so the spool never promises more
+    /// than execution kept.
+    /// </summary>
+    public const int MaxSpoolChars = 256 * 1024;
+
+    /// <summary>
+    /// Largest single page a spool read may return.
+    /// </summary>
+    public const int MaxSpoolPageChars = 32 * 1024;
+
+    /// <summary>
+    /// Longest spool identifier a read may name.
+    /// </summary>
+    public const int MaxExecutionIdChars = 256;
 }

@@ -146,6 +146,16 @@ public sealed partial class AgentConnection
                 replyPayload["boundary_directory"] = grantDirectory;
             }
 
+            // The ask alone does not tell the model what the user can do about
+            // it. Naming the directory plus the session grant turns a stall into
+            // one question with a durable answer. Rules stay untouched: this is
+            // copy only, the decision above already happened.
+            if (grantDirectory is not null
+                && string.Equals(evaluation.ReasonCode, "external_directory_required", StringComparison.Ordinal))
+            {
+                replyPayload["safe_summary"] = $"approval required for {toolId} outside the workspace ({grantDirectory}); the user can grant this directory for the session";
+            }
+
             replyPayload["expires_at"] = approvalExpiresAt!.Value.ToString("O");
             replyPayload["matcher_preview"] = matcherPreview!.DeepClone();
         }

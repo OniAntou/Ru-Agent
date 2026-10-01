@@ -84,6 +84,24 @@ def test_runner_propagates_first_failure_and_stops_following_projects(workspace:
     ]
 
 
+def test_runner_filters_projects_by_substring(workspace: Path) -> None:
+    alpha = _project(workspace, "backend-dotnet/Alpha.Tests/Alpha.Tests.csproj")
+    _project(workspace, "backend-dotnet/Beta.Tests/Beta.Tests.csproj")
+    result = _run(workspace, "-ProjectFilter", "Alpha")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (workspace / "dotnet.log").read_text(encoding="utf-8").splitlines() == [
+        f"test|{alpha}|--nologo|--configuration|Debug|",
+    ]
+
+
+def test_runner_rejects_a_project_filter_that_matches_nothing(workspace: Path) -> None:
+    _project(workspace, "backend-dotnet/Only.Tests/Only.Tests.csproj")
+    result = _run(workspace, "-ProjectFilter", "NoSuchProject")
+    assert result.returncode == 1
+    assert "No .NET test projects matched" in result.stderr
+    assert not (workspace / "dotnet.log").exists()
+
+
 def test_runner_fails_when_no_test_projects_are_found(workspace: Path) -> None:
     result = _run(workspace)
     assert result.returncode == 1
@@ -97,6 +115,15 @@ def test_runner_passes_release_and_no_restore_options_to_dotnet(workspace: Path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert (workspace / "dotnet.log").read_text(encoding="utf-8").splitlines() == [
         f"test|{project}|--nologo|--configuration|Release|--no-restore",
+    ]
+
+
+def test_runner_passes_no_build_option_to_dotnet(workspace: Path) -> None:
+    project = _project(workspace, "backend-dotnet/Only.Tests/Only.Tests.csproj")
+    result = _run(workspace, "-NoBuild")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (workspace / "dotnet.log").read_text(encoding="utf-8").splitlines() == [
+        f"test|{project}|--nologo|--configuration|Debug|--no-build",
     ]
 
 

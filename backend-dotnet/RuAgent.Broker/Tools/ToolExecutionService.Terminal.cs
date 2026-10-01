@@ -19,18 +19,94 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService
 {
+    /// <summary>
+    /// Default page when a spool read omits limit: one head-sized window.
+    /// </summary>
+    private const int DefaultSpoolPageChars = 8000;
+
+    private readonly TerminalOutputSpool _spools = new();
+
     private async ValueTask<ToolExecutionOutcome> ExecuteBashAsync(
         ToolExecutionContext context,
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
         var mode = ReadOptionalString(arguments, "mode") ?? "run";
+        if (string.Equals(mode, "read_output", StringComparison.Ordinal))
+        {
+            return ExecuteTerminalReadOutput(context, arguments);
+        }
+
         if (string.Equals(mode, "shell", StringComparison.Ordinal))
         {
             return await ExecuteTerminalShellAsync(context, arguments, cancellationToken).ConfigureAwait(false);
         }
 
         return await ExecuteTerminalRunAsync(context, arguments, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Pages back full retained output of an earlier terminal call in the same
+    /// session. Fail-closed value lookup: unknown, expired, or foreign-session
+    /// ids are a malformed call, never an approval and never another session's
+    /// text. No new capability: the session already received these bytes.
+    /// </summary>
+    private ToolExecutionOutcome ExecuteTerminalReadOutput(ToolExecutionContext context, JsonObject arguments)
+    {
+        var spoolId = ReadOptionalString(arguments, "execution_id");
+        if (string.IsNullOrWhiteSpace(spoolId)
+            || spoolId.Length > TerminalLimits.MaxExecutionIdChars
+            || spoolId.Contains('\0'))
+        {
+            throw new ArgumentException("invalid_arguments");
+        }
+
+        if (!_spools.TryRead(context.SessionId, spoolId, out var text))
+        {
+            throw new ArgumentException("unknown_spool_output");
+        }
+
+        // Ranges are already enforced by schema validation; these are backstops.
+        var offset = ReadOptionalInt(arguments, "offset") ?? 0;
+        var limit = ReadOptionalInt(arguments, "limit") ?? DefaultSpoolPageChars;
+        if (offset < 0 || offset > TerminalLimits.MaxSpoolChars
+            || limit < 1 || limit > TerminalLimits.MaxSpoolPageChars)
+        {
+            throw new ArgumentException("invalid_arguments");
+        }
+
+        var start = Math.Min(offset, text.Length);
+        var page = text.Substring(start, Math.Min(limit, text.Length - start));
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject
+            {
+                ["spool_id"] = spoolId,
+                ["offset"] = offset,
+                ["limit"] = limit,
+                ["total_chars"] = text.Length,
+                ["page"] = page,
+                ["truncated"] = start + page.Length < text.Length,
+            },
+            ToolVerificationStates.NotRequired,
+            "Terminal output page.");
+    }
+
+    private static void AppendSpoolCapped(StringBuilder retained, string frame)
+    {
+        if (retained.Length >= TerminalLimits.MaxSpoolChars || string.IsNullOrEmpty(frame))
+        {
+            return;
+        }
+
+        retained.Append(frame, 0, Math.Min(frame.Length, TerminalLimits.MaxSpoolChars - retained.Length));
+    }
+
+    private void RetainSpool(ToolExecutionContext context, StringBuilder retained)
+    {
+        if (!string.IsNullOrWhiteSpace(context.RequestId) && retained.Length > 0)
+        {
+            _spools.Store(context.SessionId, context.RequestId, retained.ToString());
+        }
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
@@ -44,6 +120,7 @@ public sealed partial class ToolExecutionService
             context.SessionId,
             context.SessionScopes ?? _session.ScopesFor(context.SessionId),
             _session.Descriptor.ExpiresAt);
+        var retained = new StringBuilder();
         var result = await tools.Terminal.RunAsync(
             grant,
             new TerminalRunRequest(
@@ -60,8 +137,10 @@ public sealed partial class ToolExecutionService
                 ReadWriteSet(arguments),
                 Approved: context.Approved),
             context.ConfinementRequired,
-            cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot);
+            cancellationToken,
+            retainOutput: frame => AppendSpoolCapped(retained, frame)).ConfigureAwait(false);
+        RetainSpool(context, retained);
+        return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot), context);
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalShellAsync(
@@ -79,6 +158,7 @@ public sealed partial class ToolExecutionService
 
         var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
         var tools = ResolveRootToolSet(context, workingDirectory);
+        var retained = new StringBuilder();
         var shellRequest = new TerminalShellRequest(
             ReadOptionalString(arguments, "shell") ?? "powershell",
             workingDirectory,
@@ -93,8 +173,24 @@ public sealed partial class ToolExecutionService
         var result = await tools.Terminal.RunApprovedShellAsync(
             shellRequest,
             context.ConfinementRequired,
-            cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot);
+            cancellationToken,
+            retainOutput: frame => AppendSpoolCapped(retained, frame)).ConfigureAwait(false);
+        RetainSpool(context, retained);
+        return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot), context);
+    }
+
+    /// <summary>
+    /// Names the retained output on the receipt so the model can page it back
+    /// with mode read_output instead of re-running the command.
+    /// </summary>
+    private static ToolExecutionOutcome WithSpoolId(ToolExecutionOutcome outcome, ToolExecutionContext context)
+    {
+        if (!string.IsNullOrWhiteSpace(context.RequestId))
+        {
+            outcome.Output["spool_id"] = context.RequestId;
+        }
+
+        return outcome;
     }
 
     /// <summary>
@@ -142,6 +238,13 @@ public sealed partial class ToolExecutionService
 
     private static string TerminalRunPreview(JsonObject arguments)
     {
+        // A spool read names retained output, not a command: the preview says
+        // so instead of rendering an empty command line.
+        if (string.Equals(ReadOptionalString(arguments, "mode"), "read_output", StringComparison.Ordinal))
+        {
+            return "Read retained terminal output.";
+        }
+
         var executable = ReadOptionalString(arguments, "executable");
         if (string.IsNullOrWhiteSpace(executable))
         {

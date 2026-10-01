@@ -4,10 +4,18 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
     [switch]$NoRestore,
+    [switch]$NoBuild,
 
     # Tests pass a unique name so they are not blocked by a real matrix running
     # on the same machine. Interactive callers keep the shared default.
-    [string]$MutexName = "Global\ru-test-matrix-run"
+    [string]$MutexName = "Global\ru-test-matrix-run",
+    # Targeted runs while iterating: only projects whose full path contains this
+    # substring, case-insensitively (e.g. -ProjectFilter "Broker" or "gui-winui3").
+    # The machine-wide lock still applies: targeted or not, one matrix at a time.
+    # Named *Filter* and not *Project*: PowerShell variables are case-insensitive,
+    # so [string]$Project would coerce the foreach $project loop variable below
+    # into a string and silently empty every project path.
+    [string]$ProjectFilter = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,6 +88,15 @@ if ($projects.Count -eq 0) {
     exit 1
 }
 
+if (-not [string]::IsNullOrWhiteSpace($ProjectFilter)) {
+    $projects = @($projects | Where-Object { $_.FullName -like "*$ProjectFilter*" })
+}
+
+if ($projects.Count -eq 0) {
+    [Console]::Error.WriteLine("No .NET test projects matched '$ProjectFilter' under '$workspace'.")
+    exit 1
+}
+
 # The lock is released on every exit from here on, including a failing project.
 # Leaving it to the two statements at the end meant a red matrix skipped the
 # release, so the next run had to recover it from AbandonedMutexException and, on
@@ -95,6 +112,9 @@ foreach ($project in $projects) {
     )
     if ($NoRestore) {
         $arguments += "--no-restore"
+    }
+    if ($NoBuild) {
+        $arguments += "--no-build"
     }
 
     Write-Host "Running dotnet test: $($project.FullName)"

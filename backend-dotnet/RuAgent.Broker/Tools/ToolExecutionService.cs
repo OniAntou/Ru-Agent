@@ -113,6 +113,9 @@ public sealed partial class ToolExecutionService
         // A deleted session must not leave its plan behind: the store is keyed by
         // session and nothing else would ever clear it.
         _todos.Remove(sessionId);
+        // Retained terminal output dies with the session for the same reason: a
+        // spool id must never resolve to another session's text.
+        _spools.RemoveSession(sessionId);
     }
 
     public void ClearPendingApprovals() => _approvals.Clear();

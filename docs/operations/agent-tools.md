@@ -99,10 +99,11 @@ session task list (at most 64 rows of `content` plus a `status` of `pending`,
 (required) plus optional `path` and `max_results` (1–64, default 64) and returns
 stable sorted relative paths without content access; `grep` takes `query`
 (1–512 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
-(default false), `is_regex` (default false) and `max_results` (1–64, default
-64), and returns bounded match locations without raw file content; `write`
+(default false), `is_regex` (default false), `max_results` (1–64, default
+64) and `offset` (0–10000, default 0) for paging the ordinal results,
+and returns bounded match locations without raw file content; `write`
 carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
-(`run`, `shell`).
+(`run`, `shell`, `read_output`).
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
@@ -129,7 +130,7 @@ boundary.
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, structured protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |

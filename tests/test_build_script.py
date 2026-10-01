@@ -73,6 +73,7 @@ def _run_build_script(
     missing_artifact: str = "",
     missing_xaml: str = "",
     missing_runtime: str = "",
+    missing_asset: str = "",
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -80,6 +81,12 @@ def _run_build_script(
     shutil.copy2(repo_root / "build.bat", build_root / "build.bat")
     (build_root / "gui-winui3").mkdir()
     (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
+    for relative in ("Assets/AppIcon.ico", "Assets/Fonts/Inter-Variable.ttf"):
+        if relative == missing_asset:
+            continue
+        asset = build_root / "gui-winui3" / relative
+        asset.parent.mkdir(parents=True, exist_ok=True)
+        asset.write_text(f"staged {relative}\n", encoding="utf-8")
     compiled_xaml = build_root / "gui-winui3/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64"
     for relative in ("App.xbf", "MainWindow.xbf", "Views/ChatView.xbf", "Controls/TerminalPanelControl.xbf"):
         if relative == missing_xaml:
@@ -199,6 +206,28 @@ def test_release_reports_the_windows_app_runtime_as_bundled(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Windows App Runtime bundled" in result.stdout
+
+
+def test_release_copies_gui_assets_into_the_flat_layout(tmp_path: Path) -> None:
+    """dotnet publish does not carry Content files, so without this stage the
+    shipped app misses its window icon and bundled font."""
+    result = _run_build_script(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "GUI Assets" in result.stdout
+    publish = tmp_path / "checkout/gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"
+    for relative in ("Assets/AppIcon.ico", "Assets/Fonts/Inter-Variable.ttf"):
+        artifact = publish / relative
+        assert artifact.is_file(), f"Missing published asset: {relative}"
+        assert artifact.read_text(encoding="utf-8") == f"staged {relative}\n"
+
+
+def test_release_fails_without_gui_assets(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, missing_asset="Assets/AppIcon.ico")
+
+    assert result.returncode != 0
+    assert "GUI Assets" in result.stdout
+    assert "Build complete" not in result.stdout
 
 
 @pytest.mark.parametrize(

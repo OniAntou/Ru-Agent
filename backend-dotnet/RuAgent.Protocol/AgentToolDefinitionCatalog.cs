@@ -42,11 +42,11 @@ public static class AgentToolDefinitionCatalog
         new("list", "List one workspace directory's entries with metadata, bounded by max_entries." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "." }),
         new("help", "Search Ru's bundled offline documentation for product behavior, architecture, configuration, tools, providers, and operating boundaries. Returns stable document IDs and excerpts only; it never reads workspace files.", AgentToolScopes.SystemRead, HelpDocsSchema, () => new JsonObject { ["query"] = "approval reasons" }),
         new("todo_write", "Replace the task list for this session. Send the complete list every time; it replaces the previous one. Use it to plan multi-step work and show progress: mark a task in_progress while working on it, completed the moment it is done, and keep at most one in_progress.", AgentToolScopes.SystemRead, TodoWriteSchema, () => new JsonObject { ["todos"] = new JsonArray(new JsonObject { ["content"] = "Read the failing test", ["status"] = "completed" }, new JsonObject { ["content"] = "Implement the validator", ["status"] = "in_progress" }) }),
-        new("grep", "Search workspace file contents. Text or regex search with a glob filter and bounded results." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
+        new("grep", "Search workspace file contents. Text or regex search with a glob filter and bounded results. Scope with path/file_glob and re-run narrower (or page with offset) when results truncate; for exact numbers use is_regex word boundaries (\\b41\\b) so fixture hashes do not match as substrings." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
         new("glob", "Find workspace files by glob pattern. Bounded ordinal results with traversal caps." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GlobSchema, () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." }),
         new("write", "Create a new file or replace a whole file (op=write), delete (op=delete), or restore (op=restore). For partial changes to an existing file, prefer edit. Policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "notes.txt", ["content"] = "new content" }),
         new("edit", "Preferred for changing an existing file. Replace one exact non-empty string." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
-        new("bash", "Run one bounded executable or shell script with an argument vector and explicit network intent.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = "." }),
+        new("bash", "Run one bounded executable or shell script with an argument vector and explicit network intent. Output is head/tail bounded: stdout_head/stdout_tail carry the start/end while stdout_bytes and stdout_dropped_bytes name the total and the swallowed middle, so a nonzero dropped count means re-running narrower (tighter flags, piping, or writing to a workspace file and reading it back) instead of guessing what the middle held. Truncated output stays readable without re-running: the receipt carries spool_id, and mode read_output pages it back with execution_id/offset/limit.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = "." }),
         new("web_search", "Search the public web. The configured engine races a fixed set of free fallback engines and the first engine with usable results answers, so a slow or blocked primary no longer delays the result. If every engine fails or none of their layouts can be read, the call fails with a bounded error rather than returning an empty answer. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest dotnet release" }),
         new("web_fetch", "Fetch one public web page as sanitized text. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
         new("skill", "Load one workspace skill's full SKILL.md workflow. Skills are prompt guidance discovered from the workspace skill roots; the prompt lists only name and description, and the model calls this tool to load the body on demand. allowed-tools metadata is descriptive only and never grants a tool, scope, path, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
@@ -152,6 +152,9 @@ public static class AgentToolDefinitionCatalog
         ("path", StringSchema()), ("file_glob", StringSchema()),
         ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
         ("max_results", IntegerSchema(1, 64)),
+        // Paging bound mirrors FileToolLimits.MaxOffset in RuAgent.Broker (the
+        // adapter is the authority; Protocol cannot reference the Broker layer).
+        ("offset", IntegerSchema(0, 10000)),
     ];
     private static JsonObject GlobSchema() => ObjectSchema(["pattern"], GlobSchemaProperties());
     private static (string Name, JsonObject Schema)[] GlobSchemaProperties() =>
@@ -167,7 +170,7 @@ public static class AgentToolDefinitionCatalog
     ];
     private static (string Name, JsonObject Schema)[] BashSchemaProperties() =>
     [
-        ("mode", EnumSchema(["run", "shell"])),
+        ("mode", EnumSchema(["run", "shell", "read_output"])),
         ("executable", StringSchema(TerminalLimits.MaxExecutableChars)),
         ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)),
         ("script", StringSchema(TerminalLimits.MaxScriptChars)),
@@ -176,6 +179,9 @@ public static class AgentToolDefinitionCatalog
         ("network_intent", BooleanSchema()),
         ("read_only", BooleanSchema()),
         ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
+        ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),
+        ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolChars)),
+        ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)),
     ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
     private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 256 * 1024))]);

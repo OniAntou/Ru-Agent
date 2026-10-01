@@ -58,6 +58,23 @@ public sealed class AgentActivityGrouperTests
     }
 
     [Fact]
+    public void Narration_rows_hide_because_the_prose_already_says_the_sentence()
+    {
+        var items = new List<AgentActivityItem>
+        {
+            Item(AgentActivityState.Completed, AgentActivityKind.Thinking, durationMs: 4000),
+            Item(AgentActivityState.Completed, AgentActivityKind.Narration),
+            Item(AgentActivityState.Completed, AgentActivityKind.Explore, fileName: "LLM"),
+        };
+
+        AgentActivityGrouper.Reconcile(items);
+
+        Assert.True(items[0].IsVisibleInFeed);
+        Assert.False(items[1].IsVisibleInFeed);
+        Assert.True(items[2].IsVisibleInFeed);
+    }
+
+    [Fact]
     public void Failed_and_waiting_rows_are_never_collapsed()
     {
         var items = new List<AgentActivityItem>

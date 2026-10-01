@@ -23,7 +23,10 @@ internal static class AgentActivityGrouper
 
         foreach (var item in items)
         {
-            item.IsVisibleInFeed = true;
+            // Narration is the model's own sentence, and the same sentence
+            // streams into the prose beside it: showing the row too prints
+            // every narration twice. The prose keeps the words.
+            item.IsVisibleInFeed = item.Kind != AgentActivityKind.Narration;
             item.CollapsedDurationMs = 0;
             item.SetDetailRepeated(false);
         }

@@ -265,6 +265,10 @@ namespace RuApp.Views
 
             var content = message.Content ?? string.Empty;
             var frozen = Math.Min(_segmentFrozenLength, content.Length);
+            // Freeze on a line edge so a mid-sentence activity frame does not
+            // slice one sentence across two bubbles. The rest keeps streaming
+            // in the tail below the new row.
+            var splitAt = AgentSegmentSplitter.SnapToLineStart(content, frozen);
             var segments = message.Segments;
             if (segments is null)
             {
@@ -274,16 +278,16 @@ namespace RuApp.Views
 
             if (segments.Count > 0 && segments[^1] is TextSegment tail)
             {
-                tail.Text = content.Substring(frozen);
+                tail.Text = content.Substring(frozen, splitAt - frozen);
                 tail.IsError = message.IsError;
             }
-            else if (content.Length > frozen)
+            else if (splitAt > frozen)
             {
-                segments.Add(new TextSegment(content.Substring(frozen)) { IsError = message.IsError });
+                segments.Add(new TextSegment(content.Substring(frozen, splitAt - frozen)) { IsError = message.IsError });
             }
 
-            _activitySplitOffsetById[item.ActivityId] = content.Length;
-            _segmentFrozenLength = content.Length;
+            _activitySplitOffsetById[item.ActivityId] = splitAt;
+            _segmentFrozenLength = splitAt;
             segments.Add(new ActivitySegment(item.ActivityId, item));
             segments.Add(new TextSegment(string.Empty) { IsError = message.IsError });
         }

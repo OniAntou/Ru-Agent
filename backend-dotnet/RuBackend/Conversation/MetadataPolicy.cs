@@ -90,8 +90,22 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
         return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 
-    private static string CollapseWhitespace(string value) =>
-        Whitespace().Replace(value, " ").Trim();
+    private static string CollapseWhitespace(string value)
+    {
+        // Giữ xuống dòng cho replay: chỉ gộp khoảng trắng ngang,
+        // 3+ dòng trống gộp còn tối đa 2. Gộp \s+ cũ nuốt \n\n
+        // thành 1 space nên session mở lại dính thành 1 cục.
+        var normalized = value.Replace("\r\n", "\n").Replace('\r', '\n');
+        normalized = HorizontalWhitespace().Replace(normalized, " ");
+        normalized = ExcessNewlines().Replace(normalized, "\n\n");
+        var lines = normalized.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = lines[i].TrimEnd();
+        }
+
+        return string.Join("\n", lines).Trim();
+    }
 
     [GeneratedRegex(@"\[\[VTS:([^\]]*)\]\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex VtsMarker();
@@ -109,8 +123,11 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex UnterminatedPrivateMarker();
 
-    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
-    private static partial Regex Whitespace();
+    [GeneratedRegex(@"[ \t\f\v\xA0]+", RegexOptions.CultureInvariant)]
+    private static partial Regex HorizontalWhitespace();
+
+    [GeneratedRegex(@"\n{3,}", RegexOptions.CultureInvariant)]
+    private static partial Regex ExcessNewlines();
 
     [GeneratedRegex(@"\b(vui|mung|cuoi|ha ha|he he|phan khoi|thich lam|tuyet voi)\b", RegexOptions.CultureInvariant)]
     private static partial Regex JoyWords();

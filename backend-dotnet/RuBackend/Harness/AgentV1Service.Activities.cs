@@ -10,6 +10,7 @@ using ProtocolActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 using ProtocolActivityWire = RuAgent.Protocol.Harness.AgentActivityWire;
 using ProtocolTodoWire = RuAgent.Protocol.Harness.AgentTodoWire;
 using RuAgent.Protocol.Harness;
+using RuBackend.Conversation;
 
 namespace RuBackend.Harness;
 
@@ -22,6 +23,20 @@ namespace RuBackend.Harness;
 public sealed partial class AgentV1Service
 {
     private const int MaxReplayedActivities = 200;
+
+    /// <summary>
+    /// How many narration chunks a replayed transcript may carry. Past this the
+    /// whole transcript is dropped and the caller falls back to the session text,
+    /// so a pathological run degrades to the old grouped layout, never to a
+    /// truncated sentence.
+    /// </summary>
+    private const int MaxTranscriptSegments = 64;
+
+    /// <summary>
+    /// Total narration characters a replayed transcript may carry. Same fail-soft
+    /// rule as the segment count: over budget means no transcript at all.
+    /// </summary>
+    private const int MaxTranscriptChars = 131072;
 
     public async Task<AgentServiceResult> ListRunActivitiesAsync(string runIdRaw, CancellationToken cancellationToken)
     {
@@ -44,6 +59,7 @@ public sealed partial class AgentV1Service
         var stepStartedAt = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         var thinking = new List<ThinkingReplayRow>();
         var reasoning = new Dictionary<string, ReasoningReplayCall>(StringComparer.Ordinal);
+        var stepTexts = new List<StepTextReplayRow>();
 
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
@@ -95,6 +111,11 @@ public sealed partial class AgentV1Service
                         ? null
                         : (int?)Math.Max(0, (evt.OccurredAt - startedAt).TotalMilliseconds);
                     thinking.Add(new ThinkingReplayRow(finishedStep, durationMs, evt.Sequence));
+                    if (evt.PayloadId is { } stepPayloadId)
+                    {
+                        stepTexts.Add(new StepTextReplayRow(stepPayloadId, evt.Sequence));
+                    }
+
                     break;
                 case "model.reasoning_recorded"
                     when evt.ModelStepId is { } reasoningStep
@@ -102,6 +123,10 @@ public sealed partial class AgentV1Service
                     reasoning[reasoningStep.Value] = new ReasoningReplayCall(
                         reasoningPayloadId,
                         evt.Sequence);
+                    break;
+                case "continue.requested"
+                    when evt.PayloadId is { } blockedPayloadId:
+                    stepTexts.Add(new StepTextReplayRow(blockedPayloadId, evt.Sequence));
                     break;
             }
         }
@@ -211,7 +236,8 @@ public sealed partial class AgentV1Service
         }
 
         var wires = new List<JsonElement>();
-        foreach (var row in rows.OrderBy(item => item.Sequence).Take(MaxReplayedActivities))
+        var cappedRows = rows.OrderBy(item => item.Sequence).Take(MaxReplayedActivities).ToList();
+        foreach (var row in cappedRows)
         {
             JsonElement wire;
             try
@@ -226,7 +252,123 @@ public sealed partial class AgentV1Service
             wires.Add(wire);
         }
 
-        return new AgentServiceResult(200, new { activities = wires });
+        var chunks = await ReadTranscriptChunksAsync(runId, stepTexts, cancellationToken).ConfigureAwait(false);
+        var transcript = chunks is null
+            ? Array.AsReadOnly(Array.Empty<TranscriptEntry>())
+            : RunTranscriptPlanner.Merge(
+                cappedRows.Select(row => (row.Sequence, row.Activity.ActivityId)).ToList(),
+                chunks);
+        return new AgentServiceResult(200, new { activities = wires, transcript });
+    }
+
+    /// <summary>
+    /// The model's own words in event order, so a reopened session can interleave
+    /// narration with the tool rows instead of grouping every row above the text.
+    /// </summary>
+    /// <remarks>
+    /// Session messages persist only the final step's text, while every intermediate
+    /// narration lives solely in the durable step payloads read here. Anything
+    /// unreadable is skipped; over budget (count or characters) drops the whole
+    /// transcript and the caller falls back to the session text, so a pathological
+    /// run degrades to the old grouped layout, never to a truncated sentence.
+    /// </remarks>
+    private async Task<IReadOnlyList<TranscriptChunk>?> ReadTranscriptChunksAsync(
+        RunId runId,
+        IReadOnlyList<StepTextReplayRow> stepTexts,
+        CancellationToken cancellationToken)
+    {
+        if (stepTexts.Count == 0 || stepTexts.Count > MaxTranscriptSegments)
+        {
+            return null;
+        }
+
+        var chunks = new List<TranscriptChunk>(stepTexts.Count);
+        int totalChars = 0;
+        foreach (var row in stepTexts.OrderBy(item => item.Sequence))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var text = await ReadStepTextAsync(runId, row.PayloadId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(text))
+            {
+                continue;
+            }
+
+            totalChars += text.Length;
+            if (totalChars > MaxTranscriptChars)
+            {
+                return null;
+            }
+
+            chunks.Add(new TranscriptChunk(row.Sequence, text));
+        }
+
+        return chunks;
+    }
+
+    private async Task<string?> ReadStepTextAsync(
+        RunId runId,
+        PayloadId payloadId,
+        CancellationToken cancellationToken)
+    {
+        HarnessPayloadContent content;
+        try
+        {
+            content = await _payloadStore.ReadForClientAsync(runId, payloadId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HarnessStoreException)
+        {
+            return null;
+        }
+
+        if (!content.Audience.HasFlag(HarnessPayloadAudience.AuthenticatedClient))
+        {
+            return null;
+        }
+
+        string? raw;
+        if (content.Kind == HarnessPayloadKind.AssistantStep && content.Encoding == HarnessPayloadEncoding.Json)
+        {
+            AssistantStep step;
+            try
+            {
+                step = AssistantStepJsonCodec.Deserialize(content.Plaintext);
+            }
+            catch (InvalidDataException)
+            {
+                return null;
+            }
+
+            raw = step.Text;
+        }
+        else if (content.Kind == HarnessPayloadKind.AssistantText && content.Encoding == HarnessPayloadEncoding.Utf8Text)
+        {
+            try
+            {
+                raw = Encoding.UTF8.GetString(content.Plaintext.Span);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+        else
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var cleaned = _metadataPolicy is null ? raw.Trim() : _metadataPolicy.StripVoiceMarkers(raw);
+        if (string.IsNullOrWhiteSpace(cleaned)
+            || string.Equals(cleaned, MetadataPolicy.EmptyResponseText, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return cleaned;
     }
 
     private async Task<ToolProposal?> RebuildProposalAsync(
@@ -439,6 +581,8 @@ public sealed partial class AgentV1Service
         CoreActivityState.Waiting => ProtocolActivityState.Waiting,
         _ => throw new ArgumentOutOfRangeException(nameof(state)),
     };
+
+    private sealed record StepTextReplayRow(PayloadId PayloadId, long Sequence);
 
     private sealed record ProposedReplayCall(
         ToolCallId ToolCallId,

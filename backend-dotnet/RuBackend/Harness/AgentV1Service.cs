@@ -18,6 +18,7 @@ using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
+using RuBackend.Conversation;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
@@ -71,6 +72,13 @@ public sealed partial class AgentV1Service
     /// </summary>
     private readonly ILogger<AgentV1Service>? _logger;
 
+    /// <summary>
+    /// Optional because the service is constructed directly by tests. When present it
+    /// strips private markers from replayed narration so a reopened session reads the
+    /// same sentence the live feed showed; without it the raw step text is replayed.
+    /// </summary>
+    private readonly IMetadataPolicy? _metadataPolicy;
+
     private const int ApprovalToolIdMaxLength = 128;
     private const int ApprovalToolVersionMaxLength = 32;
     private const int ApprovalPathMaxLength = 4096;
@@ -111,7 +119,8 @@ public sealed partial class AgentV1Service
         WorkspaceJournalProtector? workspaceJournalProtector = null,
         ISettingsStore? settingsStore = null,
         Func<string, bool>? isVisionModel = null,
-        ILogger<AgentV1Service>? logger = null)
+        ILogger<AgentV1Service>? logger = null,
+        IMetadataPolicy? metadataPolicy = null)
     {
         _store = store;
         _options = options;
@@ -135,6 +144,7 @@ public sealed partial class AgentV1Service
         _settingsStore = settingsStore;
         _isVisionModel = isVisionModel ?? ((string model) => ModelImage.IsVisionModel(model));
         _logger = logger;
+        _metadataPolicy = metadataPolicy;
     }
 
     private static AgentServiceResult BoundedError(int status, string code, string message) =>

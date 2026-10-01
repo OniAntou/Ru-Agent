@@ -203,6 +203,74 @@ public sealed class AgentRunActivitiesTests
     }
 
     /// <summary>
+    /// A reopened session must read the model's words where they happened: step
+    /// narration replays as ordered transcript entries interleaved with the tool
+    /// rows, instead of every row grouping above a text that only held the final
+    /// step. Session messages persist just that final text, so without this the
+    /// intermediate sentences are gone the next time the session is opened.
+    /// </summary>
+    [Fact]
+    public async Task Replayed_transcript_carries_step_narration_in_order()
+    {
+        var steps = new Queue<AssistantStep>();
+        steps.Enqueue(new AssistantStep(
+            "checking the plan",
+            new[]
+            {
+                new ModelToolCall(
+                    "provider_call_1",
+                    "todo_write",
+                    "1.0.0",
+                    JsonDocument.Parse("""
+                        {"todos":[
+                          {"content":"Do it","status":"in_progress"}]}
+                        """).RootElement),
+            },
+            AssistantFinishReason.ToolCalls,
+            0));
+        steps.Enqueue(new AssistantStep(
+            "done",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
+
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: tmp.DataPaths,
+            modelStepRunner: new ScriptedStepRunner(steps),
+            withInProcessBroker: true);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(
+            client, session, tmp.Path, "plan this", "transcript-act-key-" + Guid.NewGuid().ToString("N"));
+        await TrustAsync(client, runId);
+        await WaitForTerminalAsync(client, runId);
+
+        using var resp = await client.GetAsync($"/agent/v1/runs/{runId}/activities");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var activities = json.GetProperty("activities").EnumerateArray().ToArray();
+        Assert.True(activities.Length > 0, "expected replayed tool rows beside the transcript");
+
+        Assert.True(json.TryGetProperty("transcript", out var transcriptElement));
+        var transcript = transcriptElement.EnumerateArray().ToArray();
+        var texts = transcript
+            .Where(entry => entry.GetProperty("kind").GetString() == "text")
+            .Select(entry => entry.GetProperty("text").GetString())
+            .ToArray();
+        Assert.Equal(new[] { "checking the plan", "done" }, texts);
+
+        var activityIds = new HashSet<string>(
+            activities.Select(activity => activity.GetProperty("activity_id").GetString()!),
+            StringComparer.Ordinal);
+        foreach (var entry in transcript.Where(entry => entry.GetProperty("kind").GetString() == "activity"))
+        {
+            Assert.Contains(entry.GetProperty("activity_id").GetString()!, activityIds);
+        }
+    }
+
+    /// <summary>
     /// Approves the trust challenge a run raises for a workspace outside the project root.
     /// </summary>
     /// <remarks>

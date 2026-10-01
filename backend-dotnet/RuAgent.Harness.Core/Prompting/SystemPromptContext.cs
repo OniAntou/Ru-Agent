@@ -19,7 +19,8 @@ public sealed record PromptEnvironment
         string locale,
         string timezone,
         string date,
-        string? workspaceLabel)
+        string? workspaceLabel,
+        string? toolInventory = null)
     {
         Model = PromptText.Require(model, 256, nameof(model));
         Platform = PromptText.Require(platform, 64, nameof(platform));
@@ -27,6 +28,7 @@ public sealed record PromptEnvironment
         Timezone = PromptText.Require(timezone, 128, nameof(timezone));
         Date = PromptText.Require(date, 32, nameof(date));
         WorkspaceLabel = PromptText.Optional(workspaceLabel, 128, nameof(workspaceLabel));
+        ToolInventory = PromptText.Optional(toolInventory, 256, nameof(toolInventory));
     }
 
     public string Model { get; }
@@ -40,6 +42,13 @@ public sealed record PromptEnvironment
     public string Date { get; }
 
     public string? WorkspaceLabel { get; }
+
+    /// <summary>
+    /// What shells and helper tools this machine actually has, resolved fresh
+    /// per run by PATH probing (no execution). Lets the model reach for what
+    /// exists instead of guessing pwsh and learning via executable_not_found.
+    /// </summary>
+    public string? ToolInventory { get; }
 }
 
 public enum PromptInstructionOrigin
@@ -343,6 +352,7 @@ public sealed record SystemPromptContext
                 timezone = Environment.Timezone,
                 date = Environment.Date,
                 workspace_label = Environment.WorkspaceLabel,
+                tool_inventory = Environment.ToolInventory,
             },
             instruction_blocks = InstructionBlocks.Select(block => new
             {

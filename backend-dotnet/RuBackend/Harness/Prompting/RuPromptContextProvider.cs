@@ -82,7 +82,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             CultureInfoName(),
             TimeZoneInfo.Local.Id,
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            WorkspaceLabel(_canonicalRoot));
+            WorkspaceLabel(_canonicalRoot),
+            ToolInventoryProbe.Probe());
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var capabilities = BuildCapabilities();
 

@@ -242,6 +242,22 @@ public sealed class SystemPromptComposerTests
         Assert.Throws<ArgumentException>(() => snapshot.Receipt.ValidateAgainst(context, snapshot.Text + "tampered"));
     }
 
+    [Fact]
+    public void Environment_block_lists_the_tool_inventory_when_present()
+    {
+        var context = new SystemPromptContext(
+            SystemPromptContext.PromptContextSchemaVersion,
+            "ru-agent",
+            "standard",
+            new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM", "shells: powershell, cmd; tools: git; missing: pwsh"),
+            Array.Empty<PromptInstructionBlock>(),
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+        var snapshot = SystemPromptComposer.Compose(context);
+
+        Assert.Contains("tools_available: shells: powershell, cmd", snapshot.Text, StringComparison.Ordinal);
+    }
+
     private static class PromptFixtures
     {
         public static SystemPromptContext ValidContext(

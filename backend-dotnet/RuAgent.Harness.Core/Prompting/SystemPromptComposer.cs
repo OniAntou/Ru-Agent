@@ -60,6 +60,11 @@ public static class SystemPromptComposer
             lines.Add($"workspace_label: {environment.WorkspaceLabel}");
         }
 
+        if (environment.ToolInventory is not null)
+        {
+            lines.Add($"tools_available: {environment.ToolInventory}");
+        }
+
         return "ENVIRONMENT\n" + string.Join("\n", lines);
     }
 

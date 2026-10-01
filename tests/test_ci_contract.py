@@ -54,6 +54,32 @@ def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     assert "git log --check" in workflow
 
 
+def test_ci_publish_smoke_and_dependency_audits_are_wired_but_advisory() -> None:
+    """The publish path is smoked and vulnerability scans stay advisory.
+
+    The publish smoke must exercise the self-contained Release layout instead
+    of another Debug build, and the rpc smoke must keep its dynamic-port
+    default rather than pinning a port that a busy machine can already hold.
+    Each audit escapes only its own exit code; continue-on-error stays banned,
+    so no build or test gate can be marked non-blocking by this addition.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    dotnet_job = workflow.split("  dotnet:\n", maxsplit=1)[1].split("  node:\n", maxsplit=1)[0]
+    node_job = workflow.split("  node:\n", maxsplit=1)[1]
+
+    assert r"run: .\scripts\rpc_smoke.ps1" in dotnet_job
+    assert r"run: .\scripts\rpc_smoke.ps1 -Port" not in workflow
+    assert r"run: .\scripts\publish_smoke.ps1" in dotnet_job
+    assert (ROOT / "scripts" / "publish_smoke.ps1").is_file()
+
+    assert "dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0" in dotnet_job
+    assert "npm audit --prefix sdk/ru-agent --omit=dev || exit 0" in node_job
+    # pip-audit is deliberately not wired: pyproject pins no such tool, and the
+    # repo does not grow a dependency just to run an advisory scan.
+    assert "pip-audit" not in workflow
+    assert "continue-on-error" not in workflow
+
+
 def test_ruff_targets_the_minimum_supported_python() -> None:
     config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     requires_python = config["project"]["requires-python"]

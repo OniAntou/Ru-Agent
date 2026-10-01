@@ -1,0 +1,264 @@
+# Publish smoke: publish RuBackend as a self-contained win-x64 Release app and
+# prove the published output boots in managed mode, authenticates /status with
+# the descriptor bearer and shuts down cleanly.
+#
+# This covers the publish layout (apphost, runtimeconfig, sibling
+# RuAgent.Broker.exe carried by the project reference) that the Debug
+# build-and-run rpc smoke never exercises, without paying for the full
+# build.bat release matrix.
+#
+# Usage: .\scripts\publish_smoke.ps1            (Release, free loopback port)
+#        .\scripts\publish_smoke.ps1 -Port N    (pin a port for debugging)
+param(
+    [int]$Port = 0,
+
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release"
+)
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$work = Join-Path $env:TEMP ("ru-publish-smoke-" + [guid]::NewGuid().ToString("N"))
+$publishDir = Join-Path $work "publish"
+$dataRoot = Join-Path $work "data"
+$logRoot = Join-Path $work "logs"
+$hostStdoutPath = Join-Path $work "host.stdout.log"
+$hostStderrPath = Join-Path $work "host.stderr.log"
+$projectPath = Join-Path $repoRoot "backend-dotnet/RuBackend/RuBackend.csproj"
+$token = "publish-smoke-bearer"
+$environmentNames = @("RU_DATA_ROOT", "RU_LOG_ROOT", "RU_DESKTOP_TOKEN", "RU_AGENT_BROKER_EXE")
+
+# Captured before anything can fail so the finally block always restores exactly
+# the caller's environment, never a partially-set one.
+$previousEnvironment = @{}
+foreach ($name in $environmentNames) {
+    $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+}
+
+$hostProcess = $null
+$status = 1
+
+function Write-Smoke([string]$Message) {
+    Write-Host "publish smoke: $Message"
+}
+
+function Get-TextTail([string]$Path, [int]$MaxCharacters = 2000) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return "(no file)"
+    }
+
+    try {
+        $text = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        if ([string]::IsNullOrEmpty($text)) {
+            return "(empty)"
+        }
+
+        if ($text.Length -le $MaxCharacters) {
+            return $text
+        }
+
+        return $text.Substring($text.Length - $MaxCharacters)
+    } catch {
+        return "(unreadable: $($_.Exception.Message))"
+    }
+}
+
+function Stop-ProcessTree([System.Diagnostics.Process]$Process) {
+    if ($null -eq $Process) {
+        return
+    }
+
+    try {
+        if (-not $Process.HasExited) {
+            & taskkill /PID $Process.Id /T /F 2>$null | Out-Null
+        }
+    } catch {
+    }
+
+    try {
+        if (-not $Process.HasExited) {
+            $Process.Kill()
+        }
+    } catch {
+    }
+
+    try { [void]$Process.WaitForExit(5000) } catch { }
+    try { $Process.Dispose() } catch { }
+}
+
+function Resolve-SmokePort([int]$RequestedPort) {
+    if ($RequestedPort -ne 0) {
+        if ($RequestedPort -lt 1024 -or $RequestedPort -gt 65535) {
+            throw "-Port must be between 1024 and 65535; got $RequestedPort."
+        }
+
+        if ($RequestedPort -eq 8001) {
+            throw "-Port 8001 is reserved by the managed host's port scheme; pick another port."
+        }
+    }
+
+    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $RequestedPort)
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    } catch {
+        if ($RequestedPort -ne 0) {
+            throw "port $RequestedPort is already in use; pick another port or rerun."
+        }
+
+        throw
+    } finally {
+        try { $listener.Stop() } catch { }
+    }
+}
+
+function Invoke-SmokeRequest([System.Net.Http.HttpMethod]$Method, [string]$Url, [string]$Bearer) {
+    $client = New-Object System.Net.Http.HttpClient
+    try {
+        $client.Timeout = [TimeSpan]::FromSeconds(15)
+        $request = New-Object System.Net.Http.HttpRequestMessage -ArgumentList $Method, $Url
+        try {
+            $request.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue -ArgumentList "Bearer", $Bearer
+            $response = $client.SendAsync($request).GetAwaiter().GetResult()
+            try {
+                return [pscustomobject]@{
+                    StatusCode = [int]$response.StatusCode
+                    Body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                }
+            } finally {
+                $response.Dispose()
+            }
+        } finally {
+            $request.Dispose()
+        }
+    } finally {
+        $client.Dispose()
+    }
+}
+
+try {
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        throw "dotnet was not found on PATH. Install the .NET 10 SDK, then rerun this smoke."
+    }
+
+    if (-not (Test-Path -LiteralPath $projectPath)) {
+        throw "RuBackend project not found: $projectPath"
+    }
+
+    New-Item -ItemType Directory -Path $dataRoot, $logRoot -Force | Out-Null
+
+    $publicPort = Resolve-SmokePort -RequestedPort $Port
+    $baseUrl = "http://127.0.0.1:$publicPort"
+    Write-Smoke "publishing RuBackend ($Configuration, win-x64, self-contained) to $publishDir..."
+    & dotnet publish $projectPath -c $Configuration -r win-x64 --self-contained true -o $publishDir --nologo
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet publish failed with exit code $LASTEXITCODE."
+    }
+
+    $backendExe = Join-Path $publishDir "RuBackend.exe"
+    if (-not (Test-Path -LiteralPath $backendExe)) {
+        throw "dotnet publish did not produce $backendExe."
+    }
+
+    # The managed host starts the Broker from beside the host, so a publish that
+    # dropped the project-reference apphost would only fail at runtime.
+    $brokerExe = Join-Path $publishDir "RuAgent.Broker.exe"
+    if (-not (Test-Path -LiteralPath $brokerExe)) {
+        throw "RuAgent.Broker.exe was not published beside RuBackend.exe."
+    }
+
+    $env:RU_DATA_ROOT = $dataRoot
+    $env:RU_LOG_ROOT = $logRoot
+    $env:RU_DESKTOP_TOKEN = $token
+    # Force the sibling broker: an inherited override would hide a broken layout.
+    [Environment]::SetEnvironmentVariable("RU_AGENT_BROKER_EXE", $null, "Process")
+
+    Write-Smoke "starting published RuBackend on $baseUrl (data root: $dataRoot)..."
+    # --urls must come before --managed-runtime: the command-line configuration
+    # provider consumes the token that follows the value-less --managed-runtime
+    # switch, so the other order silently drops --urls and binds 8000.
+    $hostProcess = Start-Process -FilePath $backendExe `
+        -ArgumentList "--urls", $baseUrl, "--managed-runtime" `
+        -WorkingDirectory $publishDir -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $hostStdoutPath -RedirectStandardError $hostStderrPath
+
+    $descriptorPath = Join-Path $dataRoot "runtime_descriptor.json"
+    $deadline = (Get-Date).AddSeconds(60)
+    while (-not (Test-Path -LiteralPath $descriptorPath)) {
+        if ($hostProcess.HasExited) {
+            throw "host exited before publishing runtime_descriptor.json. stderr: $(Get-TextTail $hostStderrPath)"
+        }
+
+        if ((Get-Date) -ge $deadline) {
+            throw "host did not publish runtime_descriptor.json within 60 s. stderr: $(Get-TextTail $hostStderrPath)"
+        }
+
+        Start-Sleep -Milliseconds 200
+    }
+
+    $descriptor = Get-Content -LiteralPath $descriptorPath -Raw | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace($descriptor.base_url) -or $descriptor.base_url.TrimEnd("/") -ne $baseUrl) {
+        throw "descriptor base_url '$($descriptor.base_url)' does not match the published host URL '$baseUrl'."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($descriptor.bearer_token)) {
+        throw "descriptor carries no bearer_token."
+    }
+
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+    $statusResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Get) -Url "$baseUrl/status" -Bearer $descriptor.bearer_token
+    if ($statusResponse.StatusCode -ne 200) {
+        throw "GET /status returned $($statusResponse.StatusCode); expected 200. body: $($statusResponse.Body)"
+    }
+
+    $statusBody = $statusResponse.Body | ConvertFrom-Json
+    if ($statusBody.status -ne "ok") {
+        throw "GET /status reported status '$($statusBody.status)'; expected ok. body: $($statusResponse.Body)"
+    }
+
+    Write-Smoke "status ok; asking the host to shut down..."
+    $shutdownResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Post) -Url "$baseUrl/host/shutdown" -Bearer $descriptor.bearer_token
+    if ($shutdownResponse.StatusCode -ne 200) {
+        throw "POST /host/shutdown returned $($shutdownResponse.StatusCode); expected 200. body: $($shutdownResponse.Body)"
+    }
+
+    if (-not $hostProcess.WaitForExit(15000)) {
+        throw "the host did not exit within 15 s after /host/shutdown."
+    }
+
+    Write-Smoke "published host shut down cleanly"
+    $status = 0
+} catch {
+    Write-Smoke "FAIL - $($_.Exception.Message)"
+    if ($null -ne $hostProcess) {
+        Write-Smoke "host stderr tail: $(Get-TextTail $hostStderrPath)"
+    }
+} finally {
+    Stop-ProcessTree $hostProcess
+    foreach ($name in $environmentNames) {
+        [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
+    }
+
+    $workRemoved = $false
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction Stop
+            $workRemoved = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    if (-not $workRemoved) {
+        Write-Warning "publish smoke: could not remove the temp work directory $work; remove it manually."
+    }
+}
+
+if ($status -eq 0) {
+    Write-Smoke "PASS"
+    exit 0
+}
+
+exit 1

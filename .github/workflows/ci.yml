@@ -60,6 +60,15 @@ jobs:
       - name: RPC smoke (scripted model)
         shell: pwsh
         run: .\scripts\rpc_smoke.ps1
+      - name: Publish smoke (Release, self-contained)
+        shell: pwsh
+        run: .\scripts\publish_smoke.ps1
+      - name: Dependency audit (advisory)
+        shell: pwsh
+        # Report transitive NuGet advisories without letting the scan itself fail
+        # the gate. The escape is scoped to this step; build and test steps above
+        # stay fatal, and the contract test still bans blanket non-blocking flags.
+        run: dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0
 
   node:
     runs-on: windows-latest
@@ -73,3 +82,7 @@ jobs:
       - run: npm run typecheck --prefix sdk/ru-agent
       - run: npm test --prefix sdk/ru-agent
       - run: npm run build --prefix sdk/ru-agent
+      - name: Dependency audit (advisory)
+        # The SDK has no production dependencies, so --omit=dev keeps the known
+        # dev-only advisories informational instead of gate-blocking.
+        run: npm audit --prefix sdk/ru-agent --omit=dev || exit 0

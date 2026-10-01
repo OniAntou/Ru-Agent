@@ -1,13 +1,21 @@
 # End-to-end smoke for `ru agent rpc`: a real host, a scripted model and the
 # stdio JSON-RPC bridge over redirected pipes.
 #
-# Usage: .\scripts\rpc_smoke.ps1
+# Usage: .\scripts\rpc_smoke.ps1          (picks a free loopback port)
+#        .\scripts\rpc_smoke.ps1 -Port N   (pin a port for debugging)
 #
 # The bridge owns stdin/stdout for its whole life, so the two phases of a run
 # cannot be two CLI invocations. This script starts the bridge once, reads the
 # session id, starts the run, subscribes with run.attach, streams run.event
 # notifications until a terminal status, and only then closes stdin. A non-JSON
 # line on stdout, a timeout or a non-zero exit is a failure.
+param(
+    # 0 asks the OS for a free loopback port, so a host already bound to the
+    # historical default (8000) cannot make this smoke fail. Pass an explicit
+    # port only when debugging a known failure against a fixed port.
+    [int]$Port = 0
+)
+
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -18,8 +26,6 @@ $hostStderrPath = Join-Path $work "host.stderr.log"
 $backendExe = Join-Path $repoRoot "backend-dotnet/RuBackend/bin/Debug/net10.0/RuBackend.exe"
 $cliExe = Join-Path $repoRoot "backend-dotnet/RuAgent.Cli/bin/Debug/net10.0/RuAgent.Cli.exe"
 $fixtureSource = Join-Path $repoRoot "docs/operations/fixtures/rpc-smoke-scripted.json"
-$baseUrl = "http://127.0.0.1:8000"
-$publicPort = 8000
 $token = "smoke-bearer"
 $environmentNames = @("RU_DATA_ROOT", "RU_SCRIPTED_MODEL", "RU_DESKTOP_TOKEN", "RU_PROJECT_ROOT")
 
@@ -133,6 +139,32 @@ function Assert-SmokePortFree([int]$Port) {
         }
 
         throw "port $Port is already in use by $owner. This smoke never kills a host it did not start; stop that process and rerun."
+    } finally {
+        try { $listener.Stop() } catch { }
+    }
+}
+
+function Resolve-SmokePort([int]$RequestedPort) {
+    if ($RequestedPort -ne 0) {
+        if ($RequestedPort -lt 1024 -or $RequestedPort -gt 65535) {
+            throw "-Port must be between 1024 and 65535; got $RequestedPort."
+        }
+
+        if ($RequestedPort -eq 8001) {
+            throw "-Port 8001 is reserved by the managed host's port scheme; pick another port."
+        }
+
+        Assert-SmokePortFree -Port $RequestedPort
+        return $RequestedPort
+    }
+
+    # Port 0 asks the OS for a free loopback port; the listener closes before the
+    # host starts. A race is possible, but the host's own conflict gate turns it
+    # into a loud failure instead of the smoke silently exercising another process.
+    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    try {
+        $listener.Start()
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
     } finally {
         try { $listener.Stop() } catch { }
     }
@@ -274,7 +306,9 @@ try {
     Invoke-DotnetBuild (Join-Path $repoRoot "backend-dotnet/RuAgent.Cli/RuAgent.Cli.csproj")
     Invoke-DotnetBuild (Join-Path $repoRoot "backend-dotnet/RuBackend/RuBackend.csproj")
 
-    Assert-SmokePortFree -Port $publicPort
+    $publicPort = Resolve-SmokePort -RequestedPort $Port
+    $baseUrl = "http://127.0.0.1:$publicPort"
+    Write-Smoke "using loopback port $publicPort"
 
     $env:RU_DATA_ROOT = $dataRoot
     $env:RU_SCRIPTED_MODEL = $scriptPath
@@ -282,8 +316,11 @@ try {
     $env:RU_PROJECT_ROOT = $repoRoot
 
     Write-Smoke "starting RuBackend on $baseUrl (data root: $dataRoot)..."
+    # --urls must come before --managed-runtime: the command-line configuration
+    # provider consumes the token that follows the value-less --managed-runtime
+    # switch, so the historical order silently dropped --urls and bound 8000.
     $hostProcess = Start-Process -FilePath $backendExe `
-        -ArgumentList "--managed-runtime", "--urls", $baseUrl `
+        -ArgumentList "--urls", $baseUrl, "--managed-runtime" `
         -WorkingDirectory $repoRoot -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput $hostStdoutPath -RedirectStandardError $hostStderrPath
 

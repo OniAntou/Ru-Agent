@@ -204,7 +204,11 @@ public sealed class PublicHostStarter : IDisposable
             var psi = new ProcessStartInfo
             {
                 FileName = exe,
-                Arguments = $"--managed-runtime --urls http://127.0.0.1:8000",
+                // The host's command-line configuration provider treats the
+                // value-less --managed-runtime switch as consuming the next
+                // token, so --urls has to come first or it is silently dropped
+                // and the host falls back to the 8000 default.
+                Arguments = $"--urls http://127.0.0.1:{_publicPort} --managed-runtime",
                 WorkingDirectory = actualProjectRoot,
                 UseShellExecute = false,
                 CreateNoWindow = true,

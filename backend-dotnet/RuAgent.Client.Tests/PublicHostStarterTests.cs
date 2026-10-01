@@ -156,6 +156,36 @@ public sealed class PublicHostStarterTests : IDisposable
     }
 
     [Fact]
+    public async Task Started_host_receives_urls_before_managed_runtime_for_the_public_port()
+    {
+        var port = FindFreePort();
+        var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllBytes(executable, []);
+        var locator = new PublicHostLocator(Path.Combine(_root, "args-" + Guid.NewGuid().ToString("N")));
+        string? capturedArguments = null;
+        using var starter = new PublicHostStarter(locator,
+            healthProbe: (_, _) => Task.FromResult(File.Exists(locator.DescriptorPath)),
+            publicPort: port,
+            startProcess: info =>
+            {
+                capturedArguments = info.Arguments;
+                var process = System.Diagnostics.Process.GetCurrentProcess();
+                var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, $"http://127.0.0.1:{port}/",
+                    info.Environment["RU_DESKTOP_TOKEN"]!, process.Id, process.StartTime.ToUniversalTime().ToString("O"),
+                    new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+                Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+                File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+                return process;
+            });
+
+        var session = await starter.GetOrStartAsync(_root);
+
+        Assert.NotNull(session);
+        Assert.Equal($"--urls http://127.0.0.1:{port} --managed-runtime", capturedArguments);
+    }
+
+    [Fact]
     public void Starter_dispose_can_be_called_multiple_times_safely()
     {
         var locator = new PublicHostLocator(Path.Combine(_root, "disp-" + Guid.NewGuid().ToString("N")));

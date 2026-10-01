@@ -13,7 +13,6 @@ namespace RuApp.Controls
     public sealed partial class MarkdownBlock : UserControl
     {
         private const double MonoFontSize = 13;
-        private const double BodyLineHeight = 22;
         private const int MaxTableRows = 50;
 
         private static readonly FontFamily UiFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
@@ -110,12 +109,18 @@ namespace RuApp.Controls
         /// </summary>
         private sealed class BlockRenderer(double bodySize, Brush? foreground)
         {
+            /// <summary>
+            /// DeepSeek-like air: line height tracks the reader's size choice
+            /// instead of sitting on a fixed 22px that pinches at 17.
+            /// </summary>
+            private double TextLineHeight => Math.Round(bodySize * 1.7);
+
             public List<Paragraph> BuildBlocks(Markdig.Syntax.Block block, int indent)
             {
                 return block switch
                 {
                     HeadingBlock heading => new List<Paragraph> { Heading(heading, indent) },
-                    ParagraphBlock paragraph => new List<Paragraph> { Prose(paragraph.Inline, indent, bottom: 10) },
+                    ParagraphBlock paragraph => new List<Paragraph> { Prose(paragraph.Inline, indent, bottom: 12) },
                     QuoteBlock quote => Quote(quote, indent),
                     ListBlock list => BuildList(list, indent),
                     CodeBlock code => new List<Paragraph> { Code(code) },
@@ -167,7 +172,7 @@ namespace RuApp.Controls
                         current = new Paragraph
                         {
                             Margin = new Thickness(16 + indent * 20, 0, 0, 8),
-                            LineHeight = BodyLineHeight,
+                            LineHeight = TextLineHeight,
                         };
                         if (rows.Count == 0)
                         {
@@ -215,7 +220,7 @@ namespace RuApp.Controls
                         2 => new Thickness(0, 16, 0, 6),
                         _ => new Thickness(0, 14, 0, 6),
                     },
-                    LineHeight = BodyLineHeight,
+                    LineHeight = TextLineHeight,
                 };
                 double size = heading.Level switch
                 {
@@ -232,7 +237,7 @@ namespace RuApp.Controls
                 var paragraph = new Paragraph
                 {
                     Margin = new Thickness(indent * 20, 0, 0, bottom),
-                    LineHeight = BodyLineHeight,
+                    LineHeight = TextLineHeight,
                 };
                 AddInlines(paragraph, inline, bodySize, null, UiFont);
                 return paragraph;
@@ -300,14 +305,14 @@ namespace RuApp.Controls
 
             private Paragraph Html(HtmlBlock html, int indent)
             {
-                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 0, 0, 10), LineHeight = BodyLineHeight };
+                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 0, 0, 10), LineHeight = TextLineHeight };
                 paragraph.Inlines.Add(new Run { Text = html.Lines.ToString().Trim(), FontFamily = MonoFont, FontSize = MonoFontSize });
                 return paragraph;
             }
 
             private Paragraph Literal(LeafBlock leaf, int indent)
             {
-                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 0, 0, 10), LineHeight = BodyLineHeight };
+                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 0, 0, 10), LineHeight = TextLineHeight };
                 paragraph.Inlines.Add(new Run { Text = leaf.Lines.ToString().Trim(), FontFamily = UiFont, FontSize = bodySize });
                 return paragraph;
             }

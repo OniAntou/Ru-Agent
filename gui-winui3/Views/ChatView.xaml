@@ -58,16 +58,15 @@
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
-                <!-- The user bubble is a tail, not a card: the bottom-right
-                     corner pulls in to 4 so the message points back at the
-                     composer. Every other corner stays on the flyout step. -->
+                <!-- The user bubble is a lozenge, not a card: no border, fully
+                     round on every corner, so it reads as one pill of words
+                     the way DeepSeek-style transcripts do. -->
                 <Border MaxWidth="620"
                         HorizontalAlignment="Right"
                         Background="{StaticResource RuSurfaceBrush}"
-                        BorderBrush="{StaticResource RuLineBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14,14,4,14"
-                        Padding="16,12">
+                        BorderThickness="0"
+                        CornerRadius="{StaticResource AppPillCornerRadius}"
+                        Padding="16,10">
                     <Border.ContextFlyout>
                         <MenuFlyout>
                             <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">

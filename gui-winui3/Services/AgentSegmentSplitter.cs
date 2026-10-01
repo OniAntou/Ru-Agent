@@ -4,8 +4,9 @@ namespace RuApp.Services;
 /// Snaps a live transcript split to a line boundary. Activity frames can land
 /// mid-sentence while prose still streams, and freezing there slices one
 /// sentence across two bubbles with a hard visual joint. Snapping back to the
-/// previous newline keeps the joint on a line edge; the remainder keeps
-/// streaming in the tail below the new row.
+/// previous newline keeps the joint on a line edge; without one, the previous
+/// word edge still reads like a normal wrap. The remainder keeps streaming in
+/// the tail below the new row.
 /// </summary>
 internal static class AgentSegmentSplitter
 {
@@ -23,6 +24,12 @@ internal static class AgentSegmentSplitter
         }
 
         int lineBreak = content.LastIndexOf('\n', content.Length - 1, content.Length - start);
-        return lineBreak >= start ? lineBreak + 1 : content.Length;
+        if (lineBreak >= start)
+        {
+            return lineBreak + 1;
+        }
+
+        int wordEdge = content.LastIndexOfAny([' ', '\t'], content.Length - 1, content.Length - start);
+        return wordEdge >= start ? wordEdge + 1 : content.Length;
     }
 }

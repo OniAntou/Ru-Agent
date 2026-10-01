@@ -74,4 +74,18 @@ public sealed class MarkdownEngineTests
         var code = Assert.Single(document.Descendants().OfType<FencedCodeBlock>());
         Assert.Contains("var x = 1;", code.Lines.ToString(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Table_cells_flatten_to_tsv_for_the_copy_button()
+    {
+        var tsv = MarkdownBlock.TableCellsToTsv(
+            new List<IReadOnlyList<string>>
+            {
+                new[] { "a", "b" },
+                new[] { "1", "x\ty" },
+            },
+            columns: 3);
+
+        Assert.Equal("a\tb\t\n1\tx y\t", tsv);
+    }
 }

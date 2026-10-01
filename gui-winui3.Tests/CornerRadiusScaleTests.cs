@@ -48,15 +48,14 @@ public sealed class CornerRadiusScaleTests
     /// Corners that pull in on purpose, so they stay off the ladder.
     /// </summary>
     /// <remarks>
-    /// Each is a shape rather than a size: a sidebar square against the window
-    /// edge, a progress bar that must not round at all. They are listed by
-    /// value so a change to one of them has to be made here too. The user
-    /// bubble used to pull its bottom-right corner in as a tail; it is a full
-    /// lozenge on the pill step now, so the tail is gone from this list.
+    /// Each is a shape rather than a size: a bubble with a tail toward the composer, a
+    /// sidebar square against the window edge, a progress bar that must not round at all.
+    /// They are listed by value so a change to one of them has to be made here too.
     /// </remarks>
     private static readonly string[] DeliberateAsymmetricShapes =
     {
         "0,6,6,0",     // sidebar: the left edge is the window edge
+        "14,14,4,14",  // user bubble: bottom-right pulls in as a tail
         "0",           // progress tracks: a filled square reads as level
     };
 

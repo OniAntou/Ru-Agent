@@ -239,8 +239,8 @@
             <SolidColorBrush x:Key="RuVioletBrush" Color="{ThemeResource RuVioletColor}" />
             <SolidColorBrush x:Key="RuPinkBrush" Color="{ThemeResource RuPinkColor}" />
 
-            <FontFamily x:Key="RuUiFontFamily">ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI</FontFamily>
-            <FontFamily x:Key="RuDisplayFontFamily">ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI</FontFamily>
+            <FontFamily x:Key="RuUiFontFamily">ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji</FontFamily>
+            <FontFamily x:Key="RuDisplayFontFamily">ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji</FontFamily>
             <FontFamily x:Key="RuMonoFontFamily">Cascadia Code, Consolas</FontFamily>
 
             <!-- Legacy resource names remain available to untouched views. -->

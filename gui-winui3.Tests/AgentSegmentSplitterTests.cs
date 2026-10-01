@@ -16,15 +16,21 @@ public sealed class AgentSegmentSplitterTests
     }
 
     [Fact]
-    public void Split_past_the_last_newline_keeps_the_end()
+    public void Split_past_the_last_newline_uses_the_word_edge()
     {
-        Assert.Equal(22, AgentSegmentSplitter.SnapToLineStart("first line\nsecond half", 11));
+        Assert.Equal(18, AgentSegmentSplitter.SnapToLineStart("first line\nsecond half", 11));
     }
 
     [Fact]
-    public void Split_without_a_newline_keeps_the_end()
+    public void Split_without_a_newline_falls_back_to_the_word_edge()
     {
-        Assert.Equal(10, AgentSegmentSplitter.SnapToLineStart("no newline", 0));
+        Assert.Equal(6, AgentSegmentSplitter.SnapToLineStart("ab cd ef", 0));
+    }
+
+    [Fact]
+    public void Split_without_any_boundary_keeps_the_end()
+    {
+        Assert.Equal(10, AgentSegmentSplitter.SnapToLineStart("abcdefghij", 0));
     }
 
     [Fact]

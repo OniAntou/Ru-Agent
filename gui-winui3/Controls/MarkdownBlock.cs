@@ -3,6 +3,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
@@ -15,8 +16,8 @@ namespace RuApp.Controls
         private const double MonoFontSize = 13;
         private const int MaxTableRows = 50;
 
-        private static readonly FontFamily UiFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
-        private static readonly FontFamily DisplayFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
+        private static readonly FontFamily UiFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji");
+        private static readonly FontFamily DisplayFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji");
         private static readonly FontFamily MonoFont = new FontFamily("Cascadia Code, Consolas");
         private readonly RichTextBlock _richTextBlock;
 
@@ -107,6 +108,31 @@ namespace RuApp.Controls
         /// back to their literal text so a new extension degrades to visible
         /// prose, never to a swallowed reply.
         /// </summary>
+        /// <summary>
+        /// Table cells as tab-separated text for the copy button. Pure so the
+        /// shape is unit-testable without building XAML.
+        /// </summary>
+        internal static string TableCellsToTsv(IReadOnlyList<IReadOnlyList<string>> rows, int columns)
+        {
+            var builder = new System.Text.StringBuilder();
+            foreach (var row in rows)
+            {
+                for (int index = 0; index < columns; index++)
+                {
+                    if (index > 0)
+                    {
+                        builder.Append('\t');
+                    }
+
+                    builder.Append(index < row.Count ? row[index].Replace('\t', ' ') : string.Empty);
+                }
+
+                builder.Append('\n');
+            }
+
+            return builder.ToString().TrimEnd('\n');
+        }
+
         private sealed class BlockRenderer(double bodySize, Brush? foreground)
         {
             /// <summary>
@@ -252,6 +278,9 @@ namespace RuApp.Controls
                     {
                         row.Margin = new Thickness(16 + indent * 20, row.Margin.Top, row.Margin.Right, row.Margin.Bottom);
                         row.Foreground = MutedOrDefault();
+                        // RichText paragraphs carry no border, so the accent bar
+                        // is a muted glyph run keeping the quote selectable.
+                        row.Inlines.Insert(0, new Run { Text = "▌ ", FontFamily = UiFont, FontSize = bodySize, Foreground = MutedOrDefault() });
                         rows.Add(row);
                     }
                 }
@@ -263,20 +292,88 @@ namespace RuApp.Controls
             {
                 string text = code.Lines.ToString().TrimEnd('\r', '\n');
                 string? language = code is FencedCodeBlock fenced ? fenced.Info?.Trim() : null;
-                var paragraph = new Paragraph { Margin = new Thickness(10, 4, 10, 8) };
+                if (string.IsNullOrWhiteSpace(language))
+                {
+                    language = "code";
+                }
+
+                var label = new TextBlock
+                {
+                    Text = language,
+                    FontFamily = MonoFont,
+                    FontSize = 11,
+                    Foreground = MutedOrDefault(),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                var copy = new Button
+                {
+                    Content = new FontIcon { Glyph = "\uE8C8", FontSize = 12 },
+                    Style = (Style?)Application.Current?.Resources["RuToolbarButtonStyle"],
+                    Padding = new Thickness(6, 4, 6, 4),
+                    Tag = text,
+                };
+                ToolTipService.SetToolTip(copy, "Copy code");
+                copy.SetValue(AutomationProperties.NameProperty, "Copy code");
+                copy.Click += OnCopyCodeClick;
+                var header = new Grid { Margin = new Thickness(12, 8, 12, 0) };
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                Grid.SetColumn(label, 0);
+                Grid.SetColumn(copy, 1);
+                header.Children.Add(label);
+                header.Children.Add(copy);
+
+                var body = new TextBlock
+                {
+                    FontFamily = MonoFont,
+                    FontSize = MonoFontSize,
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                    Padding = new Thickness(12, 4, 12, 10),
+                };
                 foreach (var span in CodeHighlighter.Highlight(text, language))
                 {
-                    var run = new Run { Text = span.Text, FontFamily = MonoFont, FontSize = MonoFontSize };
+                    var run = new Run { Text = span.Text };
                     var brush = SpanBrush(span.Kind);
                     if (brush is not null)
                     {
                         run.Foreground = brush;
                     }
 
-                    paragraph.Inlines.Add(run);
+                    body.Inlines.Add(run);
                 }
 
+                var frame = new StackPanel();
+                frame.Children.Add(header);
+                frame.Children.Add(body);
+                var outer = new Border
+                {
+                    Background = (Brush?)Application.Current?.Resources["RuSurfaceBrush"],
+                    BorderBrush = ThemeBrush("RuLineBrush", 203, 213, 225),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = Services.UiCornerRadius.Inset,
+                    Child = frame,
+                };
+                var paragraph = new Paragraph { Margin = new Thickness(10, 4, 10, 8) };
+                paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
                 return paragraph;
+            }
+
+            private void OnCopyCodeClick(object sender, RoutedEventArgs e)
+            {
+                if (sender is Button { Tag: string text } && text.Length > 0)
+                {
+                    try
+                    {
+                        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                        package.SetText(text);
+                        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                    }
+                    catch (Exception error)
+                    {
+                        Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Copy failed: {error.Message}");
+                    }
+                }
             }
 
             private Brush? SpanBrush(CodeHighlighter.SpanKind kind) => kind switch
@@ -383,6 +480,7 @@ namespace RuApp.Controls
                             FontFamily = UiFont,
                             FontSize = bodySize,
                             TextWrapping = TextWrapping.Wrap,
+                            IsTextSelectionEnabled = true,
                         };
                         if (header)
                         {
@@ -402,12 +500,41 @@ namespace RuApp.Controls
                     }
                 }
 
+                var copy = new Button
+                {
+                    Content = new FontIcon { Glyph = "\uE8C8", FontSize = 12 },
+                    Style = (Style?)Application.Current?.Resources["RuToolbarButtonStyle"],
+                    Padding = new Thickness(6, 4, 6, 4),
+                    Tag = TableCellsToTsv(rows, columns),
+                };
+                ToolTipService.SetToolTip(copy, "Copy table");
+                copy.SetValue(AutomationProperties.NameProperty, "Copy table");
+                copy.Click += OnCopyCodeClick;
+                var tableHeader = new Grid { Margin = new Thickness(12, 8, 12, 0) };
+                tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var tableLabel = new TextBlock
+                {
+                    Text = "Table",
+                    FontFamily = MonoFont,
+                    FontSize = 11,
+                    Foreground = MutedOrDefault(),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetColumn(tableLabel, 0);
+                Grid.SetColumn(copy, 1);
+                tableHeader.Children.Add(tableLabel);
+                tableHeader.Children.Add(copy);
+
+                var tableFrame = new StackPanel();
+                tableFrame.Children.Add(tableHeader);
+                tableFrame.Children.Add(grid);
                 var outer = new Border
                 {
                     BorderBrush = line,
                     BorderThickness = new Thickness(1),
                     CornerRadius = Services.UiCornerRadius.Control,
-                    Child = grid,
+                    Child = tableFrame,
                 };
                 var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 4, 0, 10) };
                 paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
@@ -528,16 +655,30 @@ namespace RuApp.Controls
                 if (link.IsImage)
                 {
                     string alt = LinkLabel(link).Trim();
-                    string label = alt.Length > 0
-                        ? $"[image: {(alt.Length > 64 ? alt.Substring(0, 64) : alt)}]"
-                        : "[image]";
-                    // Remote images never auto-load (tracking pixels leak the
-                    // reader's IP); the label links out so opening is a choice.
+                    string domain = string.Empty;
                     if (!string.IsNullOrEmpty(link.Url)
                         && Uri.TryCreate(link.Url, UriKind.Absolute, out var imageUri)
                         && (imageUri.Scheme == Uri.UriSchemeHttp || imageUri.Scheme == Uri.UriSchemeHttps))
                     {
-                        var imageLink = new Hyperlink { NavigateUri = imageUri };
+                        domain = imageUri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                            ? imageUri.Host.Substring(4)
+                            : imageUri.Host;
+                    }
+
+                    string label = alt.Length > 0
+                        ? $"[image: {(alt.Length > 64 ? alt.Substring(0, 64) : alt)}]"
+                        : "[image]";
+                    if (domain.Length > 0)
+                    {
+                        label += $" ({domain})";
+                    }
+                    // Remote images never auto-load (tracking pixels leak the
+                    // reader's IP); the label links out so opening is a choice.
+                    if (domain.Length > 0
+                        && Uri.TryCreate(link.Url, UriKind.Absolute, out var targetUri)
+                        && (targetUri.Scheme == Uri.UriSchemeHttp || targetUri.Scheme == Uri.UriSchemeHttps))
+                    {
+                        var imageLink = new Hyperlink { NavigateUri = targetUri };
                         imageLink.Inlines.Add(new Run { Text = label, FontSize = size, FontFamily = fontFamily });
                         paragraph.Inlines.Add(imageLink);
                     }

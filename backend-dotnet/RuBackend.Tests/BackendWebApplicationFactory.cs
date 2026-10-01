@@ -180,6 +180,13 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             return;
         }
 
+        // The harness stores pool their connections to this root's database. The pool
+        // has to be dropped before the delete below or the file handle survives and the
+        // directory is leaked; clear only this root's pool, never the process-global
+        // ClearAllPools() that used to hide this cleanup gap for unrelated tests.
+        SqliteTestPools.ClearHarnessDatabase(
+            Path.Combine(_ownedDataRoot, "agent_harness.db"));
+
         try
         {
             if (Directory.Exists(_ownedDataRoot))

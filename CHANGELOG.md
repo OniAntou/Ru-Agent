@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **fix(web)**: **Kết quả search có snippet thật.** HTML engines trước đây chỉ trích title + URL nên snippet toàn chữ giả "Search result", model mù phải fetch từng link. Nay trích snippet theo từng engine (Bing `<p>`, DuckDuckGo `result__snippet`, Google `span.st`), thiếu mới rớt về placeholder.
+- **feat(gui)**: **Nhịp message kiểu DeepSeek.** Bong bóng user thành lozenge không viền, chữ thoáng hơn (line-height theo cỡ chữ ×1.7, đoạn cách 12px).
 - **fix(gui)**: **Đoạn chat không bị cắt ngang câu nữa.** Activity tới giữa lúc chữ còn stream thì điểm cắt lùi về đầu dòng, phần còn lại chảy tiếp ở đuôi bên dưới thay vì gãy giữa chừng.
 - **fix(gui)**: **Narration không hiện hai lần nữa.** Câu model nói vừa stream vào prose vừa có dòng feed riêng nên đọc trùng. Feed giờ ẩn dòng narration, prose giữ câu chữ.
 - **feat(gui)**: **Bảng thật, highlight code, link ảnh.** Code fence tô màu theo ngôn ngữ (csharp, python, powershell, json, xml, sql, bash, yaml, diff; màu theo theme) bằng tokenizer nội bộ không thêm dependency. Bảng vẽ Grid UI thật (header đậm, lưới, tối đa 8 cột × 50 dòng) thay cho lưới chữ. Ảnh remote không tự tải (tránh tracking) mà thành link bấm được.

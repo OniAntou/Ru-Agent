@@ -251,6 +251,56 @@ public sealed class WebAdapterTests
     }
 
     [Fact]
+    public async Task Search_extracts_bing_snippets_and_falls_back_to_placeholder()
+    {
+        const string html = """
+            <html><body>
+              <li class="b_algo" data-bm="1"><h2><a target="_blank" href="https://learn.microsoft.com/en-us/dotnet">.NET documentation</a></h2><p>Official <b>docs</b> here.</p></li>
+              <li class="b_algo" data-bm="2"><h2><a target="_blank" href="https://dotnet.microsoft.com/download">Download .NET</a></h2></li>
+            </body></html>
+            """;
+        using var http = new HttpClient(new FakeHandler("text/html", html));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://www.bing.com/search"));
+
+        var result = await adapter.SearchAsync("dotnet docs", 2, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Official docs here.", result[0].Snippet);
+        Assert.Equal("Search result", result[1].Snippet);
+    }
+
+    [Fact]
+    public async Task Search_pairs_duckduckgo_snippets_in_document_order()
+    {
+        const string html = """
+            <html><body>
+              <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://example.com/first">First</a></h2>
+              <a class="result__snippet" href="https://example.com/first">first snippet text</a>
+              <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://example.com/second">Second</a></h2>
+              <a class="result__snippet" href="https://example.com/second">second snippet text</a>
+            </body></html>
+            """;
+        using var http = new HttpClient(new FakeHandler("text/html", html));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://html.duckduckgo.com/html/"));
+
+        var result = await adapter.SearchAsync("dotnet docs", 2, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("first snippet text", result[0].Snippet);
+        Assert.Equal("second snippet text", result[1].Snippet);
+    }
+
+    [Fact]
     public async Task Search_parses_mojeek_titled_results()
     {
         const string html = """

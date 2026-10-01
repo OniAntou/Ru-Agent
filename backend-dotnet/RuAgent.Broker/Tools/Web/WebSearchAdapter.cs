@@ -18,7 +18,13 @@ public sealed class WebSearchAdapter
         "<a\\b(?=[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__a\\b[^\\\"']*[\\\"'])[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex BingResultPattern = new(
-        "<li[^>]*\\bclass=\"[^\"]*\\bb_algo\\b[^\"]*\"[^>]*>.*?<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
+        "<li[^>]*\\bclass=\"[^\"]*\\bb_algo\\b[^\"]*\"[^>]*>.*?<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>(?:.*?<p>(?<snippet>.*?)</p>)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex DuckDuckGoSnippetPattern = new(
+        "<a[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__snippet\\b[^\\\"']*[\\\"'][^>]*>(?<snippet>.*?)</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex GoogleSnippetPattern = new(
+        "<span[^>]*\\bclass=[\\\"']st[\\\"'][^>]*>(?<snippet>.*?)</span>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex MojeekResultPattern = new(
         "<a[^>]*\\bclass=\"[^\"]*\\btitle\\b[^\"]*\"[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
@@ -318,15 +324,22 @@ public sealed class WebSearchAdapter
     private static bool IsMojeekEndpoint(Uri endpoint) =>
         endpoint.Host.EndsWith("mojeek.com", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsDuckDuckGoEndpoint(Uri endpoint) =>
+        endpoint.Host.EndsWith("duckduckgo.com", StringComparison.OrdinalIgnoreCase);
+
     private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html, Uri endpoint)
     {
         if (IsGoogleEndpoint(endpoint))
         {
-            return GoogleResultPattern.Matches(html)
-                .Select(match => new SearchCandidate(
+            var google = GoogleResultPattern.Matches(html);
+            var googleSnippets = GoogleSnippetPattern.Matches(html);
+            return google
+                .Select((match, index) => new SearchCandidate(
                     WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
                     WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                    null))
+                    index < googleSnippets.Count
+                        ? WebUtility.HtmlDecode(googleSnippets[index].Groups["snippet"].Value.Trim())
+                        : null))
                 .ToArray();
         }
 
@@ -336,11 +349,30 @@ public sealed class WebSearchAdapter
                 .Select(match => new SearchCandidate(
                     WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
                     WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                    null))
+                    match.Groups["snippet"].Success
+                        ? WebUtility.HtmlDecode(match.Groups["snippet"].Value.Trim())
+                        : null))
                 .ToArray();
             if (bing.Length > 0)
             {
                 return bing;
+            }
+        }
+
+        if (IsDuckDuckGoEndpoint(endpoint))
+        {
+            var links = ResultLinkPattern.Matches(html);
+            if (links.Count > 0)
+            {
+                var duckSnippets = DuckDuckGoSnippetPattern.Matches(html);
+                return links
+                    .Select((match, index) => new SearchCandidate(
+                        WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
+                        WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
+                        index < duckSnippets.Count
+                            ? WebUtility.HtmlDecode(duckSnippets[index].Groups["snippet"].Value.Trim())
+                            : null))
+                    .ToArray();
             }
         }
 

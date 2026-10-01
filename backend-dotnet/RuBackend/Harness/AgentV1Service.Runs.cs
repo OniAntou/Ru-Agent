@@ -17,7 +17,6 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
-using RuBackend.Agent;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Policy;

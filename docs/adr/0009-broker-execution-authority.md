@@ -95,3 +95,6 @@ approve.
   - `RuBackend/Agent/CapabilityProfile.cs` is intentionally kept: it is the
     v1 wire contract of `AgentBrokerClient` (chat/agent profiles), not a
     duplicate of the Broker's three-profile enum.
+
+Amendment (2026-10-01): the v1 `AgentBrokerClient` wire contract was removed;
+the execution authority description above is unchanged.

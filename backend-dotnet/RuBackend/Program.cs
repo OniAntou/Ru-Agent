@@ -2,7 +2,6 @@ using RuBackend.Business;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
-using RuBackend.Agent;
 using RuBackend.Configuration;
 using RuBackend.Conversation;
 using RuBackend.Diagnostics;

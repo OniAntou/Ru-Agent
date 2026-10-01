@@ -17,8 +17,9 @@ public sealed class WorkspaceCoordinatorStoreTests
 
         var first = await store.GetOrCreateAsync(identity.WorkspaceId, CancellationToken.None);
         var second = await store.GetOrCreateAsync(identity.WorkspaceId, CancellationToken.None);
-        var firstSequence = await store.AllocateCommitSequenceAsync(identity.WorkspaceId, CancellationToken.None);
-        var secondSequence = await store.AllocateCommitSequenceAsync(identity.WorkspaceId, CancellationToken.None);
+        var protector = new WorkspaceJournalProtector(new FakeHarnessKeyStore());
+        var firstSequence = await AppendChangeSequenceAsync(store, identity.WorkspaceId, protector, "chg_41_a", "src/a.cs");
+        var secondSequence = await AppendChangeSequenceAsync(store, identity.WorkspaceId, protector, "chg_41_b", "src/b.cs");
 
         Assert.Equal("exclusive", first.Mode);
         Assert.Equal(first, second);
@@ -74,13 +75,46 @@ public sealed class WorkspaceCoordinatorStoreTests
         var identity = await fixture.RegisterWorkspaceAsync(46);
         var store = new WorkspaceCoordinatorStore(fixture.Options);
         await store.GetOrCreateAsync(identity.WorkspaceId, CancellationToken.None);
+        var protector = new WorkspaceJournalProtector(new FakeHarnessKeyStore());
 
         var tasks = Enumerable.Range(0, 4)
-            .Select(_ => store.AllocateCommitSequenceAsync(identity.WorkspaceId, CancellationToken.None))
+            .Select(index => AppendChangeSequenceAsync(
+                store,
+                identity.WorkspaceId,
+                protector,
+                $"chg_46_{index}",
+                $"src/f{index}.cs"))
             .ToArray();
         var sequences = await Task.WhenAll(tasks);
 
         Assert.Equal([1L, 2L, 3L, 4L], sequences.Order().ToArray());
+    }
+
+    private static async Task<long> AppendChangeSequenceAsync(
+        WorkspaceCoordinatorStore store,
+        WorkspaceId workspaceId,
+        WorkspaceJournalProtector protector,
+        string changeId,
+        string path)
+    {
+        var encrypted = await protector.EncryptAsync(
+            workspaceId,
+            changeId,
+            path,
+            Encoding.UTF8.GetBytes("sequence-test"),
+            CancellationToken.None);
+        var record = await store.AppendChangeAsync(
+            workspaceId,
+            runId: null,
+            changeId,
+            path,
+            new string('a', 64),
+            new string('b', 64),
+            encrypted,
+            "committed",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        return record.CommitSequence;
     }
 
     [Fact]

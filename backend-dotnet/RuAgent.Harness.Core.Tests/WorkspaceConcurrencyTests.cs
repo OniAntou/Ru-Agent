@@ -5,13 +5,6 @@ namespace RuAgent.Harness.Core.Tests;
 public sealed class WorkspaceConcurrencyTests
 {
     [Fact]
-    public void Sequence_increments_monotonically_and_overflow_fails_closed()
-    {
-        Assert.Equal(8, WorkspaceConcurrencyDecision.NextCommitSequence(7));
-        Assert.Throws<OverflowException>(() => WorkspaceConcurrencyDecision.NextCommitSequence(long.MaxValue));
-    }
-
-    [Fact]
     public void Hash_mismatch_is_classified_as_unknown_external_change()
     {
         var change = WorkspaceExternalChangeDetector.Detect(

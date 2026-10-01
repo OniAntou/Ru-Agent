@@ -5,51 +5,6 @@ namespace RuAgent.Harness.Persistence;
 
 public sealed partial class WorkspaceCoordinatorStore
 {
-    public async Task<long> AllocateCommitSequenceAsync(
-        WorkspaceId workspaceId,
-        CancellationToken cancellationToken)
-    {
-        _ = workspaceId.Value;
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = connection.BeginTransaction(deferred: false);
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                UPDATE workspace_coordinators
-                SET commit_sequence = commit_sequence + 1,
-                    version = version + 1,
-                    updated_at_utc = $updated_at
-                WHERE workspace_id = $workspace_id
-                RETURNING commit_sequence
-                """;
-            command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-            command.Parameters.AddWithValue("$updated_at", DateTimeOffset.UtcNow.ToString("O"));
-            var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (value is null)
-            {
-                throw new HarnessStoreException("workspace_not_found");
-            }
-
-            var sequence = Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return sequence;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (HarnessStoreException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is SqliteException or IOException)
-        {
-            throw new HarnessStoreException("workspace_sequence_allocation_failed", exception);
-        }
-    }
-
     public async Task<IReadOnlyList<WorkspaceChangeRecord>> ListChangesAsync(
         WorkspaceId workspaceId,
         long afterSequence,

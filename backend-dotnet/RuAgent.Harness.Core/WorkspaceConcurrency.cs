@@ -1,13 +1,5 @@
 namespace RuAgent.Harness.Core;
 
-public static class WorkspaceConcurrencyDecision
-{
-    public static long NextCommitSequence(long current) => checked(current + 1);
-
-    public static bool IsLeaseActive(DateTimeOffset nowUtc, DateTimeOffset leaseExpiresAtUtc) =>
-        nowUtc < leaseExpiresAtUtc;
-}
-
 public sealed record WorkspaceExternalChange(
     string NormalizedPath,
     string? ExpectedSha256,

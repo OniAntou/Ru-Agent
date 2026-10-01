@@ -27,7 +27,7 @@ not advertised Agent tools.
 >   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
 >   payloads, idempotent conversation outbox, workspace trust,
 >   session permissions with monotonic version, encrypted `PolicySnapshot`
->   snapshots, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering
+>   snapshots, `FileRecoveryStore`, approval ordering
 >   `consume one-time approval → execute under N → receipt → N+1` with a
 >   reusable project rule persisted only for the explicit `allow_always`
 >   decision; every other approval is `allow_once`,
@@ -550,7 +550,7 @@ Broker reply carries the exact matcher preview plus one `authorization_token`
 N+1 → invalidate other pending N decisions`; Broker restart before dispatch
 invalidates ephemeral decision and causes safe re-evaluation, never adapter
 invocation. File tools follow the same ordering with `tool.execution_requested`
-persisted before dispatch and `FileRecoveryStore`/`RunChangeSetStore` for
+persisted before dispatch and `FileRecoveryStore` for
 recoverable deletes. The deterministic Broker approval probe uses
 `write` with `op=write` (and file delete/restore ops) only inside a fresh temporary
 workspace, approves once, expects the replay to be denied as `approval_stale`,

@@ -95,7 +95,8 @@ internal static class ManagedRuntimeBootstrapper
         var managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
         var startup = new WorkerBrokerStartupOptions(
             null,
-            Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
+            Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"),
+            publicPort);
         var brokerStarted = await managedWorkerBrokerManager
             .StartAsync(projectRoot, startup)
             .ConfigureAwait(false);

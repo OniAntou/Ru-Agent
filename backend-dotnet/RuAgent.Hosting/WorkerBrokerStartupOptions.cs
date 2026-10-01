@@ -2,13 +2,19 @@ namespace RuAgent.Hosting;
 
 public sealed record WorkerBrokerStartupOptions(
     int? BrokerPort,
-    string? BrokerExecutable)
+    string? BrokerExecutable,
+    int? PublicPort = null)
 {
     public void Validate()
     {
         if (BrokerPort is not null)
         {
             ValidatePort(BrokerPort.Value, nameof(BrokerPort));
+        }
+
+        if (PublicPort is not null)
+        {
+            ValidatePort(PublicPort.Value, nameof(PublicPort));
         }
 
         if (!string.IsNullOrWhiteSpace(BrokerExecutable) && Path.GetFileName(BrokerExecutable).Length == 0)

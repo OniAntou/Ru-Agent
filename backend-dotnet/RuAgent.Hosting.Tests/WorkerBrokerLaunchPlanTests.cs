@@ -43,6 +43,33 @@ public sealed class WorkerBrokerLaunchPlanTests
     }
 
     [Fact]
+    public void Broker_port_is_validated_against_the_actual_public_port()
+    {
+        using var project = TemporaryProject.Create();
+
+        // A broker port that only collides with the hardcoded 8000 default is legal
+        // once the real public port is somewhere else.
+        var plan = WorkerBrokerLaunchPlan.Create(
+            project.Root,
+            new WorkerBrokerStartupOptions(8000, project.BrokerExecutable, PublicPort: 18110),
+            project.LogRoot);
+        Assert.Equal(8000, plan.BrokerPort);
+
+        // A broker port colliding with the actual public port is rejected.
+        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(
+            project.Root,
+            new WorkerBrokerStartupOptions(18111, project.BrokerExecutable, PublicPort: 18111),
+            project.LogRoot));
+    }
+
+    [Fact]
+    public void Startup_options_reject_an_out_of_range_public_port()
+    {
+        var startup = new WorkerBrokerStartupOptions(18112, "broker.exe", PublicPort: 80);
+        Assert.Throws<ArgumentOutOfRangeException>(() => startup.Validate());
+    }
+
+    [Fact]
     public void Failed_plan_validation_does_not_publish_a_stale_broker_descriptor()
     {
         using var project = TemporaryProject.Create();

@@ -43,7 +43,7 @@ public sealed class WorkerBrokerLaunchPlan
         ArgumentNullException.ThrowIfNull(startup);
         startup.Validate();
 
-        const int publicPort = 8000;
+        var publicPort = startup.PublicPort ?? PublicHostRuntimeOptions.DefaultPublicPort;
         var root = Path.GetFullPath(projectRoot);
         var resolvedLogRoot = ResolveLogRoot(root, configuredLogRoot);
         var brokerSessionRoot = Path.Combine(resolvedLogRoot, "agent", "session");

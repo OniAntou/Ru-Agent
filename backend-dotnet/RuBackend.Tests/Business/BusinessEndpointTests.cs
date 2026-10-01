@@ -897,9 +897,9 @@ public sealed class BusinessEndpointTests
 
         public void Dispose()
         {
-            // All pools, not one string: pools are keyed by the full connection
-            // string, and the backend opens this file through several option sets.
-            SqliteConnection.ClearAllPools();
+            // Only this test's harness pool: the process-global ClearAllPools() used to
+            // race pooled connections held by tests running in other collections.
+            SqliteTestPools.ClearHarnessDatabase(Paths.AgentHarnessDatabase);
 
             if (Directory.Exists(Root))
             {

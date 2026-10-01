@@ -321,7 +321,7 @@ public sealed class AgentReconcileEndpointTests
         var options = factory.Services.GetRequiredService<HarnessSqliteOptions>();
         var health = await HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None);
         Assert.True(health.IsAvailable, health.ErrorCode);
-        return new TestHost(factory, root);
+        return new TestHost(factory, root, dataPaths.AgentHarnessDatabase);
     }
 
     private static async Task SeedRunAsync(
@@ -349,7 +349,7 @@ public sealed class AgentReconcileEndpointTests
         // The durable Git state gives the snapshot service something fresh to hash.
         var options = host.Factory.Services.GetRequiredService<HarnessSqliteOptions>();
         var gitStateDirectory = Path.GetDirectoryName(options.DatabasePath)!;
-        var gitStore = new SqliteRunGitStateStore(Path.Combine(gitStateDirectory, "agent_git_state.db"));
+        using var gitStore = new SqliteRunGitStateStore(Path.Combine(gitStateDirectory, "agent_git_state.db"));
         await gitStore.SaveStartSnapshotAsync(
             ReconciledRunId,
             new RuAgent.Protocol.Harness.RunGitWorktreeSnapshot(
@@ -408,7 +408,10 @@ public sealed class AgentReconcileEndpointTests
 
     private const string wsPlaceholder = @"C:\workspace\placeholder";
 
-    private sealed record TestHost(BackendWebApplicationFactory Factory, string Root)
+    private sealed record TestHost(
+        BackendWebApplicationFactory Factory,
+        string Root,
+        string HarnessDatabasePath)
     {
         public HttpClient CreateAuthenticatedClient() => Factory.CreateAuthenticatedClient();
 
@@ -417,6 +420,7 @@ public sealed class AgentReconcileEndpointTests
         public void Dispose()
         {
             Factory.Dispose();
+            SqliteTestPools.ClearHarnessDatabase(HarnessDatabasePath);
             try
             {
                 if (Directory.Exists(Root))
@@ -427,15 +431,6 @@ public sealed class AgentReconcileEndpointTests
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
             }
-
-            SqliteConnectionClear();
         }
-    }
-
-    private static void SqliteConnectionClear()
-    {
-        using var pool = new Microsoft.Data.Sqlite.SqliteConnection(
-            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { Mode = Microsoft.Data.Sqlite.SqliteOpenMode.Memory }.ToString());
-        Microsoft.Data.Sqlite.SqliteConnection.ClearPool(pool);
     }
 }

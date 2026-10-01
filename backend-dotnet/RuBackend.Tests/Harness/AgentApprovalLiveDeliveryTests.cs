@@ -34,6 +34,7 @@ public sealed class AgentApprovalLiveDeliveryTests
         await File.WriteAllTextAsync(externalFile, "external content");
 
         BackendWebApplicationFactory? factory = null;
+        var dataPaths = DataPaths.Resolve(root, root, root, dataRoot, Path.Combine(root, "logs"));
         try
         {
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -43,7 +44,7 @@ public sealed class AgentApprovalLiveDeliveryTests
                 FinalStep("done"));
 
             factory = new BackendWebApplicationFactory(
-                dataPaths: DataPaths.Resolve(root, root, root, dataRoot, Path.Combine(root, "logs")),
+                dataPaths: dataPaths,
                 modelStepRunner: runner,
                 withInProcessBroker: true);
             using var client = factory.CreateAuthenticatedClient();
@@ -69,8 +70,8 @@ public sealed class AgentApprovalLiveDeliveryTests
         finally
         {
             factory?.Dispose();
+            try { SqliteTestPools.ClearHarnessDatabase(dataPaths.AgentHarnessDatabase); } catch { }
             try { Directory.Delete(root, true); } catch { }
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
         }
     }
 

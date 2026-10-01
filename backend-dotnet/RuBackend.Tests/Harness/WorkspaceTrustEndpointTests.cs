@@ -335,7 +335,7 @@ public sealed class WorkspaceTrustEndpointTests
 
         public async ValueTask DisposeAsync()
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            SqliteTestPools.ClearHarnessDatabase(Options.DatabasePath);
             await Task.Delay(50);
             GC.Collect();
             GC.WaitForPendingFinalizers();

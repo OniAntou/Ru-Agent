@@ -40,7 +40,7 @@ public sealed class AgentPolicyEndpointTests
         Assert.Equal(JsonValueKind.Array, items.ValueKind);
         Assert.Equal(0, items.GetArrayLength());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class AgentPolicyEndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("interactive_required", json.GetProperty("error_code").GetString());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class AgentPolicyEndpointTests
         // Verify encrypted at rest: raw DB should not contain plaintext path
         // Use raw connection to check agent_global_rules
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class AgentPolicyEndpointTests
 
         // Verify via direct DB access that raw document does not contain plaintext
         var dbPath = dataPaths.AgentHarnessDatabase;
-        using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
+        using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Pooling=False");
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT rule_document FROM agent_global_rules LIMIT 1";
@@ -129,7 +129,7 @@ public sealed class AgentPolicyEndpointTests
         Assert.DoesNotContain(sensitiveArgv, rawText);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class AgentPolicyEndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("unknown_field", json.GetProperty("error_code").GetString());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -198,7 +198,7 @@ public sealed class AgentPolicyEndpointTests
         Assert.Equal(HttpStatusCode.BadRequest, badResp.StatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class AgentPolicyEndpointTests
         Assert.Equal(0, listJson.GetProperty("items").GetArrayLength());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -265,11 +265,11 @@ public sealed class AgentPolicyEndpointTests
         Assert.Equal("invalid_approval_command", json.GetProperty("error_code").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
-    private static void SqliteConnectionClear()
+    private static void SqliteConnectionClear(RuBackend.Business.DataPaths dataPaths)
     {
-        try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
+        try { SqliteTestPools.ClearHarnessDatabase(dataPaths.AgentHarnessDatabase); } catch { }
     }
 }

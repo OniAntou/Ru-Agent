@@ -160,9 +160,9 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        // All pools, not one string: pools are keyed by the full connection
-        // string, and the backend opens this file through several option sets.
-        SqliteConnection.ClearAllPools();
+        // Only this fixture's harness pool: the process-global ClearAllPools() used
+        // to race pooled connections held by tests in other collections.
+        SqliteTestPools.ClearHarnessDatabase(Options.DatabasePath);
 
         await Task.Yield();
         if (Directory.Exists(RootPath))

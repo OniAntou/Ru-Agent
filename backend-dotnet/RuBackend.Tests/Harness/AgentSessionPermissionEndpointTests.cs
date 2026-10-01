@@ -50,7 +50,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal(2, json2.GetProperty("version").GetInt64());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal(1, json2.GetProperty("version").GetInt64());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal("plan", runJson.GetProperty("preset").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal((HttpStatusCode)409, badResp.StatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal("preset_mismatch", badJson.GetProperty("error_code").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal("full_access", json.GetProperty("preset").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -285,7 +285,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal("preset_version_conflict", json.GetProperty("error_code").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -351,7 +351,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal(1024L, reader.GetInt64(1));
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnection.ClearAllPools();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -398,7 +398,7 @@ public sealed class AgentSessionPermissionEndpointTests
         }
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -426,7 +426,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.True(recreateResponse.IsSuccessStatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -454,7 +454,7 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.True(updateResponse.IsSuccessStatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -518,11 +518,11 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.True(currentResponse.IsSuccessStatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
-    private static void SqliteConnectionClear()
+    private static void SqliteConnectionClear(RuBackend.Business.DataPaths dataPaths)
     {
-        try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
+        try { SqliteTestPools.ClearHarnessDatabase(dataPaths.AgentHarnessDatabase); } catch { }
     }
 }

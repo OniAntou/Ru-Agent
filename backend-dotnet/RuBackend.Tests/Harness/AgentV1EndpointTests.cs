@@ -215,7 +215,7 @@ public sealed class AgentV1EndpointTests
         Assert.Equal(HttpStatusCode.OK, getRun.StatusCode);
 
         // Verify UserImage payload persisted in SQLite and readable via payload endpoint
-        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmp.DataPaths.AgentHarnessDatabase}");
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmp.DataPaths.AgentHarnessDatabase};Pooling=False");
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT payload_id, kind, audience FROM agent_payloads WHERE run_id = $runId AND kind = 11";
@@ -1013,8 +1013,8 @@ public sealed class AgentV1EndpointTests
 
         public void Dispose()
         {
+            try { SqliteTestPools.ClearHarnessDatabase(DataPaths.AgentHarnessDatabase); } catch { }
             try { Directory.Delete(_root, recursive: true); } catch { }
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
         }
     }
 }

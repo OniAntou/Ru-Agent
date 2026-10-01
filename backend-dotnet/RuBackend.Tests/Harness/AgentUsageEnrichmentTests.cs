@@ -209,8 +209,8 @@ public sealed class AgentUsageEnrichmentTests
 
         public void Dispose()
         {
+            try { SqliteTestPools.ClearHarnessDatabase(DataPaths.AgentHarnessDatabase); } catch { }
             try { Directory.Delete(_root, true); } catch { }
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
         }
     }
 }

@@ -36,7 +36,7 @@ public sealed class AgentPayloadTests
         var runId = json.GetProperty("run_id").GetString()!;
 
         // Query payload id from database
-        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmp.DataPaths.AgentHarnessDatabase}");
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmp.DataPaths.AgentHarnessDatabase};Pooling=False");
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT payload_id FROM agent_payloads WHERE run_id = $runId AND kind = 11";
@@ -98,8 +98,8 @@ public sealed class AgentPayloadTests
 
         public void Dispose()
         {
+            try { SqliteTestPools.ClearHarnessDatabase(DataPaths.AgentHarnessDatabase); } catch { }
             try { Directory.Delete(_root, recursive: true); } catch { }
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
         }
     }
 }

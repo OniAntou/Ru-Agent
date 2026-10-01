@@ -242,8 +242,8 @@ public sealed class AgentRunIdempotencyTests
 
         public void Dispose()
         {
+            try { SqliteTestPools.ClearHarnessDatabase(DataPaths.AgentHarnessDatabase); } catch { }
             try { Directory.Delete(_root, recursive: true); } catch { }
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
         }
     }
 }

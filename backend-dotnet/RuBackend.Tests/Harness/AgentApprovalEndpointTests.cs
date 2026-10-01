@@ -64,7 +64,7 @@ public sealed class AgentApprovalEndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("run_not_found", json.GetProperty("error_code").GetString());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class AgentApprovalEndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("invalid_approval_command", json.GetProperty("error_code").GetString());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class AgentApprovalEndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("approval_stale", json.GetProperty("error_code").GetString());
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-        SqliteConnectionClear();
+        SqliteConnectionClear(dataPaths);
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -163,7 +163,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -194,7 +194,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -226,7 +226,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -276,7 +276,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -325,7 +325,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -385,7 +385,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -439,7 +439,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -482,7 +482,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -562,7 +562,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -588,7 +588,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -650,7 +650,7 @@ public sealed class AgentApprovalEndpointTests
         {
             factory?.Dispose();
             try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
-            SqliteConnectionClear();
+            SqliteConnectionClear(dataPaths);
         }
     }
 
@@ -908,8 +908,8 @@ public sealed class AgentApprovalEndpointTests
     private static AssistantStep FinalStep(string text) =>
         new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0);
 
-    private static void SqliteConnectionClear()
+    private static void SqliteConnectionClear(RuBackend.Business.DataPaths dataPaths)
     {
-        try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
+        try { SqliteTestPools.ClearHarnessDatabase(dataPaths.AgentHarnessDatabase); } catch { }
     }
 }

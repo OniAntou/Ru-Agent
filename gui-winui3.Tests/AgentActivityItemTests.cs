@@ -794,6 +794,79 @@ public sealed class AgentActivityItemTests
         Assert.True(item.IsFailed);
     }
 
+    [Fact]
+    public void A_row_with_no_durable_timestamp_shows_a_dash_not_a_fake_time()
+    {
+        // Live frames carry no timestamp. A blank or a guessed clock would let a
+        // reader line a row up against the log on a time that never happened.
+        var item = new AgentActivityItem(Activity(AgentActivityState.Completed));
+
+        Assert.Null(item.OccurredAt);
+        Assert.Equal("—", item.OccurredAtLabel);
+    }
+
+    [Fact]
+    public void A_replayed_row_shows_its_wall_clock_time()
+    {
+        var occurredAt = new DateTimeOffset(2026, 5, 4, 12, 30, 15, TimeSpan.Zero);
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            occurredAt: occurredAt));
+
+        // Local time, because the reader compares the row against a local clock.
+        Assert.Equal(
+            occurredAt.ToLocalTime().ToString("HH:mm:ss"),
+            item.OccurredAtLabel);
+    }
+
+    [Fact]
+    public void A_live_update_does_not_wipe_the_timestamp_replay_filled_in()
+    {
+        var occurredAt = new DateTimeOffset(2026, 5, 4, 12, 30, 15, TimeSpan.Zero);
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            occurredAt: occurredAt));
+
+        // Settlement frames arrive with no timestamp; the label must survive them.
+        item.UpdateFrom(Activity(AgentActivityState.Completed));
+
+        Assert.Equal(occurredAt.ToLocalTime().ToString("HH:mm:ss"), item.OccurredAtLabel);
+    }
+
+    [Fact]
+    public void Compact_density_hides_settled_detail_but_keeps_what_needs_action()
+    {
+        var settled = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            detail: "Read 3 files."));
+        var waiting = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            detail: "Approve write outside the workspace."));
+
+        Assert.True(settled.ShowPlainDetail);
+        Assert.True(waiting.ShowPlainDetail);
+
+        settled.FeedCompact = true;
+        waiting.FeedCompact = true;
+
+        // A finished step is what compact mode is for; a row that is waiting on
+        // the reader or explaining a failure keeps its line or it looks idle.
+        Assert.False(settled.ShowPlainDetail);
+        Assert.True(waiting.ShowPlainDetail);
+    }
+
+    [Fact]
+    public void Compact_density_keeps_a_failure_explained()
+    {
+        var failed = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            detail: "The tool lost connection."));
+
+        failed.FeedCompact = true;
+
+        Assert.True(failed.ShowPlainDetail);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,
@@ -807,7 +880,8 @@ public sealed class AgentActivityItemTests
         int? durationMs = null,
         string safeCode = "succeeded",
         string? toolDisplay = null,
-        string? detail = null) =>
+        string? detail = null,
+        DateTimeOffset? occurredAt = null) =>
         new(
             "act_11111111111111111111111111111111",
             kind,
@@ -824,5 +898,7 @@ public sealed class AgentActivityItemTests
             toolDisplay,
             null,
             1,
-            detail);
+            detail,
+            Todos: null,
+            OccurredAt: occurredAt);
 }

@@ -165,6 +165,7 @@ namespace RuApp.Views
             else
             {
                 var item = new AgentActivityItem(activity);
+                ApplySavedDensity(item);
 
                 _agentActivityById.Add(item.ActivityId, item);
                 // Arrival order is the harness's order, and the harness emits one
@@ -930,6 +931,31 @@ namespace RuApp.Views
             if (clearEntrance)
             {
                 grid.Tag = null;
+            }
+        }
+
+        /// <summary>
+        /// Copies one terminal row's output. The panel text is already bounded
+        /// by the row, so no extra truncation is applied here.
+        /// </summary>
+        private void OnCopyTerminalOutputClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement element
+                && element.Tag is string text
+                && !string.IsNullOrEmpty(text))
+            {
+                try
+                {
+                    var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    package.SetText(text);
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                }
+                catch (Exception ex)
+                {
+                    // A clipboard write can fail when another process holds it open,
+                    // and an exception out of a click handler takes the app with it.
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Copy terminal output failed: {ex.Message}");
+                }
             }
         }
 

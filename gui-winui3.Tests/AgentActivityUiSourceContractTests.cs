@@ -414,6 +414,74 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void A_replayed_row_puts_its_wall_clock_time_on_the_row()
+    {
+        // The label has to sit with the row's metadata, not replace it: duration,
+        // diff counts and safe code are what explain the step, the clock is only
+        // what lets a reader line it up against the durable log.
+        var template = ActivityTemplate();
+
+        Assert.True(
+            Binds(template, "OccurredAtLabel"),
+            "AgentActivityTemplate must bind OccurredAtLabel.");
+    }
+
+    [Fact]
+    public void The_terminal_block_offers_a_copy_of_its_own_output()
+    {
+        var template = ActivityTemplate();
+        Assert.Contains(
+            template.Descendants(),
+            element => GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick");
+
+        // The button copies the panel's text through its Tag rather than reaching
+        // for the row, so one handler serves every terminal row in the feed.
+        var copyButton = Assert.Single(template.Descendants().Where(element =>
+            GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick"));
+        Assert.Equal("Button", copyButton.Name.LocalName);
+        Assert.True(
+            copyButton.Attributes().Any(attribute =>
+                attribute.Value.Contains("x:Bind TerminalPanelText", StringComparison.Ordinal)),
+            "The copy button must carry the panel text it copies.");
+    }
+
+    [Fact]
+    public void The_transcript_offers_one_density_toggle_and_nothing_else_float()
+    {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        // AttributeValue deliberately skips the x: namespace, so the name is read directly.
+        var toggle = document.Descendants()
+            .FirstOrDefault(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "DensityToggleButton");
+        Assert.True(toggle is not null, "DensityToggleButton must exist.");
+        Assert.Equal("ToggleButton", toggle!.Name.LocalName);
+        Assert.Equal("OnDensityToggleClick", GuiSource.AttributeValue(toggle, "Click"));
+
+        // It floats over the transcript rather than taking a row of its own, so it
+        // has to live inside the content grid and not inside the message list.
+        var grid = GuiSource.Require(document, "ChatContentGrid");
+        var list = GuiSource.Require(document, "ChatListView");
+        Assert.True(GuiSource.IsDescendantOf(toggle, grid));
+        Assert.False(GuiSource.IsDescendantOf(toggle, list));
+
+        // The label names the current mode, not the click, and code keeps it in
+        // step with the saved preference: a label that changed on click would
+        // leave the reader unable to tell which mode is on.
+        var label = Assert.Single(toggle.Descendants().Where(element =>
+            element.Attribute(GuiSource.Xaml + "Name")?.Value == "DensityToggleLabel"));
+        Assert.Equal("Roomy", GuiSource.AttributeValue(label, "Text"));
+
+        var chrome = GuiSource.ViewText("ChatView");
+        Assert.Contains("DensityToggleLabel.Text", chrome, StringComparison.Ordinal);
+
+        // Every path that creates a row applies the saved density as it is built:
+        // a replayed session opened in compact mode must not flash roomy rows.
+        Assert.Contains(
+            "ApplySavedDensity(item);",
+            GuiSource.ViewText("ChatView"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_terminal_block_bounds_what_it_keeps()
     {
         var block = new TerminalOutputBlock("exec_1", "git status");

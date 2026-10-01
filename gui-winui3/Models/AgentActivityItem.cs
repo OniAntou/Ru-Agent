@@ -18,6 +18,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     private int? _added;
     private int? _removed;
     private int? _durationMs;
+    private DateTimeOffset? _occurredAt;
     private string _safeCode = "succeeded";
     private string? _toolDisplay;
     private string? _detail;
@@ -118,6 +119,24 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _durationMs, value);
     }
 
+    /// <summary>
+    /// When the durable event behind a replayed row happened. Live rows carry
+    /// none until they settle through replay; the label then reads a dash.
+    /// </summary>
+    public DateTimeOffset? OccurredAt
+    {
+        get => _occurredAt;
+        private set
+        {
+            if (SetProperty(ref _occurredAt, value))
+            {
+                OnPropertyChanged(nameof(OccurredAtLabel));
+            }
+        }
+    }
+
+    public string OccurredAtLabel => _occurredAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—";
+
     public string SafeCode
     {
         get => _safeCode;
@@ -178,6 +197,25 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool HasDetail => !_detailRepeats && !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
 
+    private bool _feedCompact;
+
+    /// <summary>
+    /// Whether the feed renders compact: detail lines hide except on rows
+    /// that need action or explain a failure. The view owns this from the
+    /// saved density; items default to roomy so tests stay deterministic.
+    /// </summary>
+    public bool FeedCompact
+    {
+        get => _feedCompact;
+        set
+        {
+            if (SetProperty(ref _feedCompact, value))
+            {
+                OnPropertyChanged(nameof(ShowPlainDetail));
+            }
+        }
+    }
+
     public bool IsThinking => Kind == AgentActivityKind.Thinking;
 
     public bool HasThinkingDetail => IsThinking && HasDetail;
@@ -189,7 +227,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool ShowPlainHeader => !HasThinkingDetail && !HasEditPreview;
 
-    public bool ShowPlainDetail => HasDetail && !IsThinking && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration);
+    public bool ShowPlainDetail => HasDetail
+        && !IsThinking
+        && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration)
+        && (!FeedCompact || State is AgentActivityState.Waiting or AgentActivityState.Failed);
 
     public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
 
@@ -739,6 +780,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         Added = activity.Added;
         Removed = activity.Removed;
         DurationMs = activity.DurationMs;
+        // A live frame carries no timestamp; only overwrite with a real one so
+        // replay fills the label in without live updates blanking it.
+        if (activity.OccurredAt is not null)
+        {
+            OccurredAt = activity.OccurredAt;
+        }
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
         // Producer only sends @@ old ==> new on Started; Completed carries

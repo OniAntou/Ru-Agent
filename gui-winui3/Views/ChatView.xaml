@@ -248,9 +248,16 @@
                         made the numbers read as part of the frame instead of as the change.
                       -->
                       <StackPanel Grid.Column="1"
+                                  x:Name="ActivityMetaPanel"
                                   Orientation="Horizontal"
                                   Spacing="6"
                                   VerticalAlignment="Center">
+                      <TextBlock Text="{x:Bind OccurredAtLabel, Mode=OneWay}"
+                                         ToolTipService.ToolTip="When this step happened"
+                                         FontFamily="{StaticResource RuMonoFontFamily}"
+                                         FontSize="11"
+                                         Foreground="{StaticResource RuMutedBrush}"
+                                         VerticalAlignment="Center" />
                       <Border Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                               Background="{StaticResource RuSurfaceBrush}"
                               BorderBrush="{StaticResource RuLineBrush}"
@@ -300,6 +307,7 @@
                       </StackPanel>
                 </Grid>
                 <TextBlock Grid.Row="1"
+                           x:Name="ActivityDetailText"
                            Text="{x:Bind Detail, Mode=OneWay}"
                            Visibility="{x:Bind ShowPlainDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                            FontFamily="{StaticResource RuUiFontFamily}"
@@ -344,30 +352,45 @@
                     the same question: what did this row actually do. Same row as the diff
                     since a row carries one detail or the other, never both.
                   -->
-                  <Border Grid.Row="2"
-                          Visibility="{x:Bind ShowTerminalOutput, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                          Background="{StaticResource RuSurfaceBrush}"
-                          BorderBrush="{StaticResource RuLineBrush}"
-                          BorderThickness="1"
-                          CornerRadius="{StaticResource AppCardCornerRadius}"
-                          Margin="0,8,0,2"
-                          Padding="0"
-                          HorizontalAlignment="Stretch"
-                          AutomationProperties.Name="Terminal output">
-                      <ScrollViewer MaxHeight="220"
-                                    HorizontalScrollBarVisibility="Auto"
-                                    VerticalScrollBarVisibility="Auto"
-                                    HorizontalScrollMode="Enabled"
-                                    VerticalScrollMode="Enabled"
-                                    Padding="12,8,12,8">
-                          <TextBlock Text="{x:Bind TerminalPanelText, Mode=OneWay}"
-                                     FontFamily="{StaticResource RuMonoFontFamily}"
-                                     FontSize="12"
-                                     Foreground="{StaticResource RuInkBrush}"
-                                     TextWrapping="NoWrap"
-                                     IsTextSelectionEnabled="True" />
-                      </ScrollViewer>
-                  </Border>
+                  <Grid Grid.Row="2"
+                      Visibility="{x:Bind ShowTerminalOutput, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                      Margin="0,8,0,2">
+                      <Border
+                              Background="{StaticResource RuSurfaceBrush}"
+                              BorderBrush="{StaticResource RuLineBrush}"
+                              BorderThickness="1"
+                              CornerRadius="{StaticResource AppCardCornerRadius}"
+                              Padding="0"
+                              HorizontalAlignment="Stretch"
+                              AutomationProperties.Name="Terminal output">
+                          <ScrollViewer MaxHeight="220"
+                                        HorizontalScrollBarVisibility="Auto"
+                                        VerticalScrollBarVisibility="Auto"
+                                        HorizontalScrollMode="Enabled"
+                                        VerticalScrollMode="Enabled"
+                                        Padding="12,8,12,8">
+                              <TextBlock Text="{x:Bind TerminalPanelText, Mode=OneWay}"
+                                         FontFamily="{StaticResource RuMonoFontFamily}"
+                                         FontSize="12"
+                                         Foreground="{StaticResource RuInkBrush}"
+                                         TextWrapping="NoWrap"
+                                         IsTextSelectionEnabled="True" />
+                          </ScrollViewer>
+                      </Border>
+                      <!-- The copy button floats over the panel rather than taking a row
+                            above it: the block keeps the height it had, and the icon only
+                            paints on hover, so output stays readable underneath. -->
+                      <Button HorizontalAlignment="Right"
+                              VerticalAlignment="Top"
+                              Margin="4"
+                              Style="{StaticResource RuToolbarButtonStyle}"
+                              Tag="{x:Bind TerminalPanelText, Mode=OneWay}"
+                              Click="OnCopyTerminalOutputClick"
+                              ToolTipService.ToolTip="Copy terminal output"
+                              AutomationProperties.Name="Copy terminal output">
+                              <FontIcon Glyph="&#xE8C8;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                      </Button>
+                  </Grid>
                 <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the
@@ -622,6 +645,31 @@
                         </Style>
                     </ListView.ItemContainerStyle>
                 </ListView>
+
+                <!-- Density sits top-right over the transcript, floating above the
+                     content instead of stealing a row from it. -->
+                <ToggleButton x:Name="DensityToggleButton"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Top"
+                              Margin="0,12,16,0"
+                              Click="OnDensityToggleClick"
+                              Background="{StaticResource RuSurfaceBrush}"
+                              BorderBrush="{StaticResource RuLineBrush}"
+                              BorderThickness="1"
+                              CornerRadius="{StaticResource AppPillCornerRadius}"
+                              Padding="10,6"
+                              ToolTipService.ToolTip="Toggle compact feed"
+                              AutomationProperties.Name="Toggle compact feed">
+                    <!-- Names the mode on screen, not the action: the pill's checked state already
+                     says the click landed, so a label that changed on click would
+                     leave the reader unsure which one is current. -->
+                    <TextBlock x:Name="DensityToggleLabel"
+                               Text="Roomy"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource RuMutedBrush}" />
+                </ToggleButton>
 
             </Grid>
         </Grid>

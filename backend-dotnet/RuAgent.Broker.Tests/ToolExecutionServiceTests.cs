@@ -1294,6 +1294,83 @@ public sealed class ToolExecutionServiceTests
         Assert.False(service.TryConsume(token, wrong, out _));
     }
 
+    /// <summary>
+    /// A failed file call names the repair, not just the failure: the delete
+    /// turn that met a directory died with a bare code and took the run with
+    /// it, because the model could not tell a directory from a missing file.
+    /// </summary>
+    [Fact]
+    public async Task Failed_file_calls_carry_repair_hints()
+    {
+        var fixture = CreateFullAccessService("ru-io-hint-");
+        var workspace = Path.Combine(fixture.Root, "workspace");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(workspace, "adir"));
+            File.WriteAllText(Path.Combine(workspace, "taken.txt"), "x");
+
+            var deleted = await fixture.Service.ExecuteAuthenticatedV2Async(
+                WriteEnvelope(fixture, "ru-io-1", new JsonObject
+                {
+                    ["op"] = "delete",
+                    ["path"] = "adir",
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, deleted.Status);
+            Assert.Equal("is_directory", deleted.ErrorCode);
+            Assert.Contains("directory", deleted.SafeSummary, StringComparison.OrdinalIgnoreCase);
+
+            var missing = await fixture.Service.ExecuteAuthenticatedV2Async(
+                WriteEnvelope(fixture, "ru-io-2", new JsonObject
+                {
+                    ["op"] = "delete",
+                    ["path"] = "nope.txt",
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, missing.Status);
+            Assert.Equal("file_not_found", missing.ErrorCode);
+            Assert.Contains("does not exist", missing.SafeSummary, StringComparison.OrdinalIgnoreCase);
+
+            var exists = await fixture.Service.ExecuteAuthenticatedV2Async(
+                WriteEnvelope(fixture, "ru-io-3", new JsonObject
+                {
+                    ["op"] = "write",
+                    ["path"] = "taken.txt",
+                    ["content"] = "new",
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, exists.Status);
+            Assert.Equal("file_exists", exists.ErrorCode);
+            Assert.Contains("overwrite", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    private static AgentEnvelope WriteEnvelope(
+        (string Root, string SessionId, string RunId, BrokerSession Session, ToolExecutionService Service) fixture,
+        string requestId,
+        JsonObject arguments) => new(
+            AgentEnvelopeCodec.ProtocolVersionV2,
+            requestId,
+            AgentMessageTypes.ToolExecute,
+            fixture.SessionId,
+            null,
+            30_000,
+            new JsonObject
+            {
+                ["tool_id"] = "write",
+                ["tool_version"] = "1.0.0",
+                ["capability_class"] = "internal",
+                ["run_id"] = fixture.RunId,
+                ["arguments"] = arguments,
+            });
+
     [Fact]
     public async Task Ambiguous_edit_fails_with_match_count_repair_hint()
     {

@@ -227,6 +227,19 @@ public sealed partial class ToolExecutionService
             ? ToolVerificationStates.Failed
             : ToolVerificationStates.NotRequired;
 
+    /// <summary>
+    /// What the model can do about a failed file call, in the same shape as
+    /// the edit-match hint above: the stable code stays, the summary tells it
+    /// how to repair the call, and no file content travels.
+    /// </summary>
+    private static string IoRepairHint(string? code) => code switch
+    {
+        "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
+        "file_not_found" => "file does not exist: list the directory to check the path, or create it with write.",
+        "file_exists" => "file already exists: read it first, or repeat the write with overwrite true.",
+        _ => "Tool input or output failed.",
+    };
+
     private static string StableCode(string? candidate, string fallback) =>
         candidate is not null && StableCodePattern.IsMatch(candidate)
             ? candidate

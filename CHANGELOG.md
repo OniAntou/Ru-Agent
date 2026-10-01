@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **feat(gui)**: **Code/table copy, quote bar, image domain.** Code block có header ngôn ngữ + nút copy, nền riêng; bảng có nút copy TSV và cell select được; quote có gạch accent; ảnh remote hiện kèm domain, không tự tải.
 - **fix(web)**: **Kết quả search có snippet thật.** HTML engines trước đây chỉ trích title + URL nên snippet toàn chữ giả "Search result", model mù phải fetch từng link. Nay trích snippet theo từng engine (Bing `<p>`, DuckDuckGo `result__snippet`, Google `span.st`), thiếu mới rớt về placeholder.
 - **feat(gui)**: **Nhịp message kiểu DeepSeek.** Bong bóng user thành lozenge không viền, chữ thoáng hơn (line-height theo cỡ chữ ×1.7, đoạn cách 12px).
 - **fix(gui)**: **Đoạn chat không bị cắt ngang câu nữa.** Activity tới giữa lúc chữ còn stream thì điểm cắt lùi về đầu dòng, phần còn lại chảy tiếp ở đuôi bên dưới thay vì gãy giữa chừng.

@@ -518,7 +518,7 @@ public sealed partial class ToolExecutionService
         {
             outcome = ToolExecutionOutcome.Failed(
                 StableCode(error.Message, "io_error"),
-                "Tool input or output failed.",
+                IoRepairHint(error.Message),
                 VerificationFailure(binding));
         }
         catch (InvalidDataException error)

@@ -77,6 +77,7 @@ namespace RuApp
                     var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
                     var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
                     _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+                    _appWindow?.SetIcon(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "AppIcon.ico"));
                 }
                 catch (Exception ex)
                 {

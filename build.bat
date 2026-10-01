@@ -245,6 +245,26 @@ for %%E in (RuBackend.exe RuAgent.Broker.exe RuAgent.Cli.exe) do (
     )
 )
 
+REM dotnet publish does not carry the GUI Content files (icons, fonts) into the
+REM publish folder, so the shipped app would miss its window icon (SetIcon fails
+REM and the taskbar shows a placeholder) and its bundled font. Copy them over.
+if not exist "%PROJECT_DIR%\Assets\AppIcon.ico" (
+    echo BUILD FAILED: GUI Assets are missing from "%PROJECT_DIR%\Assets".
+    exit /b 1
+)
+xcopy /E /I /Y /Q "%PROJECT_DIR%\Assets\*" "%PUBLISH_DIR%\Assets\" >nul
+if errorlevel 1 (
+    echo BUILD FAILED: could not copy GUI Assets into the flat layout.
+    exit /b 1
+)
+for %%A in ("%PUBLISH_DIR%\Assets\AppIcon.ico" "%PUBLISH_DIR%\Assets\Fonts\Inter-Variable.ttf") do (
+    if not exist "%%~A" (
+        echo BUILD FAILED: %%~A is missing from the flat layout.
+        exit /b 1
+    )
+)
+echo Published GUI Assets: icons and fonts.
+
 REM The GUI and CLI ship older builds of eight shared Microsoft.Extensions
 REM assemblies than the two services do. A size difference between trees is
 REM therefore expected rather than a defect: the flat layout holds the newer copy,

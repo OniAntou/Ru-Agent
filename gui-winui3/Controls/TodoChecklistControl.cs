@@ -24,7 +24,7 @@ namespace RuApp.Controls
     /// </remarks>
     public sealed partial class TodoChecklistControl : UserControl
     {
-        private static readonly FontFamily UiFont = new("Segoe UI Variable");
+        private static readonly FontFamily UiFont = new("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
 
         private static readonly SolidColorBrush FallbackInkBrush =
             new(Color.FromArgb(255, 241, 245, 249));

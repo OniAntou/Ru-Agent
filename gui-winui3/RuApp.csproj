@@ -5,6 +5,7 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>RuApp</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
@@ -23,6 +24,7 @@
     <ProjectReference Include="..\backend-dotnet\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
     <ProjectReference Include="..\backend-dotnet\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
+    <Content Include="Assets\Fonts\Inter-Variable.ttf" />
     <Content Include="Assets\Square150x150Logo.scale-200.png" />
     <Content Include="Assets\Square44x44Logo.scale-200.png" />
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />

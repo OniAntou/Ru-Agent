@@ -197,25 +197,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool HasDetail => !_detailRepeats && !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
 
-    private bool _feedCompact;
-
-    /// <summary>
-    /// Whether the feed renders compact: detail lines hide except on rows
-    /// that need action or explain a failure. The view owns this from the
-    /// saved density; items default to roomy so tests stay deterministic.
-    /// </summary>
-    public bool FeedCompact
-    {
-        get => _feedCompact;
-        set
-        {
-            if (SetProperty(ref _feedCompact, value))
-            {
-                OnPropertyChanged(nameof(ShowPlainDetail));
-            }
-        }
-    }
-
     public bool IsThinking => Kind == AgentActivityKind.Thinking;
 
     public bool HasThinkingDetail => IsThinking && HasDetail;
@@ -229,8 +210,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     public bool ShowPlainDetail => HasDetail
         && !IsThinking
-        && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration)
-        && (!FeedCompact || State is AgentActivityState.Waiting or AgentActivityState.Failed);
+        && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration);
 
     public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
 

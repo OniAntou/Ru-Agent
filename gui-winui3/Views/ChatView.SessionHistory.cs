@@ -448,12 +448,9 @@ namespace RuApp.Views
                         slots[slot] = replay is null
                             ? ReplayedRunBundle.Empty
                             : new ReplayedRunBundle(
-                                replay.Activities.Select(model =>
-                                {
-                                    var item = new AgentActivityItem(model);
-                                    ApplySavedDensity(item);
-                                    return item;
-                                }).ToArray(),
+                                replay.Activities
+                                .Select(model => new AgentActivityItem(model))
+                                .ToArray(),
                                 replay.Transcript);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1320,7 +1317,6 @@ namespace RuApp.Views
             _pendingGroupedState = null;
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
-            FeedDensity.Instance.PropertyChanged -= OnFeedDensityChanged;
             _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;
             Messages.CollectionChanged -= OnMessagesChanged;
             RootGrid.SizeChanged -= OnRootGridSizeChanged;

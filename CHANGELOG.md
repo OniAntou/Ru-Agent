@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **feat(gui):** **Feed cao cấp: giờ giấc, gọn, copy.** Mỗi dòng feed hiện giờ wall-clock từ event durable. Toggle gọn/rậm feed (lưu máy, dòng chi tiết ẩn trừ khi chờ/lỗi). Dòng terminal có nút copy.
+- **feat(gui):** **Feed: giờ giấc + copy terminal.** Mỗi dòng feed hiện giờ wall-clock từ event durable để đối chiếu với log. Dòng terminal có nút copy output của riêng nó.
 - **feat(gui)**: **Code/table copy, quote bar, image domain.** Code block có header ngôn ngữ + nút copy, nền riêng; bảng có nút copy TSV và cell select được; quote có gạch accent; ảnh remote hiện kèm domain, không tự tải.
 - **fix(web)**: **Kết quả search có snippet thật.** HTML engines trước đây chỉ trích title + URL nên snippet toàn chữ giả "Search result", model mù phải fetch từng link. Nay trích snippet theo từng engine (Bing `<p>`, DuckDuckGo `result__snippet`, Google `span.st`), thiếu mới rớt về placeholder.
 - **feat(gui)**: **Nhịp message kiểu DeepSeek.** Bong bóng user thành lozenge không viền, chữ thoáng hơn (line-height theo cỡ chữ ×1.7, đoạn cách 12px).

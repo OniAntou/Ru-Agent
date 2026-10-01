@@ -646,31 +646,6 @@
                     </ListView.ItemContainerStyle>
                 </ListView>
 
-                <!-- Density sits top-right over the transcript, floating above the
-                     content instead of stealing a row from it. -->
-                <ToggleButton x:Name="DensityToggleButton"
-                              HorizontalAlignment="Right"
-                              VerticalAlignment="Top"
-                              Margin="0,12,16,0"
-                              Click="OnDensityToggleClick"
-                              Background="{StaticResource RuSurfaceBrush}"
-                              BorderBrush="{StaticResource RuLineBrush}"
-                              BorderThickness="1"
-                              CornerRadius="{StaticResource AppPillCornerRadius}"
-                              Padding="10,6"
-                              ToolTipService.ToolTip="Toggle compact feed"
-                              AutomationProperties.Name="Toggle compact feed">
-                    <!-- Names the mode on screen, not the action: the pill's checked state already
-                     says the click landed, so a label that changed on click would
-                     leave the reader unsure which one is current. -->
-                    <TextBlock x:Name="DensityToggleLabel"
-                               Text="Roomy"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource RuMutedBrush}" />
-                </ToggleButton>
-
             </Grid>
         </Grid>
 

@@ -145,7 +145,6 @@ namespace RuApp.Views
             // A size chosen while the transcript is open repaints the rows already on
             // screen; without this only rows created afterwards would pick it up.
             TranscriptTypography.Instance.PropertyChanged += OnTranscriptTypographyChanged;
-            FeedDensity.Instance.PropertyChanged += OnFeedDensityChanged;
             _replyRenderScheduler = new AgentReplyRenderScheduler(
                 _replyAccumulator,
                 callback =>
@@ -183,9 +182,6 @@ namespace RuApp.Views
         {
             ApplyInputWidth();
             EnsureNewMessagesPillWired();
-            // The toggle reflects the saved density from the start, not from the
-            // first click: a preference read now must not wait on a click.
-            ApplyFeedDensityToItems();
         }
 
         private void InitializeChatHoverEffects()

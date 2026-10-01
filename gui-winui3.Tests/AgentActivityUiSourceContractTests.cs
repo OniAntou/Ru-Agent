@@ -446,39 +446,17 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void The_transcript_offers_one_density_toggle_and_nothing_else_float()
+    public void The_transcript_has_no_density_toggle()
     {
+        // The feed has one density. A second one would mean the same row renders
+        // two ways, and a reader who toggles it loses the detail they came back for.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
-        // AttributeValue deliberately skips the x: namespace, so the name is read directly.
-        var toggle = document.Descendants()
-            .FirstOrDefault(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "DensityToggleButton");
-        Assert.True(toggle is not null, "DensityToggleButton must exist.");
-        Assert.Equal("ToggleButton", toggle!.Name.LocalName);
-        Assert.Equal("OnDensityToggleClick", GuiSource.AttributeValue(toggle, "Click"));
-
-        // It floats over the transcript rather than taking a row of its own, so it
-        // has to live inside the content grid and not inside the message list.
-        var grid = GuiSource.Require(document, "ChatContentGrid");
-        var list = GuiSource.Require(document, "ChatListView");
-        Assert.True(GuiSource.IsDescendantOf(toggle, grid));
-        Assert.False(GuiSource.IsDescendantOf(toggle, list));
-
-        // The label names the current mode, not the click, and code keeps it in
-        // step with the saved preference: a label that changed on click would
-        // leave the reader unable to tell which mode is on.
-        var label = Assert.Single(toggle.Descendants().Where(element =>
-            element.Attribute(GuiSource.Xaml + "Name")?.Value == "DensityToggleLabel"));
-        Assert.Equal("Roomy", GuiSource.AttributeValue(label, "Text"));
+        Assert.DoesNotContain(
+            document.Descendants(),
+            element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "DensityToggleButton");
 
         var chrome = GuiSource.ViewText("ChatView");
-        Assert.Contains("DensityToggleLabel.Text", chrome, StringComparison.Ordinal);
-
-        // Every path that creates a row applies the saved density as it is built:
-        // a replayed session opened in compact mode must not flash roomy rows.
-        Assert.Contains(
-            "ApplySavedDensity(item);",
-            GuiSource.ViewText("ChatView"),
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("FeedDensity", chrome, StringComparison.Ordinal);
     }
 
     [Fact]

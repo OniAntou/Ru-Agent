@@ -165,7 +165,6 @@ namespace RuApp.Views
             else
             {
                 var item = new AgentActivityItem(activity);
-                ApplySavedDensity(item);
 
                 _agentActivityById.Add(item.ActivityId, item);
                 // Arrival order is the harness's order, and the harness emits one

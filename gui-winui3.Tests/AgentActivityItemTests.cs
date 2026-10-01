@@ -834,37 +834,16 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void Compact_density_hides_settled_detail_but_keeps_what_needs_action()
+    public void A_settled_row_keeps_its_detail_line()
     {
+        // The feed has one density only. A finished step still says what it did,
+        // because the alternative is a feed of headers with nothing to check back on.
         var settled = new AgentActivityItem(Activity(
             AgentActivityState.Completed,
             detail: "Read 3 files."));
-        var waiting = new AgentActivityItem(Activity(
-            AgentActivityState.Waiting,
-            detail: "Approve write outside the workspace."));
 
+        Assert.True(settled.HasDetail);
         Assert.True(settled.ShowPlainDetail);
-        Assert.True(waiting.ShowPlainDetail);
-
-        settled.FeedCompact = true;
-        waiting.FeedCompact = true;
-
-        // A finished step is what compact mode is for; a row that is waiting on
-        // the reader or explaining a failure keeps its line or it looks idle.
-        Assert.False(settled.ShowPlainDetail);
-        Assert.True(waiting.ShowPlainDetail);
-    }
-
-    [Fact]
-    public void Compact_density_keeps_a_failure_explained()
-    {
-        var failed = new AgentActivityItem(Activity(
-            AgentActivityState.Failed,
-            detail: "The tool lost connection."));
-
-        failed.FeedCompact = true;
-
-        Assert.True(failed.ShowPlainDetail);
     }
 
     private static AgentActivityModel Activity(

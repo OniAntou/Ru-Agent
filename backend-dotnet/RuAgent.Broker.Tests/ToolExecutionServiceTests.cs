@@ -1069,6 +1069,87 @@ public sealed class ToolExecutionServiceTests
         }
     }
 
+    /// <summary>
+    /// A truncated receipt names its spool so the swallowed middle pages back
+    /// without re-running the command. The read itself needs no approval, and
+    /// an unknown spool id fails closed instead of asking.
+    /// </summary>
+    [Fact]
+    public async Task Truncated_terminal_output_pages_back_from_spool_without_rerunning()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-spool-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-spool";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var runRequestId = "req-spool-" + Guid.NewGuid().ToString("N");
+            var result = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, runRequestId, new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "for /L %i in (1,1,3000) do @echo output-line-padding-0123456789"),
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.True(result.Output["stdout_dropped_bytes"]!.GetValue<long>() > 0);
+            Assert.Equal(runRequestId, result.Output["spool_id"]!.GetValue<string>());
+            var totalChars = result.Output["stdout_bytes"]!.GetValue<long>();
+            Assert.True(totalChars > 9000 + 100);
+
+            var page = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-page-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "read_output",
+                    ["execution_id"] = runRequestId,
+                    ["offset"] = 9000,
+                    ["limit"] = 100,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
+            Assert.True(page.AdapterInvoked);
+            Assert.Contains("output-line-padding", page.Output["page"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Equal(9000, page.Output["offset"]!.GetValue<int>());
+
+            var missing = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-missing-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "read_output",
+                    ["execution_id"] = "req-no-such-spool",
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, missing.Status);
+            Assert.Equal("unknown_spool_output", missing.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Terminal_timeout_over_the_hard_maximum_denies_before_the_adapter()
     {
@@ -1115,9 +1196,9 @@ public sealed class ToolExecutionServiceTests
         }
     }
 
-    private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments) => new(
+    private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments, string? requestId = null) => new(
         AgentEnvelopeCodec.ProtocolVersion,
-        "req-" + Guid.NewGuid().ToString("N"),
+        requestId ?? "req-" + Guid.NewGuid().ToString("N"),
         AgentMessageTypes.ToolRequest,
         sessionId,
         null,
@@ -1127,6 +1208,26 @@ public sealed class ToolExecutionServiceTests
             ["tool_id"] = "bash",
             ["tool_version"] = "1.0.0",
             ["capability_class"] = "internal",
+            ["arguments"] = arguments,
+        });
+
+    /// <summary>
+    /// The product path: V2 lease-authorized calls skip the manifest approval
+    /// gate because the connection leg already evaluated policy.
+    /// </summary>
+    private static AgentEnvelope TerminalV2Request(string sessionId, string requestId, JsonObject arguments) => new(
+        AgentEnvelopeCodec.ProtocolVersionV2,
+        requestId,
+        AgentMessageTypes.ToolExecute,
+        sessionId,
+        null,
+        30_000,
+        new JsonObject
+        {
+            ["tool_id"] = "bash",
+            ["tool_version"] = "1.0.0",
+            ["capability_class"] = "internal",
+            ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),
             ["arguments"] = arguments,
         });
 

@@ -323,6 +323,55 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     // ---------- offset beyond EOF, UTF-8 boundaries ----------
 
     [Fact]
+    public async Task Search_offset_pages_through_ordinal_results()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            File.WriteAllText(Path.Combine(_root, $"p{i}.txt"), "needle");
+        }
+
+        var first = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 2 }, CancellationToken.None);
+        var second = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 2, ["offset"] = 2 }, CancellationToken.None);
+        var firstPaths = first["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
+        var secondPaths = second["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
+        Assert.Equal(new[] { "p0.txt", "p1.txt" }, firstPaths);
+        Assert.Equal(new[] { "p2.txt", "p3.txt" }, secondPaths);
+        Assert.Empty(firstPaths.Intersect(secondPaths));
+    }
+
+    [Fact]
+    public async Task Search_offset_collects_later_lines_within_one_file()
+    {
+        using (var writer = new StreamWriter(Path.Combine(_root, "many.txt"), false, Encoding.UTF8))
+        {
+            for (int i = 0; i < 10; i++) writer.WriteLine($"line {i} needle");
+        }
+
+        var page = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 3, ["offset"] = 5 }, CancellationToken.None);
+        var lines = page["results"]!.AsArray().Select(n => n!["line"]!.GetValue<int>()).ToArray();
+        Assert.Equal(new[] { 6, 7, 8 }, lines);
+    }
+
+    [Fact]
+    public async Task Search_offset_beyond_results_returns_an_empty_page()
+    {
+        File.WriteAllText(Path.Combine(_root, "one.txt"), "needle");
+        var page = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["offset"] = 100 }, CancellationToken.None);
+        Assert.Equal(0, page["count"]!.GetValue<int>());
+        Assert.Empty(page["results"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task Search_rejects_invalid_offset()
+    {
+        File.WriteAllText(Path.Combine(_root, "o.txt"), "needle");
+        await Assert.ThrowsAsync<ArgumentException>(() => _search.ExecuteAsync(
+            new JsonObject { ["path"] = ".", ["query"] = "needle", ["offset"] = -1 }, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => _search.ExecuteAsync(
+            new JsonObject { ["path"] = ".", ["query"] = "needle", ["offset"] = FileToolLimits.MaxOffset + 1 }, CancellationToken.None));
+    }
+
+    [Fact]
     public void Read_offset_beyond_eof_returns_empty()
     {
         File.WriteAllText(Path.Combine(_root, "eof.txt"), "hello");

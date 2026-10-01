@@ -1162,6 +1162,56 @@ public sealed class PolicyEvaluationTests
             PolicyEvalSnapshots.Rule("r-empty-path", "allow", PolicyEvalSnapshots.Matcher(pathPattern: "  ")))));
     }
 
+    [Fact]
+    public void Spool_read_classifies_as_a_target_free_read()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var context = factory.Create(
+            "bash",
+            "1.0.0",
+            new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" });
+
+        Assert.Equal(PolicyOperationClasses.Read, context.OperationClass);
+        Assert.Null(context.Target);
+    }
+
+    [Fact]
+    public void Spool_read_is_allowed_without_approval_in_standard()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create(
+                "bash",
+                "1.0.0",
+                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", evaluation.Decision);
+    }
+
+    [Fact]
+    public void Explicit_deny_on_bash_still_denies_a_spool_read()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-deny-bash",
+                "deny",
+                PolicyEvalSnapshots.Matcher(toolId: "bash"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create(
+                "bash",
+                "1.0.0",
+                new JsonObject { ["mode"] = "read_output", ["execution_id"] = "req-1" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("rule_denied", evaluation.ReasonCode);
+    }
+
     private static PolicyContext ProfileMatrixContext(
         PolicyContextFactory factory,
         AgentPolicySubject subject) => subject switch

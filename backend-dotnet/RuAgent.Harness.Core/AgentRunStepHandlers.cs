@@ -45,12 +45,32 @@ internal sealed class AgentRunStepHandlers
         AssistantStep step,
         string errorCode,
         int droppedCount,
+        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
         string? reasoningText = null)
     {
         const string stepErrorCode = "unverified_after_tool_failure";
+        if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.UnverifiedAfterToolFailure))
+        {
+            return await HandleRecoveryAdviceStepAsync(
+                    run,
+                    modelStepId,
+                    step,
+                    droppedCount,
+                    AgentRecoveryNotes.BuildUnverifiedNote(errorCode),
+                    AgentRecoveryNotes.NoteCount(
+                        context,
+                        AgentRecoveryKind.UnverifiedAfterToolFailure),
+                    stepErrorCode,
+                    promptReceiptPayload,
+                    promptComposedEvent,
+                    cancellationToken,
+                    reasoningText)
+                .ConfigureAwait(false);
+        }
+
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.Fail);
@@ -116,6 +136,108 @@ internal sealed class AgentRunStepHandlers
                 cancellationToken)
             .ConfigureAwait(false);
         return AgentRunStepResult.Blocked(committed, errorCode);
+    }
+
+    /// <summary>
+    /// Answers a dead-end model step (prose after a failed receipt, or an empty
+    /// final step) with one durable recovery note instead of ending the run: the
+    /// note lands in the model context as a system entry and the run keeps
+    /// stepping. Bounded per case and per window by <see cref="AgentRecoveryNotes"/>;
+    /// once the notes are spent the original fail branch takes over unchanged.
+    /// </summary>
+    private async Task<AgentRunStepResult> HandleRecoveryAdviceStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        int droppedCount,
+        string noteText,
+        int priorNoteCount,
+        string noteCode,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken,
+        string? reasoningText)
+    {
+        var advisedCode = noteCode + "_advised";
+        var assistantPayloadId = _ids.NewPayloadId();
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayload = new HarnessPayloadIntent(
+            assistantPayloadId,
+            HarnessPayloadKind.AssistantStep,
+            // The dead-end reply is audit-only: the recovery note replaces it in
+            // the model context, and the user never sees the suppressed prose.
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            Math.Max(assistantBytes.Length, 1),
+            assistantBytes);
+        var notePayloadId = _ids.NewPayloadId();
+        var noteBytes = Encoding.UTF8.GetBytes(noteText);
+        var notePayload = new HarnessPayloadIntent(
+            notePayloadId,
+            HarnessPayloadKind.ModelContextNote,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            noteBytes.Length,
+            noteBytes);
+        var events = new List<HarnessEventIntent>
+        {
+            promptComposedEvent,
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCount: step.ToolCalls.Count,
+                safeCode: advisedCode),
+        };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var commitPayloads = new List<HarnessPayloadIntent>
+        {
+            promptReceiptPayload,
+            assistantPayload,
+            notePayload,
+        };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Add(reasoningEvent);
+            commitPayloads.Add(reasoningPayload);
+        }
+        if (droppedCount > 0)
+        {
+            events.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.TransientFramesDropped,
+                modelStepId: modelStepId,
+                safeCount: droppedCount));
+        }
+
+        events.Add(new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.RunNoteAdded,
+            modelStepId: modelStepId,
+            payloadId: notePayloadId,
+            safeCode: noteCode));
+
+        var next = run.Advance(
+            run.Status,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                commitPayloads,
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1));
+        return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
     }
 
     /// <summary>
@@ -305,12 +427,31 @@ internal sealed class AgentRunStepHandlers
         AgentRun run,
         ModelStepId modelStepId,
         AssistantStep step,
+        int droppedCount,
+        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
         string? reasoningText = null)
     {
         const string errorCode = "empty_model_reply";
+        if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.EmptyModelReply))
+        {
+            return await HandleRecoveryAdviceStepAsync(
+                    run,
+                    modelStepId,
+                    step,
+                    droppedCount,
+                    AgentRecoveryNotes.BuildEmptyNote(),
+                    AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.EmptyModelReply),
+                    errorCode,
+                    promptReceiptPayload,
+                    promptComposedEvent,
+                    cancellationToken,
+                    reasoningText)
+                .ConfigureAwait(false);
+        }
+
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.Fail);
@@ -462,6 +603,7 @@ internal sealed class AgentRunStepHandlers
         ModelStepId modelStepId,
         AssistantStep step,
         int droppedCount,
+        ModelContextSnapshot context,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
@@ -473,6 +615,8 @@ internal sealed class AgentRunStepHandlers
                     run,
                     modelStepId,
                     step,
+                    droppedCount,
+                    context,
                     promptReceiptPayload,
                     promptComposedEvent,
                     cancellationToken,

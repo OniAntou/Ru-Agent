@@ -69,9 +69,12 @@ public sealed class AgentPromptReceiptTests
             item.Kind == HarnessEventKind.RunFailed
             && item.SafeCode == "prompt_contract_invalid");
         Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.ModelStepCompleted);
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunNoteAdded);
         Assert.DoesNotContain(
             store.Commits.SelectMany(commit => commit.Payloads),
-            payload => payload.Kind is HarnessPayloadKind.AssistantText or HarnessPayloadKind.AssistantStep);
+            payload => payload.Kind is HarnessPayloadKind.AssistantText
+                or HarnessPayloadKind.AssistantStep
+                or HarnessPayloadKind.ModelContextNote);
         Assert.Empty(gateway.Proposals);
     }
 

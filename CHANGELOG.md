@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **feat(harness)**: **Tự phục hồi bước model chết bằng note bounded thay vì fail ngay.** Prose sau tool receipt lỗi (`unverified_after_tool_failure`) và final step rỗng (`empty_model_reply`) trước đây kết thúc run ngay. Nay harness chèn note durable `[HARNESS RECOVERY]` (`ModelContextNote`, System) + `RunNoteAdded` + `ModelStepCompleted *_advised`, run vẫn Running kèm activity Retry; bound 2 note unverified, 1 note empty, trần chung 6 note/window — hết bound thì fail đúng như cũ. Note cũ trong prompt có thể bị compaction gộp nên trần chung vẫn là chốt theo window.
 - **feat(gui)**: **Feed: giờ giấc + copy terminal.** Mỗi dòng feed hiện giờ wall-clock từ event durable để đối chiếu với log. Dòng terminal có nút copy output của riêng nó.
 - **feat(gui)**: **Code/table copy, quote bar, image domain.** Code block có header ngôn ngữ + nút copy, nền riêng; bảng có nút copy TSV và cell select được; quote có gạch accent; ảnh remote hiện kèm domain, không tự tải.
 - **fix(web)**: **Kết quả search có snippet thật.** HTML engines trước đây chỉ trích title + URL nên snippet toàn chữ giả "Search result", model mù phải fetch từng link. Nay trích snippet theo từng engine (Bing `<p>`, DuckDuckGo `result__snippet`, Google `span.st`), thiếu mới rớt về placeholder.

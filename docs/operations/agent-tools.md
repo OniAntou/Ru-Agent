@@ -175,7 +175,8 @@ non-denied call asks, prepared authorization is discarded and the whole retained
 batch pauses for one explicit decision. Resolution re-evaluates the exact durable
 proposals under the current lease; the model is not asked to reissue an approved
 call. A denial may return a repair hint, while an exact repeated call is stopped
-by `repeated_tool_call` before duplicate dispatch. An empty final step fails as
+by `repeated_tool_call` before duplicate dispatch. An empty final step is answered
+once with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
@@ -259,8 +260,12 @@ terminates or reconciles the action with a deterministic receipt.
 If the model produces ordinary assistant prose immediately following a committed
 tool batch that contains any failed or unverified receipt, the coordinator suppresses
 the prose from the conversation outbox, retains the assistant step internally for audit
-as an `InternalOnly` payload, and fails the run with the receipt error code (falling
-back to `tool_failed`). An unverified success claim is never displayed to the user as a
+as an `InternalOnly` payload, and answers with a bounded durable `[HARNESS RECOVERY]`
+note in the model context naming the failed receipt code, so the model can redo the
+call, use a different tool, or report the blocker. The unverified case is bounded to
+2 notes and every recovery case shares a global cap of 6 notes per window; once the
+bound is spent the run fails with the receipt error code (falling back to `tool_failed`)
+exactly as before. An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
 to allow recovery. A first `policy_denied` is the exception: the run stays alive so
 the model can read the failed receipt plus repair hint and adjust; only a repeated

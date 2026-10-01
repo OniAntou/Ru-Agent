@@ -324,6 +324,24 @@ public static class AgentActivityProjector
             ToolDisplay: ToolDisplayFor(proposal));
     }
 
+    /// <summary>
+    /// Projects a model-step retry: the run is stepping again after a bounded
+    /// recovery note, so unlike the tool-proposal overload there is no tool to
+    /// describe. The row keeps the same retry kind, count and safe code.
+    /// </summary>
+    public static AgentActivity ProjectRetry(
+        ModelStepId modelStepId,
+        int attempt,
+        AgentActivityState state = AgentActivityState.Completed,
+        int? durationMs = null) =>
+        new(
+            ActivityId(modelStepId.Value) + "_retry",
+            AgentActivityKind.Retry,
+            state,
+            Count: ClampCount(attempt),
+            DurationMs: ClampDuration(durationMs),
+            SafeCode: SafeCodeFor(state, "retrying"));
+
     public static AgentActivity ProjectStatus(
         string activityId,
         AgentActivityState state,

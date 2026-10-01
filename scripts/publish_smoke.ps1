@@ -104,7 +104,17 @@ function Resolve-SmokePort([int]$RequestedPort) {
         return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
     } catch {
         if ($RequestedPort -ne 0) {
-            throw "port $RequestedPort is already in use; pick another port or rerun."
+            $owner = "an unidentified process"
+            try {
+                $connection = Get-NetTCPConnection -LocalPort $RequestedPort -State Listen -ErrorAction Stop | Select-Object -First 1
+                if ($connection) {
+                    $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+                    $owner = "PID $($connection.OwningProcess) ($($process.ProcessName))"
+                }
+            } catch {
+            }
+
+            throw "port $RequestedPort is already in use by $owner. This smoke never kills a host it did not start; stop that process and rerun."
         }
 
         throw
@@ -113,10 +123,41 @@ function Resolve-SmokePort([int]$RequestedPort) {
     }
 }
 
-function Invoke-SmokeRequest([System.Net.Http.HttpMethod]$Method, [string]$Url, [string]$Bearer) {
+function Wait-StatusReady([System.Diagnostics.Process]$HostProcess, [string]$Url, [string]$Bearer, [int]$TimeoutSeconds) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastOutcome = "no attempt completed"
+    while ((Get-Date) -lt $deadline) {
+        if ($HostProcess.HasExited) {
+            throw "host exited before GET $Url/status succeeded. stderr: $(Get-TextTail $hostStderrPath)"
+        }
+
+        try {
+            $response = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Get) -Url "$Url/status" -Bearer $Bearer -TimeoutSeconds 2
+            $lastOutcome = "HTTP $($response.StatusCode)"
+            if ($response.StatusCode -eq 200) {
+                $body = $response.Body | ConvertFrom-Json
+                if ($body.status -eq "ok") {
+                    return $body
+                }
+
+                $lastOutcome = "status '$($body.status)'"
+            }
+        } catch {
+            # The descriptor is published before Kestrel binds, so a refused
+            # connection is expected during the first polls; keep polling.
+            $lastOutcome = "connection failed: $($_.Exception.Message)"
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    throw "host did not answer GET $Url/status with status=ok within $TimeoutSeconds s (last attempt: $lastOutcome). stderr: $(Get-TextTail $hostStderrPath)"
+}
+
+function Invoke-SmokeRequest([System.Net.Http.HttpMethod]$Method, [string]$Url, [string]$Bearer, [int]$TimeoutSeconds = 15) {
     $client = New-Object System.Net.Http.HttpClient
     try {
-        $client.Timeout = [TimeSpan]::FromSeconds(15)
+        $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
         $request = New-Object System.Net.Http.HttpRequestMessage -ArgumentList $Method, $Url
         try {
             $request.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue -ArgumentList "Bearer", $Bearer
@@ -148,8 +189,6 @@ try {
 
     New-Item -ItemType Directory -Path $dataRoot, $logRoot -Force | Out-Null
 
-    $publicPort = Resolve-SmokePort -RequestedPort $Port
-    $baseUrl = "http://127.0.0.1:$publicPort"
     Write-Smoke "publishing RuBackend ($Configuration, win-x64, self-contained) to $publishDir..."
     & dotnet publish $projectPath -c $Configuration -r win-x64 --self-contained true -o $publishDir --nologo
     if ($LASTEXITCODE -ne 0) {
@@ -167,6 +206,11 @@ try {
     if (-not (Test-Path -LiteralPath $brokerExe)) {
         throw "RuAgent.Broker.exe was not published beside RuBackend.exe."
     }
+
+    # Probe the port as late as possible: the publish can take minutes, and a
+    # port probed before it is another process's opportunity to steal it.
+    $publicPort = Resolve-SmokePort -RequestedPort $Port
+    $baseUrl = "http://127.0.0.1:$publicPort"
 
     $env:RU_DATA_ROOT = $dataRoot
     $env:RU_LOG_ROOT = $logRoot
@@ -207,15 +251,10 @@ try {
     }
 
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
-    $statusResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Get) -Url "$baseUrl/status" -Bearer $descriptor.bearer_token
-    if ($statusResponse.StatusCode -ne 200) {
-        throw "GET /status returned $($statusResponse.StatusCode); expected 200. body: $($statusResponse.Body)"
-    }
-
-    $statusBody = $statusResponse.Body | ConvertFrom-Json
-    if ($statusBody.status -ne "ok") {
-        throw "GET /status reported status '$($statusBody.status)'; expected ok. body: $($statusResponse.Body)"
-    }
+    # The descriptor is published before Kestrel binds, so the first GET can
+    # race the listener on a loaded runner. Poll on a bounded budget instead of
+    # failing on the first connection-refused, like rpc_smoke's Wait-HostReady.
+    $null = Wait-StatusReady -HostProcess $hostProcess -Url $baseUrl -Bearer $descriptor.bearer_token -TimeoutSeconds 30
 
     Write-Smoke "status ok; asking the host to shut down..."
     $shutdownResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Post) -Url "$baseUrl/host/shutdown" -Bearer $descriptor.bearer_token

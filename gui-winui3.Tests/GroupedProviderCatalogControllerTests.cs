@@ -310,10 +310,16 @@ public sealed class GroupedProviderCatalogControllerTests
         var controlled = new ControlledCatalogs();
         var clock = new TestClock(DateTimeOffset.UtcNow);
         await using var controller = await CreateControllerAsync(controlled, clock);
+        // The three child controllers publish on their own threads, so the
+        // counter needs an atomic increment: a lost update made the final count
+        // 2 instead of 3 once under load.
         var successfulEvents = 0;
         controller.StateChanged += (_, state) =>
         {
-            if (state.Catalogs.Values.Any(catalog => catalog.IsSuccess)) successfulEvents++;
+            if (state.Catalogs.Values.Any(catalog => catalog.IsSuccess))
+            {
+                Interlocked.Increment(ref successfulEvents);
+            }
         };
 
         var refresh = controller.RefreshAsync(force: true);
@@ -321,7 +327,7 @@ public sealed class GroupedProviderCatalogControllerTests
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.False(await refresh);
 
-        Assert.Equal(0, successfulEvents);
+        Assert.Equal(0, Volatile.Read(ref successfulEvents));
         Assert.All(controller.State.Catalogs.Values, catalog => Assert.False(catalog.IsSuccess));
 
         controlled.ReArmAll();
@@ -329,8 +335,11 @@ public sealed class GroupedProviderCatalogControllerTests
         var second = controller.RefreshAsync(force: true);
         controlled.CompleteAll(alias => Snapshot(alias, "fresh-model"));
         Assert.True(await second);
+        await WaitForAsync(
+            () => Volatile.Read(ref successfulEvents) >= 3,
+            "all three successful provider publications");
         Assert.Equal("fresh-model", controller.State.Catalogs[OpenAiAlias].Models.Single());
-        Assert.Equal(3, successfulEvents);
+        Assert.Equal(3, Volatile.Read(ref successfulEvents));
     }
 
     [Fact]

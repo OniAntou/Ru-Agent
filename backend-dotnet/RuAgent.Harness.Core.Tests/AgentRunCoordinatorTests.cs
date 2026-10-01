@@ -730,6 +730,116 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Provider_step_failure_still_fails_immediately_with_its_code_and_no_note()
+    {
+        var model = new StableThrowingModelStepRunner("provider_auth");
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store);
+
+        var error = await Assert.ThrowsAsync<StableModelStepError>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.Equal("provider_auth", error.StepErrorCode);
+        var run = await store.GetRunAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Failed, run!.State);
+        Assert.Equal("provider_auth", run.TerminalErrorCode);
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunFailed && item.SafeCode == "provider_auth");
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind is HarnessEventKind.RunNoteAdded or HarnessEventKind.ModelStepCompleted);
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+    }
+
+    [Theory]
+    [InlineData("model_tool_call_invalid")]
+    [InlineData("invalid_selection")]
+    public async Task Model_repairable_step_error_gets_advised_notes_then_fails_the_run(
+        string code)
+    {
+        var model = new StableThrowingModelStepRunner(code);
+        var source = new FixedContextSource();
+        var activities = new RecordingActivitySink();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            contextSource: source,
+            activitySink: activities);
+
+        for (var occurrence = 1;
+            occurrence <= AgentRecoveryNotes.MaximumModelRepairableNotes;
+            occurrence++)
+        {
+            var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+            Assert.Equal(HarnessRunState.Running, result.Run.State);
+            Assert.Null(result.ErrorCode);
+            Assert.Null(result.Run.TerminalErrorCode);
+
+            var commit = store.Commits.Last();
+            var notePayload = Assert.Single(
+                commit.Payloads,
+                payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+            Assert.Equal(HarnessPayloadAudience.ModelContext, notePayload.Audience);
+            Assert.Equal(HarnessPayloadEncoding.Utf8Text, notePayload.Encoding);
+            var noteText = Encoding.UTF8.GetString(notePayload.Plaintext.Span);
+            Assert.StartsWith(AgentRecoveryNotes.NotePrefix, noteText, StringComparison.Ordinal);
+            Assert.Contains(code, noteText, StringComparison.Ordinal);
+
+            Assert.Contains(commit.Events, item =>
+                item.Kind == HarnessEventKind.ModelStepCompleted
+                && item.SafeCode == code + "_advised");
+            Assert.Contains(commit.Events, item =>
+                item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == code
+                && item.PayloadId == notePayload.PayloadId);
+            Assert.DoesNotContain(commit.Events, item => item.Kind == HarnessEventKind.RunFailed);
+            Assert.Empty(commit.ConversationOutbox);
+
+            source.Add(ModelContextEntry.Text(
+                $"note-{occurrence}",
+                occurrence,
+                ModelContextRole.System,
+                noteText));
+        }
+
+        var retries = activities.Activities
+            .Where(activity => activity.Kind == AgentActivityKind.Retry)
+            .ToArray();
+        Assert.Equal(AgentRecoveryNotes.MaximumModelRepairableNotes, retries.Length);
+        Assert.Equal(1, retries[0].Count);
+        Assert.Equal(2, retries[1].Count);
+
+        var error = await Assert.ThrowsAsync<ModelRepairableStepException>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.Equal(code, error.Code);
+        var run = await store.GetRunAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Failed, run!.State);
+        Assert.Equal(code, run.TerminalErrorCode);
+        var failureCommit = store.Commits.Last();
+        Assert.Contains(failureCommit.Events, item =>
+            item.Kind == HarnessEventKind.RunFailed && item.SafeCode == code);
+        Assert.DoesNotContain(
+            failureCommit.Events,
+            item => item.Kind == HarnessEventKind.RunNoteAdded);
+        Assert.DoesNotContain(
+            failureCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+        Assert.Contains(activities.Activities, activity =>
+            activity.Kind == AgentActivityKind.Thinking
+            && activity.State == AgentActivityState.Failed
+            && activity.SafeCode == code);
+    }
+
+    [Fact]
     public async Task Recovery_tool_call_after_failed_tool_executes_normally()
     {
         var prior = ToolStep();
@@ -1509,6 +1619,20 @@ public sealed class AgentRunCoordinatorTests
             throw new TimeoutException("model timed out");
     }
 
+    private sealed class StableThrowingModelStepRunner(string code) : IModelStepRunner
+    {
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken) =>
+            Task.FromException<ModelStepResult>(new StableModelStepError(code));
+    }
+
+    private sealed class StableModelStepError(string code) : Exception(code), IStableStepError
+    {
+        public string StepErrorCode { get; } = code;
+    }
+
     private sealed class RecordingActivitySink : IAgentActivitySink
     {
         public List<AgentActivity> Activities { get; } = new();
@@ -1526,14 +1650,21 @@ public sealed class AgentRunCoordinatorTests
                 Array.Empty<ModelContextEntry>()));
     }
 
-    private sealed class FixedContextSource(params ModelContextEntry[] entries) : IModelContextSource
+    private sealed class FixedContextSource : IModelContextSource
     {
+        private readonly List<ModelContextEntry> _entries;
+
+        public FixedContextSource(params ModelContextEntry[] entries) =>
+            _entries = new List<ModelContextEntry>(entries);
+
+        public void Add(ModelContextEntry entry) => _entries.Add(entry);
+
         public Task<ModelContextSourceSnapshot> LoadAsync(
             RunId runId,
             CancellationToken cancellationToken) =>
             Task.FromResult(new ModelContextSourceSnapshot(
                 Array.Empty<ModelContextEntry>(),
-                entries));
+                _entries.ToArray()));
     }
 
     private sealed class IncrementingTimeProvider : ITimeProvider

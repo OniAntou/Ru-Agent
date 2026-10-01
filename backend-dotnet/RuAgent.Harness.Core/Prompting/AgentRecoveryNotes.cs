@@ -12,6 +12,7 @@ public enum AgentRecoveryKind
 {
     UnverifiedAfterToolFailure,
     EmptyModelReply,
+    ModelRepairable,
 }
 
 /// <summary>
@@ -32,6 +33,7 @@ public static class AgentRecoveryNotes
     // fails, but a weak model gets a real chance to answer or change course.
     public const int MaximumUnverifiedNotes = 2;
     public const int MaximumEmptyNotes = 1;
+    public const int MaximumModelRepairableNotes = 2;
 
     // Global per-window cap across every recovery case, counted from the context.
     public const int MaximumNotesPerWindow = 6;
@@ -53,10 +55,32 @@ public static class AgentRecoveryNotes
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.EmptyModelReply)} - the last model "
         + "reply was empty. Answer with text or a valid tool call.";
 
+    /// <summary>
+    /// Names the runner's model-repairable rejection and asks the model to redo
+    /// it. The code is a bounded runner code, so it is safe text.
+    /// </summary>
+    public static string BuildModelRepairableNote(string? code)
+    {
+        var stable = string.IsNullOrWhiteSpace(code) ? "invalid_selection" : code;
+        return $"{NotePrefix} {KindMarker(AgentRecoveryKind.ModelRepairable)} (code: {stable}) "
+            + "- the model reply could not be used: the tool call or selection was rejected "
+            + "as invalid. Re-issue a valid advertised tool call with complete JSON "
+            + "arguments, or answer in plain text.";
+    }
+
+    /// <summary>
+    /// The runner's stable codes a model can repair by taking another turn: a
+    /// malformed, unavailable or otherwise invalid tool call or selection.
+    /// Everything else (prompt, provider, history, image) stays terminal.
+    /// </summary>
+    public static bool IsModelRepairableCode(string? code) =>
+        code is "model_tool_call_invalid" or "model_tool_call_unavailable" or "invalid_selection";
+
     public static string KindMarker(AgentRecoveryKind kind) => kind switch
     {
         AgentRecoveryKind.UnverifiedAfterToolFailure => "unverified_after_tool_failure",
         AgentRecoveryKind.EmptyModelReply => "empty_model_reply",
+        AgentRecoveryKind.ModelRepairable => "model_repairable",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -64,6 +88,7 @@ public static class AgentRecoveryNotes
     {
         AgentRecoveryKind.UnverifiedAfterToolFailure => MaximumUnverifiedNotes,
         AgentRecoveryKind.EmptyModelReply => MaximumEmptyNotes,
+        AgentRecoveryKind.ModelRepairable => MaximumModelRepairableNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

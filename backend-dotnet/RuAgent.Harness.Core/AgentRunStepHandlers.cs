@@ -241,6 +241,69 @@ internal sealed class AgentRunStepHandlers
     }
 
     /// <summary>
+    /// Answers a model step the runner rejected with a model-repairable code
+    /// (malformed, unavailable or invalid tool call/selection) with one durable
+    /// recovery note instead of ending the run. The runner threw before producing
+    /// an assistant step, so the note is the whole commit; the run stays Running
+    /// and the next step is the model's chance to re-issue a valid call. Bounded
+    /// by <see cref="AgentRecoveryNotes"/>; once the notes are spent the
+    /// coordinator's original fail path takes over.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleModelRepairableFailureStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        string errorCode,
+        int priorNoteCount,
+        CancellationToken cancellationToken)
+    {
+        var notePayloadId = _ids.NewPayloadId();
+        var noteBytes = Encoding.UTF8.GetBytes(
+            AgentRecoveryNotes.BuildModelRepairableNote(errorCode));
+        var notePayload = new HarnessPayloadIntent(
+            notePayloadId,
+            HarnessPayloadKind.ModelContextNote,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            noteBytes.Length,
+            noteBytes);
+        var events = new List<HarnessEventIntent>
+        {
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                safeCode: errorCode + "_advised"),
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.RunNoteAdded,
+                modelStepId: modelStepId,
+                payloadId: notePayloadId,
+                safeCode: errorCode),
+        };
+
+        var next = run.Advance(
+            run.Status,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                new[] { notePayload },
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectRetry(modelStepId, priorNoteCount + 1));
+        return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
+    }
+
+    /// <summary>
     /// Answers a detected repetition with one corrective note instead of ending
     /// the run: the note lands in the model context as a system entry and the run
     /// keeps stepping, so a weak model can change its arguments. Bounded by

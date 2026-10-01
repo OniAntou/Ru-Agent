@@ -51,6 +51,55 @@ public sealed class ModelStepFailureClassificationTests
         AssertFailedWith(store, "model_failed");
     }
 
+    [Theory]
+    [InlineData("model_tool_call_invalid")]
+    [InlineData("model_tool_call_unavailable")]
+    [InlineData("invalid_selection")]
+    public async Task Model_repairable_code_routes_to_the_recovery_exception_when_notes_are_spent(
+        string code)
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumModelRepairableNotes)
+            .Select(index => ModelContextEntry.Text(
+                $"note-{index}",
+                index + 1,
+                ModelContextRole.System,
+                AgentRecoveryNotes.BuildModelRepairableNote("invalid_selection")))
+            .ToArray();
+        var coordinator = CreateCoordinator(
+            new ThrowingRunner(new StableError(code)),
+            store,
+            new FixedContextSource(notes));
+
+        var error = await Assert.ThrowsAsync<ModelRepairableStepException>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.Equal(code, error.Code);
+        Assert.IsType<StableError>(error.InnerException);
+        AssertFailedWith(store, code);
+    }
+
+    [Theory]
+    [InlineData("provider_auth")]
+    [InlineData("prompt_contract_invalid")]
+    [InlineData("model_history_invalid")]
+    [InlineData("invalid_request")]
+    [InlineData("capability_denied")]
+    [InlineData("image_payload_unavailable")]
+    public async Task Non_repairable_stable_codes_still_fail_through_the_base_path(string code)
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var coordinator = CreateCoordinator(new ThrowingRunner(new StableError(code)), store);
+
+        var error = await Assert.ThrowsAsync<StableError>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.Equal(code, error.StepErrorCode);
+        AssertFailedWith(store, code);
+    }
+
     private static void AssertFailedWith(InMemoryHarnessEventStore store, string code)
     {
         var run = store.GetRunAsync(RunId(), CancellationToken.None).GetAwaiter().GetResult();
@@ -62,12 +111,13 @@ public sealed class ModelStepFailureClassificationTests
 
     private static AgentRunCoordinator CreateCoordinator(
         IModelStepRunner model,
-        InMemoryHarnessEventStore store) =>
+        InMemoryHarnessEventStore store,
+        IModelContextSource? contextSource = null) =>
         new(
             model,
             new FakeToolGateway(),
             store,
-            new AgentContextAssembler(new EmptyContextSource()),
+            new AgentContextAssembler(contextSource ?? new EmptyContextSource()),
             new CryptographicIdGenerator(),
             new SystemTimeProvider(),
             new ToolCallScheduler(),
@@ -115,5 +165,15 @@ public sealed class ModelStepFailureClassificationTests
             Task.FromResult(new ModelContextSourceSnapshot(
                 Array.Empty<ModelContextEntry>(),
                 Array.Empty<ModelContextEntry>()));
+    }
+
+    private sealed class FixedContextSource(params ModelContextEntry[] entries) : IModelContextSource
+    {
+        public Task<ModelContextSourceSnapshot> LoadAsync(
+            RunId runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModelContextSourceSnapshot(
+                Array.Empty<ModelContextEntry>(),
+                entries));
     }
 }

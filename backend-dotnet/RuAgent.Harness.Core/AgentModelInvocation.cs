@@ -142,6 +142,14 @@ internal sealed class AgentModelInvocation
             // reader at the wrong subsystem. The code is classified from the exception rather
             // than forwarded, because a message can quote user content.
             string code = ModelStepFailureCode(error);
+            if (AgentRecoveryNotes.IsModelRepairableCode(code))
+            {
+                // The model can fix this by taking another turn, so the coordinator
+                // answers with a bounded recovery note instead of failing the run.
+                // Failing here would burn the run before the model gets its chance.
+                throw new ModelRepairableStepException(code, error);
+            }
+
             RecordContractFailure(
                 "model-step",
                 $"{error.GetType().Name}: {error.Message}",
@@ -353,6 +361,25 @@ internal sealed class AgentModelInvocation
                 AgentActivityState.Failed,
                 ElapsedMilliseconds(startedAt),
                 safeCode: safeCode));
+    }
+
+    /// <summary>
+    /// Marks a model-repairable step failure whose recovery notes are spent,
+    /// preserving the pre-recovery terminal path: fail the run with the original
+    /// code and publish the failed model-step activity.
+    /// </summary>
+    internal async Task FailRepairableStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        string safeCode)
+    {
+        await MarkModelStepFailureAsync(
+                run,
+                modelStepId,
+                _time.UtcNow,
+                telemetryActivity: null,
+                safeCode)
+            .ConfigureAwait(false);
     }
 
     private async Task MarkPromptContractFailureAsync(

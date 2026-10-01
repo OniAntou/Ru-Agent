@@ -189,12 +189,36 @@ public sealed class AgentRunCoordinator
             return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
         }
 
-        var invocation = await _invocation.InvokeAsync(
-                run,
-                context,
-                modelStepId,
-                cancellationToken)
-            .ConfigureAwait(false);
+        AgentModelInvocation.ModelInvocationResult invocation;
+        try
+        {
+            invocation = await _invocation.InvokeAsync(
+                    run,
+                    context,
+                    modelStepId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ModelRepairableStepException error)
+        {
+            if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.ModelRepairable))
+            {
+                return await _steps.HandleModelRepairableFailureStepAsync(
+                        run,
+                        modelStepId,
+                        error.Code,
+                        AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.ModelRepairable),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            // The notes are spent: keep the original terminal path and code so an
+            // unrepairable model ends the run exactly like it did before recovery.
+            await _invocation.FailRepairableStepAsync(run, modelStepId, error.Code)
+                .ConfigureAwait(false);
+            throw;
+        }
+
         var step = invocation.Step;
         var promptReceiptPayload = invocation.PromptReceiptPayload;
         var promptComposedEvent = invocation.PromptComposedEvent;

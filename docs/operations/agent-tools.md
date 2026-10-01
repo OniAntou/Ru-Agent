@@ -177,7 +177,10 @@ proposals under the current lease; the model is not asked to reissue an approved
 call. A denial may return a repair hint, while an exact repeated call is stopped
 by `repeated_tool_call` before duplicate dispatch. An empty final step is answered
 once with a bounded `[HARNESS RECOVERY]` note before the run fails as
-`empty_model_reply`.
+`empty_model_reply`. A runner-rejected tool call or selection
+(`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is
+likewise answered up to 2 notes before failing with the original runner code;
+provider and prompt failures never take the note path.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
 new low per-step cap. Read-only calls may execute concurrently in chunks of at

@@ -10,9 +10,9 @@ namespace RuApp.Controls
 {
     public sealed partial class MarkdownBlock : UserControl
     {
-        private static readonly FontFamily UiFont = new FontFamily("Segoe UI Variable");
-        private static readonly FontFamily DisplayFont = new FontFamily("Cambria");
-        private static readonly FontFamily MonoFont = new FontFamily("Consolas");
+        private static readonly FontFamily UiFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
+        private static readonly FontFamily DisplayFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI");
+        private static readonly FontFamily MonoFont = new FontFamily("Cascadia Code, Consolas");
         private readonly RichTextBlock _richTextBlock;
 
         public static readonly DependencyProperty MarkdownTextProperty =
@@ -114,12 +114,24 @@ namespace RuApp.Controls
 
                 if (trimmed == string.Empty)
                 {
+                    // Dòng trống là ranh giới đoạn văn: giữ lại khoảng thở
+                    // thay vì nuốt mất (nuốt là nhìn dính thành 1 cục với Inter).
+                    _richTextBlock.Blocks.Add(new Paragraph
+                    {
+                        Margin = new Thickness(0, 0, 0, 6),
+                    });
                     continue;
                 }
 
-                Paragraph paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 6) };
-                RenderLine(trimmed, paragraph, bodySize);
-                _richTextBlock.Blocks.Add(paragraph);
+                // Session cũ lưu gộp cả trả lời thành một dòng: tách các tiêu đề
+                // còn sót ("## 1. ...") ra trước khi vẽ. Dòng thường đi qua
+                // nguyên vẹn, code fence đã rẽ nhánh ở trên.
+                foreach (string piece in Services.MarkdownRecovery.SplitLine(trimmed))
+                {
+                    Paragraph paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 10), LineHeight = 22 };
+                    RenderLine(piece, paragraph, bodySize);
+                    _richTextBlock.Blocks.Add(paragraph);
+                }
             }
 
             if (inCode && codeBuilder.Length > 0)
@@ -142,23 +154,27 @@ namespace RuApp.Controls
         {
             if (line.StartsWith("### "))
             {
-                AddInlines(paragraph, line.Substring(4).Trim(), bodySize + 2, FontWeights.SemiBold, DisplayFont);
+                paragraph.Margin = new Thickness(0, 14, 0, 6);
+                AddInlines(paragraph, line.Substring(4).Trim(), bodySize, FontWeights.SemiBold, DisplayFont);
                 return;
             }
             if (line.StartsWith("## "))
             {
-                AddInlines(paragraph, line.Substring(3).Trim(), bodySize + 4, FontWeights.Bold, DisplayFont);
+                paragraph.Margin = new Thickness(0, 16, 0, 6);
+                AddInlines(paragraph, line.Substring(3).Trim(), bodySize, FontWeights.Bold, DisplayFont);
                 return;
             }
             if (line.StartsWith("# "))
             {
-                AddInlines(paragraph, line.Substring(2).Trim(), bodySize + 6, FontWeights.Bold, DisplayFont);
+                paragraph.Margin = new Thickness(0, 18, 0, 8);
+                AddInlines(paragraph, line.Substring(2).Trim(), bodySize + 1, FontWeights.Bold, DisplayFont);
                 return;
             }
 
             Match bullet = BulletRegex().Match(line);
             if (bullet.Success)
             {
+                paragraph.Margin = new Thickness(16, 0, 0, 8);
                 paragraph.Inlines.Add(new Run { Text = "\u2022  ", FontFamily = UiFont, FontSize = bodySize });
                 AddInlines(paragraph, bullet.Groups[2].Value, bodySize, null, UiFont);
                 return;
@@ -167,6 +183,7 @@ namespace RuApp.Controls
             Match numbered = NumberedRegex().Match(line);
             if (numbered.Success)
             {
+                paragraph.Margin = new Thickness(16, 0, 0, 8);
                 paragraph.Inlines.Add(new Run
                 {
                     Text = numbered.Groups[1].Value + ".  ",

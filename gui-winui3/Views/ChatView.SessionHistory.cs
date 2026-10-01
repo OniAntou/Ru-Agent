@@ -271,6 +271,7 @@ namespace RuApp.Views
 
                         ObservableCollection<AgentActivityItem>? activities = null;
                         List<ActivitySplitOffset>? splitOffsets = null;
+                        ReplayedRunBundle? replayBundle = null;
                         if (role == "assistant")
                         {
                             if (index == lastAssistantIndex)
@@ -298,9 +299,10 @@ namespace RuApp.Views
                                 int replayIndex = Services.ReloadActivitiesPolicy.ReplayIndexForAssistant(
                                     replayedRuns.Count, totalAssistants, assistantCount);
                                 if (replayIndex >= 0
-                                    && replayedRuns[replayIndex].Count > 0)
+                                    && replayedRuns[replayIndex].Activities.Count > 0)
                                 {
-                                    activities = new ObservableCollection<AgentActivityItem>(replayedRuns[replayIndex]);
+                                    replayBundle = replayedRuns[replayIndex];
+                                    activities = new ObservableCollection<AgentActivityItem>(replayBundle.Activities);
                                     // Register by id so live frames for a still-running
                                     // run update these rows in place instead of
                                     // appending duplicates beside them.
@@ -323,6 +325,11 @@ namespace RuApp.Views
                             ActivitySplitOffsets = splitOffsets,
                         };
                         RebuildMessageSegments(restoredMessage);
+                        if (replayBundle is not null)
+                        {
+                            ApplyReplayedTranscript(restoredMessage, replayBundle);
+                        }
+
                         restored.Add(restoredMessage);
                     }
 
@@ -395,11 +402,25 @@ namespace RuApp.Views
         /// or unreadable run keeps an empty placeholder so tail alignment holds).
         /// Best-effort: any failure yields empty rows and the text-only transcript.
         /// </summary>
-        private async Task<IReadOnlyList<IReadOnlyList<AgentActivityItem>>> LoadReplayedRunActivitiesAsync(
+        /// <summary>
+        /// One run's durable replay: its activity rows plus the narration transcript
+        /// that interleaves them. Empty when the run has nothing replayable; the
+        /// caller then renders the grouped legacy feed.
+        /// </summary>
+        private sealed record ReplayedRunBundle(
+            IReadOnlyList<AgentActivityItem> Activities,
+            IReadOnlyList<ApiService.RunTranscriptEntry> Transcript)
+        {
+            public static readonly ReplayedRunBundle Empty = new(
+                Array.AsReadOnly(Array.Empty<AgentActivityItem>()),
+                Array.AsReadOnly(Array.Empty<ApiService.RunTranscriptEntry>()));
+        }
+
+        private async Task<IReadOnlyList<ReplayedRunBundle>> LoadReplayedRunActivitiesAsync(
             string sessionId,
             CancellationToken cancellationToken)
         {
-            var empty = Array.AsReadOnly(Array.Empty<IReadOnlyList<AgentActivityItem>>());
+            var empty = Array.AsReadOnly(Array.Empty<ReplayedRunBundle>());
             if (_apiService is null || string.IsNullOrWhiteSpace(sessionId))
             {
                 return empty;
@@ -411,7 +432,7 @@ namespace RuApp.Views
                 return empty;
             }
 
-            var slots = new IReadOnlyList<AgentActivityItem>?[runs.Count];
+            var slots = new ReplayedRunBundle?[runs.Count];
             using var gate = new SemaphoreSlim(4);
             var tasks = new List<Task>(runs.Count);
             for (int index = 0; index < runs.Count; index++)
@@ -423,18 +444,20 @@ namespace RuApp.Views
                     await gate.WaitAsync(cancellationToken);
                     try
                     {
-                        var models = await _apiService.ListRunActivitiesAsync(runId, cancellationToken);
-                        slots[slot] = models is null
-                            ? Array.AsReadOnly(Array.Empty<AgentActivityItem>())
-                            : models.Select(model => new AgentActivityItem(model)).ToArray();
+                        var replay = await _apiService.ListRunActivitiesAsync(runId, cancellationToken);
+                        slots[slot] = replay is null
+                            ? ReplayedRunBundle.Empty
+                            : new ReplayedRunBundle(
+                                replay.Activities.Select(model => new AgentActivityItem(model)).ToArray(),
+                                replay.Transcript);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
-                        slots[slot] = Array.AsReadOnly(Array.Empty<AgentActivityItem>());
+                        slots[slot] = ReplayedRunBundle.Empty;
                     }
                     catch (Exception)
                     {
-                        slots[slot] = Array.AsReadOnly(Array.Empty<AgentActivityItem>());
+                        slots[slot] = ReplayedRunBundle.Empty;
                     }
                     finally
                     {
@@ -452,7 +475,32 @@ namespace RuApp.Views
                 return empty;
             }
 
-            return slots.Select(slot => slot ?? Array.AsReadOnly(Array.Empty<AgentActivityItem>())).ToArray();
+            return slots.Select(slot => slot ?? ReplayedRunBundle.Empty).ToArray();
+        }
+
+        /// <summary>
+        /// Rebuilds a reopened bubble's chronological segments from its run replay:
+        /// narration chunks become prose slices interleaved with the activity rows,
+        /// the same shape the live turn assembled while streaming. Without a
+        /// transcript the bubble keeps the grouped legacy feed.
+        /// </summary>
+        private static void ApplyReplayedTranscript(ChatMessageItem message, ReplayedRunBundle bundle)
+        {
+            if (bundle.Transcript.Count == 0 || message.AgentActivities is null)
+            {
+                return;
+            }
+
+            var built = AgentReplaySegmentBuilder.Build(message.AgentActivities, bundle.Transcript);
+            if (built is null)
+            {
+                return;
+            }
+
+            message.Content = built.Content;
+            message.Segments = built.Segments;
+            message.ActivitySplitOffsets = built.Offsets;
+            SyncSegmentErrorState(message);
         }
 
 
@@ -896,10 +944,11 @@ namespace RuApp.Views
                         };
 
                         if (placement.ReplayIndex >= 0
-                            && replayedRuns[placement.ReplayIndex].Count > 0)
+                            && replayedRuns[placement.ReplayIndex].Activities.Count > 0)
                         {
+                            var bundle = replayedRuns[placement.ReplayIndex];
                             item.AgentActivities = new ObservableCollection<AgentActivityItem>(
-                                replayedRuns[placement.ReplayIndex]);
+                                bundle.Activities);
                             // Register by id so live frames for a still-running run
                             // update these rows in place instead of appending
                             // duplicates beside them, same as the reopen path above.
@@ -907,6 +956,8 @@ namespace RuApp.Views
                             {
                                 _agentActivityById.TryAdd(replayed.ActivityId, replayed);
                             }
+
+                            ApplyReplayedTranscript(item, bundle);
                         }
 
                         opened.Add(item);

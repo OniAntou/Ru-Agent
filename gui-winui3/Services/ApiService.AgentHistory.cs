@@ -298,7 +298,7 @@ namespace RuApp.Services
             || string.Equals(status, "cancelled", StringComparison.Ordinal)
             || string.Equals(status, "interrupted", StringComparison.Ordinal);
 
-        public async Task<IReadOnlyList<AgentActivityModel>?> ListRunActivitiesAsync(string runId, CancellationToken cancellationToken)
+        public async Task<RunActivityReplay?> ListRunActivitiesAsync(string runId, CancellationToken cancellationToken)
         {
             try
             {
@@ -350,7 +350,7 @@ namespace RuApp.Services
                         wire.Todos));
                 }
 
-                return rows;
+                return new RunActivityReplay(rows, ReadTranscript(document.RootElement));
             }
             catch (Exception ex)
             {
@@ -358,6 +358,72 @@ namespace RuApp.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// One ordered replay unit from the run transcript: narration the model spoke
+        /// between tool rows. Lenient by design: a malformed entry is skipped and a
+        /// missing array means the host predates the transcript, which the caller
+        /// renders as the legacy grouped feed.
+        /// </summary>
+        public sealed record RunTranscriptEntry(long Sequence, string Kind, string? Text, string? ActivityId);
+
+        /// <summary>
+        /// A run's durable replay: its activity rows plus the narration transcript
+        /// that interleaves them. The transcript is additive: older hosts omit it
+        /// and the transcript rebuild falls back to the grouped layout.
+        /// </summary>
+        public sealed record RunActivityReplay(
+            IReadOnlyList<AgentActivityModel> Activities,
+            IReadOnlyList<RunTranscriptEntry> Transcript);
+
+        private static IReadOnlyList<RunTranscriptEntry> ReadTranscript(JsonElement root)
+        {
+            var entries = new List<RunTranscriptEntry>();
+            if (!root.TryGetProperty("transcript", out var items)
+                || items.ValueKind != JsonValueKind.Array)
+            {
+                return entries;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                long sequence = item.TryGetProperty("sequence", out var sequenceElement)
+                    && sequenceElement.ValueKind == JsonValueKind.Number
+                    && sequenceElement.TryGetInt64(out var parsed)
+                    ? parsed
+                    : 0;
+                string kind = item.TryGetProperty("kind", out var kindElement)
+                    && kindElement.ValueKind == JsonValueKind.String
+                    ? kindElement.GetString() ?? string.Empty
+                    : string.Empty;
+                string? text = item.TryGetProperty("text", out var textElement)
+                    && textElement.ValueKind == JsonValueKind.String
+                    ? textElement.GetString()
+                    : null;
+                string? activityId = item.TryGetProperty("activity_id", out var activityElement)
+                    && activityElement.ValueKind == JsonValueKind.String
+                    ? activityElement.GetString()
+                    : null;
+
+                if (string.Equals(kind, "text", StringComparison.Ordinal)
+                    && !string.IsNullOrEmpty(text))
+                {
+                    entries.Add(new RunTranscriptEntry(sequence, kind, text, null));
+                }
+                else if (string.Equals(kind, "activity", StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(activityId))
+                {
+                    entries.Add(new RunTranscriptEntry(sequence, kind, null, activityId));
+                }
+            }
+
+            return entries;
         }
     }
 }

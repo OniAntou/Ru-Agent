@@ -112,7 +112,7 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<(bool BackendAlive, bool WorkerOk, string? WorkerError)> CheckHealthDetailedAsync(CancellationToken cancellationToken = default)
+        public async Task<(bool BackendAlive, bool BackendHealthy, string? BackendError)> CheckHealthDetailedAsync(CancellationToken cancellationToken = default)
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
@@ -122,7 +122,7 @@ namespace RuApp.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     string? statusError = await TryReadStatusErrorAsync(response, timeoutCts.Token);
-                    return (BackendAlive: true, WorkerOk: false, WorkerError: statusError);
+                    return (BackendAlive: true, BackendHealthy: false, BackendError: statusError);
                 }
                 var payload = await response.Content.ReadFromJsonAsync<JsonElement>(timeoutCts.Token);
                 if (payload.TryGetProperty("status", out var status) &&
@@ -131,9 +131,9 @@ namespace RuApp.Services
                     string? message = payload.TryGetProperty("message", out var messageProp)
                         ? messageProp.GetString()
                         : null;
-                    return (BackendAlive: true, WorkerOk: false, WorkerError: string.IsNullOrWhiteSpace(message) ? null : message);
+                    return (BackendAlive: true, BackendHealthy: false, BackendError: string.IsNullOrWhiteSpace(message) ? null : message);
                 }
-                return (BackendAlive: true, WorkerOk: true, WorkerError: null);
+                return (BackendAlive: true, BackendHealthy: true, BackendError: null);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -142,14 +142,8 @@ namespace RuApp.Services
             catch (Exception ex)
             {
                 LogApiError("CheckHealthDetailedAsync", ex);
-                return (BackendAlive: false, WorkerOk: false, WorkerError: null);
+                return (BackendAlive: false, BackendHealthy: false, BackendError: null);
             }
-        }
-
-        public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync(CancellationToken cancellationToken = default)
-        {
-            var detailed = await CheckHealthDetailedAsync(cancellationToken);
-            return (detailed.WorkerOk, detailed.WorkerError);
         }
 
         private static async Task<string?> TryReadStatusErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)

@@ -6,8 +6,8 @@ namespace RuApp.Services;
 
 public sealed record HealthStatusSnapshot(
     bool BackendRunning,
-    bool WorkerOk,
-    string? WorkerError);
+    bool BackendHealthy,
+    string? BackendError);
 
 public sealed class HealthStatusService
 {
@@ -26,20 +26,20 @@ public sealed class HealthStatusService
     {
         bool backendConfigured = _backendRunning();
         bool backendRunning = false;
-        bool workerOk = false;
-        string? workerError = null;
+        bool backendHealthy = false;
+        string? backendError = null;
 
         if (backendConfigured)
         {
             var (alive, ok, error) = await _apiService.CheckHealthDetailedAsync(cancellationToken);
             backendRunning = alive;
-            workerOk = ok;
-            workerError = error;
+            backendHealthy = ok;
+            backendError = error;
         }
 
         return new HealthStatusSnapshot(
             backendRunning,
-            workerOk,
-            workerError);
+            backendHealthy,
+            backendError);
     }
 }

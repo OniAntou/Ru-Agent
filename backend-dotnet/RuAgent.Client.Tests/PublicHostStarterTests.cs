@@ -83,7 +83,7 @@ public sealed class PublicHostStarterTests : IDisposable
             healthProbe: (_, _) => Task.FromResult(File.Exists(locator.DescriptorPath)),
             startHost: (proj, bearer, _) =>
             {
-                // Ensure startHost does not attempt to start Worker/Broker directly – we check args don't contain worker
+                // Ensure startHost does not attempt to start the Broker directly; the Public Host owns that child.
                 // In our fake, we just set flag if called; real implementation would only start RuBackend.exe
                 workerStarted = bearer.Length == 64; // just marker
                 // Simulate host creates descriptor
@@ -97,7 +97,7 @@ public sealed class PublicHostStarterTests : IDisposable
         var session = await starter.GetOrStartAsync(_root);
         Assert.NotNull(session);
         Assert.True(workerStarted);
-        // No worker start via Client; only Public Host start was invoked – verified by single startHost call
+        // No broker start via Client; only Public Host start was invoked – verified by single startHost call
     }
 
     [Fact]

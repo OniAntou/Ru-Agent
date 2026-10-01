@@ -44,7 +44,7 @@ public sealed class ApiRefreshCancellationTests
     }
 
     [Fact]
-    public async Task Worker_health_requests_honor_cancellation_token()
+    public async Task Backend_health_requests_honor_cancellation_token()
     {
         using var handler = new BlockingHandler();
         var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
@@ -52,7 +52,7 @@ public sealed class ApiRefreshCancellationTests
         using var cts = new CancellationTokenSource();
 
         Task request = Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => api.CheckWorkerHealthAsync(cts.Token));
+            () => api.CheckHealthDetailedAsync(cts.Token));
 
         cts.Cancel();
         await request;

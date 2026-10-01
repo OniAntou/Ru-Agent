@@ -757,7 +757,7 @@ namespace RuApp
             {
                 _apiService.SettingsSaved -= OnSettingsSaved;
             }
-            // GUI owns Host lifetime: closing GUI should terminate the shared Host (and its Worker/Broker Job).
+            // GUI owns Host lifetime: closing GUI should terminate the shared Host (and its Broker Job).
             // Shutdown POST runs first on a single chain, then disposal, so the
             // HttpClient cannot be disposed while the shutdown request is in flight.
             if (_apiService != null)
@@ -799,7 +799,7 @@ namespace RuApp
             _providerCatalogController = null;
             await DisposeSafelyAsync("grouped catalogs", () => _groupedCatalogs?.DisposeAsync());
             _groupedCatalogs = null;
-            // The composition owns the Host process and the Worker/Broker Job, so
+            // The composition owns the Host process and the Broker Job, so
             // it is disposed last and unconditionally: a view that throws on the
             // way out must never leave those children running.
             DisposeSafely("composition", _composition.Dispose);
@@ -1005,8 +1005,8 @@ namespace RuApp
             bool backendRunning = snapshot.BackendRunning;
 
             // 2. Backend status
-            bool workerOk = snapshot.WorkerOk;
-            string? workerError = snapshot.WorkerError;
+            bool backendHealthy = snapshot.BackendHealthy;
+            string? backendError = snapshot.BackendError;
 
 
             // Overall summary text
@@ -1026,11 +1026,11 @@ namespace RuApp
                     _reconnectTimer.Stop();
                 }
 
-                if (!workerOk)
+                if (!backendHealthy)
                 {
                     StatusDot.Fill = warningBrush;
-                    StatusText.Text = backendRunning && workerError != null
-                        ? $"Backend error ({workerError})"
+                    StatusText.Text = backendRunning && backendError != null
+                        ? $"Backend error ({backendError})"
                         : "Backend starting or not ready yet";
                 }
                 else

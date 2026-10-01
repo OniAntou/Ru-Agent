@@ -25,7 +25,7 @@ public sealed class MainWindowTeardownSourceContractTests
     [Fact]
     public void The_host_composition_survives_a_view_that_throws_while_tearing_down()
     {
-        // The composition owns the Host process and its Worker/Broker Job. It used
+        // The composition owns the Host process and its Broker Job. It used
         // to sit at the end of one try block, so any view failing to dispose left
         // those children running after the GUI was gone.
         string teardown = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "DisposeWindowResourcesAsync");

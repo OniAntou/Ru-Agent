@@ -86,7 +86,7 @@ the same twelve tools in the single Agent profile: `read`, `list`, `grep`, `glob
 `skill` takes `name` and loads one SKILL.md body),
 bounded `truncated`),
 `write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
-`recovery_too_large` beyond 1 MiB,
+`recovery_too_large` beyond 4 MiB,
 `recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
 the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` allows

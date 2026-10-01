@@ -98,7 +98,7 @@ session task list (at most 64 rows of `content` plus a `status` of `pending`,
 `glob` takes `pattern`
 (required) plus optional `path` and `max_results` (1–64, default 64) and returns
 stable sorted relative paths without content access; `grep` takes `query`
-(1–512 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
+(1–1024 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
 (default false), `is_regex` (default false), `max_results` (1–64, default
 64) and `offset` (0–10000, default 0) for paging the ordinal results,
 and returns bounded match locations without raw file content; `write`

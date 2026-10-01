@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **feat(gui):** **Feed: giờ giấc + copy terminal.** Mỗi dòng feed hiện giờ wall-clock từ event durable để đối chiếu với log. Dòng terminal có nút copy output của riêng nó.
+- **feat(gui)**: **Feed: giờ giấc + copy terminal.** Mỗi dòng feed hiện giờ wall-clock từ event durable để đối chiếu với log. Dòng terminal có nút copy output của riêng nó.
 - **feat(gui)**: **Code/table copy, quote bar, image domain.** Code block có header ngôn ngữ + nút copy, nền riêng; bảng có nút copy TSV và cell select được; quote có gạch accent; ảnh remote hiện kèm domain, không tự tải.
 - **fix(web)**: **Kết quả search có snippet thật.** HTML engines trước đây chỉ trích title + URL nên snippet toàn chữ giả "Search result", model mù phải fetch từng link. Nay trích snippet theo từng engine (Bing `<p>`, DuckDuckGo `result__snippet`, Google `span.st`), thiếu mới rớt về placeholder.
 - **feat(gui)**: **Nhịp message kiểu DeepSeek.** Bong bóng user thành lozenge không viền, chữ thoáng hơn (line-height theo cỡ chữ ×1.7, đoạn cách 12px).
@@ -214,6 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(gui)**: **Dropdown provider bỏ dải chữ cái A–Z.** Dải 26 chữ cạnh tranh với ô search mà không giúp tìm nhanh hơn; list nay chỉ còn search + cuộn (virtualized sẵn), lấy lại 28px padding phải và 36px chiều cao. Xoá `JumpTargets`/`JumpLetterFor` khỏi `ProviderSetupGuidance` cùng 7 contract tests pin strip, thay bằng 1 test pin thiết kế không-strip.
 
 ### Fixed
+- **fix(broker)**: **Hint sửa lỗi khi file IO thất bại.** `is_directory`, `file_not_found` và `file_exists` trước đây chỉ trả mã trơ khiến model không phân biệt được hướng sửa và cả run chết theo; summary của receipt nay nêu cách sửa đúng như hint edit-match đã làm, mã stable giữ nguyên và không có nội dung file nào đi qua wire.
+
+- **fix(rpc)**: **Cờ hoàn tất writer được publish an toàn.** `_writerCompleted` của `RpcBridgeServer` đổi thành `volatile` vì reader thread ghi lúc đóng channel còn pump SSE đọc trong `TryPublish` — thiếu visibility thì pump có thể trễ một lần đóng sạch và bắn terminate fail-closed nhầm.
+
 - **fix(cli)**: **`agent chat --json` giữ stdout thuần NDJSON — human text và prompt không còn lẫn vào luồng máy đọc.** Human text của slash commands và mọi notice chuyển sang stderr; slash tương tác dưới `--json` trả bounded `interactive_required` thay vì mở prompt; một approval dưới `--json` kết thúc chat bằng notice bounded trỏ `ru agent approve <run-id> <approval-id>` (exit 0, run giữ `waiting_approval` server-side, không auto deny). Consumer nên bỏ qua dòng trống phân cách giữa các lượt.
 
 - **fix(rpc)**: **Subscription pump chết giữa dòng không còn treo consumer SDK.** Trước đây `RpcRunBridge` khi hết retry (hoặc gặp lỗi không phải transport) chỉ ghi stderr, còn `Run.events()` của SDK chờ mãi vì không có tín hiệu kết thúc. Nay bridge phát notification `run.detached` `{subscription_id, reason}` — `stream_interrupted` khi retry cạn/lỗi SSE, `subscription_ended` khi stream kết thúc sạch mà run chưa xác nhận terminal; detach/shutdown chủ động và backpressure không phát (đã có `bridge.shutdown`). `NotificationNames`, handshake và fixture pin danh sách mới; SDK lọc đúng subscription của mình và ném `BridgeTransportError` bounded thay vì treo.

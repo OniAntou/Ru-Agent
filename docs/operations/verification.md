@@ -486,7 +486,7 @@ unit tests replace only their external process boundary and never open RuApp.
 
 These deterministic checks do not establish the optimization plan's missing
 before/after work counters, allocation measurements or median/p95 benchmarks.
-Performance acceptance remains open in TODO, independently of bug-fix tests.
+Performance acceptance remains open in the optimization plan's SDD ledger (`scripts/measure_resources.ps1`), independently of bug-fix tests.
 
 ### Provider/lifecycle review remediation (2026-09-01)
 

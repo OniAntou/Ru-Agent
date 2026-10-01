@@ -235,7 +235,7 @@ public sealed class AgentToolDefinitionCatalogTests
     {
         var skill = AgentToolDefinitionCatalog.Find("skill", "1.0.0")!;
         Assert.Equal(AgentToolScopes.SystemRead, skill.Scope);
-        Assert.True(skill.InputSchema["required"]!.AsArray().Any(item => item!.GetValue<string>() == "name"));
+        Assert.Contains(skill.InputSchema["required"]!.AsArray(), item => item!.GetValue<string>() == "name");
         Assert.Contains("allowed-tools", skill.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
     }

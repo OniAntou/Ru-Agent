@@ -578,6 +578,9 @@ public sealed partial class AgentV1Service
                 ("files.read", _, _, _, _) => "read",
                 ("files.write", _, _, _, _) => "write",
                 ("files.edit", _, _, _, _) => "edit",
+                // Legacy persisted-approval replay only: proposals persisted by
+                // builds that still advertised apply_patch must stay approvable
+                // after an upgrade. Not model-reachable.
                 ("files.apply_patch", _, _, _, _) => "patch",
                 ("files.delete", _, _, _, _) => "delete",
                 ("files.restore", _, _, _, _) => "restore",
@@ -595,6 +598,8 @@ public sealed partial class AgentV1Service
 
                 networkIntent = network.ValueKind == JsonValueKind.True ? "declared" : "none";
             }
+            // Legacy field name kept for replay of proposals persisted by older
+            // builds; current proposals declare network_intent.
             else if (arguments.TryGetProperty("network", out var legacyNetwork))
             {
                 if (legacyNetwork.ValueKind is not (JsonValueKind.True or JsonValueKind.False))

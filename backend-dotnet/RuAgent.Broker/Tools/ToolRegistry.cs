@@ -7,6 +7,8 @@ public sealed class ToolRegistry
 {
     private static readonly Regex IdPattern = new("^[a-z][a-z0-9_]*(?:\\.[a-z0-9][a-z0-9_-]*)*$", RegexOptions.Compiled);
     private static readonly Regex VersionPattern = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled);
+    // "connector" is reserved for the MCP bridge used by RuAgent.Broker.Tests;
+    // no production adapter registers under it yet.
     private static readonly IReadOnlySet<string> TrustedAdapters = new HashSet<string>(
         ["builtin", "desktop", "terminal", "web", "connector"],
         StringComparer.Ordinal);

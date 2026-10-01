@@ -6,6 +6,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+ADVISORY_AUDIT_SHORT_CIRCUITS = (
+    "dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0",
+    "npm audit --prefix sdk/ru-agent --omit=dev || exit 0",
+)
+
 
 def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -26,15 +31,25 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
 
 
 def test_ci_never_hides_findings_behind_permanent_escapes() -> None:
-    """verification.md: ruff and pip check findings are never suppressed.
+    """verification.md: build and test gates are never suppressed.
 
     A gate that can be marked non-blocking (or short-circuited to success) stops
-    being a gate, so the workflow must not carry those escapes at all.
+    being a gate. The two advisory dependency audits are the only permitted
+    short-circuits: they are matched by their exact command line, and any other
+    ``|| true`` or ``|| exit 0`` anywhere in the workflow fails this test.
     """
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "continue-on-error" not in workflow
-    assert "|| true" not in workflow
     assert "if: false" not in workflow
+
+    escapes = sorted(
+        line.strip().removeprefix("run: ")
+        for line in workflow.splitlines()
+        if "|| true" in line or "|| exit 0" in line
+    )
+    assert escapes == sorted(ADVISORY_AUDIT_SHORT_CIRCUITS), (
+        f"only the two advisory audit steps may short-circuit; found {escapes!r}"
+    )
 
 
 def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:

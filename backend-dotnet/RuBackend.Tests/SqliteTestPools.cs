@@ -12,21 +12,37 @@ namespace RuBackend.Tests;
 /// </summary>
 internal static class SqliteTestPools
 {
-    public static void ClearHarnessDatabase(string databasePath)
+    /// <summary>
+    /// Clears the pool for <paramref name="databasePath"/>. Returns <see langword="true"/>
+    /// when the pool was cleared, <see langword="false"/> when there was no file or the
+    /// attempt failed. This runs from teardown, so a failure is logged and swallowed
+    /// rather than thrown over the test result it runs after.
+    /// </summary>
+    public static bool ClearHarnessDatabase(string databasePath)
     {
         if (!File.Exists(databasePath))
         {
-            return;
+            return false;
         }
 
-        // Opening through HarnessSqliteOptions -- the single production construction
-        // path -- yields a handle whose pool key is exactly the one the backend
-        // stores used, with no connection-string copy here that could drift.
-        var connection = new HarnessSqliteOptions(databasePath)
-            .OpenConnectionAsync(CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
-        connection.Dispose();
-        SqliteConnection.ClearPool(connection);
+        try
+        {
+            // Opening through HarnessSqliteOptions -- the single production construction
+            // path -- yields a handle whose pool key is exactly the one the backend
+            // stores used, with no connection-string copy here that could drift.
+            var connection = new HarnessSqliteOptions(databasePath)
+                .OpenConnectionAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            connection.Dispose();
+            SqliteConnection.ClearPool(connection);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                $"SqliteTestPools: could not clear '{databasePath}': {exception.GetType().Name}: {exception.Message}");
+            return false;
+        }
     }
 }

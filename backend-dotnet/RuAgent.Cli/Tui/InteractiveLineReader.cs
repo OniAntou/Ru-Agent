@@ -260,7 +260,8 @@ public sealed class InteractiveLineReader
     /// Flexible across single-line and multiline inputs without rigid wireframe boxes or redundant labels.
     /// </summary>
     /// <summary>
-    /// Formats the single prompt row with brand chevron, text, and right-aligned timestamp within an elevated card.
+    /// Formats the prompt row of the submit echo: a blue left border (OpenCode's user block),
+    /// the elevated panel background, the prompt text and the right-aligned timestamp.
     /// </summary>
     public static string BuildPromptRow(string line, string timestamp, int width)
     {
@@ -275,50 +276,74 @@ public sealed class InteractiveLineReader
             return $"> {line} · {timestamp}";
         }
 
-        const string margin = " ";
-        var cardWidth = Math.Max(18, w - margin.Length);
-        var innerWidth = cardWidth - 2; // 1 space padding left, 1 right
-
-        var brandCode = TuiPalette.Bold + TuiPalette.Code(TuiToken.Brand);
-        var textCode = TuiPalette.Bold;
+        var innerWidth = Math.Max(16, w - 1); // cells after the border glyph
+        var textCode = TuiPalette.Code(TuiToken.Bright);
         var metaCode = TuiPalette.Code(TuiToken.Meta);
         var reset = TuiPalette.Reset;
 
         const int prefixWidth = 2;
-        var timeStr = timestamp;
-        var timeWidth = timeStr.Length;
+        var timeWidth = TuiText.VisibleWidth(timestamp);
         var textWidth = TuiText.VisibleWidth(line);
+        var shown = line;
+        if (prefixWidth + textWidth + timeWidth + 3 > innerWidth)
+        {
+            shown = TuiText.Truncate(line, Math.Max(4, innerWidth - prefixWidth - timeWidth - 3));
+        }
 
-        if (prefixWidth + textWidth + 2 + timeWidth <= innerWidth)
+        var gap = Math.Max(1, innerWidth - prefixWidth - TuiText.VisibleWidth(shown) - timeWidth - 1);
+        return TuiPalette.Paint("▌", TuiToken.Brand)
+            + bg
+            + "  "
+            + textCode + shown + reset + bg
+            + new string(' ', gap)
+            + metaCode + timestamp + reset + bg
+            + " "
+            + reset;
+    }
+
+    /// <summary>
+    /// Formats a continuation row of a multiline submit echo behind the same blue border.
+    /// </summary>
+    public static string BuildContinuationEcho(string text, int width)
+    {
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+
+        if (!hasColor)
         {
-            var gap = Math.Max(1, innerWidth - (prefixWidth + textWidth + timeWidth));
-            return margin
-                + bg
-                + " "
-                + brandCode + ">" + reset + bg
-                + " "
-                + textCode + line + reset + bg
-                + new string(' ', gap)
-                + metaCode + timeStr + reset + bg
-                + " "
-                + reset;
+            return "  " + text;
         }
-        else
+
+        var innerWidth = Math.Max(16, w - 1);
+        var available = Math.Max(1, innerWidth - 3);
+        var shown = TuiText.VisibleWidth(text) > available ? TuiText.Truncate(text, available) : text;
+        var pad = Math.Max(0, innerWidth - 3 - TuiText.VisibleWidth(shown));
+        return TuiPalette.Paint("▌", TuiToken.Brand)
+            + bg
+            + "  "
+            + TuiPalette.Code(TuiToken.Bright) + shown + TuiPalette.Reset + bg
+            + new string(' ', pad)
+            + " "
+            + TuiPalette.Reset;
+    }
+
+    /// <summary>Blank padding row of the submit echo: border glyph plus panel background.</summary>
+    public static string BuildEchoPadRow(int width)
+    {
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+        if (!hasColor)
         {
-            var availableForText = Math.Max(4, innerWidth - prefixWidth - timeWidth - 2);
-            var shown = TuiText.Truncate(line, availableForText);
-            var gap = Math.Max(1, innerWidth - (prefixWidth + TuiText.VisibleWidth(shown) + timeWidth));
-            return margin
-                + bg
-                + " "
-                + brandCode + ">" + reset + bg
-                + " "
-                + textCode + shown + reset + bg
-                + new string(' ', gap)
-                + metaCode + timeStr + reset + bg
-                + " "
-                + reset;
+            return string.Empty;
         }
+
+        return TuiPalette.Paint("▌", TuiToken.Brand) + bg + new string(' ', Math.Max(0, w - 1)) + TuiPalette.Reset;
     }
 
     /// <summary>
@@ -359,12 +384,8 @@ public sealed class InteractiveLineReader
             return string.Join("\n", monoLines);
         }
 
-        // Modern elevated container card with top and bottom padding
-        const string margin = " ";
-        var cardWidth = Math.Max(18, w - margin.Length);
-        var padRow = margin + bg + new string(' ', cardWidth) + TuiPalette.Reset;
-
-        var lines = new List<string> { padRow };
+        // OpenCode user block: padded panel rows around the bordered prompt rows.
+        var lines = new List<string> { BuildEchoPadRow(w) };
         for (var i = 0; i < rawLines.Length; i++)
         {
             var line = rawLines[i];
@@ -377,43 +398,9 @@ public sealed class InteractiveLineReader
                 lines.Add(BuildContinuationEcho(line, w));
             }
         }
-        lines.Add(padRow);
+        lines.Add(BuildEchoPadRow(w));
 
         return string.Join("\n", lines);
-    }
-
-    /// <summary>
-    /// Formats a continuation row for a multiline prompt card with the elevated dark background.
-    /// </summary>
-    public static string BuildContinuationEcho(string text, int width)
-    {
-        var w = width > 0 ? width : TuiViewport.Width();
-        w = Math.Clamp(w, 20, 1000);
-
-        var bg = TuiPalette.SurfaceBgCode();
-        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
-
-        if (!hasColor)
-        {
-            return "  " + text;
-        }
-
-        const string margin = " ";
-        var cardWidth = Math.Max(18, w - margin.Length);
-        var innerWidth = cardWidth - 2;
-        const int indentWidth = 2;
-        var textWidth = TuiText.VisibleWidth(text);
-        var available = Math.Max(1, innerWidth - indentWidth);
-        var shown = textWidth > available ? TuiText.Truncate(text, available) : text;
-        var pad = Math.Max(0, innerWidth - indentWidth - TuiText.VisibleWidth(shown));
-
-        return margin
-            + bg
-            + "   "
-            + TuiPalette.Bold + shown + TuiPalette.Reset + bg
-            + new string(' ', pad)
-            + " "
-            + TuiPalette.Reset;
     }
 
     /// <summary>
@@ -428,9 +415,7 @@ public sealed class InteractiveLineReader
         }
 
         var bg = TuiPalette.SurfaceBgCode();
-        if (string.IsNullOrEmpty(bg)
-            || (!line.Contains(bg, StringComparison.Ordinal)
-                && !line.Contains("\u001b[48;5;236m", StringComparison.Ordinal)))
+        if (string.IsNullOrEmpty(bg) || !line.Contains(bg, StringComparison.Ordinal))
         {
             return TuiText.Truncate(line, newWidth);
         }
@@ -438,54 +423,43 @@ public sealed class InteractiveLineReader
         var stripped = TuiText.Strip(line);
         var trimmed = stripped.Trim();
 
-        // Check if this is a blank padding row: pure spaces inside container
-        if (trimmed.Length == 0)
+        // Blank padding row: the border glyph with no content behind it.
+        if (trimmed is "" or "▌")
         {
-            const string margin = " ";
-            var cardWidth = Math.Max(18, newWidth - margin.Length);
-            return margin + bg + new string(' ', cardWidth) + TuiPalette.Reset;
+            return BuildEchoPadRow(newWidth);
         }
 
-        // Check if this is a primary prompt row: starts with '>'
-        if (trimmed.StartsWith('>') && trimmed.Length >= 2 && trimmed[1] == ' ')
+        // Prompt and continuation rows both start with the border glyph; only the first
+        // row of the block carries the trailing timestamp.
+        if (trimmed.StartsWith('▌'))
         {
-            var content = trimmed[2..].Trim();
-            string time;
-            string prompt;
-
-            if (content.Length == 5
-                && content[2] == ':'
-                && char.IsDigit(content[0])
-                && char.IsDigit(content[1])
-                && char.IsDigit(content[3])
-                && char.IsDigit(content[4]))
+            var body = trimmed[1..].Trim();
+            if (body.Length == 0)
             {
-                time = content;
-                prompt = string.Empty;
-            }
-            else if (content.Length >= 6
-                && content[^3] == ':'
-                && char.IsDigit(content[^1])
-                && char.IsDigit(content[^2])
-                && char.IsDigit(content[^4])
-                && char.IsDigit(content[^5]))
-            {
-                time = content[^5..];
-                prompt = content[..^5].Trim();
-            }
-            else
-            {
-                time = DateTime.Now.ToString("HH:mm");
-                prompt = content;
+                return BuildEchoPadRow(newWidth);
             }
 
-            return BuildPromptRow(prompt, time, newWidth);
-        }
+            if (body.Length == 5
+                && body[2] == ':'
+                && char.IsDigit(body[0])
+                && char.IsDigit(body[1])
+                && char.IsDigit(body[3])
+                && char.IsDigit(body[4]))
+            {
+                return BuildPromptRow(string.Empty, body, newWidth);
+            }
 
-        // Check if this is a continuation multiline row: leading spaces inside container
-        if (stripped.StartsWith("   ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(trimmed))
-        {
-            return BuildContinuationEcho(trimmed, newWidth);
+            if (body.Length >= 6
+                && body[^3] == ':'
+                && char.IsDigit(body[^1])
+                && char.IsDigit(body[^2])
+                && char.IsDigit(body[^4])
+                && char.IsDigit(body[^5]))
+            {
+                return BuildPromptRow(body[..^5].Trim(), body[^5..], newWidth);
+            }
+
+            return BuildContinuationEcho(body, newWidth);
         }
 
         return TuiText.Truncate(line, newWidth);

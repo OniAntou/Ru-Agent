@@ -662,7 +662,7 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_FormatsWithBrandChevronAndTimestamp()
+    public void InteractiveLineReader_BuildSubmitEcho_FormatsWithBrandBorderAndTimestamp()
     {
         TuiPalette.Level = TuiColorLevel.TrueColor;
         try
@@ -670,14 +670,14 @@ public sealed class TuiInteractiveTests
             var echo = InteractiveLineReader.BuildSubmitEcho("sửa lỗi busy", "21:35");
 
             var stripped = TuiText.Strip(echo);
-            Assert.Contains("> ", stripped, StringComparison.Ordinal);
+            Assert.Contains("▌", stripped, StringComparison.Ordinal);
             Assert.Contains("sửa lỗi busy", stripped, StringComparison.Ordinal);
             Assert.Contains("21:35", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("> ", stripped, StringComparison.Ordinal);
             Assert.DoesNotContain("You", stripped, StringComparison.Ordinal);
             Assert.DoesNotContain("╭", stripped, StringComparison.Ordinal);
             Assert.DoesNotContain("╰", stripped, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.Code(TuiToken.Brand), echo, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.Bold, echo, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.Code(TuiToken.Meta), echo, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
 
@@ -745,7 +745,8 @@ public sealed class TuiInteractiveTests
             Assert.All(resizedLines, l => Assert.Equal(142, TuiText.VisibleWidth(l)));
 
             var stripped = TuiText.Strip(resizedLines[1]);
-            Assert.Contains("> Hello", stripped, StringComparison.Ordinal);
+            Assert.Contains("▌", stripped, StringComparison.Ordinal);
+            Assert.Contains("Hello", stripped, StringComparison.Ordinal);
             Assert.Contains("22:26", stripped, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.SurfaceBgCode(), resizedLines[1], StringComparison.Ordinal);
         }

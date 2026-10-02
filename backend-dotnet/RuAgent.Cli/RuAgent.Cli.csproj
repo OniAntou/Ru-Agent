@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Windows-targeted: image attachments decode and resize through GDI+
+         (System.Drawing.Common), exactly like the WinUI surface. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -9,6 +11,9 @@
     <ProjectReference Include="..\RuAgent.Client\RuAgent.Client.csproj" />
     <ProjectReference Include="..\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
   </ItemGroup>
   <!-- Publish Properties -->
   <PropertyGroup>

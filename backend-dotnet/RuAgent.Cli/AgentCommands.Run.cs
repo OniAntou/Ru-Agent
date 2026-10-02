@@ -14,11 +14,32 @@ public sealed partial class AgentCommands
 {
     public async Task<int> RunAsync(RunCommand cmd, CancellationToken cancellationToken)
     {
+        IReadOnlyList<string>? imagePayloads = null;
+        if (cmd.Images is { Count: > 0 })
+        {
+            var payloads = new List<string>(cmd.Images.Count);
+            foreach (var image in cmd.Images)
+            {
+                var (attachment, error) = await Images.CliImageFiles
+                    .LoadAsync(image, cmd.WorkspacePath, cancellationToken)
+                    .ConfigureAwait(false);
+                if (attachment is null)
+                {
+                    await _err.WriteLineAsync(error).ConfigureAwait(false);
+                    return 1;
+                }
+
+                payloads.Add(attachment.ToDataUrl());
+            }
+
+            imagePayloads = payloads;
+        }
+
         RunStartOutcome outcome;
         try
         {
             outcome = await _runStarter.StartAsync(
-                new RunStartRequest(cmd.WorkspacePath, cmd.Prompt, cmd.Preset, cmd.SessionId, cmd.TrustWorkspace, cmd.ConfirmFullAccess, cmd.Json),
+                new RunStartRequest(cmd.WorkspacePath, cmd.Prompt, cmd.Preset, cmd.SessionId, cmd.TrustWorkspace, cmd.ConfirmFullAccess, cmd.Json, imagePayloads),
                 async sessionId =>
                 {
                     // --json owns stdout: human-facing ids go to stderr so the NDJSON

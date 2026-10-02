@@ -44,7 +44,8 @@ public sealed record RunCommand(
     string Preset,
     bool Json,
     bool TrustWorkspace = false,
-    bool ConfirmFullAccess = false) : AgentCommand(CliCommandKind.Run, Json);
+    bool ConfirmFullAccess = false,
+    IReadOnlyList<string>? Images = null) : AgentCommand(CliCommandKind.Run, Json);
 
 public sealed record AttachCommand(
     string RunId,
@@ -130,7 +131,8 @@ public sealed record ChatCommand(
     bool Json,
     bool Classic = false,
     bool TrustWorkspace = false,
-    bool ConfirmFullAccess = false) : AgentCommand(CliCommandKind.Chat, Json);
+    bool ConfirmFullAccess = false,
+    IReadOnlyList<string>? Images = null) : AgentCommand(CliCommandKind.Chat, Json);
 
 public sealed record SessionListCommand(
     bool Json) : AgentCommand(CliCommandKind.SessionList, Json);

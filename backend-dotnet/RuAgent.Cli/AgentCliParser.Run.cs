@@ -17,10 +17,22 @@ public static partial class AgentCliParser
         bool confirmFullAccess = false;
         bool confirmFullAccessSeen = false;
         string? prompt = null;
+        var images = new List<string>();
 
         for (int i = 2; i < args.Length; i++)
         {
             var token = args[i];
+            if (token == "--image")
+            {
+                var error = TryReadImageOption(args, ref i, images);
+                if (error is not null)
+                {
+                    return error;
+                }
+
+                continue;
+            }
+
             if (token == "--workspace")
             {
                 if (workspaceSeen)
@@ -129,7 +141,39 @@ public static partial class AgentCliParser
         if (json && !trustWorkspace && !confirmFullAccess)
             return Fail("json_requires_explicit_flags", "--json requires --trust-workspace or --confirm-full-access.");
 
-        return Success(new RunCommand(workspace, prompt, sessionId, preset, json, trustWorkspace, confirmFullAccess));
+        return Success(new RunCommand(workspace, prompt, sessionId, preset, json, trustWorkspace, confirmFullAccess, images.Count == 0 ? null : images));
+    }
+
+    /// <summary>
+    /// Shared <c>--image</c> handling for run/chat: repeatable up to the attachment policy
+    /// cap, value checked like the other path options.
+    /// </summary>
+    private static AgentCliParseResult? TryReadImageOption(string[] args, ref int i, List<string> images)
+    {
+        if (i + 1 >= args.Length)
+        {
+            return Fail("missing_value", "Missing value for --image.");
+        }
+
+        var val = args[i + 1];
+        if (val.StartsWith("-", StringComparison.Ordinal))
+        {
+            return Fail("missing_value", "Missing value for --image.");
+        }
+
+        if (val.Length == 0 || val.Length > MaxFilePathLength || val.Contains('\0'))
+        {
+            return Fail("invalid_image_path", $"Image path length must be 1..{MaxFilePathLength}.");
+        }
+
+        if (images.Count >= Images.CliImagePolicy.MaxImageCount)
+        {
+            return Fail("too_many_images", Images.CliImagePolicy.TooManyImagesStatus);
+        }
+
+        images.Add(val);
+        i++;
+        return null;
     }
 
     private static AgentCliParseResult ParseChat(string[] args, int startIndex)
@@ -148,10 +192,22 @@ public static partial class AgentCliParser
         bool confirmFullAccessSeen = false;
         bool classic = false;
         bool classicSeen = false;
+        var images = new List<string>();
 
         for (int i = startIndex; i < args.Length; i++)
         {
             var token = args[i];
+            if (token == "--image")
+            {
+                var error = TryReadImageOption(args, ref i, images);
+                if (error is not null)
+                {
+                    return error;
+                }
+
+                continue;
+            }
+
             if (token == "--workspace")
             {
                 if (workspaceSeen)
@@ -255,6 +311,6 @@ public static partial class AgentCliParser
         if (json && !trustWorkspace && !confirmFullAccess)
             return Fail("json_requires_explicit_flags", "--json requires --trust-workspace or --confirm-full-access.");
 
-        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic, trustWorkspace, confirmFullAccess));
+        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic, trustWorkspace, confirmFullAccess, images.Count == 0 ? null : images));
     }
 }

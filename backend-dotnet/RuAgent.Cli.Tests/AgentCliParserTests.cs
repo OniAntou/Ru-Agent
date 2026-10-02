@@ -23,6 +23,53 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
+    public void ParseRun_CollectsRepeatableImages()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--image", "a.png", "--image", "\"b c.jpg\"", "go" };
+        var res = AgentCliParser.Parse(args);
+
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.Equal(new[] { "a.png", "\"b c.jpg\"" }, cmd.Images);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsMoreThanFourImages()
+    {
+        var args = new[]
+        {
+            "agent", "run", "--workspace", ValidWorkspace,
+            "--image", "1.png", "--image", "2.png", "--image", "3.png", "--image", "4.png", "--image", "5.png",
+            "go",
+        };
+        var res = AgentCliParser.Parse(args);
+
+        Assert.False(res.Success);
+        Assert.Equal("too_many_images", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsImageWithoutValue()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--image" };
+        var res = AgentCliParser.Parse(args);
+
+        Assert.False(res.Success);
+        Assert.Equal("missing_value", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_CollectsRepeatableImages()
+    {
+        var args = new[] { "agent", "chat", "--workspace", ValidWorkspace, "--image", "shot.png" };
+        var res = AgentCliParser.Parse(args);
+
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<ChatCommand>(res.Command);
+        Assert.Equal(new[] { "shot.png" }, cmd.Images);
+    }
+
+    [Fact]
     public void ParseRun_SucceedsWithOptionalPresetAndJsonAndSession()
     {
         var sessionId = new string('c', 32); // 32 hex lower, valid loose

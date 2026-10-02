@@ -394,7 +394,8 @@ public sealed record RunStartRequest(
     string? SessionId,
     bool TrustWorkspace,
     bool ConfirmFullAccess,
-    bool Json);
+    bool Json,
+    IReadOnlyList<string>? ImageAttachments = null);
 
 public sealed record RunStartOutcome(
     string RunId,
@@ -536,7 +537,8 @@ public sealed class RunStarter
             request.Prompt,
             request.Preset,
             presetUpdate.Version,
-            Guid.NewGuid().ToString("N"));
+            Guid.NewGuid().ToString("N"),
+            request.ImageAttachments);
 
         CreateAgentRunResponse response;
         try

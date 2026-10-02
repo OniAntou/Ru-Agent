@@ -1985,243 +1985,21 @@ public sealed partial class AgentCommands
             }
         }
 
-        try
+        // The non-slash branch of the classic key loop, moved into the shape the
+        // dispatcher expects. 'continue' became 'return' (both resume the key loop),
+        // and dispatcherExitCode carries the paths that used to return from ChatAsync.
+        int? dispatcherExitCode = null;
+
+        async Task HandlePromptLineAsync(string promptLine, CancellationToken ct)
         {
-            while (!cancellationToken.IsCancellationRequested)
-        {
-            // A prompt typed while the previous turn streamed is sent without a second Enter.
-            // In the AltBuffer frame the composer is the persistent footer, so idle input
-            // comes from the type-ahead loop; the sequential reader only serves fallbacks.
-            string? line;
-            if (queuedLine is not null)
-            {
-                line = queuedLine;
-            }
-            else if (altBufferActive && typeAheadLive)
-            {
-                line = await ReadAltIdleLineAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
-            }
-
-            queuedLine = null;
-            if (line is null) break;
-            line = line.Trim().Trim('"', '\'');
-            if (string.IsNullOrEmpty(line) && pendingImages.Count == 0 && pendingTexts.Count == 0)
-            {
-                continue;
-            }
-
-            // A quoted path dropped onto the terminal arrives as the whole line; a file
-            // that exists on disk attaches instead of being sent as prose.
-            if (!string.IsNullOrEmpty(line) && IsDroppedAttachmentPath(line))
-            {
-                await AttachFileAsync(line).ConfigureAwait(false);
-                continue;
-            }
-
-            if (altBufferActive && sticky.Active)
-            {
-                // Idle output (slash listings, command panels) flows into the scrolling
-                // transcript region; the pinned header and the footer must not move. The
-                // next footer paint (each read) restores the composer row afterwards.
-                sticky.RestoreTranscriptCursor();
-            }
-
-            if (line.StartsWith("/", StringComparison.Ordinal))
-            {
-                if (landingScreenVisible && !line.StartsWith("/clear", StringComparison.OrdinalIgnoreCase))
-                {
-                    landingScreenVisible = false;
-                }
-                if (!cmd.Json)
-                {
-                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
-                }
-                var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-                var slashCmd = parts[0].ToLowerInvariant();
-                var arg = parts.Length > 1 ? parts[1].Trim() : null;
-
-                if (slashCmd is "/exit" or "/quit")
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
-                    await humanOut.FlushAsync().ConfigureAwait(false);
-                    return 0;
-                }
-                if (slashCmd is "/history")
-                {
-                    var history = lineReader.History;
-                    if (history.Count == 0)
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
-                        for (int i = 0; i < history.Count; i++)
-                        {
-                            await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
-                        }
-                    }
-                    await humanOut.FlushAsync().ConfigureAwait(false);
-                    continue;
-                }
-                if (slashCmd is "/clear")
-                {
-                    turn = 0;
-                    landingScreenVisible = true;
-                    lastTotalTokens = null;
-                    usage.BeginTurn();
-                    if (altBufferActive)
-                    {
-                        // Reset in place: region off, alt screen wiped, header repainted by
-                        // the landing render, footer restored by ApplyFooterLayout.
-                        sticky.Exit();
-                        sessionRenderer.Status.InFooter = false;
-                        sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
-                    }
-                    else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
-                    {
-                        try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
-                    }
-                    RenderLandingScreen();
-                    if (altBufferActive && typeAheadLive)
-                    {
-                        ApplyFooterLayout(repaint: true);
-                    }
-                    await humanOut.FlushAsync().ConfigureAwait(false);
-                    continue;
-                }
-                if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
-                {
-                    await UpdateLegendAsync().ConfigureAwait(false);
-                    continue;
-                }
-                if (slashCmd is "/rewind")
-                {
-                    if (arg is null || !int.TryParse(arg, out var toIndex))
-                    {
-                        await WriteAltLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
-                        continue;
-                    }
-                    try
-                    {
-                        await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
-                    }
-                    catch (AgentApiException ex)
-                    {
-                        await WriteAltLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        await WriteAltLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
-                    }
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    continue;
-                }
-                if (slashCmd is "/attach")
-                {
-                    if (string.IsNullOrWhiteSpace(arg))
-                    {
-                        await WriteAltLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
-                        continue;
-                    }
-
-                    await AttachFileAsync(arg).ConfigureAwait(false);
-                    continue;
-                }
-                if (slashCmd is "/attachments")
-                {
-                    if (pendingImages.Count == 0 && pendingTexts.Count == 0)
-                    {
-                        await WriteAltLineAsync(humanOut, "no attachments").ConfigureAwait(false);
-                        continue;
-                    }
-
-                    for (var i = 0; i < pendingImages.Count; i++)
-                    {
-                        await WriteAltLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
-                    }
-
-                    for (var i = 0; i < pendingTexts.Count; i++)
-                    {
-                        await WriteAltLineAsync(
-                            humanOut,
-                            $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
-                if (slashCmd is "/detach")
-                {
-                    var total = pendingImages.Count + pendingTexts.Count;
-                    if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
-                    {
-                        foreach (var attachment in pendingImages)
-                        {
-                            DeleteTempFile(attachment);
-                        }
-
-                        pendingImages.Clear();
-                        pendingTexts.Clear();
-                        RefreshAttachmentLabels();
-                        await WriteAltLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
-                    {
-                        await WriteAltLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
-                        continue;
-                    }
-
-                    if (index <= pendingImages.Count)
-                    {
-                        var removedImage = pendingImages[index - 1];
-                        pendingImages.RemoveAt(index - 1);
-                        DeleteTempFile(removedImage);
-                        await WriteAltLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var textIndex = index - pendingImages.Count - 1;
-                        var removedText = pendingTexts[textIndex];
-                        pendingTexts.RemoveAt(textIndex);
-                        await WriteAltLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
-                    }
-
-                    RefreshAttachmentLabels();
-                    continue;
-                }
-                if (slashCmd is "/continue")
-                {
-                    try
-                    {
-                        await ContinueParkedRunAsync(arg).ConfigureAwait(false);
-                    }
-                    catch (RunWaitingApprovalException)
-                    {
-                        // Same escape as a fresh turn: an approval under --json ends the
-                        // chat rather than reading a prompt it must not answer.
-                        return 0;
-                    }
-                    continue;
-                }
-                await WriteAltLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
-                continue;
-            }
-
             // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
             // that literal when a parked run is known: otherwise it is an ordinary prompt.
             if (parkedRunId is not null
-                && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase))
+                && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase))
             {
                 if (!cmd.Json)
                 {
-                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(promptLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
                 }
                 try
                 {
@@ -2229,9 +2007,10 @@ public sealed partial class AgentCommands
                 }
                 catch (RunWaitingApprovalException)
                 {
-                    return 0;
+                    dispatcherExitCode = 0;
+                    return;
                 }
-                continue;
+                return;
             }
 
             // The usage envelope's input/output counters restart with every run, so the
@@ -2260,14 +2039,15 @@ public sealed partial class AgentCommands
                 sessionId,
                 cmd.Preset,
                 cmd.ConfirmFullAccess,
-                cancellationToken).ConfigureAwait(false);
+                ct).ConfigureAwait(false);
             if (presetUpdate is null)
             {
-                return 1;
+                dispatcherExitCode = 1;
+                return;
             }
 
             var idempotencyKey = Guid.NewGuid().ToString("N");
-            var promptText = Attachments.AttachedPrompt.Compose(line, pendingTexts);
+            var promptText = Attachments.AttachedPrompt.Compose(promptLine, pendingTexts);
             var imagePayloads = pendingImages.Count == 0
                 ? null
                 : pendingImages.Select(image => image.ToDataUrl()).ToList();
@@ -2296,7 +2076,7 @@ public sealed partial class AgentCommands
                 await WriteAltLineAsync(
                     _err,
                     $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {MaxComposedPromptChars}); detach or shorten attachments").ConfigureAwait(false);
-                continue;
+                return;
             }
             var presetCommitted = false;
             var sentImages = new List<Images.CliImageAttachment>();
@@ -2304,7 +2084,7 @@ public sealed partial class AgentCommands
 
             try
             {
-                turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
                 // guard can never POST a cancel against a park left over from a prior turn.
                 activeRunId = null;
@@ -2325,7 +2105,7 @@ public sealed partial class AgentCommands
                 if (!cmd.Json)
                 {
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(
-                        line,
+                        promptLine,
                         width: sessionRenderer.Width,
                         attachmentLabels: attachmentLabels.Count == 0 ? null : attachmentLabels));
                 }
@@ -2404,7 +2184,7 @@ public sealed partial class AgentCommands
                         sessionRenderer.Note("workspace not trusted · this run was cancelled", Tui.TuiToken.Err);
                     }
 
-                    continue;
+                    return;
                 }
 
                 if (!trusted)
@@ -2412,11 +2192,12 @@ public sealed partial class AgentCommands
                     if (!await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                     {
                         await FinishTurnAsync().ConfigureAwait(false);
-                        return 1;
+                        dispatcherExitCode = 1;
+                        return;
                     }
 
                     await FinishTurnAsync().ConfigureAwait(false);
-                    continue;
+                    return;
                 }
 
                 presetCommitted = true;
@@ -2439,7 +2220,8 @@ public sealed partial class AgentCommands
                 // answers it with `ru agent approve` instead of this process reading a
                 // prompt it must not consume.
                 await FinishTurnAsync().ConfigureAwait(false);
-                return 0;
+                dispatcherExitCode = 0;
+                return;
             }
             catch (OperationCanceledException)
             {
@@ -2450,7 +2232,8 @@ public sealed partial class AgentCommands
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
-                    return 1;
+                    dispatcherExitCode = 1;
+                    return;
                 }
                 await ReportInterruptionAsync().ConfigureAwait(false);
             }
@@ -2460,7 +2243,8 @@ public sealed partial class AgentCommands
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
-                    return 1;
+                    dispatcherExitCode = 1;
+                    return;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteBusyConflictAsync(ex, WriteAltLineAsync).ConfigureAwait(false);
@@ -2478,12 +2262,254 @@ public sealed partial class AgentCommands
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
                     await FinishTurnAsync().ConfigureAwait(false);
-                    return 1;
+                    dispatcherExitCode = 1;
+                    return;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteAltLineAsync(_err, Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);
+        }
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+        {
+            // A prompt typed while the previous turn streamed is sent without a second Enter.
+            // In the AltBuffer frame the composer is the persistent footer, so idle input
+            // comes from the type-ahead loop; the sequential reader only serves fallbacks.
+            string? line;
+            if (queuedLine is not null)
+            {
+                line = queuedLine;
+            }
+            else if (altBufferActive && typeAheadLive)
+            {
+                line = await ReadAltIdleLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            }
+
+            queuedLine = null;
+            if (line is null) break;
+            line = line.Trim().Trim('"', '\'');
+            if (string.IsNullOrEmpty(line) && pendingImages.Count == 0 && pendingTexts.Count == 0)
+            {
+                continue;
+            }
+
+            // A quoted path dropped onto the terminal arrives as the whole line; a file
+            // that exists on disk attaches instead of being sent as prose.
+            if (!string.IsNullOrEmpty(line) && IsDroppedAttachmentPath(line))
+            {
+                await AttachFileAsync(line).ConfigureAwait(false);
+                continue;
+            }
+
+            if (altBufferActive && sticky.Active)
+            {
+                // Idle output (slash listings, command panels) flows into the scrolling
+                // transcript region; the pinned header and the footer must not move. The
+                // next footer paint (each read) restores the composer row afterwards.
+                sticky.RestoreTranscriptCursor();
+            }
+
+            // The slash branch of the classic key loop, in the shape the dispatcher
+            // expects: 'continue' became 'return true' (handled) and the /exit and
+            // /continue approval paths record their exit code for the caller below.
+            async Task<bool> HandleSlashLineAsync(string slashLine)
+            {
+                if (landingScreenVisible && !slashLine.StartsWith("/clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    landingScreenVisible = false;
+                }
+                if (!cmd.Json)
+                {
+                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(slashLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                }
+                var parts = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var slashCmd = parts[0].ToLowerInvariant();
+                var arg = parts.Length > 1 ? parts[1].Trim() : null;
+
+                if (slashCmd is "/exit" or "/quit")
+                {
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
+                    await humanOut.FlushAsync().ConfigureAwait(false);
+                    dispatcherExitCode = 0;
+                    return true;
+                }
+                if (slashCmd is "/history")
+                {
+                    var history = lineReader.History;
+                    if (history.Count == 0)
+                    {
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
+                        for (int i = 0; i < history.Count; i++)
+                        {
+                            await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
+                        }
+                    }
+                    await humanOut.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/clear")
+                {
+                    turn = 0;
+                    landingScreenVisible = true;
+                    lastTotalTokens = null;
+                    usage.BeginTurn();
+                    if (altBufferActive)
+                    {
+                        // Reset in place: region off, alt screen wiped, header repainted by
+                        // the landing render, footer restored by ApplyFooterLayout.
+                        sticky.Exit();
+                        sessionRenderer.Status.InFooter = false;
+                        sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
+                    }
+                    else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
+                    {
+                        try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
+                    }
+                    RenderLandingScreen();
+                    if (altBufferActive && typeAheadLive)
+                    {
+                        ApplyFooterLayout(repaint: true);
+                    }
+                    await humanOut.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
+                {
+                    await UpdateLegendAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/rewind")
+                {
+                    if (arg is null || !int.TryParse(arg, out var toIndex))
+                    {
+                        await WriteAltLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
+                        return true;
+                    }
+                    try
+                    {
+                        await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                    }
+                    catch (AgentApiException ex)
+                    {
+                        await WriteAltLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await WriteAltLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
+                    }
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/attach")
+                {
+                    if (string.IsNullOrWhiteSpace(arg))
+                    {
+                        await WriteAltLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    await AttachFileAsync(arg).ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/attachments")
+                {
+                    if (pendingImages.Count == 0 && pendingTexts.Count == 0)
+                    {
+                        await WriteAltLineAsync(humanOut, "no attachments").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    for (var i = 0; i < pendingImages.Count; i++)
+                    {
+                        await WriteAltLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
+                    }
+
+                    for (var i = 0; i < pendingTexts.Count; i++)
+                    {
+                        await WriteAltLineAsync(
+                            humanOut,
+                            $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
+                    }
+
+                    return true;
+                }
+                if (slashCmd is "/detach")
+                {
+                    var total = pendingImages.Count + pendingTexts.Count;
+                    if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        foreach (var attachment in pendingImages)
+                        {
+                            DeleteTempFile(attachment);
+                        }
+
+                        pendingImages.Clear();
+                        pendingTexts.Clear();
+                        RefreshAttachmentLabels();
+                        await WriteAltLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
+                    {
+                        await WriteAltLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    if (index <= pendingImages.Count)
+                    {
+                        var removedImage = pendingImages[index - 1];
+                        pendingImages.RemoveAt(index - 1);
+                        DeleteTempFile(removedImage);
+                        await WriteAltLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var textIndex = index - pendingImages.Count - 1;
+                        var removedText = pendingTexts[textIndex];
+                        pendingTexts.RemoveAt(textIndex);
+                        await WriteAltLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
+                    }
+
+                    RefreshAttachmentLabels();
+                    return true;
+                }
+                if (slashCmd is "/continue")
+                {
+                    try
+                    {
+                        await ContinueParkedRunAsync(arg).ConfigureAwait(false);
+                    }
+                    catch (RunWaitingApprovalException)
+                    {
+                        // Same escape as a fresh turn: an approval under --json ends the
+                        // chat rather than reading a prompt it must not answer.
+                        dispatcherExitCode = 0;
+                        return true;
+                    }
+                    return true;
+                }
+                await WriteAltLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                return true;
+            }
+
+            var dispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
+            await dispatcher.DispatchAsync(line, cancellationToken).ConfigureAwait(false);
+            if (dispatcherExitCode is int exitCode)
+            {
+                return exitCode;
+            }
         }
         }
         finally
@@ -2503,6 +2529,37 @@ public sealed partial class AgentCommands
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Routes one submitted line to the slash-command handler or the prompt runner. The
+    /// classic key loop and the Terminal.Gui loop both call this so command behaviour
+    /// (attachments, /model, /attach, trust prompts) cannot drift between engines.
+    /// </summary>
+    public sealed record ChatLineDispatcher
+    {
+        public ChatLineDispatcher(
+            Func<string, Task<bool>> handleSlash,
+            Func<string, CancellationToken, Task> handlePrompt)
+        {
+            HandleSlash = handleSlash;
+            HandlePrompt = handlePrompt;
+        }
+
+        public Func<string, Task<bool>> HandleSlash { get; init; }
+
+        public Func<string, CancellationToken, Task> HandlePrompt { get; init; }
+
+        public async Task<bool> DispatchAsync(string line, CancellationToken cancellationToken)
+        {
+            if (line.TrimStart().StartsWith('/'))
+            {
+                return await HandleSlash(line).ConfigureAwait(false);
+            }
+
+            await HandlePrompt(line, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
     }
 
     /// <summary>

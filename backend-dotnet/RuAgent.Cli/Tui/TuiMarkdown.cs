@@ -15,9 +15,10 @@ namespace RuAgent.Cli.Tui;
 /// when a word character precedes it, so the closer of a bold run that began in an
 /// earlier delta is never mistaken for a new opener.
 ///
-/// Tables and nested lists are deliberately out of scope: they need state this line
-/// oriented renderer does not keep, and half-rendering them reads worse than not
-/// rendering them.
+/// Tables and one level of nested list are decided per line too: a pipe-bracketed row
+/// becomes a joined row, a two-space-indented list item gets the extra indent, and
+/// anything nested deeper falls back to plain indented text rather than a wrong-depth
+/// bullet. No block state beyond the fence is carried between lines.
 /// </summary>
 public sealed class TuiMarkdown
 {
@@ -76,6 +77,21 @@ public sealed class TuiMarkdown
         {
             var body = RenderInline(heading, width, false);
             return Wrap(level == 1 ? TuiPalette.BoldPaint(body) : body, width, 0);
+        }
+
+        if (TryTable(line, out var table))
+        {
+            return Wrap(RenderInline(table, width, false), width, 0);
+        }
+
+        if (TryNestedBullet(line, out var nested))
+        {
+            return Wrap("    " + TuiPalette.Paint("•", TuiToken.Brand2) + "  " + RenderInline(nested, width, false), width, 6);
+        }
+
+        if (IsDeeperBullet(line))
+        {
+            return Wrap(RenderInline(line.TrimEnd(), width, false), width, 0);
         }
 
         if (TryBullet(line, out var bullet))
@@ -319,6 +335,68 @@ public sealed class TuiMarkdown
 
         bullet = string.Empty;
         return false;
+    }
+
+    /// <summary>
+    /// A pipe-bracketed table row: the leading and trailing pipes are fences, the cells
+    /// between are trimmed and rejoined with a visible column separator. A second pipe is
+    /// required, so a lone leading pipe stays prose.
+    /// </summary>
+    private static bool TryTable(string line, out string row)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.Length < 2 || trimmed[0] != '|' || trimmed.IndexOf('|', 1) < 0)
+        {
+            row = string.Empty;
+            return false;
+        }
+
+        var cells = trimmed.Split('|');
+        var start = cells[0].Length == 0 ? 1 : 0;
+        var end = cells[^1].Length == 0 ? cells.Length - 1 : cells.Length;
+        var parts = new List<string>(Math.Max(0, end - start));
+        for (var i = start; i < end; i++)
+        {
+            parts.Add(cells[i].Trim());
+        }
+
+        row = string.Join(" │ ", parts);
+        return row.Length > 0;
+    }
+
+    /// <summary>An exactly two-space-indented list item, the one nesting level supported.</summary>
+    private static bool TryNestedBullet(string line, out string bullet)
+    {
+        if (line.Length >= 4
+            && line[0] == ' '
+            && line[1] == ' '
+            && (line[2] is '-' or '*' or '+')
+            && line[3] == ' ')
+        {
+            bullet = line[4..].TrimEnd();
+            return true;
+        }
+
+        bullet = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// A list item indented four spaces or more: past the supported nesting level, so it
+    /// falls back to plain indented text instead of a bullet at the wrong depth.
+    /// </summary>
+    private static bool IsDeeperBullet(string line)
+    {
+        var spaces = 0;
+        while (spaces < line.Length && line[spaces] == ' ')
+        {
+            spaces++;
+        }
+
+        return spaces >= 4
+            && spaces + 1 < line.Length
+            && (line[spaces] is '-' or '*' or '+')
+            && line[spaces + 1] == ' ';
     }
 
     private static bool TryOrdered(string line, out string marker, out string body)

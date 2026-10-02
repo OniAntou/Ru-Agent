@@ -180,6 +180,12 @@ public static class TuiPalette
 
     public static string Quiet(string? text) => Paint(text, TuiToken.Meta);
 
+    /// <summary>Elevated foreground for centered panels (approval, pickers).</summary>
+    public static string Panel(string? text) => Paint(text, TuiToken.Bright);
+
+    /// <summary>Border and separator glyphs for panels, tables and cards.</summary>
+    public static string Border(string? text) => Paint(text, TuiToken.Line);
+
     /// <summary>
     /// Background escape sequence for elevated surface cards (e.g. user prompt container).
     /// Returns empty string when color is disabled (None or Basic16).

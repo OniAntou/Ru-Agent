@@ -317,6 +317,7 @@ public sealed partial class AgentCommands
             RedrawScreenForResize();
             return Task.CompletedTask;
         };
+        lineReader.OnPasteImageAsync = ClipboardAttachAsync;
 
         void RenderLandingScreen()
         {
@@ -592,7 +593,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        async Task AttachImageAsync(string path)
+        async Task AttachImageAsync(string path, string? tempPath = null)
         {
             if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
             {
@@ -609,12 +610,32 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            if (tempPath is not null)
+            {
+                attachment = attachment with { TempPath = tempPath };
+            }
+
             pendingImages.Add(attachment);
             await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count}] {attachment.Label}").ConfigureAwait(false);
             if (altBufferActive && sticky.Active)
             {
                 PaintStickyFooter();
             }
+        }
+
+        async Task ClipboardAttachAsync()
+        {
+            var clipboard = Images.CliClipboard.TryReadImagePath();
+            if (clipboard.Path is null)
+            {
+                await WriteAltLineAsync(_err, clipboard.Error ?? "clipboard_has_no_image: copy a screenshot or an image file first").ConfigureAwait(false);
+                return;
+            }
+
+            var name = Path.GetFileName(clipboard.Path);
+            var isTemp = name.StartsWith("ru-img-", StringComparison.Ordinal)
+                && string.Equals(Path.GetDirectoryName(clipboard.Path), Path.GetTempPath().TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+            await AttachImageAsync(clipboard.Path, isTemp ? clipboard.Path : null).ConfigureAwait(false);
         }
 
         bool IsDroppedImagePath(string candidate)
@@ -713,7 +734,8 @@ public sealed partial class AgentCommands
                         Tui.TuiDebug.Log("layout", "footer rebuilt after resize");
                     }
                 },
-                typeAheadCts.Token);
+                typeAheadCts.Token,
+                onPasteImage: ClipboardAttachAsync);
             await Task.CompletedTask.ConfigureAwait(false);
         }
 

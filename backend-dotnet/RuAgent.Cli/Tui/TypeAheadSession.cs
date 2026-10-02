@@ -67,6 +67,9 @@ public sealed class TypeAheadSession
     /// <summary>Set when Enter could not queue because the slot already holds a prompt.</summary>
     public bool QueueRejected { get; set; }
 
+    /// <summary>Set by the key handler when Ctrl+V asks for an image paste; the loop clears it.</summary>
+    public bool PasteImageRequested { get; set; }
+
     /// <summary>
     /// True while a run is streaming. False between turns, when Enter hands the composer
     /// line to the idle reader instead of the type-ahead queue.

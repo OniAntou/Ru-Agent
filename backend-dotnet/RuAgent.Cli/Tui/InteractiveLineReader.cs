@@ -74,6 +74,9 @@ public sealed class InteractiveLineReader
     /// </summary>
     public Func<Task>? OnScreenRefreshedAsync { get; set; }
 
+    /// <summary>Sequential composer hook: Ctrl+V resolves an image from the clipboard.</summary>
+    public Func<Task>? OnPasteImageAsync { get; set; }
+
     public static IReadOnlyList<SlashCommandInfo> FindMatches(string input)
     {
         if (string.IsNullOrEmpty(input) || !input.StartsWith('/'))
@@ -1405,6 +1408,17 @@ public sealed class InteractiveLineReader
                 }
             }
 
+            if ((key.Key == ConsoleKey.V && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.KeyChar == '\x16')
+            {
+                if (OnPasteImageAsync is not null)
+                {
+                    await OnPasteImageAsync().ConfigureAwait(false);
+                    await RefreshAsync().ConfigureAwait(false);
+                }
+                continue;
+            }
+
             if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
             {
                 if (buffer.Length == 0)
@@ -1632,7 +1646,8 @@ public sealed class InteractiveLineReader
         Action? onCancel = null,
         Action? onExpand = null,
         Action? onResize = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<Task>? onPasteImage = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(repaint);
@@ -1651,6 +1666,12 @@ public sealed class InteractiveLineReader
                 if (Console.KeyAvailable)
                 {
                     HandleTypeAheadKey(session, Console.ReadKey(intercept: true), onCancel, onExpand);
+                    if (session.PasteImageRequested && onPasteImage is not null)
+                    {
+                        session.PasteImageRequested = false;
+                        await onPasteImage().ConfigureAwait(false);
+                    }
+
                     repaint();
                     continue;
                 }
@@ -1803,6 +1824,15 @@ public sealed class InteractiveLineReader
                 session.QueueRejected = true;
             }
 
+            return;
+        }
+
+        // Ctrl+V in the composer asks the host to read an image from the clipboard; the
+        // key handler only raises the flag so the async paste stays out of the sync path.
+        if ((key.Key == ConsoleKey.V && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+            || key.KeyChar == '\x16')
+        {
+            session.PasteImageRequested = true;
             return;
         }
 

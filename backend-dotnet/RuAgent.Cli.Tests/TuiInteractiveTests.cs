@@ -791,6 +791,19 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public void HandleTypeAheadKey_CtrlVAsksForAnImagePasteWithoutEditingTheBuffer()
+    {
+        var session = new TypeAheadSession(new PendingPromptSlot()) { Buffer = "hello" };
+
+        InteractiveLineReader.HandleTypeAheadKey(
+            session,
+            new ConsoleKeyInfo('\x16', ConsoleKey.V, shift: false, alt: false, control: true));
+
+        Assert.True(session.PasteImageRequested);
+        Assert.Equal("hello", session.Buffer);
+    }
+
+    [Fact]
     public void InteractiveLineReader_BuildSubmitEcho_ShowsImageLabels()
     {
         TuiPalette.Level = TuiColorLevel.TrueColor;

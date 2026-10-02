@@ -32,5 +32,16 @@ public sealed class TgChatWindow : Window
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
 
+    /// <summary>
+    /// Focus must be granted after the app's first loop iterations; a SetFocus before
+    /// Run (or on the first tick) is ignored, which the spike reproduced. Callers use
+    /// this from a one-shot timeout once the window is live.
+    /// </summary>
+    public void FocusComposer()
+    {
+        SetFocus();
+        Composer.Input.SetFocus();
+    }
+
     public static TgChatWindow Build() => new();
 }

@@ -1,3 +1,5 @@
+using RuAgent.Cli.Tui;
+
 namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>Which full-screen renderer drives <c>agent chat</c>.</summary>
@@ -9,9 +11,9 @@ public enum TuiEngine
 
 /// <summary>
 /// Engine resolution for the chat TUI. The terminal gates mirror the classic AltBuffer
-/// gate (<c>TuiAltBuffer.ShouldUseAltBuffer</c>): a redirected, JSON, NO_COLOR or small
-/// terminal always stays classic. Until parity ships, only the explicit opt-in selects
-/// Terminal.Gui; the default flips in Task 15.
+/// gate (<c>TuiAltBuffer.ShouldUseAltBuffer</c>): a redirected, JSON, NO_COLOR, dumb or
+/// small terminal always stays classic. Until parity ships, only the explicit opt-in
+/// selects Terminal.Gui; the default flips in Task 15.
 /// </summary>
 public static class TuiEngineSelection
 {
@@ -24,14 +26,25 @@ public static class TuiEngineSelection
         int columns,
         int rows,
         string? noColor,
+        string? term,
         bool classic)
     {
-        if (outputRedirected || json || !string.IsNullOrEmpty(noColor) || classic)
+        if (outputRedirected || json || classic)
         {
             return TuiEngine.Classic;
         }
 
-        if (columns < 80 || rows < 24)
+        if (noColor is not null)
+        {
+            return TuiEngine.Classic;
+        }
+
+        if (string.Equals(term, "dumb", StringComparison.OrdinalIgnoreCase))
+        {
+            return TuiEngine.Classic;
+        }
+
+        if (columns < TuiViewport.MinAltBufferWidth || rows < TuiViewport.MinAltBufferHeight)
         {
             return TuiEngine.Classic;
         }

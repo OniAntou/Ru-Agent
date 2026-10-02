@@ -198,13 +198,13 @@ public static class TuiPalette
     };
 
     /// <summary>
-    /// Background escape sequence for the composer box interior (elevated element surface).
+    /// Background escape sequence for the composer box interior (gray element surface).
     /// Returns empty string when color is disabled (None or Basic16).
     /// </summary>
     public static string ElementBgCode() => Level switch
     {
-        TuiColorLevel.TrueColor => "\u001b[48;2;30;30;30m",
-        TuiColorLevel.Palette256 => "\u001b[48;5;234m",
+        TuiColorLevel.TrueColor => "\u001b[48;2;51;51;51m",
+        TuiColorLevel.Palette256 => "\u001b[48;5;236m",
         _ => string.Empty,
     };
 

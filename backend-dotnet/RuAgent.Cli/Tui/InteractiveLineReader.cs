@@ -71,13 +71,6 @@ public sealed class InteractiveLineReader
     /// </summary>
     public Func<Task>? OnScreenRefreshedAsync { get; set; }
 
-    /// <summary>
-    /// Host hook for the landing star twinkle. Polled while the composer idles with an
-    /// empty buffer: returning true rebuilds the screen with the next star epoch through
-    /// the same path as a settled resize (host increments the epoch inside).
-    /// </summary>
-    public Func<bool>? ShouldTwinkleStars { get; set; }
-
     public static IReadOnlyList<SlashCommandInfo> FindMatches(string input)
     {
         if (string.IsNullOrEmpty(input) || !input.StartsWith('/'))
@@ -1261,8 +1254,6 @@ public sealed class InteractiveLineReader
             resizeWatcher.Observe(initCols, initRows, Environment.TickCount64);
         }
 
-        var lastStarTwinkleAt = Environment.TickCount64;
-
         async Task ApplyPendingResizeAsync()
         {
             var cursorTop = Console.CursorTop;
@@ -1320,18 +1311,7 @@ public sealed class InteractiveLineReader
                 {
                     if (resizeWatcher.Observe(curCols, curRows, Environment.TickCount64))
                     {
-                        lastStarTwinkleAt = Environment.TickCount64;
                         await ApplyPendingResizeAsync().ConfigureAwait(false);
-                    }
-                    else if (!choosing
-                        && ShouldTwinkleStars is not null
-                        && Environment.TickCount64 - lastStarTwinkleAt >= TuiHeader.StarTwinkleIntervalMs)
-                    {
-                        lastStarTwinkleAt = Environment.TickCount64;
-                        if (buffer.Length == 0 && ShouldTwinkleStars())
-                        {
-                            await ApplyPendingResizeAsync().ConfigureAwait(false);
-                        }
                     }
                 }
 

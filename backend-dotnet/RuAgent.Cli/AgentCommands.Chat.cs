@@ -287,7 +287,6 @@ public sealed partial class AgentCommands
 
         int turn = 0;
         bool landingScreenVisible = true;
-        int starEpoch = 0;
 
         // The composer reopens its own frame after a settled resize; this rebuilds everything
         // around it (region, header, transcript tail) so the new width applies end to end.
@@ -297,25 +296,6 @@ public sealed partial class AgentCommands
         {
             RedrawScreenForResize();
             return Task.CompletedTask;
-        };
-
-        // Landing star twinkle: the reader polls this while its buffer is empty; a true
-        // answer advances the star epoch so the resize-path rebuild paints a new sky.
-        // Idle-only by construction: first prompt, approval UI or typed text keeps false.
-        lineReader.ShouldTwinkleStars = () =>
-        {
-            if (!landingScreenVisible || turn != 0)
-            {
-                return false;
-            }
-
-            if (typeAhead.Approval is not null || !string.IsNullOrEmpty(typeAhead.Buffer))
-            {
-                return false;
-            }
-
-            starEpoch++;
-            return true;
         };
 
         void RenderLandingScreen()
@@ -331,14 +311,7 @@ public sealed partial class AgentCommands
             var headerRows = altBufferActive
                 ? Tui.TuiScreenLayout.Compute(width, rows).HeaderHeight
                 : 0;
-            var landingLines = Tui.TuiHeader.ComposeLandingScreen(
-                width,
-                canonicalWorkspace,
-                backendName,
-                activeModel,
-                cmd.Preset,
-                rows,
-                starEpoch);
+            var landingLines = Tui.TuiHeader.ComposeLandingScreen(width, rows);
 
             foreach (var line in landingLines)
             {
@@ -356,7 +329,7 @@ public sealed partial class AgentCommands
                 var cursorRow = landingLines.Count + 1 + headerRows;
                 for (var i = cursorRow; i < boxTop; i++)
                 {
-                    _out.WriteLine(Tui.TuiHeader.StarRow(width, 2500 + i, starEpoch));
+                    _out.WriteLine(new string(' ', width));
                 }
             }
 

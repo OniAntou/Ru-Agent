@@ -14,6 +14,9 @@ public static class TuiViewport
     /// <summary>Below this, frames stop shrinking the two-cell margin and use the full width.</summary>
     public const int MinUsableWidth = 20;
 
+    public const int MinAltBufferWidth = 80;
+    public const int MinAltBufferHeight = 24;
+
     public static bool IsLiveConsole => !Console.IsOutputRedirected;
 
     /// <summary>

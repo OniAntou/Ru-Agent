@@ -178,6 +178,36 @@ public sealed class ComposerBoxTests : IDisposable
     }
 
     [Fact]
+    public void ComposeStack_RowBackgroundSurvivesPaintedSegments()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
+        {
+            var bg = TuiPalette.ElementBgCode();
+            var idle = ComposerBox.ComposeStack(
+                80, ComposerState.Idle, string.Empty, "Ask anything…", "Standard", "gpt-5-codex", "models.dev:kilo");
+            var typed = ComposerBox.ComposeStack(
+                80, ComposerState.Idle, "hi", string.Empty, "Standard", "gpt-5-codex", "models.dev:kilo");
+
+            AssertBackgroundIsUnbroken(idle[1], bg);
+            AssertBackgroundIsUnbroken(idle[2], bg);
+            AssertBackgroundIsUnbroken(typed[1], bg);
+            AssertBackgroundIsUnbroken(typed[2], bg);
+        }
+    }
+
+    /// <summary>
+    /// Every painted segment resets the pen; only the row's final reset and the right
+    /// border's own reset may drop the band, so all other resets must be re-based.
+    /// </summary>
+    private static void AssertBackgroundIsUnbroken(string row, string bg)
+    {
+        var resets = row.Split(TuiPalette.Reset, StringSplitOptions.None).Length - 1;
+        var rebased = row.Split(TuiPalette.Reset + bg, StringSplitOptions.None).Length - 1;
+
+        Assert.Equal(resets - 2, rebased);
+    }
+
+    [Fact]
     public void ComposeHints_PinsKeyOrderAndSpinnerStates()
     {
         var idle = TuiText.Strip(ComposerBox.ComposeHints(100, null, "D:/LLM"));

@@ -134,11 +134,14 @@ public static class ComposerBox
             : TuiText.Truncate(ghost, inner - used);
         var pad = Math.Max(0, inner - used - TuiText.VisibleWidth(ghostText));
         var bg = TuiPalette.ElementBgCode();
+        // Paint() ends every segment with a reset, which would punch dark holes into the
+        // gray band; re-apply the background after each segment so the row is one surface.
         return TuiPalette.Paint("│", token)
             + bg
             + " "
             + TuiPalette.Paint(text, TuiToken.Bright)
-            + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Meta))
+            + bg
+            + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Meta) + bg)
             + new string(' ', pad)
             + " "
             + TuiPalette.Reset
@@ -151,25 +154,27 @@ public static class ComposerBox
         var name = TuiText.Truncate(
             string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim(),
             Math.Max(1, inner - 2));
-        var parts = TuiPalette.Paint(name, TuiToken.Brand);
+        // Every painted segment ends with a reset; the background is re-applied after each
+        // so the gray band spans the whole meta row, separators and padding included.
+        var bg = TuiPalette.ElementBgCode();
+        var parts = TuiPalette.Paint(name, TuiToken.Brand) + bg;
         var used = TuiText.VisibleWidth(parts);
 
         if (!string.IsNullOrWhiteSpace(model))
         {
             var modelText = TuiText.Truncate(model.Trim(), Math.Max(1, inner - used - 2));
-            parts += "  " + TuiPalette.Paint(modelText, TuiToken.Bright);
+            parts += "  " + TuiPalette.Paint(modelText, TuiToken.Bright) + bg;
             used += 2 + TuiText.VisibleWidth(modelText);
         }
 
         if (!string.IsNullOrWhiteSpace(provider) && used < inner - 2)
         {
             var providerText = TuiText.Truncate(ProviderLabel(provider), Math.Max(1, inner - used - 1));
-            parts += " " + TuiPalette.Paint(providerText, TuiToken.Meta);
+            parts += " " + TuiPalette.Paint(providerText, TuiToken.Meta) + bg;
             used += 1 + TuiText.VisibleWidth(providerText);
         }
 
         var pad = Math.Max(0, inner - used);
-        var bg = TuiPalette.ElementBgCode();
         return TuiPalette.Paint("│", token)
             + bg
             + " "

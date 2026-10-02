@@ -16,7 +16,7 @@ public sealed class TgComposerTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 7 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
         composer.SetMeta("Standard", "stealth/space-bunny-alpha", "kilo");
         composer.SetPlaceholder("Ask anything, / for commands, /key for sign-in…");
         window.Add(composer);
@@ -25,8 +25,8 @@ public sealed class TgComposerTests
         {
             var rowsText = TgSnapshot.Capture(app);
             Assert.Contains("┌", rowsText[rowsText.Length - 7]);
-            Assert.Contains("Standard", rowsText[rowsText.Length - 2]);
-            Assert.Contains("kilo", rowsText[rowsText.Length - 2]);
+            Assert.Contains("Standard", rowsText[rowsText.Length - 3]);
+            Assert.Contains("kilo", rowsText[rowsText.Length - 3]);
             app.RequestStop();
             return false;
         });
@@ -38,7 +38,7 @@ public sealed class TgComposerTests
     public void Idle_ShowsSquareFramePlaceholderAndMeta()
     {
         var rows = Render(100, 30, _ => { });
-        Assert.Contains("Ask anything", rows[rows.Length - 4]);
+        Assert.Contains("Ask anything", rows[rows.Length - 5]);
         Assert.DoesNotContain("╭", string.Join('\n', rows));
         Assert.DoesNotContain("models.dev", string.Join('\n', rows));
     }
@@ -49,7 +49,7 @@ public sealed class TgComposerTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 7 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
         window.Add(composer);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {

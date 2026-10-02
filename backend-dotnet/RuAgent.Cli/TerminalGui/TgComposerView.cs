@@ -25,25 +25,25 @@ public sealed class TgComposerView : View
         _ghost = new Label
         {
             X = 1,
-            Y = 2,
+            Y = 1,
         };
         _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.ElementRgb()));
 
         Input = new TextField
         {
             X = 1,
-            Y = 2,
+            Y = 1,
             Width = Dim.Fill(2),
             Text = string.Empty,
         };
         Input.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.ElementRgb()));
         Input.TextChanged += (_, _) => UpdateGhost();
 
-        _preset = new Label { X = 1, Y = 4 };
+        _preset = new Label { X = 1, Y = 3 };
         _preset.SetScheme(TgPalette.Scheme(TuiToken.Brand, TuiPalette.ElementRgb()));
-        _model = new Label { X = Pos.Right(_preset) + 2, Y = 4 };
+        _model = new Label { X = Pos.Right(_preset) + 2, Y = 3 };
         _model.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.ElementRgb()));
-        _provider = new Label { X = Pos.Right(_model) + 1, Y = 4 };
+        _provider = new Label { X = Pos.Right(_model) + 1, Y = 3 };
         _provider.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.ElementRgb()));
 
         Add(Input, _ghost, _preset, _model, _provider);

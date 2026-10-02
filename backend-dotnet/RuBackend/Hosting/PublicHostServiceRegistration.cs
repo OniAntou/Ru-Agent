@@ -186,7 +186,11 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<IAgentHistoryTransitionSink>(services =>
             services.GetRequiredService<AgentRunHistoryTransitionSink>());
         services.AddSingleton<AgentConversationOutboxDispatcher>();
-        services.AddHostedService<AgentRuntimeLoopService>();
+        // AddHostedService<T> only wires IHostedService; the idle probe resolves the
+        // concrete loop, so the singleton must own the instance and the hosted
+        // registration must forward to it (two registrations would create two loops).
+        services.AddSingleton<AgentRuntimeLoopService>();
+        services.AddHostedService(services => services.GetRequiredService<AgentRuntimeLoopService>());
         services.AddSingleton<AgentV1Service>();
         // Image-input support follows what the provider's catalog declares for the
         // selected model. A name check alone read a gateway model carrying no vendor

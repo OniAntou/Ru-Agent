@@ -1,13 +1,31 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Hosting;
+using RuBackend.Harness;
+using RuBackend.Hosting;
 using Xunit;
 
 namespace RuBackend.Tests.Hosting;
 
 public sealed class HostIdleShutdownTests
 {
+    [Fact]
+    public void ManagedRuntimeRegistration_ExposesTheConcreteRuntimeLoop()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+
+        PublicHostServiceRegistration.AddRuAgentRuntime(services, isManagedRuntime: true);
+
+        // AddHostedService<T> wires IHostedService only; the idle probe resolves the
+        // concrete loop, and a missing descriptor used to crash the managed host at
+        // startup with "No service for type 'AgentRuntimeLoopService'".
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(AgentRuntimeLoopService));
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(RuAgent.Hosting.IHostIdleProbe));
+    }
     [Theory]
     [InlineData(null, 10)]
     [InlineData("", 10)]

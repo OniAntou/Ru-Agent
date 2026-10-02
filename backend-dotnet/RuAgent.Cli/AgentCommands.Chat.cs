@@ -139,6 +139,9 @@ public sealed partial class AgentCommands
 
         using TgChatWindow? tgWindow = tgMode ? TgChatWindow.Build() : null;
         TgTranscriptWriter? tgWriter = tgMode ? new TgTranscriptWriter(tgApp!, tgWindow!.Transcript) : null;
+        // The loop is created once the run handlers exist (RunTerminalGuiChatAsync);
+        // attachment mutations below refresh its hint row through this seam.
+        TgChatLoop? tgLoop = null;
 
         if (backendName is not null)
         {
@@ -675,14 +678,22 @@ public sealed partial class AgentCommands
 
         static void DeleteTempFile(Images.CliImageAttachment attachment) => DeleteTempPath(attachment.TempPath);
 
-        void RefreshAttachmentLabels()
+        string CurrentAttachmentLabel()
         {
             var count = pendingImages.Count + pendingTexts.Count;
-            var label = count == 0
+            return count == 0
                 ? workspaceLabel
                 : $"[{count} attachment{(count == 1 ? string.Empty : "s")}] {workspaceLabel}";
+        }
+
+        void RefreshAttachmentLabels()
+        {
+            var label = CurrentAttachmentLabel();
             lineReader.TopLabel = label;
             typeAhead.WorkspaceLabel = label;
+            // The TG composer reads neither TopLabel nor the type-ahead label: push the
+            // same count/workspace wording into its hint row after every mutation.
+            tgLoop?.RefreshAttachmentLabel();
         }
 
         async Task AttachImageAsync(string path, string? tempPath = null)
@@ -761,6 +772,33 @@ public sealed partial class AgentCommands
             }
         }
 
+        /// <summary>
+        /// Appends pasted text to the TG composer on the UI loop; the composer itself never
+        /// sees the Ctrl+V (the clipboard read runs here), so the two cannot double-paste.
+        /// </summary>
+        void InsertIntoComposer(string text)
+        {
+            try
+            {
+                tgApp!.Invoke(() =>
+                {
+                    var input = tgWindow!.Composer.Input;
+                    var current = input.Text?.ToString() ?? string.Empty;
+                    var room = 4096 - current.Length;
+                    if (room <= 0)
+                    {
+                        return;
+                    }
+
+                    input.Text = current + (text.Length > room ? text[..room] : text);
+                });
+            }
+            catch (NotInitializedException)
+            {
+                // The TG session wound down before the paste landed.
+            }
+        }
+
         async Task ClipboardAttachAsync()
         {
             var clipboard = Images.CliClipboard.TryReadImagePath();
@@ -768,7 +806,20 @@ public sealed partial class AgentCommands
             {
                 // A text-only clipboard still pastes: Ctrl+V would otherwise swallow the
                 // keystroke with only an error line.
-                if (altBufferActive)
+                if (tgMode)
+                {
+                    var text = Images.CliClipboard.TryReadText();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        var flat = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
+                        if (flat.Length > 0)
+                        {
+                            InsertIntoComposer(flat);
+                            return;
+                        }
+                    }
+                }
+                else if (altBufferActive)
                 {
                     var text = Images.CliClipboard.TryReadText();
                     if (!string.IsNullOrWhiteSpace(text) && typeAhead.Buffer.Length < 4096)
@@ -2651,6 +2702,7 @@ public sealed partial class AgentCommands
             async Task RunTerminalGuiChatAsync()
             {
                 var loop = new TgChatLoop(tgWindow!);
+                tgLoop = loop;
                 var guiDispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
                 loop.SetPromptHandler(async (line, _, ct) =>
                 {
@@ -2664,8 +2716,42 @@ public sealed partial class AgentCommands
                     }
                 });
 
+                // Attachment mutations refresh the hint row through RefreshAttachmentLabels;
+                // these seams let the loop ask for the label/count and claim Ctrl+V
+                // clipboard pastes and dropped paths without parsing anything itself.
+                loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
+                loop.SetAttachmentCountProvider(() => pendingImages.Count + pendingTexts.Count);
+                loop.SetPasteHandler(ClipboardAttachAsync);
+                loop.SetDropHandler(line =>
+                {
+                    // Same shape as the classic idle loop: a quoted/rooted path that exists
+                    // on disk attaches instead of being sent as prose.
+                    var candidate = line.Trim().Trim('"', '\'');
+                    if (string.IsNullOrEmpty(candidate) || !IsDroppedAttachmentPath(candidate))
+                    {
+                        return false;
+                    }
+
+                    _ = RunAttachmentAsync(() => AttachFileAsync(candidate));
+                    return true;
+                });
+
+                // The drop attach starts its own task from a synchronous handler; failures
+                // that slip past AttachFileAsync's own error rows land in the transcript.
+                async Task RunAttachmentAsync(Func<Task> action)
+                {
+                    try
+                    {
+                        await action().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await WriteAltLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                    }
+                }
+
                 tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
-                tgWindow.Hints.SetIdle(workspaceLabel);
+                loop.RefreshAttachmentLabel();
                 tgApp!.AddTimeout(
                     TimeSpan.FromMilliseconds(200),
                     () =>

@@ -27,6 +27,10 @@ public sealed class TgChatLoop
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Func<string, TranscriptStream, CancellationToken, Task> _promptHandler =
         (_, _, _) => Task.CompletedTask;
+    private Func<string>? _attachmentLabelProvider;
+    private Func<int>? _attachmentCountProvider;
+    private Func<Task>? _pasteHandler;
+    private Func<string, bool>? _dropHandler;
     private CancellationTokenSource? _turn;
     private int _historyIndex;
     private string _draft = string.Empty;
@@ -52,10 +56,47 @@ public sealed class TgChatLoop
     public void SetPromptHandler(Func<string, TranscriptStream, CancellationToken, Task> handler) =>
         _promptHandler = handler;
 
+    /// <summary>Feeds the hint row's idle label; the provider owns the count/workspace wording.</summary>
+    public void SetAttachmentLabelProvider(Func<string> provider) => _attachmentLabelProvider = provider;
+
+    /// <summary>Pending attachment count, used to allow an attachment-only (empty) submit.</summary>
+    public void SetAttachmentCountProvider(Func<int> provider) => _attachmentCountProvider = provider;
+
+    /// <summary>Ctrl+V handler (clipboard image/text); a null handler leaves the key to the input.</summary>
+    public void SetPasteHandler(Func<Task> handler) => _pasteHandler = handler;
+
+    /// <summary>
+    /// A dropped path in the composer text: returns true when the line was consumed as an
+    /// attachment. The handler starts its own async attach; the loop just routes the line.
+    /// </summary>
+    public void SetDropHandler(Func<string, bool> handler) => _dropHandler = handler;
+
+    /// <summary>Repaints the idle hint from the provider; a busy turn keeps its spinner.</summary>
+    public void RefreshAttachmentLabel()
+    {
+        if (_attachmentLabelProvider is null || _busy)
+        {
+            return;
+        }
+
+        _window.Hints.SetIdle(_attachmentLabelProvider());
+    }
+
     public void Submit()
     {
         var line = _window.Composer.Input.Text?.ToString() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(line))
+        if (_dropHandler is not null)
+        {
+            var candidate = line.Trim();
+            if (candidate.Length > 0 && _dropHandler(candidate))
+            {
+                _window.Composer.Input.Text = string.Empty;
+                return;
+            }
+        }
+
+        var hasAttachments = (_attachmentCountProvider?.Invoke() ?? 0) > 0;
+        if (string.IsNullOrWhiteSpace(line) && !hasAttachments)
         {
             return;
         }
@@ -168,7 +209,7 @@ public sealed class TgChatLoop
             }
             else
             {
-                _window.Hints.SetIdle(_window.Hints.Workspace);
+                _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace);
             }
         }
     }
@@ -206,10 +247,50 @@ public sealed class TgChatLoop
             CompleteCommand();
             key.Handled = true;
         }
+        else if (key == Terminal.Gui.Input.Key.V.WithCtrl && _pasteHandler is not null)
+        {
+            Paste();
+            key.Handled = true;
+        }
         else if (key == Terminal.Gui.Input.Key.O.WithCtrl)
         {
             _window.Transcript.ToggleExpanded();
             key.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Ctrl+V claims the key whenever a paste handler is wired: the handler reads the
+    /// Windows clipboard itself (image or text), so the composer must not also paste.
+    /// </summary>
+    private void Paste()
+    {
+        var handler = _pasteHandler;
+        if (handler is null)
+        {
+            return;
+        }
+
+        _ = RunHandlerAsync(handler);
+    }
+
+    /// <summary>Runs a fire-and-forget composer handler, landing failures on the transcript.</summary>
+    private async Task RunHandlerAsync(Func<Task> handler)
+    {
+        try
+        {
+            await handler().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                _window.App?.Invoke(() => _window.Transcript.Append(" " + ex.Message, TranscriptStyle.Error));
+            }
+            catch (NotInitializedException)
+            {
+                // The session wound down before the failure could be reported.
+            }
         }
     }
 

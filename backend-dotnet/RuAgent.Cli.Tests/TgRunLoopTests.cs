@@ -269,4 +269,88 @@ public sealed class TgRunLoopTests
         });
         app.Run(window);
     }
+
+    [Fact]
+    public void AttachmentLabel_ShowsInHintsRow()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        loop.SetAttachmentLabelProvider(() => "[2 attachments] C:/Users/USER");
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            loop.RefreshAttachmentLabel();
+            return false;
+        });
+        // The label is asserted on the next frame: SetIdle only marks the view dirty, and
+        // the snapshot reads the driver's last drawn cells.
+        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
+        {
+            Assert.Contains("[2 attachments] C:/Users/USER", string.Join('\n', TgSnapshot.Capture(app)));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    /// <summary>
+    /// Task 10's parked finding: the empty-prompt guard rejected an attachment-only turn,
+    /// which classic mode allows. With attachments pending the empty line must submit; the
+    /// prompt handler receives the empty string and composes the pending files.
+    /// </summary>
+    [Fact]
+    public async Task Submit_AttachmentOnlyTurn_IsAllowed()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var submitted = new List<string>();
+        loop.SetPromptHandler((line, _, _) =>
+        {
+            submitted.Add(line);
+            return Task.CompletedTask;
+        });
+        loop.SetAttachmentCountProvider(() => 2);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            loop.Submit();
+            Assert.Equal([string.Empty], submitted);
+            loop.Stop();
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    [Fact]
+    public void Submit_EmptyPromptWithoutAttachments_IsIgnored()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var submitted = new List<string>();
+        loop.SetPromptHandler((line, _, _) =>
+        {
+            submitted.Add(line);
+            return Task.CompletedTask;
+        });
+        loop.SetAttachmentCountProvider(() => 0);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            loop.Submit();
+            Assert.Empty(submitted);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
 }

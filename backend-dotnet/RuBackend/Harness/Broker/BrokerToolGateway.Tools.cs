@@ -299,7 +299,8 @@ public sealed partial class BrokerToolGateway
                         execution,
                         body["error_code"]?.GetValue<string>() is { Length: > 0 } errorCode
                             ? errorCode
-                            : "tool_failed");
+                            : "tool_failed",
+                        body["safe_summary"]?.GetValue<string>());
             }
         }
         catch (ToolTransportException error) when (
@@ -391,8 +392,17 @@ public sealed partial class BrokerToolGateway
             contentEncoding: HarnessPayloadEncoding.Json);
     }
 
-    private static ToolExecutionReceipt FailedReceipt(PreparedToolExecution execution, string code)
+    private static ToolExecutionReceipt FailedReceipt(
+        PreparedToolExecution execution,
+        string code,
+        string? safeSummary = null)
     {
+        var content = new JsonObject { ["error"] = code };
+        if (BoundRepairHint(safeSummary) is { } hint)
+        {
+            content["hint"] = hint;
+        }
+
         return new ToolExecutionReceipt(
             execution.ExecutionId,
             execution.ToolCallId,
@@ -400,9 +410,44 @@ public sealed partial class BrokerToolGateway
             code,
             null,
             sideEffectsPossible: false,
-            modelContent: Encoding.UTF8.GetBytes(
-                new JsonObject { ["error"] = code }.ToJsonString()),
+            modelContent: Encoding.UTF8.GetBytes(content.ToJsonString()),
             contentEncoding: HarnessPayloadEncoding.Json);
+    }
+
+    internal const int MaximumRepairHintLength = 512;
+
+    /// <summary>
+    /// Bounds the Broker's repair summary before it becomes model-visible: one
+    /// line, at most <see cref="MaximumRepairHintLength"/> characters, and never
+    /// a forbidden field name. Serializer output escapes content quotes as
+    /// <c>\u0022</c>, so both spellings are normalized before matching, exactly
+    /// like the NDJSON privacy guard.
+    /// </summary>
+    internal static string? BoundRepairHint(string? safeSummary)
+    {
+        if (string.IsNullOrWhiteSpace(safeSummary))
+        {
+            return null;
+        }
+
+        var cleaned = safeSummary.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (cleaned.Length == 0 || cleaned.Contains('\0'))
+        {
+            return null;
+        }
+
+        if (cleaned.Length > MaximumRepairHintLength)
+        {
+            cleaned = cleaned[..MaximumRepairHintLength];
+        }
+
+        var serialized = new JsonObject { ["hint"] = cleaned }.ToJsonString();
+        var normalized = serialized
+            .ToLowerInvariant()
+            .Replace("\\u0022", "\"", StringComparison.Ordinal);
+        return HarnessEventContractValidator.ContainsForbiddenField(normalized)
+            ? null
+            : cleaned;
     }
 
     private static bool IsPostDispatchExecuteFailure(

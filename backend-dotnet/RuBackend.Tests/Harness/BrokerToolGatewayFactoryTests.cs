@@ -499,6 +499,136 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Failed_edit_carries_the_broker_repair_hint_into_model_content()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('e', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+        var editPath = Path.Combine(_workspaceRoot, "edit-hint.txt");
+        await File.WriteAllTextAsync(editPath, "present");
+        try
+        {
+            var proposal = Proposal(runId, "edit", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = editPath,
+                ["old_string"] = "absent",
+                ["new_string"] = "replacement",
+            });
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_" + new string('e', 32)),
+                    decision.CanonicalIntentToken!,
+                    decision.GatewayGeneration),
+                CancellationToken.None);
+            var receipt = await gateway.ExecuteAsync(
+                prepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("edit_no_match", receipt.Code);
+            var content = System.Text.Json.Nodes.JsonNode.Parse(
+                System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
+            Assert.Equal("edit_no_match", content["error"]!.GetValue<string>());
+            var hint = content["hint"]!.GetValue<string>();
+            Assert.Contains("old_string was not found in the file", hint, StringComparison.Ordinal);
+            Assert.True(
+                hint.Length <= global::RuBackend.Harness.Broker.BrokerToolGateway.MaximumRepairHintLength);
+            Assert.DoesNotContain('\n', hint);
+            Assert.DoesNotContain('\r', hint);
+        }
+        finally
+        {
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    [Fact]
+    public async Task Failed_execution_without_a_broker_summary_has_no_hint()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('b', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+        try
+        {
+            var proposal = Proposal(runId, "read", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = "notes/missing.txt",
+            });
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_" + new string('b', 32)),
+                    decision.CanonicalIntentToken!,
+                    decision.GatewayGeneration),
+                CancellationToken.None);
+            gateway.ExecutionReplyTextTransform = text =>
+            {
+                var envelope = System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject();
+                envelope["payload"]!.AsObject().Remove("safe_summary");
+                return envelope.ToJsonString();
+            };
+
+            var receipt = await gateway.ExecuteAsync(
+                prepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("file_not_found", receipt.Code);
+            var content = System.Text.Json.Nodes.JsonNode.Parse(
+                System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
+            Assert.Equal("file_not_found", content["error"]!.GetValue<string>());
+            Assert.False(content.ContainsKey("hint"));
+        }
+        finally
+        {
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    [Fact]
+    public void BoundRepairHint_strips_lines_clamps_and_rejects_forbidden_fields()
+    {
+        Assert.Null(global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint(null));
+        Assert.Null(global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint("   "));
+        Assert.Null(global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint("copy \"output\" from the file"));
+
+        var bounded = global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint(
+            "line one\r\nline two " + new string('x', 600));
+
+        Assert.NotNull(bounded);
+        Assert.DoesNotContain('\r', bounded!);
+        Assert.DoesNotContain('\n', bounded!);
+        Assert.Equal(
+            global::RuBackend.Harness.Broker.BrokerToolGateway.MaximumRepairHintLength,
+            bounded!.Length);
+        Assert.Equal(
+            "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
+            global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint(
+                "  old_string was not found in the file. Re-read the file and copy the exact text including whitespace.  "));
+    }
+
+    [Fact]
     public async Task RepeatedResumedProposal_ReevaluatesAfterTokenConsumption()
     {
         var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);

@@ -3,8 +3,11 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Persistence;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -67,6 +70,60 @@ public sealed class HeadlessCodingLoopTests
         // and the unrelated dirty file is untouched.
         Assert.Equal(workspace.HeadAfterSeed, workspace.HeadNow());
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Failed_edit_hint_reaches_the_model_context()
+    {
+        using var workspace = GitWorkspace.Create();
+        var runner = new ScriptedRunner();
+        runner.Enqueue(ToolCall(
+            "files.edit",
+            """{"path":"seed.txt","old_string":"text-not-in-the-file","new_string":"replacement"}"""));
+
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: workspace.DataPaths,
+            modelStepRunner: runner,
+            withInProcessBroker: true);
+        using var client = factory.CreateAuthenticatedClient();
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+
+        Assert.True(
+            await WaitForStatusAsync(
+                client,
+                runId,
+                new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                TimeSpan.FromSeconds(30)),
+            "run never reached a terminal state");
+
+        var payloadStore = factory.Services.GetRequiredService<HarnessPayloadStore>();
+        var taskRunId = new RunId(runId);
+        var payloadIds = await payloadStore.ListPayloadIdsAsync(
+            taskRunId,
+            HarnessPayloadKind.ToolOutput,
+            CancellationToken.None);
+        string? failedOutput = null;
+        foreach (var payloadId in payloadIds)
+        {
+            var payload = await payloadStore.ReadForModelAsync(
+                taskRunId,
+                payloadId,
+                CancellationToken.None);
+            var text = Encoding.UTF8.GetString(payload.Plaintext.Span);
+            if (text.Contains("\"edit_no_match\"", StringComparison.Ordinal))
+            {
+                failedOutput = text;
+                break;
+            }
+        }
+
+        Assert.NotNull(failedOutput);
+        var content = JsonNode.Parse(failedOutput!)!.AsObject();
+        Assert.Equal("edit_no_match", content["error"]!.GetValue<string>());
+        Assert.Contains(
+            "old_string was not found in the file",
+            content["hint"]!.GetValue<string>(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -6,17 +6,17 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiPaletteTests
 {
     [Fact]
-    public void TrueColor_EmitsAuroraRgbCodes()
+    public void TrueColor_EmitsThemeRgbCodes()
     {
         using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
-            Assert.Equal("\u001b[38;2;56;189;248m", TuiPalette.Code(TuiToken.Brand));
-            Assert.Equal("\u001b[38;2;129;140;248m", TuiPalette.Code(TuiToken.Brand2));
-            Assert.Equal("\u001b[38;2;148;163;184m", TuiPalette.Code(TuiToken.Meta));
-            Assert.Equal("\u001b[38;2;52;211;153m", TuiPalette.Code(TuiToken.Ok));
-            Assert.Equal("\u001b[38;2;251;191;36m", TuiPalette.Code(TuiToken.Warn));
-            Assert.Equal("\u001b[38;2;248;113;113m", TuiPalette.Code(TuiToken.Err));
-            Assert.Equal("\u001b[38;2;255;255;255m", TuiPalette.Code(TuiToken.Bright));
+            Assert.Equal("\u001b[38;2;92;156;245m", TuiPalette.Code(TuiToken.Brand));
+            Assert.Equal("\u001b[38;2;157;124;216m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[38;2;128;128;128m", TuiPalette.Code(TuiToken.Meta));
+            Assert.Equal("\u001b[38;2;127;216;143m", TuiPalette.Code(TuiToken.Ok));
+            Assert.Equal("\u001b[38;2;245;167;66m", TuiPalette.Code(TuiToken.Warn));
+            Assert.Equal("\u001b[38;2;224;108;117m", TuiPalette.Code(TuiToken.Err));
+            Assert.Equal("\u001b[38;2;238;238;238m", TuiPalette.Code(TuiToken.Bright));
         }
     }
 
@@ -25,13 +25,13 @@ public sealed class TuiPaletteTests
     {
         using (TuiPalette.PinLevel(TuiColorLevel.Palette256))
         {
-            Assert.Equal("\u001b[38;5;39m", TuiPalette.Code(TuiToken.Brand));
-            Assert.Equal("\u001b[38;5;105m", TuiPalette.Code(TuiToken.Brand2));
-            Assert.Equal("\u001b[38;5;246m", TuiPalette.Code(TuiToken.Meta));
+            Assert.Equal("\u001b[38;5;75m", TuiPalette.Code(TuiToken.Brand));
+            Assert.Equal("\u001b[38;5;140m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[38;5;244m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[38;5;79m", TuiPalette.Code(TuiToken.Ok));
-            Assert.Equal("\u001b[38;5;221m", TuiPalette.Code(TuiToken.Warn));
-            Assert.Equal("\u001b[38;5;210m", TuiPalette.Code(TuiToken.Err));
-            Assert.Equal("\u001b[38;5;231m", TuiPalette.Code(TuiToken.Bright));
+            Assert.Equal("\u001b[38;5;215m", TuiPalette.Code(TuiToken.Warn));
+            Assert.Equal("\u001b[38;5;174m", TuiPalette.Code(TuiToken.Err));
+            Assert.Equal("\u001b[38;5;255m", TuiPalette.Code(TuiToken.Bright));
         }
     }
 
@@ -41,7 +41,7 @@ public sealed class TuiPaletteTests
         using (TuiPalette.PinLevel(TuiColorLevel.Basic16))
         {
             Assert.Equal("\u001b[94m", TuiPalette.Code(TuiToken.Brand));
-            Assert.Equal("\u001b[96m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[95m", TuiPalette.Code(TuiToken.Brand2));
             Assert.Equal("\u001b[37m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[90m", TuiPalette.Code(TuiToken.Line));
             Assert.Equal("\u001b[92m", TuiPalette.Code(TuiToken.Ok));
@@ -78,7 +78,7 @@ public sealed class TuiPaletteTests
     {
         using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
-            Assert.Equal("\u001b[38;2;56;189;248m◆\u001b[0m", TuiPalette.Paint("◆", TuiToken.Brand));
+            Assert.Equal("\u001b[38;2;92;156;245m◆\u001b[0m", TuiPalette.Paint("◆", TuiToken.Brand));
         }
     }
 

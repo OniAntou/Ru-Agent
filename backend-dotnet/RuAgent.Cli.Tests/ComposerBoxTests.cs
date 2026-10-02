@@ -120,7 +120,7 @@ public sealed class ComposerBoxTests : IDisposable
         using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             var lines = ComposerBox.Compose(40, ComposerState.Approval, "❯ ", "", "", "", "", "approval needed");
-            Assert.Contains("\u001b[38;2;251;191;36m", lines[0], StringComparison.Ordinal);
+            Assert.Contains("\u001b[38;2;245;167;66m", lines[0], StringComparison.Ordinal);
         }
     }
 
@@ -140,8 +140,8 @@ public sealed class ComposerBoxTests : IDisposable
         {
             var lines = ComposerBox.Compose(40, ComposerState.Idle, "❯ ", "hi", "ghost", "", "", null);
 
-            Assert.Contains("\u001b[38;2;255;255;255mhi", lines[1], StringComparison.Ordinal);
-            Assert.Contains("\u001b[38;2;148;163;184mghost", lines[1], StringComparison.Ordinal);
+            Assert.Contains("\u001b[38;2;238;238;238mhi", lines[1], StringComparison.Ordinal);
+            Assert.Contains("\u001b[38;2;128;128;128mghost", lines[1], StringComparison.Ordinal);
         }
     }
 }

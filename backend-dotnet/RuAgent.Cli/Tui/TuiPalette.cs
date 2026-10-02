@@ -23,8 +23,8 @@ public enum TuiColorLevel
 }
 
 /// <summary>
-/// The aurora palette shared with the WinUI surface: cyan to violet identity, GUI dark
-/// semantics for meta/line/ok/warn/err. Colour depth degrades truecolor -> 256 -> 16 -> none.
+/// The terminal palette cloned from OpenCode's dark theme: a steel-blue identity,
+/// violet accents and warm neutrals. Colour depth degrades truecolor -> 256 -> 16 -> none.
 /// </summary>
 public static class TuiPalette
 {
@@ -187,46 +187,57 @@ public static class TuiPalette
     public static string Border(string? text) => Paint(text, TuiToken.Line);
 
     /// <summary>
-    /// Background escape sequence for elevated surface cards (e.g. user prompt container).
+    /// Background escape sequence for the user prompt block (panel surface).
     /// Returns empty string when color is disabled (None or Basic16).
     /// </summary>
     public static string SurfaceBgCode() => Level switch
     {
-        TuiColorLevel.TrueColor => "\u001b[48;2;31;34;42m",
-        TuiColorLevel.Palette256 => "\u001b[48;5;236m",
+        TuiColorLevel.TrueColor => "\u001b[48;2;20;20;20m",
+        TuiColorLevel.Palette256 => "\u001b[48;5;233m",
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Background escape sequence for the composer box interior (elevated element surface).
+    /// Returns empty string when color is disabled (None or Basic16).
+    /// </summary>
+    public static string ElementBgCode() => Level switch
+    {
+        TuiColorLevel.TrueColor => "\u001b[48;2;30;30;30m",
+        TuiColorLevel.Palette256 => "\u001b[48;5;234m",
         _ => string.Empty,
     };
 
     private static string TrueColorParts(TuiToken token) => token switch
     {
-        TuiToken.Brand => "56;189;248",
-        TuiToken.Brand2 => "129;140;248",
-        TuiToken.Meta => "148;163;184",
-        TuiToken.Line => "30;41;59",
-        TuiToken.Ok => "52;211;153",
-        TuiToken.Warn => "251;191;36",
-        TuiToken.Err => "248;113;113",
-        TuiToken.Bright => "255;255;255",
-        _ => "255;255;255",
+        TuiToken.Brand => "92;156;245",
+        TuiToken.Brand2 => "157;124;216",
+        TuiToken.Meta => "128;128;128",
+        TuiToken.Line => "72;72;72",
+        TuiToken.Ok => "127;216;143",
+        TuiToken.Warn => "245;167;66",
+        TuiToken.Err => "224;108;117",
+        TuiToken.Bright => "238;238;238",
+        _ => "238;238;238",
     };
 
     private static int Palette256Index(TuiToken token) => token switch
     {
-        TuiToken.Brand => 39,
-        TuiToken.Brand2 => 105,
-        TuiToken.Meta => 246,
-        TuiToken.Line => 236,
+        TuiToken.Brand => 75,
+        TuiToken.Brand2 => 140,
+        TuiToken.Meta => 244,
+        TuiToken.Line => 238,
         TuiToken.Ok => 79,
-        TuiToken.Warn => 221,
-        TuiToken.Err => 210,
-        TuiToken.Bright => 231,
+        TuiToken.Warn => 215,
+        TuiToken.Err => 174,
+        TuiToken.Bright => 255,
         _ => 255,
     };
 
     private static int Basic16Index(TuiToken token) => token switch
     {
         TuiToken.Brand => 12,
-        TuiToken.Brand2 => 14,
+        TuiToken.Brand2 => 13,
         TuiToken.Meta => 7,
         TuiToken.Line => 8,
         TuiToken.Ok => 10,

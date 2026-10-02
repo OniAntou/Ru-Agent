@@ -616,6 +616,13 @@ public sealed partial class AgentCommands
             }
 
             pendingImages.Add(attachment);
+            if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
+            {
+                await WriteAltLineAsync(
+                    _err,
+                    $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
+            }
+
             await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count}] {attachment.Label}").ConfigureAwait(false);
             if (altBufferActive && sticky.Active)
             {
@@ -1181,6 +1188,12 @@ public sealed partial class AgentCommands
 
                 string mLbl = string.IsNullOrWhiteSpace(curModel) ? (string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel) : curModel;
                 lineReader.Legend = string.IsNullOrWhiteSpace(effort) ? mLbl : $"{mLbl} · {effort}";
+                if (!string.IsNullOrWhiteSpace(curModel))
+                {
+                    // The footer agent bar and the vision pre-check read this local, so a
+                    // /model switch is reflected without a restart.
+                    activeModel = curModel;
+                }
             }
             catch (Exception)
             {
@@ -1247,6 +1260,23 @@ public sealed partial class AgentCommands
             else
             {
                 sessionRenderer.Note(modelWarning, Tui.TuiToken.Warn);
+                sessionRenderer.Flush();
+            }
+        }
+
+        if (pendingImages.Count > 0
+            && activeModel.Length > 0
+            && !Images.CliVisionModels.IsVisionModel(activeModel))
+        {
+            var visionWarning =
+                $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model";
+            if (cmd.Json)
+            {
+                await WriteAltLineAsync(_err, visionWarning).ConfigureAwait(false);
+            }
+            else
+            {
+                sessionRenderer.Note(visionWarning, Tui.TuiToken.Warn);
                 sessionRenderer.Flush();
             }
         }

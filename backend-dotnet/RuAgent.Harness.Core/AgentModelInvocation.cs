@@ -137,7 +137,6 @@ internal sealed class AgentModelInvocation
         }
         catch (Exception error)
         {
-            assistantStream.Complete();
             // The runner threw, so the prompt is not what failed and saying it did points the
             // reader at the wrong subsystem. The code is classified from the exception rather
             // than forwarded, because a message can quote user content.
@@ -148,9 +147,15 @@ internal sealed class AgentModelInvocation
                 // retries. Failing the run here would burn it on a condition that
                 // may clear while the user waits, so the coordinator parks the run
                 // for an explicit Continue instead; no failure marking happens here.
+                // The attempts before the throw may have streamed partial text, so
+                // reset the stream before it completes: the Continue retry must
+                // start on a clean turn instead of appending to the superseded text.
+                assistantStream.Reset();
+                assistantStream.Complete();
                 throw new ProviderTransientPauseException(code, error);
             }
 
+            assistantStream.Complete();
             if (AgentRecoveryNotes.IsModelRepairableCode(code))
             {
                 // The model can fix this by taking another turn, so the coordinator

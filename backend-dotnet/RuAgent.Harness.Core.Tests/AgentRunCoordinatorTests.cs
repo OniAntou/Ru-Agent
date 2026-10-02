@@ -442,6 +442,38 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Exhausted_provider_transient_resets_the_partial_stream_before_parking()
+    {
+        var frames = new List<HarnessTransientFrame>();
+        var buffer = new TransientFrameBuffer(32, frames.Add);
+        var model = new PartialDeltaThenThrowStepRunner(
+            "half an ans",
+            new StableModelStepError("provider_rate_limited"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, new FakeToolGateway(), store, buffer)
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal("provider_rate_limited", result.ErrorCode);
+        Assert.Collection(
+            frames,
+            partial =>
+            {
+                Assert.Equal(TransientFrameKind.AssistantDelta, partial.Kind);
+                Assert.False(partial.IsReset);
+                Assert.Equal("half an ans", partial.Content);
+            },
+            reset =>
+            {
+                Assert.Equal(TransientFrameKind.AssistantDelta, reset.Kind);
+                Assert.True(reset.IsReset);
+                Assert.Equal(string.Empty, reset.Content);
+            });
+    }
+
+    [Fact]
     public async Task Changed_tool_arguments_execute_after_a_completed_call()
     {
         var source = new FixedContextSource(
@@ -1700,6 +1732,21 @@ public sealed class AgentRunCoordinatorTests
     private sealed class StableModelStepError(string code) : Exception(code), IStableStepError
     {
         public string StepErrorCode { get; } = code;
+    }
+
+    private sealed class PartialDeltaThenThrowStepRunner(
+        string partial,
+        Exception failure) : IModelStepRunner
+    {
+        public async Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            await publishDelta(new AssistantDelta(request.ModelStepId, 1, partial))
+                .ConfigureAwait(false);
+            throw failure;
+        }
     }
 
     private sealed class RecordingActivitySink : IAgentActivitySink

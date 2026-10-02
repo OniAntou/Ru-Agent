@@ -86,6 +86,13 @@ public static class OfficeDocumentText
                 continue;
             }
 
+            // Stop decompressing once the extracted text is over the cap: reading more
+            // parts cannot change the verdict and only burns memory.
+            if (builder.Length > MaxTextChars)
+            {
+                return Extraction.Failed(Result.TooLarge);
+            }
+
             if (entry.FullName.Contains("/slides/slide", StringComparison.OrdinalIgnoreCase)
                 && ++slides > MaxSlides)
             {
@@ -99,10 +106,6 @@ public static class OfficeDocumentText
             }
 
             AppendPart(builder, entry.FullName, part);
-            if (builder.Length > MaxTextChars)
-            {
-                return Extraction.Failed(Result.TooLarge);
-            }
         }
 
         return builder.Length == 0

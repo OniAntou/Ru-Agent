@@ -810,11 +810,11 @@ public sealed class TuiInteractiveTests
         try
         {
             var echo = InteractiveLineReader.BuildSubmitEcho(
-                "look at this", "21:35", width: 80, attachmentLabels: ["1: cat.png", "2: dog.jpg"]);
+                "look at this", "21:35", width: 80, attachmentLabels: ["[image 1: cat.png]", "[file 1: notes.md]"]);
 
             var stripped = TuiText.Strip(echo);
             Assert.Contains("[image 1: cat.png]", stripped, StringComparison.Ordinal);
-            Assert.Contains("[image 2: dog.jpg]", stripped, StringComparison.Ordinal);
+            Assert.Contains("[file 1: notes.md]", stripped, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
         }
         finally
@@ -827,7 +827,7 @@ public sealed class TuiInteractiveTests
     public void InteractiveLineReader_BuildSubmitEcho_MonoShowsImageLabels()
     {
         TuiPalette.Level = TuiColorLevel.None;
-        var echo = InteractiveLineReader.BuildSubmitEcho("hi", "10:00", attachmentLabels: ["1: a.png"]);
+        var echo = InteractiveLineReader.BuildSubmitEcho("hi", "10:00", attachmentLabels: ["[image 1: a.png]"]);
 
         Assert.Contains("[image 1: a.png]", echo, StringComparison.Ordinal);
     }

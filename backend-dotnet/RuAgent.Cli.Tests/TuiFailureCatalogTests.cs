@@ -71,6 +71,7 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [InlineData("image_too_large")]
     [InlineData("invalid_image_mime")]
     [InlineData("invalid_image_base64")]
+    [InlineData("invalid_prompt")]
     [InlineData("forbidden")]
     [InlineData("model_failed")]
     [InlineData("model_timeout")]

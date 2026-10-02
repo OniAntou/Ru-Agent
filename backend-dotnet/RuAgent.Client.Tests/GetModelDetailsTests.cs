@@ -57,4 +57,20 @@ public sealed class GetModelDetailsTests
 
         Assert.Null(details);
     }
+
+    [Fact]
+    public async Task NonsenseRatesReadAsUnpublished()
+    {
+        var client = SettingsApiClientTests.Client(_ => SettingsApiClientTests.Json(HttpStatusCode.OK, """
+            {"status":"ok","catalog":[{"id":"vendor/odd","supported":true,
+             "cost":{"input":-1,"output":"free","cache_read":0.1}}]}
+            """));
+
+        var details = await client.GetModelDetailsAsync(null, "vendor/odd", CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.Null(details!.InputCost);
+        Assert.Null(details.OutputCost);
+        Assert.Equal(0.1, details.CacheReadCost);
+    }
 }

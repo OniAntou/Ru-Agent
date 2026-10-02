@@ -163,6 +163,25 @@ public sealed class CliImageResizerTests
     }
 
     [Fact]
+    public void TryReadWebpDimensions_ReadsTheLossyHeader()
+    {
+        var bytes = WebpLossy(640, 480);
+
+        Assert.True(CliImageResizer.TryReadWebpDimensions(bytes, out var width, out var height));
+        Assert.Equal(640, width);
+        Assert.Equal(480, height);
+    }
+
+    [Fact]
+    public void TryReadWebpDimensions_RejectsABadLossyStartCode()
+    {
+        var bytes = WebpLossy(640, 480);
+        bytes[23] = 0x00;
+
+        Assert.False(CliImageResizer.TryReadWebpDimensions(bytes, out _, out _));
+    }
+
+    [Fact]
     public void TryReadWebpDimensions_RejectsNonWebp()
     {
         Assert.False(CliImageResizer.TryReadWebpDimensions(Png(4, 4), out _, out _));
@@ -186,6 +205,23 @@ public sealed class CliImageResizerTests
             target[offset + 1] = (byte)((value >> 8) & 0xFF);
             target[offset + 2] = (byte)((value >> 16) & 0xFF);
         }
+    }
+
+    /// <summary>Minimal RIFF/WEBP container with a VP8 header (lossy): frame tag, start code, 14-bit sizes.</summary>
+    private static byte[] WebpLossy(int width, int height)
+    {
+        var bytes = new byte[30];
+        "RIFF"u8.CopyTo(bytes);
+        "WEBP"u8.CopyTo(bytes.AsSpan(8));
+        "VP8 "u8.CopyTo(bytes.AsSpan(12));
+        bytes[23] = 0x9D;
+        bytes[24] = 0x01;
+        bytes[25] = 0x2A;
+        bytes[26] = (byte)(width & 0xFF);
+        bytes[27] = (byte)((width >> 8) & 0x3F);
+        bytes[28] = (byte)(height & 0xFF);
+        bytes[29] = (byte)((height >> 8) & 0x3F);
+        return bytes;
     }
 
     /// <summary>Minimal VP8L header: signature byte then two packed 14-bit values (minus one).</summary>

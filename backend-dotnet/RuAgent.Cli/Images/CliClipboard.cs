@@ -35,7 +35,17 @@ public static class CliClipboard
         ClipboardImage? result = null;
         try
         {
-            var thread = new Thread(() => { result = ReadSta(); })
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    result = ReadSta();
+                }
+                catch (Exception ex)
+                {
+                    result = new(null, $"clipboard_paste_failed: {CliErrorText.ShortMessage(ex.Message)}");
+                }
+            })
             {
                 IsBackground = true,
             };
@@ -52,6 +62,58 @@ public static class CliClipboard
         }
 
         return result ?? new(null, "clipboard_paste_failed: the clipboard read returned nothing");
+    }
+
+    /// <summary>
+    /// Reads the clipboard's plain text, for a composer that wants a text paste fallback
+    /// when the clipboard holds no image. Bounded and retried like the image read.
+    /// </summary>
+    public static string? TryReadText()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        string? result = null;
+        try
+        {
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    if (!NativeClipboard.OpenClipboard(IntPtr.Zero))
+                    {
+                        return;
+                    }
+
+                    try
+                    {
+                        result = ReadUnicodeText();
+                    }
+                    finally
+                    {
+                        NativeClipboard.CloseClipboard();
+                    }
+                }
+                catch (Exception)
+                {
+                    // A text fallback that fails is simply no text.
+                }
+            })
+            {
+                IsBackground = true,
+            };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromSeconds(2));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        return result;
     }
 
     private static ClipboardImage ReadSta()
@@ -137,7 +199,7 @@ public static class CliClipboard
         }
 
         var count = NativeClipboard.DragQueryFileW(handle, 0xFFFFFFFF, null, 0);
-        for (uint i = 0; i < count; i++)
+        for (uint i = 0; i < count && i < 16; i++)
         {
             var length = NativeClipboard.DragQueryFileW(handle, i, null, 0);
             var buffer = new StringBuilder((int)length + 1);
@@ -250,8 +312,9 @@ public static class CliClipboard
     }
 
     /// <summary>
-    /// Wraps a DIB payload in a BMP file header so GDI+ can decode it. Handles the
-    /// BITMAPINFOHEADER/V4/V5 families; palette entries are skipped for indexed formats.
+    /// Wraps a DIB payload in a BMP file header so GDI+ can decode it. Only the
+    /// BITMAPINFOHEADER family (header ≥ 40 bytes) is accepted: the 12-byte core header
+    /// puts its bit depth at a different offset, and guessing would mis-address pixels.
     /// </summary>
     public static byte[]? DibToBmp(byte[] dib)
     {
@@ -261,7 +324,7 @@ public static class CliClipboard
         }
 
         var headerSize = BitConverter.ToInt32(dib, 0);
-        if (headerSize < 12 || headerSize > dib.Length)
+        if (headerSize < 40 || headerSize > dib.Length)
         {
             return null;
         }

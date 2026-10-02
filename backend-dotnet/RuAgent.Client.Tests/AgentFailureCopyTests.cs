@@ -49,6 +49,7 @@ public sealed class AgentFailureCopyTests
     [InlineData("image_too_large")]
     [InlineData("invalid_image_mime")]
     [InlineData("invalid_image_base64")]
+    [InlineData("invalid_prompt")]
     public void Every_audited_code_resolves_to_copy(string code)
     {
         Assert.True(AgentFailureCopy.TryGet(code, out var copy), code);

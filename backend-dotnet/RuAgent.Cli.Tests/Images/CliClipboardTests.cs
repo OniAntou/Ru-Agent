@@ -29,6 +29,17 @@ public sealed class CliClipboardTests
     }
 
     [Fact]
+    public void DibToBmp_RejectsTheCoreHeaderFamily()
+    {
+        // A 12-byte BITMAPCOREHEADER puts the bit depth at a different offset; guessing
+        // would mis-address pixels, so the whole family fails closed.
+        var core = new byte[64];
+        BitConverter.GetBytes(12).CopyTo(core, 0);
+
+        Assert.Null(CliClipboard.DibToBmp(core));
+    }
+
+    [Fact]
     public void SaveDibAsTempPng_WritesADecodablePngAndCleansUp()
     {
         var dib = Build32bppDib(6, 3);

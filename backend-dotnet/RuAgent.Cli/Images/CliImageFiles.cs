@@ -91,16 +91,24 @@ public static class CliImageFiles
         {
             resized = CliImageResizer.ResizeIfNeeded(bytes);
         }
-        catch (InvalidDataException ex)
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException
+            or OutOfMemoryException or System.Runtime.InteropServices.ExternalException)
         {
-            return (null, $"invalid_image: {name} - {ex.Message}");
+            return (null, $"invalid_image: {name} - {CliErrorText.ShortMessage(ex.Message)}");
+        }
+
+        if (resized.Bytes.LongLength > CliImagePolicy.MaxDecodedImageBytes)
+        {
+            return (null,
+                $"image_too_large: {name} is still {CliImageAttachment.FormatBytes(resized.Bytes.LongLength)} after resize (limit {CliImageAttachment.FormatBytes(CliImagePolicy.MaxDecodedImageBytes)})");
         }
 
         var base64 = Convert.ToBase64String(resized.Bytes);
-        if (base64.Length > CliImagePolicy.MaxDataUrlChars)
+        var dataUrlLength = "data:".Length + resized.MimeType.Length + ";base64,".Length + base64.Length;
+        if (dataUrlLength > CliImagePolicy.MaxDataUrlChars)
         {
             return (null,
-                $"image_too_large: {name} encodes to {base64.Length} chars (limit {CliImagePolicy.MaxDataUrlChars})");
+                $"image_too_large: {name} encodes to {dataUrlLength} chars (limit {CliImagePolicy.MaxDataUrlChars})");
         }
 
         return (new CliImageAttachment(

@@ -5,13 +5,13 @@ Thin headless client for the Agent v2 headless coding loop (Phase 3). Delegates 
 ## Commands
 
 ```text
-agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic] [--trust-workspace] [--confirm-full-access]
+agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--image PATH]... [--json] [--classic] [--trust-workspace] [--confirm-full-access]
 agent session list [--json]
 agent session rewind <session-id> --index <n> [--json]
 agent session delete <session-id> [--yes]
 agent session export <session-id> --harness <claude-code|codex> [--out <dir>] [--json]
 agent session import <file> [--harness <claude-code|codex|antigravity|opencode>] [--session <id>] [--json]
-agent run [--preset plan|standard|full_access] --workspace PATH "prompt" [--session <id>] [--json] [--trust-workspace] [--confirm-full-access]
+agent run [--preset plan|standard|full_access] --workspace PATH "prompt" [--session <id>] [--image PATH]... [--json] [--trust-workspace] [--confirm-full-access]
 agent attach <run-id> [--json]
 agent trust <run-id> --approve|--deny
 agent approve <run-id> <approval-id>
@@ -31,6 +31,8 @@ agent rpc
 - `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, command history (Up/Down arrow navigation), Tab autocompletion for slash commands, a live status row (state, current activity, elapsed, turn/token/tool counters), multiline prompt continuation (`\`), inline tool approvals (`approval.requested`), and slash commands (`/model`, `/backend`, `/rewind`, `/continue`, `/delete`, `/status`, `/history`, `/clear`, `/help`, `/exit`). A parked run (`waiting_user`, `reconciliation_required`) is surfaced instead of spinning forever: the status row reads `▲ run paused · <code> · /continue` and one notice carries `resume with /continue (or 'ru agent continue <run-id>')`; `/continue [run-id]` — or a bare `Continue` while a parked run is known — `POST`s the resume and follows the run from its durable cursor, and the parked state clears when it moves again. A run left parked by a host restart is adopted when `chat --session <id>` reopens the session; a running run only gets an `ru agent attach` hint and is never followed automatically. Reopening with `--session <id>` also reprints the session's tail before the first prompt — the newest 20 user/assistant messages, only text, each message capped and marked with `…` when shortened, tool/thinking rows never replayed — through the same transcript renderer a live turn uses; a read fault prints one bounded `session_replay_unavailable` notice and the REPL still starts, and a session with no history keeps the landing screen instead of double-rendering.
 - While a turn streams, keystrokes are captured in the pinned footer: Enter queues one prompt (`PendingPromptSlot`) and sends it when the turn ends, a first Escape clears a non-empty draft and the next Escape (empty draft) interrupts the run, `Ctrl+C` interrupts it too, `Ctrl+O` expands the last collapsed tool/diff block. The interrupt `POST`s `/agent/v1/runs/{runId}/cancel` (best-effort) so the server releases the run instead of only the terminal detaching. A pending approval takes over the footer with a choice list (`↑↓`/digits to move, Enter to confirm, Escape to deny).
 - `--classic` opts out of the sticky footer and keeps the sequential layout where the composer only appears between turns. The sticky footer is also disabled automatically when stdout is redirected, when `TERM=dumb`, and with `--json`.
+- Attachments travel with the next turn. Images: `--image PATH` (repeatable, max 4), `/attach <path>`, a dropped path, or `Ctrl+V` (clipboard file drop, a screenshot via DIB → temp PNG, a text path, and plain-text paste when no image is present). Images are validated, resized (longest side 2048, `>4MB` re-encoded, BMP/GIF normalised to JPEG, PNG alpha kept, EXIF orientation applied; WebP passes through only when its header proves it fits) and capped exactly like the GUI: 10MB read, 4MB decoded per image, 20MB per turn, 5.6M-char data URL. Text/code files (5MB) and `.docx`/`.pptx`/`.xlsx` (20MB, extracted text capped at 400k chars) inline as fenced blocks ahead of the prompt; a composed prompt over 16k chars is refused before the run is POSTed. `/attachments` lists every pending item, `/detach <n> | --all` removes one or all; the list clears when the run owns it and a declined workspace-trust challenge restores it intact. Temp clipboard files (`%TEMP%\ru-img-*`) are deleted on send, detach, or chat exit. A vision-name pre-check only warns; the backend remains the source of truth and fails closed with `vision_unsupported`.
+- The pinned header shows the OpenCode-style usage cluster (`39,413  20%  ($0.29)`) when the active model's catalog publishes a context window and rates: the percent tracks the largest model step this turn (like the GUI meter) and the cost accumulates at the published per-million rates; both need a `models.dev`-style catalog and stay off when it publishes nothing. Session cost is session-level (a `/clear` resets the percent, not the cost).
 - A new run whose workspace identity has not been trusted **asks in the composer**, on the same frame and keyboard a tool approval uses: the status row reads `▲ workspace needs trust · <path>` and the choice list offers `1 · trust` or `2 · cancel`. Nothing is executing while the challenge is open, so the type-ahead loop can hand the keyboard over safely — the earlier design wrote an instruction into the transcript and left the turn live, which made the row spin `Thinking` over a run that could not reply, and the instruction itself was repainted away. Trust is still an explicit human decision: the prompt starts on **cancel**, a bare Enter or Escape never widens what the agent may read, and nothing is auto-approved. Declining cancels the run, because the challenge is single-use and a parked run holds its workspace's active-run lock. Trust is a one-time grant per canonical workspace identity and the host stores it, so `bin/ru.cmd` runs normally afterwards and never asks again; a moved or recreated identity asks once more. Without a composer (redirected stdout, `--json`, `--classic`, a terminal too small for the sticky footer) the CLI stays non-interactive, never reads stdin, and reports the bounded `workspace_trust_required` with the `ru agent trust <run> --approve` fallback.
 - A trust challenge expires after ten minutes, and the host now notices while it is running rather than only at the next startup: the runtime loop cancels the expired run with `terminal_error_code = workspace_trust_expired` and releases the lock. Trust is a pre-execution gate, so cancelling cannot roll back a tool side effect. Previously only the startup sweep could do this, so a long-lived desktop host left the run — and the workspace lock — parked indefinitely.
 - A turn that completes with no assistant text and no tool row says so: `▲ no text arrived from the model · the run completed but its reply never reached this terminal · retry, or switch model with /model`. Reply text is persisted even when its delta never reaches this client, so a finished run that delivered nothing used to end in total silence — just a `✓ idle · 10.6s` row, which reads exactly like a very short answer. The note is deliberately withheld when the turn did stream text or did run tools, because there the operator can already see what happened. This reports the observation; it does not recover the missing text.
@@ -116,7 +118,9 @@ Interrupting a chat turn is server-side, not just a local detach: Escape with an
 
 - Max arguments: 64
 - Workspace path: 1..512
-- Prompt: 1..8192
+- Prompt: 1..8192 (the composed prompt with inlined attachments is refused above 16,000 chars)
+- Image attachments: max 4, 10MB per file, 4MB decoded each, 20MB per turn, png/jpeg/webp/bmp
+- Text attachments: 5MB per file; office documents 20MB raw / 400k extracted chars
 - Session id: 1..64 (alphanum, `_`, `-`)
 - Run id: `run_` + 32 lower hex (36 total)
 - Approval id: `apr_` + 32 lower hex
@@ -136,7 +140,9 @@ transport (`timeout` / `transport_error`), provider errors
 (`server_error` / `http_error` / `malformed_payload`), catalog reachability
 (`catalog_unavailable` / `catalog_http_error`) and shape
 (`catalog_malformed` / `catalog_too_large` / `catalog_configuration_error`),
-`response_too_large`, `vision_unsupported`, `empty_model_reply`,
+`response_too_large`, `vision_unsupported` (`image_limit_exceeded`,
+`image_too_large`, `invalid_image_mime`, `invalid_image_base64`),
+`invalid_prompt`, `empty_model_reply`,
 `model_failed` / `model_timeout` / `prompt_too_large` / `model_unavailable`,
 model-backend reachability (historical `worker_unavailable` / `worker_failed`
 codes, kept apart from

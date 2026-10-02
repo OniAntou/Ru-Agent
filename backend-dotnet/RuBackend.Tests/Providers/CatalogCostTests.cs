@@ -113,6 +113,7 @@ public sealed class CatalogCostTests : IDisposable
     [InlineData("0")]
     [InlineData("-5")]
     [InlineData("\"big\"")]
+    [InlineData("100000001")]
     public async Task A_nonsense_context_limit_stays_unpublished(string context)
     {
         var snapshot = await ReadAsync(

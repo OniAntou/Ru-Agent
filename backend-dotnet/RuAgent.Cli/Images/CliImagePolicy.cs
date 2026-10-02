@@ -10,6 +10,12 @@ public static class CliImagePolicy
     public const int MaxImageAttachmentBytes = 10 * 1024 * 1024;
     public const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
 
+    /// <summary>Backend cap on one decoded image, mirrored so the client refuses early.</summary>
+    public const int MaxDecodedImageBytes = 4 * 1024 * 1024;
+
+    /// <summary>Backend cap on the decoded bytes of one turn's images, mirrored.</summary>
+    public const int MaxTotalImageBytes = 20 * 1024 * 1024;
+
     /// <summary>Backend cap on one data URL, mirrored so the client refuses before POSTing.</summary>
     public const int MaxDataUrlChars = 5_600_000;
 

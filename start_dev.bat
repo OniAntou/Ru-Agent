@@ -21,9 +21,9 @@ if not exist "%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\pub
     endlocal
     exit /b 1
 )
-if not exist "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0\win-x64\publish\RuAgent.Cli.exe" (
+if not exist "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0-windows\win-x64\publish\RuAgent.Cli.exe" (
     echo CLI publish output not found. Run build.bat and wait for [12/12] Build complete.
-    echo Expected: "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0\win-x64\publish\RuAgent.Cli.exe"
+    echo Expected: "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0-windows\win-x64\publish\RuAgent.Cli.exe"
     endlocal
     exit /b 1
 )

@@ -166,6 +166,10 @@ public static class AgentFailureCopy
             "Prompt too large",
             "the composed prompt exceeded the size bound",
             "shorten the prompt or attachments, or compact the session");
+        Add(table, ["invalid_prompt"],
+            "Prompt rejected",
+            "the prompt was empty, malformed or over the host's size bound",
+            "shorten the prompt or its attachments, then retry");
         Add(table, ["model_unavailable"],
             "Model unavailable",
             "the provider does not serve this model id",

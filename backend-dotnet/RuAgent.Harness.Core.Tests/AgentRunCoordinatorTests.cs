@@ -474,6 +474,42 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Repairable_model_step_failure_resets_the_partial_stream_before_the_note()
+    {
+        var frames = new List<HarnessTransientFrame>();
+        var buffer = new TransientFrameBuffer(32, frames.Add);
+        var model = new PartialDeltaThenThrowStepRunner(
+            "half an ans",
+            new StableModelStepError("model_tool_call_invalid"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(model, new FakeToolGateway(), store, buffer)
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Null(result.ErrorCode);
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == "model_tool_call_invalid");
+        Assert.Collection(
+            frames,
+            partial =>
+            {
+                Assert.Equal(TransientFrameKind.AssistantDelta, partial.Kind);
+                Assert.False(partial.IsReset);
+                Assert.Equal("half an ans", partial.Content);
+            },
+            reset =>
+            {
+                Assert.Equal(TransientFrameKind.AssistantDelta, reset.Kind);
+                Assert.True(reset.IsReset);
+                Assert.Equal(string.Empty, reset.Content);
+            });
+    }
+
+    [Fact]
     public async Task Changed_tool_arguments_execute_after_a_completed_call()
     {
         var source = new FixedContextSource(
@@ -632,6 +668,153 @@ public sealed class AgentRunCoordinatorTests
         Assert.DoesNotContain(
             commit.Payloads,
             payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+    }
+
+    [Fact]
+    public async Task Prose_after_a_failed_receipt_spends_both_notes_then_fails_with_the_receipt_code()
+    {
+        var prior = ToolStep();
+        const string toolErrorCode = "workspace_path_outside_root";
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, prior),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Failed,
+                    toolErrorCode,
+                    null,
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            contextSource: source);
+
+        var first = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, first.Run.State);
+        var firstCommit = store.Commits.Last();
+        Assert.Contains(firstCommit.Events, item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted
+            && item.SafeCode == "unverified_after_tool_failure_advised");
+        Assert.Contains(firstCommit.Events, item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+            && item.SafeCode == "unverified_after_tool_failure");
+        var firstNote = Assert.Single(
+            firstCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+        source.Add(ModelContextEntry.Text(
+            "note-0",
+            3,
+            ModelContextRole.System,
+            Encoding.UTF8.GetString(firstNote.Plaintext.Span)));
+
+        var second = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, second.Run.State);
+        var secondCommit = store.Commits.Last();
+        Assert.Contains(secondCommit.Events, item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+            && item.SafeCode == "unverified_after_tool_failure");
+        var secondNote = Assert.Single(
+            secondCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+        source.Add(ModelContextEntry.Text(
+            "note-1",
+            4,
+            ModelContextRole.System,
+            Encoding.UTF8.GetString(secondNote.Plaintext.Span)));
+
+        var third = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Failed, third.Run.State);
+        Assert.Equal(toolErrorCode, third.ErrorCode);
+        Assert.Equal(toolErrorCode, third.Run.TerminalErrorCode);
+        var failureCommit = store.Commits.Last();
+        Assert.Contains(failureCommit.Events, item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted
+            && item.SafeCode == "unverified_after_tool_failure");
+        Assert.Contains(failureCommit.Events, item =>
+            item.Kind == HarnessEventKind.RunFailed && item.SafeCode == toolErrorCode);
+        Assert.DoesNotContain(failureCommit.Events, item => item.Kind == HarnessEventKind.RunNoteAdded);
+        Assert.DoesNotContain(
+            failureCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+        Assert.Equal(
+            AgentRecoveryNotes.MaximumUnverifiedNotes,
+            store.Commits
+                .SelectMany(commit => commit.Events)
+                .Count(item => item.Kind == HarnessEventKind.RunNoteAdded
+                    && item.SafeCode == "unverified_after_tool_failure"));
+    }
+
+    [Fact]
+    public async Task Successful_recovery_tool_after_a_note_lets_the_final_prose_complete()
+    {
+        var prior = ToolStep();
+        const string toolErrorCode = "workspace_path_outside_root";
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, prior),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Failed,
+                    toolErrorCode,
+                    null,
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        model.Enqueue(ToolStep(path: "recovery.txt"));
+        model.Enqueue(FinalStep("repair finished"));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+
+        var advised = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, advised.Run.State);
+        var notePayload = Assert.Single(
+            store.Commits.Last().Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+        source.Add(ModelContextEntry.Text(
+            "note-0",
+            3,
+            ModelContextRole.System,
+            Encoding.UTF8.GetString(notePayload.Plaintext.Span)));
+
+        var recovered = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, recovered.Run.State);
+        Assert.Single(gateway.ExecuteAttempts);
+        var receipt = Assert.Single(recovered.Receipts);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        source.Add(ModelContextEntry.Assistant(
+            "assistant-recovery",
+            4,
+            ToolStep(path: "recovery.txt")));
+        source.Add(ModelContextEntry.ToolResult("tool-recovery", 5, receipt, "{}"));
+
+        var completed = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(completed.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingHistory, completed.Run.State);
+        Assert.Equal(HistoryWaitKind.FinalBeforeCompletion, completed.Run.HistoryWaitKind);
+        Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunNoteAdded);
     }
 
     [Fact]

@@ -155,14 +155,20 @@ internal sealed class AgentModelInvocation
                 throw new ProviderTransientPauseException(code, error);
             }
 
-            assistantStream.Complete();
             if (AgentRecoveryNotes.IsModelRepairableCode(code))
             {
                 // The model can fix this by taking another turn, so the coordinator
                 // answers with a bounded recovery note instead of failing the run.
                 // Failing here would burn the run before the model gets its chance.
+                // The attempts before the throw may have streamed partial text, so
+                // reset the stream before it completes: the retry must start on a
+                // clean turn instead of appending to the superseded text.
+                assistantStream.Reset();
+                assistantStream.Complete();
                 throw new ModelRepairableStepException(code, error);
             }
+
+            assistantStream.Complete();
 
             RecordContractFailure(
                 "model-step",

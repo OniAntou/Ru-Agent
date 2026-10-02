@@ -200,6 +200,63 @@ public sealed class TuiFullScreenSnapshotTests
         }
     }
 
+    [Theory]
+    [InlineData(80)]
+    [InlineData(120)]
+    public async Task ErrorLine_InsideTheAltFrame_LandsInTheTranscriptAndKeepsTheHeaderPinned(int width)
+    {
+        var (writer, surface) = NewSurface();
+        var region = new TuiStickyRegion(surface);
+        var layout = TuiScreenLayout.Compute(width, Rows);
+        TuiHeader.RenderPinned(
+            surface, width, layout.HeaderTop + 1,
+            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_error", layout.HeaderHeight);
+        Assert.True(region.Enter(Rows, layout.FooterHeight, width, topRow: layout.TranscriptTop + 1));
+        for (var i = 0; i < 40; i++)
+        {
+            surface.WriteLine($"assistant line {i:D2}");
+        }
+
+        // The footer paint parks the hardware cursor on the composer row; a raw error
+        // write here smudges the frame and its newline scrolls the whole screen.
+        PaintIdleFooter(surface, region, width, Rows);
+
+        await AgentCommands.WriteAltSafeAsync(
+            region,
+            altBufferActive: true,
+            writer,
+            "assistant_text_truncated: 12 of 34 characters reached this terminal.");
+
+        // The next footer repaint must not erase the line: it belongs to the transcript.
+        PaintIdleFooter(surface, region, width, Rows);
+
+        var sim = new TuiScreenSimulator(rows: Rows, cols: width);
+        sim.Write(writer.ToString());
+
+        // The header stays on its original rows.
+        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("OpenAI/gpt-5", sim.VisibleRow(1), StringComparison.Ordinal);
+        Assert.DoesNotContain("assistant_text_truncated", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.DoesNotContain("assistant_text_truncated", sim.VisibleRow(1), StringComparison.Ordinal);
+
+        // The error line is visible inside the transcript region, not in the footer.
+        var footerFirst = Rows - layout.FooterHeight;
+        var inTranscript = false;
+        for (var row = layout.TranscriptTop; row < footerFirst; row++)
+        {
+            if (sim.VisibleRow(row).Contains("assistant_text_truncated", StringComparison.Ordinal))
+            {
+                inTranscript = true;
+            }
+        }
+
+        Assert.True(inTranscript, "the error line must be visible inside the transcript region");
+        for (var row = footerFirst; row < Rows; row++)
+        {
+            Assert.DoesNotContain("assistant_text_truncated", sim.VisibleRow(row), StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Resize_RebuildKeepsTailAndFrame()
     {

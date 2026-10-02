@@ -349,7 +349,7 @@ public sealed partial class AgentCommands
             {
                 try { Console.Clear(); } catch (IOException) { }
             }
-            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
+            sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
 
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
@@ -522,10 +522,17 @@ public sealed partial class AgentCommands
             }
 
             // While the operator is typing, the hardware cursor belongs in the composer: IME
-            // candidate windows otherwise open wherever the transcript left the cursor.
-            var caretColumn = Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer);
+            // candidate windows otherwise open wherever the transcript left the cursor. The
+            // legend is passed through so the caret is clamped left of it.
+            var caretColumn = Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer, lineReader.Legend);
             sticky.Paint(footer, footerWidth, caretRow, caretColumn);
         }
+
+        // Every diagnostic line the REPL prints goes through here: in the AltBuffer frame
+        // the footer paint parks the cursor on the composer row, and a raw stderr write
+        // there smudges the frame and can scroll the pinned header away.
+        Task WriteAltLineAsync(TextWriter writer, string line) =>
+            WriteAltSafeAsync(sticky, altBufferActive, writer, line);
 
         /// <summary>
         /// Rebuilds the pinned layout for the viewport as it is right now, resetting any
@@ -801,7 +808,7 @@ public sealed partial class AgentCommands
                     return true;
                 }
 
-                await _err.WriteLineAsync("workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, "workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
                 return false;
             }
             catch (OperationCanceledException)
@@ -810,12 +817,12 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex)
             {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, $"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                 return false;
             }
             catch (Exception ex)
             {
-                await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, $"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
                 return false;
             }
         }
@@ -838,7 +845,7 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
-                await _err.WriteLineAsync($"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, $"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
             }
         }
 
@@ -858,7 +865,7 @@ public sealed partial class AgentCommands
         {
             if (!RunStartCore.IsCreateResponseBound(response, expectedSessionId, expectedPreset))
             {
-                await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, "agent_create_failed: invalid create response binding.").ConfigureAwait(false);
                 return (false, false);
             }
 
@@ -866,7 +873,7 @@ public sealed partial class AgentCommands
             var displayHash = response.DisplayIdentityHash;
             if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
             {
-                await _err.WriteLineAsync("workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, "workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
                 return (false, false);
             }
 
@@ -944,7 +951,7 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
-                await _err.WriteLineAsync($"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, $"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
                 return;
             }
 
@@ -976,7 +983,8 @@ public sealed partial class AgentCommands
                     return;
                 }
 
-                await _err.WriteLineAsync(
+                await WriteAltLineAsync(
+                        _err,
                         $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
                     .ConfigureAwait(false);
                 Tui.TuiDebug.Log("recover", $"head missing: {streamed.Length} of {full.Length}");
@@ -1112,7 +1120,7 @@ public sealed partial class AgentCommands
             if (cmd.Json)
             {
                 // Nothing human may land on the NDJSON stdout.
-                await _err.WriteLineAsync(modelWarning).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, modelWarning).ConfigureAwait(false);
             }
             else
             {
@@ -1192,7 +1200,8 @@ public sealed partial class AgentCommands
                         if (approvalEnvelope is not null)
                         {
                             var targetRunId = !string.IsNullOrEmpty(approvalEnvelope.RunId) ? approvalEnvelope.RunId : runId;
-                            await _err.WriteLineAsync(
+                            await WriteAltLineAsync(
+                                    _err,
                                     $"approval_required: run {targetRunId} is waiting for approval {approvalEnvelope.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {approvalEnvelope.ApprovalId}' or deny it with 'ru agent deny {targetRunId} {approvalEnvelope.ApprovalId}'.")
                                 .ConfigureAwait(false);
                             await _out.FlushAsync().ConfigureAwait(false);
@@ -1246,7 +1255,7 @@ public sealed partial class AgentCommands
                         }
                         catch (Exception ex)
                         {
-                            await _err.WriteLineAsync($"inline_approval_error: {ex.Message}").ConfigureAwait(false);
+                            await WriteAltLineAsync(_err, $"inline_approval_error: {ex.Message}").ConfigureAwait(false);
                         }
                     }
 
@@ -1366,7 +1375,7 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex)
             {
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
             }
@@ -1374,7 +1383,7 @@ public sealed partial class AgentCommands
             {
                 // A transport failure must not escape the REPL: report it bounded and keep
                 // the prompt (and the parked tracking) intact.
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
                     $"continue_error: {CliErrorText.ShortMessage(ex.Message)}")).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
@@ -1382,7 +1391,7 @@ public sealed partial class AgentCommands
 
             if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
             {
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_runnable: run {targetRunId} is {run.Status} and cannot be continued.")).ConfigureAwait(false);
                 if (string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal))
                 {
@@ -1399,7 +1408,7 @@ public sealed partial class AgentCommands
             // the tracked parked run and keeps its existing behavior.
             if (runIdArg is not null && !IsParkedRunStatus(run.Status))
             {
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
@@ -1454,12 +1463,12 @@ public sealed partial class AgentCommands
             catch (AgentApiException ex)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
-                await _err.WriteLineAsync(Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
             }
 
             await _out.FlushAsync().ConfigureAwait(false);
@@ -1625,7 +1634,7 @@ public sealed partial class AgentCommands
                     var notice = Tui.TuiTranscript.FormatParkedNotice(newestRunId, run.Status);
                     if (cmd.Json)
                     {
-                        await _err.WriteLineAsync(Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
+                        await WriteAltLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
                     }
                     else
                     {
@@ -1639,7 +1648,7 @@ public sealed partial class AgentCommands
                     var notice = Tui.TuiTranscript.FormatAttachNotice(newestRunId);
                     if (cmd.Json)
                     {
-                        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
+                        await WriteAltLineAsync(_err, Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
                     }
                     else
                     {
@@ -1742,7 +1751,7 @@ public sealed partial class AgentCommands
                         // the landing render, footer restored by ApplyFooterLayout.
                         sticky.Exit();
                         sessionRenderer.Status.InFooter = false;
-                        sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
+                        sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
                     }
                     else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
                     {
@@ -1765,7 +1774,7 @@ public sealed partial class AgentCommands
                 {
                     if (arg is null || !int.TryParse(arg, out var toIndex))
                     {
-                        await _err.WriteLineAsync("usage: /rewind <message_index>").ConfigureAwait(false);
+                        await WriteAltLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
                         continue;
                     }
                     try
@@ -1775,11 +1784,11 @@ public sealed partial class AgentCommands
                     }
                     catch (AgentApiException ex)
                     {
-                        await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                        await WriteAltLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
-                        await _err.WriteLineAsync($"rewind_error: {ex.Message}").ConfigureAwait(false);
+                        await WriteAltLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
@@ -1798,7 +1807,7 @@ public sealed partial class AgentCommands
                     }
                     continue;
                 }
-                await _err.WriteLineAsync($"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                await WriteAltLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 continue;
             }
 
@@ -1826,7 +1835,13 @@ public sealed partial class AgentCommands
             if (landingScreenVisible)
             {
                 landingScreenVisible = false;
-                if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
+                if (altBufferActive)
+                {
+                    // The AltBuffer has no scrollback; 3J can reach through to the normal
+                    // buffer's saved lines on some terminals via ConPTY, so only 2J runs.
+                    sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
+                }
+                else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
                 {
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
@@ -1986,14 +2001,14 @@ public sealed partial class AgentCommands
                     return 1;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteBusyConflictAsync(ex).ConfigureAwait(false);
+                await WriteBusyConflictAsync(ex, WriteAltLineAsync).ConfigureAwait(false);
             }
             catch (AgentApiException ex)
             {
                 // Pre-run rejections (missing credential, no model) already name
                 // themselves: one error line, no supplementary text.
                 await FinishTurnAsync().ConfigureAwait(false);
-                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -2004,7 +2019,7 @@ public sealed partial class AgentCommands
                     return 1;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await _err.WriteLineAsync(Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
+                await WriteAltLineAsync(_err, Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }
@@ -2023,28 +2038,65 @@ public sealed partial class AgentCommands
     }
 
     /// <summary>
-    /// A busy workspace is operator-recoverable: name the run that owns it and how to
-    /// release it instead of printing the raw error envelope.
+    /// Writes one diagnostic line so it can never smudge the pinned full-screen frame. In
+    /// the AltBuffer layout the hardware cursor can be parked on the composer row after a
+    /// footer paint, so a raw stderr write lands on the frame and its trailing line feed on
+    /// the last physical row scrolls the whole screen, unpinning the header. Restoring the
+    /// transcript cursor first lands the line in the scrolling region, where it scrolls with
+    /// the transcript and survives the next footer repaint; the sequential/fallback layouts
+    /// write exactly as before.
     /// </summary>
-    private async Task WriteBusyConflictAsync(AgentApiException error)
+    public static async Task WriteAltSafeAsync(
+        Tui.TuiStickyRegion sticky,
+        bool altBufferActive,
+        TextWriter writer,
+        string line)
     {
+        ArgumentNullException.ThrowIfNull(sticky);
+        ArgumentNullException.ThrowIfNull(writer);
+        if (altBufferActive && sticky.Active)
+        {
+            sticky.RestoreTranscriptCursor(writer);
+        }
+
+        await writer.WriteLineAsync(line).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A busy workspace is operator-recoverable: name the run that owns it and how to
+    /// release it instead of printing the raw error envelope. Every line goes through
+    /// <paramref name="writeLineAsync"/> so the AltBuffer frame is never smudged.
+    /// </summary>
+    private async Task WriteBusyConflictAsync(
+        AgentApiException error,
+        Func<TextWriter, string, Task> writeLineAsync)
+    {
+        ArgumentNullException.ThrowIfNull(writeLineAsync);
         var blockingRunId = error.BlockingRunId;
         if (string.IsNullOrWhiteSpace(blockingRunId))
         {
-            await _err.WriteLineAsync(Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
-            await _err.WriteLineAsync(Tui.TuiPalette.DimPaint("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
+            await writeLineAsync(_err, Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
+            await writeLineAsync(_err, Tui.TuiPalette.DimPaint("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
             await _err.FlushAsync().ConfigureAwait(false);
             return;
         }
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
-        await _err.WriteLineAsync(Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
+        await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
         var hint = IsParkedRunStatus(status)
             ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."
             : $"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.";
-        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint(hint)).ConfigureAwait(false);
+        await writeLineAsync(_err, Tui.TuiPalette.DimPaint(hint)).ConfigureAwait(false);
         await _err.FlushAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Clear sequence for a full in-place rebuild. The AltBuffer screen has no scrollback of
+    /// its own, and on some terminals via ConPTY <c>3J</c> reaches through to the normal
+    /// buffer's saved lines; only the sequential/fallback layout clears those.
+    /// </summary>
+    public static string FullRebuildClearSequence(bool altBufferActive) =>
+        altBufferActive ? "\u001b[r\u001b[2J\u001b[H" : "\u001b[r\u001b[3J\u001b[2J\u001b[H";
 
     private static bool IsTerminalRunStatus(string? status) =>
         status is not null

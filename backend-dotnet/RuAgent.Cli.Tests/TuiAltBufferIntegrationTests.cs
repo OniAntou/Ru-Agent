@@ -182,6 +182,49 @@ public sealed class TuiAltBufferIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task WriteAltSafeAsync_SequentialFallback_IsByteIdentical()
+    {
+        var frameWriter = new StringWriter();
+        var region = new TuiStickyRegion(new TuiSurface(frameWriter));
+        Assert.True(region.Enter(30, 3, Cols));
+        frameWriter.GetStringBuilder().Clear();
+
+        var expected = new StringWriter();
+        await expected.WriteLineAsync("run_error: boom");
+        var actual = new StringWriter();
+
+        await AgentCommands.WriteAltSafeAsync(region, altBufferActive: false, actual, "run_error: boom");
+
+        Assert.Equal(expected.ToString(), actual.ToString());
+    }
+
+    [Fact]
+    public async Task WriteAltSafeAsync_AltFrame_RestoresTheTranscriptCursorFirst()
+    {
+        var frameWriter = new StringWriter();
+        var region = new TuiStickyRegion(new TuiSurface(frameWriter));
+        Assert.True(region.Enter(30, 3, Cols));
+        frameWriter.GetStringBuilder().Clear();
+
+        var expected = new StringWriter();
+        expected.Write("\u001b[27;1H");
+        await expected.WriteLineAsync("run_error: boom");
+        var actual = new StringWriter();
+
+        await AgentCommands.WriteAltSafeAsync(region, altBufferActive: true, actual, "run_error: boom");
+
+        // Footer starts at row 28, so the transcript bottom row is 27.
+        Assert.Equal(expected.ToString(), actual.ToString());
+    }
+
+    [Fact]
+    public void FullRebuildClearSequence_Drops3JOnlyOnTheAltScreen()
+    {
+        Assert.Equal("\u001b[r\u001b[2J\u001b[H", AgentCommands.FullRebuildClearSequence(altBufferActive: true));
+        Assert.Equal("\u001b[r\u001b[3J\u001b[2J\u001b[H", AgentCommands.FullRebuildClearSequence(altBufferActive: false));
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

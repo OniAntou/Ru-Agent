@@ -71,17 +71,9 @@ public static class ComposerBox
         buffer ??= string.Empty;
         ghost ??= string.Empty;
 
+        var (legendText, legendWidth, available) = RowMetrics(w, prompt, legend);
         var inner = Math.Max(1, w - 4);
-        var legendText = string.IsNullOrWhiteSpace(legend) ? string.Empty : legend.Trim();
-        var legendWidth = string.IsNullOrEmpty(legendText) ? 0 : Math.Min(TuiText.VisibleWidth(legendText), Math.Max(0, inner / 2));
-        if (legendWidth > 0 && TuiText.VisibleWidth(legendText) > legendWidth)
-        {
-            legendText = TuiText.Tail(legendText, legendWidth);
-        }
-
-        var room = Math.Max(1, inner - (legendWidth > 0 ? legendWidth + 1 : 0));
         var promptWidth = TuiText.VisibleWidth(prompt);
-        var available = Math.Max(1, room - promptWidth);
         var text = TuiText.Tail(buffer, available);
         var used = TuiText.VisibleWidth(text);
         var ghostText = string.IsNullOrEmpty(ghost) || used >= available
@@ -124,17 +116,41 @@ public static class ComposerBox
     }
 
     /// <summary>
-    /// One-based column where the caret belongs inside <see cref="Middle"/>, honouring the tail
-    /// the box shows when the buffer overflows. Placing the real terminal cursor here keeps IME
-    /// candidate windows attached to the text being typed.
+    /// Shared row metrics: the legend slice <see cref="ComposeRow"/> paints and the width the
+    /// buffer may use. <see cref="CursorColumn"/> consumes the same width, so the caret can
+    /// never be placed over the legend.
     /// </summary>
-    public static int CursorColumn(int width, string prompt, string buffer)
+    private static (string LegendText, int LegendWidth, int Available) RowMetrics(
+        int width,
+        string prompt,
+        string? legend)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
         var inner = Math.Max(1, w - 4);
+        var legendText = string.IsNullOrWhiteSpace(legend) ? string.Empty : legend.Trim();
+        var legendWidth = string.IsNullOrEmpty(legendText) ? 0 : Math.Min(TuiText.VisibleWidth(legendText), Math.Max(0, inner / 2));
+        if (legendWidth > 0 && TuiText.VisibleWidth(legendText) > legendWidth)
+        {
+            legendText = TuiText.Tail(legendText, legendWidth);
+        }
+
+        var room = Math.Max(1, inner - (legendWidth > 0 ? legendWidth + 1 : 0));
+        var available = Math.Max(1, room - TuiText.VisibleWidth(prompt ?? string.Empty));
+        return (legendText, legendWidth, available);
+    }
+
+    /// <summary>
+    /// One-based column where the caret belongs inside <see cref="Middle"/> or
+    /// <see cref="ComposeRow"/>, honouring the tail the box shows when the buffer overflows
+    /// and the legend the row reserves. Placing the real terminal cursor here keeps IME
+    /// candidate windows attached to the text being typed.
+    /// </summary>
+    public static int CursorColumn(int width, string prompt, string buffer, string legend = "")
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
         prompt ??= string.Empty;
+        var (_, _, available) = RowMetrics(w, prompt, legend);
         var promptWidth = TuiText.VisibleWidth(prompt);
-        var available = Math.Max(1, inner - promptWidth);
         var shown = TuiText.Tail(buffer ?? string.Empty, available);
 
         // Frame border + gutter + prompt + the visible slice of the buffer.

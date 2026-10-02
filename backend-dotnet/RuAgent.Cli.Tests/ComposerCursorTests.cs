@@ -65,4 +65,43 @@ public sealed class ComposerCursorTests
 
         Assert.InRange(column, 1, width - 1);
     }
+
+    [Fact]
+    public void CursorColumn_ReservesTheLegendForALongBuffer()
+    {
+        var width = 40;
+        var legend = "gpt-5 · high";
+        var legendWidth = TuiText.VisibleWidth(legend);
+        var buffer = new string('x', 200);
+
+        var column = ComposerBox.CursorColumn(width, "❯ ", buffer, legend);
+
+        // Border+gutter+prompt (5) plus the buffer width left once the legend and its
+        // separator space are reserved.
+        Assert.Equal(3 + 2 + (width - 4 - legendWidth - 1 - 2), column);
+        Assert.True(column <= width - 2 - legendWidth, "caret must stay left of the legend");
+    }
+
+    [Fact]
+    public void CursorColumn_ShortBufferIsUnchangedByTheLegend()
+    {
+        var plain = ComposerBox.CursorColumn(80, "❯ ", "hello");
+        var withLegend = ComposerBox.CursorColumn(80, "❯ ", "hello", "gpt-5 · high");
+
+        Assert.Equal(plain, withLegend);
+    }
+
+    [Fact]
+    public void CursorColumn_MatchesTheBufferTailComposeRowShows()
+    {
+        var width = 40;
+        var legend = "standard";
+        var buffer = new string('x', 200);
+        var available = width - 4 - TuiText.VisibleWidth(legend) - 1 - 2;
+        var shown = TuiText.Tail(buffer, available);
+
+        Assert.Equal(
+            3 + 2 + TuiText.VisibleWidth(shown),
+            ComposerBox.CursorColumn(width, "❯ ", buffer, legend));
+    }
 }

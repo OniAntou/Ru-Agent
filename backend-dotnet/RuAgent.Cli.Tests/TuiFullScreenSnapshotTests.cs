@@ -45,35 +45,20 @@ public sealed class TuiFullScreenSnapshotTests
     [InlineData(80)]
     [InlineData(120)]
     [InlineData(160)]
-    public void ToolCard_FullAndCollapsedSnapshot_FramesDiffHunks(int width)
+    public void ToolRow_SettledSnapshot_ShowsInlineMutedRow(int width)
     {
         var (writer, surface) = NewSurface();
-        const string Title = "✓ edited src/app.cs · +3 -1 · 12ms";
 
-        foreach (var row in TuiToolCard.Render(
-            Title,
-            ["@@ -1,3 +1,4 @@", "- old line", "+ new line", " context"],
-            width,
-            TuiColorLevel.None))
-        {
-            surface.WriteLine(row);
-        }
-
-        surface.WriteLine(TuiToolCard.RenderSummary(Title, width, expandable: true, TuiColorLevel.None));
+        surface.WriteLine(TuiToolRow.Compose(
+            ToolLineStatus.Ok, "Search", "\"homepage\"", "(18 matches)", width));
 
         // One spare row: the trailing newline of the last write would otherwise scroll
         // the first row off a shorter screen, exactly like a real terminal at the bottom.
-        var sim = new TuiScreenSimulator(rows: 9, cols: width);
+        var sim = new TuiScreenSimulator(rows: 2, cols: width);
         sim.Write(writer.ToString());
 
-        Assert.StartsWith("╭", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("edited src/app.cs", sim.VisibleRow(1), StringComparison.Ordinal);
-        Assert.Contains("- old line", sim.VisibleRow(3), StringComparison.Ordinal);
-        Assert.Contains("+ new line", sim.VisibleRow(4), StringComparison.Ordinal);
-        Assert.StartsWith("╰", sim.VisibleRow(6), StringComparison.Ordinal);
-        Assert.Contains("ctrl+o", sim.VisibleRow(7), StringComparison.Ordinal);
-        Assert.Equal(width, TuiText.VisibleWidth(sim.VisibleRow(0)));
-        Assert.Equal(width, TuiText.VisibleWidth(sim.VisibleRow(7)));
+        Assert.StartsWith("✱ Search \"homepage\" (18 matches)", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.True(TuiText.VisibleWidth(sim.VisibleRow(0)) <= width);
     }
 
     [Theory]
@@ -332,7 +317,7 @@ public sealed class TuiFullScreenSnapshotTests
         var footer = new List<string>
         {
             status.Compose(width),
-            TuiToolCard.RenderLiveRow(null, width, TuiColorLevel.None),
+            TuiToolRow.RenderLiveRow(null, width, TuiColorLevel.None),
             ComposerBox.ComposeRow(width, ComposerState.Idle, "❯ ", "next request", string.Empty, "gpt-5"),
         };
         region.Paint(footer, width, caretRowInFooter: 3, caretColumn: 3);

@@ -197,17 +197,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ComposeAssistantHeader_NamesTheRoleOnce()
-    {
-        var header = TuiText.Strip(TuiTranscript.ComposeAssistantHeader(new DateTime(2026, 9, 24, 8, 36, 0)));
-
-        Assert.Contains("◆", header, StringComparison.Ordinal);
-        Assert.Contains("Ru", header, StringComparison.Ordinal);
-        Assert.Contains("08:36", header, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void FirstDelta_PrintsTheAssistantHeaderOnce()
+    public void FirstDelta_PrintsProseWithoutAHeader()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -215,9 +205,8 @@ public sealed class TuiTranscriptTests
         transcript.AppendAssistant("world");
 
         var text = output.ToString();
-        Assert.Contains("◆", text, StringComparison.Ordinal);
-        Assert.Contains("Ru", text, StringComparison.Ordinal);
-        Assert.Equal(1, text.Split('◆').Length - 1);
+        Assert.DoesNotContain("◆", text, StringComparison.Ordinal);
+        Assert.Contains("hello world", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -326,8 +315,8 @@ public sealed class TuiTranscriptTests
         Assert.Equal(0, transcript.AssistantBlockRowCount);
 
         transcript.AppendAssistant("first line\nsecond line\n");
-        // The mark is taken before the assistant header is written, so the header row
-        // counts as part of the turn's block alongside the two body rows.
+        // The block mark is taken before the spacer row, so the spacer counts as part of
+        // the turn's block alongside the two body rows.
         Assert.Equal(3, transcript.AssistantBlockRowCount);
 
         transcript.EndTurn(TuiTurnOutcome.Completed, null);
@@ -833,10 +822,10 @@ public sealed class TuiTranscriptTests
         transcript.Flush();
 
         var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
-        Assert.Contains("◆ Ru", text, StringComparison.Ordinal);
+        Assert.Contains("Hello there!", text, StringComparison.Ordinal);
         Assert.True(
-            text.IndexOf("◆ Ru", StringComparison.Ordinal) < text.IndexOf("Hello there!", StringComparison.Ordinal),
-            "the assistant header must sit between the settled tool and the prose");
+            text.IndexOf("read_only", StringComparison.Ordinal) < text.IndexOf("Hello there!", StringComparison.Ordinal),
+            "the settled tool row must sit above the prose");
     }
 
     [Fact]

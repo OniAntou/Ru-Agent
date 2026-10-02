@@ -60,10 +60,10 @@ public sealed class TuiTranscript
     private bool _fullScreenCards;
 
     /// <summary>
-    /// Full-screen transcript rendering: tool results become bordered <see cref="TuiToolCard"/>
-    /// summaries with the diff body behind <c>ctrl+o</c>, and fenced code goes through
-    /// <see cref="TuiCodeHighlight"/>. Off by default so the sequential fallback keeps its
-    /// existing rows byte-for-byte.
+    /// Full-screen transcript rendering: tool results become inline <see cref="TuiToolRow"/>
+    /// rows in the OpenCode style with the diff hunks behind <c>ctrl+o</c>, and fenced code
+    /// goes through <see cref="TuiCodeHighlight"/>. Off by default so the sequential fallback
+    /// keeps its existing rows byte-for-byte.
     /// </summary>
     public bool FullScreenCards
     {
@@ -170,7 +170,15 @@ public sealed class TuiTranscript
     private void WriteLines(params string[] lines) =>
         _surface.WriteBlock(lines, _status.LiveRow(Width));
 
-    private sealed record ToolDetail(string Verb, string? Target, int? Added, int? Removed, int? DurationMs, bool Failed);
+    private sealed record ToolDetail(
+        string Verb,
+        string? Display,
+        string? Target,
+        int? Count,
+        int? Added,
+        int? Removed,
+        int? DurationMs,
+        bool Failed);
 
     public void BeginTurn()
     {
@@ -220,12 +228,15 @@ public sealed class TuiTranscript
         {
             _hasStreamedDelta = true;
             _status.Clear(Width);
-            if (_toolsSettled > 0 && _atLineStart)
+            // The spacer row separates this block from what came before (the user block or
+            // a settled tool row) and anchors the recorded history so a truncation repair
+            // can replace the block even before its first line completes.
+            if (_atLineStart)
             {
                 _surface.Line();
             }
-            WriteLines(ComposeAssistantHeader(DateTime.Now));
-            _atLineStart = false;
+
+            _atLineStart = true;
         }
 
         _lineBuffer += text;
@@ -243,12 +254,6 @@ public sealed class TuiTranscript
         RenderStyled(emit);
         _surface.Flush();
     }
-
-    /// <summary>One assistant header per turn: glyph, role and time, printed before the first delta.</summary>
-    public static string ComposeAssistantHeader(DateTime moment) =>
-        TuiPalette.Paint("◆ ", TuiToken.Brand)
-        + TuiPalette.BoldPaint("Ru")
-        + TuiPalette.Paint(" · " + moment.ToString("HH:mm"), TuiToken.Meta);
 
     /// <summary>
     /// Drops text held back for the current streamed answer. A retried model step
@@ -529,7 +534,9 @@ public sealed class TuiTranscript
             case AgentActivityState.Started:
                 _pendingTools.Add(new ToolDetail(
                     verb,
+                    activity.ToolDisplay,
                     BuildTarget(activity),
+                    activity.Count,
                     activity.Added,
                     activity.Removed,
                     activity.DurationMs,
@@ -546,6 +553,7 @@ public sealed class TuiTranscript
                     var last = _pendingTools[^1];
                     _pendingTools[^1] = last with
                     {
+                        Count = activity.Count ?? last.Count,
                         Added = activity.Added ?? last.Added,
                         Removed = activity.Removed ?? last.Removed,
                         DurationMs = activity.DurationMs ?? last.DurationMs,
@@ -556,7 +564,9 @@ public sealed class TuiTranscript
                 {
                     _pendingTools.Add(new ToolDetail(
                         verb,
+                        activity.ToolDisplay,
                         BuildTarget(activity),
+                        activity.Count,
                         activity.Added,
                         activity.Removed,
                         activity.DurationMs,
@@ -814,7 +824,7 @@ public sealed class TuiTranscript
         var status = failed ? ToolLineStatus.Failed : ToolLineStatus.Ok;
         if (_fullScreenCards)
         {
-            WriteToolCard(status, detail?.Verb ?? "tool", target, meta, envelope.SafeSummary);
+            WriteToolRow(status, detail, target, envelope.SafeSummary);
         }
         else
         {
@@ -829,53 +839,46 @@ public sealed class TuiTranscript
     }
 
     /// <summary>
-    /// The full-screen settled tool result: one collapsed bordered summary row; when the
-    /// result carries diff hunks the complete card (summary plus every hunk, no 12-line cap)
-    /// is retained behind <c>ctrl+o</c>, reusing the existing expansion key handling.
+    /// The full-screen settled tool result, OpenCode style: one inline row with the display
+    /// name, target and bounded metrics; the diff hunks (no 12-line cap) are retained behind
+    /// <c>ctrl+o</c>, reusing the existing expansion key handling.
     /// </summary>
-    private void WriteToolCard(
-        ToolLineStatus status, string verb, string? target, string? meta, string? diffText)
+    private void WriteToolRow(
+        ToolLineStatus status, ToolDetail? detail, string? target, string? diffText)
     {
-        var summary = ComposeToolCardSummary(status, verb, target, meta);
-        var diffLines = ExtractDiffLines(diffText);
-        WriteLines(TuiToolCard.RenderSummary(summary, Width, diffLines.Count > 0, TuiPalette.Level));
-        if (diffLines.Count == 0)
-        {
-            return;
-        }
+        var display = string.IsNullOrWhiteSpace(detail?.Display)
+            ? TitleCase(detail?.Verb ?? "tool")
+            : detail!.Display!;
+        var meta = ComposeToolRowMeta(detail?.Count, detail?.Added, detail?.Removed);
+        WriteLines(TuiToolRow.Compose(status, display, target, meta, Width));
 
-        foreach (var row in TuiToolCard.Render(summary, diffLines, Width, TuiPalette.Level))
+        foreach (var line in ExtractDiffLines(diffText))
         {
-            _retained.Add(row);
+            _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
         }
 
         TrimRetained();
     }
 
-    /// <summary>Summary row for a tool card: outcome glyph, verb, target and metrics.</summary>
-    public static string ComposeToolCardSummary(
-        ToolLineStatus status, string verb, string? target, string? meta)
+    /// <summary>Metrics suffix for an inline tool row: counts and diff stats, no duration.</summary>
+    public static string? ComposeToolRowMeta(int? count, int? added, int? removed)
     {
-        var glyph = status switch
+        var parts = new List<string>();
+        if (count is { } matches)
         {
-            ToolLineStatus.Ok => "✓",
-            ToolLineStatus.Failed => "✗",
-            _ => "▸",
-        };
-
-        var text = glyph + " " + verb;
-        if (!string.IsNullOrWhiteSpace(target))
-        {
-            text += " " + target;
+            parts.Add(matches == 1 ? "(1 match)" : $"({matches} matches)");
         }
 
-        if (!string.IsNullOrWhiteSpace(meta))
+        if (added is > 0 || removed is > 0)
         {
-            text += " · " + meta;
+            parts.Add($"(+{added ?? 0} -{removed ?? 0})");
         }
 
-        return text;
+        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
+
+    private static string TitleCase(string value) =>
+        string.IsNullOrEmpty(value) ? "Tool" : char.ToUpperInvariant(value[0]) + value[1..];
 
     private static List<string> ExtractDiffLines(string? text) =>
         string.IsNullOrWhiteSpace(text)
@@ -966,7 +969,7 @@ public sealed class TuiTranscript
         }
 
         TrimRetained();
-        Notice("thought · ctrl+o", TuiToken.Line);
+        Notice("Thought · ctrl+o", TuiToken.Warn);
     }
 
     private void Notice(string text, TuiToken token)

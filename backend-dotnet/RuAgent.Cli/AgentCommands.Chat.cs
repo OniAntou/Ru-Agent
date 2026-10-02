@@ -521,7 +521,7 @@ public sealed partial class AgentCommands
                 footer =
                 [
                     sessionRenderer.Status.Compose(footerWidth),
-                    Tui.TuiToolCard.RenderLiveRow(sessionRenderer.Status.Activity, footerWidth, Tui.TuiPalette.Level),
+                    Tui.TuiToolRow.RenderLiveRow(sessionRenderer.Status.Activity, footerWidth, Tui.TuiPalette.Level),
                 ];
                 footer.AddRange(PanelLines(footerWidth));
                 footer.Add(Tui.ComposerBox.ComposeRow(

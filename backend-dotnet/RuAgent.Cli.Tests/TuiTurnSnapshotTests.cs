@@ -172,7 +172,7 @@ public sealed class TuiTurnSnapshotTests
         var edit = indexOf("✓ edited");
         var footer = rows.ToList().FindLastIndex(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
-        Assert.Equal(0, indexOf("◆ Ru"));
+        Assert.DoesNotContain(rows, row => row.Contains("◆", StringComparison.Ordinal));
         Assert.True(prose >= 0, "prose missing");
         Assert.True(prose < read, "the first tool row must follow the prose");
         Assert.True(read < edit, "tool rows keep their order");

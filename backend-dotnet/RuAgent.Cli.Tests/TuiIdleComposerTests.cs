@@ -142,7 +142,7 @@ public sealed class TuiIdleComposerTests
     }
 
     [Fact]
-    public void TranscriptFullScreenCards_RendersCollapsedCardAndExpandsTheDiff()
+    public void TranscriptFullScreenCards_RendersInlineToolRowAndExpandsTheDiff()
     {
         TuiPalette.Level = TuiColorLevel.None;
         var writer = new StringWriter();
@@ -156,15 +156,14 @@ public sealed class TuiIdleComposerTests
             "@@ -1 +1 @@\n- old line\n+ new line", 2));
 
         var text = writer.ToString();
-        Assert.Contains("╭─", text, StringComparison.Ordinal);
-        Assert.Contains("✓ edited app.cs", text, StringComparison.Ordinal);
-        Assert.Contains("ctrl+o", text, StringComparison.Ordinal);
+        Assert.Contains("← Edit app.cs", TuiText.Strip(text), StringComparison.Ordinal);
+        Assert.DoesNotContain("╭─", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("- old line", text, StringComparison.Ordinal);
 
         renderer.ToggleExpand();
         text = writer.ToString();
         Assert.Contains("- old line", text, StringComparison.Ordinal);
         Assert.Contains("+ new line", text, StringComparison.Ordinal);
-        Assert.Contains("╰", text, StringComparison.Ordinal);
     }
 
     [Fact]

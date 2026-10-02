@@ -91,7 +91,35 @@ public sealed class CatalogCostTests : IDisposable
             modelsDev: """ "vendor/mystery": { "limit": { "context": 200000 } } """,
             providerModels: """{"id":"vendor/mystery"}""");
 
-        Assert.Null(Assert.Single(snapshot.Catalog).Cost);
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Null(model.Cost);
+        Assert.Equal(200000, model.ContextLength);
+    }
+
+    [Fact]
+    public async Task A_published_context_limit_lands_on_the_model_and_the_wire()
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: """ "vendor/ctx": { "limit": { "context": 131072 } } """,
+            providerModels: """{"id":"vendor/ctx"}""");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(131072, model.ContextLength);
+        var root = JsonNode.Parse(snapshot.ToJson().ToJsonString())!.AsObject();
+        Assert.Equal(131072, root["catalog"]!.AsArray()[0]!["context_length"]!.GetValue<long>());
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("\"big\"")]
+    public async Task A_nonsense_context_limit_stays_unpublished(string context)
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: $$""" "vendor/bad": { "limit": { "context": {{context}} } } """,
+            providerModels: """{"id":"vendor/bad"}""");
+
+        Assert.Null(Assert.Single(snapshot.Catalog).ContextLength);
     }
 
     [Fact]

@@ -16,7 +16,8 @@ public sealed record ModelsDevProvider(
     IReadOnlyList<string> Models,
     IReadOnlyDictionary<string, CatalogReasoning>? Reasoning = null,
     IReadOnlyDictionary<string, CatalogCost>? Costs = null,
-    IReadOnlyDictionary<string, bool>? Vision = null);
+    IReadOnlyDictionary<string, bool>? Vision = null,
+    IReadOnlyDictionary<string, int>? Contexts = null);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
 public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
@@ -291,7 +292,8 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                     ReadModelIds(property.Value),
                     ReadModelReasoning(property.Value),
                     ReadModelCosts(property.Value),
-                    ReadModelVision(property.Value)));
+                    ReadModelVision(property.Value),
+                    ReadModelContexts(property.Value)));
             }
         }
 
@@ -364,6 +366,44 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         }
 
         return costs;
+    }
+
+    /// <summary>
+    /// Published context windows for a Models.dev provider's own models, keyed by model
+    /// id. Only a positive <c>limit.context</c> is kept; a missing or malformed value
+    /// stays unpublished rather than guessed.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ReadModelContexts(JsonElement entry)
+    {
+        var contexts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("models", out var models)
+            || models.ValueKind != JsonValueKind.Object)
+        {
+            return contexts;
+        }
+
+        foreach (var model in models.EnumerateObject())
+        {
+            var id = model.Name?.Trim() ?? string.Empty;
+            if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+
+            if (model.Value.ValueKind == JsonValueKind.Object
+                && model.Value.TryGetProperty("limit", out var limit)
+                && limit.ValueKind == JsonValueKind.Object
+                && limit.TryGetProperty("context", out var context)
+                && context.ValueKind == JsonValueKind.Number
+                && context.TryGetInt64(out var value)
+                && value is > 0 and <= 100_000_000)
+            {
+                contexts[id] = (int)value;
+            }
+
+            if (contexts.Count >= 5000) break;
+        }
+
+        return contexts;
     }
 
     /// <summary>
@@ -584,7 +624,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
 
         var reasoning = provider.Reasoning;
         var costs = provider.Costs;
-        if ((reasoning is null || reasoning.Count == 0) && (costs is null || costs.Count == 0))
+        var contexts = provider.Contexts;
+        if ((reasoning is null || reasoning.Count == 0)
+            && (costs is null || costs.Count == 0)
+            && (contexts is null || contexts.Count == 0))
         {
             return models;
         }
@@ -613,6 +656,13 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             if (model.Cost is null && costs is not null && costs.TryGetValue(model.Id, out var cost))
             {
                 model = model with { Cost = cost };
+            }
+
+            if (model.ContextLength is null
+                && contexts is not null
+                && contexts.TryGetValue(model.Id, out var contextLength))
+            {
+                model = model with { ContextLength = contextLength };
             }
 
             rewritten.Add(model);

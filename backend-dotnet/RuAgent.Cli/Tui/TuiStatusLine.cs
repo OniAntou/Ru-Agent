@@ -35,9 +35,6 @@ public sealed class TuiStatusLine
 
     public TuiRunState State => _state;
 
-    /// <summary>Current activity label (verb plus target), or null when none is running.</summary>
-    public string? Activity => _activity;
-
     /// <summary>Current braille spinner frame, reused by the composer hint row.</summary>
     public string SpinnerFrame => Frames[_frame];
 

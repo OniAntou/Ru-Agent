@@ -12,8 +12,10 @@ public enum ComposerState
 }
 
 /// <summary>
-/// The three-row prompt frame. Pure composition: every line occupies exactly the requested
-/// width, so the transcript above can never be pushed out of alignment by the composer.
+/// The prompt frame: the three-row sequential composer (borders, prompt, buffer) and the
+/// full-screen composer stack with its agent bar and hint row. Pure composition: every line
+/// occupies exactly the requested width, so the transcript above can never be pushed out of
+/// alignment by the composer.
 /// </summary>
 public static class ComposerBox
 {
@@ -118,11 +120,11 @@ public static class ComposerBox
         var right = TuiPalette.Paint("/", TuiToken.Bright)
             + TuiPalette.Paint(" commands", TuiToken.Meta)
             + "  "
-            + TuiPalette.Paint("ctrl+o", TuiToken.Bright)
-            + TuiPalette.Paint(" expand", TuiToken.Meta)
-            + "  "
             + TuiPalette.Paint("tab", TuiToken.Bright)
-            + TuiPalette.Paint(" complete", TuiToken.Meta);
+            + TuiPalette.Paint(" complete", TuiToken.Meta)
+            + "  "
+            + TuiPalette.Paint("ctrl+o", TuiToken.Bright)
+            + TuiPalette.Paint(" expand", TuiToken.Meta);
         var rightWidth = TuiText.VisibleWidth(right);
 
         var left = spinnerFrame is not null
@@ -166,7 +168,9 @@ public static class ComposerBox
     private static string MetaRow(int width, TuiToken token, string agent, string model, string provider)
     {
         var inner = Math.Max(1, width - 4);
-        var name = string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim();
+        var name = TuiText.Truncate(
+            string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim(),
+            Math.Max(1, inner - 2));
         var parts = TuiPalette.Paint(name, TuiToken.Brand);
         var used = TuiText.VisibleWidth(parts);
 
@@ -222,7 +226,7 @@ public static class ComposerBox
     }
 
     /// <summary>
-    /// Shared row metrics: the legend slice <see cref="ComposeRow"/> paints and the width the
+    /// Shared row metrics: the legend slice <see cref="Compose"/> paints and the width the
     /// buffer may use. <see cref="CursorColumn"/> consumes the same width, so the caret can
     /// never be placed over the legend.
     /// </summary>
@@ -246,10 +250,10 @@ public static class ComposerBox
     }
 
     /// <summary>
-    /// One-based column where the caret belongs inside <see cref="Middle"/> or
-    /// <see cref="ComposeRow"/>, honouring the tail the box shows when the buffer overflows
-    /// and the legend the row reserves. Placing the real terminal cursor here keeps IME
-    /// candidate windows attached to the text being typed.
+    /// One-based column where the caret belongs inside <see cref="Compose"/>'s middle row,
+    /// honouring the tail the box shows when the buffer overflows and the legend the row
+    /// reserves. Placing the real terminal cursor here keeps IME candidate windows attached
+    /// to the text being typed.
     /// </summary>
     public static int CursorColumn(int width, string prompt, string buffer, string legend = "")
     {

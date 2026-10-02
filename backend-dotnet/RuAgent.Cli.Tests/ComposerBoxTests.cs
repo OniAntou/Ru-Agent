@@ -144,4 +144,56 @@ public sealed class ComposerBoxTests : IDisposable
             Assert.Contains("\u001b[38;2;128;128;128mghost", lines[1], StringComparison.Ordinal);
         }
     }
+
+    [Theory]
+    [InlineData(20)]
+    [InlineData(40)]
+    [InlineData(80)]
+    [InlineData(200)]
+    public void ComposeStack_EveryRowFillsExactlyTheWidth(int width)
+    {
+        var rows = ComposerBox.ComposeStack(
+            width, ComposerState.Idle, "fix the busy lock", string.Empty, "Ru", "gpt-5-codex", "OpenAI");
+
+        Assert.Equal(ComposerBox.StackHeight, rows.Count);
+        Assert.All(rows, row => Assert.Equal(width, TuiText.VisibleWidth(row)));
+    }
+
+    [Fact]
+    public void ComposeStack_MetaRowCarriesAgentModelAndProvider()
+    {
+        var rows = ComposerBox.ComposeStack(
+            80, ComposerState.Idle, string.Empty, string.Empty, "Ru", "gpt-5-codex", "OpenAI");
+
+        Assert.StartsWith("╭", rows[0], StringComparison.Ordinal);
+        Assert.EndsWith("╯", rows[^1], StringComparison.Ordinal);
+        Assert.Contains("Ru", rows[2], StringComparison.Ordinal);
+        Assert.Contains("gpt-5-codex", rows[2], StringComparison.Ordinal);
+        Assert.Contains("OpenAI", rows[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ComposeAgentBar_ShowsAgentAndModelAtExactWidth()
+    {
+        var bar = ComposerBox.ComposeAgentBar(60, "Ru", "gpt-5-codex");
+
+        Assert.Contains("▪ Ru · gpt-5-codex", TuiText.Strip(bar), StringComparison.Ordinal);
+        Assert.Equal(60, TuiText.VisibleWidth(bar));
+    }
+
+    [Fact]
+    public void ComposeHints_PinsKeyOrderAndSpinnerStates()
+    {
+        var idle = TuiText.Strip(ComposerBox.ComposeHints(100, null, "D:/LLM"));
+
+        Assert.Contains("D:/LLM", idle, StringComparison.Ordinal);
+        Assert.DoesNotContain("interrupt", idle, StringComparison.Ordinal);
+        Assert.True(idle.IndexOf("/ commands", StringComparison.Ordinal) < idle.IndexOf("tab complete", StringComparison.Ordinal));
+        Assert.True(idle.IndexOf("tab complete", StringComparison.Ordinal) < idle.IndexOf("ctrl+o expand", StringComparison.Ordinal));
+        Assert.Equal(100, TuiText.VisibleWidth(idle));
+
+        var busy = TuiText.Strip(ComposerBox.ComposeHints(100, "⠋", "D:/LLM"));
+        Assert.Contains("⠋ esc interrupt", busy, StringComparison.Ordinal);
+        Assert.DoesNotContain("D:/LLM", busy, StringComparison.Ordinal);
+    }
 }

@@ -157,6 +157,7 @@ public sealed class TuiIdleComposerTests
 
         var text = writer.ToString();
         Assert.Contains("← Edit app.cs", TuiText.Strip(text), StringComparison.Ordinal);
+        Assert.Contains("ctrl+o", text, StringComparison.Ordinal);
         Assert.DoesNotContain("╭─", text, StringComparison.Ordinal);
         Assert.DoesNotContain("- old line", text, StringComparison.Ordinal);
 

@@ -200,6 +200,9 @@ public sealed class TuiTranscript
         _streamedAssistant.Clear();
         _assistantBlockStartRow = -1;
 
+        // A blank row separates the turn from what came before. It is also the first write
+        // of the turn: an output that fails here must still unwind through the restore path
+        // before any run starts.
         _surface.Line();
     }
 
@@ -850,9 +853,25 @@ public sealed class TuiTranscript
             ? TitleCase(detail?.Verb ?? "tool")
             : detail!.Display!;
         var meta = ComposeToolRowMeta(detail?.Count, detail?.Added, detail?.Removed);
+
+        // The count-derived target ("3 results") would duplicate the "(3 matches)" meta.
+        if (detail?.Count is not null
+            && target is not null
+            && (target.EndsWith(" result", StringComparison.Ordinal)
+                || target.EndsWith(" results", StringComparison.Ordinal)))
+        {
+            target = null;
+        }
+
+        var diffLines = ExtractDiffLines(diffText);
+        if (diffLines.Count > 0)
+        {
+            meta = string.IsNullOrWhiteSpace(meta) ? "· ctrl+o" : meta + " · ctrl+o";
+        }
+
         WriteLines(TuiToolRow.Compose(status, display, target, meta, Width));
 
-        foreach (var line in ExtractDiffLines(diffText))
+        foreach (var line in diffLines)
         {
             _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
         }

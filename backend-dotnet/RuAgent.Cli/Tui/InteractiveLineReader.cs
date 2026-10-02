@@ -248,11 +248,6 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false, null, null);
 
     /// <summary>
-    /// Submitted prompts echo cleanly in a modern elevated dark container card with a cyan chevron
-    /// and embedded timestamp, matching modern CLI style (Claude Code / Cursor).
-    /// Flexible across single-line and multiline inputs without rigid wireframe boxes or redundant labels.
-    /// </summary>
-    /// <summary>
     /// Formats the prompt row of the submit echo: a blue left border (OpenCode's user block),
     /// the elevated panel background, the prompt text and the right-aligned timestamp.
     /// </summary>

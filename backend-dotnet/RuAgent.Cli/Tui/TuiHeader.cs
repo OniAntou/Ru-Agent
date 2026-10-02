@@ -28,7 +28,7 @@ public static class TuiHeader
         var tallyWidth = TuiText.VisibleWidth(tally);
         var titleBudget = tallyWidth > 0 ? width - tallyWidth - 2 : width;
         var heading = string.IsNullOrWhiteSpace(title) ? "session" : title.Trim();
-        var left = TuiPalette.Paint("# ", TuiToken.Meta) + TuiPalette.Paint(heading, TuiToken.Bright);
+        var left = TuiPalette.Paint("# ", TuiToken.Bright) + TuiPalette.Paint(heading, TuiToken.Bright);
         if (TuiText.VisibleWidth(left) > titleBudget)
         {
             left = TuiText.Truncate(left, Math.Max(0, titleBudget));
@@ -73,7 +73,7 @@ public static class TuiHeader
     }
 
     /// <summary>Rows reserved below the landing block for the composer frame.</summary>
-    public const int ComposerReserveRows = 6;
+    public const int ComposerReserveRows = 1 + ComposerBox.StackHeight + 1;
 
     /// <summary>Rows of the block wordmark.</summary>
     public const int WordmarkRows = 4;
@@ -125,6 +125,11 @@ public static class TuiHeader
     /// </summary>
     public static IReadOnlyList<string> Wordmark(int width)
     {
+        if (width <= 0)
+        {
+            return Array.Empty<string>();
+        }
+
         var w = Math.Clamp(width, 20, 1000);
         var lines = new List<string> { string.Empty };
         if (w < MinWordmarkWidth)

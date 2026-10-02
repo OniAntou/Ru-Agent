@@ -23,7 +23,7 @@ public readonly record struct TuiScreenLayout(
     public static TuiScreenLayout Compute(int columns, int rows)
     {
         const int headerHeight = 1;
-        const int footerHeight = 6;
+        var footerHeight = 1 + ComposerBox.StackHeight + 1;
         var transcriptTop = headerHeight;
         var transcriptHeight = Math.Max(0, rows - headerHeight - footerHeight);
         var footerTop = transcriptTop + transcriptHeight;

@@ -183,16 +183,17 @@ public sealed partial class AgentCommands
             && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
 
         // Header state captured by the pinned header painter. The title is read from the
-        // session document (bounded probes) and the tally arrives with usage frames.
+        // session document (bounded probes) and the tally repaints as usage frames arrive.
         string? sessionTitle = null;
         long? lastTotalTokens = null;
         var sessionTitleProbes = 0;
 
         // Best effort and bounded: a fresh session may not have a title until the host has
-        // seen a message, so the header keeps the plain caption until one arrives.
+        // seen a message, so the header keeps the plain caption until one arrives. The probe
+        // only runs where the header exists and never blocks turn cleanup.
         async Task RefreshSessionTitleAsync()
         {
-            if (!string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
+            if (!altBufferActive || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
             {
                 return;
             }
@@ -210,9 +211,10 @@ public sealed partial class AgentCommands
                     PaintAltHeader();
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                throw;
+                // The enclosing turn was cancelled: the probe must not swallow the cleanup
+                // and the server-side run cancel that follow it.
             }
             catch (Exception ex)
             {
@@ -241,7 +243,7 @@ public sealed partial class AgentCommands
                 layout.HeaderHeight);
         }
 
-        // First 1-based row of the transcript region: below the two pinned header rows in the
+        // First 1-based row of the transcript region: below the pinned header row in the
         // AltBuffer frame, the whole screen in the sequential layout.
         int TranscriptTopRow(int rows) => altBufferActive
             ? Tui.TuiScreenLayout.Compute(Tui.TuiViewport.Width(), rows).TranscriptTop + 1
@@ -452,8 +454,8 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Footer rows for the live viewport: the spec's fixed three rows (status, live tool
-        /// card, composer) in the AltBuffer frame, the historical dynamic footer otherwise.
+        /// Footer rows for the live viewport: the fixed six-row stack (agent bar, composer,
+        /// hints) in the AltBuffer frame, the historical dynamic footer otherwise.
         /// An open approval/trust/picker/secret panel temporarily grows the footer.
         /// </summary>
         int FooterHeightFor(int width) => altBufferActive
@@ -493,7 +495,7 @@ public sealed partial class AgentCommands
                 // and the composer and temporarily grows the footer.
                 footer = [Tui.ComposerBox.ComposeAgentBar(footerWidth, "Ru", activeModel)];
                 footer.AddRange(PanelLines(footerWidth));
-                var inputRow = footer.Count + 1;
+                var inputRow = footer.Count + 2;
                 footer.AddRange(Tui.ComposerBox.ComposeStack(
                     footerWidth,
                     typeAhead.State,
@@ -502,7 +504,11 @@ public sealed partial class AgentCommands
                     "Ru",
                     activeModel,
                     backendName));
-                var busy = typeAhead.TurnActive || sessionRenderer.Status.State != Tui.TuiRunState.Idle;
+                var busy = typeAhead.TurnActive
+                    || sessionRenderer.Status.State is Tui.TuiRunState.Thinking
+                        or Tui.TuiRunState.Tool
+                        or Tui.TuiRunState.WaitingApproval
+                        or Tui.TuiRunState.WaitingTrust;
                 footer.Add(Tui.ComposerBox.ComposeHints(
                     footerWidth,
                     busy ? sessionRenderer.Status.SpinnerFrame : null,
@@ -1302,6 +1308,7 @@ public sealed partial class AgentCommands
                             {
                                 lastTotalTokens = total;
                                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                                PaintAltHeader();
                             }
                         }
                         catch (System.Text.Json.JsonException)

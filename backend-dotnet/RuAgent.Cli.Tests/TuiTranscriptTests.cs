@@ -897,4 +897,16 @@ public sealed class TuiTranscriptTests
         // The continue commit itself stays silent: only the park prints.
         Assert.DoesNotContain(Rows(output), row => row.Contains("continued", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData(null, null, null, null)]
+    [InlineData(1, null, null, "(1 match)")]
+    [InlineData(18, null, null, "(18 matches)")]
+    [InlineData(null, 3, 1, "(+3 -1)")]
+    [InlineData(2, 3, 1, "(2 matches) (+3 -1)")]
+    public void ComposeToolRowMeta_RendersCountsAndDiffStatsOnly(
+        int? count, int? added, int? removed, string? expected)
+    {
+        Assert.Equal(expected, TuiTranscript.ComposeToolRowMeta(count, added, removed));
+    }
 }

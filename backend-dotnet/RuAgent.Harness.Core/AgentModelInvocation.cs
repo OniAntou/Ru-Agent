@@ -142,6 +142,15 @@ internal sealed class AgentModelInvocation
             // reader at the wrong subsystem. The code is classified from the exception rather
             // than forwarded, because a message can quote user content.
             string code = ModelStepFailureCode(error);
+            if (ProviderTransientPauseException.IsProviderTransientCode(code))
+            {
+                // The provider kept failing transiently after the runner's bounded
+                // retries. Failing the run here would burn it on a condition that
+                // may clear while the user waits, so the coordinator parks the run
+                // for an explicit Continue instead; no failure marking happens here.
+                throw new ProviderTransientPauseException(code, error);
+            }
+
             if (AgentRecoveryNotes.IsModelRepairableCode(code))
             {
                 // The model can fix this by taking another turn, so the coordinator
@@ -364,11 +373,12 @@ internal sealed class AgentModelInvocation
     }
 
     /// <summary>
-    /// Marks a model-repairable step failure whose recovery notes are spent,
-    /// preserving the pre-recovery terminal path: fail the run with the original
-    /// code and publish the failed model-step activity.
+    /// Marks a step failure whose recovery was refused (repair notes spent, or the
+    /// run changed state and could not park), preserving the pre-recovery terminal
+    /// path: fail the run with the original code and publish the failed model-step
+    /// activity.
     /// </summary>
-    internal async Task FailRepairableStepAsync(
+    internal async Task FailStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
         string safeCode)

@@ -304,6 +304,60 @@ internal sealed class AgentRunStepHandlers
     }
 
     /// <summary>
+    /// Parks a run whose provider kept failing transiently until the runner's
+    /// bounded retries were spent. Unlike a failure, the provider may recover
+    /// while the user waits, so the run moves to WaitingUser with a
+    /// ContinueRequested naming the provider code; an explicit Continue opens a
+    /// fresh budget window and the loop retries a fresh model step. The runner
+    /// threw before producing a step, so the park is the whole commit.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleProviderTransientPauseStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        HarnessRunStatus waitingStatus,
+        string errorCode,
+        CancellationToken cancellationToken)
+    {
+        const string parkCode = "waiting_user";
+        var events = new List<HarnessEventIntent>
+        {
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.RunStateChanged,
+                safeCode: parkCode),
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ContinueRequested,
+                modelStepId: modelStepId,
+                safeCode: errorCode),
+        };
+        var next = run.Advance(
+            waitingStatus,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectStatus(
+                AgentActivityProjector.ActivityId(modelStepId.Value) + "_provider_paused",
+                AgentActivityState.Waiting,
+                errorCode,
+                "Run paused: the provider kept failing transiently after retries. Send Continue to retry the model step."));
+        return AgentRunStepResult.Blocked(committed, errorCode);
+    }
+
+    /// <summary>
     /// Answers a detected repetition with one corrective note instead of ending
     /// the run: the note lands in the model context as a system entry and the run
     /// keeps stepping, so a weak model can change its arguments. Bounded by

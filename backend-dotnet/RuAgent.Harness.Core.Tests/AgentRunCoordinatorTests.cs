@@ -397,6 +397,51 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Exhausted_provider_transient_parks_the_run_and_continue_retries_a_fresh_step()
+    {
+        var model = new ScriptedFailureThenStepRunner(
+            new StableModelStepError("provider_rate_limited"),
+            FinalStep("done"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var activities = new RecordingActivitySink();
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            activitySink: activities);
+
+        var parked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, parked.Run.State);
+        Assert.Equal("provider_rate_limited", parked.ErrorCode);
+        Assert.Null(parked.Run.TerminalErrorCode);
+        Assert.Single(model.Requests);
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.RunStateChanged
+            && item.SafeCode == "waiting_user");
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.ContinueRequested
+            && item.SafeCode == "provider_rate_limited");
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+        Assert.Contains(activities.Activities, activity =>
+            activity.Kind == AgentActivityKind.Status
+            && activity.State == AgentActivityState.Waiting
+            && activity.SafeCode == "provider_rate_limited");
+
+        var continued = await coordinator.ContinueAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, continued.State);
+
+        var completed = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(completed.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingHistory, completed.Run.State);
+        Assert.Equal(HistoryWaitKind.FinalBeforeCompletion, completed.Run.HistoryWaitKind);
+        Assert.Equal(2, model.Requests.Count);
+    }
+
+    [Fact]
     public async Task Changed_tool_arguments_execute_after_a_completed_call()
     {
         var source = new FixedContextSource(
@@ -1626,6 +1671,30 @@ public sealed class AgentRunCoordinatorTests
             Func<AssistantDelta, ValueTask> publishDelta,
             CancellationToken cancellationToken) =>
             Task.FromException<ModelStepResult>(new StableModelStepError(code));
+    }
+
+    private sealed class ScriptedFailureThenStepRunner(
+        Exception firstFailure,
+        AssistantStep step) : IModelStepRunner
+    {
+        public List<ModelStepRequest> Requests { get; } = new();
+
+        public async Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            if (Requests.Count == 1)
+            {
+                throw firstFailure;
+            }
+
+            await Task.Yield();
+            return new ModelStepResult(
+                step,
+                SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt);
+        }
     }
 
     private sealed class StableModelStepError(string code) : Exception(code), IStableStepError

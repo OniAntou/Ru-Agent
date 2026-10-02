@@ -214,9 +214,36 @@ public sealed class AgentRunCoordinator
 
             // The notes are spent: keep the original terminal path and code so an
             // unrepairable model ends the run exactly like it did before recovery.
-            await _invocation.FailRepairableStepAsync(run, modelStepId, error.Code)
+            await _invocation.FailStepAsync(run, modelStepId, error.Code)
                 .ConfigureAwait(false);
             throw;
+        }
+        catch (ProviderTransientPauseException error)
+        {
+            // The runner's bounded retries are spent and the provider is still
+            // transiently unavailable. The provider may recover while the user
+            // waits, so park the run for an explicit Continue keeping the
+            // provider's code as the park reason instead of failing it.
+            var pause = AgentRunStateMachine.TryTransition(
+                run.Status,
+                HarnessRunTransition.ExhaustBudget);
+            if (!pause.Accepted)
+            {
+                // The run changed state under the step and cannot park any more:
+                // keep the original terminal path exactly like the exhausted
+                // recovery notes do.
+                await _invocation.FailStepAsync(run, modelStepId, error.Code)
+                    .ConfigureAwait(false);
+                throw;
+            }
+
+            return await _steps.HandleProviderTransientPauseStepAsync(
+                    run,
+                    modelStepId,
+                    pause.Next,
+                    error.Code,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var step = invocation.Step;

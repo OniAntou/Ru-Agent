@@ -81,12 +81,39 @@ public sealed class ModelStepFailureClassificationTests
     }
 
     [Theory]
+    [InlineData("provider_rate_limited")]
+    [InlineData("provider_timeout")]
+    [InlineData("provider_server_error")]
+    [InlineData("provider_transport_error")]
+    public async Task Provider_transient_code_parks_the_run_for_continue(string code)
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var coordinator = CreateCoordinator(new ThrowingRunner(new StableError(code)), store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal(code, result.ErrorCode);
+        Assert.Null(result.Run.TerminalErrorCode);
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.RunStateChanged && item.SafeCode == "waiting_user");
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.ContinueRequested && item.SafeCode == code);
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+    }
+
+    [Theory]
     [InlineData("provider_auth")]
+    [InlineData("provider_bootstrap_failed")]
     [InlineData("prompt_contract_invalid")]
     [InlineData("model_history_invalid")]
     [InlineData("invalid_request")]
     [InlineData("capability_denied")]
     [InlineData("image_payload_unavailable")]
+    [InlineData("protocol_failure")]
+    [InlineData("tool_contract_mismatch")]
     public async Task Non_repairable_stable_codes_still_fail_through_the_base_path(string code)
     {
         var store = new InMemoryHarnessEventStore();

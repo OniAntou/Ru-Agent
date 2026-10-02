@@ -11,16 +11,40 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public sealed class TgChatLoop
 {
+    /// <summary>Lines kept for Up/Down navigation; older entries fall off the front.</summary>
+    public const int MaxHistory = 100;
+
+    /// <summary>Prompts typed while a turn streams wait here; beyond this depth they are dropped oldest-first.</summary>
+    public const int MaxQueueDepth = 8;
+
+    private const string SpinnerFrame = "⠋";
+    private const string QueueHint = "enter queues · esc cancels";
+
     private readonly TgChatWindow _window;
+    private readonly List<string> _history = [];
+    private readonly Queue<string> _queued = new();
+    private readonly object _queueGate = new();
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Func<string, TranscriptStream, CancellationToken, Task> _promptHandler =
         (_, _, _) => Task.CompletedTask;
     private CancellationTokenSource? _turn;
+    private int _historyIndex;
+    private string _draft = string.Empty;
+    private volatile bool _busy;
 
     public TgChatLoop(TgChatWindow window)
     {
         _window = window;
         window.Composer.Input.KeyDown += OnComposerKey;
+        // Stop() is the explicit signal, but the window can also wind down on its own
+        // (app stop/close); the runnable leaving its running state must release waiters.
+        window.IsRunningChanged += (_, args) =>
+        {
+            if (!args.Value)
+            {
+                _completion.TrySetResult();
+            }
+        };
     }
 
     public Task Completion => _completion.Task;
@@ -37,21 +61,85 @@ public sealed class TgChatLoop
         }
 
         _window.Composer.Input.Text = string.Empty;
-        _window.Transcript.Append(" ▌ " + line, TranscriptStyle.User);
-        _turn = new CancellationTokenSource();
-        var stream = new TranscriptStream(_window.Transcript);
-        _ = RunTurnAsync(line, stream, _turn.Token);
+        Remember(line);
+        _historyIndex = _history.Count;
+        _draft = string.Empty;
+
+        var queued = false;
+        lock (_queueGate)
+        {
+            if (_busy)
+            {
+                while (_queued.Count >= MaxQueueDepth)
+                {
+                    _queued.Dequeue();
+                }
+
+                _queued.Enqueue(line);
+                queued = true;
+            }
+        }
+
+        if (queued)
+        {
+            _window.Hints.SetBusy(SpinnerFrame, QueueHint);
+            return;
+        }
+
+        StartTurn(line);
     }
 
     public void Cancel() => _turn?.Cancel();
 
     public void Stop() => _completion.TrySetResult();
 
+    /// <summary>Test seam for the bounded history, mirroring what <see cref="Submit"/> feeds.</summary>
+    internal void RememberForTests(string line) => Remember(line);
+
+    private void Remember(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        if (_history.Count == 0 || !string.Equals(_history[^1], line, StringComparison.Ordinal))
+        {
+            _history.Add(line);
+            if (_history.Count > MaxHistory)
+            {
+                _history.RemoveAt(0);
+            }
+        }
+
+        _historyIndex = _history.Count;
+    }
+
+    private bool HasQueued
+    {
+        get
+        {
+            lock (_queueGate)
+            {
+                return _queued.Count > 0;
+            }
+        }
+    }
+
+    private void StartTurn(string line)
+    {
+        _busy = true;
+        _window.Transcript.Append(" ▌ " + line, TranscriptStyle.User);
+        _turn = new CancellationTokenSource();
+        var stream = new TranscriptStream(_window.Transcript);
+        _ = RunTurnAsync(line, stream, _turn.Token);
+    }
+
     private async Task RunTurnAsync(string line, TranscriptStream stream, CancellationToken ct)
     {
         try
         {
-            _window.Hints.SetBusy("⠋");
+            _window.Hints.SetBusy(SpinnerFrame, HasQueued ? QueueHint : null);
             await _promptHandler(line, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -64,7 +152,24 @@ public sealed class TgChatLoop
         }
         finally
         {
-            _window.Hints.SetIdle(_window.Hints.Workspace);
+            string? next;
+            lock (_queueGate)
+            {
+                next = _queued.Count > 0 ? _queued.Dequeue() : null;
+                if (next is null)
+                {
+                    _busy = false;
+                }
+            }
+
+            if (next is not null)
+            {
+                StartTurn(next);
+            }
+            else
+            {
+                _window.Hints.SetIdle(_window.Hints.Workspace);
+            }
         }
     }
 
@@ -75,11 +180,83 @@ public sealed class TgChatLoop
             Submit();
             key.Handled = true;
         }
-        else if (key == Terminal.Gui.Input.Key.Esc && _turn is { IsCancellationRequested: false })
+        else if (key == Terminal.Gui.Input.Key.Esc && _busy)
         {
             Cancel();
             key.Handled = true;
         }
+        else if (key == Terminal.Gui.Input.Key.CursorUp)
+        {
+            NavigateHistory(-1);
+            key.Handled = true;
+        }
+        else if (key == Terminal.Gui.Input.Key.CursorDown)
+        {
+            NavigateHistory(1);
+            key.Handled = true;
+        }
+        else if (key == Terminal.Gui.Input.Key.Tab)
+        {
+            CompleteCommand();
+            key.Handled = true;
+        }
+        else if (key == Terminal.Gui.Input.Key.O.WithCtrl)
+        {
+            _window.Transcript.ToggleExpanded();
+            key.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Up walks towards older entries, Down back towards the in-progress draft; the
+    /// draft typed before the first Up is restored when Down passes the newest entry.
+    /// </summary>
+    private void NavigateHistory(int delta)
+    {
+        if (_history.Count == 0)
+        {
+            return;
+        }
+
+        if (delta < 0)
+        {
+            if (_historyIndex <= 0)
+            {
+                return;
+            }
+
+            if (_historyIndex == _history.Count)
+            {
+                _draft = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+            }
+
+            _historyIndex--;
+            _window.Composer.Input.Text = _history[_historyIndex];
+            return;
+        }
+
+        if (_historyIndex >= _history.Count)
+        {
+            return;
+        }
+
+        _historyIndex++;
+        _window.Composer.Input.Text = _historyIndex == _history.Count ? _draft : _history[_historyIndex];
+    }
+
+    /// <summary>Tab completes a unique known command through the classic matcher.</summary>
+    private void CompleteCommand()
+    {
+        var current = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+        var completion = InteractiveLineReader.AutoComplete(
+            current,
+            InteractiveLineReader.KnownCommands.Select(command => command.Command));
+        if (completion is null)
+        {
+            return;
+        }
+
+        _window.Composer.Input.Text = completion + " ";
     }
 }
 

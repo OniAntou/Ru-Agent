@@ -16,6 +16,9 @@
     <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RuAgent.Cli.Tests" />
+  </ItemGroup>
   <!-- Publish Properties -->
   <PropertyGroup>
     <!-- Release precompiles the assemblies to native code with crossgen2, so the

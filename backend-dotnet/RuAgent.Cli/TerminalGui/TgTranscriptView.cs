@@ -23,17 +23,54 @@ public sealed class TgTranscriptView : View
 {
     private readonly List<(string Text, TranscriptStyle Style)> _lines = [];
     private readonly List<(string Text, TranscriptStyle Style)> _wrapped = [];
+    private (int AfterLine, List<(string Text, TranscriptStyle Style)> Hidden)? _collapsedBlock;
+    private bool _expanded;
     private int _wrapWidth = -1;
     private int _tailRows = 1;
+
+    /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
+    public bool IsExpanded => _expanded;
 
     public void Append(string text, TranscriptStyle style)
     {
         _lines.Add((text, style));
-        if (_wrapWidth > 0)
+        if (_expanded)
+        {
+            // The revealed rows trail the wrap cache; rebuild it on the next draw.
+            _wrapWidth = -1;
+        }
+        else if (_wrapWidth > 0)
         {
             _tailRows = AppendWrapped(text, style, _wrapWidth);
         }
 
+        SetNeedsDraw();
+    }
+
+    /// <summary>
+    /// Appends a collapsed block: the summary row stays visible, the hidden rows join the
+    /// transcript only while the view is expanded. The previous block is replaced; only the
+    /// last collapsed tool/diff block answers <see cref="ToggleExpanded"/>.
+    /// </summary>
+    public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
+    {
+        _lines.Add((summary, style));
+        _collapsedBlock = (_lines.Count, hidden.Select(line => (line, style)).ToList());
+        _expanded = false;
+        _wrapWidth = -1;
+        SetNeedsDraw();
+    }
+
+    /// <summary>Flips the last collapsed block; the next draw reveals or hides its rows.</summary>
+    public void ToggleExpanded()
+    {
+        if (_collapsedBlock is null)
+        {
+            return;
+        }
+
+        _expanded = !_expanded;
+        _wrapWidth = -1;
         SetNeedsDraw();
     }
 
@@ -49,7 +86,11 @@ public sealed class TgTranscriptView : View
         var last = _lines[^1];
         var grown = last.Text + text;
         _lines[^1] = (grown, last.Style);
-        if (_wrapWidth > 0)
+        if (_expanded)
+        {
+            _wrapWidth = -1;
+        }
+        else if (_wrapWidth > 0)
         {
             // Re-wrap only the tail: its old rows are the last _tailRows of the cache.
             _wrapped.RemoveRange(_wrapped.Count - _tailRows, _tailRows);
@@ -88,9 +129,18 @@ public sealed class TgTranscriptView : View
     private void RebuildWrapped(int width)
     {
         _wrapped.Clear();
-        foreach (var (text, style) in _lines)
+        for (var i = 0; i < _lines.Count; i++)
         {
+            var (text, style) = _lines[i];
             _tailRows = AppendWrapped(text, style, width);
+
+            if (_expanded && _collapsedBlock is { } block && block.AfterLine == i + 1)
+            {
+                foreach (var (hiddenText, hiddenStyle) in block.Hidden)
+                {
+                    _tailRows = AppendWrapped(hiddenText, hiddenStyle, width);
+                }
+            }
         }
 
         _wrapWidth = width;

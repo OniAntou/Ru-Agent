@@ -9,6 +9,7 @@ public sealed class TgHintsView : View
     private const string KeysRight = "/ commands  tab complete  ctrl+o expand";
     private string _left = string.Empty;
     private string? _spinnerFrame;
+    private string? _busyHint;
 
     public TgHintsView()
     {
@@ -23,12 +24,18 @@ public sealed class TgHintsView : View
         Workspace = workspace;
         _left = workspace;
         _spinnerFrame = null;
+        _busyHint = null;
         SetNeedsDraw();
     }
 
-    public void SetBusy(string spinnerFrame)
+    /// <summary>
+    /// Swaps the left text for the spinner. An optional hint replaces the default
+    /// "esc interrupt" copy, e.g. while queued lines wait behind the active turn.
+    /// </summary>
+    public void SetBusy(string spinnerFrame, string? hint = null)
     {
         _spinnerFrame = spinnerFrame;
+        _busyHint = hint;
         SetNeedsDraw();
     }
 
@@ -39,7 +46,11 @@ public sealed class TgHintsView : View
         // Classic truncates the workspace first so the key hints always survive; the
         // remaining columns are split between the two sides.
         var leftBudget = Math.Max(0, width - rightWidth - 2);
-        var leftText = _spinnerFrame is null ? _left : $"{_spinnerFrame} esc interrupt";
+        var leftText = _spinnerFrame is null
+            ? _left
+            : _busyHint is null
+                ? $"{_spinnerFrame} esc interrupt"
+                : $"{_spinnerFrame} {_busyHint}";
         var shownLeft = TuiText.Truncate(leftText, leftBudget);
         var leftWidth = TuiText.VisibleWidth(shownLeft);
         var gap = Math.Max(1, width - leftWidth - rightWidth);
@@ -57,13 +68,20 @@ public sealed class TgHintsView : View
             [
                 (TuiText.Truncate(_left, maxWidth), TuiToken.Meta),
             ]
-            :
-            [
-                (_spinnerFrame, TuiToken.Bright),
-                (" ", TuiToken.Bright),
-                ("esc", TuiToken.Bright),
-                (" interrupt", TuiToken.Meta),
-            ];
+            : _busyHint is null
+                ?
+                [
+                    (_spinnerFrame, TuiToken.Bright),
+                    (" ", TuiToken.Bright),
+                    ("esc", TuiToken.Bright),
+                    (" interrupt", TuiToken.Meta),
+                ]
+                :
+                [
+                    (_spinnerFrame, TuiToken.Bright),
+                    (" ", TuiToken.Bright),
+                    (_busyHint, TuiToken.Meta),
+                ];
         Draw(0, segments, maxWidth);
     }
 

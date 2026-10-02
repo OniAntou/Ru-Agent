@@ -4,9 +4,11 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Cli.TerminalGui;
 using RuAgent.Client;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using Terminal.Gui.App;
 
 namespace RuAgent.Cli;
 
@@ -115,6 +117,29 @@ public sealed partial class AgentCommands
             // Settings backend unreachable; the header reports it as unknown.
         }
 
+        // Engine selection happens once settings are known: --json, --classic, redirected
+        // output, NO_COLOR, a dumb TERM and a too-small viewport all stay classic. In TG
+        // mode the window and its transcript writer are created before the session renderer
+        // so the shared run machinery renders into the Terminal.Gui transcript, never stdout.
+        var engine = TuiEngineSelection.Resolve(
+            Environment.GetEnvironmentVariable(TuiEngineSelection.EngineVariable),
+            Console.IsOutputRedirected,
+            cmd.Json,
+            Tui.TuiViewport.Width(),
+            Tui.TuiViewport.Height(),
+            Environment.GetEnvironmentVariable("NO_COLOR"),
+            Environment.GetEnvironmentVariable("TERM"),
+            cmd.Classic);
+        bool tgMode = engine == TuiEngine.TerminalGui;
+        using IApplication? tgApp = tgMode ? Application.Create() : null;
+        if (tgApp is not null)
+        {
+            tgApp.Init();
+        }
+
+        using TgChatWindow? tgWindow = tgMode ? TgChatWindow.Build() : null;
+        TgTranscriptWriter? tgWriter = tgMode ? new TgTranscriptWriter(tgApp!, tgWindow!.Transcript) : null;
+
         if (backendName is not null)
         {
             // Best-effort and once per chat: a models.dev id that is not in the catalog
@@ -128,7 +153,8 @@ public sealed partial class AgentCommands
 
         // --json owns stdout: every human-facing line a command prints goes to
         // stderr instead, so a consumer can parse stdout line by line as NDJSON.
-        var humanOut = cmd.Json ? _err : _out;
+        // Terminal.Gui owns the screen: human lines land in the transcript view.
+        var humanOut = cmd.Json ? _err : (TextWriter?)tgWriter ?? _out;
 
         var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
         var workspaceLabel = ws;
@@ -152,7 +178,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        var sessionRenderer = new Tui.TuiSessionRenderer(_out);
+        var sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
         var lineReader = new Tui.InteractiveLineReader
         {
             TopLabel = workspaceLabel,
@@ -163,7 +189,7 @@ public sealed partial class AgentCommands
         // Evaluated once per session: switching buffers mid-session would strand the scrollback.
         // NO_COLOR is honoured on definition, empty string included, exactly like TuiPalette.
         var hasLiveSize = Tui.TuiViewport.TryReadLiveSize(out var liveColumns, out var liveRows);
-        var altBufferActive = Tui.TuiAltBuffer.ShouldUseAltBuffer(
+        var altBufferActive = !tgMode && Tui.TuiAltBuffer.ShouldUseAltBuffer(
             outputRedirected: Console.IsOutputRedirected || !ReferenceEquals(_out, Console.Out),
             term: Environment.GetEnvironmentVariable("TERM"),
             noColor: Environment.GetEnvironmentVariable("NO_COLOR"),
@@ -180,7 +206,7 @@ public sealed partial class AgentCommands
         // the AltBuffer frame; the sequential fallback keeps its existing rows byte-for-byte.
         sessionRenderer.Transcript.FullScreenCards = altBufferActive;
 
-        if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected && !altBufferActive)
+        if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected && !altBufferActive)
         {
             try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
         }
@@ -196,7 +222,8 @@ public sealed partial class AgentCommands
         // rows and agent output scrolls above them. Redirected output, --json and --classic keep
         // the sequential layout.
         var sticky = new Tui.TuiStickyRegion(sessionRenderer.Surface);
-        bool stickyEnabled = !cmd.Json
+        bool stickyEnabled = !tgMode
+            && !cmd.Json
             && !cmd.Classic
             && Tui.TuiViewport.IsLiveConsole
             && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
@@ -217,8 +244,9 @@ public sealed partial class AgentCommands
             usage.InputRate = null;
             usage.OutputRate = null;
             // The usage cluster only exists on the pinned header; a sequential/data-only
-            // chat must not pay a catalog read for numbers it never shows.
-            if (!altBufferActive || activeModel.Length == 0)
+            // chat must not pay a catalog read for numbers it never shows. The TG header
+            // exists too, so it gets the same catalog read.
+            if ((!altBufferActive && !tgMode) || activeModel.Length == 0)
             {
                 return;
             }
@@ -255,7 +283,7 @@ public sealed partial class AgentCommands
         // only runs where the header exists and never blocks turn cleanup.
         async Task RefreshSessionTitleAsync()
         {
-            if (!altBufferActive || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
+            if ((!altBufferActive && !tgMode) || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
             {
                 return;
             }
@@ -270,7 +298,14 @@ public sealed partial class AgentCommands
                     && !string.IsNullOrWhiteSpace(titleElement.GetString()))
                 {
                     sessionTitle = titleElement.GetString()!.Trim();
-                    PaintAltHeader();
+                    if (tgMode)
+                    {
+                        tgWindow!.Header.SetTitle(sessionTitle);
+                    }
+                    else
+                    {
+                        PaintAltHeader();
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -335,17 +370,17 @@ public sealed partial class AgentCommands
         _slashCommands.HumanOut = humanOut;
         _slashCommands.Json = cmd.Json;
         _slashCommands.PanelWidth = Tui.TuiViewport.Width();
-        _slashCommands.Picker = (list, ct) => cmd.Json
+        _slashCommands.Picker = (list, ct) => cmd.Json || tgMode
             ? Task.FromResult<string?>(null)
             : altBufferActive && typeAheadLive
                 ? RequestChoicePanelAsync(list, ct)
                 : lineReader.ReadChoiceAsync(list, _out, ct);
-        _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
+        _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json || tgMode
             ? Task.FromResult<string?>(null)
             : altBufferActive && typeAheadLive
                 ? RequestSecretPanelAsync(null, ct)
                 : lineReader.ReadSecretAsync(_out, prompt, ct);
-        _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
+        _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json || tgMode
             ? Task.FromResult<string?>(null)
             : altBufferActive && typeAheadLive
                 ? RequestSecretPanelAsync(providerDisplay, ct)
@@ -367,7 +402,7 @@ public sealed partial class AgentCommands
 
         void RenderLandingScreen()
         {
-            if (cmd.Json || cmd.Classic || !Tui.TuiViewport.IsLiveConsole)
+            if (cmd.Json || cmd.Classic || tgMode || !Tui.TuiViewport.IsLiveConsole)
             {
                 return;
             }
@@ -412,10 +447,10 @@ public sealed partial class AgentCommands
         /// </summary>
         void RedrawScreenForResize()
         {
-            if (cmd.Json)
+            if (cmd.Json || tgMode)
             {
                 // The NDJSON trace has no screen to clear, and Console.Clear/ANSI
-                // bytes would corrupt stdout.
+                // bytes would corrupt stdout; Terminal.Gui owns its own redraws.
                 return;
             }
 
@@ -616,9 +651,10 @@ public sealed partial class AgentCommands
 
         // Every diagnostic line the REPL prints goes through here: in the AltBuffer frame
         // the footer paint parks the cursor on the composer row, and a raw stderr write
-        // there smudges the frame and can scroll the pinned header away.
+        // there smudges the frame and can scroll the pinned header away. In TG mode the
+        // writer is the transcript bridge, because the TG frame owns the screen.
         Task WriteAltLineAsync(TextWriter writer, string line) =>
-            WriteAltSafeAsync(sticky, altBufferActive, writer, line);
+            WriteAltSafeAsync(sticky, altBufferActive, tgWriter ?? writer, line);
 
         static void DeleteTempPath(string? path)
         {
@@ -1149,8 +1185,9 @@ public sealed partial class AgentCommands
                 // No composer to ask in, so there is no frame to protect and the bounded
                 // code keeps its established stream. Never read stdin here: the type-ahead
                 // loop may already own it, which is how the old prompt hung forever.
-                // --json owns stdout, so the human notice lands on stderr there.
-                await (json ? _err : _out).WriteLineAsync(
+                // --json owns stdout, and TG owns the screen, so the notice follows
+                // humanOut instead of the raw console writer.
+                await (json ? _err : humanOut).WriteLineAsync(
                         $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
                     .ConfigureAwait(false);
                 return (false, false);
@@ -1349,6 +1386,12 @@ public sealed partial class AgentCommands
                 string mLbl = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
                 lineReader.Legend = string.IsNullOrWhiteSpace(reasoningEffort) ? mLbl : $"{mLbl} · {reasoningEffort}";
             }
+
+            if (tgMode)
+            {
+                // A /model or /backend switch must land on the TG composer meta row too.
+                tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+            }
         }
 
         _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
@@ -1531,6 +1574,18 @@ public sealed partial class AgentCommands
                             if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                             {
                                 var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
+                                if (tgMode)
+                                {
+                                    // The TG approval panel arrives in Task 12. Until then answer
+                                    // out of band like the --json escape: never block a stdin
+                                    // read the TG keyboard loop owns, and leave the run waiting.
+                                    await WriteAltLineAsync(
+                                            _err,
+                                            $"approval_required: run {targetRunId} is waiting for approval {envelope.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {envelope.ApprovalId}'.")
+                                        .ConfigureAwait(false);
+                                    throw new RunWaitingApprovalException(targetRunId, envelope.ApprovalId!);
+                                }
+
                                 var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
 
                                 if (decision == Tui.ApprovalPrompt.Deny)
@@ -1553,6 +1608,12 @@ public sealed partial class AgentCommands
                         catch (OperationCanceledException) when (frameCt.IsCancellationRequested)
                         {
                             // The operator cancelled the turn while the approval was open.
+                            throw;
+                        }
+                        catch (RunWaitingApprovalException)
+                        {
+                            // The TG escape above: the notice is already in the transcript and
+                            // the run is deliberately left waiting server-side.
                             throw;
                         }
                         catch (Exception ex)
@@ -1596,6 +1657,13 @@ public sealed partial class AgentCommands
                                     ?? ((usageEnvelope.InputTokens ?? 0) + (usageEnvelope.OutputTokens ?? 0));
                                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                                 PaintAltHeader();
+                                if (tgMode)
+                                {
+                                    tgWindow!.Header.UpdateUsage(
+                                        lastTotalTokens ?? 0,
+                                        usage.ContextPercent ?? 0,
+                                        usage.CostKnown ? (decimal)usage.SessionCost : null);
+                                }
                             }
                         }
                         catch (System.Text.Json.JsonException)
@@ -1609,7 +1677,14 @@ public sealed partial class AgentCommands
 
             await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
             sessionRenderer.Flush();
-            await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+            if (!tgMode)
+            {
+                // The recovery reprints a lost head into the classic surface history; the
+                // TG transcript is append-only through the bridge, so it is skipped there
+                // (Task 15 parity) rather than pretending a repair happened.
+                await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+            }
+
             await _out.FlushAsync().ConfigureAwait(false);
         }
 
@@ -1997,7 +2072,7 @@ public sealed partial class AgentCommands
             if (parkedRunId is not null
                 && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase))
             {
-                if (!cmd.Json)
+                if (!cmd.Json && !tgMode)
                 {
                     await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(promptLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
                 }
@@ -2026,7 +2101,7 @@ public sealed partial class AgentCommands
                     // buffer's saved lines on some terminals via ConPTY, so only 2J runs.
                     sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
                 }
-                else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
+                else if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
                 {
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
@@ -2102,7 +2177,7 @@ public sealed partial class AgentCommands
                 {
                     sticky.RestoreTranscriptCursor();
                 }
-                if (!cmd.Json)
+                if (!cmd.Json && !tgMode)
                 {
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(
                         promptLine,
@@ -2274,6 +2349,15 @@ public sealed partial class AgentCommands
         {
             while (!cancellationToken.IsCancellationRequested)
         {
+            if (engine == TuiEngine.TerminalGui)
+            {
+                // Terminal.Gui owns the keyboard and the frame from here on. The classic
+                // loop never reads a line: the same slash/prompt handlers below are driven
+                // by TgChatLoop, so command behaviour cannot drift between engines.
+                await RunTerminalGuiChatAsync().ConfigureAwait(false);
+                return dispatcherExitCode ?? 0;
+            }
+
             // A prompt typed while the previous turn streamed is sent without a second Enter.
             // In the AltBuffer frame the composer is the persistent footer, so idle input
             // comes from the type-ahead loop; the sequential reader only serves fallbacks.
@@ -2324,7 +2408,7 @@ public sealed partial class AgentCommands
                 {
                     landingScreenVisible = false;
                 }
-                if (!cmd.Json)
+                if (!cmd.Json && !tgMode)
                 {
                     await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(slashLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
                 }
@@ -2371,7 +2455,7 @@ public sealed partial class AgentCommands
                         sessionRenderer.Status.InFooter = false;
                         sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
                     }
-                    else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
+                    else if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
                     {
                         try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                     }
@@ -2502,6 +2586,44 @@ public sealed partial class AgentCommands
                 }
                 await WriteAltLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 return true;
+            }
+
+            /// <summary>
+            /// The TG engine's entry point: the window is already built and every classic
+            /// surface that could fight Terminal.Gui is off (alt buffer, sticky footer,
+            /// type-ahead). Slash lines and prompts go through the very same local handlers
+            /// the classic loop calls, with their writers redirected to the transcript.
+            /// </summary>
+            async Task RunTerminalGuiChatAsync()
+            {
+                var loop = new TgChatLoop(tgWindow!);
+                var guiDispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
+                loop.SetPromptHandler(async (line, _, ct) =>
+                {
+                    await guiDispatcher.DispatchAsync(line, ct).ConfigureAwait(false);
+                    if (dispatcherExitCode is not null)
+                    {
+                        // /exit and the fatal prompt paths record an exit code; the TG frame
+                        // has no natural end, so stop both the loop and the app.
+                        loop.Stop();
+                        tgApp!.Invoke(() => tgApp.RequestStop());
+                    }
+                });
+
+                tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+                tgWindow.Hints.SetIdle(workspaceLabel);
+                tgApp!.AddTimeout(
+                    TimeSpan.FromMilliseconds(200),
+                    () =>
+                    {
+                        tgWindow.FocusComposer();
+                        return false;
+                    });
+                tgApp.Run(tgWindow);
+                // A stop that did not come from /exit (window closed under us) must still
+                // release the completion the caller awaits.
+                loop.Stop();
+                await loop.Completion.ConfigureAwait(false);
             }
 
             var dispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);

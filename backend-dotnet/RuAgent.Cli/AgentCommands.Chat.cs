@@ -134,6 +134,7 @@ public sealed partial class AgentCommands
         var workspaceLabel = string.IsNullOrWhiteSpace(cmd.Preset) ? ws : $"{ws} · {cmd.Preset}";
 
         var pendingImages = new List<Images.CliImageAttachment>();
+        var pendingTexts = new List<Attachments.CliTextAttachment>();
         if (cmd.Images is { Count: > 0 })
         {
             foreach (var image in cmd.Images)
@@ -528,9 +529,10 @@ public sealed partial class AgentCommands
                         or Tui.TuiRunState.Tool
                         or Tui.TuiRunState.WaitingApproval
                         or Tui.TuiRunState.WaitingTrust;
-                var attachmentHint = pendingImages.Count == 0
+                var attachmentCount = pendingImages.Count + pendingTexts.Count;
+                var attachmentHint = attachmentCount == 0
                     ? workspaceLabel
-                    : $"[{pendingImages.Count} image{(pendingImages.Count == 1 ? string.Empty : "s")}] {workspaceLabel}";
+                    : $"[{attachmentCount} attachment{(attachmentCount == 1 ? string.Empty : "s")}] {workspaceLabel}";
                 footer.Add(Tui.ComposerBox.ComposeHints(
                     footerWidth,
                     busy ? sessionRenderer.Status.SpinnerFrame : null,
@@ -623,7 +625,32 @@ public sealed partial class AgentCommands
                     $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
             }
 
-            await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count}] {attachment.Label}").ConfigureAwait(false);
+            await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
+            if (altBufferActive && sticky.Active)
+            {
+                PaintStickyFooter();
+            }
+        }
+
+        async Task AttachFileAsync(string path)
+        {
+            if (Images.CliImagePolicy.IsImageFile(path))
+            {
+                await AttachImageAsync(path).ConfigureAwait(false);
+                return;
+            }
+
+            var (attachment, textError) = await Attachments.CliTextFiles
+                .LoadAsync(path, canonicalWorkspace, cancellationToken)
+                .ConfigureAwait(false);
+            if (attachment is null)
+            {
+                await WriteAltLineAsync(_err, textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
+                return;
+            }
+
+            pendingTexts.Add(attachment);
+            await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
             if (altBufferActive && sticky.Active)
             {
                 PaintStickyFooter();
@@ -645,9 +672,16 @@ public sealed partial class AgentCommands
             await AttachImageAsync(clipboard.Path, isTemp ? clipboard.Path : null).ConfigureAwait(false);
         }
 
-        bool IsDroppedImagePath(string candidate)
+        bool IsDroppedAttachmentPath(string candidate)
         {
-            if (candidate.Length > AgentCliParser.MaxFilePathLength || !Images.CliImagePolicy.IsImageFile(candidate))
+            if (candidate.Length > AgentCliParser.MaxFilePathLength)
+            {
+                return false;
+            }
+
+            if (!Images.CliImagePolicy.IsImageFile(candidate)
+                && !Images.CliImagePolicy.IsTextOrCodeFile(candidate)
+                && !Attachments.OfficeDocumentText.IsSupported(candidate))
             {
                 return false;
             }
@@ -1854,16 +1888,16 @@ public sealed partial class AgentCommands
             queuedLine = null;
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
-            if (string.IsNullOrEmpty(line) && pendingImages.Count == 0)
+            if (string.IsNullOrEmpty(line) && pendingImages.Count == 0 && pendingTexts.Count == 0)
             {
                 continue;
             }
 
-            // A quoted path dropped onto the terminal arrives as the whole line; an image
+            // A quoted path dropped onto the terminal arrives as the whole line; a file
             // that exists on disk attaches instead of being sent as prose.
-            if (!string.IsNullOrEmpty(line) && IsDroppedImagePath(line))
+            if (!string.IsNullOrEmpty(line) && IsDroppedAttachmentPath(line))
             {
-                await AttachImageAsync(line).ConfigureAwait(false);
+                await AttachFileAsync(line).ConfigureAwait(false);
                 continue;
             }
 
@@ -1974,12 +2008,12 @@ public sealed partial class AgentCommands
                         continue;
                     }
 
-                    await AttachImageAsync(arg).ConfigureAwait(false);
+                    await AttachFileAsync(arg).ConfigureAwait(false);
                     continue;
                 }
                 if (slashCmd is "/attachments")
                 {
-                    if (pendingImages.Count == 0)
+                    if (pendingImages.Count == 0 && pendingTexts.Count == 0)
                     {
                         await WriteAltLineAsync(humanOut, "no attachments").ConfigureAwait(false);
                         continue;
@@ -1987,13 +2021,21 @@ public sealed partial class AgentCommands
 
                     for (var i = 0; i < pendingImages.Count; i++)
                     {
-                        await WriteAltLineAsync(humanOut, $"  [{i + 1}] {pendingImages[i].Label}").ConfigureAwait(false);
+                        await WriteAltLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
+                    }
+
+                    for (var i = 0; i < pendingTexts.Count; i++)
+                    {
+                        await WriteAltLineAsync(
+                            humanOut,
+                            $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
                     }
 
                     continue;
                 }
                 if (slashCmd is "/detach")
                 {
+                    var total = pendingImages.Count + pendingTexts.Count;
                     if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
                     {
                         foreach (var attachment in pendingImages)
@@ -2001,22 +2043,33 @@ public sealed partial class AgentCommands
                             DeleteTempFile(attachment);
                         }
 
-                        var detached = pendingImages.Count;
                         pendingImages.Clear();
-                        await WriteAltLineAsync(humanOut, $"detached all {detached} attachment(s)").ConfigureAwait(false);
+                        pendingTexts.Clear();
+                        await WriteAltLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
                         continue;
                     }
 
-                    if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > pendingImages.Count)
+                    if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
                     {
                         await WriteAltLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
                         continue;
                     }
 
-                    var removed = pendingImages[index - 1];
-                    pendingImages.RemoveAt(index - 1);
-                    DeleteTempFile(removed);
-                    await WriteAltLineAsync(humanOut, $"detached {removed.FileName}").ConfigureAwait(false);
+                    if (index <= pendingImages.Count)
+                    {
+                        var removedImage = pendingImages[index - 1];
+                        pendingImages.RemoveAt(index - 1);
+                        DeleteTempFile(removedImage);
+                        await WriteAltLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var textIndex = index - pendingImages.Count - 1;
+                        var removedText = pendingTexts[textIndex];
+                        pendingTexts.RemoveAt(textIndex);
+                        await WriteAltLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
+                    }
+
                     continue;
                 }
                 if (slashCmd is "/continue")
@@ -2087,13 +2140,25 @@ public sealed partial class AgentCommands
             }
 
             var idempotencyKey = Guid.NewGuid().ToString("N");
+            var promptText = Attachments.AttachedPrompt.Compose(line, pendingTexts);
             var imagePayloads = pendingImages.Count == 0
                 ? null
                 : pendingImages.Select(image => image.ToDataUrl()).ToList();
+            var attachmentLabels = new List<string>();
+            for (var i = 0; i < pendingImages.Count; i++)
+            {
+                attachmentLabels.Add($"image {i + 1}: {pendingImages[i].FileName}");
+            }
+
+            for (var i = 0; i < pendingTexts.Count; i++)
+            {
+                attachmentLabels.Add($"file {i + 1}: {pendingTexts[i].FileName}");
+            }
+
             var request = new CreateAgentRunRequest(
                 sessionId,
                 canonicalWorkspace,
-                line,
+                promptText,
                 cmd.Preset,
                 presetUpdate.Version,
                 idempotencyKey,
@@ -2125,24 +2190,23 @@ public sealed partial class AgentCommands
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(
                         line,
                         width: sessionRenderer.Width,
-                        attachmentLabels: pendingImages.Count == 0
-                            ? null
-                            : pendingImages.Select((image, index) => $"{index + 1}: {image.FileName}").ToList()));
+                        attachmentLabels: attachmentLabels.Count == 0 ? null : attachmentLabels));
                 }
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
                 activeRunId = resp.RunId;
 
-                if (pendingImages.Count > 0)
+                if (pendingImages.Count > 0 || pendingTexts.Count > 0)
                 {
-                    // The run owns the attachment now: drop the pending list and any temp
-                    // clipboard file behind it.
+                    // The run owns the attachments now: drop the pending lists and any temp
+                    // clipboard file behind an image.
                     foreach (var image in pendingImages)
                     {
                         DeleteTempFile(image);
                     }
 
                     pendingImages.Clear();
+                    pendingTexts.Clear();
                 }
 
                 var isTrustWait = string.Equals(

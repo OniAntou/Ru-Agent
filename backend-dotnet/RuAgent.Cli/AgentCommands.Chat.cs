@@ -182,6 +182,45 @@ public sealed partial class AgentCommands
             && Tui.TuiViewport.IsLiveConsole
             && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
 
+        // Header state captured by the pinned header painter. The title is read from the
+        // session document (bounded probes) and the tally arrives with usage frames.
+        string? sessionTitle = null;
+        long? lastTotalTokens = null;
+        var sessionTitleProbes = 0;
+
+        // Best effort and bounded: a fresh session may not have a title until the host has
+        // seen a message, so the header keeps the plain caption until one arrives.
+        async Task RefreshSessionTitleAsync()
+        {
+            if (!string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
+            {
+                return;
+            }
+
+            sessionTitleProbes++;
+            try
+            {
+                var doc = await _sessionClient.GetSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                if (doc.TryGetProperty("session", out var sessionElement)
+                    && sessionElement.TryGetProperty("title", out var titleElement)
+                    && titleElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(titleElement.GetString()))
+                {
+                    sessionTitle = titleElement.GetString()!.Trim();
+                    PaintAltHeader();
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // The header keeps its caption when the title cannot be read.
+                Tui.TuiDebug.Log("header", $"session title read failed: {CliErrorText.ShortMessage(ex.Message)}");
+            }
+        }
+
         // The pinned full-screen header. Only the AltBuffer frame has one; the sequential
         // layout keeps its existing header/landing flow untouched.
         void PaintAltHeader()
@@ -197,11 +236,8 @@ public sealed partial class AgentCommands
                 sessionRenderer.Surface,
                 width,
                 layout.HeaderTop + 1,
-                canonicalWorkspace,
-                backendName,
-                activeModel,
-                cmd.Preset,
-                sessionId,
+                sessionTitle,
+                lastTotalTokens,
                 layout.HeaderHeight);
         }
 
@@ -1006,6 +1042,7 @@ public sealed partial class AgentCommands
 
         async Task FinishTurnAsync()
         {
+            await RefreshSessionTitleAsync().ConfigureAwait(false);
             if (altBufferActive)
             {
                 // Between turns the AltBuffer frame persists: pinned header, scrolling
@@ -1067,7 +1104,6 @@ public sealed partial class AgentCommands
             }
         }
 
-        long? lastTotalTokens = null;
         _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
             SessionId: sessionId,
             Preset: cmd.Preset,
@@ -1501,24 +1537,33 @@ public sealed partial class AgentCommands
 
             var all = new List<(string Role, string Text)>();
             if (root.TryGetProperty("session", out var sessionElement)
-                && sessionElement.ValueKind == JsonValueKind.Object
-                && sessionElement.TryGetProperty("messages", out var messagesElement)
-                && messagesElement.ValueKind == JsonValueKind.Array)
+                && sessionElement.ValueKind == JsonValueKind.Object)
             {
-                foreach (var message in messagesElement.EnumerateArray())
+                if (sessionElement.TryGetProperty("title", out var titleElement)
+                    && titleElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(titleElement.GetString()))
                 {
-                    var role = message.TryGetProperty("role", out var roleElement) && roleElement.ValueKind == JsonValueKind.String
-                        ? roleElement.GetString()!.Trim().ToLowerInvariant()
-                        : string.Empty;
-                    var content = message.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
-                        ? contentElement.GetString() ?? string.Empty
-                        : string.Empty;
-                    if (string.IsNullOrWhiteSpace(content))
-                    {
-                        continue;
-                    }
+                    sessionTitle = titleElement.GetString()!.Trim();
+                }
 
-                    all.Add((role, content.Trim()));
+                if (sessionElement.TryGetProperty("messages", out var messagesElement)
+                    && messagesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var message in messagesElement.EnumerateArray())
+                    {
+                        var role = message.TryGetProperty("role", out var roleElement) && roleElement.ValueKind == JsonValueKind.String
+                            ? roleElement.GetString()!.Trim().ToLowerInvariant()
+                            : string.Empty;
+                        var content = message.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
+                            ? contentElement.GetString() ?? string.Empty
+                            : string.Empty;
+                        if (string.IsNullOrWhiteSpace(content))
+                        {
+                            continue;
+                        }
+
+                        all.Add((role, content.Trim()));
+                    }
                 }
             }
 

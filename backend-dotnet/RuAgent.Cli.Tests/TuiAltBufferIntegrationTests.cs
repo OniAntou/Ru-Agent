@@ -98,7 +98,7 @@ public sealed class TuiAltBufferIntegrationTests
     }
 
     [Fact]
-    public void PinnedHeader_FillsTheTwoHeaderRowsAndParksBelow()
+    public void PinnedHeader_FillsTheHeaderRowAndParksBelow()
     {
         var (writer, surface, sim) = NewFrame(rows: 30);
 
@@ -106,20 +106,16 @@ public sealed class TuiAltBufferIntegrationTests
             surface,
             width: Cols,
             topRow: 1,
-            workspace: "D:\\LLM",
-            backend: "OpenAI",
-            model: "gpt-5",
-            preset: "standard",
-            sessionId: "sess_1234567890",
-            height: 2);
+            title: "Fix broken tests",
+            tokens: 39413,
+            height: 1);
 
         surface.Write("tail lands below the header");
 
         sim.Write(writer.ToString());
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("D:/LLM", sim.VisibleRow(1), StringComparison.Ordinal);
-        Assert.Contains("OpenAI/gpt-5", sim.VisibleRow(1), StringComparison.Ordinal);
-        Assert.Contains("tail lands below the header", sim.VisibleRow(2), StringComparison.Ordinal);
+        Assert.Contains("# Fix broken tests", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("39,413", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("tail lands below the header", sim.VisibleRow(1), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,7 +128,7 @@ public sealed class TuiAltBufferIntegrationTests
 
         TuiHeader.RenderPinned(
             surface, Cols, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_123", layout.HeaderHeight);
+            "Scrolling session", 59, layout.HeaderHeight);
         Assert.True(region.Enter(30, footerHeight, Cols, topRow: layout.TranscriptTop + 1));
 
         for (var i = 0; i < 60; i++)
@@ -144,7 +140,7 @@ public sealed class TuiAltBufferIntegrationTests
 
         sim.Write(writer.ToString());
         var footerFirst = 30 - footerHeight;
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("Scrolling session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.DoesNotContain("line", sim.VisibleRow(0), StringComparison.Ordinal);
         // The tracked append row is the bottom transcript row; the line's trailing newline
         // scrolls the text up one, so the last finished line sits directly above it.
@@ -168,7 +164,7 @@ public sealed class TuiAltBufferIntegrationTests
         var layout = TuiScreenLayout.Compute(Cols, 40);
         var footerFirst = 40 - footerHeight;
 
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("Resize rebuild", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.Contains("assistant tail marker", sim.VisibleRow(footerFirst - 2), StringComparison.Ordinal);
         Assert.Contains("status", sim.VisibleRow(footerFirst), StringComparison.Ordinal);
         for (var row = 0; row < layout.TranscriptTop; row++)
@@ -256,7 +252,7 @@ public sealed class TuiAltBufferIntegrationTests
         var layout = TuiScreenLayout.Compute(Cols, rows);
         TuiHeader.RenderPinned(
             surface, Cols, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_123", layout.HeaderHeight);
+            "Resize rebuild", 88, layout.HeaderHeight);
         Assert.True(region.Enter(rows, footerHeight, Cols, topRow: layout.TranscriptTop + 1));
         surface.WriteLine(assistantTail);
         region.Paint(["status", "top", "mid", "bottom"], Cols);

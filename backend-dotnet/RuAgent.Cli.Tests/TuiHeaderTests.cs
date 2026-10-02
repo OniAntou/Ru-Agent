@@ -18,56 +18,45 @@ public sealed class TuiHeaderTests : IDisposable
     [InlineData(40)]
     [InlineData(80)]
     [InlineData(200)]
-    public void Compose_HeaderLinesFitTheViewport(int width)
+    public void Compose_HeaderLineFitsTheViewport(int width)
     {
-        var lines = TuiHeader.Compose(width, @"D:\LLM", "Kilo Gateway", "gpt-5-codex", "standard", "a2026184", empty: false);
+        var line = TuiHeader.Compose(width, "Homepage button color change in repo workflow", 39413);
 
-        Assert.All(lines, line => Assert.True(
-            TuiText.VisibleWidth(line) <= width,
-            $"line exceeds {width}: '{line}'"));
+        Assert.True(TuiText.VisibleWidth(line) <= width, $"line exceeds {width}: '{line}'");
     }
 
     [Fact]
-    public void NonEmpty_header_keeps_four_rows_and_exact_width()
+    public void Compose_KeepsExactWidthTitleAndGroupedTally()
     {
-        var lines = TuiHeader.Compose(100, @"D:\LLM", "opencode", "gpt-sol", "standard", "abcdef123456", empty: false);
+        var line = TuiHeader.Compose(100, "Fix broken tests", 39413);
 
-        Assert.Equal(4, lines.Count);
-        Assert.All(lines, line => Assert.Equal(100, TuiText.VisibleWidth(line)));
+        Assert.Equal(100, TuiText.VisibleWidth(line));
+        Assert.StartsWith("# Fix broken tests", line, StringComparison.Ordinal);
+        Assert.EndsWith("39,413", line, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Compose_RendersIdentityContextRuleAndHints()
+    public void Compose_SingleRowCaptionsTheSessionWithoutTitle()
     {
-        var lines = TuiHeader.Compose(100, @"D:\LLM", "Kilo Gateway", "gpt-5-codex", "standard", "a2026184", empty: false);
+        var line = TuiHeader.Compose(40, null, null);
 
-        Assert.Equal(4, lines.Count);
-        Assert.Contains("✦ Ru", lines[0], StringComparison.Ordinal);
-        Assert.Contains("a2026184", lines[0], StringComparison.Ordinal);
-        Assert.Contains("LLM", lines[1], StringComparison.Ordinal);
-        Assert.Contains("standard", lines[1], StringComparison.Ordinal);
-        Assert.Contains("Kilo Gateway/gpt-5-codex", lines[1], StringComparison.Ordinal);
-        Assert.All(lines[2].Trim(), character => Assert.Equal('─', character));
-        Assert.Contains("/ commands", lines[3], StringComparison.Ordinal);
-        Assert.Contains("ctrl+o expand", lines[3], StringComparison.Ordinal);
+        Assert.Equal(40, TuiText.VisibleWidth(line));
+        Assert.StartsWith("# session", line, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Compose_EmptyStateTeachesTheSpace()
+    public void Compose_DropsTheTallyWhenTheRowCannotFitBoth()
     {
-        var lines = TuiHeader.Compose(80, @"D:\LLM", "Kilo Gateway", "gpt-5-codex", "standard", "a2026184", empty: true);
+        var line = TuiHeader.Compose(12, "A long session title", 1234567);
 
-        var text = string.Join("\n", lines);
-        Assert.Contains("coding agent", text, StringComparison.Ordinal);
-        Assert.Contains("Type a request to start", text, StringComparison.Ordinal);
-        Assert.Contains("/help", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("/ commands", text, StringComparison.Ordinal);
+        Assert.Equal(12, TuiText.VisibleWidth(line));
+        Assert.DoesNotContain("1,234,567", line, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Compose_ZeroWidthReturnsNothing()
     {
-        Assert.Empty(TuiHeader.Compose(0, "w", "b", "m", "p", "s", empty: false));
+        Assert.Empty(TuiHeader.Compose(0, "title", 1));
     }
 
     [Theory]

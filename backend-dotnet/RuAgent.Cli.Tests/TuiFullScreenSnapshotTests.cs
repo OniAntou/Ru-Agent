@@ -25,23 +25,20 @@ public sealed class TuiFullScreenSnapshotTests
     [InlineData(80)]
     [InlineData(120)]
     [InlineData(160)]
-    public void Header_PinnedSnapshot_ShowsIdentityAndContext(int width)
+    public void Header_PinnedSnapshot_ShowsTitleAndTally(int width)
     {
         var (writer, surface) = NewSurface();
 
         TuiHeader.RenderPinned(
             surface, width, topRow: 1,
-            workspace: "D:\\LLM", backend: "OpenAI", model: "gpt-5",
-            preset: "standard", sessionId: "sess_1234567890", height: 2);
+            title: "Fix broken tests", tokens: 39413, height: 1);
 
         var sim = new TuiScreenSimulator(rows: Rows, cols: width);
         sim.Write(writer.ToString());
 
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("sess_123", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("D:/LLM", sim.VisibleRow(1), StringComparison.Ordinal);
-        Assert.Contains("OpenAI/gpt-5", sim.VisibleRow(1), StringComparison.Ordinal);
-        Assert.Empty(sim.VisibleRow(2));
+        Assert.Contains("# Fix broken tests", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("39,413", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Empty(sim.VisibleRow(1));
     }
 
     [Theory]
@@ -185,10 +182,8 @@ public sealed class TuiFullScreenSnapshotTests
         sim.Write(writer.ToString());
 
         // Header stays pinned; nothing scrolled over it.
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("OpenAI/gpt-5", sim.VisibleRow(1), StringComparison.Ordinal);
+        Assert.Contains("idle session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.DoesNotContain("assistant line", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.DoesNotContain("assistant line", sim.VisibleRow(1), StringComparison.Ordinal);
 
         // The transcript is present and never leaks into the fixed three-row footer.
         Assert.Contains("assistant line 59", sim.ScreenText(), StringComparison.Ordinal);
@@ -210,7 +205,7 @@ public sealed class TuiFullScreenSnapshotTests
         var layout = TuiScreenLayout.Compute(width, Rows);
         TuiHeader.RenderPinned(
             surface, width, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_error", layout.HeaderHeight);
+            "Error recovery session", 1200, layout.HeaderHeight);
         Assert.True(region.Enter(Rows, layout.FooterHeight, width, topRow: layout.TranscriptTop + 1));
         for (var i = 0; i < 40; i++)
         {
@@ -233,11 +228,9 @@ public sealed class TuiFullScreenSnapshotTests
         var sim = new TuiScreenSimulator(rows: Rows, cols: width);
         sim.Write(writer.ToString());
 
-        // The header stays on its original rows.
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.Contains("OpenAI/gpt-5", sim.VisibleRow(1), StringComparison.Ordinal);
+        // The header stays on its original row.
+        Assert.Contains("Error recovery session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.DoesNotContain("assistant_text_truncated", sim.VisibleRow(0), StringComparison.Ordinal);
-        Assert.DoesNotContain("assistant_text_truncated", sim.VisibleRow(1), StringComparison.Ordinal);
 
         // The error line is visible inside the transcript region, not in the footer.
         var footerFirst = Rows - layout.FooterHeight;
@@ -270,7 +263,7 @@ public sealed class TuiFullScreenSnapshotTests
         var layout = TuiScreenLayout.Compute(120, 40);
         TuiHeader.RenderPinned(
             surface, 120, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_resize", layout.HeaderHeight);
+            "Resize session", 88, layout.HeaderHeight);
         Assert.True(region.Enter(40, layout.FooterHeight, 120, topRow: layout.TranscriptTop + 1));
 
         var budget = 40 - layout.FooterHeight - 2;
@@ -284,7 +277,7 @@ public sealed class TuiFullScreenSnapshotTests
         var sim = new TuiScreenSimulator(rows: 40, cols: 120);
         sim.Write(writer.ToString());
 
-        Assert.Contains("Ru", sim.VisibleRow(0), StringComparison.Ordinal);
+        Assert.Contains("Resize session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.Contains("assistant tail marker", sim.ScreenText(), StringComparison.Ordinal);
         Assert.Contains("idle", sim.VisibleRow(37), StringComparison.Ordinal);
         for (var row = 37; row < 40; row++)
@@ -306,7 +299,7 @@ public sealed class TuiFullScreenSnapshotTests
         var layout = TuiScreenLayout.Compute(width, rows);
         TuiHeader.RenderPinned(
             surface, width, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_12345678", layout.HeaderHeight);
+            "idle session", 1234, layout.HeaderHeight);
         Assert.True(region.Enter(rows, layout.FooterHeight, width, topRow: layout.TranscriptTop + 1));
         for (var i = 0; i < transcriptLines; i++)
         {
@@ -323,7 +316,7 @@ public sealed class TuiFullScreenSnapshotTests
         var layout = TuiScreenLayout.Compute(width, rows);
         TuiHeader.RenderPinned(
             surface, width, layout.HeaderTop + 1,
-            "D:\\LLM", "OpenAI", "gpt-5", "standard", "sess_resize", layout.HeaderHeight);
+            "Frame session", 42, layout.HeaderHeight);
         Assert.True(region.Enter(rows, layout.FooterHeight, width, topRow: layout.TranscriptTop + 1));
         surface.WriteLine("assistant answer head");
         surface.WriteLine(tail);

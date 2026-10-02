@@ -1,74 +1,42 @@
+using System.Globalization;
 using System.Text;
 
 namespace RuAgent.Cli.Tui;
 
 /// <summary>
-/// The compact aurora header: identity, context and the key hints, replacing the tall
-/// Spectre panel.
+/// The pinned session header, cloned from OpenCode: the session title on the left and the
+/// token tally on the right, on a single row. The landing helpers below build the pre-chat
+/// home surface.
 /// </summary>
 public static class TuiHeader
 {
-    private const string Hints = "/ commands · ↑↓ history · tab complete · ctrl+o expand · ctrl+c stop";
-
-    public static IReadOnlyList<string> Compose(
-        int width,
-        string workspace,
-        string backend,
-        string model,
-        string preset,
-        string sessionId,
-        bool empty)
+    /// <summary>
+    /// One header row: "# &lt;title&gt;" at the left edge and the grouped token count at the
+    /// right edge. The title is shortened first; the tally is only dropped when the row can
+    /// no longer fit both.
+    /// </summary>
+    public static string Compose(int width, string? title, long? tokens)
     {
         if (width <= 0)
         {
-            return Array.Empty<string>();
+            return string.Empty;
         }
 
-        var lines = new List<string>();
-        if (empty)
+        var tally = tokens is > 0
+            ? TuiPalette.Paint(tokens.Value.ToString("N0", CultureInfo.InvariantCulture), TuiToken.Meta)
+            : string.Empty;
+        var tallyWidth = TuiText.VisibleWidth(tally);
+        var titleBudget = tallyWidth > 0 ? width - tallyWidth - 2 : width;
+        var heading = string.IsNullOrWhiteSpace(title) ? "session" : title.Trim();
+        var left = TuiPalette.Paint("# ", TuiToken.Meta) + TuiPalette.Paint(heading, TuiToken.Bright);
+        if (TuiText.VisibleWidth(left) > titleBudget)
         {
-            lines.Add(TuiPalette.Paint("✦ Ru", TuiToken.Brand) + TuiPalette.Paint(" · coding agent", TuiToken.Meta));
-            lines.Add(string.Empty);
-            var emptyContext = Shorten(Join(backend, model), Math.Max(8, width - 2));
-            var emptyPreset = string.IsNullOrWhiteSpace(preset) ? string.Empty : " · " + preset;
-            var emptyWorkspace = string.IsNullOrWhiteSpace(workspace) ? string.Empty : " · " + ShortenWorkspace(workspace, Math.Max(8, width / 2));
-            lines.Add("  " + emptyContext + TuiPalette.Paint(emptyPreset + emptyWorkspace, TuiToken.Line));
-            lines.Add(string.Empty);
-            lines.Add(TuiPalette.Paint("  Type a request to start, or /help for every command.", TuiToken.Meta));
-            lines.Add(TuiPalette.Paint("  Try: \"explain the approve flow in the harness\"", TuiToken.Line));
-            return Pad(lines, width);
+            left = TuiText.Truncate(left, Math.Max(0, titleBudget));
         }
 
-        var left = TuiPalette.Paint("✦ Ru", TuiToken.Brand) + TuiPalette.Paint(" · coding agent", TuiToken.Meta);
-        var session = string.IsNullOrWhiteSpace(sessionId) ? string.Empty : TuiPalette.Paint(ShortSession(sessionId), TuiToken.Meta);
-        lines.Add(TwoColumn(left, session, width));
-
-        var context = ShortenWorkspace(workspace, Math.Max(8, width / 2));
-        var presetLabel = TuiPalette.Paint(string.IsNullOrWhiteSpace(preset) ? string.Empty : " · " + preset, TuiToken.Line);
-        var engine = string.IsNullOrWhiteSpace(Join(backend, model))
-            ? string.Empty
-            : TuiPalette.Paint(Shorten(Join(backend, model), Math.Max(8, width / 2)), TuiToken.Brand2);
-        lines.Add(TwoColumn(" " + context + presetLabel, engine, width));
-
-        lines.Add(TuiPalette.Paint(new string('─', width), TuiToken.Line));
-        lines.Add(TuiPalette.Paint(Shorten(" " + Hints, width), TuiToken.Line));
-        return Pad(lines, width);
-    }
-
-    public static void Render(
-        TuiSurface surface,
-        int width,
-        string workspace,
-        string backend,
-        string model,
-        string preset,
-        string sessionId,
-        bool empty)
-    {
-        foreach (var line in Compose(width, workspace, backend, model, preset, sessionId, empty))
-        {
-            surface.WriteLine(line);
-        }
+        return tallyWidth > 0 && titleBudget >= 2
+            ? TwoColumn(left, tally, width)
+            : TuiText.Pad(TuiText.Truncate(left, width), width);
     }
 
     /// <summary>
@@ -76,27 +44,23 @@ public static class TuiHeader
     /// starting at <paramref name="topRow"/> (1-based), then parks the cursor on the first row
     /// below it so a sequential write continues into the transcript region. Each row is erased
     /// first: a resize rebuild can otherwise leave old text of a different width behind.
-    /// The two rows the layout reserves are identity/session and workspace/preset/engine.
     /// </summary>
     public static void RenderPinned(
         TuiSurface surface,
         int width,
         int topRow,
-        string workspace,
-        string backend,
-        string model,
-        string preset,
-        string sessionId,
+        string? title,
+        long? tokens,
         int height)
     {
         ArgumentNullException.ThrowIfNull(surface);
         var rows = Math.Max(0, height);
         var first = Math.Max(1, topRow);
-        var lines = Compose(width, workspace, backend, model, preset, sessionId, empty: false);
+        var lines = new[] { Compose(width, title, tokens) };
         surface.Repaint(writer =>
         {
             var builder = new StringBuilder();
-            for (var i = 0; i < rows && i < lines.Count; i++)
+            for (var i = 0; i < rows && i < lines.Length; i++)
             {
                 builder.Append($"\u001b[{first + i};1H");
                 builder.Append("\u001b[2K");
@@ -471,18 +435,6 @@ public static class TuiHeader
         "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠛⡣⠯⠟⠙⠊⠁",
     ];
 
-    private static string Center(string text, int width)
-    {
-        var visible = TuiText.VisibleWidth(text);
-        if (visible >= width)
-        {
-            return TuiText.Truncate(text, width);
-        }
-
-        var left = (width - visible) / 2;
-        return new string(' ', left) + text + new string(' ', width - visible - left);
-    }
-
     private static string TwoColumn(string left, string right, int width)
     {
         if (right.Length == 0)
@@ -499,16 +451,6 @@ public static class TuiHeader
         }
 
         return left + new string(' ', room) + right;
-    }
-
-    private static IReadOnlyList<string> Pad(List<string> lines, int width)
-    {
-        for (var i = 0; i < lines.Count; i++)
-        {
-            lines[i] = TuiText.Pad(lines[i], width);
-        }
-
-        return lines;
     }
 
     /// <summary>Keeps the tail of a path so the leaf stays visible on narrow terminals.</summary>
@@ -541,8 +483,6 @@ public static class TuiHeader
         return built.Length == 0 ? TuiText.Truncate(normalized, maxCells) : "…/" + built;
     }
 
-    private static string Shorten(string text, int maxCells) => TuiText.Truncate(text, maxCells);
-
     private static string Join(string backend, string model)
     {
         if (string.IsNullOrWhiteSpace(backend))
@@ -557,7 +497,4 @@ public static class TuiHeader
 
         return backend + "/" + model;
     }
-
-    private static string ShortSession(string sessionId) =>
-        sessionId.Length <= 8 ? sessionId : sessionId[..8];
 }

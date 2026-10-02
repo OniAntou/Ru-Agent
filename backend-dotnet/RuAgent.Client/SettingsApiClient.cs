@@ -18,6 +18,17 @@ public sealed record ModelReasoningSnapshot(
     IReadOnlyList<string> Options);
 
 /// <summary>
+/// Catalog details for one model. Rates are US dollars per million tokens, as published;
+/// every field is nullable because "unpublished" and "zero" are different statements.
+/// </summary>
+public sealed record CatalogModelDetails(
+    int? ContextLength,
+    double? InputCost,
+    double? OutputCost,
+    double? CacheReadCost,
+    double? CacheWriteCost);
+
+/// <summary>
 /// Authenticated settings API with bounded reads and envelope validation.
 /// POST /settings returns {status: success|error}, GET /settings returns {status: ok}.
 /// </summary>
@@ -280,6 +291,89 @@ public sealed class SettingsApiClient
             throw new AgentApiException("catalog_malformed", ex.Message);
         }
     }
+
+    /// <summary>
+    /// Catalog details for one model: the published context window and rates, when the
+    /// provider declared them. Returns null when the model is absent from the catalog;
+    /// unpublished fields stay null instead of being invented.
+    /// </summary>
+    public async Task<CatalogModelDetails?> GetModelDetailsAsync(
+        string? backend, string modelId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        var url = string.IsNullOrWhiteSpace(backend)
+            ? new Uri(_session.BaseUri, "models")
+            : new Uri(_session.BaseUri, "models?backend=" + Uri.EscapeDataString(backend.Trim()));
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("catalog_http_error", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("catalog", out var catalog)
+                || catalog.ValueKind != JsonValueKind.Array)
+            {
+                throw new AgentApiException("catalog_malformed", "Missing model catalog.");
+            }
+
+            foreach (var entry in catalog.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object
+                    || !entry.TryGetProperty("id", out var idProp)
+                    || idProp.ValueKind != JsonValueKind.String
+                    || !string.Equals(idProp.GetString(), modelId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                int? contextLength = null;
+                if (entry.TryGetProperty("context_length", out var contextProp)
+                    && contextProp.ValueKind == JsonValueKind.Number
+                    && contextProp.TryGetInt32(out var parsedContext))
+                {
+                    contextLength = parsedContext;
+                }
+
+                double? input = null;
+                double? output = null;
+                double? cacheRead = null;
+                double? cacheWrite = null;
+                if (entry.TryGetProperty("cost", out var costProp) && costProp.ValueKind == JsonValueKind.Object)
+                {
+                    input = ReadRate(costProp, "input");
+                    output = ReadRate(costProp, "output");
+                    cacheRead = ReadRate(costProp, "cache_read");
+                    cacheWrite = ReadRate(costProp, "cache_write");
+                }
+
+                return new CatalogModelDetails(contextLength, input, output, cacheRead, cacheWrite);
+            }
+
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("catalog_malformed", ex.Message);
+        }
+    }
+
+    private static double? ReadRate(JsonElement cost, string name) =>
+        cost.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Number
+        && value.TryGetDouble(out var rate)
+        && double.IsFinite(rate)
+        && rate >= 0
+            ? rate
+            : null;
 
     /// <summary>
     /// The reasoning surface of the active model: the snapshot identity a save must echo

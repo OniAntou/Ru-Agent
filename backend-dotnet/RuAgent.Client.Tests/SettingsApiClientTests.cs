@@ -19,10 +19,10 @@ public sealed class SettingsApiClientTests
         return PublicHostSession.FromDescriptor(descriptor);
     }
 
-    private static SettingsApiClient Client(Func<HttpRequestMessage, HttpResponseMessage> handler) =>
+    internal static SettingsApiClient Client(Func<HttpRequestMessage, HttpResponseMessage> handler) =>
         new(Session(), new HttpClient(new FakeHandler(handler)));
 
-    private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
+    internal static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
     [Fact]

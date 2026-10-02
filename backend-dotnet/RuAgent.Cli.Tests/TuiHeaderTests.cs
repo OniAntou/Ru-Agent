@@ -54,6 +54,26 @@ public sealed class TuiHeaderTests : IDisposable
     }
 
     [Fact]
+    public void Compose_ShowsContextPercentAndCostInTheCluster()
+    {
+        var line = TuiHeader.Compose(100, "Fix broken tests", 39413, contextPercent: 20, costUsd: 0.29);
+
+        Assert.Contains("39,413", line, StringComparison.Ordinal);
+        Assert.Contains("20%", line, StringComparison.Ordinal);
+        Assert.Contains("($0.29)", line, StringComparison.Ordinal);
+        Assert.Equal(100, TuiText.VisibleWidth(line));
+    }
+
+    [Fact]
+    public void Compose_OmitsUnpublishedClusterMembers()
+    {
+        var line = TuiHeader.Compose(60, "Fix", null, contextPercent: 20);
+
+        Assert.Contains("20%", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("($", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compose_ZeroWidthReturnsNothing()
     {
         Assert.Empty(TuiHeader.Compose(0, "title", 1));

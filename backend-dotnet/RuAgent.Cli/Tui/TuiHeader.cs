@@ -11,20 +11,41 @@ namespace RuAgent.Cli.Tui;
 public static class TuiHeader
 {
     /// <summary>
-    /// One header row: "# &lt;title&gt;" at the left edge and the grouped token count at the
-    /// right edge. The title is shortened first; the tally is only dropped when the row can
-    /// no longer fit both.
+    /// One header row: "# &lt;title&gt;" at the left edge and the usage cluster (grouped token
+    /// count, context percentage, session cost) at the right edge. The title is shortened
+    /// first; the cluster is only dropped when the row can no longer fit both.
     /// </summary>
-    public static string Compose(int width, string? title, long? tokens)
+    public static string Compose(
+        int width,
+        string? title,
+        long? tokens,
+        int? contextPercent = null,
+        double? costUsd = null)
     {
         if (width <= 0)
         {
             return string.Empty;
         }
 
-        var tally = tokens is > 0
-            ? TuiPalette.Paint(tokens.Value.ToString("N0", CultureInfo.InvariantCulture), TuiToken.Meta)
-            : string.Empty;
+        var parts = new List<string>(3);
+        if (tokens is > 0)
+        {
+            parts.Add(tokens.Value.ToString("N0", CultureInfo.InvariantCulture));
+        }
+
+        if (contextPercent is { } percent)
+        {
+            parts.Add($"{percent}%");
+        }
+
+        if (costUsd is { } cost)
+        {
+            parts.Add($"(${cost.ToString("0.00", CultureInfo.InvariantCulture)})");
+        }
+
+        var tally = parts.Count == 0
+            ? string.Empty
+            : TuiPalette.Paint(string.Join("  ", parts), TuiToken.Meta);
         var tallyWidth = TuiText.VisibleWidth(tally);
         var titleBudget = tallyWidth > 0 ? width - tallyWidth - 2 : width;
         var heading = string.IsNullOrWhiteSpace(title) ? "session" : title.Trim();
@@ -51,12 +72,14 @@ public static class TuiHeader
         int topRow,
         string? title,
         long? tokens,
-        int height)
+        int height,
+        int? contextPercent = null,
+        double? costUsd = null)
     {
         ArgumentNullException.ThrowIfNull(surface);
         var rows = Math.Max(0, height);
         var first = Math.Max(1, topRow);
-        var lines = new[] { Compose(width, title, tokens) };
+        var lines = new[] { Compose(width, title, tokens, contextPercent, costUsd) };
         surface.Repaint(writer =>
         {
             var builder = new StringBuilder();

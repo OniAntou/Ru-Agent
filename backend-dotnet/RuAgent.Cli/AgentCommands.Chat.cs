@@ -205,7 +205,50 @@ public sealed partial class AgentCommands
         // session document (bounded probes) and the tally repaints as usage frames arrive.
         string? sessionTitle = null;
         long? lastTotalTokens = null;
+        var usage = new Tui.TuiUsageTracker();
         var sessionTitleProbes = 0;
+
+        // Best effort: the header's percent and cost need the catalog's published context
+        // window and rates; a catalog that cannot answer leaves both off rather than
+        // inventing numbers.
+        async Task RefreshModelUsageInfoAsync(CancellationToken ct)
+        {
+            usage.ContextLimit = null;
+            usage.InputRate = null;
+            usage.OutputRate = null;
+            // The usage cluster only exists on the pinned header; a sequential/data-only
+            // chat must not pay a catalog read for numbers it never shows.
+            if (!altBufferActive || activeModel.Length == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                var details = await _settingsClient
+                    .GetModelDetailsAsync(backendName is "(provider unknown)" ? null : backendName, activeModel, ct)
+                    .ConfigureAwait(false);
+                if (details is null)
+                {
+                    return;
+                }
+
+                usage.ContextLimit = details.ContextLength;
+                if (details.InputCost is { } inputRate && details.OutputCost is { } outputRate)
+                {
+                    usage.InputRate = inputRate;
+                    usage.OutputRate = outputRate;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Tui.TuiDebug.Log("usage", $"model details read failed: {CliErrorText.ShortMessage(ex.Message)}");
+            }
+        }
 
         // Best effort and bounded: a fresh session may not have a title until the host has
         // seen a message, so the header keeps the plain caption until one arrives. The probe
@@ -259,7 +302,9 @@ public sealed partial class AgentCommands
                 layout.HeaderTop + 1,
                 sessionTitle,
                 lastTotalTokens,
-                layout.HeaderHeight);
+                layout.HeaderHeight,
+                usage.ContextPercent,
+                usage.CostKnown ? usage.SessionCost : null);
         }
 
         // First 1-based row of the transcript region: below the pinned header row in the
@@ -1222,11 +1267,26 @@ public sealed partial class AgentCommands
 
                 string mLbl = string.IsNullOrWhiteSpace(curModel) ? (string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel) : curModel;
                 lineReader.Legend = string.IsNullOrWhiteSpace(effort) ? mLbl : $"{mLbl} · {effort}";
-                if (!string.IsNullOrWhiteSpace(curModel))
+                var backendChanged = !string.IsNullOrWhiteSpace(bName)
+                    && !string.Equals(bName, backendName, StringComparison.Ordinal);
+                var modelChanged = !string.IsNullOrWhiteSpace(curModel)
+                    && !string.Equals(curModel, activeModel, StringComparison.Ordinal);
+                if (backendChanged)
                 {
-                    // The footer agent bar and the vision pre-check read this local, so a
-                    // /model switch is reflected without a restart.
+                    backendName = bName;
+                }
+
+                if (modelChanged)
+                {
+                    // The footer agent bar, the vision pre-check and the usage cluster read
+                    // this local, so a /model switch is reflected without a restart.
                     activeModel = curModel;
+                }
+
+                if (backendChanged || modelChanged)
+                {
+                    await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
+                    PaintAltHeader();
                 }
             }
             catch (Exception)
@@ -1314,6 +1374,8 @@ public sealed partial class AgentCommands
                 sessionRenderer.Flush();
             }
         }
+
+        await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(cmd.SessionId))
         {
@@ -1472,6 +1534,7 @@ public sealed partial class AgentCommands
                             var usageEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
                             if (usageEnvelope?.TotalTokens is { } total)
                             {
+                                usage.Apply(usageEnvelope.InputTokens, usageEnvelope.OutputTokens);
                                 lastTotalTokens = total;
                                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                                 PaintAltHeader();
@@ -2110,6 +2173,9 @@ public sealed partial class AgentCommands
                 continue;
             }
 
+            // The usage envelope's input/output counters restart with every run, so the
+            // step-delta baseline resets here; the session cost itself keeps accumulating.
+            usage.BeginTurn();
             turn++;
             if (landingScreenVisible)
             {

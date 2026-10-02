@@ -496,6 +496,8 @@ public sealed class AgentApprovalEndpointTests
         {
             var runner = new ScriptedRunner(
                 BatchToolStep(),
+                FinalStep("done"),
+                ToolCall("files.read", """{"path":"README.md"}"""),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(
                 dataPaths: dataPaths,
@@ -548,19 +550,20 @@ public sealed class AgentApprovalEndpointTests
 
             var after = await ReadEventsAsync(client, runId);
             Assert.Equal(
-                3,
+                proposedBefore.Length + 1,
                 after.Count(item => item.GetProperty("event_type").GetString() == "tool.proposed"));
             Assert.Equal(
-                3,
+                4,
                 after.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
             Assert.Equal(
                 1,
                 after.Count(item => item.GetProperty("event_type").GetString() == "approval.requested"));
             // Batch request, the prose answer after the failed unknown-executable
-            // execution (answered with a recovery note), then the script's final
-            // answer after the note: the failed tool no longer ends the run.
+            // execution (answered with a recovery note), the corrected read, then
+            // the script's final answer after that verified call: the failed tool
+            // no longer ends the run and the unverified prose is never accepted.
             Assert.Contains(after, item => item.GetProperty("event_type").GetString() == "run.note_added");
-            Assert.Equal(3, runner.RequestCount);
+            Assert.Equal(4, runner.RequestCount);
         }
         finally
         {

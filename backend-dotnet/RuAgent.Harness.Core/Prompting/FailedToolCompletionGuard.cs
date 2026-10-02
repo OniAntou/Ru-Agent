@@ -15,7 +15,16 @@ public static class FailedToolCompletionGuard
         }
 
         var lastIndex = context.Entries.Count - 1;
-        if (context.Entries[lastIndex].Kind != ModelContextEntryKind.ToolResult)
+        // A recovery note committed after the failed receipt is feedback about
+        // that receipt, not a new model action. Skip trailing notes so the
+        // failure stays visible to the next final-prose step and the bounded
+        // note budget remains reachable in the real flow.
+        while (lastIndex >= 0 && IsTrailingRecoveryNote(context.Entries[lastIndex]))
+        {
+            lastIndex--;
+        }
+
+        if (lastIndex < 0 || context.Entries[lastIndex].Kind != ModelContextEntryKind.ToolResult)
         {
             return false;
         }
@@ -57,6 +66,12 @@ public static class FailedToolCompletionGuard
         errorCode = firstFailureCode;
         return true;
     }
+
+    private static bool IsTrailingRecoveryNote(ModelContextEntry entry) =>
+        entry.Kind == ModelContextEntryKind.Text
+        && entry.Role == ModelContextRole.System
+        && entry.Content is { } content
+        && content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal);
 
     private static bool HasEarlierDeny(ModelContextSnapshot context, int beforeIndex)
     {

@@ -164,6 +164,48 @@ public sealed class FailedToolCompletionGuardTests
         Assert.False(FailedToolCompletionGuard.TryGetFailure(context, out _));
     }
 
+    [Fact]
+    public void Trailing_recovery_notes_do_not_hide_the_failed_receipt()
+    {
+        var failedTool = ModelContextEntry.ToolResult(
+            "tool-1",
+            2,
+            Receipt(ToolExecutionOutcome.Failed, "workspace_path_outside_root"),
+            "{}");
+        var firstNote = ModelContextEntry.Text(
+            "note-1",
+            3,
+            ModelContextRole.System,
+            AgentRecoveryNotes.BuildUnverifiedNote("workspace_path_outside_root"));
+        var secondNote = ModelContextEntry.Text(
+            "note-2",
+            4,
+            ModelContextRole.System,
+            AgentRecoveryNotes.BuildUnverifiedNote("workspace_path_outside_root"));
+        var context = new ModelContextSnapshot([failedTool, firstNote, secondNote], "[]"u8.ToArray());
+
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(context, out var code));
+        Assert.Equal("workspace_path_outside_root", code);
+    }
+
+    [Fact]
+    public void Non_recovery_system_text_still_hides_the_prior_failure()
+    {
+        var failedTool = ModelContextEntry.ToolResult(
+            "tool-1",
+            2,
+            Receipt(ToolExecutionOutcome.Failed, "workspace_path_outside_root"),
+            "{}");
+        var systemText = ModelContextEntry.Text(
+            "system-1",
+            3,
+            ModelContextRole.System,
+            "plain system instruction");
+        var context = new ModelContextSnapshot([failedTool, systemText], "[]"u8.ToArray());
+
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(context, out _));
+    }
+
     private static ModelContextSnapshot CreateContext(params ToolExecutionReceipt[] receipts)
     {
         var entries = new List<ModelContextEntry>

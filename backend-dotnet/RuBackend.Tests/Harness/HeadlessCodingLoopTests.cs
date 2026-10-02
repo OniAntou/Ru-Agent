@@ -50,6 +50,13 @@ public sealed class HeadlessCodingLoopTests
         // The unrelated dirty file must still be dirty after the read-only steps.
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
 
+        // Approval resumes the parked call instead of dropping it: the unknown
+        // executable executes exactly once and fails. The failed receipt stays
+        // visible behind the recovery note, so the prose is answered with note #1,
+        // the corrected read succeeds, and only the prose after that verified
+        // call is accepted as the final answer.
+        runner.Enqueue(FinalStep("repair finished"));
+        runner.Enqueue(ToolCall("files.read", """{"path":"seed.txt"}"""));
         runner.Enqueue(FinalStep("repair finished"));
         using var approve = await client.PostAsJsonAsync(
             $"/agent/v1/runs/{runId}/approvals/{approvalId}",
@@ -58,13 +65,11 @@ public sealed class HeadlessCodingLoopTests
 
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
         Assert.True(completedSeen, $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
-        // Approval resumes the parked call instead of dropping it: the unknown
-        // executable executes exactly once. Its honest failure no longer ends the
-        // run: the harness answers the unverified prose step with a recovery note,
-        // and the exhausted script's final answer is then accepted.
         var terminal = await ReadEventsAsync(client, runId);
+        // The parked unknown executable plus the corrected read both complete:
+        // the failed call is not counted as verified and the recovery read is.
         Assert.Equal(
-            preApprovalCompletions + 1,
+            preApprovalCompletions + 2,
             terminal.Where(e => e.GetProperty("event_type").GetString() == "tool.execution_completed").Count());
         Assert.Contains(terminal, e => e.GetProperty("event_type").GetString() == "run.note_added");
         Assert.Equal("completed", await GetStatusAsync(client, runId));

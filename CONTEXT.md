@@ -174,14 +174,18 @@ the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 2 `unverified_after_tool_failure` notes, 2
 `model_repairable` notes, 1 `empty_model_reply` note — under a global cap of 6
-notes per window. Every note is same-model bounded self-correction, never
-provider/model/tool substitution; when a bound is spent the run fails closed
-with the original code. An exhausted provider-transient step is not failed
-either: it parks in `WaitingUser` with a `ContinueRequested` preserving the
-provider's code, and an explicit Continue retries the same provider. Approval,
-denial, and reconciliation paths never take a recovery note: a repeated
-identical deny still terminates the run and an ambiguous mutation still pauses
-until explicit reconciliation.
+notes per window, measured over the recovery notes visible in the assembled
+context (compaction can fold earlier notes out of the count). Every note is
+same-model bounded self-correction, never provider/model/tool substitution;
+when a bound is spent the run fails closed with the original code. An exhausted
+provider-transient step is not failed either: it parks in `WaitingUser` with a
+`ContinueRequested` preserving the provider's code, and an explicit Continue
+retries the same provider. An approval-decision deny never enters recovery: a
+user deny keeps its fail-closed rule and an ambiguous mutation still pauses
+until explicit reconciliation. A repeated `policy_denied` tool receipt followed
+by prose is a tool outcome, not an approval decision, so it may still take the
+bounded `unverified_after_tool_failure` notes with the denial code as the
+terminal code.
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 **Agent Persona Source**:
@@ -198,10 +202,13 @@ in memory while live and reconstructed from durable events and encrypted
 argument payloads after restart; resume re-evaluates the complete batch and
 never asks the model to reissue it. A repeated identical deny still terminates
 the run, and there is no provider/model/protocol/tool fallback. Bounded
-auto-recovery never applies to approval, denial, or reconciliation: those paths
-keep their exact fail-closed rules and no recovery note can soften them. The
-explicit `allow_always` decision additionally remembers the exact intent as a
-project-scope allow rule; `allow_once` and session grants stay single-use.
+auto-recovery never applies to approval decisions or reconciliation: those
+paths keep their exact fail-closed rules and no recovery note can soften them.
+A repeated `policy_denied` tool receipt is not an approval decision: it follows
+the Recovery Note bound above, and when that bound is spent the run terminates
+with the denial code. The explicit `allow_always` decision additionally
+remembers the exact intent as a project-scope allow rule; `allow_once` and
+session grants stay single-use.
 _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Policy Snapshot**:

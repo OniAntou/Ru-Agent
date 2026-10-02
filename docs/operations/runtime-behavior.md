@@ -327,19 +327,24 @@ mood state, or public diagnostics.
 
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
-`[HARNESS RECOVERY]` note (2 notes); an empty final step gets 1 note; and a
-runner-rejected malformed, unavailable, or invalid tool call or selection gets
-up to 2 notes, all under a global cap of 6 notes per window. The note is
-`ModelContext` feedback to the same model and provider, the run stays `Running`,
-and a spent bound fails closed with the original code. An exhausted
-provider-transient failure (`provider_rate_limited`, `provider_timeout`,
-`provider_server_error`, `provider_transport_error`) is not failed either: it
-parks the run in `waiting_user` with a `ContinueRequested` that preserves the
-provider's code, and an explicit Continue retries the same provider in a fresh
-budget window. Deny, approval, and reconciliation decisions stay outside this
-loop: a repeated identical deny still terminates the run, the approval rules
-above are unchanged, and an ambiguous mutation still pauses until explicit
-reconciliation.
+`[HARNESS RECOVERY]` note (2 notes); the failed receipt stays visible behind a
+trailing note, so the budget is spent before the run fails. An empty final step
+gets 1 note; and a runner-rejected malformed, unavailable, or invalid tool call
+or selection gets up to 2 notes, all under a global cap of 6 notes per window
+measured over the recovery notes visible in the assembled context (compaction
+can fold earlier notes out of the count). The note is `ModelContext` feedback to
+the same model and provider, the run stays `Running`, and a spent bound fails
+closed with the original code. An exhausted provider-transient failure
+(`provider_rate_limited`, `provider_timeout`, `provider_server_error`,
+`provider_transport_error`) is not failed either: it parks the run in
+`waiting_user` with a `ContinueRequested` that preserves the provider's code,
+and an explicit Continue retries the same provider in a fresh budget window.
+Approval-decision deny and reconciliation decisions stay outside this loop: a
+user deny keeps its fail-closed rule, the approval rules above are unchanged,
+and an ambiguous mutation still pauses until explicit reconciliation. A
+repeated `policy_denied` tool receipt followed by prose is not an approval
+decision: it may still take the bounded `unverified_after_tool_failure` notes,
+with the denial code as the terminal code.
 
 External-folder requests and terminal deletion or unknown-executable requests
 use bounded approval cards. The Public Host opens

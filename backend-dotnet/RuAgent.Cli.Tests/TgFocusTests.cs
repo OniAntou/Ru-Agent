@@ -17,8 +17,7 @@ public sealed class TgFocusTests
         using var window = TgChatWindow.Build();
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            window.SetFocus();
-            window.Composer.Input.SetFocus();
+            window.FocusComposer();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
@@ -39,8 +38,7 @@ public sealed class TgFocusTests
         using var window = TgChatWindow.Build();
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            window.SetFocus();
-            window.Composer.Input.SetFocus();
+            window.FocusComposer();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>

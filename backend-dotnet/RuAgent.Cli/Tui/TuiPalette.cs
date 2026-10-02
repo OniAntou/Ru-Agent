@@ -208,18 +208,32 @@ public static class TuiPalette
         _ => string.Empty,
     };
 
-    private static string TrueColorParts(TuiToken token) => token switch
+    /// <summary>Truecolor components for a token; the Terminal.Gui bridge reads these so
+    /// both engines share one palette definition.</summary>
+    public static (int R, int G, int B) Rgb(TuiToken token) => token switch
     {
-        TuiToken.Brand => "92;156;245",
-        TuiToken.Brand2 => "157;124;216",
-        TuiToken.Meta => "128;128;128",
-        TuiToken.Line => "72;72;72",
-        TuiToken.Ok => "127;216;143",
-        TuiToken.Warn => "245;167;66",
-        TuiToken.Err => "224;108;117",
-        TuiToken.Bright => "238;238;238",
-        _ => "238;238;238",
+        TuiToken.Brand => (92, 156, 245),
+        TuiToken.Brand2 => (157, 124, 216),
+        TuiToken.Meta => (128, 128, 128),
+        TuiToken.Line => (72, 72, 72),
+        TuiToken.Ok => (127, 216, 143),
+        TuiToken.Warn => (245, 167, 66),
+        TuiToken.Err => (224, 108, 117),
+        TuiToken.Bright => (238, 238, 238),
+        _ => (238, 238, 238),
     };
+
+    /// <summary>Composer interior gray band.</summary>
+    public static (int R, int G, int B) ElementRgb() => (51, 51, 51);
+
+    /// <summary>User-block panel surface.</summary>
+    public static (int R, int G, int B) SurfaceRgb() => (20, 20, 20);
+
+    private static string TrueColorParts(TuiToken token)
+    {
+        var (r, g, b) = Rgb(token);
+        return $"{r};{g};{b}";
+    }
 
     private static int Palette256Index(TuiToken token) => token switch
     {

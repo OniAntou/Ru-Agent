@@ -35,6 +35,12 @@ public sealed class TuiStatusLine
 
     public TuiRunState State => _state;
 
+    /// <summary>Current activity label (verb plus target), or null when none is running.</summary>
+    public string? Activity => _activity;
+
+    /// <summary>Elapsed seconds of the turn in progress.</summary>
+    public double ElapsedSeconds => _elapsedSeconds;
+
     /// <summary>True while this row owns the current terminal line.</summary>
     public bool IsLive { get; set; }
 

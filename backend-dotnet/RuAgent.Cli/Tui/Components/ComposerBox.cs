@@ -51,6 +51,53 @@ public static class ComposerBox
         ];
     }
 
+    /// <summary>
+    /// The single-row composer used by the full-screen footer: the same middle row the
+    /// three-row frame paints (borders, prompt, buffer, tail-anchored text) plus an
+    /// optional right-aligned legend, exactly <paramref name="width"/> cells so the
+    /// footer never shifts.
+    /// </summary>
+    public static string ComposeRow(
+        int width,
+        ComposerState state,
+        string prompt,
+        string buffer,
+        string ghost = "",
+        string legend = "")
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var token = TokenFor(state);
+        prompt ??= string.Empty;
+        buffer ??= string.Empty;
+        ghost ??= string.Empty;
+
+        var inner = Math.Max(1, w - 4);
+        var legendText = string.IsNullOrWhiteSpace(legend) ? string.Empty : legend.Trim();
+        var legendWidth = string.IsNullOrEmpty(legendText) ? 0 : Math.Min(TuiText.VisibleWidth(legendText), Math.Max(0, inner / 2));
+        if (legendWidth > 0 && TuiText.VisibleWidth(legendText) > legendWidth)
+        {
+            legendText = TuiText.Tail(legendText, legendWidth);
+        }
+
+        var room = Math.Max(1, inner - (legendWidth > 0 ? legendWidth + 1 : 0));
+        var promptWidth = TuiText.VisibleWidth(prompt);
+        var available = Math.Max(1, room - promptWidth);
+        var text = TuiText.Tail(buffer, available);
+        var used = TuiText.VisibleWidth(text);
+        var ghostText = string.IsNullOrEmpty(ghost) || used >= available
+            ? string.Empty
+            : TuiText.Truncate(ghost, available - used);
+        var pad = Math.Max(0, inner - promptWidth - used - TuiText.VisibleWidth(ghostText) - (legendWidth > 0 ? legendWidth + 1 : 0));
+
+        return TuiPalette.Paint("│ ", token)
+            + prompt
+            + TuiPalette.Paint(text, TuiToken.Bright)
+            + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Meta))
+            + new string(' ', pad)
+            + (legendWidth > 0 ? " " + TuiPalette.Paint(legendText, TuiToken.Meta) : string.Empty)
+            + TuiPalette.Paint(" │", token);
+    }
+
     private static string Top(int width, TuiToken token, string? topLabel)
     {
         var inner = width - 2;

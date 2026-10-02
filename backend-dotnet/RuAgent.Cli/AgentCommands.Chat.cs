@@ -157,6 +157,10 @@ public sealed partial class AgentCommands
         // normal screen is restored even when the session dies mid-turn.
         using var altScreen = new Tui.TuiAltBufferScope(sessionRenderer.Surface, altBufferActive);
 
+        // Full-screen transcript rendering (bordered tool cards, highlighted fences) only in
+        // the AltBuffer frame; the sequential fallback keeps its existing rows byte-for-byte.
+        sessionRenderer.Transcript.FullScreenCards = altBufferActive;
+
         if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected && !altBufferActive)
         {
             try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
@@ -231,13 +235,19 @@ public sealed partial class AgentCommands
         _slashCommands.PanelWidth = Tui.TuiViewport.Width();
         _slashCommands.Picker = (list, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : lineReader.ReadChoiceAsync(list, _out, ct);
+            : altBufferActive && typeAheadLive
+                ? RequestChoicePanelAsync(list, ct)
+                : lineReader.ReadChoiceAsync(list, _out, ct);
         _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : lineReader.ReadSecretAsync(_out, prompt, ct);
+            : altBufferActive && typeAheadLive
+                ? RequestSecretPanelAsync(null, ct)
+                : lineReader.ReadSecretAsync(_out, prompt, ct);
         _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
+            : altBufferActive && typeAheadLive
+                ? RequestSecretPanelAsync(providerDisplay, ct)
+                : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
 
         int turn = 0;
         bool landingScreenVisible = true;
@@ -299,7 +309,9 @@ public sealed partial class AgentCommands
                 _out.WriteLine(line);
             }
 
-            if (!typeAheadLive)
+            // The AltBuffer frame owns its composer in the pinned footer, so the sequential
+            // box pad only exists in the fallback layout.
+            if (!typeAheadLive && !altBufferActive)
             {
                 var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
                     ? Tui.ComposerBox.Height + 1
@@ -346,6 +358,13 @@ public sealed partial class AgentCommands
             if (landingScreenVisible && turn == 0)
             {
                 RenderLandingScreen();
+                if (altBufferActive && typeAheadLive)
+                {
+                    // The landing rebuild left the footer region down; the persistent
+                    // idle composer needs it back in the same settled resize.
+                    ApplyFooterLayout(repaint: true);
+                }
+
                 return;
             }
 
@@ -353,7 +372,7 @@ public sealed partial class AgentCommands
 
             var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
                 rows,
-                typeAhead.FooterHeight(width));
+                FooterHeightFor(width));
             var budget = Math.Max(0, rows - footerHeight - 2);
             var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
             foreach (var line in tail)
@@ -380,9 +399,72 @@ public sealed partial class AgentCommands
             }
 
             _out.Flush();
+
+            if (altBufferActive && typeAheadLive)
+            {
+                // A mid-turn recovery rebuild (repainted durable text) must restore the
+                // region and the persistent footer before streaming continues.
+                ApplyFooterLayout(repaint: true);
+            }
+
             Tui.TuiDebug.Log(
                 "layout",
                 $"redraw rows={rows} width={width} tail={tail.Count} budget={budget} history={sessionRenderer.Surface.HistoryCount}");
+        }
+
+        /// <summary>Panel rows the AltBuffer footer must add above the composer, if any.</summary>
+        List<string> PanelLines(int width)
+        {
+            if (!altBufferActive)
+            {
+                return [];
+            }
+
+            if (typeAhead.Approval is { } approval)
+            {
+                return [.. approval.RenderFloating(width)];
+            }
+
+            if (typeAhead.Choice is { } choice)
+            {
+                var panelWidth = Tui.TuiFloatingPanel.ComputeWidth(width);
+                return [.. Tui.TuiFloatingPanel.Center(choice.List.Render(panelWidth), width)];
+            }
+
+            if (typeAhead.Secret is { } secret)
+            {
+                var panelWidth = Tui.TuiFloatingPanel.ComputeWidth(width);
+                return [.. Tui.TuiFloatingPanel.Center(
+                    Tui.KeyInputPanel.Compose(panelWidth, secret.ProviderDisplay ?? "api key", secret.Buffer.Length),
+                    width)];
+            }
+
+            return [];
+        }
+
+        /// <summary>
+        /// Footer rows for the live viewport: the spec's fixed three rows (status, live tool
+        /// card, composer) in the AltBuffer frame, the historical dynamic footer otherwise.
+        /// An open approval/trust/picker/secret panel temporarily grows the footer.
+        /// </summary>
+        int FooterHeightFor(int width) => altBufferActive
+            ? Tui.TuiScreenLayout.Compute(width, Tui.TuiViewport.Height()).FooterHeight + PanelLines(width).Count
+            : typeAhead.FooterHeight(width);
+
+        /// <summary>
+        /// Key-loop repaint: in the AltBuffer idle state, while the REPL handles a slash
+        /// command (no pending request), the command's raw output is streaming into the
+        /// transcript region and a footer paint would park the caret over it. The next
+        /// idle read repaints the footer instead.
+        /// </summary>
+        void RepaintFooterForKeys()
+        {
+            if (altBufferActive && !typeAhead.TurnActive && typeAhead.IdleLine is null && !typeAhead.IsPanelActive)
+            {
+                return;
+            }
+
+            PaintStickyFooter();
         }
 
         void PaintStickyFooter()
@@ -393,25 +475,54 @@ public sealed partial class AgentCommands
             }
 
             var footerWidth = Tui.TuiViewport.Width();
-            var footer = new List<string> { sessionRenderer.Status.Compose(footerWidth) };
-            if (typeAhead.Approval is { } approval)
+            List<string> footer;
+            int? caretRow;
+            if (altBufferActive)
             {
-                footer.AddRange(approval.Render(footerWidth));
-            }
+                // Fixed three-row footer: status, live tool card, single-row composer.
+                // Any approval/picker/secret panel sits between the tool row and the
+                // composer and temporarily grows the footer beyond three rows.
+                footer =
+                [
+                    sessionRenderer.Status.Compose(footerWidth),
+                    Tui.TuiToolCard.RenderLiveRow(sessionRenderer.Status.Activity, footerWidth, Tui.TuiPalette.Level),
+                ];
+                footer.AddRange(PanelLines(footerWidth));
+                footer.Add(Tui.ComposerBox.ComposeRow(
+                    footerWidth,
+                    typeAhead.State,
+                    "❯ ",
+                    typeAhead.Buffer,
+                    typeAhead.Buffer.Length == 0 ? Tui.InteractiveLineReader.ComposerPlaceholder : string.Empty,
+                    lineReader.Legend));
 
-            footer.AddRange(Tui.ComposerBox.Compose(
-                footerWidth,
-                typeAhead.State,
-                "❯ ",
-                typeAhead.Buffer,
-                string.Empty,
-                lineReader.Legend,
-                typeAhead.Hint,
-                typeAhead.TopLabel));
+                // While the operator types in the footer composer, the hardware cursor
+                // belongs there so IME popups follow the text; an open panel owns the
+                // keyboard and needs no caret.
+                caretRow = typeAheadLive && !typeAhead.IsPanelActive ? footer.Count - 1 : (int?)null;
+            }
+            else
+            {
+                footer = [sessionRenderer.Status.Compose(footerWidth)];
+                if (typeAhead.Approval is { } approval)
+                {
+                    footer.AddRange(approval.Render(footerWidth));
+                }
+
+                footer.AddRange(Tui.ComposerBox.Compose(
+                    footerWidth,
+                    typeAhead.State,
+                    "❯ ",
+                    typeAhead.Buffer,
+                    string.Empty,
+                    lineReader.Legend,
+                    typeAhead.Hint,
+                    typeAhead.TopLabel));
+                caretRow = typeAheadLive && !typeAhead.IsApprovalActive ? footer.Count - 1 : (int?)null;
+            }
 
             // While the operator is typing, the hardware cursor belongs in the composer: IME
             // candidate windows otherwise open wherever the transcript left the cursor.
-            var caretRow = typeAheadLive && !typeAhead.IsApprovalActive ? footer.Count - 1 : (int?)null;
             var caretColumn = Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer);
             sticky.Paint(footer, footerWidth, caretRow, caretColumn);
         }
@@ -431,7 +542,7 @@ public sealed partial class AgentCommands
 
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
-            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, typeAhead.FooterHeight(width));
+            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, FooterHeightFor(width));
             if (footerHeight == 0)
             {
                 sticky.Exit();
@@ -469,7 +580,7 @@ public sealed partial class AgentCommands
 
         async Task StartTypeAheadAsync()
         {
-            if (!sticky.Active || _in != Console.In || Console.IsInputRedirected)
+            if (typeAheadLive || !sticky.Active || _in != Console.In || Console.IsInputRedirected)
             {
                 return;
             }
@@ -478,7 +589,7 @@ public sealed partial class AgentCommands
             typeAheadLive = true;
             typeAheadLoop = lineReader.RunTypeAheadAsync(
                 typeAhead,
-                PaintStickyFooter,
+                RepaintFooterForKeys,
                 onCancel: () => turnCts?.Cancel(),
                 onExpand: () => sessionRenderer.ToggleExpand(),
                 onResize: () =>
@@ -526,6 +637,77 @@ public sealed partial class AgentCommands
             typeAhead.Buffer = string.Empty;
             typeAhead.QueueRejected = false;
             typeAhead.Approval = null;
+            typeAhead.Choice = null;
+            typeAhead.Secret = null;
+            typeAhead.IdleLine = null;
+            typeAhead.TurnActive = false;
+        }
+
+        /// <summary>
+        /// The AltBuffer picker: the floating panel takes the footer and the type-ahead key
+        /// loop owns the keyboard. The sequential layout keeps the reader-based picker.
+        /// </summary>
+        async Task<string?> RequestChoicePanelAsync(Tui.ChoiceList list, CancellationToken ct)
+        {
+            var request = new Tui.PendingChoiceRequest(list);
+            typeAhead.Choice = request;
+            ApplyFooterLayout(repaint: false);
+            PaintStickyFooter();
+            using var registration = ct.Register(() => request.Decision.TrySetResult(null));
+            try
+            {
+                return await request.Decision.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                typeAhead.Choice = null;
+                ApplyFooterLayout(repaint: false);
+                PaintStickyFooter();
+            }
+        }
+
+        /// <summary>
+        /// The AltBuffer masked secret panel: keys arrive through the type-ahead loop, the
+        /// buffer never leaves the request object, and only its length reaches the screen.
+        /// </summary>
+        async Task<string?> RequestSecretPanelAsync(string? providerDisplay, CancellationToken ct)
+        {
+            var request = new Tui.PendingSecretRequest(providerDisplay);
+            typeAhead.Secret = request;
+            ApplyFooterLayout(repaint: false);
+            PaintStickyFooter();
+            using var registration = ct.Register(() => request.Decision.TrySetResult(null));
+            try
+            {
+                return await request.Decision.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                typeAhead.Secret = null;
+                ApplyFooterLayout(repaint: false);
+                PaintStickyFooter();
+            }
+        }
+
+        /// <summary>
+        /// Reads one line from the persistent footer composer between turns. The type-ahead
+        /// loop resolves the request on Enter; cancellation returns null so the REPL winds down.
+        /// </summary>
+        async Task<string?> ReadAltIdleLineAsync(CancellationToken ct)
+        {
+            var request = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            typeAhead.TurnActive = false;
+            typeAhead.IdleLine = request;
+            PaintStickyFooter();
+            using var registration = ct.Register(() => request.TrySetResult(null));
+            try
+            {
+                return await request.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                typeAhead.IdleLine = null;
+            }
         }
 
         /// <summary>
@@ -816,6 +998,29 @@ public sealed partial class AgentCommands
 
         async Task FinishTurnAsync()
         {
+            if (altBufferActive)
+            {
+                // Between turns the AltBuffer frame persists: pinned header, scrolling
+                // transcript region and fixed footer all stay in place, and the composer
+                // becomes the REPL's own prompt. The type-ahead loop keeps running so the
+                // next line arrives from the footer instead of the sequential reader box.
+                queuedLine ??= pendingPrompt.Take();
+                Tui.TuiDebug.Log("layout", $"finish turn alt rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
+                typeAhead.TurnActive = false;
+                sessionRenderer.EndTurn();
+                turnCts?.Dispose();
+                turnCts = null;
+                if (!sticky.Active)
+                {
+                    // A durable-text recovery rebuild tears the region down; restore it so
+                    // the footer and the next idle prompt land inside the frame.
+                    ApplyFooterLayout(repaint: false);
+                }
+
+                PaintStickyFooter();
+                return;
+            }
+
             await StopTypeAheadAsync().ConfigureAwait(false);
             queuedLine ??= pendingPrompt.Take();
             Tui.TuiDebug.Log("layout", $"finish turn rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
@@ -866,6 +1071,14 @@ public sealed partial class AgentCommands
             ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
             ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
+        if (altBufferActive)
+        {
+            // Enter the transcript region before the landing/replay write so even a long
+            // replay scrolls under the pinned header instead of off the screen; the footer
+            // is painted after the content below.
+            ApplyFooterLayout(repaint: false);
+        }
+
         if (cmd.Json || string.IsNullOrWhiteSpace(cmd.SessionId))
         {
             RenderLandingScreen();
@@ -913,6 +1126,15 @@ public sealed partial class AgentCommands
             // Only an explicit --session reopens someone else's session; a fresh session
             // has no run to adopt and must not spend the round trip.
             await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
+        }
+
+        if (altBufferActive)
+        {
+            // The persistent idle frame: header pinned, transcript region installed and
+            // the footer composer owning the keyboard before the first prompt.
+            PaintAltHeader();
+            ApplyFooterLayout(repaint: true);
+            await StartTypeAheadAsync().ConfigureAwait(false);
         }
 
         string prompt = Tui.TuiPalette.BoldPaint("❯ ");
@@ -1186,6 +1408,7 @@ public sealed partial class AgentCommands
             turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            typeAhead.TurnActive = true;
             PaintAltHeader();
             if (ApplyFooterLayout(repaint: true))
             {
@@ -1441,11 +1664,34 @@ public sealed partial class AgentCommands
             while (!cancellationToken.IsCancellationRequested)
         {
             // A prompt typed while the previous turn streamed is sent without a second Enter.
-            var line = queuedLine ?? await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            // In the AltBuffer frame the composer is the persistent footer, so idle input
+            // comes from the type-ahead loop; the sequential reader only serves fallbacks.
+            string? line;
+            if (queuedLine is not null)
+            {
+                line = queuedLine;
+            }
+            else if (altBufferActive && typeAheadLive)
+            {
+                line = await ReadAltIdleLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            }
+
             queuedLine = null;
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
             if (string.IsNullOrEmpty(line)) continue;
+
+            if (altBufferActive && sticky.Active)
+            {
+                // Idle output (slash listings, command panels) flows into the scrolling
+                // transcript region; the pinned header and the footer must not move. The
+                // next footer paint (each read) restores the composer row afterwards.
+                sticky.RestoreTranscriptCursor();
+            }
 
             if (line.StartsWith("/", StringComparison.Ordinal))
             {
@@ -1490,11 +1736,23 @@ public sealed partial class AgentCommands
                     turn = 0;
                     landingScreenVisible = true;
                     lastTotalTokens = null;
-                    if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
+                    if (altBufferActive)
+                    {
+                        // Reset in place: region off, alt screen wiped, header repainted by
+                        // the landing render, footer restored by ApplyFooterLayout.
+                        sticky.Exit();
+                        sessionRenderer.Status.InFooter = false;
+                        sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
+                    }
+                    else if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
                     {
                         try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                     }
                     RenderLandingScreen();
+                    if (altBufferActive && typeAheadLive)
+                    {
+                        ApplyFooterLayout(repaint: true);
+                    }
                     await humanOut.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
@@ -1607,6 +1865,7 @@ public sealed partial class AgentCommands
                 assistantPayloadRefs.Clear();
                 sessionRenderer.Width = Tui.TuiViewport.Width();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+                typeAhead.TurnActive = true;
                 if (ApplyFooterLayout(repaint: true))
                 {
                     await StartTypeAheadAsync().ConfigureAwait(false);

@@ -1706,11 +1706,94 @@ public sealed class InteractiveLineReader
             }
         }
 
+        if (session.Choice is { } choice)
+        {
+            // A picker panel owns the keyboard: letters filter, digits quick-pick.
+            if (key.Key == ConsoleKey.Backspace && choice.List.TryTrimFilter())
+            {
+                return;
+            }
+
+            if (key.Key != ConsoleKey.Backspace && choice.List.TryAppendFilter(key.KeyChar))
+            {
+                return;
+            }
+
+            switch (choice.List.HandleKey(key))
+            {
+                case ChoiceOutcome.Confirmed:
+                    choice.Resolve(choice.List.Current.Value);
+                    return;
+                case ChoiceOutcome.Cancelled:
+                    choice.Resolve(null);
+                    return;
+                default:
+                    return;
+            }
+        }
+
+        if (session.Secret is { } secret)
+        {
+            // Masked secret input: content never reaches the buffer editor, the history or
+            // the transcript. Ctrl+V pastes from the clipboard because raw console input
+            // never triggers the terminal's own paste binding.
+            if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
+            {
+                secret.Resolve(secret.Buffer.ToString());
+                return;
+            }
+
+            if (key.Key == ConsoleKey.Escape)
+            {
+                secret.Resolve(null);
+                return;
+            }
+
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (secret.Buffer.Length > 0)
+                {
+                    secret.Buffer.Length--;
+                }
+
+                return;
+            }
+
+            if ((key.Key == ConsoleKey.V && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.KeyChar == '\x16')
+            {
+                var pasted = SanitizePastedText(ReadClipboardText(), PendingSecretRequest.MaxChars - secret.Buffer.Length);
+                if (pasted.Length > 0)
+                {
+                    secret.Buffer.Append(pasted);
+                }
+
+                return;
+            }
+
+            if (!char.IsControl(key.KeyChar) && secret.Buffer.Length < PendingSecretRequest.MaxChars)
+            {
+                secret.Buffer.Append(key.KeyChar);
+            }
+
+            return;
+        }
+
         if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
         {
             var text = session.Buffer.Trim();
             if (text.Length == 0)
             {
+                return;
+            }
+
+            // Between turns the composer is the REPL's prompt: Enter hands the line to the
+            // idle reader. While a run streams (or a slash command runs) it queues instead.
+            if (!session.TurnActive && session.IdleLine is { } idle)
+            {
+                session.Buffer = string.Empty;
+                session.QueueRejected = false;
+                idle.TrySetResult(text);
                 return;
             }
 

@@ -27,12 +27,24 @@ public sealed class TuiMarkdown
     private const string Gutter = "│ ";
 
     private string _fence = string.Empty;
+    private int _codeLine;
 
     /// <summary>True while the stream is inside a fenced code block.</summary>
     public bool InFence => _fence.Length > 0;
 
+    /// <summary>
+    /// Renders fenced code through <see cref="TuiCodeHighlight"/> (line-number gutter plus
+    /// keyword/string/comment tint) instead of the plain gutter. Off by default, so the
+    /// sequential fallback keeps its exact existing rows.
+    /// </summary>
+    public bool HighlightCode { get; set; }
+
     /// <summary>Forgets the fence state; used when a tool block interrupts the prose.</summary>
-    public void Reset() => _fence = string.Empty;
+    public void Reset()
+    {
+        _fence = string.Empty;
+        _codeLine = 0;
+    }
 
     /// <summary>
     /// Renders one complete line (no trailing newline) into zero or more display rows.
@@ -49,12 +61,19 @@ public sealed class TuiMarkdown
                 return [];
             }
 
+            if (HighlightCode)
+            {
+                _codeLine++;
+                return TuiCodeHighlight.RenderLine(line, _codeLine, width, TuiPalette.Level);
+            }
+
             return [CodeRow(line, width)];
         }
 
         if (IsFenceLine(line))
         {
             _fence = FenceChars;
+            _codeLine = 0;
             return [];
         }
 

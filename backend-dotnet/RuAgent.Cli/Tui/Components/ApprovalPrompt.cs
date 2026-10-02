@@ -136,4 +136,15 @@ public sealed class ApprovalPrompt
 
     /// <summary>The approval block, drawn with the same frame as every other list.</summary>
     public IReadOnlyList<string> Render(int width) => _list.Render(width);
+
+    /// <summary>
+    /// The approval block as the full-screen floating panel: compact width derived from the
+    /// viewport, horizontally centered. Keyboard behaviour (digits, arrows, Enter, Escape) is
+    /// untouched; only the placement changes.
+    /// </summary>
+    public IReadOnlyList<string> RenderFloating(int screenWidth)
+    {
+        var width = TuiFloatingPanel.ComputeWidth(screenWidth);
+        return TuiFloatingPanel.Center(_list.Render(width), screenWidth);
+    }
 }

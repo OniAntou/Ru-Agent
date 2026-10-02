@@ -57,6 +57,23 @@ public sealed class TuiTranscript
     private bool _sawCompletion;
     private bool _paused;
     private string? _pausedRunId;
+    private bool _fullScreenCards;
+
+    /// <summary>
+    /// Full-screen transcript rendering: tool results become bordered <see cref="TuiToolCard"/>
+    /// summaries with the diff body behind <c>ctrl+o</c>, and fenced code goes through
+    /// <see cref="TuiCodeHighlight"/>. Off by default so the sequential fallback keeps its
+    /// existing rows byte-for-byte.
+    /// </summary>
+    public bool FullScreenCards
+    {
+        get => _fullScreenCards;
+        set
+        {
+            _fullScreenCards = value;
+            _markdown.HighlightCode = value;
+        }
+    }
 
     /// <summary>
     /// The raw assistant text this turn actually received as deltas, before markdown
@@ -105,7 +122,7 @@ public sealed class TuiTranscript
 
         var width = Width;
         var rendered = new List<string>();
-        var markdown = new TuiMarkdown();
+        var markdown = new TuiMarkdown { HighlightCode = _fullScreenCards };
         foreach (var raw in fullText.Replace("\r", string.Empty).Split('\n'))
         {
             rendered.AddRange(markdown.RenderLine(raw, width));
@@ -782,24 +799,88 @@ public sealed class TuiTranscript
         // auditable detail the durable stream carries, so it takes the target column.
         if (!failed && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
         {
-            target = Escape(envelope.SafeSummary);
-            _retained.Add("    " + target);
+            var safe = Escape(envelope.SafeSummary);
+            if (_fullScreenCards)
+            {
+                target = TuiText.Truncate(safe, 60);
+            }
+            else
+            {
+                target = safe;
+                _retained.Add("    " + target);
+            }
         }
 
-        var line = ComposeToolLine(
-            failed ? ToolLineStatus.Failed : ToolLineStatus.Ok,
-            detail?.Verb ?? "tool",
-            target,
-            meta,
-            Width);
+        var status = failed ? ToolLineStatus.Failed : ToolLineStatus.Ok;
+        if (_fullScreenCards)
+        {
+            WriteToolCard(status, detail?.Verb ?? "tool", target, meta, envelope.SafeSummary);
+        }
+        else
+        {
+            WriteLines(ComposeToolLine(status, detail?.Verb ?? "tool", target, meta, Width));
+            ApplyDiffText(envelope.SafeSummary, Width);
+        }
 
-        WriteLines(line);
-        ApplyDiffText(envelope.SafeSummary, Width);
         _toolsSettled++;
         _status.AddTool();
         _status.SetActivity(null);
         _status.SetState(TuiRunState.Thinking);
     }
+
+    /// <summary>
+    /// The full-screen settled tool result: one collapsed bordered summary row; when the
+    /// result carries diff hunks the complete card (summary plus every hunk, no 12-line cap)
+    /// is retained behind <c>ctrl+o</c>, reusing the existing expansion key handling.
+    /// </summary>
+    private void WriteToolCard(
+        ToolLineStatus status, string verb, string? target, string? meta, string? diffText)
+    {
+        var summary = ComposeToolCardSummary(status, verb, target, meta);
+        var diffLines = ExtractDiffLines(diffText);
+        WriteLines(TuiToolCard.RenderSummary(summary, Width, diffLines.Count > 0, TuiPalette.Level));
+        if (diffLines.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var row in TuiToolCard.Render(summary, diffLines, Width, TuiPalette.Level))
+        {
+            _retained.Add(row);
+        }
+
+        TrimRetained();
+    }
+
+    /// <summary>Summary row for a tool card: outcome glyph, verb, target and metrics.</summary>
+    public static string ComposeToolCardSummary(
+        ToolLineStatus status, string verb, string? target, string? meta)
+    {
+        var glyph = status switch
+        {
+            ToolLineStatus.Ok => "✓",
+            ToolLineStatus.Failed => "✗",
+            _ => "▸",
+        };
+
+        var text = glyph + " " + verb;
+        if (!string.IsNullOrWhiteSpace(target))
+        {
+            text += " " + target;
+        }
+
+        if (!string.IsNullOrWhiteSpace(meta))
+        {
+            text += " · " + meta;
+        }
+
+        return text;
+    }
+
+    private static List<string> ExtractDiffLines(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? []
+            : text.Split('\n').Where(IsDiffLine).ToList();
 
     /// <summary>One settled tool line: glyph, verb column, target, right-aligned meta.</summary>
     public static string ComposeToolLine(

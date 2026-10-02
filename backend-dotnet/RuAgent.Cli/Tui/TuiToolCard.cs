@@ -42,6 +42,65 @@ public static class TuiToolCard
         return rows;
     }
 
+    /// <summary>
+    /// The collapsed card: one framed summary row with no body. <paramref name="expandable"/>
+    /// appends the <c>ctrl+o</c> affordance when diff hunks were retained behind the card.
+    /// Exactly <paramref name="width"/> cells, so a card never wraps the transcript frame.
+    /// </summary>
+    public static string RenderSummary(string summary, int width, bool expandable, TuiColorLevel level)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        var w = Math.Max(MinWidth, width);
+        using var scope = TuiPalette.PinLevel(level);
+
+        var text = summary.Trim();
+        if (expandable)
+        {
+            text += " · ctrl+o";
+        }
+
+        var budget = w - 5;
+        if (TuiText.VisibleWidth(text) > budget)
+        {
+            text = TuiText.Truncate(text, budget);
+        }
+
+        var fill = Math.Max(0, w - 5 - TuiText.VisibleWidth(text));
+        var token = summary.StartsWith("✓", StringComparison.Ordinal)
+            ? TuiToken.Ok
+            : summary.StartsWith("✗", StringComparison.Ordinal)
+                ? TuiToken.Err
+                : TuiToken.Brand;
+        return Border("╭─")
+            + " "
+            + TuiPalette.Paint(text, token)
+            + " "
+            + Border(new string('─', fill))
+            + Border("╮");
+    }
+
+    /// <summary>
+    /// The footer's live tool row: the in-flight tool activity on one rail line, repainted in
+    /// place as the activity changes. A null or blank activity leaves the row empty but keeps
+    /// its width, so the fixed three-row footer never shifts.
+    /// </summary>
+    public static string RenderLiveRow(string? activity, int width, TuiColorLevel level)
+    {
+        if (width <= 0)
+        {
+            return string.Empty;
+        }
+
+        using var scope = TuiPalette.PinLevel(level);
+        if (string.IsNullOrWhiteSpace(activity))
+        {
+            return new string(' ', width);
+        }
+
+        var head = Border("  ▌ ") + TuiPalette.Paint(TuiText.Truncate(activity.Trim(), Math.Max(1, width - 4)), TuiToken.Brand2);
+        return TuiText.Pad(head, width);
+    }
+
     private static TuiToken DiffToken(string line) =>
         line.StartsWith("+", StringComparison.Ordinal) ? TuiToken.Ok
         : line.StartsWith("-", StringComparison.Ordinal) ? TuiToken.Err

@@ -318,10 +318,10 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
     )
     release.mkdir(parents=True)
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
-    for project, executable in (
-        ("RuBackend", "RuBackend.exe"),
-        ("RuAgent.Broker", "RuAgent.Broker.exe"),
-        ("RuAgent.Cli", "RuAgent.Cli.exe"),
+    for project, executable, target_framework in (
+        ("RuBackend", "RuBackend.exe", "net10.0"),
+        ("RuAgent.Broker", "RuAgent.Broker.exe", "net10.0"),
+        ("RuAgent.Cli", "RuAgent.Cli.exe", "net10.0-windows"),
     ):
         service = (
             tmp_path
@@ -329,7 +329,7 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
             / project
             / "bin"
             / "Release"
-            / "net10.0"
+            / target_framework
             / "win-x64"
             / "publish"
         )
@@ -377,10 +377,10 @@ def test_start_dev_accepts_a_layout_without_the_worker_publish(tmp_path: Path) -
     )
     release.mkdir(parents=True)
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
-    for project, executable in (
-        ("RuBackend", "RuBackend.exe"),
-        ("RuAgent.Broker", "RuAgent.Broker.exe"),
-        ("RuAgent.Cli", "RuAgent.Cli.exe"),
+    for project, executable, target_framework in (
+        ("RuBackend", "RuBackend.exe", "net10.0"),
+        ("RuAgent.Broker", "RuAgent.Broker.exe", "net10.0"),
+        ("RuAgent.Cli", "RuAgent.Cli.exe", "net10.0-windows"),
     ):
         service = (
             tmp_path
@@ -388,7 +388,7 @@ def test_start_dev_accepts_a_layout_without_the_worker_publish(tmp_path: Path) -
             / project
             / "bin"
             / "Release"
-            / "net10.0"
+            / target_framework
             / "win-x64"
             / "publish"
         )

@@ -519,7 +519,7 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Footer rows for the live viewport: the fixed five-row stack (composer, hints)
+        /// Footer rows for the live viewport: the fixed seven-row stack (composer, hints)
         /// in the AltBuffer frame, the historical dynamic footer otherwise. An open
         /// approval/trust/picker/secret panel temporarily grows the footer.
         /// </summary>
@@ -560,7 +560,7 @@ public sealed partial class AgentCommands
                 // composer and temporarily grows the footer.
                 footer = [];
                 footer.AddRange(PanelLines(footerWidth));
-                var inputRow = footer.Count + 2;
+                var inputRow = footer.Count + 3;
                 footer.AddRange(Tui.ComposerBox.ComposeStack(
                     footerWidth,
                     typeAhead.State,

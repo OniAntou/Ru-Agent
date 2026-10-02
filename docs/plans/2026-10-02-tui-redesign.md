@@ -5,7 +5,7 @@ status: pending
 # TUI Redesign Full-screen Engine Implementation Plan
 
 > **Note (R2):** The *visuals* described here were superseded by the OpenCode TUI clone
-> (see CHANGELOG `[Unreleased]`): one-row header, inline tool rows, five-row composer footer
+> (see CHANGELOG `[Unreleased]`): one-row header, inline tool rows, seven-row composer footer
 > (stack + hints) and block wordmark. The engine architecture (AltBuffer gate, regions, sticky
 > footer, sequential fallback) is unchanged.
 

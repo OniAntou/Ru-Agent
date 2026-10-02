@@ -23,8 +23,8 @@ public static class ComposerBox
     public const int MinWidth = 10;
     public const int MaxWidth = 1000;
 
-    /// <summary>Rows of the full-screen composer stack: top border, input, meta, bottom border.</summary>
-    public const int StackHeight = 4;
+    /// <summary>Rows of the full-screen composer stack: top border, padding, input, padding, meta, bottom border.</summary>
+    public const int StackHeight = 6;
 
     public static TuiToken TokenFor(ComposerState state) => state switch
     {
@@ -75,7 +75,9 @@ public static class ComposerBox
         return
         [
             Top(w, token, null),
+            BlankRow(w, token),
             InputRow(w, token, buffer ?? string.Empty, ghost ?? string.Empty),
+            BlankRow(w, token),
             MetaRow(w, token, agent, model, provider),
             Bottom(w, token, string.Empty, string.Empty),
         ];
@@ -122,6 +124,16 @@ public static class ComposerBox
 
         var gap = Math.Max(1, w - TuiText.VisibleWidth(left) - rightWidth);
         return TuiText.Pad(left + new string(' ', gap) + right, w);
+    }
+
+    private static string BlankRow(int width, TuiToken token)
+    {
+        var inner = Math.Max(0, width - 2);
+        return TuiPalette.Paint("│", token)
+            + TuiPalette.ElementBgCode()
+            + new string(' ', inner)
+            + TuiPalette.Reset
+            + TuiPalette.Paint("│", token);
     }
 
     private static string InputRow(int width, TuiToken token, string buffer, string ghost)

@@ -12,24 +12,24 @@ public sealed class TuiScreenLayoutTests
 
         Assert.Equal(0, layout.HeaderTop);
         Assert.Equal(1, layout.HeaderHeight);
-        Assert.Equal(5, layout.FooterHeight);
-        Assert.Equal(35, layout.FooterTop);
+        Assert.Equal(7, layout.FooterHeight);
+        Assert.Equal(33, layout.FooterTop);
         Assert.Equal(1, layout.TranscriptTop);
-        Assert.Equal(34, layout.TranscriptHeight);
+        Assert.Equal(32, layout.TranscriptHeight);
     }
 
     [Fact]
-    public void Compute_80x24_MinimumScreen_Leaves18TranscriptRows()
+    public void Compute_80x24_MinimumScreen_Leaves16TranscriptRows()
     {
         var layout = TuiScreenLayout.Compute(columns: 80, rows: 24);
 
-        Assert.Equal(18, layout.TranscriptHeight);
+        Assert.Equal(16, layout.TranscriptHeight);
     }
 
     [Fact]
     public void Compute_RowsExactlyHeaderPlusFooter_LeavesZeroTranscriptRows()
     {
-        var layout = TuiScreenLayout.Compute(columns: 80, rows: 6);
+        var layout = TuiScreenLayout.Compute(columns: 80, rows: 8);
 
         Assert.Equal(0, layout.TranscriptHeight);
         Assert.Equal(1, layout.FooterTop);

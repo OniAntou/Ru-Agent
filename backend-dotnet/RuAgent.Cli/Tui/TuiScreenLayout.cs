@@ -2,7 +2,7 @@ namespace RuAgent.Cli.Tui;
 
 /// <summary>
 /// Vertical geometry of the three-region full-screen layout: a fixed one-row header, the
-/// transcript in the middle and a fixed five-row footer (composer stack, hints).
+/// transcript in the middle and a fixed seven-row footer (composer stack, hints).
 /// Pure arithmetic; painting is the caller's job.
 /// </summary>
 /// <remarks>

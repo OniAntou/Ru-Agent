@@ -35,6 +35,7 @@ public sealed class TgChatLoop
     private int _historyIndex;
     private string _draft = string.Empty;
     private volatile bool _busy;
+    private volatile bool _stopped;
 
     public TgChatLoop(TgChatWindow window)
     {
@@ -132,7 +133,16 @@ public sealed class TgChatLoop
 
     public void Cancel() => _turn?.Cancel();
 
-    public void Stop() => _completion.TrySetResult();
+    /// <summary>
+    /// Terminal: releases waiters and stops the loop from starting any further turn. The
+    /// queue is abandoned so a handover cannot dispatch TG lines after the classic reader
+    /// has taken the session over.
+    /// </summary>
+    public void Stop()
+    {
+        _stopped = true;
+        _completion.TrySetResult();
+    }
 
     /// <summary>Test seam for the bounded history, mirroring what <see cref="Submit"/> feeds.</summary>
     internal void RememberForTests(string line) => Remember(line);
@@ -196,7 +206,7 @@ public sealed class TgChatLoop
             string? next;
             lock (_queueGate)
             {
-                next = _queued.Count > 0 ? _queued.Dequeue() : null;
+                next = _stopped || _queued.Count == 0 ? null : _queued.Dequeue();
                 if (next is null)
                 {
                     _busy = false;

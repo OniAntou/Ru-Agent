@@ -1,4 +1,6 @@
+using System.Drawing;
 using RuAgent.Cli.Tui;
+using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -17,6 +19,7 @@ public sealed class TgChatWindow : Window
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
     private bool _secretPanel;
+    private IApplication? _resizeApp;
 
     private TgChatWindow()
     {
@@ -45,6 +48,13 @@ public sealed class TgChatWindow : Window
     public TgHintsView Hints { get; }
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
+
+    /// <summary>
+    /// Set once the live terminal shrinks below the 80x24 floor: the window stops the app
+    /// and the run loop continues the same session on the classic sequential path. One-way
+    /// for the life of the window; the TG frame never reopens.
+    /// </summary>
+    public bool HandOverToSequential { get; private set; }
 
     /// <summary>Decision token of a confirmed approval/trust/picker panel.</summary>
     public event Action<string>? PanelConfirmed;
@@ -174,6 +184,43 @@ public sealed class TgChatWindow : Window
     }
 
     public static TgChatWindow Build() => new();
+
+    /// <summary>
+    /// Watches the app's resize feed for as long as the window is running: a size change
+    /// relayouts the pinned regions, and a drop below the TG floor (the same 80x24 the
+    /// engine selection gates on) ends the frame in favour of the sequential fallback.
+    /// </summary>
+    protected override void OnIsRunningChanged(bool args)
+    {
+        base.OnIsRunningChanged(args);
+        if (args)
+        {
+            _resizeApp = App;
+            if (_resizeApp is not null)
+            {
+                _resizeApp.ScreenChanged += OnScreenChanged;
+            }
+        }
+        else if (_resizeApp is not null)
+        {
+            _resizeApp.ScreenChanged -= OnScreenChanged;
+            _resizeApp = null;
+        }
+    }
+
+    private void OnScreenChanged(object? sender, EventArgs<Rectangle> args)
+    {
+        if (args.Value.Width < TuiViewport.MinAltBufferWidth
+            || args.Value.Height < TuiViewport.MinAltBufferHeight)
+        {
+            HandOverToSequential = true;
+            _resizeApp?.RequestStop();
+            return;
+        }
+
+        Layout();
+        SetNeedsDraw();
+    }
 
     private void ShowPanel(Func<int, IReadOnlyList<string>> render)
     {

@@ -693,7 +693,10 @@ public sealed partial class AgentCommands
             typeAhead.WorkspaceLabel = label;
             // The TG composer reads neither TopLabel nor the type-ahead label: push the
             // same count/workspace wording into its hint row after every mutation.
-            tgLoop?.RefreshAttachmentLabel();
+            if (tgMode)
+            {
+                tgLoop?.RefreshAttachmentLabel();
+            }
         }
 
         async Task AttachImageAsync(string path, string? tempPath = null)
@@ -1073,7 +1076,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task<string> RequestApprovalAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken)
         {
-            if (tgWindow is not null)
+            if (tgMode)
             {
                 return await RequestApprovalInTgAsync(prompt, approvalToken).ConfigureAwait(false);
             }
@@ -1171,7 +1174,7 @@ public sealed partial class AgentCommands
             Tui.ApprovalPrompt prompt,
             CancellationToken trustToken)
         {
-            if (tgWindow is not null)
+            if (tgMode)
             {
                 return await RequestTrustInTgAsync(prompt, trustToken).ConfigureAwait(false);
             }
@@ -2460,6 +2463,28 @@ public sealed partial class AgentCommands
                 // loop never reads a line: the same slash/prompt handlers below are driven
                 // by TgChatLoop, so command behaviour cannot drift between engines.
                 await RunTerminalGuiChatAsync().ConfigureAwait(false);
+                if (tgWindow!.HandOverToSequential && dispatcherExitCode is null)
+                {
+                    // The terminal shrank below the 80x24 floor while TG owned the screen,
+                    // so the window stopped the app. One-way handover: the same session,
+                    // handlers and copy continue on the classic sequential path. The
+                    // writers the shared machinery captured must leave the stopped
+                    // Terminal.Gui buffer and point back at the real console.
+                    engine = TuiEngine.Classic;
+                    tgMode = false;
+                    humanOut = _out;
+                    _slashCommands.HumanOut = _out;
+                    sessionRenderer = new Tui.TuiSessionRenderer(_out);
+
+                    // Terminal.Gui renders on the alternate screen buffer and only restores
+                    // the normal one on dispose; the sequential session must be visible, so
+                    // wind the TG application down before the first classic write. The local
+                    // stays set: an in-flight TG continuation may still call Invoke and must
+                    // observe NotInitializedException (caught) rather than a null reference.
+                    tgApp!.Dispose();
+                    continue;
+                }
+
                 return dispatcherExitCode ?? 0;
             }
 
@@ -2762,6 +2787,14 @@ public sealed partial class AgentCommands
                 tgApp.Run(tgWindow);
                 // A stop that did not come from /exit (window closed under us) must still
                 // release the completion the caller awaits.
+                if (tgWindow.HandOverToSequential)
+                {
+                    // The tiny-terminal stop ends the TG frame for good: an in-flight turn
+                    // must not keep streaming into a stopped app (a floating panel can no
+                    // longer be answered), and Stop() keeps the queue from firing later.
+                    loop.Cancel();
+                }
+
                 loop.Stop();
                 await loop.Completion.ConfigureAwait(false);
             }

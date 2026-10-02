@@ -39,6 +39,55 @@ public sealed class TgChromeTests
     }
 
     [Fact]
+    public void Window_KeepsComposerPinnedAtTheBottomAfterResize()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            app.Driver!.SetScreenSize(100, 30);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            Assert.Contains("┌", rows[^7]);
+            Assert.Contains("/ commands", rows[^1]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        // 100x30 is still above the 80x24 floor: the TG frame must not hand over.
+        Assert.False(window.HandOverToSequential);
+    }
+
+    [Fact]
+    public void Window_HandsOverToSequentialWhenTerminalDropsBelowTheMinimum()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var stillRunning = false;
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            app.Driver!.SetScreenSize(79, 23);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            // The window must stop the app itself on the tiny handover; reaching this
+            // timeout means RequestStop never ran.
+            stillRunning = true;
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        Assert.False(stillRunning);
+        Assert.True(window.HandOverToSequential);
+    }
+
+    [Fact]
     public void Hints_IdleShowsWorkspaceAndKeys_BusyShowsSpinner()
     {
         using IApplication app = Application.Create();

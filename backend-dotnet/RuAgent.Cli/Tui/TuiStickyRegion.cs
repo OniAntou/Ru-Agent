@@ -57,11 +57,15 @@ public sealed class TuiStickyRegion
         return bottom == 0 ? 0 : requested;
     }
 
-    /// <summary>Enters the region for a fresh layout. Does not clear the screen.</summary>
-    public bool Enter(int rows, int footerHeight, int width)
+    /// <summary>
+    /// Enters the region for a fresh layout. Does not clear the screen.
+    /// <paramref name="topRow"/> is the first 1-based transcript row; it stays 1 in the
+    /// sequential layout and moves below the pinned header in the AltBuffer frame.
+    /// </summary>
+    public bool Enter(int rows, int footerHeight, int width, int topRow = 1)
     {
         var (_, bottom) = Compute(rows, footerHeight);
-        if (bottom == 0)
+        if (bottom == 0 || topRow < 1 || topRow > bottom)
         {
             TuiDebug.Log("sticky", $"enter rejected rows={rows} footer={footerHeight}");
             return false;
@@ -73,7 +77,7 @@ public sealed class TuiStickyRegion
         FooterFirst = bottom + 1;
         Active = true;
         _surface.TrackTranscriptCursor(bottom - 1);
-        Write($"\u001b[1;{bottom}r\u001b[{bottom};1H");
+        Write($"\u001b[{topRow};{bottom}r\u001b[{bottom};1H");
         TuiDebug.Log("sticky", $"enter rows={rows} footer={footerHeight} first={FooterFirst} bottom={bottom}");
         return true;
     }
@@ -83,10 +87,10 @@ public sealed class TuiStickyRegion
     /// reset, whatever the old footer painted is erased, and the new region is installed.
     /// Never addresses a row below the live viewport.
     /// </summary>
-    public bool Reapply(int rows, int footerHeight, int width)
+    public bool Reapply(int rows, int footerHeight, int width, int topRow = 1)
     {
         var (_, bottom) = Compute(rows, footerHeight);
-        if (bottom == 0)
+        if (bottom == 0 || topRow < 1 || topRow > bottom)
         {
             Exit();
             return false;
@@ -94,7 +98,7 @@ public sealed class TuiStickyRegion
 
         if (!Active)
         {
-            return Enter(rows, footerHeight, width);
+            return Enter(rows, footerHeight, width, topRow);
         }
 
         var previousFirst = FooterFirst;
@@ -108,7 +112,7 @@ public sealed class TuiStickyRegion
         var builder = new StringBuilder();
         builder.Append("\u001b[r");
         AppendClearDown(builder, Math.Min(previousFirst, FooterFirst));
-        builder.Append($"\u001b[1;{bottom}r\u001b[{bottom};1H");
+        builder.Append($"\u001b[{topRow};{bottom}r\u001b[{bottom};1H");
         Write(builder.ToString());
         TuiDebug.Log("sticky", $"reapply rows={rows} footer={footerHeight} first={FooterFirst} prevFirst={previousFirst}");
         return true;

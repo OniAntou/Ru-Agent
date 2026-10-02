@@ -445,6 +445,31 @@ public sealed class TuiSurface
         }
     }
 
+    /// <summary>
+    /// Switches the terminal to its alternate screen buffer. A session boundary, not content:
+    /// the sequence is written outside the rebuild history and the transcript cursor tracking,
+    /// so a rebuild can never reprint it into the middle of the screen. Disabled callers never
+    /// invoke it, which is what keeps redirected output byte-identical.
+    /// </summary>
+    public void EnterAltBuffer()
+    {
+        lock (Gate)
+        {
+            Writer.Write(TuiAltBuffer.Enter);
+            Writer.Flush();
+        }
+    }
+
+    /// <summary>Switches back to the normal screen buffer. Pairs with <see cref="EnterAltBuffer"/>.</summary>
+    public void ExitAltBuffer()
+    {
+        lock (Gate)
+        {
+            Writer.Write(TuiAltBuffer.Exit);
+            Writer.Flush();
+        }
+    }
+
     /// <summary>Runs a mutable repaint atomically, inside a synchronized-output batch.</summary>
     public void Repaint(Action<TextWriter> paint)
     {

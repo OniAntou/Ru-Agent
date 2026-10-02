@@ -130,11 +130,6 @@ public sealed partial class AgentCommands
         // stderr instead, so a consumer can parse stdout line by line as NDJSON.
         var humanOut = cmd.Json ? _err : _out;
 
-        if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
-        {
-            try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
-        }
-
         var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
         var workspaceLabel = string.IsNullOrWhiteSpace(cmd.Preset) ? ws : $"{ws} · {cmd.Preset}";
 
@@ -144,6 +139,36 @@ public sealed partial class AgentCommands
             TopLabel = workspaceLabel,
         };
 
+        // Full-screen AltBuffer gate: the same real signals the sticky footer already trusts
+        // (a live console, TERM), plus NO_COLOR, the command flags and the live 80x24 minimum.
+        // Evaluated once per session: switching buffers mid-session would strand the scrollback.
+        // NO_COLOR is honoured on definition, empty string included, exactly like TuiPalette.
+        var hasLiveSize = Tui.TuiViewport.TryReadLiveSize(out var liveColumns, out var liveRows);
+        var altBufferActive = Tui.TuiAltBuffer.ShouldUseAltBuffer(
+            outputRedirected: Console.IsOutputRedirected || !ReferenceEquals(_out, Console.Out),
+            term: Environment.GetEnvironmentVariable("TERM"),
+            noColor: Environment.GetEnvironmentVariable("NO_COLOR"),
+            columns: hasLiveSize ? liveColumns : 0,
+            rows: hasLiveSize ? liveRows : 0,
+            classic: cmd.Classic,
+            json: cmd.Json);
+
+        // Disposed on every exit path (return, cancellation, exception), so the operator's
+        // normal screen is restored even when the session dies mid-turn.
+        using var altScreen = new Tui.TuiAltBufferScope(sessionRenderer.Surface, altBufferActive);
+
+        if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected && !altBufferActive)
+        {
+            try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
+        }
+
+        if (altBufferActive)
+        {
+            // The alt buffer starts from a blank frame; the normal buffer's scrollback stays
+            // untouched, because leaving the session restores it.
+            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[2J\u001b[H"));
+        }
+
         // Sticky footer: while a turn runs the live row and composer stay pinned to the bottom
         // rows and agent output scrolls above them. Redirected output, --json and --classic keep
         // the sequential layout.
@@ -152,6 +177,35 @@ public sealed partial class AgentCommands
             && !cmd.Classic
             && Tui.TuiViewport.IsLiveConsole
             && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
+
+        // The pinned full-screen header. Only the AltBuffer frame has one; the sequential
+        // layout keeps its existing header/landing flow untouched.
+        void PaintAltHeader()
+        {
+            if (!altBufferActive)
+            {
+                return;
+            }
+
+            var width = Tui.TuiViewport.Width();
+            var layout = Tui.TuiScreenLayout.Compute(width, Tui.TuiViewport.Height());
+            Tui.TuiHeader.RenderPinned(
+                sessionRenderer.Surface,
+                width,
+                layout.HeaderTop + 1,
+                canonicalWorkspace,
+                backendName,
+                activeModel,
+                cmd.Preset,
+                sessionId,
+                layout.HeaderHeight);
+        }
+
+        // First 1-based row of the transcript region: below the two pinned header rows in the
+        // AltBuffer frame, the whole screen in the sequential layout.
+        int TranscriptTopRow(int rows) => altBufferActive
+            ? Tui.TuiScreenLayout.Compute(Tui.TuiViewport.Width(), rows).TranscriptTop + 1
+            : 1;
 
         // Type-ahead: keystrokes captured during a turn feed the one-slot queue, and a pending
         // approval takes the keyboard over the same pinned footer.
@@ -227,6 +281,10 @@ public sealed partial class AgentCommands
 
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
+            PaintAltHeader();
+            var headerRows = altBufferActive
+                ? Tui.TuiScreenLayout.Compute(width, rows).HeaderHeight
+                : 0;
             var landingLines = Tui.TuiHeader.ComposeLandingScreen(
                 width,
                 canonicalWorkspace,
@@ -247,7 +305,7 @@ public sealed partial class AgentCommands
                     ? Tui.ComposerBox.Height + 1
                     : Tui.ComposerBox.Height;
                 var boxTop = Math.Max(1, rows - boxHeight + 1);
-                var cursorRow = landingLines.Count + 1;
+                var cursorRow = landingLines.Count + 1 + headerRows;
                 for (var i = cursorRow; i < boxTop; i++)
                 {
                     _out.WriteLine(Tui.TuiHeader.StarRow(width, 2500 + i, starEpoch));
@@ -291,6 +349,8 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            PaintAltHeader();
+
             var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
                 rows,
                 typeAhead.FooterHeight(width));
@@ -312,7 +372,7 @@ public sealed partial class AgentCommands
                     ? Tui.ComposerBox.Height + 1
                     : Tui.ComposerBox.Height;
                 var boxTop = Math.Max(1, rows - boxHeight + 1);
-                var cursorRow = tail.Count + 1;
+                var cursorRow = tail.Count + 1 + (altBufferActive ? Tui.TuiScreenLayout.Compute(width, rows).HeaderHeight : 0);
                 for (var i = cursorRow; i < boxTop; i++)
                 {
                     _out.WriteLine();
@@ -380,11 +440,12 @@ public sealed partial class AgentCommands
                 return false;
             }
 
+            var transcriptTop = TranscriptTopRow(rows);
             var applied = !sticky.Active
-                ? sticky.Enter(rows, footerHeight, width)
+                ? sticky.Enter(rows, footerHeight, width, transcriptTop)
                 : sticky.Rows == rows && sticky.Width == width && sticky.FooterHeight == footerHeight
                     ? true
-                    : sticky.Reapply(rows, footerHeight, width);
+                    : sticky.Reapply(rows, footerHeight, width, transcriptTop);
 
             if (!applied)
             {
@@ -817,6 +878,7 @@ public sealed partial class AgentCommands
             if (replay.Messages.Count > 0)
             {
                 landingScreenVisible = false;
+                PaintAltHeader();
                 RenderSessionReplay(sessionId, replay);
             }
             else
@@ -1124,6 +1186,7 @@ public sealed partial class AgentCommands
             turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            PaintAltHeader();
             if (ApplyFooterLayout(repaint: true))
             {
                 await StartTypeAheadAsync().ConfigureAwait(false);
@@ -1510,6 +1573,10 @@ public sealed partial class AgentCommands
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
             }
+
+            // Idle output (slash listings, notices) can scroll the sequential rows; the pinned
+            // header is restored before the region takes over. No-op in the sequential layout.
+            PaintAltHeader();
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
                 sessionId,
                 cmd.Preset,

@@ -99,6 +99,21 @@ internal sealed class TuiScreenSimulator
 
     public string ScreenText() => string.Join("\n", VisibleRows());
 
+    /// <summary>
+    /// One row's visible text with trailing blanks trimmed, addressed by absolute row so a
+    /// test can assert region membership (header, transcript, footer) instead of order.
+    /// Out-of-range rows are empty.
+    /// </summary>
+    public string VisibleRow(int row)
+    {
+        if (row < 0 || row >= _rows)
+        {
+            return string.Empty;
+        }
+
+        return new string(_cells[row]).TrimEnd();
+    }
+
     private void Put(char c)
     {
         if (_col >= _cols)

@@ -72,6 +72,43 @@ public static class TuiHeader
     }
 
     /// <summary>
+    /// Paints the pinned full-screen header into <paramref name="height"/> absolute rows
+    /// starting at <paramref name="topRow"/> (1-based), then parks the cursor on the first row
+    /// below it so a sequential write continues into the transcript region. Each row is erased
+    /// first: a resize rebuild can otherwise leave old text of a different width behind.
+    /// The two rows the layout reserves are identity/session and workspace/preset/engine.
+    /// </summary>
+    public static void RenderPinned(
+        TuiSurface surface,
+        int width,
+        int topRow,
+        string workspace,
+        string backend,
+        string model,
+        string preset,
+        string sessionId,
+        int height)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        var rows = Math.Max(0, height);
+        var first = Math.Max(1, topRow);
+        var lines = Compose(width, workspace, backend, model, preset, sessionId, empty: false);
+        surface.Repaint(writer =>
+        {
+            var builder = new StringBuilder();
+            for (var i = 0; i < rows && i < lines.Count; i++)
+            {
+                builder.Append($"\u001b[{first + i};1H");
+                builder.Append("\u001b[2K");
+                builder.Append(TuiText.Truncate(lines[i], width));
+            }
+
+            builder.Append($"\u001b[{first + rows};1H");
+            writer.Write(builder.ToString());
+        });
+    }
+
+    /// <summary>
     /// Composes the main landing/home screen rendered at startup and after /clear before chat begins.
     /// Slim brand line, engine pill and hints; on wide terminals two braille figures
     /// flank the block left and right. Every line fits the viewport width.

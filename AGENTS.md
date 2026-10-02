@@ -35,11 +35,16 @@ product.
   copy of tool semantics.
 - **No fallbacks.** No provider, model, protocol, or tool *substitution*: a
   failure surfaces as a bounded, named code rather than being retried on a
-  different backend. One narrow exception is deliberate and documented — a
-  single tool may race a fixed set of its own upstream endpoints (`web_search`
-  over its configured engine plus three public HTML engines). That is one tool,
-  one policy decision, one result contract: every request still passes
-  `WebPolicy`, so it can never widen the network boundary or bypass a denial.
+  different backend. Bounded self-correction is not substitution: a recovery
+  note is durable `[HARNESS RECOVERY]` feedback returned to the same model,
+  provider, and tool, and exhaustion still ends at the original fail-closed
+  code; an exhausted transient provider parks the run for an explicit Continue
+  that retries the same provider instead of switching backends. One narrow
+  exception is deliberate and documented — a single tool may race a fixed set
+  of its own upstream endpoints (`web_search` over its configured engine plus
+  three public HTML engines). That is one tool, one policy decision, one result
+  contract: every request still passes `WebPolicy`, so it can never widen the
+  network boundary or bypass a denial.
 - **Loopback + bearer only.** The Public Contract is the 41 routes in
   `public-route-contract.json`. No new public transport, no WebSocket routes.
 - **Permissions are session-scoped.** Approval tokens are single-use,

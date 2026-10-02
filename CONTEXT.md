@@ -148,7 +148,12 @@ twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
 `todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
 and standalone `web_search`/`web_fetch`. There is no provider, model, protocol,
 tool, or workspace-cleanliness *substitution*: a failure is a bounded, named
-code, never a retry on a different backend. The one exception is that
+code, never a retry on a different backend. Bounded self-correction is not
+substitution: a `[HARNESS RECOVERY]` note is durable feedback returned to the
+same model, provider, and tool, and spent bounds fall back to the original
+fail-closed code; an exhausted transient provider parks the run in
+`WaitingUser` for an explicit Continue that retries the same provider. The one
+exception is that
 `web_search` races its configured engine against a fixed set of public HTML
 engines inside the same tool decision, every request still passing `WebPolicy`.
 _Avoid_: permission inferred from prompt text, repository cleanliness, or a
@@ -163,6 +168,22 @@ most eight active, while mutations and terminal calls retain sequential
 barriers. A text-selection provider path still emits exactly one JSON selection.
 _Avoid_: one-call-per-step rule, reissuing approved calls
 
+**Recovery Note**:
+A durable `ModelContextNote` beginning with `[HARNESS RECOVERY]`, addressed to
+the `ModelContext` audience, that answers a dead-end model step instead of
+failing the run; the same model takes the next step with that feedback in
+context. Bounds are per kind — 2 `unverified_after_tool_failure` notes, 2
+`model_repairable` notes, 1 `empty_model_reply` note — under a global cap of 6
+notes per window. Every note is same-model bounded self-correction, never
+provider/model/tool substitution; when a bound is spent the run fails closed
+with the original code. An exhausted provider-transient step is not failed
+either: it parks in `WaitingUser` with a `ContinueRequested` preserving the
+provider's code, and an explicit Continue retries the same provider. Approval,
+denial, and reconciliation paths never take a recovery note: a repeated
+identical deny still terminates the run and an ambiguous mutation still pauses
+until explicit reconciliation.
+_Avoid_: fallback answer, substitute model, retry on another backend
+
 **Agent Persona Source**:
 The root-selected `AGENTS.md` instruction is the sole Agent persona/style source.
 The built-in prompt is a neutral execution contract. Root instructions may
@@ -176,8 +197,10 @@ lease, and policy snapshot for an ask decision. Approval proposals are retained
 in memory while live and reconstructed from durable events and encrypted
 argument payloads after restart; resume re-evaluates the complete batch and
 never asks the model to reissue it. A repeated identical deny still terminates
-the run, and there is no provider/model/protocol/tool fallback. The explicit
-`allow_always` decision additionally remembers the exact intent as a
+the run, and there is no provider/model/protocol/tool fallback. Bounded
+auto-recovery never applies to approval, denial, or reconciliation: those paths
+keep their exact fail-closed rules and no recovery note can soften them. The
+explicit `allow_always` decision additionally remembers the exact intent as a
 project-scope allow rule; `allow_once` and session grants stay single-use.
 _Avoid_: reusable confirmation flag or approval-time reissue
 

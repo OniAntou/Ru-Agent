@@ -21,6 +21,14 @@ stable failure codes. `AgentProviderSnapshotFactory` returns
 file; the Host assembles the typed `ModelGenerationRequest`, so the request
 shape is validated as a type, not as parsed JSON.
 
+Amendment (2026-10-02): the bounded-retry and selection-feedback concept above
+was extended past the runner's own attempts into the harness loop. A dead-end
+model step now gets bounded durable `[HARNESS RECOVERY]` notes (2 unverified, 2
+model-repairable, 1 empty reply, ≤6 per window) that return to the same model
+and provider, and an exhausted provider-transient failure parks the run in
+`WaitingUser` for an explicit Continue instead of ending it. Both are bounded
+self-correction over the same runner, not provider substitution.
+
 ## Trade-off accepted
 
 The worker process was documented as isolation: it could crash without the

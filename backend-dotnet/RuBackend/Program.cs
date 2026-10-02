@@ -160,6 +160,21 @@ app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();
 app.UseMiddleware<DiagnosticRequestMiddleware>();
+// Request activity for the managed host's idle shutdown: an in-flight request (including
+// a streaming response) keeps the host alive, and every request resets the idle clock.
+app.Use(async (context, next) =>
+{
+    var activity = context.RequestServices.GetRequiredService<RuAgent.Hosting.HostActivityTracker>();
+    activity.Enter();
+    try
+    {
+        await next().ConfigureAwait(false);
+    }
+    finally
+    {
+        activity.Exit();
+    }
+});
 // Harness store health: disable only /agent/v1/* with agent_store_unavailable
 app.Use(async (context, next) =>
 {

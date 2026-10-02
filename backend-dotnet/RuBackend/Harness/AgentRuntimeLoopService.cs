@@ -344,7 +344,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 /// dispatcher, then runs model/tool steps for every running run it holds a workspace
 /// root for. Runs stop being driven when they block on approval/history or complete.
 /// </summary>
-public sealed class AgentRuntimeLoopService : BackgroundService
+public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting.IHostIdleProbe
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
@@ -410,9 +410,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
     }
 
+    /// <summary>Registered runs the loop is driving; surfaced to the idle-shutdown probe.</summary>
+    public int ActiveWorkCount { get; private set; }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
+    {        while (!stoppingToken.IsCancellationRequested)
         {
             var nextDelay = IdlePollInterval;
             try
@@ -447,6 +449,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         // approve), so delivery alone is not a sufficient trigger.
         _ = dispatch;
         var registrations = _roots.Snapshot();
+        // Published for the managed host's idle-shutdown policy: a registered run (even
+        // parked) keeps the host alive so a detached turn keeps progressing.
+        ActiveWorkCount = registrations.Count;
         if (registrations.Count == 0)
         {
             return false;

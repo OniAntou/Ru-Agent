@@ -107,6 +107,9 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<ITimeProvider, SystemTimeProvider>();
         services.AddSingleton<IHarnessSessionArtifactStore, HarnessSessionArtifactStore>();
         services.AddSingleton(TimeProvider.System);
+        // HTTP activity for the managed host's idle shutdown; registered always so the
+        // request-activity middleware can resolve it in every hosting mode.
+        services.AddSingleton<RuAgent.Hosting.HostActivityTracker>();
         services.AddSingleton<IHarnessSessionDeletionCoordinator,
             HarnessSessionDeletionCoordinator>();
         services.AddSingleton<AgentSessionPermissionStore>(services =>
@@ -256,6 +259,17 @@ internal static class PublicHostServiceRegistration
         if (isManagedRuntime)
         {
             services.AddHostedService<RuAgent.Hosting.ParentProcessWatcher>();
+            // A managed host outlives the terminal that spawned it, so it also stops on
+            // its own once nothing has used it for the idle window (RU_HOST_IDLE_MINUTES,
+            // default 10, 0 disables). Clients restart it through GetOrStartAsync.
+            services.AddSingleton<RuAgent.Hosting.IHostIdleProbe>(services =>
+                services.GetRequiredService<AgentRuntimeLoopService>());
+            services.AddHostedService(services => new RuAgent.Hosting.HostIdleShutdownService(
+                services.GetRequiredService<IHostApplicationLifetime>(),
+                services.GetRequiredService<RuAgent.Hosting.HostActivityTracker>(),
+                services.GetRequiredService<ILogger<RuAgent.Hosting.HostIdleShutdownService>>(),
+                services.GetRequiredService<TimeProvider>(),
+                services.GetRequiredService<RuAgent.Hosting.IHostIdleProbe>()));
         }
         // Non-blocking store health: Lazy<Task<...>> starts init asynchronously on first
         // use (or via warmup hosted service) instead of .GetAwaiter().GetResult() in a

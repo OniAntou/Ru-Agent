@@ -15,6 +15,9 @@ public sealed class InteractiveLineReader
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
+        new("/attach", "Attach an image to the next prompt", "/attach <path>"),
+        new("/attachments", "List pending attachments", "/attachments"),
+        new("/detach", "Remove a pending attachment", "/detach <n> | --all"),
         new("/tree", "Show the session tree", "/tree"),
         new("/stats", "Show token and session stats", "/stats"),
         new("/tokens", "Show detailed token usage", "/tokens"),
@@ -338,7 +341,7 @@ public sealed class InteractiveLineReader
     /// Formats the submitted prompt into an elevated container card with top/bottom padding
     /// matching the Claude Code terminal style.
     /// </summary>
-    public static string BuildSubmitEcho(string text, string? time = null, int width = 0)
+    public static string BuildSubmitEcho(string text, string? time = null, int width = 0, IReadOnlyList<string>? attachmentLabels = null)
     {
         var timestamp = time ?? DateTime.Now.ToString("HH:mm");
         var clean = text?.Trim('\r', '\n') ?? string.Empty;
@@ -369,6 +372,15 @@ public sealed class InteractiveLineReader
                     monoLines.Add($"  {line}");
                 }
             }
+
+            if (attachmentLabels is not null)
+            {
+                foreach (var label in attachmentLabels)
+                {
+                    monoLines.Add($"[image {label}]");
+                }
+            }
+
             return string.Join("\n", monoLines);
         }
 
@@ -386,9 +398,44 @@ public sealed class InteractiveLineReader
                 lines.Add(BuildContinuationEcho(line, w));
             }
         }
+        if (attachmentLabels is not null)
+        {
+            foreach (var label in attachmentLabels)
+            {
+                lines.Add(BuildAttachmentRow(label, w));
+            }
+        }
+
         lines.Add(BuildEchoPadRow(w));
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>Attachment line inside the user block: border, panel background, muted label.</summary>
+    public static string BuildAttachmentRow(string label, int width)
+    {
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+        var text = "[image " + label + "]";
+        if (!hasColor)
+        {
+            return text;
+        }
+
+        var innerWidth = Math.Max(16, w - 1);
+        var available = Math.Max(1, innerWidth - 3);
+        var shown = TuiText.VisibleWidth(text) > available ? TuiText.Truncate(text, available) : text;
+        var pad = Math.Max(0, innerWidth - 3 - TuiText.VisibleWidth(shown));
+        return TuiPalette.Paint("▌", TuiToken.Brand)
+            + bg
+            + "  "
+            + TuiPalette.Paint(shown, TuiToken.Meta)
+            + new string(' ', pad)
+            + " "
+            + TuiPalette.Reset;
     }
 
     /// <summary>

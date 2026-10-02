@@ -134,6 +134,22 @@ public static class AgentFailureCopy
             "Model has no vision",
             "this model cannot read images",
             "model does not support images · switch to a vision model with /model");
+        Add(table, ["image_limit_exceeded"],
+            "Too many images",
+            "a turn can carry at most 4 images",
+            "remove images with /detach, then retry");
+        Add(table, ["image_too_large"],
+            "Image too large",
+            "one image or the whole turn exceeded the size bound",
+            "images cap at 4MB each and 20MB per turn · resize or remove some");
+        Add(table, ["invalid_image_mime"],
+            "Unsupported image type",
+            "images must be png, jpeg or webp",
+            "convert the image to png/jpeg/webp, then attach it again");
+        Add(table, ["invalid_image_base64"],
+            "Corrupt image payload",
+            "the image data could not be decoded",
+            "attach the image again; if it keeps failing, re-save it as png/jpeg");
         Add(table, ["empty_model_reply"],
             "Empty model reply",
             "the model returned no text",

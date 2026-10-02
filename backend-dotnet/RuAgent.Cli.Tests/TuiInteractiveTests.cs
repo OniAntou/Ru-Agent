@@ -790,6 +790,35 @@ public sealed class TuiInteractiveTests
         Assert.Equal(prose, result);
     }
 
+    [Fact]
+    public void InteractiveLineReader_BuildSubmitEcho_ShowsImageLabels()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var echo = InteractiveLineReader.BuildSubmitEcho(
+                "look at this", "21:35", width: 80, attachmentLabels: ["1: cat.png", "2: dog.jpg"]);
+
+            var stripped = TuiText.Strip(echo);
+            Assert.Contains("[image 1: cat.png]", stripped, StringComparison.Ordinal);
+            Assert.Contains("[image 2: dog.jpg]", stripped, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
+    public void InteractiveLineReader_BuildSubmitEcho_MonoShowsImageLabels()
+    {
+        TuiPalette.Level = TuiColorLevel.None;
+        var echo = InteractiveLineReader.BuildSubmitEcho("hi", "10:00", attachmentLabels: ["1: a.png"]);
+
+        Assert.Contains("[image 1: a.png]", echo, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(40)]
     [InlineData(80)]

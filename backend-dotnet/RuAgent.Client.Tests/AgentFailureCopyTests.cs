@@ -45,6 +45,10 @@ public sealed class AgentFailureCopyTests
     [InlineData("web_disabled")]
     [InlineData("web_uri_invalid")]
     [InlineData("web_search_endpoint_not_allowed")]
+    [InlineData("image_limit_exceeded")]
+    [InlineData("image_too_large")]
+    [InlineData("invalid_image_mime")]
+    [InlineData("invalid_image_base64")]
     public void Every_audited_code_resolves_to_copy(string code)
     {
         Assert.True(AgentFailureCopy.TryGet(code, out var copy), code);

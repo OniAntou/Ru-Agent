@@ -52,7 +52,8 @@ Two traps that cost real time here:
 detection (`COLORTERM`, `WT_SESSION`, `TERM=…direct`, `TERM_PROGRAM`), and
 otherwise 256-colour. **A monochrome TUI therefore means `NO_COLOR` is set or
 stdout is redirected**, not that colour is broken — the palette itself is the
-aurora cyan-to-violet set shared with the WinUI surface.
+OpenCode-cloned dark set (steel blue / violet / warm neutrals) kept local to
+the CLI.
 
 To see colour while a shell has `NO_COLOR=1`:
 

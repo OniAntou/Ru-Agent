@@ -6,6 +6,9 @@ status: pending
 
 Date: 2026-10-02
 Status: approved (all 4 sections confirmed by owner)
+
+> **Note (R2):** The *visuals* described here were superseded by the OpenCode TUI clone
+> (see CHANGELOG `[Unreleased]`); the engine design (gates, regions, fallback) still holds.
 Scope: `backend-dotnet/RuAgent.Cli/Tui/*`, `AgentCommands.Chat.cs`, `AgentSlashCommands.cs`. No new external dependencies. No commit for this spec (owner request).
 
 ## 1. Context

@@ -4,6 +4,11 @@ status: pending
 
 # TUI Redesign Full-screen Engine Implementation Plan
 
+> **Note (R2):** The *visuals* described here were superseded by the OpenCode TUI clone
+> (see CHANGELOG `[Unreleased]`): one-row header, inline tool rows, six-row composer stack
+> and block wordmark. The engine architecture (AltBuffer gate, regions, sticky footer,
+> sequential fallback) is unchanged.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild `agent chat` rendering on a full-screen AltBuffer engine with header, scroll transcript, bordered tool cards, highlighted code, and floating approval panels, keeping the sequential fallback for redirect/json/dumb/small terminals.

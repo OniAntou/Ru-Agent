@@ -13,8 +13,8 @@ public enum ComposerState
 
 /// <summary>
 /// The prompt frame: the three-row sequential composer (borders, prompt, buffer) and the
-/// full-screen composer stack with its agent bar and hint row. Pure composition: every line
-/// occupies exactly the requested width, so the transcript above can never be pushed out of
+/// full-screen composer stack with its hint row. Pure composition: every line occupies
+/// exactly the requested width, so the transcript above can never be pushed out of
 /// alignment by the composer.
 /// </summary>
 public static class ComposerBox
@@ -54,26 +54,6 @@ public static class ComposerBox
             Middle(w, token, prompt, buffer, ghost ?? string.Empty),
             Bottom(w, token, legend, hint),
         ];
-    }
-
-    /// <summary>
-    /// The agent bar above the composer, cloned from OpenCode: a coloured block glyph, the
-    /// agent name and the active model. Exactly <paramref name="width"/> cells.
-    /// </summary>
-    public static string ComposeAgentBar(int width, string agent, string model)
-    {
-        var w = Math.Clamp(width, MinWidth, MaxWidth);
-        var name = string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim();
-        var bar = "  "
-            + TuiPalette.Paint("▪", TuiToken.Brand)
-            + " "
-            + TuiPalette.Paint(name, TuiToken.Bright);
-        if (!string.IsNullOrWhiteSpace(model))
-        {
-            bar += TuiPalette.Paint(" · " + model.Trim(), TuiToken.Meta);
-        }
-
-        return TuiText.Pad(bar, w);
     }
 
     /// <summary>

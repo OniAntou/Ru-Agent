@@ -173,15 +173,6 @@ public sealed class ComposerBoxTests : IDisposable
     }
 
     [Fact]
-    public void ComposeAgentBar_ShowsAgentAndModelAtExactWidth()
-    {
-        var bar = ComposerBox.ComposeAgentBar(60, "Ru", "gpt-5-codex");
-
-        Assert.Contains("▪ Ru · gpt-5-codex", TuiText.Strip(bar), StringComparison.Ordinal);
-        Assert.Equal(60, TuiText.VisibleWidth(bar));
-    }
-
-    [Fact]
     public void ComposeHints_PinsKeyOrderAndSpinnerStates()
     {
         var idle = TuiText.Strip(ComposerBox.ComposeHints(100, null, "D:/LLM"));

@@ -170,12 +170,13 @@ public sealed class TuiFullScreenSnapshotTests
         Assert.Contains("idle session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.DoesNotContain("assistant line", sim.VisibleRow(0), StringComparison.Ordinal);
 
-        // The transcript is present and never leaks into the fixed six-row footer.
+        // The transcript is present and never leaks into the fixed five-row footer.
         Assert.Contains("assistant line 59", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("▪ Ru", sim.VisibleRow(Rows - 6), StringComparison.Ordinal);
+        Assert.Contains("╭", sim.VisibleRow(Rows - 5), StringComparison.Ordinal);
         Assert.Contains("next request", sim.VisibleRow(Rows - 4), StringComparison.Ordinal);
+        Assert.Contains("Standard", sim.VisibleRow(Rows - 3), StringComparison.Ordinal);
         Assert.Contains("/ commands", sim.VisibleRow(Rows - 1), StringComparison.Ordinal);
-        for (var row = Rows - 6; row < Rows; row++)
+        for (var row = Rows - 5; row < Rows; row++)
         {
             Assert.DoesNotContain("assistant line", sim.VisibleRow(row), StringComparison.Ordinal);
         }
@@ -265,8 +266,8 @@ public sealed class TuiFullScreenSnapshotTests
 
         Assert.Contains("Resize session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.Contains("assistant tail marker", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("▪ Ru", sim.VisibleRow(34), StringComparison.Ordinal);
-        for (var row = 34; row < 40; row++)
+        Assert.Contains("╭", sim.VisibleRow(35), StringComparison.Ordinal);
+        for (var row = 35; row < 40; row++)
         {
             Assert.DoesNotContain("assistant tail marker", sim.VisibleRow(row), StringComparison.Ordinal);
         }
@@ -317,11 +318,10 @@ public sealed class TuiFullScreenSnapshotTests
         status.SetElapsed(12.3);
         List<string> footer =
         [
-            ComposerBox.ComposeAgentBar(width, "Ru", "gpt-5"),
             .. ComposerBox.ComposeStack(
-                width, ComposerState.Idle, "next request", string.Empty, "Ru", "gpt-5", "OpenAI"),
+                width, ComposerState.Idle, "next request", string.Empty, "Standard", "gpt-5", "OpenAI"),
             ComposerBox.ComposeHints(width, null, "D:/LLM"),
         ];
-        region.Paint(footer, width, caretRowInFooter: 3, caretColumn: 3);
+        region.Paint(footer, width, caretRowInFooter: 2, caretColumn: 3);
     }
 }

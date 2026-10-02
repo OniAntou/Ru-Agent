@@ -131,7 +131,7 @@ public sealed partial class AgentCommands
         var humanOut = cmd.Json ? _err : _out;
 
         var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
-        var workspaceLabel = string.IsNullOrWhiteSpace(cmd.Preset) ? ws : $"{ws} · {cmd.Preset}";
+        var workspaceLabel = ws;
 
         var pendingImages = new List<Images.CliImageAttachment>();
         var pendingTexts = new List<Attachments.CliTextAttachment>();
@@ -519,9 +519,9 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Footer rows for the live viewport: the fixed six-row stack (agent bar, composer,
-        /// hints) in the AltBuffer frame, the historical dynamic footer otherwise.
-        /// An open approval/trust/picker/secret panel temporarily grows the footer.
+        /// Footer rows for the live viewport: the fixed five-row stack (composer, hints)
+        /// in the AltBuffer frame, the historical dynamic footer otherwise. An open
+        /// approval/trust/picker/secret panel temporarily grows the footer.
         /// </summary>
         int FooterHeightFor(int width) => altBufferActive
             ? Tui.TuiScreenLayout.Compute(width, Tui.TuiViewport.Height()).FooterHeight + PanelLines(width).Count
@@ -555,10 +555,10 @@ public sealed partial class AgentCommands
             int? caretRow;
             if (altBufferActive)
             {
-                // Fixed footer, cloned from OpenCode: the agent bar, the composer stack and
-                // the hint row. Any approval/picker/secret panel sits between the agent bar
-                // and the composer and temporarily grows the footer.
-                footer = [Tui.ComposerBox.ComposeAgentBar(footerWidth, "Ru", activeModel)];
+                // Fixed footer, cloned from OpenCode: the composer stack and the hint
+                // row. Any approval/picker/secret panel sits directly above the
+                // composer and temporarily grows the footer.
+                footer = [];
                 footer.AddRange(PanelLines(footerWidth));
                 var inputRow = footer.Count + 2;
                 footer.AddRange(Tui.ComposerBox.ComposeStack(
@@ -566,7 +566,7 @@ public sealed partial class AgentCommands
                     typeAhead.State,
                     typeAhead.Buffer,
                     typeAhead.Buffer.Length == 0 ? Tui.InteractiveLineReader.ComposerPlaceholder : string.Empty,
-                    "Ru",
+                    "Standard",
                     activeModel,
                     backendName));
                 var busy = typeAhead.TurnActive
@@ -1332,7 +1332,7 @@ public sealed partial class AgentCommands
 
                 if (modelChanged)
                 {
-                    // The footer agent bar, the vision pre-check and the usage cluster read
+                    // The composer meta row, the vision pre-check and the usage cluster read
                     // this local, so a /model switch is reflected without a restart.
                     activeModel = curModel;
                 }

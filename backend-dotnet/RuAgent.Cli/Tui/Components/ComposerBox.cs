@@ -21,6 +21,9 @@ public static class ComposerBox
     public const int MinWidth = 10;
     public const int MaxWidth = 1000;
 
+    /// <summary>Rows of the full-screen composer stack: top border, input, meta, bottom border.</summary>
+    public const int StackHeight = 4;
+
     public static TuiToken TokenFor(ComposerState state) => state switch
     {
         ComposerState.Slash or ComposerState.Busy or ComposerState.Queued => TuiToken.Brand,
@@ -52,42 +55,145 @@ public static class ComposerBox
     }
 
     /// <summary>
-    /// The single-row composer used by the full-screen footer: the same middle row the
-    /// three-row frame paints (borders, prompt, buffer, tail-anchored text) plus an
-    /// optional right-aligned legend, exactly <paramref name="width"/> cells so the
-    /// footer never shifts.
+    /// The agent bar above the composer, cloned from OpenCode: a coloured block glyph, the
+    /// agent name and the active model. Exactly <paramref name="width"/> cells.
     /// </summary>
-    public static string ComposeRow(
+    public static string ComposeAgentBar(int width, string agent, string model)
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var name = string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim();
+        var bar = "  "
+            + TuiPalette.Paint("▪", TuiToken.Brand)
+            + " "
+            + TuiPalette.Paint(name, TuiToken.Bright);
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            bar += TuiPalette.Paint(" · " + model.Trim(), TuiToken.Meta);
+        }
+
+        return TuiText.Pad(bar, w);
+    }
+
+    /// <summary>
+    /// The full-screen composer stack: top border, the input row (with the elevated element
+    /// background), the agent/model/provider meta row and the bottom border. Every row is
+    /// exactly <paramref name="width"/> cells.
+    /// </summary>
+    public static IReadOnlyList<string> ComposeStack(
         int width,
         ComposerState state,
-        string prompt,
         string buffer,
-        string ghost = "",
-        string legend = "")
+        string ghost,
+        string agent,
+        string model,
+        string provider)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
         var token = TokenFor(state);
-        prompt ??= string.Empty;
-        buffer ??= string.Empty;
-        ghost ??= string.Empty;
+        return
+        [
+            Top(w, token, null),
+            InputRow(w, token, buffer ?? string.Empty, ghost ?? string.Empty),
+            MetaRow(w, token, agent, model, provider),
+            Bottom(w, token, string.Empty, string.Empty),
+        ];
+    }
 
-        var (legendText, legendWidth, available) = RowMetrics(w, prompt, legend);
-        var inner = Math.Max(1, w - 4);
-        var promptWidth = TuiText.VisibleWidth(prompt);
-        var text = TuiText.Tail(buffer, available);
+    /// <summary>One-based caret column inside <see cref="ComposeStack"/>'s input row.</summary>
+    public static int StackCursorColumn(int width, string buffer)
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var shown = TuiText.Tail(buffer ?? string.Empty, Math.Max(1, w - 4));
+        return Math.Min(w - 1, 3 + TuiText.VisibleWidth(shown));
+    }
+
+    /// <summary>
+    /// The hint row below the composer: the spinner with esc-interrupt on the left while a
+    /// turn runs (the workspace label when idle), key hints right-aligned. Exactly
+    /// <paramref name="width"/> cells.
+    /// </summary>
+    public static string ComposeHints(int width, string? spinnerFrame, string idleLeft)
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var right = TuiPalette.Paint("/", TuiToken.Bright)
+            + TuiPalette.Paint(" commands", TuiToken.Meta)
+            + "  "
+            + TuiPalette.Paint("ctrl+o", TuiToken.Bright)
+            + TuiPalette.Paint(" expand", TuiToken.Meta)
+            + "  "
+            + TuiPalette.Paint("tab", TuiToken.Bright)
+            + TuiPalette.Paint(" complete", TuiToken.Meta);
+        var rightWidth = TuiText.VisibleWidth(right);
+
+        var left = spinnerFrame is not null
+            ? TuiPalette.Paint(spinnerFrame, TuiToken.Bright)
+                + " "
+                + TuiPalette.Paint("esc", TuiToken.Bright)
+                + TuiPalette.Paint(" interrupt", TuiToken.Meta)
+            : TuiPalette.Paint(idleLeft ?? string.Empty, TuiToken.Meta);
+
+        var leftBudget = Math.Max(0, w - rightWidth - 2);
+        if (TuiText.VisibleWidth(left) > leftBudget)
+        {
+            left = TuiText.Truncate(left, leftBudget);
+        }
+
+        var gap = Math.Max(1, w - TuiText.VisibleWidth(left) - rightWidth);
+        return TuiText.Pad(left + new string(' ', gap) + right, w);
+    }
+
+    private static string InputRow(int width, TuiToken token, string buffer, string ghost)
+    {
+        var inner = Math.Max(1, width - 4);
+        var text = TuiText.Tail(buffer, inner);
         var used = TuiText.VisibleWidth(text);
-        var ghostText = string.IsNullOrEmpty(ghost) || used >= available
+        var ghostText = string.IsNullOrEmpty(ghost) || used >= inner
             ? string.Empty
-            : TuiText.Truncate(ghost, available - used);
-        var pad = Math.Max(0, inner - promptWidth - used - TuiText.VisibleWidth(ghostText) - (legendWidth > 0 ? legendWidth + 1 : 0));
-
-        return TuiPalette.Paint("│ ", token)
-            + prompt
+            : TuiText.Truncate(ghost, inner - used);
+        var pad = Math.Max(0, inner - used - TuiText.VisibleWidth(ghostText));
+        var bg = TuiPalette.ElementBgCode();
+        return TuiPalette.Paint("│", token)
+            + bg
+            + " "
             + TuiPalette.Paint(text, TuiToken.Bright)
             + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Meta))
             + new string(' ', pad)
-            + (legendWidth > 0 ? " " + TuiPalette.Paint(legendText, TuiToken.Meta) : string.Empty)
-            + TuiPalette.Paint(" │", token);
+            + " "
+            + TuiPalette.Reset
+            + TuiPalette.Paint("│", token);
+    }
+
+    private static string MetaRow(int width, TuiToken token, string agent, string model, string provider)
+    {
+        var inner = Math.Max(1, width - 4);
+        var name = string.IsNullOrWhiteSpace(agent) ? "Ru" : agent.Trim();
+        var parts = TuiPalette.Paint(name, TuiToken.Brand);
+        var used = TuiText.VisibleWidth(parts);
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var modelText = TuiText.Truncate(model.Trim(), Math.Max(1, inner - used - 2));
+            parts += "  " + TuiPalette.Paint(modelText, TuiToken.Bright);
+            used += 2 + TuiText.VisibleWidth(modelText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(provider) && used < inner - 2)
+        {
+            var providerText = TuiText.Truncate(provider.Trim(), Math.Max(1, inner - used - 1));
+            parts += " " + TuiPalette.Paint(providerText, TuiToken.Meta);
+            used += 1 + TuiText.VisibleWidth(providerText);
+        }
+
+        var pad = Math.Max(0, inner - used);
+        var bg = TuiPalette.ElementBgCode();
+        return TuiPalette.Paint("│", token)
+            + bg
+            + " "
+            + parts
+            + new string(' ', pad)
+            + " "
+            + TuiPalette.Reset
+            + TuiPalette.Paint("│", token);
     }
 
     private static string Top(int width, TuiToken token, string? topLabel)

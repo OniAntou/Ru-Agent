@@ -2,8 +2,8 @@ namespace RuAgent.Cli.Tui;
 
 /// <summary>
 /// Vertical geometry of the three-region full-screen layout: a fixed one-row header, the
-/// transcript in the middle and a fixed three-row footer. Pure arithmetic; painting is the
-/// caller's job.
+/// transcript in the middle and a fixed six-row footer (agent bar, composer stack, hints).
+/// Pure arithmetic; painting is the caller's job.
 /// </summary>
 /// <remarks>
 /// A terminal shorter than the header plus footer cannot fit all three regions. Rather than
@@ -23,7 +23,7 @@ public readonly record struct TuiScreenLayout(
     public static TuiScreenLayout Compute(int columns, int rows)
     {
         const int headerHeight = 1;
-        const int footerHeight = 3;
+        const int footerHeight = 6;
         var transcriptTop = headerHeight;
         var transcriptHeight = Math.Max(0, rows - headerHeight - footerHeight);
         var footerTop = transcriptTop + transcriptHeight;

@@ -515,27 +515,30 @@ public sealed partial class AgentCommands
             int? caretRow;
             if (altBufferActive)
             {
-                // Fixed three-row footer: status, live tool card, single-row composer.
-                // Any approval/picker/secret panel sits between the tool row and the
-                // composer and temporarily grows the footer beyond three rows.
-                footer =
-                [
-                    sessionRenderer.Status.Compose(footerWidth),
-                    Tui.TuiToolRow.RenderLiveRow(sessionRenderer.Status.Activity, footerWidth, Tui.TuiPalette.Level),
-                ];
+                // Fixed footer, cloned from OpenCode: the agent bar, the composer stack and
+                // the hint row. Any approval/picker/secret panel sits between the agent bar
+                // and the composer and temporarily grows the footer.
+                footer = [Tui.ComposerBox.ComposeAgentBar(footerWidth, "Ru", activeModel)];
                 footer.AddRange(PanelLines(footerWidth));
-                footer.Add(Tui.ComposerBox.ComposeRow(
+                var inputRow = footer.Count + 1;
+                footer.AddRange(Tui.ComposerBox.ComposeStack(
                     footerWidth,
                     typeAhead.State,
-                    "❯ ",
                     typeAhead.Buffer,
                     typeAhead.Buffer.Length == 0 ? Tui.InteractiveLineReader.ComposerPlaceholder : string.Empty,
-                    lineReader.Legend));
+                    "Ru",
+                    activeModel,
+                    backendName));
+                var busy = typeAhead.TurnActive || sessionRenderer.Status.State != Tui.TuiRunState.Idle;
+                footer.Add(Tui.ComposerBox.ComposeHints(
+                    footerWidth,
+                    busy ? sessionRenderer.Status.SpinnerFrame : null,
+                    workspaceLabel));
 
                 // While the operator types in the footer composer, the hardware cursor
-                // belongs there so IME popups follow the text; an open panel owns the
-                // keyboard and needs no caret.
-                caretRow = typeAheadLive && !typeAhead.IsPanelActive ? footer.Count - 1 : (int?)null;
+                // belongs on its input row so IME popups follow the text; an open panel owns
+                // the keyboard and needs no caret.
+                caretRow = typeAheadLive && !typeAhead.IsPanelActive ? inputRow : (int?)null;
             }
             else
             {
@@ -560,7 +563,9 @@ public sealed partial class AgentCommands
             // While the operator is typing, the hardware cursor belongs in the composer: IME
             // candidate windows otherwise open wherever the transcript left the cursor. The
             // legend is passed through so the caret is clamped left of it.
-            var caretColumn = Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer, lineReader.Legend);
+            var caretColumn = altBufferActive
+                ? Tui.ComposerBox.StackCursorColumn(footerWidth, typeAhead.Buffer)
+                : Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer, lineReader.Legend);
             sticky.Paint(footer, footerWidth, caretRow, caretColumn);
         }
 

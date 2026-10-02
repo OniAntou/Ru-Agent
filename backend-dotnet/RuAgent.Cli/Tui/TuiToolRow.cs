@@ -48,27 +48,4 @@ public static class TuiToolRow
         "Fetch" => "%",
         _ => "⚙",
     };
-
-    /// <summary>
-    /// The footer's live tool row: the in-flight tool activity on one rail line, repainted in
-    /// place as the activity changes. A null or blank activity leaves the row empty but keeps
-    /// its width, so the fixed footer never shifts.
-    /// </summary>
-    public static string RenderLiveRow(string? activity, int width, TuiColorLevel level)
-    {
-        if (width <= 0)
-        {
-            return string.Empty;
-        }
-
-        using var scope = TuiPalette.PinLevel(level);
-        if (string.IsNullOrWhiteSpace(activity))
-        {
-            return new string(' ', width);
-        }
-
-        var head = TuiPalette.Paint("  ▌ ", TuiToken.Line)
-            + TuiPalette.Paint(TuiText.Truncate(activity.Trim(), Math.Max(1, width - 4)), TuiToken.Brand2);
-        return TuiText.Pad(head, width);
-    }
 }

@@ -170,11 +170,12 @@ public sealed class TuiFullScreenSnapshotTests
         Assert.Contains("idle session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.DoesNotContain("assistant line", sim.VisibleRow(0), StringComparison.Ordinal);
 
-        // The transcript is present and never leaks into the fixed three-row footer.
+        // The transcript is present and never leaks into the fixed six-row footer.
         Assert.Contains("assistant line 59", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("idle", sim.VisibleRow(Rows - 3), StringComparison.Ordinal);
-        Assert.Contains("next request", sim.VisibleRow(Rows - 1), StringComparison.Ordinal);
-        for (var row = Rows - 3; row < Rows; row++)
+        Assert.Contains("▪ Ru", sim.VisibleRow(Rows - 6), StringComparison.Ordinal);
+        Assert.Contains("next request", sim.VisibleRow(Rows - 4), StringComparison.Ordinal);
+        Assert.Contains("/ commands", sim.VisibleRow(Rows - 1), StringComparison.Ordinal);
+        for (var row = Rows - 6; row < Rows; row++)
         {
             Assert.DoesNotContain("assistant line", sim.VisibleRow(row), StringComparison.Ordinal);
         }
@@ -264,8 +265,8 @@ public sealed class TuiFullScreenSnapshotTests
 
         Assert.Contains("Resize session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.Contains("assistant tail marker", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("idle", sim.VisibleRow(37), StringComparison.Ordinal);
-        for (var row = 37; row < 40; row++)
+        Assert.Contains("▪ Ru", sim.VisibleRow(34), StringComparison.Ordinal);
+        for (var row = 34; row < 40; row++)
         {
             Assert.DoesNotContain("assistant tail marker", sim.VisibleRow(row), StringComparison.Ordinal);
         }
@@ -314,12 +315,13 @@ public sealed class TuiFullScreenSnapshotTests
         var status = new TuiStatusLine(surface);
         status.SetState(TuiRunState.Idle);
         status.SetElapsed(12.3);
-        var footer = new List<string>
-        {
-            status.Compose(width),
-            TuiToolRow.RenderLiveRow(null, width, TuiColorLevel.None),
-            ComposerBox.ComposeRow(width, ComposerState.Idle, "❯ ", "next request", string.Empty, "gpt-5"),
-        };
+        List<string> footer =
+        [
+            ComposerBox.ComposeAgentBar(width, "Ru", "gpt-5"),
+            .. ComposerBox.ComposeStack(
+                width, ComposerState.Idle, "next request", string.Empty, "Ru", "gpt-5", "OpenAI"),
+            ComposerBox.ComposeHints(width, null, "D:/LLM"),
+        ];
         region.Paint(footer, width, caretRowInFooter: 3, caretColumn: 3);
     }
 }

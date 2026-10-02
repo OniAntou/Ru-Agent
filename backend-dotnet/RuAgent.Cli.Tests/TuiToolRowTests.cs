@@ -94,13 +94,4 @@ public sealed class TuiToolRowTests
     [Fact]
     public void Compose_BlankDisplay_Throws() =>
         Assert.Throws<ArgumentException>(() => TuiToolRow.Compose(ToolLineStatus.Ok, "  ", null, null, 60));
-
-    [Fact]
-    public void RenderLiveRow_NullActivity_KeepsTheWidthWithoutText()
-    {
-        var row = TuiToolRow.RenderLiveRow(null, 30, TuiColorLevel.None);
-
-        Assert.Equal(30, TuiText.VisibleWidth(row));
-        Assert.Equal(new string(' ', 30), row);
-    }
 }

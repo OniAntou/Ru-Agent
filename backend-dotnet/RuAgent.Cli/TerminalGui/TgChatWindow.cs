@@ -8,9 +8,16 @@ namespace RuAgent.Cli.TerminalGui;
 /// <summary>
 /// The three-region window: pinned header, scrolling transcript, pinned composer stack and
 /// hint row. State changes go through this facade so the run loop never touches views.
+/// Slash suggestions and approval/trust/picker/secret panels float over the transcript.
 /// </summary>
 public sealed class TgChatWindow : Window
 {
+    private TgSlashDropdown? _slashDropdown;
+    private TgPanelHost? _panel;
+    private ApprovalPrompt? _approval;
+    private ChoiceList? _choices;
+    private bool _secretPanel;
+
     private TgChatWindow()
     {
         BorderStyle = LineStyle.None;
@@ -25,12 +32,25 @@ public sealed class TgChatWindow : Window
 
         Add(Header, Transcript, Composer, Hints);
         CanFocus = true;
+
+        // The dropdown is driven from the composer text itself: every edit (typed, history,
+        // programmatic) refreshes it, and accepting writes the command back through the same
+        // channel so the two can never disagree.
+        Composer.Input.TextChanged += (_, _) => RefreshSlashDropdown();
     }
 
     public TgHeaderView Header { get; }
     public TgTranscriptView Transcript { get; }
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
+
+    public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
+
+    /// <summary>Decision token of a confirmed approval/trust/picker panel.</summary>
+    public event Action<string>? PanelConfirmed;
+
+    /// <summary>Escape on a panel: an approval denies, a picker aborts.</summary>
+    public event Action? PanelCancelled;
 
     /// <summary>
     /// Focus must be granted after the app's first loop iterations; a SetFocus before
@@ -43,5 +63,231 @@ public sealed class TgChatWindow : Window
         Composer.Input.SetFocus();
     }
 
+    /// <summary>
+    /// Opens or refreshes the slash dropdown for the composer's current text. The composer
+    /// keeps focus — typing must keep filtering the list — so the run loop routes Up/Down,
+    /// Enter/Tab and Escape here instead of the composer.
+    /// </summary>
+    public void ShowSlashDropdown()
+    {
+        var matches = InteractiveLineReader.FindMatches(Composer.Input.Text?.ToString() ?? string.Empty);
+        if (matches.Count == 0)
+        {
+            HideSlashDropdown();
+            return;
+        }
+
+        if (_slashDropdown is null)
+        {
+            _slashDropdown = new TgSlashDropdown { X = 0, Width = Dim.Fill() };
+            _slashDropdown.CommandAccepted += command =>
+            {
+                Composer.Input.Text = command + " ";
+                HideSlashDropdown();
+                Composer.Input.SetFocus();
+            };
+            _slashDropdown.Closed += HideSlashDropdown;
+        }
+
+        _slashDropdown.SetMatches(matches);
+        _slashDropdown.Height = _slashDropdown.PanelHeight;
+        _slashDropdown.Y = Pos.AnchorEnd(7 + _slashDropdown.PanelHeight);
+        if (_slashDropdown.SuperView is null)
+        {
+            Add(_slashDropdown);
+        }
+
+        SetNeedsDraw();
+    }
+
+    public void HideSlashDropdown()
+    {
+        if (_slashDropdown?.SuperView is not null)
+        {
+            Remove(_slashDropdown);
+        }
+
+        SetNeedsDraw();
+    }
+
+    public void MoveSlashDropdown(int delta) => _slashDropdown?.Move(delta);
+
+    public void AcceptSlashDropdown() => _slashDropdown?.Accept();
+
+    /// <summary>The approval panel for a safe wire summary (choices via <see cref="ApprovalPrompt.For"/>).</summary>
+    public void ShowApproval(string safeSummary, bool offerDirectory = false)
+    {
+        var prompt = ApprovalPrompt.For(safeSummary, offerDirectory);
+        _approval = prompt;
+        _choices = null;
+        _secretPanel = false;
+        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+    }
+
+    /// <summary>The workspace-trust panel; Enter defaults to cancel like the classic prompt.</summary>
+    public void ShowWorkspaceTrust(string workspacePath)
+    {
+        var prompt = ApprovalPrompt.ForWorkspaceTrust(workspacePath);
+        _approval = prompt;
+        _choices = null;
+        _secretPanel = false;
+        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+    }
+
+    /// <summary>A picker over the transcript, navigated by the shared <see cref="ChoiceList"/> grammar.</summary>
+    public void ShowPicker(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null)
+    {
+        var list = new ChoiceList(title, items, selected, footer);
+        _approval = null;
+        _choices = list;
+        _secretPanel = false;
+        ShowPanel(width => CenterPanel(list.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+    }
+
+    /// <summary>The masked secret panel; only the bullet count reaches the screen.</summary>
+    public void ShowSecret(string providerDisplay, int bulletCount = 0)
+    {
+        _approval = null;
+        _choices = null;
+        _secretPanel = true;
+        ShowPanel(width => CenterPanel(
+            KeyInputPanel.Compose(TuiFloatingPanel.ComputeWidth(width), providerDisplay, bulletCount),
+            width));
+    }
+
+    public void HidePanel()
+    {
+        if (_panel?.SuperView is not null)
+        {
+            Remove(_panel);
+        }
+
+        _approval = null;
+        _choices = null;
+        _secretPanel = false;
+        if (App is not null)
+        {
+            FocusComposer();
+        }
+
+        SetNeedsDraw();
+    }
+
     public static TgChatWindow Build() => new();
+
+    private void ShowPanel(Func<int, IReadOnlyList<string>> render)
+    {
+        // A modal panel takes the keyboard; the suggestion list must not linger behind it.
+        HideSlashDropdown();
+        if (_panel is null)
+        {
+            _panel = new TgPanelHost { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(8) };
+            _panel.PanelKey += OnPanelKey;
+        }
+
+        _panel.SetRenderer(render);
+        if (_panel.SuperView is null)
+        {
+            Add(_panel);
+        }
+
+        SetNeedsDraw();
+        _panel.SetFocus();
+    }
+
+    private static IReadOnlyList<string> CenterPanel(IReadOnlyList<string> lines, int width) =>
+        TuiFloatingPanel.Center(lines, width);
+
+    private void RefreshSlashDropdown()
+    {
+        var text = Composer.Input.Text?.ToString() ?? string.Empty;
+        // Mirrors the classic isSlash gate: a space means the command is being parameterised,
+        // which also closes the list right after an accepted command gains its trailing space.
+        if (text.StartsWith('/') && !text.Contains(' '))
+        {
+            ShowSlashDropdown();
+        }
+        else
+        {
+            HideSlashDropdown();
+        }
+    }
+
+    private void OnPanelKey(TgPanelKey key)
+    {
+        if (_approval is { } approval)
+        {
+            switch (key.Kind)
+            {
+                case TgPanelKeyKind.Up:
+                    approval.Move(-1);
+                    break;
+                case TgPanelKeyKind.Down:
+                    approval.Move(1);
+                    break;
+                case TgPanelKeyKind.Enter:
+                    ResolveConfirmed(approval.Current.Decision);
+                    return;
+                case TgPanelKeyKind.Escape:
+                    ResolveCancelled();
+                    return;
+                case TgPanelKeyKind.Digit:
+                    if (approval.TrySelectDigit(key.Digit))
+                    {
+                        ResolveConfirmed(approval.Current.Decision);
+                    }
+
+                    return;
+            }
+
+            _panel?.SetNeedsDraw();
+            return;
+        }
+
+        if (_choices is { } choices)
+        {
+            switch (key.Kind)
+            {
+                case TgPanelKeyKind.Up:
+                    choices.Move(-1);
+                    break;
+                case TgPanelKeyKind.Down:
+                    choices.Move(1);
+                    break;
+                case TgPanelKeyKind.Enter:
+                    ResolveConfirmed(choices.Current.Value);
+                    return;
+                case TgPanelKeyKind.Escape:
+                    ResolveCancelled();
+                    return;
+                case TgPanelKeyKind.Digit:
+                    if (choices.TrySelectDigit(key.Digit))
+                    {
+                        ResolveConfirmed(choices.Current.Value);
+                    }
+
+                    return;
+            }
+
+            _panel?.SetNeedsDraw();
+            return;
+        }
+
+        if (_secretPanel && key.Kind == TgPanelKeyKind.Escape)
+        {
+            ResolveCancelled();
+        }
+    }
+
+    private void ResolveConfirmed(string value)
+    {
+        HidePanel();
+        PanelConfirmed?.Invoke(value);
+    }
+
+    private void ResolveCancelled()
+    {
+        HidePanel();
+        PanelCancelled?.Invoke();
+    }
 }

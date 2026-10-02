@@ -1022,6 +1022,11 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task<string> RequestApprovalAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken)
         {
+            if (tgWindow is not null)
+            {
+                return await RequestApprovalInTgAsync(prompt, approvalToken).ConfigureAwait(false);
+            }
+
             if (typeAheadLive && sticky.Active)
             {
                 using var registration = approvalToken.Register(() => prompt.Decision.TrySetCanceled(approvalToken));
@@ -1050,6 +1055,62 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
+        /// The TG approval: the panel floats over the transcript and the window's loop owns
+        /// the keyboard. Escape denies — which ends the tool call, not the session — exactly
+        /// like the pinned-footer path, so the turn keeps streaming its settled rows.
+        /// </summary>
+        Task<string> RequestApprovalInTgAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken) =>
+            RunTgPanelAsync(() => tgWindow!.ShowApproval(prompt.Summary), approvalToken);
+
+        /// <summary>The TG workspace-trust ask; Escape is a cancel, never a silent grant.</summary>
+        Task<string> RequestTrustInTgAsync(Tui.ApprovalPrompt prompt, CancellationToken trustToken) =>
+            RunTgPanelAsync(() => tgWindow!.ShowWorkspaceTrust(prompt.Summary), trustToken);
+
+        /// <summary>
+        /// Runs one floating panel on the Terminal.Gui loop and awaits the answer. The turn
+        /// streams on a background task, so the panel is shown through the app's dispatcher;
+        /// the token releases the wait when the turn is cancelled underneath it. The panel
+        /// always closes in the finally, and a wind-down with the app already stopped is a
+        /// no-op instead of an error.
+        /// </summary>
+        async Task<string> RunTgPanelAsync(Action show, CancellationToken panelToken)
+        {
+            var decision = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnConfirmed(string value) => decision.TrySetResult(value);
+            void OnCancelled() => decision.TrySetResult(Tui.ApprovalPrompt.Deny);
+
+            tgApp!.Invoke(() =>
+            {
+                tgWindow!.PanelConfirmed += OnConfirmed;
+                tgWindow.PanelCancelled += OnCancelled;
+                show();
+            });
+
+            using var registration = panelToken.Register(() => decision.TrySetCanceled(panelToken));
+            try
+            {
+                return await decision.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    tgApp.Invoke(() =>
+                    {
+                        tgWindow!.PanelConfirmed -= OnConfirmed;
+                        tgWindow.PanelCancelled -= OnCancelled;
+                        tgWindow.HidePanel();
+                    });
+                }
+                catch (NotInitializedException)
+                {
+                    // The TG session wound down while the panel was open; there is no view
+                    // left to close and the enclosing turn is ending anyway.
+                }
+            }
+        }
+
+        /// <summary>
         /// Asks the operator to trust the workspace, in the composer, while the run holds
         /// the challenge open. No work is in flight at this point, so the type-ahead loop
         /// can hand the keyboard to the choice list — the same handoff a tool approval uses.
@@ -1059,6 +1120,11 @@ public sealed partial class AgentCommands
             Tui.ApprovalPrompt prompt,
             CancellationToken trustToken)
         {
+            if (tgWindow is not null)
+            {
+                return await RequestTrustInTgAsync(prompt, trustToken).ConfigureAwait(false);
+            }
+
             if (!typeAheadLive || !sticky.Active)
             {
                 return null;
@@ -1574,18 +1640,6 @@ public sealed partial class AgentCommands
                             if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                             {
                                 var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
-                                if (tgMode)
-                                {
-                                    // The TG approval panel arrives in Task 12. Until then answer
-                                    // out of band like the --json escape: never block a stdin
-                                    // read the TG keyboard loop owns, and leave the run waiting.
-                                    await WriteAltLineAsync(
-                                            _err,
-                                            $"approval_required: run {targetRunId} is waiting for approval {envelope.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {envelope.ApprovalId}'.")
-                                        .ConfigureAwait(false);
-                                    throw new RunWaitingApprovalException(targetRunId, envelope.ApprovalId!);
-                                }
-
                                 var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
 
                                 if (decision == Tui.ApprovalPrompt.Deny)

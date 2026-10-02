@@ -175,6 +175,12 @@ public sealed class TgChatLoop
 
     private void OnComposerKey(object? sender, Terminal.Gui.Input.Key key)
     {
+        if (TryHandleDropdownKey(key))
+        {
+            key.Handled = true;
+            return;
+        }
+
         if (key == Terminal.Gui.Input.Key.Enter)
         {
             Submit();
@@ -205,6 +211,45 @@ public sealed class TgChatLoop
             _window.Transcript.ToggleExpanded();
             key.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// While the slash dropdown is open it owns the navigation keys, but the composer keeps
+    /// focus so typing still filters the list. Enter/Tab accept the selection into the
+    /// composer; Escape dismisses the list without clearing what was typed.
+    /// </summary>
+    private bool TryHandleDropdownKey(Terminal.Gui.Input.Key key)
+    {
+        if (!_window.IsSlashDropdownOpen)
+        {
+            return false;
+        }
+
+        if (key == Terminal.Gui.Input.Key.CursorUp)
+        {
+            _window.MoveSlashDropdown(-1);
+            return true;
+        }
+
+        if (key == Terminal.Gui.Input.Key.CursorDown)
+        {
+            _window.MoveSlashDropdown(1);
+            return true;
+        }
+
+        if (key == Terminal.Gui.Input.Key.Enter || key == Terminal.Gui.Input.Key.Tab)
+        {
+            _window.AcceptSlashDropdown();
+            return true;
+        }
+
+        if (key == Terminal.Gui.Input.Key.Esc)
+        {
+            _window.HideSlashDropdown();
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

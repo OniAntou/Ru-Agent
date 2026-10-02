@@ -126,7 +126,7 @@ model, open a project folder, and start chatting.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,155 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,169 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

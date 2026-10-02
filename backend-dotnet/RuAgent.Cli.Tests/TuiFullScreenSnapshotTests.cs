@@ -172,7 +172,7 @@ public sealed class TuiFullScreenSnapshotTests
 
         // The transcript is present and never leaks into the fixed five-row footer.
         Assert.Contains("assistant line 59", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("╭", sim.VisibleRow(Rows - 5), StringComparison.Ordinal);
+        Assert.Contains("┌", sim.VisibleRow(Rows - 5), StringComparison.Ordinal);
         Assert.Contains("next request", sim.VisibleRow(Rows - 4), StringComparison.Ordinal);
         Assert.Contains("Standard", sim.VisibleRow(Rows - 3), StringComparison.Ordinal);
         Assert.Contains("/ commands", sim.VisibleRow(Rows - 1), StringComparison.Ordinal);
@@ -266,7 +266,7 @@ public sealed class TuiFullScreenSnapshotTests
 
         Assert.Contains("Resize session", sim.VisibleRow(0), StringComparison.Ordinal);
         Assert.Contains("assistant tail marker", sim.ScreenText(), StringComparison.Ordinal);
-        Assert.Contains("╭", sim.VisibleRow(35), StringComparison.Ordinal);
+        Assert.Contains("┌", sim.VisibleRow(35), StringComparison.Ordinal);
         for (var row = 35; row < 40; row++)
         {
             Assert.DoesNotContain("assistant tail marker", sim.VisibleRow(row), StringComparison.Ordinal);

@@ -433,10 +433,10 @@ public sealed class TuiInteractiveTests
         var mid = InteractiveLineReader.BuildMid(width, "❯ ", "hello", false);
         var bottom = InteractiveLineReader.BuildBottom(width, "model-test", false);
 
-        Assert.Contains("╭", top);
-        Assert.Contains("╮", top);
+        Assert.Contains("┌", top);
+        Assert.Contains("┐", top);
         Assert.Contains("│ ❯ hello", mid);
-        Assert.Contains("╰", bottom);
+        Assert.Contains("└", bottom);
         Assert.Contains("model-test", bottom);
 
         int computedWidth = InteractiveLineReader.ComputeBoxWidth();
@@ -465,8 +465,8 @@ public sealed class TuiInteractiveTests
         var stripped = TuiText.Strip(bottom);
 
         Assert.Equal(width, stripped.Length);
-        Assert.StartsWith("╰", stripped, StringComparison.Ordinal);
-        Assert.EndsWith("╯", stripped, StringComparison.Ordinal);
+        Assert.StartsWith("└", stripped, StringComparison.Ordinal);
+        Assert.EndsWith("┘", stripped, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -675,8 +675,8 @@ public sealed class TuiInteractiveTests
             Assert.Contains("21:35", stripped, StringComparison.Ordinal);
             Assert.DoesNotContain("> ", stripped, StringComparison.Ordinal);
             Assert.DoesNotContain("You", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("╭", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("╰", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("┌", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("└", stripped, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.Code(TuiToken.Brand), echo, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.Code(TuiToken.Meta), echo, StringComparison.Ordinal);
             Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
@@ -840,13 +840,13 @@ public sealed class TuiInteractiveTests
     public void InteractiveLineReader_BuildBoxOpen_AdaptsToVariousTerminalWidths(int width)
     {
         var boxOpen = InteractiveLineReader.BuildBoxOpen(width, "❯ ", "model-test", false);
-        Assert.Contains("╭", boxOpen);
-        Assert.Contains("╰", boxOpen);
+        Assert.Contains("┌", boxOpen);
+        Assert.Contains("└", boxOpen);
         Assert.Contains("model-test", boxOpen);
 
         var top = InteractiveLineReader.BuildTop(width);
-        Assert.StartsWith("╭", top);
-        Assert.EndsWith("╮", top);
+        Assert.StartsWith("┌", top);
+        Assert.EndsWith("┐", top);
     }
 
     [Fact]

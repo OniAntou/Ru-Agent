@@ -163,7 +163,7 @@ public static class ComposerBox
 
         if (!string.IsNullOrWhiteSpace(provider) && used < inner - 2)
         {
-            var providerText = TuiText.Truncate(provider.Trim(), Math.Max(1, inner - used - 1));
+            var providerText = TuiText.Truncate(ProviderLabel(provider), Math.Max(1, inner - used - 1));
             parts += " " + TuiPalette.Paint(providerText, TuiToken.Meta);
             used += 1 + TuiText.VisibleWidth(providerText);
         }
@@ -180,12 +180,25 @@ public static class ComposerBox
             + TuiPalette.Paint("│", token);
     }
 
+    /// <summary>
+    /// Provider text for the meta row: the model-gateway prefix is dropped, so
+    /// <c>models.dev:kilo</c> reads as <c>kilo</c> while plain ids stay untouched.
+    /// </summary>
+    private static string ProviderLabel(string provider)
+    {
+        var trimmed = provider.Trim();
+        const string gatewayPrefix = "models.dev:";
+        return trimmed.StartsWith(gatewayPrefix, StringComparison.OrdinalIgnoreCase)
+            ? trimmed[gatewayPrefix.Length..]
+            : trimmed;
+    }
+
     private static string Top(int width, TuiToken token, string? topLabel)
     {
         var inner = width - 2;
         if (string.IsNullOrWhiteSpace(topLabel))
         {
-            return TuiPalette.Paint("╭" + new string('─', inner) + "╮", token);
+            return TuiPalette.Paint("┌" + new string('─', inner) + "┐", token);
         }
 
         var label = topLabel.Trim();
@@ -197,12 +210,12 @@ public static class ComposerBox
         }
 
         var fill = Math.Max(0, inner - TuiText.VisibleWidth(left));
-        return TuiPalette.Paint("╭", token)
+        return TuiPalette.Paint("┌", token)
             + TuiPalette.Paint("─ ", token)
             + TuiPalette.Paint(label, TuiToken.Brand)
             + TuiPalette.Paint(" ", token)
             + TuiPalette.Paint(new string('─', fill), token)
-            + TuiPalette.Paint("╮", token);
+            + TuiPalette.Paint("┐", token);
     }
 
     /// <summary>
@@ -298,10 +311,10 @@ public static class ComposerBox
         }
 
         var fill = Math.Max(0, inner - TuiText.VisibleWidth(left) - TuiText.VisibleWidth(right));
-        return TuiPalette.Paint("╰", token)
+        return TuiPalette.Paint("└", token)
             + (left.Length == 0 ? string.Empty : TuiPalette.Paint("─ ", token) + TuiPalette.Paint(left[2..], TuiToken.Meta))
             + TuiPalette.Paint(new string('─', fill), token)
             + (right.Length == 0 ? string.Empty : TuiPalette.Paint(right[..^2], TuiToken.Meta) + TuiPalette.Paint(" ─", token))
-            + TuiPalette.Paint("╯", token);
+            + TuiPalette.Paint("┘", token);
     }
 }

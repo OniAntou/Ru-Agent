@@ -48,12 +48,12 @@ public sealed class ComposerBoxTests : IDisposable
             "type / for commands",
             null);
 
-        Assert.StartsWith("╭", lines[0], StringComparison.Ordinal);
+        Assert.StartsWith("┌", lines[0], StringComparison.Ordinal);
         Assert.StartsWith("│ ❯ fix the busy lock", lines[1], StringComparison.Ordinal);
         Assert.EndsWith(" │", lines[1], StringComparison.Ordinal);
         Assert.Contains("standard", lines[2], StringComparison.Ordinal);
         Assert.Contains("type / for commands", lines[2], StringComparison.Ordinal);
-        Assert.EndsWith("╯", lines[2], StringComparison.Ordinal);
+        Assert.EndsWith("┘", lines[2], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class ComposerBoxTests : IDisposable
             null);
 
         Assert.Equal(30, TuiText.VisibleWidth(lines[2]));
-        Assert.EndsWith("╯", lines[2], StringComparison.Ordinal);
+        Assert.EndsWith("┘", lines[2], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -129,8 +129,8 @@ public sealed class ComposerBoxTests : IDisposable
     {
         var lines = ComposerBox.Compose(24, ComposerState.Idle, "❯ ", "", "", "", "", null);
 
-        Assert.Equal("╭" + new string('─', 22) + "╮", lines[0]);
-        Assert.Equal("╰" + new string('─', 22) + "╯", lines[2]);
+        Assert.Equal("┌" + new string('─', 22) + "┐", lines[0]);
+        Assert.Equal("└" + new string('─', 22) + "┘", lines[2]);
     }
 
     [Fact]
@@ -163,13 +163,18 @@ public sealed class ComposerBoxTests : IDisposable
     public void ComposeStack_MetaRowCarriesAgentModelAndProvider()
     {
         var rows = ComposerBox.ComposeStack(
-            80, ComposerState.Idle, string.Empty, string.Empty, "Ru", "gpt-5-codex", "OpenAI");
+            80, ComposerState.Idle, string.Empty, string.Empty, "Standard", "gpt-5-codex", "models.dev:kilo");
 
-        Assert.StartsWith("╭", rows[0], StringComparison.Ordinal);
-        Assert.EndsWith("╯", rows[^1], StringComparison.Ordinal);
-        Assert.Contains("Ru", rows[2], StringComparison.Ordinal);
+        Assert.StartsWith("┌", rows[0], StringComparison.Ordinal);
+        Assert.EndsWith("┘", rows[^1], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[2], StringComparison.Ordinal);
         Assert.Contains("gpt-5-codex", rows[2], StringComparison.Ordinal);
-        Assert.Contains("OpenAI", rows[2], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[2], StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev", rows[2], StringComparison.Ordinal);
+
+        var plain = ComposerBox.ComposeStack(
+            80, ComposerState.Idle, string.Empty, string.Empty, "Standard", "gpt-5-codex", "OpenAI");
+        Assert.Contains("OpenAI", plain[2], StringComparison.Ordinal);
     }
 
     [Fact]

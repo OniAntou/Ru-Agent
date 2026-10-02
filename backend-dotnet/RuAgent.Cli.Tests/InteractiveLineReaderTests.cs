@@ -173,7 +173,7 @@ public sealed class InteractiveLineReaderTests
     public void BuildBottom_With_Empty_Legend_Renders_Clean_Border_Without_Tooltips()
     {
         var cleanBottom = TuiText.Strip(InteractiveLineReader.BuildBottom(40, string.Empty));
-        Assert.Equal("╰" + new string('─', 38) + "╯", cleanBottom);
+        Assert.Equal("└" + new string('─', 38) + "┘", cleanBottom);
     }
 
     [Fact]
@@ -184,9 +184,9 @@ public sealed class InteractiveLineReaderTests
         var bottom = TuiText.Strip(InteractiveLineReader.BuildBottom(fullscreenWidth, "model · fast"));
 
         Assert.Equal(fullscreenWidth, top.Length);
-        Assert.Equal("╭" + new string('─', fullscreenWidth - 2) + "╮", top);
-        Assert.StartsWith("╰", bottom);
-        Assert.EndsWith("╯", bottom);
+        Assert.Equal("┌" + new string('─', fullscreenWidth - 2) + "┐", top);
+        Assert.StartsWith("└", bottom);
+        Assert.EndsWith("┘", bottom);
         Assert.Contains("model · fast", bottom);
     }
 

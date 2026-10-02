@@ -556,7 +556,11 @@ public sealed class AgentApprovalEndpointTests
             Assert.Equal(
                 1,
                 after.Count(item => item.GetProperty("event_type").GetString() == "approval.requested"));
-            Assert.Equal(2, runner.RequestCount);
+            // Batch request, the prose answer after the failed unknown-executable
+            // execution (answered with a recovery note), then the script's final
+            // answer after the note: the failed tool no longer ends the run.
+            Assert.Contains(after, item => item.GetProperty("event_type").GetString() == "run.note_added");
+            Assert.Equal(3, runner.RequestCount);
         }
         finally
         {

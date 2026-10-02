@@ -59,12 +59,15 @@ public sealed class HeadlessCodingLoopTests
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
         Assert.True(completedSeen, $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
         // Approval resumes the parked call instead of dropping it: the unknown
-        // executable executes exactly once and its honest failure ends the run.
+        // executable executes exactly once. Its honest failure no longer ends the
+        // run: the harness answers the unverified prose step with a recovery note,
+        // and the exhausted script's final answer is then accepted.
         var terminal = await ReadEventsAsync(client, runId);
         Assert.Equal(
             preApprovalCompletions + 1,
             terminal.Where(e => e.GetProperty("event_type").GetString() == "tool.execution_completed").Count());
-        Assert.Equal("failed", await GetStatusAsync(client, runId));
+        Assert.Contains(terminal, e => e.GetProperty("event_type").GetString() == "run.note_added");
+        Assert.Equal("completed", await GetStatusAsync(client, runId));
 
         // The raw post-approval commit must not have advanced HEAD (nothing was staged),
         // and the unrelated dirty file is untouched.

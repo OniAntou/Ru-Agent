@@ -215,6 +215,14 @@ public sealed partial class HarnessPayloadStore
         IReadOnlyList<HarnessEventIntent> events,
         long firstEventSequence)
     {
+        // Context scope is the model-read contract: SqliteModelContextSource throws
+        // context_payload_forbidden on any scoped payload the model may not read, so
+        // audit-only rows (an InternalOnly AssistantStep, for example) must never bind.
+        if (!HarnessPayloadStore.CanReadForModel(intent))
+        {
+            return null;
+        }
+
         ModelContextRole role;
         ModelContextEntryKind entryKind;
         switch (intent.Kind)

@@ -375,6 +375,171 @@ public sealed class ModelContextSourceTests
         Assert.Equal($"event:{HarnessStoreTestFixture.Event(41).Value}", entry.SourceId);
     }
 
+    [Fact]
+    public async Task Advised_recovery_step_assembles_note_and_leaves_internal_assistant_step_unscoped()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [],
+            HarnessStoreTestFixture.Timestamp.AddSeconds(1),
+            CancellationToken.None);
+        const string toolErrorCode = "workspace_path_outside_root";
+        var deadEnd = new AssistantStep(
+            "I succeeded in running the command!",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            estimatedInputTokens: 0);
+        var assistantPayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(50),
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            4096,
+            AssistantStepJsonCodec.Serialize(deadEnd));
+        var noteText = AgentRecoveryNotes.BuildUnverifiedNote(toolErrorCode);
+        var noteBytes = Encoding.UTF8.GetBytes(noteText);
+        var notePayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(51),
+            HarnessPayloadKind.ModelContextNote,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            4096,
+            noteBytes);
+        var modelStepId = new ModelStepId("step_11111111111111111111111111111111");
+        var advisedRun = NextRun(request.Run, version: 1, lastSequence: 3);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                advisedRun,
+                [
+                    new HarnessEventIntent(
+                        HarnessStoreTestFixture.Event(50),
+                        HarnessEventKind.ModelStepCompleted,
+                        modelStepId: modelStepId,
+                        payloadId: assistantPayload.PayloadId,
+                        safeCode: "unverified_after_tool_failure_advised"),
+                    new HarnessEventIntent(
+                        HarnessStoreTestFixture.Event(51),
+                        HarnessEventKind.RunNoteAdded,
+                        modelStepId: modelStepId,
+                        payloadId: notePayload.PayloadId,
+                        safeCode: "unverified_after_tool_failure"),
+                ],
+                [assistantPayload, notePayload],
+                []),
+            CancellationToken.None);
+
+        var context = await new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, CancellationToken.None);
+
+        var entry = Assert.Single(context.Entries);
+        Assert.Equal(ModelContextEntryKind.Text, entry.Kind);
+        Assert.Equal(ModelContextRole.System, entry.Role);
+        Assert.Equal(noteText, entry.Content);
+        Assert.Equal($"event:{HarnessStoreTestFixture.Event(51).Value}", entry.SourceId);
+        Assert.Equal(0L, await ScopedCountAsync(fixture, assistantPayload.PayloadId));
+        Assert.Equal(1L, await ScopedCountAsync(fixture, notePayload.PayloadId));
+        var forbidden = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            fixture.PayloadStore.ReadForModelAsync(
+                request.Run.RunId,
+                assistantPayload.PayloadId,
+                CancellationToken.None));
+        Assert.Equal("payload_model_forbidden", forbidden.Code);
+    }
+
+    [Fact]
+    public async Task Manually_scoped_internal_only_payload_still_fails_closed()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [],
+            HarnessStoreTestFixture.Timestamp.AddSeconds(1),
+            CancellationToken.None);
+        var assistantPayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(60),
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            4096,
+            AssistantStepJsonCodec.Serialize(new AssistantStep(
+                "suppressed",
+                Array.Empty<ModelToolCall>(),
+                AssistantFinishReason.Stop,
+                estimatedInputTokens: 0)));
+        var next = NextRun(request.Run, version: 1, lastSequence: 2);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                next,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(60),
+                    HarnessEventKind.ModelStepCompleted,
+                    modelStepId: new ModelStepId("step_11111111111111111111111111111111"),
+                    payloadId: assistantPayload.PayloadId,
+                    safeCode: "unverified_after_tool_failure_advised")],
+                [assistantPayload],
+                []),
+            CancellationToken.None);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE agent_payloads
+                SET context_scope = 1,
+                    context_source_id = $source_id,
+                    context_sequence = 2,
+                    context_role = $role,
+                    context_entry_kind = $entry_kind
+                WHERE payload_id = $payload_id
+                """;
+            command.Parameters.AddWithValue(
+                "$source_id",
+                $"event:{HarnessStoreTestFixture.Event(60).Value}");
+            command.Parameters.AddWithValue("$role", (int)ModelContextRole.Assistant);
+            command.Parameters.AddWithValue("$entry_kind", (int)ModelContextEntryKind.AssistantStep);
+            command.Parameters.AddWithValue("$payload_id", assistantPayload.PayloadId.Value);
+            Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        }
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)
+                .LoadAsync(request.Run.RunId, CancellationToken.None));
+
+        Assert.Equal("context_payload_forbidden", exception.Code);
+    }
+
+    private static async Task<long> ScopedCountAsync(
+        HarnessStoreTestFixture fixture,
+        PayloadId payloadId)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM agent_payloads
+            WHERE payload_id = $payload_id
+              AND context_scope IS NOT NULL
+            """;
+        command.Parameters.AddWithValue("$payload_id", payloadId.Value);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
     private static HarnessPayloadIntent TextPayload(
         int number,
         HarnessPayloadKind kind,

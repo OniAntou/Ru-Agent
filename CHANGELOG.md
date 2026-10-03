@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **fix(cli)**: **TG: bỏ nền xám khung nhập, viền xanh lá.** Khung composer giờ chỉ có viền `┌┐└┘` màu xanh lá (`Ok`, `#7fd88f`) trên nền mặc định terminal; không còn dải xám — dòng input/meta/ghost đều trong suốt theo nền.
 - **fix(cli)**: **TG: nền xám không còn lấn ra ngoài viền khung nhập.** Khung composer đổi nền view về mặc định terminal (viền nằm trên nền đen như bản classic) và tự tô dải xám bên trong viền — trước đó Terminal.Gui phủ nền xám lên cả hàng/cột viền nên dải xám trông tràn ra ngoài khung.
 - **fix(cli)**: **TG: Enter bền hơn + trả lại wordmark "ru agent" + log chẩn đoán phím.** `Enter` giờ nhận cả `KeyCode.Enter` (CR) lẫn line feed `(KeyCode)10` — một số đường IME/console gửi LF nên Enter trước đây rơi vào khoảng không; màn hình chờ có lại wordmark khối 2 tông "ru agent" (ẩn khi transcript có nội dung, hiện lại sau `/clear`); bật `RU_TUI_DEBUG=1` sẽ ghi mã phím + quyết định submit vào `%TEMP%\ru-tui-debug.log` để soi ca Enter bị nuốt.
 - **feat(cli)**: **TUI full-screen mặc định chuyển sang Terminal.Gui v2.** Parity của engine mới đã đạt (parity test so từng dòng composer/hints/header với bản classic), nên `agent chat` mặc định dựng giao diện bằng Terminal.Gui; classic trở thành escape hatch qua `RU_TUI_ENGINE=classic` (không phân biệt hoa thường, có trim) cho một chu kỳ release. Các cổng terminal giữ nguyên: fallback sequential/JSON (redirect, `--json`, `--classic`, `NO_COLOR`, `TERM=dumb`, viewport < 80×24) không đổi hành vi.

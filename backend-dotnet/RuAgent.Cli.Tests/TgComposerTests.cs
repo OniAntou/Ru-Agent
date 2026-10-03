@@ -44,26 +44,7 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Interior_IsTheGrayElementBand()
-    {
-        using IApplication app = Application.Create();
-        app.Init(DriverRegistry.Names.ANSI);
-        using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
-        window.Add(composer);
-        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
-        {
-            var rowsText = TgSnapshot.Capture(app);
-            var element = TgPalette.ToColor(TuiPalette.ElementRgb());
-            Assert.Equal(element, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
-            app.RequestStop();
-            return false;
-        });
-        app.Run(window);
-    }
-
-    [Fact]
-    public void Frame_KeepsTheTerminalBackgroundOutsideTheGrayBand()
+    public void Interior_HasNoFill_JustTheTerminalBackground()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -74,17 +55,35 @@ public sealed class TgComposerTests
         {
             var rowsText = TgSnapshot.Capture(app);
             var black = new Terminal.Gui.Drawing.Color(0, 0, 0, 255);
-            var element = TgPalette.ToColor(TuiPalette.ElementRgb());
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
+    public void Frame_IsGreenOnTheTerminalBackground()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        window.Add(composer);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rowsText = TgSnapshot.Capture(app);
+            var black = new Terminal.Gui.Drawing.Color(0, 0, 0, 255);
+            var green = TgPalette.ToColor(TuiToken.Ok);
             var top = rowsText.Length - 7;
 
-            // The border rows and columns sit on the terminal default, not on gray.
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, top, 0).Background);
+            // Every border cell is green on the terminal default; the interior has no fill.
+            Assert.Equal(green, TgSnapshot.CellAttribute(app, top, 0).Foreground);
+            Assert.Equal(green, TgSnapshot.CellAttribute(app, top, 40).Foreground);
+            Assert.Equal(green, TgSnapshot.CellAttribute(app, top + 5, 0).Foreground);
             Assert.Equal(black, TgSnapshot.CellAttribute(app, top, 40).Background);
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 5, 0).Background);
-
-            // The content area keeps the gray band edge to edge.
-            Assert.Equal(element, TgSnapshot.CellAttribute(app, top + 1, 1).Background);
-            Assert.Equal(element, TgSnapshot.CellAttribute(app, top + 4, 40).Background);
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 1, 1).Background);
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 4, 40).Background);
             app.RequestStop();
             return false;
         });

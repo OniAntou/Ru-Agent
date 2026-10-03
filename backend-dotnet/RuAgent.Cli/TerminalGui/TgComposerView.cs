@@ -19,11 +19,9 @@ public sealed class TgComposerView : View
     public TgComposerView()
     {
         BorderStyle = LineStyle.Single;
-        // The frame sits on the terminal default (like the classic box); the gray band is
-        // painted inside the frame by OnDrawingContent, not by the whole view's background,
-        // or the border rows and columns would carry gray too and the band would read as
-        // spilling outside the frame.
-        SetScheme(TgPalette.Scheme(TuiToken.Line));
+        // The frame is the accent: a green border on the terminal default background, no
+        // filled interior — the classic gray band is gone per the operator's request.
+        SetScheme(TgPalette.Scheme(TuiToken.Ok));
         CanFocus = true;
 
         _ghost = new Label
@@ -31,7 +29,7 @@ public sealed class TgComposerView : View
             X = 1,
             Y = 1,
         };
-        _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.ElementRgb()));
+        _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta));
 
         Input = new TextField
         {
@@ -40,44 +38,20 @@ public sealed class TgComposerView : View
             Width = Dim.Fill(2),
             Text = string.Empty,
         };
-        Input.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.ElementRgb()));
+        Input.SetScheme(TgPalette.Scheme(TuiToken.Ink));
         Input.TextChanged += (_, _) => UpdateGhost();
 
         _preset = new Label { X = 1, Y = 3 };
-        _preset.SetScheme(TgPalette.Scheme(TuiToken.Brand, TuiPalette.ElementRgb()));
+        _preset.SetScheme(TgPalette.Scheme(TuiToken.Brand));
         _model = new Label { X = Pos.Right(_preset) + 2, Y = 3 };
-        _model.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.ElementRgb()));
+        _model.SetScheme(TgPalette.Scheme(TuiToken.Ink));
         _provider = new Label { X = Pos.Right(_model) + 1, Y = 3 };
-        _provider.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.ElementRgb()));
+        _provider.SetScheme(TgPalette.Scheme(TuiToken.Meta));
 
         Add(Input, _ghost, _preset, _model, _provider);
     }
 
     public TextField Input { get; }
-
-    /// <summary>
-    /// Paints the gray element band across the content area (inside the border). Runs before
-    /// the child input/meta views, so their own gray schemes sit on an already-gray row.
-    /// </summary>
-    protected override bool OnDrawingContent(DrawContext? context)
-    {
-        var width = Viewport.Width;
-        var height = Viewport.Height;
-        if (width <= 0 || height <= 0)
-        {
-            return true;
-        }
-
-        SetAttribute(TgPalette.Attr(TuiToken.Ink, TuiPalette.ElementRgb()));
-        var blank = new string(' ', width);
-        for (var y = 0; y < height; y++)
-        {
-            Move(0, y);
-            AddStr(blank);
-        }
-
-        return true;
-    }
 
     public void SetPlaceholder(string placeholder)
     {

@@ -5,7 +5,9 @@ namespace RuApp.Services;
 public enum UiTheme
 {
     Light,
-    Dark
+    Dark,
+    LightMeteorShower,
+    DarkMeteorShower
 }
 
 public sealed class UiThemePreferenceStore
@@ -37,8 +39,21 @@ public sealed class UiThemePreferenceStore
             }
 
             var preferences = JsonSerializer.Deserialize<UiThemePreferences>(bytes, JsonOptions);
+            var name = preferences?.Theme?.Trim();
 
-            if (!Enum.TryParse(preferences?.Theme, ignoreCase: true, out UiTheme theme)
+            if (string.Equals(name, "light-meteor", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "lightmeteorshower", StringComparison.OrdinalIgnoreCase))
+            {
+                return UiTheme.LightMeteorShower;
+            }
+
+            if (string.Equals(name, "dark-meteor", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "darkmeteorshower", StringComparison.OrdinalIgnoreCase))
+            {
+                return UiTheme.DarkMeteorShower;
+            }
+
+            if (!Enum.TryParse(name, ignoreCase: true, out UiTheme theme)
                 || !Enum.IsDefined(typeof(UiTheme), theme))
             {
                 return UiTheme.Light;

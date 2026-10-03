@@ -10,33 +10,45 @@ namespace RuApp.Tests;
 public sealed class SessionUsagePanelUiSourceContractTests
 {
     [Fact]
-    public void The_row_offers_a_named_menu_button_beside_the_delete_control()
+    public void The_row_offers_more_and_delete_on_hover()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        var button = GuiSource.Require(document, "SessionUsageButton");
+        var more = GuiSource.Require(document, "SessionMoreButton");
+        var delete = GuiSource.Require(document, "SessionDeleteButton");
 
-        Assert.Equal("OnSessionUsageClick", GuiSource.AttributeValue(button, "Click"));
-        Assert.Equal("Session usage", GuiSource.AttributeValue(button, "Name"));
-        Assert.Equal("{x:Bind Id, Mode=OneTime}", GuiSource.AttributeValue(button, "Tag"));
+        Assert.Equal("More actions", GuiSource.AttributeValue(more, "Name"));
+        Assert.Equal("Delete session", GuiSource.AttributeValue(delete, "Name"));
+        Assert.Equal("OnDeleteSessionClick", GuiSource.AttributeValue(delete, "Click"));
 
-        // Hidden until the row is hovered, exactly like the delete control it sits
-        // next to — and hidden from hit testing with it, so an invisible button can
-        // never answer a click meant for the timestamp underneath.
-        Assert.Equal("0", GuiSource.AttributeValue(button, "Opacity"));
-        Assert.Equal("False", GuiSource.AttributeValue(button, "IsHitTestVisible"));
+        // Hidden until the row is hovered — and hidden from hit testing with it,
+        // so an invisible button can never answer a click meant for the timestamp
+        // underneath.
+        Assert.Equal("0", GuiSource.AttributeValue(more, "Opacity"));
+        Assert.Equal("False", GuiSource.AttributeValue(more, "IsHitTestVisible"));
+        Assert.Equal("0", GuiSource.AttributeValue(delete, "Opacity"));
+        Assert.Equal("False", GuiSource.AttributeValue(delete, "IsHitTestVisible"));
 
-        var row = GuiSource.Require(document, "SessionDeleteButton").Parent!;
-        Assert.True(GuiSource.IsDescendantOf(button, row));
+        // The old usage hover control is gone: usage lives in the … menu now.
+        var named = GuiSource.NamedElements(document);
+        Assert.False(named.ContainsKey("SessionUsageButton"));
+
+        // Delete sits beside …, not inside its flyout.
+        Assert.False(GuiSource.IsDescendantOf(delete, more));
+
+        var row = GuiSource.Require(document, "SessionTimeText").Parent!.Parent!;
+        Assert.True(GuiSource.IsDescendantOf(more, row));
+        Assert.True(GuiSource.IsDescendantOf(delete, row));
     }
 
     [Fact]
-    public void Both_row_actions_appear_and_disappear_together()
+    public void Both_hover_actions_appear_and_disappear_with_the_clock()
     {
         string code = GuiSource.ViewText("MainWindow");
         string reveal = GuiSource.MethodBody(code, "SetSessionRowActionsVisible");
 
+        Assert.Contains("SessionMoreButton", reveal, StringComparison.Ordinal);
         Assert.Contains("SessionDeleteButton", reveal, StringComparison.Ordinal);
-        Assert.Contains("SessionUsageButton", reveal, StringComparison.Ordinal);
+        Assert.DoesNotContain("SessionUsageButton", reveal, StringComparison.Ordinal);
         Assert.Contains("SessionTimeText", reveal, StringComparison.Ordinal);
     }
 

@@ -81,55 +81,6 @@
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
             <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneTime}"
                   PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent" Padding="10,4">
-                <Grid.ContextFlyout>
-                    <MenuFlyout>
-                        <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
-                                        Text="Export as Claude Code"
-                                        Click="OnExportSessionMenuClick"
-                                        Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <!-- Handing the session to another agent's own directory. -->
-                                <FontIcon Glyph="&#xE74E;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutItem x:Name="ExportCodexItem"
-                                        Text="Export as Codex"
-                                        Click="OnExportSessionMenuClick"
-                                        Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE74E;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutItem x:Name="ImportSessionItem"
-                                        Text="Import session from another agent…"
-                                        Click="OnImportSessionMenuClick">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE8E5;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutSeparator />
-                        <!-- The same two row actions as the hover controls, for the
-                             keyboard: those controls are deliberately not tab stops,
-                             so this menu is the path that reaches them without a
-                             pointer. -->
-                        <MenuFlyoutItem x:Name="SessionUsageItem"
-                                        Text="Session usage"
-                                        Click="OnSessionUsageClick"
-                                        Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE712;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutItem x:Name="DeleteSessionItem"
-                                        Text="Delete chat"
-                                        Click="OnDeleteSessionClick"
-                                        Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE74D;" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                    </MenuFlyout>
-                </Grid.ContextFlyout>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -137,12 +88,12 @@
                 <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            TextTrimming="CharacterEllipsis" 
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <!-- The clock owns the right edge. The row's two actions share the
-                     same cell and stay hidden until the row is hovered, at which
-                     point the clock steps aside for them: everything is right-aligned
+                <!-- The clock owns the right edge. The row's … control shares the
+                     same cell and stays hidden until the row is hovered, at which
+                     point the clock steps aside for it: everything is right-aligned
                      in one place, so the row never reflows, and the clock never
-                     paints underneath a glyph. The controls are hidden by opacity
-                     rather than by collapsing them so their width still reserves the
+                     paints underneath a glyph. The control is hidden by opacity
+                     rather than by collapsing it so its width still reserves the
                      cell's edge. -->
                 <Grid Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="SessionTimeText" HorizontalAlignment="Right"
@@ -150,21 +101,60 @@
                                FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
                                VerticalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <!-- Token report for this session, including a session that is
-                             not the one on screen. -->
-                        <Button x:Name="SessionUsageButton" HorizontalAlignment="Right"
+                        <!-- The row's only hover control. Clicking it opens the
+                             row menu (export/import/usage/delete), so there is
+                             no right-click path anymore. It stays focusable so
+                             keyboard users reach the same menu without a pointer. -->
+                        <Button x:Name="SessionMoreButton" HorizontalAlignment="Right"
                                  Background="Transparent" BorderThickness="0" Padding="0"
-                                 Width="22" Height="22" CornerRadius="{StaticResource AppControlCornerRadius}" Click="OnSessionUsageClick"
-                                 Tag="{x:Bind Id, Mode=OneTime}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
-                                 ToolTipService.ToolTip="Session usage"
-                                 AutomationProperties.Name="Session usage">
+                                 Width="22" Height="22" CornerRadius="{StaticResource AppControlCornerRadius}"
+                                 Tag="{x:Bind Id, Mode=OneTime}" Opacity="0" IsHitTestVisible="False" IsTabStop="True"
+                                 ToolTipService.ToolTip="More actions"
+                                 AutomationProperties.Name="More actions">
                             <TextBlock Text="…" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
                                        Foreground="{StaticResource RuInkBrush}" Margin="0,-6,0,0" />
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
+                                                    Text="Export as Claude Code"
+                                                    Click="OnExportSessionMenuClick"
+                                                    Tag="{x:Bind Id}">
+                                        <MenuFlyoutItem.Icon>
+                                            <!-- Handing the session to another agent's own directory. -->
+                                            <FontIcon Glyph="&#xE74E;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem x:Name="ExportCodexItem"
+                                                    Text="Export as Codex"
+                                                    Click="OnExportSessionMenuClick"
+                                                    Tag="{x:Bind Id}">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE74E;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutItem x:Name="ImportSessionItem"
+                                                    Text="Import session from another agent…"
+                                                    Click="OnImportSessionMenuClick">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE8E5;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem x:Name="SessionUsageItem"
+                                                    Text="Session usage"
+                                                    Click="OnSessionUsageClick"
+                                                    Tag="{x:Bind Id}">
+                                        <MenuFlyoutItem.Icon>
+                                            <FontIcon Glyph="&#xE712;" />
+                                        </MenuFlyoutItem.Icon>
+                                    </MenuFlyoutItem>
+                                </MenuFlyout>
+                            </Button.Flyout>
                         </Button>
                         <Button x:Name="SessionDeleteButton" HorizontalAlignment="Right"
                                  Background="Transparent" BorderThickness="0" Padding="0"
                                  Width="22" Height="22" CornerRadius="{StaticResource AppControlCornerRadius}" Click="OnDeleteSessionClick"
-                                 Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
+                                 Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="True"
                                  ToolTipService.ToolTip="Delete session"
                                  AutomationProperties.Name="Delete session">
                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource RuInkBrush}"/>

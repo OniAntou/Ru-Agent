@@ -52,6 +52,9 @@ namespace RuApp
 
         public static MainWindow? Instance { get; private set; }
 
+        /// <summary>Last applied theme, so views can gate theme-bound decoration.</summary>
+        internal static UiTheme CurrentTheme { get; private set; } = UiTheme.Light;
+
         public ObservableCollection<SessionInfo> Sessions { get; } = new();
 
         public MainWindow()
@@ -100,7 +103,13 @@ namespace RuApp
 
         private void OnThemeToggleClick(object sender, RoutedEventArgs e)
         {
-            var nextTheme = _currentTheme == UiTheme.Dark ? UiTheme.Light : UiTheme.Dark;
+            var nextTheme = _currentTheme switch
+            {
+                UiTheme.Dark => UiTheme.Light,
+                UiTheme.LightMeteorShower => UiTheme.DarkMeteorShower,
+                UiTheme.DarkMeteorShower => UiTheme.LightMeteorShower,
+                _ => UiTheme.Dark,
+            };
             ApplyTheme(nextTheme);
             _themePreferenceStore.TrySave(nextTheme);
         }
@@ -108,14 +117,16 @@ namespace RuApp
         private void ApplyTheme(UiTheme theme)
         {
             _currentTheme = theme;
-            ShellRoot.RequestedTheme = theme == UiTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+            CurrentTheme = theme;
+            bool isDark = theme is UiTheme.Dark or UiTheme.DarkMeteorShower;
+            ShellRoot.RequestedTheme = isDark ? ElementTheme.Dark : ElementTheme.Light;
 
-            bool isDark = theme == UiTheme.Dark;
             var label = isDark ? "Switch to light mode" : "Switch to dark mode";
             LabelThemeToggle.Text = label;
             ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
             AutomationProperties.SetName(ThemeToggleButton, label);
             ApplyTitleBarTheme();
+            _chatView?.RefreshBackdropEffect();
         }
 
         private void ApplyTitleBarTheme()

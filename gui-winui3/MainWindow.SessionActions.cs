@@ -317,8 +317,8 @@ namespace RuApp
         }
 
         /// <summary>
-        /// Reveals the row's actions in place of the clock at the right edge, and
-        /// restores the clock on leave.
+        /// Reveals the row's … and delete actions in place of the clock at the
+        /// right edge, and restores the clock on leave.
         /// </summary>
         /// <remarks>
         /// The clock is collapsed rather than dimmed: it is wider than the two 22px
@@ -326,10 +326,11 @@ namespace RuApp
         /// them. Everything is right-aligned in one cell, so swapping them does not
         /// move anything else in the row.
         ///
-        /// Hit testing is toggled with the opacity. Controls that stay invisible but
-        /// still accept clicks would turn a stray click on the timestamp into a delete,
-        /// or into a network read. Keyboard reach is deliberately not granted here —
-        /// the row's context menu owns that path — so neither control is a tab stop.
+        /// Hit testing is toggled with the opacity. A control that stays invisible
+        /// but still accepts clicks would turn a stray click on the timestamp into
+        /// a menu open or a delete. Both controls stay tab stops so keyboard users
+        /// reach the row menu and the delete without a pointer; there is no
+        /// right-click path anymore.
         /// </remarks>
         private static void SetSessionRowActionsVisible(object sender, bool visible)
         {
@@ -344,16 +345,16 @@ namespace RuApp
                 return;
             }
 
+            if (cell.FindName("SessionMoreButton") is Button moreButton)
+            {
+                moreButton.Opacity = visible ? 1.0 : 0.0;
+                moreButton.IsHitTestVisible = visible;
+            }
+
             if (cell.FindName("SessionDeleteButton") is Button deleteButton)
             {
                 deleteButton.Opacity = visible ? 1.0 : 0.0;
                 deleteButton.IsHitTestVisible = visible;
-            }
-
-            if (cell.FindName("SessionUsageButton") is Button usageButton)
-            {
-                usageButton.Opacity = visible ? 1.0 : 0.0;
-                usageButton.IsHitTestVisible = visible;
             }
 
             if (cell.FindName("SessionTimeText") is TextBlock clock)

@@ -99,6 +99,7 @@ namespace RuApp.Controls
             PaintShareCell(OutputShareBar, OutputValueText, "—", 0, "RuVioletBrush", false);
             PaintShareCell(CacheReadShareBar, CacheReadValueText, "—", 0, "RuInfoBrush", false);
             PaintShareCell(CacheWriteShareBar, CacheWriteValueText, "—", 0, "RuPinkBrush", false);
+            ShowLoading();
 
             var previous = _loadCts;
             _loadCts = new CancellationTokenSource();
@@ -128,7 +129,22 @@ namespace RuApp.Controls
                 return;
             }
 
+            HideLoading();
             Render(rows, SessionUsagePricing.RatesFrom(catalog));
+        }
+
+        private void ShowLoading()
+        {
+            LoadingPanel.Visibility = Visibility.Visible;
+            UsageLoadingRing.IsActive = true;
+            BodyPanel.Opacity = 0.45;
+        }
+
+        private void HideLoading()
+        {
+            UsageLoadingRing.IsActive = false;
+            LoadingPanel.Visibility = Visibility.Collapsed;
+            BodyPanel.Opacity = 1.0;
         }
 
         private void Render(IReadOnlyList<SessionUsageRow>? rows, IReadOnlyDictionary<string, ProviderCatalogCost> rates)

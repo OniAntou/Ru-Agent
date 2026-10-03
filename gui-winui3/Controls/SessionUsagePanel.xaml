@@ -89,6 +89,21 @@
                       VerticalScrollBarVisibility="Auto"
                       VerticalScrollMode="Auto">
             <StackPanel x:Name="BodyPanel" Spacing="20">
+                <!-- Loading state: explicit feedback while runs are read,
+                     so the open never looks like an empty blurred card. -->
+                <StackPanel x:Name="LoadingPanel"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <ProgressRing x:Name="UsageLoadingRing"
+                                  Width="16" Height="16"
+                                  IsActive="True" />
+                    <TextBlock Text="Đang đọc usage…"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
 
                 <!-- Billed is the number the panel exists to answer, so it leads and
                      carries the size. Peak context is a qualifier on it, so it sits on

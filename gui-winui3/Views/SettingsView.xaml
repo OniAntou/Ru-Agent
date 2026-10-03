@@ -158,7 +158,7 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Appearance" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Switch between Dark and Light mode theme" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Choose Light, Dark, or a Meteor Shower variant" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="ThemeButton"
                                         Grid.Column="1"
@@ -222,6 +222,52 @@
                                                                    VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" />
                                                         <FontIcon x:Name="ThemeLightCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ThemeLightMeteorOption"
+                                                        Tag="light-meteor"
+                                                        Click="OnThemeOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Light Meteor Shower theme">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ThemeLightMeteorText"
+                                                                   Text="Light Meteor Shower"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ThemeLightMeteorCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ThemeDarkMeteorOption"
+                                                        Tag="dark-meteor"
+                                                        Click="OnThemeOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Dark Meteor Shower theme">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ThemeDarkMeteorText"
+                                                                   Text="Dark Meteor Shower"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ThemeDarkMeteorCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"
                                                                   FontSize="11"

@@ -70,7 +70,13 @@ namespace RuApp.Views
 
         public void SetCurrentTheme(UiTheme theme)
         {
-            _themeChoice = theme == UiTheme.Light ? "light" : "dark";
+            _themeChoice = theme switch
+            {
+                UiTheme.Dark => "dark",
+                UiTheme.LightMeteorShower => "light-meteor",
+                UiTheme.DarkMeteorShower => "dark-meteor",
+                _ => "light",
+            };
             RefreshThemeUI();
         }
 
@@ -166,6 +172,8 @@ namespace RuApp.Views
             {
                 new DropdownOption(ThemeDarkOption, ThemeDarkText, ThemeDarkCheck, "dark"),
                 new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
+                new DropdownOption(ThemeLightMeteorOption, ThemeLightMeteorText, ThemeLightMeteorCheck, "light-meteor"),
+                new DropdownOption(ThemeDarkMeteorOption, ThemeDarkMeteorText, ThemeDarkMeteorCheck, "dark-meteor"),
             };
             _presetOptions = new[]
             {
@@ -996,10 +1004,22 @@ namespace RuApp.Views
         {
             if (_loading) return;
             if (sender is not Button button || button.Tag is not string tag) return;
-            _themeChoice = string.Equals(tag, "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
+            _themeChoice = tag.ToLowerInvariant() switch
+            {
+                "dark" => "dark",
+                "light-meteor" => "light-meteor",
+                "dark-meteor" => "dark-meteor",
+                _ => "light",
+            };
             RefreshThemeUI();
             (ThemeButton.Flyout as Flyout)?.Hide();
-            var theme = _themeChoice == "light" ? UiTheme.Light : UiTheme.Dark;
+            var theme = _themeChoice switch
+            {
+                "dark" => UiTheme.Dark,
+                "light-meteor" => UiTheme.LightMeteorShower,
+                "dark-meteor" => UiTheme.DarkMeteorShower,
+                _ => UiTheme.Light,
+            };
             ThemeChanged?.Invoke(theme);
         }
 

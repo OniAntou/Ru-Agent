@@ -270,9 +270,24 @@ namespace RuApp.Views
             }
             if (MeteorShowerField != null)
             {
-                MeteorShowerField.IsActive = !hasMessages;
+                MeteorShowerField.IsActive = !hasMessages && IsMeteorShowerTheme;
             }
         }
+
+        /// <summary>
+        /// Re-evaluates the welcome decoration after a theme switch. Only the
+        /// Meteor Shower themes animate the backdrop; plain Light/Dark stay still.
+        /// </summary>
+        public void RefreshBackdropEffect()
+        {
+            if (MeteorShowerField != null)
+            {
+                MeteorShowerField.IsActive = Messages.Count == 0 && IsMeteorShowerTheme;
+            }
+        }
+
+        private static bool IsMeteorShowerTheme =>
+            MainWindow.CurrentTheme is UiTheme.LightMeteorShower or UiTheme.DarkMeteorShower;
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 

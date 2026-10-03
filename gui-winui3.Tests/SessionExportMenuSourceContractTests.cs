@@ -82,12 +82,13 @@ public sealed class SessionExportMenuSourceContractTests
     }
 
     /// <summary>
-    /// The hover controls are deliberately not tab stops, so the row menu is the
-    /// keyboard path to the same two actions. Without them a keyboard user cannot
-    /// delete a chat or open its usage at all.
+    /// The … button is a hover control, so the row menu is the
+    /// keyboard path to export/import/usage. Delete sits beside … as its own
+    /// hover control with the same click handler. Without them a keyboard user
+    /// cannot reach every row action at all.
     /// </summary>
     [Fact]
-    public void The_row_menu_reaches_the_two_hover_actions()
+    public void The_more_menu_reaches_every_row_action()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
 
@@ -95,15 +96,20 @@ public sealed class SessionExportMenuSourceContractTests
         Assert.Equal("OnSessionUsageClick", GuiSource.AttributeValue(usage, "Click"));
         Assert.Equal("{x:Bind Id}", GuiSource.AttributeValue(usage, "Tag"));
 
-        var delete = GuiSource.Require(document, "DeleteSessionItem");
+        // Delete lives beside …, not inside its flyout.
+        var named = GuiSource.NamedElements(document);
+        Assert.False(named.ContainsKey("DeleteSessionItem"));
+        var delete = GuiSource.Require(document, "SessionDeleteButton");
         Assert.Equal("OnDeleteSessionClick", GuiSource.AttributeValue(delete, "Click"));
-        Assert.Equal("{x:Bind Id}", GuiSource.AttributeValue(delete, "Tag"));
 
-        // Both sit in the same context menu as the export/import items, so
-        // right-clicking a row offers what the hover controls carry.
+        // Export/import/usage sit in the … button's flyout, so hovering a row
+        // and opening … offers what right-click used to carry. There is no
+        // ContextFlyout path anymore.
         var menu = GuiSource.Require(document, "ExportCodexItem").Parent!;
         Assert.True(GuiSource.IsDescendantOf(usage, menu));
-        Assert.True(GuiSource.IsDescendantOf(delete, menu));
+        var more = GuiSource.Require(document, "SessionMoreButton");
+        Assert.True(GuiSource.IsDescendantOf(menu, more));
+        Assert.False(GuiSource.IsDescendantOf(delete, more));
 
         // The menu items name handlers on the window; a missing one silently leaves
         // the action unreachable.

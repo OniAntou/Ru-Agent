@@ -296,7 +296,7 @@ public sealed class VisualPolishContractTests
         // accessibility setting rather than always running, and must ask the shared gate
         // rather than reading the OS setting themselves — a second reader is how the
         // loops come to disagree about the setting.
-        foreach (var control in new[] { "WelcomeOverlay.cs", "MeteorShowerField.cs" })
+        foreach (var control in new[] { "WelcomeOverlay.cs", "MeteorShowerField.cs", "StarryLivingField.cs" })
         {
             var source = GuiSource.Text("Controls", control);
 

@@ -75,6 +75,7 @@ namespace RuApp.Views
                 UiTheme.Dark => "dark",
                 UiTheme.LightMeteorShower => "light-meteor",
                 UiTheme.DarkMeteorShower => "dark-meteor",
+                UiTheme.StarryNight => "starry-night",
                 _ => "light",
             };
             RefreshThemeUI();
@@ -174,6 +175,7 @@ namespace RuApp.Views
                 new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
                 new DropdownOption(ThemeLightMeteorOption, ThemeLightMeteorText, ThemeLightMeteorCheck, "light-meteor"),
                 new DropdownOption(ThemeDarkMeteorOption, ThemeDarkMeteorText, ThemeDarkMeteorCheck, "dark-meteor"),
+                new DropdownOption(ThemeStarryNightOption, ThemeStarryNightText, ThemeStarryNightCheck, "starry-night"),
             };
             _presetOptions = new[]
             {
@@ -1009,6 +1011,7 @@ namespace RuApp.Views
                 "dark" => "dark",
                 "light-meteor" => "light-meteor",
                 "dark-meteor" => "dark-meteor",
+                "starry-night" => "starry-night",
                 _ => "light",
             };
             RefreshThemeUI();
@@ -1018,6 +1021,7 @@ namespace RuApp.Views
                 "dark" => UiTheme.Dark,
                 "light-meteor" => UiTheme.LightMeteorShower,
                 "dark-meteor" => UiTheme.DarkMeteorShower,
+                "starry-night" => UiTheme.StarryNight,
                 _ => UiTheme.Light,
             };
             ThemeChanged?.Invoke(theme);

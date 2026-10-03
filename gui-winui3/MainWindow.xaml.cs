@@ -108,6 +108,7 @@ namespace RuApp
                 UiTheme.Dark => UiTheme.Light,
                 UiTheme.LightMeteorShower => UiTheme.DarkMeteorShower,
                 UiTheme.DarkMeteorShower => UiTheme.LightMeteorShower,
+                UiTheme.StarryNight => UiTheme.Dark,
                 _ => UiTheme.Dark,
             };
             ApplyTheme(nextTheme);
@@ -118,8 +119,19 @@ namespace RuApp
         {
             _currentTheme = theme;
             CurrentTheme = theme;
-            bool isDark = theme is UiTheme.Dark or UiTheme.DarkMeteorShower;
-            ShellRoot.RequestedTheme = isDark ? ElementTheme.Dark : ElementTheme.Light;
+            bool isDark = RuApp.Services.RuThemePalettes.IsDark(theme);
+            var target = isDark ? ElementTheme.Dark : ElementTheme.Light;
+
+            // The pack is written into the active base dictionary, so flip the
+            // requested theme around the write: ThemeResource bindings only
+            // re-resolve on a theme change, and Studio Dark and Starry Night
+            // share the Dark base.
+            if (ShellRoot.RequestedTheme == target)
+            {
+                ShellRoot.RequestedTheme = isDark ? ElementTheme.Light : ElementTheme.Dark;
+            }
+            RuApp.Services.RuThemePalettes.Apply(theme);
+            ShellRoot.RequestedTheme = target;
 
             var label = isDark ? "Switch to light mode" : "Switch to dark mode";
             LabelThemeToggle.Text = label;

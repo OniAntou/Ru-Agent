@@ -552,6 +552,45 @@
                                     VerticalAlignment="Stretch"
                                     IsHitTestVisible="False" />
 
+        <!-- Starry Night welcome backdrop: Van Gogh's 1889 painting, public
+             domain (Google Art Project scan), with a canvas scrim so the hero
+             greeting stays readable over the bright swirls. Visible only for
+             the Starry Night theme while no session is open. -->
+        <Image x:Name="StarryPainting"
+               Grid.Row="0"
+               Grid.RowSpan="2"
+               HorizontalAlignment="Stretch"
+               VerticalAlignment="Stretch"
+               Stretch="UniformToFill"
+               Source="ms-appx:///Assets/StarryNight.jpg"
+               Visibility="Collapsed"
+               IsHitTestVisible="False"
+               AutomationProperties.Name="The Starry Night by Vincent van Gogh" />
+        <!-- Living layer: twinkles pinned to the painted stars plus slow glows
+             around the two vortexes. Cover-fit mapped, so it tracks the Image
+             above at any window size. -->
+        <controls:StarryLivingField x:Name="StarryLivingField"
+                                    Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch"
+                                    IsHitTestVisible="False" />
+        <Border x:Name="StarryScrim"
+                Grid.Row="0"
+                Grid.RowSpan="2"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Offset="0.0" Color="#00232F4C" />
+                    <GradientStop Offset="0.55" Color="#66232F4C" />
+                    <GradientStop Offset="1.0" Color="#B3232F4C" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
         <Grid x:Name="ReadingColumn"
               Grid.Row="0"
               HorizontalAlignment="Stretch"

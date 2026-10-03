@@ -268,21 +268,35 @@ namespace RuApp.Views
             {
                 ChatContentGrid.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
-            if (MeteorShowerField != null)
-            {
-                MeteorShowerField.IsActive = !hasMessages && IsMeteorShowerTheme;
-            }
+            RefreshBackdropEffect();
         }
 
         /// <summary>
-        /// Re-evaluates the welcome decoration after a theme switch. Only the
-        /// Meteor Shower themes animate the backdrop; plain Light/Dark stay still.
+        /// Re-evaluates the welcome decoration after a theme switch. Meteor
+        /// Shower themes animate the meteor field, Starry Night shows the
+        /// painting; plain Light/Dark stay still.
         /// </summary>
         public void RefreshBackdropEffect()
         {
+            bool show = Messages.Count == 0;
+            var theme = MainWindow.CurrentTheme;
             if (MeteorShowerField != null)
             {
-                MeteorShowerField.IsActive = Messages.Count == 0 && IsMeteorShowerTheme;
+                MeteorShowerField.IsActive = show
+                    && theme is UiTheme.LightMeteorShower or UiTheme.DarkMeteorShower;
+            }
+            bool starry = show && theme == UiTheme.StarryNight;
+            if (StarryPainting != null)
+            {
+                StarryPainting.Visibility = starry ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (StarryScrim != null)
+            {
+                StarryScrim.Visibility = starry ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (StarryLivingField != null)
+            {
+                StarryLivingField.IsActive = starry;
             }
         }
 

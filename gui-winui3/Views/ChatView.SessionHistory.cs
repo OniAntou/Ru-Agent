@@ -1382,6 +1382,7 @@ namespace RuApp.Views
                 _activityFlushTimer = null;
             }
             MeteorShowerField?.Dispose();
+            StarryLivingField?.Dispose();
         }
 
         private void DetachWaveTimer()

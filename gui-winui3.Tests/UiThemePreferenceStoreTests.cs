@@ -47,6 +47,16 @@ public sealed class UiThemePreferenceStoreTests : IDisposable
         Assert.Equal(UiTheme.DarkMeteorShower, store.Load());
     }
 
+    [Fact]
+    public void TrySave_and_load_round_trip_starry_night_theme()
+    {
+        var path = Path.Combine(_root, "ui-preferences.json");
+        var store = new UiThemePreferenceStore(path);
+
+        Assert.True(store.TrySave(UiTheme.StarryNight));
+        Assert.Equal(UiTheme.StarryNight, store.Load());
+    }
+
     [Theory]
     [InlineData("not-json")]
     [InlineData("{\"theme\":\"Sepia\"}")]

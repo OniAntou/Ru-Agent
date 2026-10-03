@@ -1,6 +1,8 @@
 using System.Text;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
 
 namespace RuAgent.Cli.TerminalGui;
 
@@ -123,6 +125,7 @@ public sealed class TgChatLoop
         var hasAttachments = (_attachmentCountProvider?.Invoke() ?? 0) > 0;
         if (string.IsNullOrWhiteSpace(line) && !hasAttachments)
         {
+            TuiDebug.Log("submit", "ignored: empty prompt and no attachments");
             return;
         }
 
@@ -148,6 +151,7 @@ public sealed class TgChatLoop
 
         if (refused)
         {
+            TuiDebug.Log("submit", "refused: queue full");
             _window.Hints.SetBusy(SpinnerFrame, QueueFullHint);
             return;
         }
@@ -159,10 +163,12 @@ public sealed class TgChatLoop
 
         if (queued)
         {
+            TuiDebug.Log("submit", $"queued ({_queued.Count})");
             _window.Hints.SetBusy(SpinnerFrame, QueueHint);
             return;
         }
 
+        TuiDebug.Log("submit", $"start turn len={line.Length} attachments={hasAttachments}");
         StartTurn(line);
     }
 
@@ -345,13 +351,22 @@ public sealed class TgChatLoop
 
     private void OnComposerKey(object? sender, Terminal.Gui.Input.Key key)
     {
+        if (TuiDebug.IsEnabled)
+        {
+            // RU_TUI_DEBUG=1: what the driver actually delivered, so a swallowed Enter
+            // (IME/console quirks) can be told apart from a handler mismatch.
+            TuiDebug.Log(
+                "keys",
+                $"code={(int)key.KeyCode} rune={key.AsRune.Value} ctrl={key.IsCtrl} alt={key.IsAlt} shift={key.IsShift}");
+        }
+
         if (TryHandleDropdownKey(key))
         {
             key.Handled = true;
             return;
         }
 
-        if (key == Terminal.Gui.Input.Key.Enter)
+        if (IsSubmitKey(key))
         {
             Submit();
             key.Handled = true;
@@ -387,6 +402,14 @@ public sealed class TgChatLoop
             key.Handled = true;
         }
     }
+
+    /// <summary>
+    /// Enter as the terminal drivers deliver it: <see cref="KeyCode.Enter"/> (CR) normally,
+    /// but some IME/console paths hand over a line feed (<c>(KeyCode)10</c>) instead — treat
+    /// both as submit so a synthesized Enter can never dead-end the composer.
+    /// </summary>
+    private static bool IsSubmitKey(Terminal.Gui.Input.Key key) =>
+        key.KeyCode is KeyCode.Enter || key.AsRune.Value is 13 or 10;
 
     /// <summary>
     /// Ctrl+V claims the key whenever a paste handler is wired: the handler reads the

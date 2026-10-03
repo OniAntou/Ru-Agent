@@ -31,6 +31,15 @@ public sealed class TgTranscriptView : View
     /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
     public bool IsExpanded => _expanded;
 
+    /// <summary>True once at least one row exists; the landing overlay hides while this is true.</summary>
+    public bool HasContent => _lines.Count > 0;
+
+    /// <summary>Raised on the 0-to-1 transition, so the window can hide its landing overlay.</summary>
+    public event Action? FirstContentAppended;
+
+    /// <summary>Raised when <see cref="Clear"/> empties the transcript, so the landing returns.</summary>
+    public event Action? ContentCleared;
+
     /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
     internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
 
@@ -50,12 +59,20 @@ public sealed class TgTranscriptView : View
         _expanded = false;
         _wrapWidth = -1;
         _tailRows = 1;
+        ContentCleared?.Invoke();
         SetNeedsDraw();
     }
 
     public void Append(string text, TranscriptStyle style)
     {
+        var wasEmpty = _lines.Count == 0;
         _lines.Add((text, style));
+        if (wasEmpty)
+        {
+            TuiDebug.Log("transcript", $"first append hides landing (len={text.Length})");
+            FirstContentAppended?.Invoke();
+        }
+
         if (_expanded)
         {
             // The revealed rows trail the wrap cache; rebuild it on the next draw.
@@ -76,7 +93,13 @@ public sealed class TgTranscriptView : View
     /// </summary>
     public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
     {
+        var wasEmpty = _lines.Count == 0;
         _lines.Add((summary, style));
+        if (wasEmpty)
+        {
+            FirstContentAppended?.Invoke();
+        }
+
         _collapsedBlock = (_lines.Count, hidden.Select(line => (line, style)).ToList());
         _expanded = false;
         _wrapWidth = -1;

@@ -585,4 +585,34 @@ public sealed class TgRunLoopTests
         app.Run(window);
         await loop.Completion;
     }
+
+    [Fact]
+    public void EnterDeliveredAsLineFeed_StillSubmits()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var seen = new List<string>();
+        loop.SetPromptHandler((line, _, _) =>
+        {
+            seen.Add(line);
+            return Task.CompletedTask;
+        });
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "lf";
+            app.InjectKey(new Key((KeyCode)10));
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
+        {
+            Assert.Equal(["lf"], seen);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
 }

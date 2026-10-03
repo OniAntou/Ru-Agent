@@ -36,9 +36,15 @@ public sealed class TgChatWindow : Window
         // bottom border at L-2) and one for the hint row (L-1).
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+        Landing = new TgLandingView();
 
-        Add(Header, Transcript, Composer, Hints);
+        Add(Header, Transcript, Landing, Composer, Hints);
         CanFocus = true;
+
+        // The pre-chat wordmark owns the transcript region only while it is empty; the
+        // first row (or /clear) toggles it exactly like the classic landing screen.
+        Transcript.FirstContentAppended += HideLanding;
+        Transcript.ContentCleared += ShowLanding;
 
         // The dropdown is driven from the composer text itself: every edit (typed, history,
         // programmatic) refreshes it, and accepting writes the command back through the same
@@ -50,6 +56,21 @@ public sealed class TgChatWindow : Window
     public TgTranscriptView Transcript { get; }
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
+
+    /// <summary>The centered two-tone wordmark shown until the transcript has content.</summary>
+    public TgLandingView Landing { get; }
+
+    private void HideLanding()
+    {
+        Landing.Visible = false;
+        Landing.SetNeedsDraw();
+    }
+
+    private void ShowLanding()
+    {
+        Landing.Visible = true;
+        Landing.SetNeedsDraw();
+    }
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
 

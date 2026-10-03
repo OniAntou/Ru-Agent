@@ -190,6 +190,12 @@ public static class TuiHeader
         "▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀  ▀ ",
     ];
 
+    /// <summary>The muted "ru" half of the block wordmark, one string per row.</summary>
+    public static IReadOnlyList<string> WordmarkRuRows => RuWord;
+
+    /// <summary>The bright "agent" half of the block wordmark, one string per row.</summary>
+    public static IReadOnlyList<string> WordmarkAgentRows => AgentWord;
+
     private static string Center(string text, int width)
     {
         var visible = TuiText.VisibleWidth(text);

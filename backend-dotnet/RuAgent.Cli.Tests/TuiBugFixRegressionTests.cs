@@ -7,9 +7,6 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TuiBugFixRegressionTests
 {
-    private static ConsoleKeyInfo Typed(char ch) => new(ch, ConsoleKey.None, shift: false, alt: false, control: false);
-    private static ConsoleKeyInfo Key(ConsoleKey key) => new('\0', key, shift: false, alt: false, control: false);
-
     [Fact]
     public void Wrap_NarrowWidthWithWideChar_DoesNotHangInInfiniteLoop()
     {
@@ -47,17 +44,6 @@ public sealed class TuiBugFixRegressionTests
         // Stripped result should be 3 visible cells ("…" + "lo")
         Assert.Equal(3, TuiText.VisibleWidth(tail));
         Assert.Equal("…lo", TuiText.Strip(tail));
-    }
-
-    [Fact]
-    public void HandleTypeAheadKey_Backspace_DeletesSurrogatePairTogether()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot());
-        session.Buffer = "Test🔥";
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Backspace));
-
-        Assert.Equal("Test", session.Buffer);
     }
 
     [Fact]
@@ -139,14 +125,6 @@ public sealed class TuiBugFixRegressionTests
     }
 
     [Fact]
-    public void TuiStickyRegion_ComposeClearDown_StartsAtFirstFooterRow()
-    {
-        // Must clear starting from firstFooterRow, NOT firstFooterRow - 1
-        var clear = TuiStickyRegion.ComposeClearDown(25, 30);
-        Assert.Equal("\u001b[25;1H\u001b[J", clear);
-    }
-
-    [Fact]
     public void BuildBoxOpen_IncludesWorkspaceTopLabelAndBottomHints()
     {
         var box = InteractiveLineReader.BuildBoxOpen(
@@ -173,20 +151,6 @@ public sealed class TuiBugFixRegressionTests
             hints: null);
         Assert.Contains("\x1b[1A", boxNoHints);
         Assert.EndsWith("\x1b[1A", boxNoHints);
-    }
-
-    [Fact]
-    public void TypeAheadSession_TopLabel_DefaultsToWorkspaceLabel()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot())
-        {
-            WorkspaceLabel = "d:/LLM · standard"
-        };
-
-        Assert.Equal("d:/LLM · standard", session.TopLabel);
-
-        session.Queue.TryQueue("fix something");
-        Assert.StartsWith("queued · fix something", session.TopLabel);
     }
 
     [Theory]
@@ -277,45 +241,6 @@ public sealed class TuiBugFixRegressionTests
     {
         var result = InteractiveLineReader.DidDropdownScroll(cursorTop, linesCount, windowRows);
         Assert.Equal(expected, result);
-    }
-
-    [Fact]
-    public void StickyRegion_Enter_WithUsableWidth_DoesNotReportLayoutStale()
-    {
-        // When raw console columns is 120, usable width is 118 (UsableWidth leaves 2 margin cells)
-        int rawCols = 120;
-        int usableWidth = TuiViewport.UsableWidth(rawCols);
-        int rows = 30;
-
-        // If sticky region was built with rawCols (120), LayoutIsStale compares 120 with live usable width 118 -> stale!
-        Assert.True(TuiStickyRegion.LayoutIsStale(rows, rawCols, true, rows, usableWidth));
-
-        // When sticky region is built with usableWidth (118), LayoutIsStale matches -> not stale!
-        Assert.False(TuiStickyRegion.LayoutIsStale(rows, usableWidth, true, rows, usableWidth));
-    }
-
-    [Fact]
-    public void StickyRegion_Paint_RendersFooterSuccessfully_WhenBuiltWithUsableWidth()
-    {
-        var writer = new StringWriter();
-        var surface = new TuiSurface(writer);
-        var region = new TuiStickyRegion(surface);
-
-        int rows = 30;
-        int footerHeight = 4;
-        int usableWidth = 80;
-
-        Assert.True(region.Enter(rows, footerHeight, usableWidth));
-        writer.GetStringBuilder().Clear();
-
-        // Painting with the same usable width must succeed and output footer rows
-        region.Paint(["Status Row", "Box Top", "Box Mid", "Box Bottom"], usableWidth);
-        var output = writer.ToString();
-
-        Assert.Contains("Status Row", output);
-        Assert.Contains("Box Top", output);
-        Assert.Contains("Box Mid", output);
-        Assert.Contains("Box Bottom", output);
     }
 }
 

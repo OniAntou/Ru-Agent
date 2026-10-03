@@ -118,11 +118,10 @@ public sealed partial class AgentCommands
         }
 
         // Engine selection happens once settings are known: --json, --classic, redirected
-        // output, NO_COLOR, a dumb TERM and a too-small viewport all stay classic. In TG
+        // output, NO_COLOR, a dumb TERM and a too-small viewport all stay sequential. In TG
         // mode the window and its transcript writer are created before the session renderer
         // so the shared run machinery renders into the Terminal.Gui transcript, never stdout.
         var engine = TuiEngineSelection.Resolve(
-            Environment.GetEnvironmentVariable(TuiEngineSelection.EngineVariable),
             Console.IsOutputRedirected,
             cmd.Json,
             Tui.TuiViewport.Width(),
@@ -195,51 +194,12 @@ public sealed partial class AgentCommands
             TopLabel = workspaceLabel,
         };
 
-        // Full-screen AltBuffer gate: the same real signals the sticky footer already trusts
-        // (a live console, TERM), plus NO_COLOR, the command flags and the live 80x24 minimum.
-        // Evaluated once per session: switching buffers mid-session would strand the scrollback.
-        // NO_COLOR is honoured on definition, empty string included, exactly like TuiPalette.
-        var hasLiveSize = Tui.TuiViewport.TryReadLiveSize(out var liveColumns, out var liveRows);
-        var altBufferActive = !tgMode && Tui.TuiAltBuffer.ShouldUseAltBuffer(
-            outputRedirected: Console.IsOutputRedirected || !ReferenceEquals(_out, Console.Out),
-            term: Environment.GetEnvironmentVariable("TERM"),
-            noColor: Environment.GetEnvironmentVariable("NO_COLOR"),
-            columns: hasLiveSize ? liveColumns : 0,
-            rows: hasLiveSize ? liveRows : 0,
-            classic: cmd.Classic,
-            json: cmd.Json);
-
-        // Disposed on every exit path (return, cancellation, exception), so the operator's
-        // normal screen is restored even when the session dies mid-turn.
-        using var altScreen = new Tui.TuiAltBufferScope(sessionRenderer.Surface, altBufferActive);
-
-        // Full-screen transcript rendering (bordered tool cards, highlighted fences) only in
-        // the AltBuffer frame; the sequential fallback keeps its existing rows byte-for-byte.
-        sessionRenderer.Transcript.FullScreenCards = altBufferActive;
-
-        if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected && !altBufferActive)
+        if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
         {
             try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
         }
 
-        if (altBufferActive)
-        {
-            // The alt buffer starts from a blank frame; the normal buffer's scrollback stays
-            // untouched, because leaving the session restores it.
-            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[2J\u001b[H"));
-        }
-
-        // Sticky footer: while a turn runs the live row and composer stay pinned to the bottom
-        // rows and agent output scrolls above them. Redirected output, --json and --classic keep
-        // the sequential layout.
-        var sticky = new Tui.TuiStickyRegion(sessionRenderer.Surface);
-        bool stickyEnabled = !tgMode
-            && !cmd.Json
-            && !cmd.Classic
-            && Tui.TuiViewport.IsLiveConsole
-            && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
-
-        // Header state captured by the pinned header painter. The title is read from the
+        // Header state for the Terminal.Gui header. The title is read from the
         // session document (bounded probes) and the tally repaints as usage frames arrive.
         string? sessionTitle = null;
         long? lastTotalTokens = null;
@@ -254,10 +214,9 @@ public sealed partial class AgentCommands
             usage.ContextLimit = null;
             usage.InputRate = null;
             usage.OutputRate = null;
-            // The usage cluster only exists on the pinned header; a sequential/data-only
-            // chat must not pay a catalog read for numbers it never shows. The TG header
-            // exists too, so it gets the same catalog read.
-            if ((!altBufferActive && !tgMode) || activeModel.Length == 0)
+            // The usage cluster only exists on the TG header; a sequential/data-only
+            // chat must not pay a catalog read for numbers it never shows.
+            if (!tgMode || activeModel.Length == 0)
             {
                 return;
             }
@@ -294,7 +253,7 @@ public sealed partial class AgentCommands
         // only runs where the header exists and never blocks turn cleanup.
         async Task RefreshSessionTitleAsync()
         {
-            if ((!altBufferActive && !tgMode) || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
+            if (!tgMode || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
             {
                 return;
             }
@@ -309,14 +268,7 @@ public sealed partial class AgentCommands
                     && !string.IsNullOrWhiteSpace(titleElement.GetString()))
                 {
                     sessionTitle = titleElement.GetString()!.Trim();
-                    if (tgMode)
-                    {
-                        RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
-                    }
-                    else
-                    {
-                        PaintAltHeader();
-                    }
+                    RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
                 }
             }
             catch (OperationCanceledException)
@@ -331,53 +283,14 @@ public sealed partial class AgentCommands
             }
         }
 
-        // The pinned full-screen header. Only the AltBuffer frame has one; the sequential
-        // layout keeps its existing header/landing flow untouched.
-        void PaintAltHeader()
-        {
-            if (!altBufferActive)
-            {
-                return;
-            }
-
-            var width = Tui.TuiViewport.Width();
-            var layout = Tui.TuiScreenLayout.Compute(width, Tui.TuiViewport.Height());
-            Tui.TuiHeader.RenderPinned(
-                sessionRenderer.Surface,
-                width,
-                layout.HeaderTop + 1,
-                sessionTitle,
-                lastTotalTokens,
-                layout.HeaderHeight,
-                usage.ContextPercent,
-                usage.CostKnown ? usage.SessionCost : null);
-        }
-
-        // First 1-based row of the transcript region: below the pinned header row in the
-        // AltBuffer frame, the whole screen in the sequential layout.
-        int TranscriptTopRow(int rows) => altBufferActive
-            ? Tui.TuiScreenLayout.Compute(Tui.TuiViewport.Width(), rows).TranscriptTop + 1
-            : 1;
-
-        // Type-ahead: keystrokes captured during a turn feed the one-slot queue, and a pending
-        // approval takes the keyboard over the same pinned footer.
-        var pendingPrompt = new PendingPromptSlot();
-        var typeAhead = new Tui.TypeAheadSession(pendingPrompt)
-        {
-            WorkspaceLabel = workspaceLabel,
-        };
-        string? queuedLine = null;
         CancellationTokenSource? turnCts = null;
         string? activeRunId = null;
         string? parkedRunId = null;
         var assistantPayloadRefs = new List<string>();
-        CancellationTokenSource? typeAheadCts = null;
-        Task? typeAheadLoop = null;
-        bool typeAheadLive = false;
 
-        // Slash-command surfaces: the pickers run through the same key loop as the composer.
-        // --json owns stdout, so every human-facing line a slash command prints goes to
-        // stderr and picker-only commands refuse instead of prompting.
+        // Slash-command surfaces: the pickers run through the TG panels or the sequential
+        // reader. --json owns stdout, so every human-facing line a slash command prints goes
+        // to stderr and picker-only commands refuse instead of prompting.
         _slashCommands.HumanOut = humanOut;
         _slashCommands.Json = cmd.Json;
         _slashCommands.PanelWidth = Tui.TuiViewport.Width();
@@ -388,31 +301,23 @@ public sealed partial class AgentCommands
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct)
-                : altBufferActive && typeAheadLive
-                    ? RequestChoicePanelAsync(list, ct)
-                    : lineReader.ReadChoiceAsync(list, _out, ct);
+                : lineReader.ReadChoiceAsync(list, _out, ct);
         _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestSecretAsync(tgWindow!, null, ct)
-                : altBufferActive && typeAheadLive
-                    ? RequestSecretPanelAsync(null, ct)
-                    : lineReader.ReadSecretAsync(_out, prompt, ct);
+                : lineReader.ReadSecretAsync(_out, prompt, ct);
         _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
-                : altBufferActive && typeAheadLive
-                    ? RequestSecretPanelAsync(providerDisplay, ct)
-                    : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
+                : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
 
         int turn = 0;
         bool landingScreenVisible = true;
 
-        // The composer reopens its own frame after a settled resize; this rebuilds everything
-        // around it (region, header, transcript tail) so the new width applies end to end.
-        // Always the full in-place rebuild, even without a sticky region: reprinting the
-        // header as appended lines is what used to grow the scrollback on every resize.
+        // The composer reopens its own frame after a settled resize; this rebuilds the
+        // transcript around it so the new width applies end to end.
         lineReader.OnScreenRefreshedAsync = () =>
         {
             RedrawScreenForResize();
@@ -429,10 +334,6 @@ public sealed partial class AgentCommands
 
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
-            PaintAltHeader();
-            var headerRows = altBufferActive
-                ? Tui.TuiScreenLayout.Compute(width, rows).HeaderHeight
-                : 0;
             var landingLines = Tui.TuiHeader.ComposeLandingScreen(width, rows);
 
             foreach (var line in landingLines)
@@ -440,19 +341,15 @@ public sealed partial class AgentCommands
                 _out.WriteLine(line);
             }
 
-            // The AltBuffer frame owns its composer in the pinned footer, so the sequential
-            // box pad only exists in the fallback layout.
-            if (!typeAheadLive && !altBufferActive)
+            // The sequential composer owns the box below the landing content.
+            var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
+                ? Tui.ComposerBox.Height + 1
+                : Tui.ComposerBox.Height;
+            var boxTop = Math.Max(1, rows - boxHeight + 1);
+            var cursorRow = landingLines.Count + 1;
+            for (var i = cursorRow; i < boxTop; i++)
             {
-                var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
-                    ? Tui.ComposerBox.Height + 1
-                    : Tui.ComposerBox.Height;
-                var boxTop = Math.Max(1, rows - boxHeight + 1);
-                var cursorRow = landingLines.Count + 1 + headerRows;
-                for (var i = cursorRow; i < boxTop; i++)
-                {
-                    _out.WriteLine(new string(' ', width));
-                }
+                _out.WriteLine(new string(' ', width));
             }
 
             _out.Flush();
@@ -474,13 +371,11 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            sticky.Exit();
-            sessionRenderer.Status.InFooter = false;
             if (_out == Console.Out && !Console.IsOutputRedirected)
             {
                 try { Console.Clear(); } catch (IOException) { }
             }
-            sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
+            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
 
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
@@ -489,21 +384,11 @@ public sealed partial class AgentCommands
             if (landingScreenVisible && turn == 0)
             {
                 RenderLandingScreen();
-                if (altBufferActive && typeAheadLive)
-                {
-                    // The landing rebuild left the footer region down; the persistent
-                    // idle composer needs it back in the same settled resize.
-                    ApplyFooterLayout(repaint: true);
-                }
-
                 return;
             }
 
-            PaintAltHeader();
-
-            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
-                rows,
-                FooterHeightFor(width));
+            // The status row and composer frame reopen below the reprinted tail.
+            var footerHeight = 1 + Tui.ComposerBox.Height;
             var budget = Math.Max(0, rows - footerHeight - 2);
             var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
             foreach (var line in tail)
@@ -516,165 +401,28 @@ public sealed partial class AgentCommands
             // history). Newlines only scroll past the last viewport row, so this
             // never grows the scrollback. PushToBottomAsync must stay out of this
             // path: it unconditionally emits newlines at the bottom row.
-            if (!typeAheadLive)
+            var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
+                ? Tui.ComposerBox.Height + 1
+                : Tui.ComposerBox.Height;
+            var boxTop = Math.Max(1, rows - boxHeight + 1);
+            var cursorRow = tail.Count + 1;
+            for (var i = cursorRow; i < boxTop; i++)
             {
-                var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
-                    ? Tui.ComposerBox.Height + 1
-                    : Tui.ComposerBox.Height;
-                var boxTop = Math.Max(1, rows - boxHeight + 1);
-                var cursorRow = tail.Count + 1 + (altBufferActive ? Tui.TuiScreenLayout.Compute(width, rows).HeaderHeight : 0);
-                for (var i = cursorRow; i < boxTop; i++)
-                {
-                    _out.WriteLine();
-                }
+                _out.WriteLine();
             }
 
             _out.Flush();
-
-            if (altBufferActive && typeAheadLive)
-            {
-                // A mid-turn recovery rebuild (repainted durable text) must restore the
-                // region and the persistent footer before streaming continues.
-                ApplyFooterLayout(repaint: true);
-            }
 
             Tui.TuiDebug.Log(
                 "layout",
                 $"redraw rows={rows} width={width} tail={tail.Count} budget={budget} history={sessionRenderer.Surface.HistoryCount}");
         }
 
-        /// <summary>Panel rows the AltBuffer footer must add above the composer, if any.</summary>
-        List<string> PanelLines(int width)
-        {
-            if (!altBufferActive)
-            {
-                return [];
-            }
-
-            if (typeAhead.Approval is { } approval)
-            {
-                return [.. approval.RenderFloating(width)];
-            }
-
-            if (typeAhead.Choice is { } choice)
-            {
-                var panelWidth = Tui.TuiFloatingPanel.ComputeWidth(width);
-                return [.. Tui.TuiFloatingPanel.Center(choice.List.Render(panelWidth), width)];
-            }
-
-            if (typeAhead.Secret is { } secret)
-            {
-                var panelWidth = Tui.TuiFloatingPanel.ComputeWidth(width);
-                return [.. Tui.TuiFloatingPanel.Center(
-                    Tui.KeyInputPanel.Compose(panelWidth, secret.ProviderDisplay ?? "api key", secret.Buffer.Length),
-                    width)];
-            }
-
-            return [];
-        }
-
-        /// <summary>
-        /// Footer rows for the live viewport: the fixed seven-row stack (composer, hints)
-        /// in the AltBuffer frame, the historical dynamic footer otherwise. An open
-        /// approval/trust/picker/secret panel temporarily grows the footer.
-        /// </summary>
-        int FooterHeightFor(int width) => altBufferActive
-            ? Tui.TuiScreenLayout.Compute(width, Tui.TuiViewport.Height()).FooterHeight + PanelLines(width).Count
-            : typeAhead.FooterHeight(width);
-
-        /// <summary>
-        /// Key-loop repaint: in the AltBuffer idle state, while the REPL handles a slash
-        /// command (no pending request), the command's raw output is streaming into the
-        /// transcript region and a footer paint would park the caret over it. The next
-        /// idle read repaints the footer instead.
-        /// </summary>
-        void RepaintFooterForKeys()
-        {
-            if (altBufferActive && !typeAhead.TurnActive && typeAhead.IdleLine is null && !typeAhead.IsPanelActive)
-            {
-                return;
-            }
-
-            PaintStickyFooter();
-        }
-
-        void PaintStickyFooter()
-        {
-            if (!sticky.Active)
-            {
-                return;
-            }
-
-            var footerWidth = Tui.TuiViewport.Width();
-            List<string> footer;
-            int? caretRow;
-            if (altBufferActive)
-            {
-                // Fixed footer, cloned from OpenCode: the composer stack and the hint
-                // row. Any approval/picker/secret panel sits directly above the
-                // composer and temporarily grows the footer.
-                footer = [];
-                footer.AddRange(PanelLines(footerWidth));
-                var inputRow = footer.Count + 3;
-                footer.AddRange(Tui.ComposerBox.ComposeStack(
-                    footerWidth,
-                    typeAhead.State,
-                    typeAhead.Buffer,
-                    typeAhead.Buffer.Length == 0 ? Tui.InteractiveLineReader.ComposerPlaceholder : string.Empty,
-                    "Standard",
-                    activeModel,
-                    backendName));
-                var busy = typeAhead.TurnActive
-                    || sessionRenderer.Status.State is Tui.TuiRunState.Thinking
-                        or Tui.TuiRunState.Tool
-                        or Tui.TuiRunState.WaitingApproval
-                        or Tui.TuiRunState.WaitingTrust;
-                var attachmentHint = lineReader.TopLabel ?? workspaceLabel;
-                footer.Add(Tui.ComposerBox.ComposeHints(
-                    footerWidth,
-                    busy ? sessionRenderer.Status.SpinnerFrame : null,
-                    attachmentHint));
-
-                // While the operator types in the footer composer, the hardware cursor
-                // belongs on its input row so IME popups follow the text; an open panel owns
-                // the keyboard and needs no caret.
-                caretRow = typeAheadLive && !typeAhead.IsPanelActive ? inputRow : (int?)null;
-            }
-            else
-            {
-                footer = [sessionRenderer.Status.Compose(footerWidth)];
-                if (typeAhead.Approval is { } approval)
-                {
-                    footer.AddRange(approval.Render(footerWidth));
-                }
-
-                footer.AddRange(Tui.ComposerBox.Compose(
-                    footerWidth,
-                    typeAhead.State,
-                    "❯ ",
-                    typeAhead.Buffer,
-                    string.Empty,
-                    lineReader.Legend,
-                    typeAhead.Hint,
-                    typeAhead.TopLabel));
-                caretRow = typeAheadLive && !typeAhead.IsApprovalActive ? footer.Count - 1 : (int?)null;
-            }
-
-            // While the operator is typing, the hardware cursor belongs in the composer: IME
-            // candidate windows otherwise open wherever the transcript left the cursor. The
-            // legend is passed through so the caret is clamped left of it.
-            var caretColumn = altBufferActive
-                ? Tui.ComposerBox.StackCursorColumn(footerWidth, typeAhead.Buffer)
-                : Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer, lineReader.Legend);
-            sticky.Paint(footer, footerWidth, caretRow, caretColumn);
-        }
-
-        // Every diagnostic line the REPL prints goes through here: in the AltBuffer frame
-        // the footer paint parks the cursor on the composer row, and a raw stderr write
-        // there smudges the frame and can scroll the pinned header away. In TG mode the
-        // writer is the transcript bridge, because the TG frame owns the screen.
-        Task WriteAltLineAsync(TextWriter writer, string line) =>
-            WriteAltSafeAsync(sticky, altBufferActive, ResolveDiagnosticWriter(tgMode, tgWriter, writer), line);
+        // Every diagnostic line the REPL prints goes through here so --json keeps stdout
+        // pure and TG mode lands the line in its transcript; sequential writes go to the
+        // requested writer unchanged.
+        Task WriteDiagnosticLineAsync(TextWriter writer, string line) =>
+            ResolveDiagnosticWriter(tgMode, tgWriter, writer).WriteLineAsync(line);
 
         static void DeleteTempPath(string? path)
         {
@@ -707,9 +455,8 @@ public sealed partial class AgentCommands
         {
             var label = CurrentAttachmentLabel();
             lineReader.TopLabel = label;
-            typeAhead.WorkspaceLabel = label;
-            // The TG composer reads neither TopLabel nor the type-ahead label: push the
-            // same count/workspace wording into its hint row after every mutation.
+            // The TG composer does not read TopLabel: push the same count/workspace
+            // wording into its hint row after every mutation.
             if (tgMode)
             {
                 tgLoop?.RefreshAttachmentLabel();
@@ -738,7 +485,7 @@ public sealed partial class AgentCommands
             if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
             {
                 DeleteTempPath(tempPath);
-                await WriteAltLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
                 return;
             }
 
@@ -748,7 +495,7 @@ public sealed partial class AgentCommands
             if (attachment is null)
             {
                 DeleteTempPath(tempPath);
-                await WriteAltLineAsync(_err, imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
                 return;
             }
 
@@ -756,7 +503,7 @@ public sealed partial class AgentCommands
             if (totalBytes > Images.CliImagePolicy.MaxTotalImageBytes)
             {
                 DeleteTempPath(tempPath);
-                await WriteAltLineAsync(
+                await WriteDiagnosticLineAsync(
                     _err,
                     $"image_too_large: this turn's images total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); remove some with /detach").ConfigureAwait(false);
                 return;
@@ -771,16 +518,12 @@ public sealed partial class AgentCommands
             RefreshAttachmentLabels();
             if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
             {
-                await WriteAltLineAsync(
+                await WriteDiagnosticLineAsync(
                     _err,
                     $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
             }
 
-            await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
-            if (altBufferActive && sticky.Active)
-            {
-                PaintStickyFooter();
-            }
+            await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
         }
 
         async Task AttachFileAsync(string path)
@@ -796,17 +539,13 @@ public sealed partial class AgentCommands
                 .ConfigureAwait(false);
             if (attachment is null)
             {
-                await WriteAltLineAsync(_err, textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
                 return;
             }
 
             pendingTexts.Add(attachment);
             RefreshAttachmentLabels();
-            await WriteAltLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
-            if (altBufferActive && sticky.Active)
-            {
-                PaintStickyFooter();
-            }
+            await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
         }
 
         /// <summary>
@@ -856,27 +595,8 @@ public sealed partial class AgentCommands
                         }
                     }
                 }
-                else if (altBufferActive)
-                {
-                    var text = Images.CliClipboard.TryReadText();
-                    if (!string.IsNullOrWhiteSpace(text) && typeAhead.Buffer.Length < 4096)
-                    {
-                        var flat = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
-                        var room = 4096 - typeAhead.Buffer.Length;
-                        if (flat.Length > 0)
-                        {
-                            typeAhead.Buffer += flat.Length > room ? flat[..room] : flat;
-                            if (sticky.Active)
-                            {
-                                PaintStickyFooter();
-                            }
 
-                            return;
-                        }
-                    }
-                }
-
-                await WriteAltLineAsync(_err, clipboard.Error ?? "clipboard_has_no_image: copy a screenshot or an image file first").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, clipboard.Error ?? "clipboard_has_no_image: copy a screenshot or an image file first").ConfigureAwait(false);
                 return;
             }
 
@@ -920,217 +640,14 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Rebuilds the pinned layout for the viewport as it is right now, resetting any
-        /// previous scrolling region first. Called at turn start and after a settled resize;
-        /// when the window is too short for a pinned footer it leaves sticky mode cleanly so
-        /// the transcript keeps scrolling normally.
-        /// </summary>
-        bool ApplyFooterLayout(bool repaint)
-        {
-            if (!stickyEnabled)
-            {
-                return false;
-            }
-
-            var rows = Tui.TuiViewport.Height();
-            var width = Tui.TuiViewport.Width();
-            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, FooterHeightFor(width));
-            if (footerHeight == 0)
-            {
-                sticky.Exit();
-                sessionRenderer.Status.InFooter = false;
-                sessionRenderer.LiveRowRepaintHook = null;
-                return false;
-            }
-
-            var transcriptTop = TranscriptTopRow(rows);
-            var applied = !sticky.Active
-                ? sticky.Enter(rows, footerHeight, width, transcriptTop)
-                : sticky.Rows == rows && sticky.Width == width && sticky.FooterHeight == footerHeight
-                    ? true
-                    : sticky.Reapply(rows, footerHeight, width, transcriptTop);
-
-            if (!applied)
-            {
-                sessionRenderer.Status.InFooter = false;
-                sessionRenderer.LiveRowRepaintHook = null;
-                return false;
-            }
-
-            sessionRenderer.Status.InFooter = true;
-            sessionRenderer.LiveRowRepaintHook = PaintStickyFooter;
-            Tui.TuiDebug.Log(
-                "layout",
-                $"applied rows={rows} footer={footerHeight} first={sticky.FooterFirst} sticky={sticky.Active}");
-            if (repaint)
-            {
-                PaintStickyFooter();
-            }
-
-            return true;
-        }
-
-        async Task StartTypeAheadAsync()
-        {
-            if (typeAheadLive || !sticky.Active || _in != Console.In || Console.IsInputRedirected)
-            {
-                return;
-            }
-
-            typeAheadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            typeAheadLive = true;
-            typeAheadLoop = lineReader.RunTypeAheadAsync(
-                typeAhead,
-                RepaintFooterForKeys,
-                onCancel: () => turnCts?.Cancel(),
-                onExpand: () => sessionRenderer.ToggleExpand(),
-                onResize: () =>
-                {
-                    // A settled resize: the terminal has reflowed the rows this layout was
-                    // pinned to, so rebuild the whole screen instead of patching the frame.
-                    Tui.TuiDebug.Log(
-                        "layout",
-                        $"onResize rows={Tui.TuiViewport.Height()} width={Tui.TuiViewport.Width()} wasRows={sticky.Rows}");
-                    RedrawScreenForResize();
-                    sessionRenderer.Width = Tui.TuiViewport.Width();
-                    if (ApplyFooterLayout(repaint: true))
-                    {
-                        Tui.TuiDebug.Log("layout", "footer rebuilt after resize");
-                    }
-                },
-                typeAheadCts.Token,
-                onPasteImage: ClipboardAttachAsync);
-            await Task.CompletedTask.ConfigureAwait(false);
-        }
-
-        async Task StopTypeAheadAsync()
-        {
-            if (typeAheadCts is null)
-            {
-                return;
-            }
-
-            typeAheadCts.Cancel();
-            if (typeAheadLoop is not null)
-            {
-                try
-                {
-                    await typeAheadLoop.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected: the loop only ends when its token fires.
-                }
-            }
-
-            typeAheadCts.Dispose();
-            typeAheadCts = null;
-            typeAheadLoop = null;
-            typeAheadLive = false;
-            typeAhead.Buffer = string.Empty;
-            typeAhead.QueueRejected = false;
-            typeAhead.Approval = null;
-            typeAhead.Choice = null;
-            typeAhead.Secret = null;
-            typeAhead.IdleLine = null;
-            typeAhead.TurnActive = false;
-        }
-
-        /// <summary>
-        /// The AltBuffer picker: the floating panel takes the footer and the type-ahead key
-        /// loop owns the keyboard. The sequential layout keeps the reader-based picker.
-        /// </summary>
-        async Task<string?> RequestChoicePanelAsync(Tui.ChoiceList list, CancellationToken ct)
-        {
-            var request = new Tui.PendingChoiceRequest(list);
-            typeAhead.Choice = request;
-            ApplyFooterLayout(repaint: false);
-            PaintStickyFooter();
-            using var registration = ct.Register(() => request.Decision.TrySetResult(null));
-            try
-            {
-                return await request.Decision.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                typeAhead.Choice = null;
-                ApplyFooterLayout(repaint: false);
-                PaintStickyFooter();
-            }
-        }
-
-        /// <summary>
-        /// The AltBuffer masked secret panel: keys arrive through the type-ahead loop, the
-        /// buffer never leaves the request object, and only its length reaches the screen.
-        /// </summary>
-        async Task<string?> RequestSecretPanelAsync(string? providerDisplay, CancellationToken ct)
-        {
-            var request = new Tui.PendingSecretRequest(providerDisplay);
-            typeAhead.Secret = request;
-            ApplyFooterLayout(repaint: false);
-            PaintStickyFooter();
-            using var registration = ct.Register(() => request.Decision.TrySetResult(null));
-            try
-            {
-                return await request.Decision.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                typeAhead.Secret = null;
-                ApplyFooterLayout(repaint: false);
-                PaintStickyFooter();
-            }
-        }
-
-        /// <summary>
-        /// Reads one line from the persistent footer composer between turns. The type-ahead
-        /// loop resolves the request on Enter; cancellation returns null so the REPL winds down.
-        /// </summary>
-        async Task<string?> ReadAltIdleLineAsync(CancellationToken ct)
-        {
-            var request = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            typeAhead.TurnActive = false;
-            typeAhead.IdleLine = request;
-            PaintStickyFooter();
-            using var registration = ct.Register(() => request.TrySetResult(null));
-            try
-            {
-                return await request.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                typeAhead.IdleLine = null;
-            }
-        }
-
-        /// <summary>
-        /// Answers one approval. Inside the pinned footer the choice list owns the keyboard;
-        /// the sequential layout keeps the numbered stdin prompt. Cancelling the run releases
-        /// the wait instead of leaving the frame callback blocked on an unanswered choice.
+        /// Answers one approval. The sequential layout keeps the numbered stdin prompt;
+        /// cancelling the run releases the wait instead of leaving the caller blocked.
         /// </summary>
         async Task<string> RequestApprovalAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken)
         {
             if (tgMode)
             {
                 return await RequestApprovalInTgAsync(prompt, approvalToken).ConfigureAwait(false);
-            }
-
-            if (typeAheadLive && sticky.Active)
-            {
-                using var registration = approvalToken.Register(() => prompt.Decision.TrySetCanceled(approvalToken));
-                typeAhead.Approval = prompt;
-                ApplyFooterLayout(repaint: false);
-                PaintStickyFooter();
-                try
-                {
-                    return await prompt.Decision.Task.ConfigureAwait(false);
-                }
-                finally
-                {
-                    typeAhead.Approval = null;
-                    ApplyFooterLayout(repaint: false);
-                    PaintStickyFooter();
-                }
             }
 
             await _out.WriteAsync(Tui.TuiPalette.BoldPaint("\n  ❯ Approve? [1: once / 2: deny] (default: 2): ")).ConfigureAwait(false);
@@ -1199,10 +716,10 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Asks the operator to trust the workspace, in the composer, while the run holds
-        /// the challenge open. No work is in flight at this point, so the type-ahead loop
-        /// can hand the keyboard to the choice list — the same handoff a tool approval uses.
-        /// Returning without a decision is a cancel, never a silent grant.
+        /// Asks the operator to trust the workspace while the run holds the challenge open.
+        /// Only the TG frame has a composer to ask in; the sequential fallback returns null
+        /// so its caller reports the bounded code. Returning without a decision is a cancel,
+        /// never a silent grant.
         /// </summary>
         async Task<string?> PromptWorkspaceTrustAsync(
             Tui.ApprovalPrompt prompt,
@@ -1213,31 +730,7 @@ public sealed partial class AgentCommands
                 return await RequestTrustInTgAsync(prompt, trustToken).ConfigureAwait(false);
             }
 
-            if (!typeAheadLive || !sticky.Active)
-            {
-                return null;
-            }
-
-            using var registration = trustToken.Register(() => prompt.Decision.TrySetCanceled(trustToken));
-            typeAhead.Approval = prompt;
-            sessionRenderer.Status.SetState(Tui.TuiRunState.WaitingTrust);
-            sessionRenderer.Status.SetDetail(prompt.Summary);
-            ApplyFooterLayout(repaint: false);
-            PaintStickyFooter();
-            try
-            {
-                return await prompt.Decision.Task.ConfigureAwait(false);
-            }
-            finally
-            {
-                typeAhead.Approval = null;
-                sessionRenderer.Status.SetDetail(null);
-                // The turn either continues into the run or is about to be wound down;
-                // either way the row must stop claiming it is waiting on trust.
-                sessionRenderer.Status.SetState(Tui.TuiRunState.Thinking);
-                ApplyFooterLayout(repaint: false);
-                PaintStickyFooter();
-            }
+            return null;
         }
 
         async Task<bool> PostTrustDecisionAsync(
@@ -1260,7 +753,7 @@ public sealed partial class AgentCommands
                     return true;
                 }
 
-                await WriteAltLineAsync(_err, "workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, "workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
                 return false;
             }
             catch (OperationCanceledException)
@@ -1269,12 +762,12 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex)
             {
-                await WriteAltLineAsync(_err, $"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                 return false;
             }
             catch (Exception ex)
             {
-                await WriteAltLineAsync(_err, $"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
                 return false;
             }
         }
@@ -1297,7 +790,7 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
-                await WriteAltLineAsync(_err, $"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
             }
         }
 
@@ -1317,7 +810,7 @@ public sealed partial class AgentCommands
         {
             if (!RunStartCore.IsCreateResponseBound(response, expectedSessionId, expectedPreset))
             {
-                await WriteAltLineAsync(_err, "agent_create_failed: invalid create response binding.").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, "agent_create_failed: invalid create response binding.").ConfigureAwait(false);
                 return (false, false);
             }
 
@@ -1325,7 +818,7 @@ public sealed partial class AgentCommands
             var displayHash = response.DisplayIdentityHash;
             if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
             {
-                await WriteAltLineAsync(_err, "workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, "workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
                 return (false, false);
             }
 
@@ -1337,10 +830,9 @@ public sealed partial class AgentCommands
             if (decision is null)
             {
                 // No composer to ask in, so there is no frame to protect and the bounded
-                // code keeps its established stream. Never read stdin here: the type-ahead
-                // loop may already own it, which is how the old prompt hung forever.
-                // --json owns stdout, and TG owns the screen, so the notice follows
-                // humanOut instead of the raw console writer.
+                // code keeps its established stream. Never read stdin here: a scripted
+                // --json consumer owns it. --json owns stdout, and TG owns the screen, so
+                // the notice follows humanOut instead of the raw console writer.
                 await (json ? _err : humanOut).WriteLineAsync(
                         $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
                     .ConfigureAwait(false);
@@ -1404,7 +896,7 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
-                await WriteAltLineAsync(_err, $"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
                 return;
             }
 
@@ -1438,7 +930,7 @@ public sealed partial class AgentCommands
                     return;
                 }
 
-                await WriteAltLineAsync(
+                await WriteDiagnosticLineAsync(
                         _err,
                         $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
                     .ConfigureAwait(false);
@@ -1462,35 +954,6 @@ public sealed partial class AgentCommands
         async Task FinishTurnAsync()
         {
             await RefreshSessionTitleAsync().ConfigureAwait(false);
-            if (altBufferActive)
-            {
-                // Between turns the AltBuffer frame persists: pinned header, scrolling
-                // transcript region and fixed footer all stay in place, and the composer
-                // becomes the REPL's own prompt. The type-ahead loop keeps running so the
-                // next line arrives from the footer instead of the sequential reader box.
-                queuedLine ??= pendingPrompt.Take();
-                Tui.TuiDebug.Log("layout", $"finish turn alt rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
-                typeAhead.TurnActive = false;
-                sessionRenderer.EndTurn();
-                turnCts?.Dispose();
-                turnCts = null;
-                if (!sticky.Active)
-                {
-                    // A durable-text recovery rebuild tears the region down; restore it so
-                    // the footer and the next idle prompt land inside the frame.
-                    ApplyFooterLayout(repaint: false);
-                }
-
-                PaintStickyFooter();
-                return;
-            }
-
-            await StopTypeAheadAsync().ConfigureAwait(false);
-            queuedLine ??= pendingPrompt.Take();
-            Tui.TuiDebug.Log("layout", $"finish turn rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
-            sessionRenderer.LiveRowRepaintHook = null;
-            sessionRenderer.Status.InFooter = false;
-            sticky.Exit();
             sessionRenderer.EndTurn();
             turnCts?.Dispose();
             turnCts = null;
@@ -1533,7 +996,6 @@ public sealed partial class AgentCommands
                 if (backendChanged || modelChanged)
                 {
                     await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
-                    PaintAltHeader();
                 }
             }
             catch (Exception)
@@ -1561,13 +1023,6 @@ public sealed partial class AgentCommands
             ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
             ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
-        if (altBufferActive)
-        {
-            // Enter the transcript region before the landing/replay write so even a long
-            // replay scrolls under the pinned header instead of off the screen; the footer
-            // is painted after the content below.
-            ApplyFooterLayout(repaint: false);
-        }
 
         if (cmd.Json || string.IsNullOrWhiteSpace(cmd.SessionId))
         {
@@ -1581,7 +1036,6 @@ public sealed partial class AgentCommands
             if (replay.Messages.Count > 0)
             {
                 landingScreenVisible = false;
-                PaintAltHeader();
                 RenderSessionReplay(sessionId, replay);
             }
             else
@@ -1602,7 +1056,7 @@ public sealed partial class AgentCommands
             if (cmd.Json)
             {
                 // Nothing human may land on the NDJSON stdout.
-                await WriteAltLineAsync(_err, modelWarning).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, modelWarning).ConfigureAwait(false);
             }
             else
             {
@@ -1619,7 +1073,7 @@ public sealed partial class AgentCommands
                 $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model";
             if (cmd.Json)
             {
-                await WriteAltLineAsync(_err, visionWarning).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, visionWarning).ConfigureAwait(false);
             }
             else
             {
@@ -1635,15 +1089,6 @@ public sealed partial class AgentCommands
             // Only an explicit --session reopens someone else's session; a fresh session
             // has no run to adopt and must not spend the round trip.
             await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
-        }
-
-        if (altBufferActive)
-        {
-            // The persistent idle frame: header pinned, transcript region installed and
-            // the footer composer owning the keyboard before the first prompt.
-            PaintAltHeader();
-            ApplyFooterLayout(repaint: true);
-            await StartTypeAheadAsync().ConfigureAwait(false);
         }
 
         string prompt = Tui.TuiPalette.BoldPaint("❯ ");
@@ -1701,7 +1146,7 @@ public sealed partial class AgentCommands
                         if (approvalEnvelope is not null)
                         {
                             var targetRunId = !string.IsNullOrEmpty(approvalEnvelope.RunId) ? approvalEnvelope.RunId : runId;
-                            await WriteAltLineAsync(
+                            await WriteDiagnosticLineAsync(
                                     _err,
                                     $"approval_required: run {targetRunId} is waiting for approval {approvalEnvelope.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {approvalEnvelope.ApprovalId}' or deny it with 'ru agent deny {targetRunId} {approvalEnvelope.ApprovalId}'.")
                                 .ConfigureAwait(false);
@@ -1713,14 +1158,7 @@ public sealed partial class AgentCommands
                 }
                 else
                 {
-                    // No per-frame cursor restore: the surface tracks the transcript
-                    // append point across footer repaints, and rewinding to the row
-                    // start here would overwrite a partially streamed row.
                     sessionRenderer.RenderFrame(frame);
-                    if (sticky.Active && typeAheadLive)
-                    {
-                        PaintStickyFooter();
-                    }
 
                     if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
                     {
@@ -1762,7 +1200,7 @@ public sealed partial class AgentCommands
                         }
                         catch (Exception ex)
                         {
-                            await WriteAltLineAsync(_err, $"inline_approval_error: {ex.Message}").ConfigureAwait(false);
+                            await WriteDiagnosticLineAsync(_err, $"inline_approval_error: {ex.Message}").ConfigureAwait(false);
                         }
                     }
 
@@ -1800,7 +1238,6 @@ public sealed partial class AgentCommands
                                 lastTotalTokens = usageEnvelope.TotalTokens
                                     ?? ((usageEnvelope.InputTokens ?? 0) + (usageEnvelope.OutputTokens ?? 0));
                                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
-                                PaintAltHeader();
                                 if (tgMode)
                                 {
                                     RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
@@ -1823,7 +1260,7 @@ public sealed partial class AgentCommands
             sessionRenderer.Flush();
             // The recovery reprints a lost suffix through the same surface/writer the turn
             // streamed through, so it works for both engines; only the truncation repaint is
-            // classic-only (the TG transcript cannot rebuild what it already painted).
+            // sequential-only (the TG transcript cannot rebuild what it already painted).
             await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
 
             await _out.FlushAsync().ConfigureAwait(false);
@@ -1899,7 +1336,7 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex)
             {
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
             }
@@ -1907,7 +1344,7 @@ public sealed partial class AgentCommands
             {
                 // A transport failure must not escape the REPL: report it bounded and keep
                 // the prompt (and the parked tracking) intact.
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"continue_error: {CliErrorText.ShortMessage(ex.Message)}")).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
@@ -1915,7 +1352,7 @@ public sealed partial class AgentCommands
 
             if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
             {
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_runnable: run {targetRunId} is {run.Status} and cannot be continued.")).ConfigureAwait(false);
                 if (string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal))
                 {
@@ -1932,7 +1369,7 @@ public sealed partial class AgentCommands
             // the tracked parked run and keeps its existing behavior.
             if (runIdArg is not null && !IsParkedRunStatus(run.Status))
             {
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
@@ -1941,18 +1378,6 @@ public sealed partial class AgentCommands
             turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
-            typeAhead.TurnActive = true;
-            PaintAltHeader();
-            if (ApplyFooterLayout(repaint: true))
-            {
-                await StartTypeAheadAsync().ConfigureAwait(false);
-            }
-
-            if (sticky.Active)
-            {
-                sticky.RestoreTranscriptCursor();
-            }
-
             sessionRenderer.BeginTurn();
             activeRunId = targetRunId;
             var wasParkedRun = string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal);
@@ -1987,12 +1412,12 @@ public sealed partial class AgentCommands
             catch (AgentApiException ex)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err($"continue_error: {ex.Message}")).ConfigureAwait(false);
             }
 
             await _out.FlushAsync().ConfigureAwait(false);
@@ -2167,7 +1592,7 @@ public sealed partial class AgentCommands
                     var notice = Tui.TuiTranscript.FormatParkedNotice(newestRunId, run.Status);
                     if (cmd.Json)
                     {
-                        await WriteAltLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
                     }
                     else
                     {
@@ -2181,7 +1606,7 @@ public sealed partial class AgentCommands
                     var notice = Tui.TuiTranscript.FormatAttachNotice(newestRunId);
                     if (cmd.Json)
                     {
-                        await WriteAltLineAsync(_err, Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
                     }
                     else
                     {
@@ -2201,7 +1626,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        // The non-slash branch of the classic key loop, moved into the shape the
+        // The non-slash branch of the sequential key loop, moved into the shape the
         // dispatcher expects. 'continue' became 'return' (both resume the key loop),
         // and dispatcherExitCode carries the paths that used to return from ChatAsync.
         int? dispatcherExitCode = null;
@@ -2236,21 +1661,12 @@ public sealed partial class AgentCommands
             if (landingScreenVisible)
             {
                 landingScreenVisible = false;
-                if (altBufferActive)
-                {
-                    // The AltBuffer has no scrollback; 3J can reach through to the normal
-                    // buffer's saved lines on some terminals via ConPTY, so only 2J runs.
-                    sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
-                }
-                else if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
+                if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
                 {
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
             }
 
-            // Idle output (slash listings, notices) can scroll the sequential rows; the pinned
-            // header is restored before the region takes over. No-op in the sequential layout.
-            PaintAltHeader();
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
                 sessionId,
                 cmd.Preset,
@@ -2289,7 +1705,7 @@ public sealed partial class AgentCommands
             const int MaxComposedPromptChars = 16_000;
             if (promptText.Length > MaxComposedPromptChars)
             {
-                await WriteAltLineAsync(
+                await WriteDiagnosticLineAsync(
                     _err,
                     $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {MaxComposedPromptChars}); detach or shorten attachments").ConfigureAwait(false);
                 return;
@@ -2308,16 +1724,6 @@ public sealed partial class AgentCommands
                 assistantPayloadRefs.Clear();
                 sessionRenderer.Width = Tui.TuiViewport.Width();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
-                typeAhead.TurnActive = true;
-                if (ApplyFooterLayout(repaint: true))
-                {
-                    await StartTypeAheadAsync().ConfigureAwait(false);
-                }
-
-                if (sticky.Active)
-                {
-                    sticky.RestoreTranscriptCursor();
-                }
                 if (!cmd.Json && !tgMode)
                 {
                     sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(
@@ -2463,14 +1869,14 @@ public sealed partial class AgentCommands
                     return;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteBusyConflictAsync(ex, WriteAltLineAsync).ConfigureAwait(false);
+                await WriteBusyConflictAsync(ex, WriteDiagnosticLineAsync).ConfigureAwait(false);
             }
             catch (AgentApiException ex)
             {
                 // Pre-run rejections (missing credential, no model) already name
                 // themselves: one error line, no supplementary text.
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -2482,7 +1888,7 @@ public sealed partial class AgentCommands
                     return;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteAltLineAsync(_err, Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }
@@ -2492,18 +1898,18 @@ public sealed partial class AgentCommands
         {
             if (engine == TuiEngine.TerminalGui)
             {
-                // Terminal.Gui owns the keyboard and the frame from here on. The classic
-                // loop never reads a line: the same slash/prompt handlers below are driven
-                // by TgChatLoop, so command behaviour cannot drift between engines.
+                // Terminal.Gui owns the keyboard and the frame from here on. The sequential
+                // loop never reads a line while TG runs: the same slash/prompt handlers below
+                // are driven by TgChatLoop, so command behaviour cannot drift between engines.
                 await RunTerminalGuiChatAsync().ConfigureAwait(false);
                 if (tgWindow!.HandOverToSequential && dispatcherExitCode is null)
                 {
                     // The terminal shrank below the 80x24 floor while TG owned the screen,
                     // so the window stopped the app. One-way handover: the same session,
-                    // handlers and copy continue on the classic sequential path. The
-                    // writers the shared machinery captured must leave the stopped
-                    // Terminal.Gui buffer and point back at the real console.
-                    engine = TuiEngine.Classic;
+                    // handlers and copy continue on the sequential path. The writers the
+                    // shared machinery captured must leave the stopped Terminal.Gui buffer
+                    // and point back at the real console.
+                    engine = TuiEngine.Sequential;
                     tgMode = false;
                     // The bridge points into the stopped Terminal.Gui app: every diagnostic
                     // written through it after this line would vanish. Diagnostics fall back
@@ -2516,9 +1922,10 @@ public sealed partial class AgentCommands
 
                     // Terminal.Gui renders on the alternate screen buffer and only restores
                     // the normal one on dispose; the sequential session must be visible, so
-                    // wind the TG application down before the first classic write. The local
-                    // stays set: an in-flight TG continuation may still call Invoke and must
-                    // observe NotInitializedException (caught) rather than a null reference.
+                    // wind the TG application down before the first sequential write. The
+                    // local stays set: an in-flight TG continuation may still call Invoke and
+                    // must observe NotInitializedException (caught) rather than a null
+                    // reference.
                     tgApp!.Dispose();
                     continue;
                 }
@@ -2526,24 +1933,8 @@ public sealed partial class AgentCommands
                 return dispatcherExitCode ?? 0;
             }
 
-            // A prompt typed while the previous turn streamed is sent without a second Enter.
-            // In the AltBuffer frame the composer is the persistent footer, so idle input
-            // comes from the type-ahead loop; the sequential reader only serves fallbacks.
-            string? line;
-            if (queuedLine is not null)
-            {
-                line = queuedLine;
-            }
-            else if (altBufferActive && typeAheadLive)
-            {
-                line = await ReadAltIdleLineAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
-            }
-
-            queuedLine = null;
+            // The sequential reader owns idle input.
+            var line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
             if (string.IsNullOrEmpty(line) && pendingImages.Count == 0 && pendingTexts.Count == 0)
@@ -2559,15 +1950,7 @@ public sealed partial class AgentCommands
                 continue;
             }
 
-            if (altBufferActive && sticky.Active)
-            {
-                // Idle output (slash listings, command panels) flows into the scrolling
-                // transcript region; the pinned header and the footer must not move. The
-                // next footer paint (each read) restores the composer row afterwards.
-                sticky.RestoreTranscriptCursor();
-            }
-
-            // The slash branch of the classic key loop, in the shape the dispatcher
+            // The slash branch of the sequential key loop, in the shape the dispatcher
             // expects: 'continue' became 'return true' (handled) and the /exit and
             // /continue approval paths record their exit code for the caller below.
             async Task<bool> HandleSlashLineAsync(string slashLine)
@@ -2593,7 +1976,7 @@ public sealed partial class AgentCommands
                 }
                 if (slashCmd is "/history")
                 {
-                    // The TG loop owns its own Up/Down history; the classic reader never
+                    // The TG loop owns its own Up/Down history; the sequential reader never
                     // sees a TG line, so reading it there would always report an empty list.
                     var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
                     if (history.Count == 0)
@@ -2620,26 +2003,14 @@ public sealed partial class AgentCommands
                     if (tgMode)
                     {
                         // Clear the TG transcript and its header usage cluster in place; the
-                        // sequential/AltBuffer layouts below keep their existing resets.
+                        // sequential layout below keeps its existing reset.
                         RunOnTgUi(() => tgWindow!.ResetTranscript());
-                    }
-                    else if (altBufferActive)
-                    {
-                        // Reset in place: region off, alt screen wiped, header repainted by
-                        // the landing render, footer restored by ApplyFooterLayout.
-                        sticky.Exit();
-                        sessionRenderer.Status.InFooter = false;
-                        sessionRenderer.Surface.Repaint(writer => writer.Write(FullRebuildClearSequence(altBufferActive)));
                     }
                     else if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
                     {
                         try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                     }
                     RenderLandingScreen();
-                    if (altBufferActive && typeAheadLive)
-                    {
-                        ApplyFooterLayout(repaint: true);
-                    }
                     await humanOut.FlushAsync().ConfigureAwait(false);
                     return true;
                 }
@@ -2652,7 +2023,7 @@ public sealed partial class AgentCommands
                 {
                     if (arg is null || !int.TryParse(arg, out var toIndex))
                     {
-                        await WriteAltLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
                         return true;
                     }
                     try
@@ -2662,11 +2033,11 @@ public sealed partial class AgentCommands
                     }
                     catch (AgentApiException ex)
                     {
-                        await WriteAltLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
-                        await WriteAltLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                     return true;
@@ -2675,7 +2046,7 @@ public sealed partial class AgentCommands
                 {
                     if (string.IsNullOrWhiteSpace(arg))
                     {
-                        await WriteAltLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
                         return true;
                     }
 
@@ -2686,18 +2057,18 @@ public sealed partial class AgentCommands
                 {
                     if (pendingImages.Count == 0 && pendingTexts.Count == 0)
                     {
-                        await WriteAltLineAsync(humanOut, "no attachments").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(humanOut, "no attachments").ConfigureAwait(false);
                         return true;
                     }
 
                     for (var i = 0; i < pendingImages.Count; i++)
                     {
-                        await WriteAltLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
                     }
 
                     for (var i = 0; i < pendingTexts.Count; i++)
                     {
-                        await WriteAltLineAsync(
+                        await WriteDiagnosticLineAsync(
                             humanOut,
                             $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
                     }
@@ -2717,13 +2088,13 @@ public sealed partial class AgentCommands
                         pendingImages.Clear();
                         pendingTexts.Clear();
                         RefreshAttachmentLabels();
-                        await WriteAltLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
                         return true;
                     }
 
                     if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
                     {
-                        await WriteAltLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
                         return true;
                     }
 
@@ -2732,14 +2103,14 @@ public sealed partial class AgentCommands
                         var removedImage = pendingImages[index - 1];
                         pendingImages.RemoveAt(index - 1);
                         DeleteTempFile(removedImage);
-                        await WriteAltLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
                     }
                     else
                     {
                         var textIndex = index - pendingImages.Count - 1;
                         var removedText = pendingTexts[textIndex];
                         pendingTexts.RemoveAt(textIndex);
-                        await WriteAltLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
                     }
 
                     RefreshAttachmentLabels();
@@ -2760,15 +2131,15 @@ public sealed partial class AgentCommands
                     }
                     return true;
                 }
-                await WriteAltLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 return true;
             }
 
             /// <summary>
-            /// The TG engine's entry point: the window is already built and every classic
-            /// surface that could fight Terminal.Gui is off (alt buffer, sticky footer,
-            /// type-ahead). Slash lines and prompts go through the very same local handlers
-            /// the classic loop calls, with their writers redirected to the transcript.
+            /// The TG engine's entry point: the window is already built and no sequential
+            /// surface fights Terminal.Gui. Slash lines and prompts go through the very same
+            /// local handlers the sequential loop calls, with their writers redirected to
+            /// the transcript.
             /// </summary>
             async Task RunTerminalGuiChatAsync()
             {
@@ -2817,7 +2188,7 @@ public sealed partial class AgentCommands
                     }
                     catch (Exception ex)
                     {
-                        await WriteAltLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
                     }
                 }
 
@@ -2855,17 +2226,10 @@ public sealed partial class AgentCommands
         }
         finally
         {
-            await StopTypeAheadAsync().ConfigureAwait(false);
             // Pending clipboard screenshots do not outlive the chat that owns them.
             foreach (var image in pendingImages)
             {
                 DeleteTempFile(image);
-            }
-
-            if (!cmd.Json)
-            {
-                sticky.Exit();
-                sessionRenderer.Surface.Repaint(w => w.Write("\u001b[r"));
             }
         }
 
@@ -2874,7 +2238,7 @@ public sealed partial class AgentCommands
 
     /// <summary>
     /// Routes one submitted line to the slash-command handler or the prompt runner. The
-    /// classic key loop and the Terminal.Gui loop both call this so command behaviour
+    /// sequential and Terminal.Gui loops both call this so command behaviour
     /// (attachments, /model, /attach, trust prompts) cannot drift between engines.
     /// </summary>
     public sealed record ChatLineDispatcher
@@ -2913,34 +2277,9 @@ public sealed partial class AgentCommands
         tgMode && tgWriter is not null ? tgWriter : fallback;
 
     /// <summary>
-    /// Writes one diagnostic line so it can never smudge the pinned full-screen frame. In
-    /// the AltBuffer layout the hardware cursor can be parked on the composer row after a
-    /// footer paint, so a raw stderr write lands on the frame and its trailing line feed on
-    /// the last physical row scrolls the whole screen, unpinning the header. Restoring the
-    /// transcript cursor first lands the line in the scrolling region, where it scrolls with
-    /// the transcript and survives the next footer repaint; the sequential/fallback layouts
-    /// write exactly as before.
-    /// </summary>
-    public static async Task WriteAltSafeAsync(
-        Tui.TuiStickyRegion sticky,
-        bool altBufferActive,
-        TextWriter writer,
-        string line)
-    {
-        ArgumentNullException.ThrowIfNull(sticky);
-        ArgumentNullException.ThrowIfNull(writer);
-        if (altBufferActive && sticky.Active)
-        {
-            sticky.RestoreTranscriptCursor(writer);
-        }
-
-        await writer.WriteLineAsync(line).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// A busy workspace is operator-recoverable: name the run that owns it and how to
     /// release it instead of printing the raw error envelope. Every line goes through
-    /// <paramref name="writeLineAsync"/> so the AltBuffer frame is never smudged.
+    /// <paramref name="writeLineAsync"/> so it lands on the resolved writer.
     /// </summary>
     private async Task WriteBusyConflictAsync(
         AgentApiException error,
@@ -2964,14 +2303,6 @@ public sealed partial class AgentCommands
         await writeLineAsync(_err, Tui.TuiPalette.DimPaint(hint)).ConfigureAwait(false);
         await _err.FlushAsync().ConfigureAwait(false);
     }
-
-    /// <summary>
-    /// Clear sequence for a full in-place rebuild. The AltBuffer screen has no scrollback of
-    /// its own, and on some terminals via ConPTY <c>3J</c> reaches through to the normal
-    /// buffer's saved lines; only the sequential/fallback layout clears those.
-    /// </summary>
-    public static string FullRebuildClearSequence(bool altBufferActive) =>
-        altBufferActive ? "\u001b[r\u001b[2J\u001b[H" : "\u001b[r\u001b[3J\u001b[2J\u001b[H";
 
     private static bool IsTerminalRunStatus(string? status) =>
         status is not null

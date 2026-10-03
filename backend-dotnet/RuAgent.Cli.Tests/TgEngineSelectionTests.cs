@@ -6,37 +6,19 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgEngineSelectionTests
 {
     [Fact]
-    public void Resolve_DefaultsToTerminalGui()
+    public void Resolve_LiveTerminal_ReturnsTerminalGui()
     {
         Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
-            envValue: null, outputRedirected: false, json: false,
+            outputRedirected: false, json: false,
             columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
     }
 
     [Fact]
-    public void Resolve_ExplicitTerminalGui_LiveTerminal_ReturnsTerminalGui()
+    public void Resolve_AtTheMinimumViewport_ReturnsTerminalGui()
     {
         Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
-            envValue: "terminalgui", outputRedirected: false, json: false,
-            columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
-    }
-
-    [Fact]
-    public void Resolve_ExplicitTerminalGui_IgnoresCaseAndWhitespace()
-    {
-        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
-            envValue: "  TerminalGUI  ", outputRedirected: false, json: false,
-            columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
-    }
-
-    [Theory]
-    [InlineData("classic")]
-    [InlineData("  CLASSIC  ")]
-    public void Resolve_ClassicEscapeHatch_LiveTerminal_ReturnsClassic(string envValue)
-    {
-        Assert.Equal(TuiEngine.Classic, TuiEngineSelection.Resolve(
-            envValue: envValue, outputRedirected: false, json: false,
-            columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
+            outputRedirected: false, json: false,
+            columns: 80, rows: 24, noColor: null, term: "xterm-256color", classic: false));
     }
 
     [Theory]
@@ -49,19 +31,10 @@ public sealed class TgEngineSelectionTests
     [InlineData(false, false, null, 120, 40, null, true)]     // classic flag
     [InlineData(false, false, null, 120, 40, "dumb", false)]  // TERM=dumb
     [InlineData(false, false, null, 120, 40, "DUMB", false)]  // TERM=DUMB
-    public void Resolve_TerminalGuiRequested_ButGateFails_ReturnsClassic(
+    public void Resolve_GateFails_ReturnsSequential(
         bool outputRedirected, bool json, string? noColor, int columns, int rows, string? term, bool classic)
     {
-        Assert.Equal(TuiEngine.Classic, TuiEngineSelection.Resolve(
-            envValue: "terminalgui", outputRedirected, json,
-            columns, rows, noColor, term, classic));
-    }
-
-    [Fact]
-    public void Resolve_UnknownValue_FallsBackToTerminalGui()
-    {
-        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
-            envValue: "nonsense", outputRedirected: false, json: false,
-            columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
+        Assert.Equal(TuiEngine.Sequential, TuiEngineSelection.Resolve(
+            outputRedirected, json, columns, rows, noColor, term, classic));
     }
 }

@@ -1,6 +1,4 @@
-using System.Text;
 using System.Text.Json;
-using RuAgent.Cli;
 using RuAgent.Cli.Tui;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
@@ -9,138 +7,10 @@ using Xunit;
 namespace RuAgent.Cli.Tests;
 
 /// <summary>
-/// T5b keyboard semantics for the persistent footer: between turns Enter hands the line to
-/// the idle reader, during a turn it queues, and pickers/secrets/approvals own the keyboard
-/// as panels. Pure key routing, no console.
+/// Transcript rendering of tool rows and fenced code with the full-screen card layout.
 /// </summary>
 public sealed class TuiIdleComposerTests
 {
-    private static ConsoleKeyInfo Key(ConsoleKey key, char ch, bool control = false) =>
-        new(ch, key, false, false, control);
-
-    private static (TypeAheadSession Session, TaskCompletionSource<string?> Idle) NewIdleSession()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot()) { TurnActive = false };
-        var idle = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        session.IdleLine = idle;
-        return (session, idle);
-    }
-
-    [Fact]
-    public async Task IdleEnter_HandsTheLineToTheIdleReader()
-    {
-        var (session, idle) = NewIdleSession();
-        session.Buffer = "explain the approve flow";
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Enter, '\r'));
-
-        Assert.Equal("explain the approve flow", await idle.Task);
-        Assert.Empty(session.Buffer);
-    }
-
-    [Fact]
-    public void TurnEnter_QueuesInsteadOfResolvingTheIdleReader()
-    {
-        var (session, idle) = NewIdleSession();
-        session.TurnActive = true;
-        session.Buffer = "while you work";
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Enter, '\r'));
-
-        Assert.False(idle.Task.IsCompleted);
-        Assert.Equal("while you work", session.Queue.Value);
-    }
-
-    [Fact]
-    public async Task IdleEmptyEnter_DoesNothing()
-    {
-        var (session, idle) = NewIdleSession();
-        session.Buffer = "   ";
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Enter, '\r'));
-
-        Assert.False(idle.Task.IsCompleted);
-        Assert.False(session.Queue.HasValue);
-    }
-
-    [Theory]
-    [InlineData('1')]
-    [InlineData('2')]
-    [InlineData('3')]
-    public async Task ChoicePanel_DigitQuickPick_ResolvesTheValue(char digit)
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot());
-        var list = new ChoiceList(
-            "reasoning",
-            [
-                new ChoiceItem("low", string.Empty, "low"),
-                new ChoiceItem("medium", string.Empty, "medium"),
-                new ChoiceItem("high", string.Empty, "high"),
-            ],
-            selected: 1);
-        var request = new PendingChoiceRequest(list);
-        session.Choice = request;
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key((ConsoleKey)digit, digit));
-
-        Assert.Equal(digit - '0', list.Selected + 1);
-        Assert.Equal(list.Current.Value, await request.Decision.Task);
-    }
-
-    [Fact]
-    public async Task ChoicePanel_EscapeCancels()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot());
-        var request = new PendingChoiceRequest(new ChoiceList("backend", [new ChoiceItem("openai", string.Empty, "openai")]));
-        session.Choice = request;
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Escape, '\u001b'));
-
-        Assert.Null(await request.Decision.Task);
-    }
-
-    [Fact]
-    public async Task SecretPanel_TypesMasksAndResolvesWithoutTouchingTheComposer()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot()) { Buffer = "draft stays" };
-        var request = new PendingSecretRequest("OpenAI");
-        session.Secret = request;
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.S, 's'));
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.K, 'k'));
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Backspace, '\b'));
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Enter, '\r'));
-
-        Assert.Equal("s", await request.Decision.Task);
-        Assert.Equal("draft stays", session.Buffer);
-        Assert.Empty(session.Queue.Value ?? string.Empty);
-    }
-
-    [Fact]
-    public async Task SecretPanel_EscapeReturnsNull()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot());
-        var request = new PendingSecretRequest(null);
-        session.Secret = request;
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.A, 'a'));
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Escape, '\u001b'));
-
-        Assert.Null(await request.Decision.Task);
-    }
-
-    [Fact]
-    public async Task ApprovalPanel_DigitQuickPick_ResolvesTheDecision()
-    {
-        var session = new TypeAheadSession(new PendingPromptSlot());
-        var approval = ApprovalPrompt.For("terminal_delete_requires_approval");
-        session.Approval = approval;
-
-        InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.D3, '3'));
-
-        Assert.Equal(ApprovalPrompt.AllowAlways, await approval.Decision.Task);
-    }
-
     [Fact]
     public void TranscriptFullScreenCards_RendersInlineToolRowAndExpandsTheDiff()
     {

@@ -355,41 +355,6 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void Live_frame_sequence_keeps_text_coherent_on_the_visible_screen()
-    {
-        // Faithful emulation of the live loop: sticky region entered once, then per frame
-        // the transcript write followed by a footer paint, exactly like processing frames
-        // followed by PaintStickyFooter. No cursor restore between the frames of one row:
-        // the surface tracks the append point, so each chunk continues where the previous
-        // one ended instead of restarting over painted text.
-        const string full =
-            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
-        TuiPalette.Level = TuiColorLevel.None;
-        var writer = new StringWriter();
-        var surface = new TuiSurface(writer) { SuppressRepaints = false };
-        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
-        var sticky = new TuiStickyRegion(surface);
-        Assert.True(sticky.Enter(41, 4, 120));
-
-        var footer = new List<string> { "status row", "composer box" };
-        transcript.BeginTurn();
-        foreach (var piece in Chunk(full, 11))
-        {
-            transcript.AppendAssistant(piece);
-            sticky.Paint(footer, 120);
-        }
-
-        transcript.Flush();
-        transcript.EndTurn(TuiTurnOutcome.Completed, null);
-
-        var screen = new TuiScreenSimulator(rows: 41, cols: 120);
-        screen.Write(writer.ToString());
-        var text = screen.ScreenText();
-        Assert.Contains("ready to help you with your workspace", text, StringComparison.Ordinal);
-        Assert.Contains("running commands, and more", text, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Real_short_reply_from_the_host_renders_completely()
     {
         // The exact 162-character answer the host persisted, em dash and all. Three or four

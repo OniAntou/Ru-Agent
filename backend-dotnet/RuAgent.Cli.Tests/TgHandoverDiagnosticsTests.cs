@@ -26,11 +26,7 @@ public sealed class TgHandoverDiagnosticsTests
         var fallback = new StringWriter();
         var selected = AgentCommands.ResolveDiagnosticWriter(tgMode: false, tgWriter, fallback);
         Assert.Same(fallback, selected);
-        await AgentCommands.WriteAltSafeAsync(
-            new TuiStickyRegion(new TuiSurface(fallback)),
-            altBufferActive: false,
-            selected,
-            "post-handover diagnostic");
+        await selected.WriteLineAsync("post-handover diagnostic");
 
         Assert.Contains("post-handover diagnostic", fallback.ToString());
     }

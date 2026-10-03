@@ -16,6 +16,9 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public sealed class TgChatWindow : Window
 {
+    /// <summary>Masked secret input is bounded like the sequential reader's secret prompt.</summary>
+    private const int MaxSecretChars = 4096;
+
     private TgSlashDropdown? _slashDropdown;
     private TgPanelHost? _panel;
     private ApprovalPrompt? _approval;
@@ -417,7 +420,7 @@ public sealed class TgChatWindow : Window
     {
         var sanitized = InteractiveLineReader.SanitizePastedText(
             text,
-            PendingSecretRequest.MaxChars - _secret.Length);
+            MaxSecretChars - _secret.Length);
         if (sanitized.Length > 0)
         {
             _secret.Append(sanitized);

@@ -12,8 +12,9 @@ public enum TuiEngine
 /// <summary>
 /// Engine resolution for the chat TUI. The terminal gates mirror the classic AltBuffer
 /// gate (<c>TuiAltBuffer.ShouldUseAltBuffer</c>): a redirected, JSON, NO_COLOR, dumb or
-/// small terminal always stays classic. Until parity ships, only the explicit opt-in
-/// selects Terminal.Gui; the default flips in Task 15.
+/// small terminal always stays classic. Parity reached (2026-10-03), so Terminal.Gui is
+/// the default and <c>RU_TUI_ENGINE=classic</c> is the one-release escape hatch back to
+/// the hand-rolled full-screen renderer.
 /// </summary>
 public static class TuiEngineSelection
 {
@@ -49,8 +50,8 @@ public static class TuiEngineSelection
             return TuiEngine.Classic;
         }
 
-        return string.Equals(envValue?.Trim(), "terminalgui", StringComparison.OrdinalIgnoreCase)
-            ? TuiEngine.TerminalGui
-            : TuiEngine.Classic;
+        return string.Equals(envValue?.Trim(), "classic", StringComparison.OrdinalIgnoreCase)
+            ? TuiEngine.Classic
+            : TuiEngine.TerminalGui;
     }
 }

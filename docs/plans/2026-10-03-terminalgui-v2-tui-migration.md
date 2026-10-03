@@ -1,5 +1,5 @@
 ---
-status: pending
+status: deferred
 ---
 
 # Terminal.Gui v2 TUI Migration Implementation Plan
@@ -15,6 +15,8 @@ status: pending
 **Spec:** This document, plus Appendix A (spike findings, 2026-10-03) and `docs/plans/2026-10-02-tui-redesign.md` for the classic renderer's contract.
 
 **Branch rule:** Repo keeps a single `dev` branch; this migration lands on `dev` behind `RU_TUI_ENGINE`, no side branches.
+
+> **Status (2026-10-03):** Tasks 1–15 shipped on `dev` (commits `6efe9ece`..`ac26cf94` plus this Task 15 flip commit, "feat(cli): default the chat TUI to Terminal.Gui with a classic escape hatch"). Task 16 (retire the classic full-screen renderer) is deferred until the Terminal.Gui default has survived one release cycle.
 
 ---
 

@@ -6,15 +6,15 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgEngineSelectionTests
 {
     [Fact]
-    public void Resolve_DefaultsToClassic()
+    public void Resolve_DefaultsToTerminalGui()
     {
-        Assert.Equal(TuiEngine.Classic, TuiEngineSelection.Resolve(
+        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
             envValue: null, outputRedirected: false, json: false,
             columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
     }
 
     [Fact]
-    public void Resolve_TerminalGuiOptIn_LiveTerminal_ReturnsTerminalGui()
+    public void Resolve_ExplicitTerminalGui_LiveTerminal_ReturnsTerminalGui()
     {
         Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
             envValue: "terminalgui", outputRedirected: false, json: false,
@@ -22,10 +22,20 @@ public sealed class TgEngineSelectionTests
     }
 
     [Fact]
-    public void Resolve_TerminalGuiOptIn_IgnoresCaseAndWhitespace()
+    public void Resolve_ExplicitTerminalGui_IgnoresCaseAndWhitespace()
     {
         Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
             envValue: "  TerminalGUI  ", outputRedirected: false, json: false,
+            columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
+    }
+
+    [Theory]
+    [InlineData("classic")]
+    [InlineData("  CLASSIC  ")]
+    public void Resolve_ClassicEscapeHatch_LiveTerminal_ReturnsClassic(string envValue)
+    {
+        Assert.Equal(TuiEngine.Classic, TuiEngineSelection.Resolve(
+            envValue: envValue, outputRedirected: false, json: false,
             columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
     }
 
@@ -48,9 +58,9 @@ public sealed class TgEngineSelectionTests
     }
 
     [Fact]
-    public void Resolve_UnknownValue_ReturnsClassic()
+    public void Resolve_UnknownValue_FallsBackToTerminalGui()
     {
-        Assert.Equal(TuiEngine.Classic, TuiEngineSelection.Resolve(
+        Assert.Equal(TuiEngine.TerminalGui, TuiEngineSelection.Resolve(
             envValue: "nonsense", outputRedirected: false, json: false,
             columns: 120, rows: 40, noColor: null, term: "xterm-256color", classic: false));
     }

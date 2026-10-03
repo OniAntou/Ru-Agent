@@ -61,4 +61,33 @@ public sealed class TgComposerTests
         });
         app.Run(window);
     }
+
+    [Fact]
+    public void Frame_KeepsTheTerminalBackgroundOutsideTheGrayBand()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        window.Add(composer);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rowsText = TgSnapshot.Capture(app);
+            var black = new Terminal.Gui.Drawing.Color(0, 0, 0, 255);
+            var element = TgPalette.ToColor(TuiPalette.ElementRgb());
+            var top = rowsText.Length - 7;
+
+            // The border rows and columns sit on the terminal default, not on gray.
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, top, 0).Background);
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, top, 40).Background);
+            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 5, 0).Background);
+
+            // The content area keeps the gray band edge to edge.
+            Assert.Equal(element, TgSnapshot.CellAttribute(app, top + 1, 1).Background);
+            Assert.Equal(element, TgSnapshot.CellAttribute(app, top + 4, 40).Background);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
 }

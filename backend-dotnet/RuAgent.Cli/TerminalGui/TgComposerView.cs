@@ -19,7 +19,11 @@ public sealed class TgComposerView : View
     public TgComposerView()
     {
         BorderStyle = LineStyle.Single;
-        SetScheme(TgPalette.Scheme(TuiToken.Line, TuiPalette.ElementRgb()));
+        // The frame sits on the terminal default (like the classic box); the gray band is
+        // painted inside the frame by OnDrawingContent, not by the whole view's background,
+        // or the border rows and columns would carry gray too and the band would read as
+        // spilling outside the frame.
+        SetScheme(TgPalette.Scheme(TuiToken.Line));
         CanFocus = true;
 
         _ghost = new Label
@@ -50,6 +54,30 @@ public sealed class TgComposerView : View
     }
 
     public TextField Input { get; }
+
+    /// <summary>
+    /// Paints the gray element band across the content area (inside the border). Runs before
+    /// the child input/meta views, so their own gray schemes sit on an already-gray row.
+    /// </summary>
+    protected override bool OnDrawingContent(DrawContext? context)
+    {
+        var width = Viewport.Width;
+        var height = Viewport.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return true;
+        }
+
+        SetAttribute(TgPalette.Attr(TuiToken.Ink, TuiPalette.ElementRgb()));
+        var blank = new string(' ', width);
+        for (var y = 0; y < height; y++)
+        {
+            Move(0, y);
+            AddStr(blank);
+        }
+
+        return true;
+    }
 
     public void SetPlaceholder(string placeholder)
     {

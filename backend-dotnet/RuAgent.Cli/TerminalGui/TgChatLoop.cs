@@ -14,11 +14,15 @@ public sealed class TgChatLoop
     /// <summary>Lines kept for Up/Down navigation; older entries fall off the front.</summary>
     public const int MaxHistory = 100;
 
-    /// <summary>Prompts typed while a turn streams wait here; beyond this depth they are dropped oldest-first.</summary>
+    /// <summary>Prompts typed while a turn streams wait here; a full queue refuses the new prompt.</summary>
     public const int MaxQueueDepth = 8;
 
     private const string SpinnerFrame = "⠋";
     private const string QueueHint = "enter queues · esc cancels";
+    private const string QueueFullHint = "queue full · enter retries";
+
+    /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing waiters.</summary>
+    private static readonly TimeSpan StopDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly TgChatWindow _window;
     private readonly List<string> _history = [];
@@ -32,6 +36,7 @@ public sealed class TgChatLoop
     private Func<Task>? _pasteHandler;
     private Func<string, bool>? _dropHandler;
     private CancellationTokenSource? _turn;
+    private TaskCompletionSource? _turnDone;
     private int _historyIndex;
     private string _draft = string.Empty;
     private volatile bool _busy;
@@ -47,7 +52,7 @@ public sealed class TgChatLoop
         {
             if (!args.Value)
             {
-                _completion.TrySetResult();
+                Stop();
             }
         };
     }
@@ -73,15 +78,16 @@ public sealed class TgChatLoop
     public void SetDropHandler(Func<string, bool> handler) => _dropHandler = handler;
 
     /// <summary>Repaints the idle hint from the provider; a busy turn keeps its spinner.</summary>
-    public void RefreshAttachmentLabel()
-    {
-        if (_attachmentLabelProvider is null || _busy)
+    public void RefreshAttachmentLabel() =>
+        Dispatch(() =>
         {
-            return;
-        }
+            if (_attachmentLabelProvider is null || _busy)
+            {
+                return;
+            }
 
-        _window.Hints.SetIdle(_attachmentLabelProvider());
-    }
+            _window.Hints.SetIdle(_attachmentLabelProvider());
+        });
 
     public void Submit()
     {
@@ -102,25 +108,36 @@ public sealed class TgChatLoop
             return;
         }
 
-        _window.Composer.Input.Text = string.Empty;
-        Remember(line);
-        _historyIndex = _history.Count;
-        _draft = string.Empty;
-
         var queued = false;
+        var refused = false;
         lock (_queueGate)
         {
             if (_busy)
             {
-                while (_queued.Count >= MaxQueueDepth)
+                if (_queued.Count >= MaxQueueDepth)
                 {
-                    _queued.Dequeue();
+                    // The classic type-ahead refuses the new prompt instead of discarding
+                    // an already-queued one, so the composer keeps the line for a retry.
+                    refused = true;
                 }
-
-                _queued.Enqueue(line);
-                queued = true;
+                else
+                {
+                    _queued.Enqueue(line);
+                    queued = true;
+                }
             }
         }
+
+        if (refused)
+        {
+            _window.Hints.SetBusy(SpinnerFrame, QueueFullHint);
+            return;
+        }
+
+        _window.Composer.Input.Text = string.Empty;
+        Remember(line);
+        _historyIndex = _history.Count;
+        _draft = string.Empty;
 
         if (queued)
         {
@@ -134,14 +151,21 @@ public sealed class TgChatLoop
     public void Cancel() => _turn?.Cancel();
 
     /// <summary>
-    /// Terminal: releases waiters and stops the loop from starting any further turn. The
-    /// queue is abandoned so a handover cannot dispatch TG lines after the classic reader
-    /// has taken the session over.
+    /// Terminal: stops the loop from starting any further turn, abandons the queue, and
+    /// releases waiters only once the in-flight turn's teardown has finished (bounded), so
+    /// the caller cannot dispose the app under a still-running cancellation continuation.
     /// </summary>
     public void Stop()
     {
-        _stopped = true;
-        _completion.TrySetResult();
+        Task turnDone;
+        lock (_queueGate)
+        {
+            _stopped = true;
+            _queued.Clear();
+            turnDone = _turnDone?.Task ?? Task.CompletedTask;
+        }
+
+        _ = ReleaseCompletionWhenIdleAsync(turnDone);
     }
 
     /// <summary>Test seam for the bounded history, mirroring what <see cref="Submit"/> feeds.</summary>
@@ -179,18 +203,36 @@ public sealed class TgChatLoop
 
     private void StartTurn(string line)
     {
-        _busy = true;
-        _window.Transcript.Append(" ▌ " + line, TranscriptStyle.User);
-        _turn = new CancellationTokenSource();
-        var stream = new TranscriptStream(_window.Transcript);
-        _ = RunTurnAsync(line, stream, _turn.Token);
+        TaskCompletionSource turnDone;
+        lock (_queueGate)
+        {
+            if (_stopped)
+            {
+                _busy = false;
+                _turnDone = null;
+                return;
+            }
+
+            _busy = true;
+            _turn = new CancellationTokenSource();
+            turnDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _turnDone = turnDone;
+        }
+
+        Dispatch(() => _window.Transcript.Append(" ▌ " + line, TranscriptStyle.User));
+        var stream = new TranscriptStream(_window.Transcript, Dispatch);
+        _ = RunTurnAsync(line, stream, _turn.Token, turnDone);
     }
 
-    private async Task RunTurnAsync(string line, TranscriptStream stream, CancellationToken ct)
+    private async Task RunTurnAsync(
+        string line,
+        TranscriptStream stream,
+        CancellationToken ct,
+        TaskCompletionSource turnDone)
     {
         try
         {
-            _window.Hints.SetBusy(SpinnerFrame, HasQueued ? QueueHint : null);
+            Dispatch(() => _window.Hints.SetBusy(SpinnerFrame, HasQueued ? QueueHint : null));
             await _promptHandler(line, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -219,8 +261,50 @@ public sealed class TgChatLoop
             }
             else
             {
-                _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace);
+                Dispatch(() => _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace));
             }
+
+            turnDone.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Releases the completion once the captured turn settles; Stop is called from the UI
+    /// loop (handover) and from the turn itself (/exit), so it never blocks the caller. A
+    /// turn that ignores cancellation cannot pin the session forever: the wait is bounded.
+    /// </summary>
+    private async Task ReleaseCompletionWhenIdleAsync(Task turnDone)
+    {
+        if (!turnDone.IsCompleted)
+        {
+            await Task.WhenAny(turnDone, Task.Delay(StopDrainTimeout)).ConfigureAwait(false);
+        }
+
+        _completion.TrySetResult();
+    }
+
+    /// <summary>
+    /// Runs a view mutation on the Terminal.Gui loop: the turn resumes on thread-pool
+    /// continuations after <c>ConfigureAwait(false)</c>, so transcript, hint and stream
+    /// writes must be marshalled. A mutation that arrives after the session disposed the
+    /// app is dropped instead of crashing the wind-down.
+    /// </summary>
+    private void Dispatch(Action action)
+    {
+        var app = _window.App;
+        if (app is null)
+        {
+            action();
+            return;
+        }
+
+        try
+        {
+            app.Invoke(action);
+        }
+        catch (NotInitializedException)
+        {
+            // The TG session wound down; late view mutations are dropped.
         }
     }
 
@@ -396,11 +480,12 @@ public sealed class TgChatLoop
     }
 }
 
-/// <summary>Thin append facade handed to the prompt handler.</summary>
-public sealed class TranscriptStream(TgTranscriptView transcript)
+/// <summary>Thin append facade handed to the prompt handler; every write is marshalled.</summary>
+public sealed class TranscriptStream(TgTranscriptView transcript, Action<Action> dispatch)
 {
-    public void Append(string text, TranscriptStyle style) => transcript.Append(text, style);
-    public void AppendChunk(string text) => transcript.AppendChunk(text);
+    public void Append(string text, TranscriptStyle style) => dispatch(() => transcript.Append(text, style));
+
+    public void AppendChunk(string text) => dispatch(() => transcript.AppendChunk(text));
 }
 
 /// <summary>

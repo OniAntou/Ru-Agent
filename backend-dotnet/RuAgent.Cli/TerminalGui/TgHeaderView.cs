@@ -5,7 +5,7 @@ using Terminal.Gui.Views;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>One-line header: <c># title</c> left, usage cluster right.</summary>
+/// <summary>One-line header: <c># title</c> flush left, usage cluster flush right.</summary>
 public sealed class TgHeaderView : View
 {
     private readonly Label _title;
@@ -15,26 +15,45 @@ public sealed class TgHeaderView : View
     {
         Height = 1;
         SetScheme(TgPalette.Scheme(TuiToken.Meta));
-        _title = new Label { X = 0, Y = 0, Text = " #" };
+        _title = new Label { X = 0, Y = 0, Text = "#" };
         _title.SetScheme(TgPalette.Scheme(TuiToken.Bright));
         _usage = new Label { X = 0, Y = 0 };
         Add(_title, _usage);
     }
 
-    public void SetTitle(string title) => _title.Text = " # " + title;
+    public void SetTitle(string title) => _title.Text = "# " + title;
 
-    public void UpdateUsage(long totalTokens, int percent, decimal? cost)
+    public void UpdateUsage(long totalTokens, int? percent, decimal? cost)
     {
-        // InvariantCulture matches TuiHeader.Compose so both engines pin the same copy.
-        var usage = totalTokens.ToString("N0", CultureInfo.InvariantCulture) + $"  {percent}%";
-        if (cost is { } value)
+        var usage = ComposeUsage(totalTokens, percent, cost);
+        _usage.Text = usage;
+        // Same right edge as TuiHeader's TwoColumn: the cluster ends on the last column.
+        _usage.X = Pos.AnchorEnd(TuiText.VisibleWidth(usage));
+        SetNeedsDraw();
+    }
+
+    /// <summary>
+    /// The classic <see cref="TuiHeader.Compose"/> tally: grouped tokens only when positive,
+    /// the context percent only when known, the cost only when priced, joined two spaces apart.
+    /// </summary>
+    internal static string ComposeUsage(long totalTokens, int? percent, decimal? cost)
+    {
+        var parts = new List<string>(3);
+        if (totalTokens > 0)
         {
-            usage += $"  (${value.ToString("0.00", CultureInfo.InvariantCulture)})";
+            parts.Add(totalTokens.ToString("N0", CultureInfo.InvariantCulture));
         }
 
-        _usage.Text = usage;
-        // Right-aligned: recompute the anchor against the live width.
-        _usage.X = Math.Max(0, (App?.Screen.Width ?? 80) - usage.Length - 2);
-        SetNeedsDraw();
+        if (percent is { } knownPercent)
+        {
+            parts.Add($"{knownPercent}%");
+        }
+
+        if (cost is { } value)
+        {
+            parts.Add($"(${value.ToString("0.00", CultureInfo.InvariantCulture)})");
+        }
+
+        return string.Join("  ", parts);
     }
 }

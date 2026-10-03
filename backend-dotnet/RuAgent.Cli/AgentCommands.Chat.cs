@@ -303,7 +303,7 @@ public sealed partial class AgentCommands
                     sessionTitle = titleElement.GetString()!.Trim();
                     if (tgMode)
                     {
-                        tgWindow!.Header.SetTitle(sessionTitle);
+                        RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
                     }
                     else
                     {
@@ -696,6 +696,23 @@ public sealed partial class AgentCommands
             if (tgMode)
             {
                 tgLoop?.RefreshAttachmentLabel();
+            }
+        }
+
+        /// <summary>
+        /// Runs one TG view mutation on the Terminal.Gui loop. The frame/probe paths resume
+        /// on thread-pool continuations, so any direct view write from here would race the
+        /// driver's draw; an already-disposed session drops the late mutation instead.
+        /// </summary>
+        void RunOnTgUi(Action action)
+        {
+            try
+            {
+                tgApp!.Invoke(action);
+            }
+            catch (NotInitializedException)
+            {
+                // The TG session wound down; late view mutations are dropped.
             }
         }
 
@@ -1114,11 +1131,11 @@ public sealed partial class AgentCommands
         /// like the pinned-footer path, so the turn keeps streaming its settled rows.
         /// </summary>
         Task<string> RequestApprovalInTgAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken) =>
-            RunTgPanelAsync(() => tgWindow!.ShowApproval(prompt.Summary), approvalToken);
+            RunTgPanelAsync(() => tgWindow!.ShowApproval(prompt), approvalToken);
 
         /// <summary>The TG workspace-trust ask; Escape is a cancel, never a silent grant.</summary>
         Task<string> RequestTrustInTgAsync(Tui.ApprovalPrompt prompt, CancellationToken trustToken) =>
-            RunTgPanelAsync(() => tgWindow!.ShowWorkspaceTrust(prompt.Summary), trustToken);
+            RunTgPanelAsync(() => tgWindow!.ShowWorkspaceTrust(prompt), trustToken);
 
         /// <summary>
         /// Runs one floating panel on the Terminal.Gui loop and awaits the answer. The turn
@@ -1767,10 +1784,10 @@ public sealed partial class AgentCommands
                                 PaintAltHeader();
                                 if (tgMode)
                                 {
-                                    tgWindow!.Header.UpdateUsage(
+                                    RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
                                         lastTotalTokens ?? 0,
-                                        usage.ContextPercent ?? 0,
-                                        usage.CostKnown ? (decimal)usage.SessionCost : null);
+                                        usage.ContextPercent,
+                                        usage.CostKnown ? (decimal)usage.SessionCost : null));
                                 }
                             }
                         }

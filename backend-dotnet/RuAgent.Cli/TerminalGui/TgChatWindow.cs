@@ -124,20 +124,34 @@ public sealed class TgChatWindow : Window
 
     public void AcceptSlashDropdown() => _slashDropdown?.Accept();
 
-    /// <summary>The approval panel for a safe wire summary (choices via <see cref="ApprovalPrompt.For"/>).</summary>
-    public void ShowApproval(string safeSummary, bool offerDirectory = false)
+    /// <summary>
+    /// The approval panel for an already-built prompt: the caller's choices (including a
+    /// folder or always grant) and full summary are rendered as-is, never rebuilt from a
+    /// truncated copy.
+    /// </summary>
+    public void ShowApproval(ApprovalPrompt prompt)
     {
-        var prompt = ApprovalPrompt.For(safeSummary, offerDirectory);
-        _approval = prompt;
-        _choices = null;
-        _secretPanel = false;
-        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+        ArgumentNullException.ThrowIfNull(prompt);
+        ShowApprovalPanel(prompt);
+    }
+
+    /// <summary>The approval panel for a safe wire summary (choices via <see cref="ApprovalPrompt.For"/>).</summary>
+    public void ShowApproval(string safeSummary, bool offerDirectory = false) =>
+        ShowApproval(ApprovalPrompt.For(safeSummary, offerDirectory));
+
+    /// <summary>The workspace-trust panel for an already-built prompt; Enter defaults to cancel.</summary>
+    public void ShowWorkspaceTrust(ApprovalPrompt prompt)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        ShowApprovalPanel(prompt);
     }
 
     /// <summary>The workspace-trust panel; Enter defaults to cancel like the classic prompt.</summary>
-    public void ShowWorkspaceTrust(string workspacePath)
+    public void ShowWorkspaceTrust(string workspacePath) =>
+        ShowWorkspaceTrust(ApprovalPrompt.ForWorkspaceTrust(workspacePath));
+
+    private void ShowApprovalPanel(ApprovalPrompt prompt)
     {
-        var prompt = ApprovalPrompt.ForWorkspaceTrust(workspacePath);
         _approval = prompt;
         _choices = null;
         _secretPanel = false;

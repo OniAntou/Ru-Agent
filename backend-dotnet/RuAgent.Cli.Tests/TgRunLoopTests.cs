@@ -353,4 +353,144 @@ public sealed class TgRunLoopTests
         });
         app.Run(window);
     }
+
+    /// <summary>
+    /// Task 11's parked finding: a full queue must refuse the new prompt like the classic
+    /// type-ahead (`queue full · enter retries`) instead of silently dropping the oldest
+    /// queued line, and the composer keeps the refused line so Enter can retry.
+    /// </summary>
+    [Fact]
+    public async Task FullQueue_RefusesTheNewLine_AndQueuedLinesStillDrain()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var gate = new TaskCompletionSource();
+        var seen = new List<string>();
+        loop.SetPromptHandler(async (line, _, _) =>
+        {
+            seen.Add(line);
+            if (line == "một")
+            {
+                await gate.Task;
+            }
+        });
+
+        var queued = new[] { "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín" };
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "một";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            foreach (var line in queued)
+            {
+                window.Composer.Input.Text = line;
+                loop.Submit();
+            }
+
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
+        {
+            window.Composer.Input.Text = "mười";
+            loop.Submit();
+            Assert.Equal("mười", window.Composer.Input.Text?.ToString());
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            Assert.Contains("queue full · enter retries", string.Join('\n', TgSnapshot.Capture(app)));
+            gate.SetResult();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(1200), () =>
+        {
+            var expected = new List<string> { "một" };
+            expected.AddRange(queued);
+            Assert.Equal(expected, seen);
+            Assert.DoesNotContain("mười", seen);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    /// <summary>
+    /// Task 14's parked finding: Stop must not release Completion while the cancelled turn's
+    /// teardown still runs, and queued lines must be dropped instead of dispatching after a
+    /// handover. The in-flight turn is held open, then released after Stop; Completion must
+    /// only complete once that turn ended and the queued line must never run.
+    /// </summary>
+    [Fact]
+    public async Task Stop_WaitsForTheRunningTurn_AndDropsQueuedLines()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var gate = new TaskCompletionSource();
+        var seen = new List<string>();
+        loop.SetPromptHandler(async (line, _, _) =>
+        {
+            seen.Add(line);
+            if (line == "một")
+            {
+                await gate.Task;
+            }
+        });
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "một";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            window.Composer.Input.Text = "hai";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
+        {
+            loop.Stop();
+            Assert.False(loop.Completion.IsCompleted);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            gate.SetResult();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(900), () =>
+        {
+            Assert.True(loop.Completion.IsCompleted);
+            Assert.Equal(["một"], seen);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    /// <summary>
+    /// Probe for the handover early-dispose path: the chat command disposes tgApp once when
+    /// it leaves the TG frame and the using declaration disposes it again at scope exit, so
+    /// a second Dispose must be a no-op.
+    /// </summary>
+    [Fact]
+    public void ApplicationDispose_IsIdempotent()
+    {
+        var app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        app.Dispose();
+        app.Dispose();
+    }
 }

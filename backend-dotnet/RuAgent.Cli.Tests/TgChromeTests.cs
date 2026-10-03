@@ -24,7 +24,8 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("Fix the busy lock", row);
+            // Classic TuiHeader starts the heading at column 0: "# title", no leading pad.
+            Assert.StartsWith("# Fix the busy lock", row);
             Assert.Contains("39,413", row);
             Assert.Contains("20%", row);
             Assert.Contains("$0.29", row);
@@ -32,10 +33,27 @@ public sealed class TgChromeTests
             Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, hash).Foreground);
             var tally = row.IndexOf("39,413", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, tally).Foreground);
+            // Flush right like TuiHeader's TwoColumn: the cluster ends on the last column.
+            var last = app.Driver!.Cols - 1;
+            Assert.Equal(")", app.Driver.Contents![0, last].Grapheme);
             app.RequestStop();
             return false;
         });
         app.Run(window);
+    }
+
+    /// <summary>
+    /// Task 5's parity minors: the tally emits a part only when TuiHeader.Compose would —
+    /// tokens when positive, the percent when known, the cost when priced.
+    /// </summary>
+    [Fact]
+    public void ComposeUsage_OmitsTokensWhenNotPositive_AndPercentWhenNull()
+    {
+        Assert.Equal("39,413  20%  ($0.29)", TgHeaderView.ComposeUsage(39413, 20, 0.29m));
+        Assert.Equal("20%", TgHeaderView.ComposeUsage(0, 20, null));
+        Assert.Equal("39,413", TgHeaderView.ComposeUsage(39413, null, null));
+        Assert.Equal(string.Empty, TgHeaderView.ComposeUsage(0, null, null));
+        Assert.Equal(string.Empty, TgHeaderView.ComposeUsage(-1, null, null));
     }
 
     [Fact]

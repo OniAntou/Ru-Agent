@@ -53,6 +53,14 @@ public sealed class AgentSlashCommands
     /// </summary>
     public Func<string, CancellationToken, Task<string?>>? SecretPanelPrompt { get; set; }
 
+    /// <summary>
+    /// Set by the Terminal.Gui wiring: the TG transcript has no scrollback behind the
+    /// floating picker, so a cancelled bare form reprints the classic option panel instead
+    /// of leaving the operator with a silent no-op. The classic full-screen and sequential
+    /// paths keep their behaviour (Escape closes the picker and nothing else is printed).
+    /// </summary>
+    public bool ReprintPanelOnPickerCancel { get; set; }
+
     /// <summary>Live run counters for the status card. Wired by the CLI; may be absent in tests.</summary>
     public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
 
@@ -264,8 +272,9 @@ public sealed class AgentSlashCommands
             var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
             if (picked is null)
             {
-                // Cancelled (nothing to add) or not interactive (list the options).
-                if (Picker is null || !IsInteractiveConsole())
+                // Cancelled (nothing to add) or not interactive (list the options). The TG
+                // engine also lists them: its picker panel leaves no scrollback to read.
+                if (Picker is null || !IsInteractiveConsole() || ReprintPanelOnPickerCancel)
                 {
                     WriteBackendPanel(current, keyStates, providers);
                 }
@@ -354,6 +363,11 @@ public sealed class AgentSlashCommands
             var picked = await Picker(new Tui.ChoiceList("reasoning", choices), cancellationToken).ConfigureAwait(false);
             if (picked is null)
             {
+                if (ReprintPanelOnPickerCancel)
+                {
+                    WriteReasoningPanel(snapshot, choices);
+                }
+
                 return;
             }
 

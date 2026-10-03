@@ -10,7 +10,7 @@ Manager and your project never leaves your disk.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-5%2C353%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-5%2C371%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -128,14 +128,17 @@ model, open a project folder, and start chatting.
 `ru agent chat` (or `repl`) drives a full-screen TUI rendered by **Terminal.Gui v2**.
 The full-screen views only engage on an interactive, colour-capable terminal of at
 least 80×24; redirected output, `--json`, `--classic`, `NO_COLOR`, `TERM=dumb` and a
-smaller viewport all stay on the sequential path, unchanged. Set
-`RU_TUI_ENGINE=classic` to pin the previous hand-rolled full-screen renderer — the
-escape hatch stays for one release cycle while the new engine settles.
+smaller viewport all stay on the sequential path, unchanged.
+
+**The Terminal.Gui default is provisional** until the owner runs the manual parity
+checklist on a real terminal (streaming feel, live panels, Vietnamese IME in `cmd`).
+`RU_TUI_ENGINE=classic` is the one-cycle escape hatch back to the previous hand-rolled
+full-screen renderer while that checklist is pending.
 
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,353 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,371 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

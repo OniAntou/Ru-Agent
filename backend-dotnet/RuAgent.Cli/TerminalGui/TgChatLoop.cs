@@ -28,6 +28,8 @@ public sealed class TgChatLoop
     private readonly List<string> _history = [];
     private readonly Queue<string> _queued = new();
     private readonly object _queueGate = new();
+    private readonly object _historyGate = new();
+    private readonly CancellationToken _outerToken;
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Func<string, TranscriptStream, CancellationToken, Task> _promptHandler =
         (_, _, _) => Task.CompletedTask;
@@ -42,9 +44,10 @@ public sealed class TgChatLoop
     private volatile bool _busy;
     private volatile bool _stopped;
 
-    public TgChatLoop(TgChatWindow window)
+    public TgChatLoop(TgChatWindow window, CancellationToken cancellationToken = default)
     {
         _window = window;
+        _outerToken = cancellationToken;
         window.Composer.Input.KeyDown += OnComposerKey;
         // Stop() is the explicit signal, but the window can also wind down on its own
         // (app stop/close); the runnable leaving its running state must release waiters.
@@ -58,6 +61,21 @@ public sealed class TgChatLoop
     }
 
     public Task Completion => _completion.Task;
+
+    /// <summary>
+    /// A snapshot of the bounded prompt history (newest last, matching the classic reader),
+    /// safe to read from a slash handler that may have resumed off the UI thread.
+    /// </summary>
+    public IReadOnlyList<string> History
+    {
+        get
+        {
+            lock (_historyGate)
+            {
+                return [.. _history];
+            }
+        }
+    }
 
     public void SetPromptHandler(Func<string, TranscriptStream, CancellationToken, Task> handler) =>
         _promptHandler = handler;
@@ -148,7 +166,15 @@ public sealed class TgChatLoop
         StartTurn(line);
     }
 
-    public void Cancel() => _turn?.Cancel();
+    public void Cancel()
+    {
+        // The turn's CTS is disposed under the same gate once its handler settles, so a
+        // late Escape (or the handover's Cancel) can never hit a disposed source.
+        lock (_queueGate)
+        {
+            _turn?.Cancel();
+        }
+    }
 
     /// <summary>
     /// Terminal: stops the loop from starting any further turn, abandons the queue, and
@@ -178,16 +204,19 @@ public sealed class TgChatLoop
             return;
         }
 
-        if (_history.Count == 0 || !string.Equals(_history[^1], line, StringComparison.Ordinal))
+        lock (_historyGate)
         {
-            _history.Add(line);
-            if (_history.Count > MaxHistory)
+            if (_history.Count == 0 || !string.Equals(_history[^1], line, StringComparison.Ordinal))
             {
-                _history.RemoveAt(0);
+                _history.Add(line);
+                if (_history.Count > MaxHistory)
+                {
+                    _history.RemoveAt(0);
+                }
             }
-        }
 
-        _historyIndex = _history.Count;
+            _historyIndex = _history.Count;
+        }
     }
 
     private bool HasQueued
@@ -214,7 +243,9 @@ public sealed class TgChatLoop
             }
 
             _busy = true;
-            _turn = new CancellationTokenSource();
+            // Link the session's token: a shutdown outside the window (or a handover) must
+            // stop the in-flight turn too, not only the local Escape path.
+            _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
             turnDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _turnDone = turnDone;
         }
@@ -248,6 +279,10 @@ public sealed class TgChatLoop
             string? next;
             lock (_queueGate)
             {
+                // The handler settled: the per-turn source (and its outer-token link) has no
+                // further use. Disposing under the gate keeps Cancel from racing the dispose.
+                _turn?.Dispose();
+                _turn = null;
                 next = _stopped || _queued.Count == 0 ? null : _queued.Dequeue();
                 if (next is null)
                 {
@@ -500,6 +535,13 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
 
+    /// <summary>
+    /// The classic renderer's retained <c>ctrl+o</c> rows. When a committed line advertises
+    /// expansion and this supplies rows, the line is bridged as a collapsed block instead
+    /// of a plain row, so Ctrl+O reveals the hidden diff/thinking lines end to end.
+    /// </summary>
+    public Func<IReadOnlyList<string>>? RetainedLinesProvider { get; set; }
+
     public override Encoding Encoding => Encoding.UTF8;
 
     public override void Write(char value)
@@ -556,7 +598,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         var text = (value ?? string.Empty).Replace("\r", string.Empty);
         foreach (var line in text.Split('\n'))
         {
-            Emit(line, TranscriptStyle.Prose, append: false);
+            EmitLine(line);
         }
     }
 
@@ -604,19 +646,58 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         return true;
     }
 
+    /// <summary>
+    /// One completed line: strips the palette escapes every path shares, and when the line
+    /// carries the classic <c>ctrl+o</c> affordance, bridges the renderer's retained rows
+    /// as a collapsed block so <see cref="TgTranscriptView.ToggleExpanded"/> reveals them.
+    /// </summary>
+    private void EmitLine(string line)
+    {
+        var text = TuiText.Strip(line);
+        if (text.EndsWith("ctrl+o", StringComparison.Ordinal)
+            && RetainedLinesProvider?.Invoke() is { Count: > 0 } hidden)
+        {
+            var stripped = hidden.Select(TuiText.Strip).ToList();
+            stripped.Add("    │ · end of expanded block");
+            var style = Classify(text);
+            // A collapsed supplementary block is dim like the affordance that opened it,
+            // never prose-bright, even when the summary row itself classifies as prose.
+            EmitCollapsed(text, stripped, style == TranscriptStyle.Prose ? TranscriptStyle.Tool : style);
+            return;
+        }
+
+        Emit(text, Classify(text), append: false);
+    }
+
+    private void EmitCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
+    {
+        try
+        {
+            app.Invoke(() => transcript.AppendCollapsed(summary, hidden, style));
+        }
+        catch (NotInitializedException)
+        {
+            // The TG session has already shut down; late renderer output is dropped
+            // instead of crashing the wind-down.
+        }
+    }
+
     private void Emit(string text, TranscriptStyle style, bool append)
     {
+        // Defensive strip: streamed fragments are stripped in CommitStream, but every
+        // full-line path (WriteBlock, Notice, tool rows) also lands here.
+        var clean = TuiText.Strip(text);
         try
         {
             app.Invoke(() =>
             {
                 if (append)
                 {
-                    transcript.AppendChunk(text);
+                    transcript.AppendChunk(clean);
                 }
                 else
                 {
-                    transcript.Append(text, style);
+                    transcript.Append(clean, style);
                 }
             });
         }

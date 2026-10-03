@@ -118,4 +118,25 @@ public sealed class TgTranscriptTests
         Assert.Equal(string.Empty, rows[1].TrimEnd());
         Assert.Contains("bottom", rows[2]);
     }
+
+    /// <summary>I3: `/clear` drops rows, wrap cache and any collapsed block.</summary>
+    [Fact]
+    public void Clear_DropsRowsAndTheCollapsedBlock()
+    {
+        var rows = Render(24, t =>
+        {
+            t.Append("before clear", TranscriptStyle.Prose);
+            t.AppendCollapsed("    │ · 2 more lines · ctrl+o", ["hidden diff row"], TranscriptStyle.Tool);
+            t.ToggleExpanded();
+            t.Clear();
+            Assert.False(t.IsExpanded);
+            t.Append("after clear", TranscriptStyle.Prose);
+        });
+
+        var text = string.Join('\n', rows);
+        Assert.Contains("after clear", text);
+        Assert.DoesNotContain("before clear", text);
+        Assert.DoesNotContain("hidden diff row", text);
+        Assert.DoesNotContain("ctrl+o", text);
+    }
 }

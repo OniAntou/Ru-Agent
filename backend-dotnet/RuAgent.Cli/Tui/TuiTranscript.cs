@@ -91,6 +91,13 @@ public sealed class TuiTranscript
         _surface.SnapshotTail(maxLines, Width);
 
     /// <summary>
+    /// The rows behind the last <c>ctrl+o</c> affordance, still palette-painted. The TG
+    /// bridge reads this when a summary row is committed so the transcript can expand the
+    /// block; the classic renderer reads the same list in <see cref="ToggleExpand"/>.
+    /// </summary>
+    public IReadOnlyList<string> RetainedLines => _retained;
+
+    /// <summary>
     /// How many recorded lines this turn's assistant block currently occupies. The surface
     /// records every finished line even when the screen erases it, so comparing this with
     /// what is visible tells a paint loss apart from a stream loss.

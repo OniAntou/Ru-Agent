@@ -130,6 +130,38 @@ public sealed class TgChromeTests
         app.Run(window);
     }
 
+    /// <summary>
+    /// I3: `/clear` in TG mode resets the transcript and the header usage cluster in place
+    /// while the title and the pinned regions stay.
+    /// </summary>
+    [Fact]
+    public void ResetTranscript_ClearsRowsAndUsageCluster()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Header.SetTitle("Fix the busy lock");
+        window.Header.UpdateUsage(39413, 20, 0.29m);
+        window.Transcript.Append(" ▌ hello", TranscriptStyle.User);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.ResetTranscript();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            var text = string.Join('\n', TgSnapshot.Capture(app));
+            Assert.Contains("Fix the busy lock", text);
+            Assert.DoesNotContain("hello", text);
+            Assert.DoesNotContain("39,413", text);
+            Assert.DoesNotContain("$0.29", text);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
     [Fact]
     public void Hints_BusyShowsSpinnerAndInterrupt()
     {

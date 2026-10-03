@@ -1,4 +1,6 @@
 using System.Drawing;
+using System.Text;
+using RuAgent.Cli.Images;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
@@ -19,6 +21,8 @@ public sealed class TgChatWindow : Window
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
     private bool _secretPanel;
+    private readonly StringBuilder _secret = new();
+    private string _secretProvider = string.Empty;
     private IApplication? _resizeApp;
 
     private TgChatWindow()
@@ -168,15 +172,31 @@ public sealed class TgChatWindow : Window
         ShowPanel(width => CenterPanel(list.Render(TuiFloatingPanel.ComputeWidth(width)), width));
     }
 
-    /// <summary>The masked secret panel; only the bullet count reaches the screen.</summary>
-    public void ShowSecret(string providerDisplay, int bulletCount = 0)
+    /// <summary>
+    /// The masked secret panel: typed characters append to the buffer, Backspace trims it,
+    /// Enter confirms the secret and Escape cancels. Only the bullet count ever reaches the
+    /// screen; the buffer is cleared when the panel closes.
+    /// </summary>
+    public void ShowSecret(string providerDisplay)
     {
         _approval = null;
         _choices = null;
         _secretPanel = true;
+        _secret.Clear();
+        _secretProvider = string.IsNullOrWhiteSpace(providerDisplay) ? "api key" : providerDisplay.Trim();
         ShowPanel(width => CenterPanel(
-            KeyInputPanel.Compose(TuiFloatingPanel.ComputeWidth(width), providerDisplay, bulletCount),
+            KeyInputPanel.Compose(TuiFloatingPanel.ComputeWidth(width), _secretProvider, _secret.Length),
             width));
+    }
+
+    /// <summary>
+    /// <c>/clear</c> in TG mode: drop every transcript row and reset the header's usage
+    /// cluster, in place, without touching the pinned regions or the composer.
+    /// </summary>
+    public void ResetTranscript()
+    {
+        Transcript.Clear();
+        Header.UpdateUsage(0, null, null);
     }
 
     public void HidePanel()
@@ -189,6 +209,7 @@ public sealed class TgChatWindow : Window
         _approval = null;
         _choices = null;
         _secretPanel = false;
+        _secret.Clear();
         if (App is not null)
         {
             FocusComposer();
@@ -334,10 +355,54 @@ public sealed class TgChatWindow : Window
             return;
         }
 
-        if (_secretPanel && key.Kind == TgPanelKeyKind.Escape)
+        if (_secretPanel)
         {
-            ResolveCancelled();
+            switch (key.Kind)
+            {
+                case TgPanelKeyKind.Escape:
+                    ResolveCancelled();
+                    return;
+                case TgPanelKeyKind.Enter:
+                    ResolveConfirmed(_secret.ToString());
+                    return;
+                case TgPanelKeyKind.Backspace:
+                    if (_secret.Length > 0)
+                    {
+                        _secret.Length--;
+                    }
+
+                    _panel?.SetNeedsDraw();
+                    return;
+                case TgPanelKeyKind.Paste:
+                    AppendSecret(CliClipboard.TryReadText());
+                    return;
+                case TgPanelKeyKind.Character:
+                    AppendSecret(key.Character.ToString());
+                    return;
+                case TgPanelKeyKind.Digit:
+                    // The panel host keeps digits as the numbered-pick shortcut; inside a
+                    // secret they are ordinary key characters.
+                    AppendSecret(key.Digit.ToString());
+                    return;
+            }
         }
+    }
+
+    /// <summary>
+    /// Appends sanitized input to the masked buffer, bounded like the classic reader.
+    /// Clipboard text keeps its first line only, so a copied key never carries a newline.
+    /// </summary>
+    private void AppendSecret(string? text)
+    {
+        var sanitized = InteractiveLineReader.SanitizePastedText(
+            text,
+            PendingSecretRequest.MaxChars - _secret.Length);
+        if (sanitized.Length > 0)
+        {
+            _secret.Append(sanitized);
+        }
+
+        _panel?.SetNeedsDraw();
     }
 
     private void ResolveConfirmed(string value)

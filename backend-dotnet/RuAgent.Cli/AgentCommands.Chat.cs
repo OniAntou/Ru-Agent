@@ -182,6 +182,14 @@ public sealed partial class AgentCommands
         }
 
         var sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
+        if (tgWriter is not null)
+        {
+            // Ctrl+O parity: a classic row that advertises expansion (`· ctrl+o`) carries
+            // its hidden diff/thinking rows in the renderer, not on the wire. The provider
+            // lets the bridge hand them to the TG transcript so expansion works end to end.
+            tgWriter.RetainedLinesProvider = () => sessionRenderer.Transcript.RetainedLines;
+        }
+
         var lineReader = new Tui.InteractiveLineReader
         {
             TopLabel = workspaceLabel,
@@ -373,21 +381,30 @@ public sealed partial class AgentCommands
         _slashCommands.HumanOut = humanOut;
         _slashCommands.Json = cmd.Json;
         _slashCommands.PanelWidth = Tui.TuiViewport.Width();
-        _slashCommands.Picker = (list, ct) => cmd.Json || tgMode
+        // The TG frame has no scrollback behind the picker, so a cancelled bare form must
+        // reprint the option panel instead of leaving the operator with a silent no-op.
+        _slashCommands.ReprintPanelOnPickerCancel = tgMode;
+        _slashCommands.Picker = (list, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : altBufferActive && typeAheadLive
-                ? RequestChoicePanelAsync(list, ct)
-                : lineReader.ReadChoiceAsync(list, _out, ct);
-        _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json || tgMode
+            : tgMode
+                ? TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct)
+                : altBufferActive && typeAheadLive
+                    ? RequestChoicePanelAsync(list, ct)
+                    : lineReader.ReadChoiceAsync(list, _out, ct);
+        _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : altBufferActive && typeAheadLive
-                ? RequestSecretPanelAsync(null, ct)
-                : lineReader.ReadSecretAsync(_out, prompt, ct);
-        _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json || tgMode
+            : tgMode
+                ? TgPanelRequests.RequestSecretAsync(tgWindow!, null, ct)
+                : altBufferActive && typeAheadLive
+                    ? RequestSecretPanelAsync(null, ct)
+                    : lineReader.ReadSecretAsync(_out, prompt, ct);
+        _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
-            : altBufferActive && typeAheadLive
-                ? RequestSecretPanelAsync(providerDisplay, ct)
-                : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
+            : tgMode
+                ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
+                : altBufferActive && typeAheadLive
+                    ? RequestSecretPanelAsync(providerDisplay, ct)
+                    : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
 
         int turn = 0;
         bool landingScreenVisible = true;
@@ -657,7 +674,7 @@ public sealed partial class AgentCommands
         // there smudges the frame and can scroll the pinned header away. In TG mode the
         // writer is the transcript bridge, because the TG frame owns the screen.
         Task WriteAltLineAsync(TextWriter writer, string line) =>
-            WriteAltSafeAsync(sticky, altBufferActive, tgWriter ?? writer, line);
+            WriteAltSafeAsync(sticky, altBufferActive, ResolveDiagnosticWriter(tgMode, tgWriter, writer), line);
 
         static void DeleteTempPath(string? path)
         {
@@ -1411,8 +1428,10 @@ public sealed partial class AgentCommands
             {
                 // A terminal cannot unprint, so the head cannot be appended after the tail.
                 // Rewrite the turn's block from the run's own text and rebuild the screen
-                // from the surface history, which is the path a resize already uses.
-                if (sessionRenderer.Transcript.RepaintAssistantText(full))
+                // from the surface history, which is the path a resize already uses. The TG
+                // transcript is append-only through the bridge and has no scrollback rebuild,
+                // so it takes the bounded notice below instead of pretending a repair.
+                if (!tgMode && sessionRenderer.Transcript.RepaintAssistantText(full))
                 {
                     RedrawScreenForResize();
                     Tui.TuiDebug.Log("recover", $"repainted turn from durable text ({full.Length} chars)");
@@ -1802,13 +1821,10 @@ public sealed partial class AgentCommands
 
             await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
             sessionRenderer.Flush();
-            if (!tgMode)
-            {
-                // The recovery reprints a lost head into the classic surface history; the
-                // TG transcript is append-only through the bridge, so it is skipped there
-                // (Task 15 parity) rather than pretending a repair happened.
-                await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
-            }
+            // The recovery reprints a lost suffix through the same surface/writer the turn
+            // streamed through, so it works for both engines; only the truncation repaint is
+            // classic-only (the TG transcript cannot rebuild what it already painted).
+            await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
 
             await _out.FlushAsync().ConfigureAwait(false);
         }
@@ -2489,6 +2505,11 @@ public sealed partial class AgentCommands
                     // Terminal.Gui buffer and point back at the real console.
                     engine = TuiEngine.Classic;
                     tgMode = false;
+                    // The bridge points into the stopped Terminal.Gui app: every diagnostic
+                    // written through it after this line would vanish. Diagnostics fall back
+                    // to the real console writer for the rest of the session.
+                    tgWriter = null;
+                    _slashCommands.ReprintPanelOnPickerCancel = false;
                     humanOut = _out;
                     _slashCommands.HumanOut = _out;
                     sessionRenderer = new Tui.TuiSessionRenderer(_out);
@@ -2572,7 +2593,9 @@ public sealed partial class AgentCommands
                 }
                 if (slashCmd is "/history")
                 {
-                    var history = lineReader.History;
+                    // The TG loop owns its own Up/Down history; the classic reader never
+                    // sees a TG line, so reading it there would always report an empty list.
+                    var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
                     if (history.Count == 0)
                     {
                         await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
@@ -2594,7 +2617,13 @@ public sealed partial class AgentCommands
                     landingScreenVisible = true;
                     lastTotalTokens = null;
                     usage.BeginTurn();
-                    if (altBufferActive)
+                    if (tgMode)
+                    {
+                        // Clear the TG transcript and its header usage cluster in place; the
+                        // sequential/AltBuffer layouts below keep their existing resets.
+                        RunOnTgUi(() => tgWindow!.ResetTranscript());
+                    }
+                    else if (altBufferActive)
                     {
                         // Reset in place: region off, alt screen wiped, header repainted by
                         // the landing render, footer restored by ApplyFooterLayout.
@@ -2743,7 +2772,7 @@ public sealed partial class AgentCommands
             /// </summary>
             async Task RunTerminalGuiChatAsync()
             {
-                var loop = new TgChatLoop(tgWindow!);
+                var loop = new TgChatLoop(tgWindow!, cancellationToken);
                 tgLoop = loop;
                 var guiDispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
                 loop.SetPromptHandler(async (line, _, ct) =>
@@ -2873,6 +2902,15 @@ public sealed partial class AgentCommands
             return false;
         }
     }
+
+    /// <summary>
+    /// Picks the writer a diagnostic line lands on. While Terminal.Gui owns the frame the
+    /// bridge writer keeps the line in the transcript; once the tiny-terminal handover has
+    /// disposed the app (or no bridge exists) the plain writer must take over, or every
+    /// line after the handover disappears into a stopped bridge.
+    /// </summary>
+    public static TextWriter ResolveDiagnosticWriter(bool tgMode, TextWriter? tgWriter, TextWriter fallback) =>
+        tgMode && tgWriter is not null ? tgWriter : fallback;
 
     /// <summary>
     /// Writes one diagnostic line so it can never smudge the pinned full-screen frame. In

@@ -240,6 +240,26 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.DoesNotContain("Anthropic · no key", text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// I1's no-op guard: the TG picker leaves no scrollback behind it, so a cancelled bare
+    /// `/backend` must still leave the option panel in the transcript.
+    /// </summary>
+    [Fact]
+    public async Task Backend_PickerCancel_StillPrintsThePanel()
+    {
+        var output = new StringWriter();
+        var commands = Create(output);
+        commands.ReprintPanelOnPickerCancel = true;
+        commands.Picker = (_, _) => Task.FromResult<string?>(null);
+
+        Assert.True(await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("╭─ backend", text, StringComparison.Ordinal);
+        Assert.Contains("OpenAI", text, StringComparison.Ordinal);
+        Assert.Contains("/backend <name>", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Backend_WithAnArgument_SwitchesDirectly()
     {

@@ -31,6 +31,28 @@ public sealed class TgTranscriptView : View
     /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
     public bool IsExpanded => _expanded;
 
+    /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
+    internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
+
+    /// <summary>Test seam: the hidden rows of the last collapsed block, expanded or not.</summary>
+    internal IReadOnlyList<(string Text, TranscriptStyle Style)> CollapsedRows =>
+        _collapsedBlock?.Hidden ?? [];
+
+    /// <summary>
+    /// Drops every row, wrap cache and collapsed block. `/clear` uses this so the TG
+    /// transcript resets in place instead of accumulating the previous session's rows.
+    /// </summary>
+    public void Clear()
+    {
+        _lines.Clear();
+        _wrapped.Clear();
+        _collapsedBlock = null;
+        _expanded = false;
+        _wrapWidth = -1;
+        _tailRows = 1;
+        SetNeedsDraw();
+    }
+
     public void Append(string text, TranscriptStyle style)
     {
         _lines.Add((text, style));

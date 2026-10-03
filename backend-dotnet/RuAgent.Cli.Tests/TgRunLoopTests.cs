@@ -493,4 +493,96 @@ public sealed class TgRunLoopTests
         app.Dispose();
         app.Dispose();
     }
+
+    /// <summary>I3: `/history` reads this snapshot instead of the always-empty classic reader.</summary>
+    [Fact]
+    public void History_ExposesRememberedPrompts_NewestLast()
+    {
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        loop.RememberForTests("một");
+        loop.RememberForTests("hai");
+        loop.RememberForTests("hai");
+
+        Assert.Equal(["một", "hai"], loop.History);
+    }
+
+    /// <summary>
+    /// M2: the outer session token is linked into the per-turn token, so a shutdown that
+    /// never touches the window still cancels the in-flight turn.
+    /// </summary>
+    [Fact]
+    public async Task OuterCancellation_CancelsTheInFlightTurn()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        using var outer = new CancellationTokenSource();
+        var loop = new TgChatLoop(window, outer.Token);
+        var cancelled = new TaskCompletionSource();
+        loop.SetPromptHandler(async (_, _, ct) =>
+        {
+            try
+            {
+                await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
+        });
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "chạy lâu";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            outer.Cancel();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(700), () =>
+        {
+            Assert.True(cancelled.Task.IsCompleted);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    /// <summary>
+    /// M2: the per-turn CTS is disposed once its handler settles, so a late Cancel (Escape
+    /// after the turn, or the handover) must not throw on a disposed source.
+    /// </summary>
+    [Fact]
+    public async Task Cancel_AfterTheTurnSettled_DoesNotThrow()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        loop.SetPromptHandler((_, _, _) => Task.CompletedTask);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "xong";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(500), () =>
+        {
+            loop.Cancel();
+            loop.Stop();
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        await loop.Completion;
+    }
 }

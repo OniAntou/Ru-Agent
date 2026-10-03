@@ -1,3 +1,4 @@
+using System.Text;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
@@ -13,16 +14,24 @@ public enum TgPanelKeyKind
     Enter,
     Escape,
     Digit,
+    Backspace,
+
+    /// <summary>A printable rune; <see cref="TgPanelKey.Character"/> carries it.</summary>
+    Character,
+
+    /// <summary>Ctrl+V: the secret panel reads the clipboard text itself.</summary>
+    Paste,
 }
 
 /// <summary>One mapped panel key; <see cref="Digit"/> carries the 1-based character.</summary>
-public readonly record struct TgPanelKey(TgPanelKeyKind Kind, char Digit = '\0');
+public readonly record struct TgPanelKey(TgPanelKeyKind Kind, char Digit = '\0', char Character = '\0');
 
 /// <summary>
 /// Floating panel over the transcript for the approval, trust, picker and secret surfaces.
 /// Content is composed by the classic renderers by the owner (<see cref="ApprovalPrompt"/>,
 /// <see cref="ChoiceList"/>, <see cref="KeyInputPanel"/>); the host only strips the palette
-/// escapes, centers the frame and forwards 1/2/3, arrow, Enter and Escape keys.
+/// escapes, centers the frame and forwards 1/2/3, arrow, Enter, Escape, Backspace and
+/// printable keys (the secret panel needs to accept a typed key).
 /// </summary>
 public sealed class TgPanelHost : View
 {
@@ -106,10 +115,32 @@ public sealed class TgPanelHost : View
             return new TgPanelKey(TgPanelKeyKind.Escape);
         }
 
-        var code = key.KeyCode;
-        if (code >= KeyCode.D1 && code <= KeyCode.D9)
+        if (key == Key.V.WithCtrl)
         {
-            return new TgPanelKey(TgPanelKeyKind.Digit, (char)('1' + (code - KeyCode.D1)));
+            return new TgPanelKey(TgPanelKeyKind.Paste);
+        }
+
+        if (key.KeyCode == KeyCode.Backspace)
+        {
+            return new TgPanelKey(TgPanelKeyKind.Backspace);
+        }
+
+        // Printable input for the masked secret panel. Unshifted digits stay the numbered-pick
+        // shortcut (the owner re-reads them as characters while a secret is open); a shifted
+        // digit is the symbol the operator typed (`!`), never the base digit. Modified keys
+        // are left alone so Ctrl+ chords cannot leak their base letter into a secret.
+        if (!key.IsCtrl && !key.IsAlt)
+        {
+            var rune = key.AsRune;
+            if (rune.Value > 0 && rune.Value <= char.MaxValue && !Rune.IsControl(rune))
+            {
+                var code = key.KeyCode;
+                var isUnshiftedDigit = code >= KeyCode.D1 && code <= KeyCode.D9
+                    && (char)rune.Value == (char)('1' + (code - KeyCode.D1));
+                return isUnshiftedDigit
+                    ? new TgPanelKey(TgPanelKeyKind.Digit, (char)('1' + (code - KeyCode.D1)))
+                    : new TgPanelKey(TgPanelKeyKind.Character, Character: (char)rune.Value);
+            }
         }
 
         return null;

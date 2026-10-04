@@ -72,7 +72,8 @@ public sealed class AnthropicMessagesModelProviderTests
             + ContentBlockDeltaText(0, "Reading the file.") + ContentBlockStop(0)
             + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = new JsonObject { ["type"] = "thinking", ["thinking"] = "" } })
             + ContentBlockDeltaThinking(1, "private thought")
-            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "opaque-signature" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "opaque-" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "signature" } })
             + ContentBlockStop(1)
             + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 2, ["content_block"] = new JsonObject { ["type"] = "redacted_thinking", ["data"] = "opaque-redacted-bytes" } })
             + ContentBlockStop(2)
@@ -156,6 +157,59 @@ public sealed class AnthropicMessagesModelProviderTests
             + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = (JsonObject)toolBlock.DeepClone() });
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", failure.Code);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(-1, -1)]
+    [InlineData(0, 2)]
+    public async Task GenerateAsync_native_stream_rejects_nonsequential_content_indexes(int firstIndex, int secondIndex)
+    {
+        static string ToolBlock(int index, string id) =>
+            Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = index,
+                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = index,
+                ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(index);
+        var lifecycle = MessageStart() + ToolBlock(firstIndex, "toolu_first") + ToolBlock(secondIndex, "toolu_second")
+            + MessageDelta("tool_use") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
+        var deltas = new List<ModelDelta>();
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+        {
+            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None))
+                deltas.Add(delta);
+        });
+
+        Assert.Equal("malformed_payload", failure.Code);
+        Assert.DoesNotContain(deltas, delta => delta.Completed);
+        Assert.DoesNotContain(deltas, delta => delta.ProviderContinuation is not null);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_stream_rejects_thinking_after_signature_starts()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0,
+                ["content_block"] = new JsonObject { ["type"] = "thinking", ["thinking"] = "" } })
+            + ContentBlockDeltaThinking(0, "signed content")
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "part-one" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "part-two" } })
+            + ContentBlockDeltaThinking(0, " changed")
+            + ContentBlockStop(0) + MessageDelta("end_turn") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
 
         var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
             provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
@@ -368,8 +422,7 @@ public sealed class AnthropicMessagesModelProviderTests
     [Fact]
     public async Task GenerateAsync_surfaces_thinking_delta_as_reasoning()
     {
-        var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(0, "text") + ContentBlockDeltaText(0, "answer") + ContentBlockStop(0) + MessageDelta() + MessageStop();
-        // Note: second block uses same index after first closed — provider expects new blockIndex free, index 0 reused; still valid after stop
+        var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(1, "text") + ContentBlockDeltaText(1, "answer") + ContentBlockStop(1) + MessageDelta() + MessageStop();
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
         var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));

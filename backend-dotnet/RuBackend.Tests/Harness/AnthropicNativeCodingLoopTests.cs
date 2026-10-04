@@ -149,6 +149,35 @@ public sealed partial class HeadlessCodingLoopTests
         Assert.Empty(continuations);
     }
 
+    [Fact]
+    public async Task Native_anthropic_duplicate_block_indexes_never_dispatch_or_persist_continuation()
+    {
+        using var workspace = GitWorkspace.Create();
+        var settings = new SettingsStore(workspace.DataPaths);
+        await settings.SaveAsync((await settings.ReadAsync(default)) with
+        { Backend = "Anthropic", AnthropicModel = "claude-fable-5" }, default);
+        var credentials = new EphemeralTestCredentialStore();
+        await credentials.SetAsync("Ru", "anthropic_api_key", "synthetic-test-key", default);
+        var provider = new DuplicateIndexAnthropicHandler();
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths,
+            credentialStore: credentials, settingsStore: settings, withInProcessBroker: true, providerHandler: provider);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+        Assert.True(await WaitForStatusAsync(client, runId,
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+
+        Assert.Equal("completed", await GetStatusAsync(client, runId));
+        Assert.Equal(2, provider.RequestCount);
+        Assert.False(File.Exists(System.IO.Path.Combine(workspace.Path, "duplicate-index-first.txt")));
+        Assert.False(File.Exists(System.IO.Path.Combine(workspace.Path, "duplicate-index-second.txt")));
+        var events = await ReadEventsAsync(client, runId);
+        Assert.DoesNotContain(events, item => item.GetProperty("event_type").GetString() == "tool.execution_completed");
+        var continuations = await factory.Services.GetRequiredService<HarnessPayloadStore>().ListPayloadIdsAsync(
+            new RunId(runId), HarnessPayloadKind.ProviderContinuation, CancellationToken.None);
+        Assert.Empty(continuations);
+    }
+
     private static void AssertNativeResults(JsonObject request, IReadOnlySet<string> errorCallIds, params string[] callIds)
     {
         var messages = request["messages"]!.AsArray();
@@ -328,6 +357,76 @@ public sealed partial class HeadlessCodingLoopTests
                 Content = new StringContent(stream, Encoding.UTF8, "text/event-stream"),
             };
         }
+
+        private static string Event(string name, JsonObject data) => $"event: {name}\ndata: {data.ToJsonString()}\n\n";
+    }
+
+    private sealed class DuplicateIndexAnthropicHandler : HttpMessageHandler
+    {
+        private int _requestCount;
+        public int RequestCount => Volatile.Read(ref _requestCount);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var lifecycle = Interlocked.Increment(ref _requestCount) == 1
+                ? InvalidIndexToolBatch()
+                : TextCompletion("offline recovery complete");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream"),
+            });
+        }
+
+        private static string InvalidIndexToolBatch()
+        {
+            var output = new StringBuilder();
+            output.Append(Event("message_start", new JsonObject
+            {
+                ["type"] = "message_start",
+                ["message"] = new JsonObject { ["model"] = "claude-fable-5", ["content"] = new JsonArray() },
+            }));
+            AppendWrite(output, 0, "toolu-duplicate-a", "duplicate-index-first.txt");
+            AppendWrite(output, 0, "toolu-duplicate-b", "duplicate-index-second.txt");
+            output.Append(Event("message_delta", new JsonObject { ["type"] = "message_delta", ["delta"] = new JsonObject { ["stop_reason"] = "tool_use" } }));
+            output.Append(Event("message_stop", new JsonObject { ["type"] = "message_stop" }));
+            return output.ToString();
+        }
+
+        private static void AppendWrite(StringBuilder output, int index, string id, string path)
+        {
+            var arguments = JsonSerializer.Serialize(new { op = "write", path, content = "must-not-run" });
+            output.Append(Event("content_block_start", new JsonObject
+            {
+                ["type"] = "content_block_start", ["index"] = index,
+                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "write", ["input"] = new JsonObject() },
+            }));
+            output.Append(Event("content_block_delta", new JsonObject
+            {
+                ["type"] = "content_block_delta", ["index"] = index,
+                ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = arguments },
+            }));
+            output.Append(Event("content_block_stop", new JsonObject { ["type"] = "content_block_stop", ["index"] = index }));
+        }
+
+        private static string TextCompletion(string text) =>
+            Event("message_start", new JsonObject
+            {
+                ["type"] = "message_start",
+                ["message"] = new JsonObject { ["model"] = "claude-fable-5", ["content"] = new JsonArray() },
+            })
+            + Event("content_block_start", new JsonObject
+            {
+                ["type"] = "content_block_start", ["index"] = 0,
+                ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = "" },
+            })
+            + Event("content_block_delta", new JsonObject
+            {
+                ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "text_delta", ["text"] = text },
+            })
+            + Event("content_block_stop", new JsonObject { ["type"] = "content_block_stop", ["index"] = 0 })
+            + Event("message_delta", new JsonObject { ["type"] = "message_delta", ["delta"] = new JsonObject { ["stop_reason"] = "end_turn" } })
+            + Event("message_stop", new JsonObject { ["type"] = "message_stop" });
 
         private static string Event(string name, JsonObject data) => $"event: {name}\ndata: {data.ToJsonString()}\n\n";
     }

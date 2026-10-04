@@ -21,6 +21,7 @@ internal sealed class AnthropicNativeContentAssembly
     private readonly StringBuilder _input = new();
     private int _inputByteCount;
     private int _serializedBlockBytes;
+    private bool _signatureStarted;
 
     public JsonObject? CurrentBlock { get; private set; }
     public string Text => _text.ToString();
@@ -34,6 +35,7 @@ internal sealed class AnthropicNativeContentAssembly
         if (isNative) _blocks.Add(CurrentBlock);
         _text.Clear();
         _signature.Clear();
+        _signatureStarted = false;
         _input.Clear();
         _inputByteCount = 0;
         if (type == "text") _text.Append(ReadString(CurrentBlock["text"]));
@@ -49,6 +51,7 @@ internal sealed class AnthropicNativeContentAssembly
 
     public string AppendThinking(string text, bool isNative)
     {
+        if (isNative && _signatureStarted) throw new ModelProviderException("malformed_payload", false);
         AppendBounded(_text, text);
         if (isNative) CurrentBlock!["thinking"] = _text.ToString();
         return text;
@@ -57,6 +60,7 @@ internal sealed class AnthropicNativeContentAssembly
     public void AppendSignature(string signature, bool isNative)
     {
         if (!isNative) return;
+        _signatureStarted = true;
         _signature.Append(signature);
         if (_signature.Length > MaximumSignatureChars) throw new ModelProviderException("response_too_large", false);
         CurrentBlock!["signature"] = _signature.ToString();

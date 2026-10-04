@@ -39,6 +39,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                 var phase = Phase.ExpectMessageStart;
                 string? stopReason = null;
                 int? blockIndex = null;
+                var nextBlockIndex = 0;
                 string blockType = string.Empty;
                 var nativeContent = new AnthropicNativeContentAssembly();
                 ModelUsage? usage = null;
@@ -91,7 +92,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                         {
                             if (phase is not Phase.InMessage and not Phase.InBlock) throw new ModelProviderException("malformed_payload", false);
                             var idx = ReadInt(data["index"]);
-                            if (idx is null) throw new ModelProviderException("malformed_payload", false);
+                            if (idx is null || idx != nextBlockIndex) throw new ModelProviderException("malformed_payload", false);
                             if (blockIndex is not null) throw new ModelProviderException("malformed_payload", false);
                             var block = data["content_block"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
                             var t = ReadString(block["type"]) ?? throw new ModelProviderException("malformed_payload", false);
@@ -108,6 +109,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                     yield return new ModelDelta(null, [], false, null, null, nativeContent.Text);
                             }
                             blockIndex = idx;
+                            nextBlockIndex++;
                             blockType = t;
                             phase = Phase.InBlock;
                             break;

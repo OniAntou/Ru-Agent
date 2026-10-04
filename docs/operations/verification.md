@@ -57,6 +57,30 @@ scripted provider; it does not measure real-model quality or native terminal
 key/resize/clipboard behavior. No native terminal/desktop UI or real provider
 was driven during this delivery.
 
+## Model working environment baseline (2026-10-04)
+
+`scripts/evaluate_agent_workflows.ps1 -ValidateOnly` validated all twelve scenario
+oracles against workspace SHA-256
+`d5de862ab22f1e8f9b5960f40a8a1e8d143f4de34139c4392dde33f10a92560e`.
+`-RunScripted -ScenarioId recover_edit_no_match` built the CLI and Public Host,
+started an isolated loopback Host/Broker with a temporary data root and workspace,
+and invoked `RuAgent.Cli agent run --preset standard --workspace <temporary-workspace>
+--json --trust-workspace <fixture-input>`. The Broker returned `edit_no_match` for
+the first edit; the scripted corrective edit returned `ok`, changed only `seed.txt`
+to `fixed`, and the run completed. The run used 3 predetermined scripted model
+steps, 2 edit calls, 1 failed tool call and 0 approval requests. This does not show
+that a model read or followed the recovery note. Tokens, cost, provider/model
+quality, and live-provider results are unknown/not run. The other catalog entries
+retain their explicit `not_run` or `unmet` statuses; this is wiring evidence, not
+a task-quality score.
+
+The focused Python runner/fixture tests and documentation/route guards passed
+**26 tests**. Baseline headless Harness + model conversation tests passed **21
+tests**. The route contract was not changed. After Tasks B–F add supported
+workflows, extend the runner's explicit scenario dispatch and add a concrete
+offline oracle for each newly supported case; do not infer passes from unrelated
+tests.
+
 ## Model trust boundary verification (2026-09-24)
 
 The focused contract for the shipped autonomy boundary is:

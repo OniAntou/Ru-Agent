@@ -83,6 +83,61 @@ def test_runner_rejects_duplicate_base_paths_before_hashing(tmp_path):
     _run_invalid_fixture(tmp_path, fixture, "is duplicated")
 
 
+def test_scripted_edit_oracle_requires_exact_ordered_completions_and_single_terminal(tmp_path):
+    powershell = _powershell()
+    module = str(ROOT / "scripts" / "WorkflowEvaluationOracle.psm1").replace("'", "''")
+    script = tmp_path / "exercise-oracle.ps1"
+    script.write_text(
+        f"""
+$ErrorActionPreference = 'Stop'
+Import-Module '{module}' -Force
+$scenario = [pscustomobject]@{{ id = 'recovery'; assertions = @(
+    [pscustomobject]@{{ kind = 'first_edit_error'; equals = 'edit_no_match' }},
+    [pscustomobject]@{{ kind = 'successful_recovery_edit_count'; equals = 1 }},
+    [pscustomobject]@{{ kind = 'final_status'; equals = 'completed' }}
+) }}
+$failure = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 4; safe_summary = 'edit_no_match' }}
+$success = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 8; safe_summary = 'ok' }}
+$completed = [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 9; status = 'completed' }}
+$good = @($failure, $success, $completed)
+$metrics = Get-ScriptedEditMetrics $scenario $good
+if ($metrics.tool_calls -ne 2 -or $metrics.failed_tool_calls -ne 1) {{ throw 'The exact valid trace did not pass.' }}
+
+function Assert-Rejected($events, $case) {{
+    try {{ Get-ScriptedEditMetrics $scenario $events | Out-Null }}
+    catch {{ if ($_.Exception.Message.StartsWith('Oracle failure:')) {{ return }}; throw }}
+    throw "The oracle accepted invalid trace: $case"
+}}
+
+$reordered = @(
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 4; safe_summary = 'ok' }},
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 8; safe_summary = 'edit_no_match' }},
+    $completed
+)
+Assert-Rejected $reordered 'reordered completions'
+$extra = @($failure, $success,
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 9; safe_summary = 'ok' }},
+    [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 10; status = 'completed' }}
+)
+Assert-Rejected $extra 'extra completion'
+$duplicateTerminal = @($good, [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 10; status = 'completed' }})
+Assert-Rejected $duplicateTerminal 'duplicate terminal'
+Write-Output 'exact, reordered, extra, and duplicate-terminal oracle checks passed'
+""",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [powershell, "-NoProfile", "-File", str(script)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "exact, reordered, extra, and duplicate-terminal oracle checks passed" in completed.stdout
+
+
 def _run_invalid_fixture(tmp_path, fixture, expected_error):
     powershell = _powershell()
     invalid_fixture = tmp_path / "bad-fixture.json"

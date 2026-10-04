@@ -7,6 +7,29 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$Limits = @{
+    FixtureBytes = 2MB
+    ScenarioCount = 12
+    WorkspaceOverlayCount = 16
+    FileBytes = 256KB
+    WorkspaceBytes = 1MB
+    WorkspaceFiles = 64
+    InputBytes = 8KB
+    ExpectedFiles = 32
+    Assertions = 32
+    Turns = 32
+    TurnBytes = 8KB
+    CaseSeconds = 150
+    ReadinessRequestSeconds = 2
+    RepeatedLines = 4096
+    OutputLines = 5000
+    Sentinels = 32
+    StdoutBytes = 256KB
+    StderrBytes = 64KB
+    HostStdoutBytes = 16KB
+    HostStderrBytes = 32KB
+}
+Import-Module (Join-Path $PSScriptRoot "WorkflowEvaluationOracle.psm1") -Force
 if ($ValidateOnly -and $RunScripted) { throw "Choose either -ValidateOnly or -RunScripted." }
 if (-not $RunScripted) { $ValidateOnly = $true }
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -16,10 +39,10 @@ $defaultReportPath = Join-Path $repoRoot "artifacts/model-working-environment/wo
 if ([string]::IsNullOrWhiteSpace($ReportPath)) { $ReportPath = $defaultReportPath }
 $ReportPath = [System.IO.Path]::GetFullPath($ReportPath)
 $fixtureInfo = Get-Item -LiteralPath $fixturePath
-if ($fixtureInfo.Length -gt 2097152) { throw "Workflow fixture exceeds the 2 MiB cap." }
+if ($fixtureInfo.Length -gt $Limits.FixtureBytes) { throw "Workflow fixture exceeds the 2 MiB cap." }
 $fixture = Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
 $scenarioIds = @($fixture.scenarios | ForEach-Object { $_.id })
-if ($scenarioIds.Count -ne 12 -or ($scenarioIds | Select-Object -Unique).Count -ne 12) {
+if ($scenarioIds.Count -ne $Limits.ScenarioCount -or ($scenarioIds | Select-Object -Unique).Count -ne $Limits.ScenarioCount) {
     throw "The workflow fixture must contain exactly twelve unique scenarios."
 }
 
@@ -67,14 +90,14 @@ function Get-WorkspaceHash($Files) {
 function Get-FixtureContent($Entry) {
     switch ($Entry.kind) {
         "repeated_utf8" {
-            if ($Entry.count -lt 1 -or $Entry.count -gt 4096 -or [System.Text.Encoding]::UTF8.GetByteCount($Entry.line) * $Entry.count + [System.Text.Encoding]::UTF8.GetByteCount($Entry.suffix) -gt 262144) { throw "Repeated UTF-8 fixture exceeds its bounds." }
+            if ($Entry.count -lt 1 -or $Entry.count -gt $Limits.RepeatedLines -or [System.Text.Encoding]::UTF8.GetByteCount($Entry.line) * $Entry.count + [System.Text.Encoding]::UTF8.GetByteCount($Entry.suffix) -gt $Limits.FileBytes) { throw "Repeated UTF-8 fixture exceeds its bounds." }
             $builder = [System.Text.StringBuilder]::new()
             for ($index = 0; $index -lt $Entry.count; $index++) { [void]$builder.Append($Entry.line) }
             [void]$builder.Append($Entry.suffix)
             return $builder.ToString()
         }
         "numbered_output" {
-            if ($Entry.count -lt 1 -or $Entry.count -gt 5000 -or $Entry.sentinels.Count -gt 32 -or [System.Text.Encoding]::UTF8.GetByteCount($Entry.linePrefix) * $Entry.count -gt 262144) { throw "Numbered output fixture exceeds its bounds." }
+            if ($Entry.count -lt 1 -or $Entry.count -gt $Limits.OutputLines -or $Entry.sentinels.Count -gt $Limits.Sentinels -or [System.Text.Encoding]::UTF8.GetByteCount($Entry.linePrefix) * $Entry.count -gt $Limits.FileBytes) { throw "Numbered output fixture exceeds its bounds." }
             $builder = [System.Text.StringBuilder]::new()
             for ($index = 1; $index -le $Entry.count; $index++) {
                 $line = if ($null -ne $Entry.sentinels -and $null -ne $Entry.sentinels."$index") { $Entry.sentinels."$index" } else { "$($Entry.linePrefix)$index" }
@@ -122,7 +145,7 @@ function Get-RemainingSeconds([DateTimeOffset]$Deadline) {
     return $remaining
 }
 
-function Enable-BoundedProcessOutput([System.Diagnostics.Process]$Process, [int]$StdoutLimit = 262144, [int]$StderrLimit = 65536) {
+function Enable-BoundedProcessOutput([System.Diagnostics.Process]$Process, [int]$StdoutLimit = $Limits.StdoutBytes, [int]$StderrLimit = $Limits.StderrBytes) {
     $stdout = [RuWorkflow.BoundedProcessOutput]::new($StdoutLimit)
     $stderr = [RuWorkflow.BoundedProcessOutput]::new($StderrLimit)
     $Process.add_OutputDataReceived($stdout.Handler)
@@ -171,16 +194,16 @@ $seenBasePaths = [System.Collections.Generic.HashSet[string]]::new([System.Strin
 foreach ($entry in $fixture.workspaceFiles) {
     Assert-SafeRelativePath $entry.path "Workspace path"
     if (-not $seenBasePaths.Add($entry.path)) { throw "Base workspace path '$($entry.path)' is duplicated." }
-    if ([System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt 262144) { throw "Base workspace file '$($entry.path)' exceeds 256 KiB." }
+    if ([System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt $Limits.FileBytes) { throw "Base workspace file '$($entry.path)' exceeds 256 KiB." }
 }
 $workspaceHash = Get-WorkspaceHash $fixture.workspaceFiles
 foreach ($scenario in $fixture.scenarios) {
-    if ($scenario.workspaceOverlay.Count -gt 16) { throw "Scenario '$($scenario.id)' exceeds the workspace overlay cap." }
+    if ($scenario.workspaceOverlay.Count -gt $Limits.WorkspaceOverlayCount) { throw "Scenario '$($scenario.id)' exceeds the workspace overlay cap." }
     $seenOverlayPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $scenario.workspaceOverlay) {
         Assert-SafeRelativePath $entry.path "Workspace overlay path"
         if (-not $seenOverlayPaths.Add($entry.path)) { throw "Scenario '$($scenario.id)' repeats workspace overlay path '$($entry.path)'." }
-        if ($entry.kind -eq "literal" -and [System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt 262144) { throw "Workspace overlay '$($entry.path)' exceeds 256 KiB." }
+        if ($entry.kind -eq "literal" -and [System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt $Limits.FileBytes) { throw "Workspace overlay '$($entry.path)' exceeds 256 KiB." }
         if ($entry.kind -notin @("literal", "repeated_utf8", "numbered_output")) { throw "Scenario '$($scenario.id)' has an unknown workspace overlay kind." }
     }
     $scenarioFiles = Get-ScenarioWorkspaceFiles $scenario
@@ -188,27 +211,27 @@ foreach ($scenario in $fixture.scenarios) {
     if ($scenario.workspaceSha256 -ne $scenarioHash) {
         throw "Workspace hash mismatch for scenario '$($scenario.id)'."
     }
-    if ([string]::IsNullOrWhiteSpace($scenario.input) -or [System.Text.Encoding]::UTF8.GetByteCount($scenario.input) -gt 8192 -or $scenario.expectedFiles.Count -eq 0 -or $scenario.expectedFiles.Count -gt 32 -or $scenario.assertions.Count -eq 0 -or $scenario.assertions.Count -gt 32) {
+    if ([string]::IsNullOrWhiteSpace($scenario.input) -or [System.Text.Encoding]::UTF8.GetByteCount($scenario.input) -gt $Limits.InputBytes -or $scenario.expectedFiles.Count -eq 0 -or $scenario.expectedFiles.Count -gt $Limits.ExpectedFiles -or $scenario.assertions.Count -eq 0 -or $scenario.assertions.Count -gt $Limits.Assertions) {
         throw "Scenario '$($scenario.id)' is missing its input or oracle."
     }
     if ($scenario.preset -notin @("plan", "standard")) {
         throw "Scenario '$($scenario.id)' has a preset outside the approved offline baseline."
     }
-    if ($scenario.turns.Count -gt 32) { throw "Scenario '$($scenario.id)' exceeds the conversation turn cap." }
+    if ($scenario.turns.Count -gt $Limits.Turns) { throw "Scenario '$($scenario.id)' exceeds the conversation turn cap." }
     foreach ($turn in $scenario.turns) {
-        if ([System.Text.Encoding]::UTF8.GetByteCount($turn) -gt 8192) { throw "Scenario '$($scenario.id)' has an oversized turn." }
+        if ([System.Text.Encoding]::UTF8.GetByteCount($turn) -gt $Limits.TurnBytes) { throw "Scenario '$($scenario.id)' has an oversized turn." }
     }
-    if ($scenarioFiles.Count -eq 0 -or $scenarioFiles.Count -gt 64) { throw "Scenario '$($scenario.id)' exceeds the workspace file cap." }
+    if ($scenarioFiles.Count -eq 0 -or $scenarioFiles.Count -gt $Limits.WorkspaceFiles) { throw "Scenario '$($scenario.id)' exceeds the workspace file cap." }
     $seenWorkspacePaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $workspaceBytes = 0
     foreach ($entry in $scenarioFiles) {
         Assert-SafeRelativePath $entry.path "Workspace path"
         if (-not $seenWorkspacePaths.Add($entry.path)) { throw "Workspace path '$($entry.path)' is duplicated." }
         $fileBytes = [System.Text.Encoding]::UTF8.GetByteCount($entry.content)
-        if ($fileBytes -gt 262144) { throw "Workspace file '$($entry.path)' exceeds 256 KiB." }
+        if ($fileBytes -gt $Limits.FileBytes) { throw "Workspace file '$($entry.path)' exceeds 256 KiB." }
         $workspaceBytes += $fileBytes
     }
-    if ($workspaceBytes -gt 1048576) {
+    if ($workspaceBytes -gt $Limits.WorkspaceBytes) {
         throw "The scenario workspace is empty or exceeds 1 MiB."
     }
     $seenExpectedPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -221,7 +244,7 @@ foreach ($scenario in $fixture.scenarios) {
             $expectedHash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($entry.content))).ToLowerInvariant()
             if ($expectedHash -ne $entry.sha256) { throw "Expected content hash mismatch for '$($entry.path)'." }
         }
-        if ($null -ne $entry.content -and [System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt 262144) { throw "Expected file '$($entry.path)' exceeds 256 KiB." }
+        if ($null -ne $entry.content -and [System.Text.Encoding]::UTF8.GetByteCount($entry.content) -gt $Limits.FileBytes) { throw "Expected file '$($entry.path)' exceeds 256 KiB." }
         if (-not $seenWorkspacePaths.Contains($entry.path)) { throw "Expected path '$($entry.path)' is absent from the baseline workspace." }
         if ($entry.state -eq "unchanged" -and $null -ne $entry.content) {
             $initial = $scenarioFiles | Where-Object path -eq $entry.path | Select-Object -First 1
@@ -267,7 +290,7 @@ function Start-ScenarioHost($ScenarioRoot, $ScenarioWorkspace, [DateTimeOffset]$
     $start.Environment["RU_AGENT_BROKER_PROJECT_ROOT"] = $repoRoot
     $process = [System.Diagnostics.Process]::Start($start)
     try {
-        $capture = Enable-BoundedProcessOutput $process 16384 32768
+        $capture = Enable-BoundedProcessOutput $process $Limits.HostStdoutBytes $Limits.HostStderrBytes
         Wait-HostReady $process $ScenarioWorkspace.dataRoot $baseUrl $token (Get-RemainingSeconds $Deadline)
         return [pscustomobject]@{ process = $process; capture = $capture; baseUrl = $baseUrl; token = $token }
     } catch {
@@ -305,26 +328,17 @@ function Invoke-ScenarioCli($Scenario, $ScenarioWorkspace, $HostSession, [DateTi
 }
 
 function Test-ScriptedEditToolCycle($Scenario, $ScenarioWorkspace, $Events) {
-    $toolEvents = @($Events | Where-Object event_type -eq "tool.execution_completed")
-    $failedEvents = @($toolEvents | Where-Object safe_summary -eq "edit_no_match")
-    $successfulEvents = @($toolEvents | Where-Object safe_summary -in @("ok", "succeeded"))
-    $completedEvents = @($Events | Where-Object { $_.event_type -eq "run.state_changed" -and $_.status -eq "completed" })
+    $metrics = Get-ScriptedEditMetrics $Scenario $Events
     $filesMatch = Test-ScenarioFiles $Scenario $ScenarioWorkspace.workspace $ScenarioWorkspace.files
-    if ($failedEvents.Count -lt 1 -or $successfulEvents.Count -lt 1 -or $completedEvents.Count -lt 1 -or -not $filesMatch) {
-        $eventSummary = @($Events | ForEach-Object { "$($_.event_type):$($_.status):$($_.safe_summary)" }) -join ","
-        throw "Oracle failure: failed_tool=$($failedEvents.Count), successful_tool=$($successfulEvents.Count), completed=$($completedEvents.Count), files_match=$filesMatch, events=$eventSummary."
+    if (-not $filesMatch) {
+        throw "Oracle failure: scripted edit sequence did not produce the exact expected workspace."
     }
-    return [pscustomobject]@{
-        tool_calls = $toolEvents.Count
-        failed_tool_calls = $failedEvents.Count
-        approval_requests = @($Events | Where-Object event_type -eq "approval.requested").Count
-        model_steps = @($Events | Where-Object event_type -eq "model.step_started").Count
-    }
+    return $metrics
 }
 
 function Invoke-ScriptedScenario($Scenario, $BuildEvidence) {
     $scenarioRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ru-workflow-" + [guid]::NewGuid().ToString("N"))
-    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(150)
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Limits.CaseSeconds)
     $duration = [System.Diagnostics.Stopwatch]::StartNew()
     $outcome = "environment_failure"
     $failure = $null
@@ -417,7 +431,7 @@ function Wait-HostReady($Process, [string]$DataRoot, [string]$BaseUrl, [string]$
         if ($Process.HasExited) { throw "Managed Host exited during isolated startup with code $($Process.ExitCode)." }
         if (Test-Path -LiteralPath $descriptorPath) {
             $client = [System.Net.Http.HttpClient]::new()
-            $client.Timeout = [TimeSpan]::FromSeconds(2)
+    $client.Timeout = [TimeSpan]::FromSeconds($Limits.ReadinessRequestSeconds)
             $request = $null
             $response = $null
             try {

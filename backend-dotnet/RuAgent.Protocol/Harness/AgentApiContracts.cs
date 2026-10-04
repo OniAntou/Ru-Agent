@@ -28,7 +28,9 @@ public sealed record CreateAgentRunResponse(
     [property: JsonPropertyName("terminal_at")] string? TerminalAt = null,
     [property: JsonPropertyName("terminal_error_code")] string? TerminalErrorCode = null,
     [property: JsonPropertyName("trust_request_id")] string? TrustRequestId = null,
-    [property: JsonPropertyName("display_identity_hash")] string? DisplayIdentityHash = null);
+    [property: JsonPropertyName("display_identity_hash")] string? DisplayIdentityHash = null,
+    [property: JsonPropertyName("provider_backend")] string? ProviderBackend = null,
+    [property: JsonPropertyName("provider_model")] string? ProviderModel = null);
 
 public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("run_id")] string RunId,

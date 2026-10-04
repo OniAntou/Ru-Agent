@@ -265,6 +265,13 @@ Agent user/assistant activity records use the `agent` activity type and remain
 preview-sanitized at the activity-store boundary.
 When no session has been opened yet, the first Agent prompt creates a fresh
 session before creating the run.
+The desktop captures the submitted session ID after that creation, so an accepted
+first turn clears its own composer draft. A refused submission retains the prompt
+and attachments; its composer error remains visible across run-state refreshes,
+even when no run exists yet.
+Acceptance remains valid when the event stream finishes before the queued UI
+transition runs. Session-switch teardown or a newer controller owner invalidates
+that queued transition, so an older run cannot clear another session's draft.
 If an Agent API call reports `session_not_found` or `invalid_session_id`, the
 desktop creates one replacement session and retries once only before a run is
 created. A second recovery failure is shown as a bounded error and is never

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(client,gui)**: Parser response tạo run nhận và kiểm tra hai trường provider/model tuỳ chọn từ Host, cùng giới hạn với run-detail. Trước đây Host đã tạo run nhưng client ném `unknown_field` với `provider_backend`, khiến GUI không gửi được chat và không theo dõi run đã tạo.
+- **fix(gui)**: Lỗi gửi chat giữ nguyên trên composer khi chưa tạo được run, thay vì chớp rồi biến mất do panel bị ẩn. Chat mới chụp ID session sau khi tạo session để callback acceptance xoá đúng draft; lượt gửi bị từ chối vẫn giữ prompt và attachment để thử lại. Run kết thúc trước lượt UI dispatch vẫn xác nhận acceptance; đổi session hoặc teardown vô hiệu callback cũ.
+
 ### Added
 - **fix(broker)**: Git read tự động chặn external diff/textconv, fsmonitor và pager của repository; nhánh managed commit giữ hợp đồng preview/hash. `cat-file --filters` cần approval. Read lấy content/SHA-256 từ cùng handle đã kiểm tra path/hard-link, hỗ trợ cancellation và deadline hash; managed Web không dùng proxy môi trường/hệ thống.
 - **fix(harness)**: Pin provider/model/endpoint/protocol và reasoning options trong SQLite trước request model đầu tiên, không lưu secret; restart dùng đúng selection đã pin, run cũ thiếu selection fail closed. Compaction bảo vệ prompt của run hiện tại và replay theo run version thay vì timestamp.

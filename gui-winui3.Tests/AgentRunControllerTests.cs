@@ -94,6 +94,7 @@ public sealed class AgentRunControllerTests
         public bool ApproveCalled;
         public bool DenyCalled;
         public bool ThrowOnGetRun;
+        public bool ThrowOnCreate;
         public bool ThrowOnSubscribe;
         public string? SubscribeRunId;
         public long? SubscribeAfter;
@@ -107,6 +108,11 @@ public sealed class AgentRunControllerTests
         {
             CreateCallCount++;
             CreateCancellationToken = ct;
+            if (ThrowOnCreate)
+            {
+                throw new InvalidOperationException("create_rejected");
+            }
+
             if (CreateRunGate is not null)
             {
                 await CreateRunGate.Task.ConfigureAwait(false);
@@ -313,6 +319,92 @@ public sealed class AgentRunControllerTests
         Assert.False(controller.IsBusy);
         Assert.NotNull(controller.CurrentRun);
         Assert.Contains("Stop", controller.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_allows_retry_after_run_creation_is_rejected()
+    {
+        var fake = new FakeClient { Run = MakeRun(), ThrowOnCreate = true };
+        var controller = new AgentRunController(fake);
+        int acceptedCallbacks = 0;
+        var request = new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-create-rejected");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.CreateAndRunAsync(
+            request,
+            onAccepted: () => acceptedCallbacks++));
+
+        Assert.False(controller.IsBusy);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.CanCancel);
+        Assert.Equal(0, acceptedCallbacks);
+
+        fake.ThrowOnCreate = false;
+        bool accepted = await controller.CreateAndRunAsync(
+            request,
+            onAccepted: () => acceptedCallbacks++);
+
+        Assert.True(accepted);
+        Assert.Equal(2, fake.CreateCallCount);
+        Assert.Equal(1, acceptedCallbacks);
+        Assert.Equal(RunId, fake.SubscribeRunId);
+        Assert.True(controller.CanCancel);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_publishes_acceptance_after_a_fast_run_finishes_before_ui_dispatch()
+    {
+        var fake = new FakeClient { Run = MakeRunWith("completed") };
+        var queued = new List<Action>();
+        var controller = new AgentRunController(fake, synchronize: queued.Add);
+        int acceptedCallbacks = 0;
+
+        bool accepted = await controller.CreateAndRunAsync(
+            new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-fast-terminal"),
+            onAccepted: () => acceptedCallbacks++);
+
+        Assert.True(accepted);
+        Assert.Equal(0, acceptedCallbacks);
+        DrainUiQueue(queued);
+
+        Assert.Equal(1, acceptedCallbacks);
+        Assert.Equal(RunId, controller.CurrentRun?.RunId);
+        Assert.Equal("completed", controller.CurrentRun?.Status);
+        Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_drops_queued_acceptance_after_session_switch_teardown()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var queued = new List<Action>();
+        var controller = new AgentRunController(fake, synchronize: queued.Add);
+        int acceptedCallbacks = 0;
+
+        bool accepted = await controller.CreateAndRunAsync(
+            new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-stale-acceptance"),
+            onAccepted: () => acceptedCallbacks++);
+
+        Assert.True(accepted);
+        await controller.StopForSessionSwitchAsync();
+        DrainUiQueue(queued);
+
+        Assert.Equal(0, acceptedCallbacks);
+        Assert.Null(controller.CurrentRun);
+        Assert.True(fake.CancelCalled);
+    }
+
+    private static void DrainUiQueue(List<Action> queued)
+    {
+        int safety = 0;
+        while (queued.Count > 0 && safety++ < 100)
+        {
+            var action = queued[0];
+            queued.RemoveAt(0);
+            action();
+        }
+
+        Assert.Empty(queued);
     }
 
     [Fact]

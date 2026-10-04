@@ -275,7 +275,9 @@ namespace RuApp.Views
                 ShowWorkspaceTrustDialogAsync();
             }
 
-            AgentInlinePanel.Visibility = state.ShowInlinePanel ? Visibility.Visible : Visibility.Collapsed;
+            AgentInlinePanel.Visibility = state.ShowInlinePanel || _localComposerStatus.Length > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
 
             // A composer-local message outlives the refresh that would otherwise
             // blank it: the panel policy only knows about runs.
@@ -753,7 +755,6 @@ namespace RuApp.Views
                 return;
             }
 
-            string submittedSessionId = _activeSessionId;
             long submittedGeneration = _agentTurnGeneration;
             try
             {
@@ -787,6 +788,8 @@ namespace RuApp.Views
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
 
+                await EnsureAgentSessionAsync(CancellationToken.None);
+                string submittedSessionId = _activeSessionId;
                 bool accepted = await SendAgentTurnAsync(
                     BuildEffectivePrompt(text, attachments),
                     CancellationToken.None,
@@ -1169,6 +1172,7 @@ namespace RuApp.Views
 
             StartNewAgentActivityRun();
             BeginAgentReply(text, attachments, displayUserText, addUserMessage);
+            ClearComposerStatus();
             JumpToLatestForNewTurn();
             ScrollChatToBottom();
             AgentStopButton.Visibility = Visibility.Collapsed;

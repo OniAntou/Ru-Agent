@@ -93,6 +93,9 @@ has null metadata; reading the response never selects a provider. CLI retained-r
 display uses those fields, while configured model settings remain the next-turn
 intent. Catalog-derived usage estimates stay hidden when a retained run's
 selection is unknown.
+Run creation uses the same response projection and carries these nullable fields.
+The shared client validates them on both create and detail responses, with the
+same type and length bounds; unknown fields still fail closed.
 
 Schema v13 adds the bounded session-workspace lookup index. Migration executes
 and drains every SQL result before advancing `user_version`, inside the same

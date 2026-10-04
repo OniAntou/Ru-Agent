@@ -383,6 +383,24 @@ public sealed class ChatMessageAttachmentTests
         int acceptedCallback = send.IndexOf("onAccepted:", StringComparison.Ordinal);
         int clearDraft = send.IndexOf("ClearComposerDraft(submittedSessionId)", StringComparison.Ordinal);
         Assert.True(clearDraft > acceptedCallback, "the saved draft must be cleared only after the controller accepts the run");
+
+        var beginAccepted = GuiSource.MethodBody(view, "BeginAcceptedAgentTurn");
+        int beginReply = beginAccepted.IndexOf("BeginAgentReply(", StringComparison.Ordinal);
+        int clearStatus = beginAccepted.IndexOf("ClearComposerStatus()", StringComparison.Ordinal);
+        int updateStatus = beginAccepted.IndexOf("UpdateAgentInlineState()", StringComparison.Ordinal);
+        Assert.True(beginReply >= 0 && clearStatus > beginReply, "a previous error clears only after the current session accepts the run");
+        Assert.True(updateStatus > clearStatus, "the accepted run's status is projected after the old composer error clears");
+    }
+
+    [Fact]
+    public void Send_snapshots_the_session_after_creating_a_session_for_a_fresh_chat()
+    {
+        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
+        int ensureSession = send.IndexOf("await EnsureAgentSessionAsync", StringComparison.Ordinal);
+        int captureSession = send.IndexOf("submittedSessionId = _activeSessionId", StringComparison.Ordinal);
+
+        Assert.True(ensureSession >= 0, "a fresh chat needs its session before send guards are captured");
+        Assert.True(captureSession > ensureSession, "capture the session after a fresh session is activated");
     }
 
     [Fact]
@@ -428,6 +446,7 @@ public sealed class ChatMessageAttachmentTests
         Assert.Contains("_localComposerStatus = status", status, StringComparison.Ordinal);
         var update = GuiSource.MethodBody(view, "UpdateAgentInlineState");
         Assert.Contains("_localComposerStatus", update, StringComparison.Ordinal);
+        Assert.Contains("state.ShowInlinePanel || _localComposerStatus.Length > 0", update, StringComparison.Ordinal);
     }
 
     [Fact]

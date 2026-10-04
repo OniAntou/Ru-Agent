@@ -122,6 +122,47 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task CreateRunStrictParsingAcceptsOptionalProviderPins()
+    {
+        var response = new CreateAgentRunResponse(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ws_1",
+            "waiting_history",
+            "standard",
+            DateTimeOffset.UtcNow.ToString("O"),
+            DateTimeOffset.UtcNow.ToString("O"),
+            ProviderBackend: "OpenAI",
+            ProviderModel: "gpt-5");
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(response), Encoding.UTF8, "application/json"),
+            })));
+
+        var result = await client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard"));
+
+        Assert.Equal("OpenAI", result.ProviderBackend);
+        Assert.Equal("gpt-5", result.ProviderModel);
+    }
+
+    [Fact]
+    public async Task CreateRunStrictParsingRejectsInvalidProviderPinShape()
+    {
+        foreach (var payload in new[]
+        {
+            RunSummary(1, "gpt-5"),
+            RunSummary(null, new string('m', 257)),
+        })
+        {
+            var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(payload))));
+            var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+                client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+            Assert.Equal("invalid_response", error.ErrorCode);
+        }
+    }
+
+    [Fact]
     public async Task CreateRun_rejects_wrong_session_before_returning_response()
     {
         var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new

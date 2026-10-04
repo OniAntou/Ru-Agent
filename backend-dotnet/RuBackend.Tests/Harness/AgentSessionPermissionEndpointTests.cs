@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -227,6 +229,52 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal((HttpStatusCode)409, badResp.StatusCode);
         var badJson = await badResp.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("preset_mismatch", badJson.GetProperty("error_code").GetString());
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear(dataPaths);
+    }
+
+    [Fact]
+    public async Task AgentApiClient_CreatesRunAfterSettingFreshSessionPreset()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var baseUri = client.BaseAddress!;
+        var bearerToken = "test-secret";
+        var descriptor = new RuntimeDescriptor(
+            RuntimeDescriptor.CurrentProtocolVersion,
+            baseUri.ToString(),
+            bearerToken,
+            Environment.ProcessId,
+            "0",
+            "test-instance",
+            DateTimeOffset.UtcNow.ToString("O"));
+        using var api = new AgentApiClient(
+            new PublicHostSession(baseUri, bearerToken, descriptor),
+            client);
+
+        var presetResponse = await api.SetSessionPresetAsync(
+            sessionId,
+            "standard",
+            expectedVersion: 0,
+            interactive: true);
+        var presetVersion = presetResponse.GetProperty("version").GetInt64();
+        var created = await api.CreateRunAsync(new CreateAgentRunRequest(
+            sessionId,
+            wsPath,
+            "fresh session preset flow",
+            "standard",
+            presetVersion,
+            Guid.NewGuid().ToString("N")));
+        var fetched = await api.GetRunAsync(created.RunId);
+
+        Assert.Equal(1, presetVersion);
+        Assert.Equal(sessionId, created.SessionId);
+        Assert.Equal("standard", created.Preset);
+        Assert.Equal(created.RunId, fetched.RunId);
+        Assert.Equal("standard", fetched.Preset);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear(dataPaths);

@@ -661,12 +661,13 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using (doc)
         {
             var root = doc.RootElement;
-            var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
+            var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model"], StringComparer.Ordinal);
             foreach (var prop in root.EnumerateObject())
             {
                 if (!allowed.Contains(prop.Name))
                     throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
             }
+            ValidateProviderPins(root);
             try
             {
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -724,26 +725,8 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         {
             if (!allowed.Contains(prop.Name))
                 throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
-
-            if (prop.Name is "provider_backend" or "provider_model")
-            {
-                if (prop.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
-                {
-                    throw new AgentApiException("invalid_response", $"Invalid {prop.Name}");
-                }
-
-                var pin = prop.Value.GetString();
-                var isModelsDevBackend = prop.Name == "provider_backend"
-                    && pin?.StartsWith(ProviderCredential.ModelsDevPrefix, StringComparison.Ordinal) is true;
-                var maxChars = prop.Name == "provider_model"
-                    ? MaxProviderModelChars
-                    : isModelsDevBackend ? MaxModelsDevBackendChars : MaxProviderBackendChars;
-                if (pin is not null && pin.Length > maxChars)
-                {
-                    throw new AgentApiException("invalid_response", $"Invalid {prop.Name}");
-                }
-            }
         }
+        ValidateProviderPins(root);
         try
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -755,6 +738,33 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             return result;
         }
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        }
+    }
+
+    private static void ValidateProviderPins(JsonElement root)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name is not ("provider_backend" or "provider_model"))
+            {
+                continue;
+            }
+
+            if (property.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+            {
+                throw new AgentApiException("invalid_response", $"Invalid {property.Name}");
+            }
+
+            var pin = property.Value.GetString();
+            var isModelsDevBackend = property.Name == "provider_backend"
+                && pin?.StartsWith(ProviderCredential.ModelsDevPrefix, StringComparison.Ordinal) is true;
+            var maxChars = property.Name == "provider_model"
+                ? MaxProviderModelChars
+                : isModelsDevBackend ? MaxModelsDevBackendChars : MaxProviderBackendChars;
+            if (pin is not null && pin.Length > maxChars)
+            {
+                throw new AgentApiException("invalid_response", $"Invalid {property.Name}");
+            }
         }
     }
 

@@ -20,6 +20,7 @@
     <ProjectReference Include="..\RuAgent.Broker\RuAgent.Broker.csproj" Aliases="Broker" />
     <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <ProjectReference Include="..\RuAgent.Harness.Persistence\RuAgent.Harness.Persistence.csproj" />
+    <ProjectReference Include="..\RuAgent.Client\RuAgent.Client.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuBackend\RuBackend.csproj" />
   </ItemGroup>

@@ -6,12 +6,34 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **41 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,319 passed / 0 failed / 0 skipped** (2026-10-04, agent hardening and CLI workflows; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,326 passed / 0 failed / 0 skipped** (2026-10-04, GUI chat create-response compatibility and acceptance lifecycle; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **171 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-04 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## GUI chat create-response compatibility (2026-10-04)
+
+The actual shared-client flow against an isolated HTTP Host reproduced
+`unknown_field: Unexpected field provider_backend` after run creation. The Host
+uses the run-detail projection for create responses; the create parser had not
+accepted its two nullable provider fields. A regression now exercises fresh
+session creation, preset selection without a snapshot token, `AgentApiClient`
+run creation and run detail. Create/detail share type and length validation for
+provider metadata, and unknown fields remain rejected.
+
+GUI tests also reproduced acceptance being dropped when a fast stream completed
+before queued UI dispatch. Run ownership now survives normal stream completion;
+teardown invalidates stale callbacks. Composer errors remain visible without a
+run, and first-turn acceptance uses the newly created session ID.
+
+After compiling the changed projects, the final sequential Debug matrix with
+`-NoBuild -NoRestore` passed **5,326 tests in all 12 projects**, including
+**1,175 GUI tests**. Native GUI Enter handling and real-provider quality were
+not driven; these checks cover the actual HTTP client and controller lifecycle.
+`build.bat` then passed all **12/12** stages and refreshed the self-contained
+flat Release distribution, including the corrected shared client and GUI.
 
 ## Agent hardening and CLI workflows (2026-10-04)
 

@@ -50,6 +50,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private AgentRunModel? _currentRun;
     private string? _currentRunId;
     private string? _waitKind;
+    private long _runOwnershipGeneration;
 
     /// <summary>
     /// Wait kind for a run the host parked in ReconciliationRequired. Matches the
@@ -209,6 +210,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
         bool alreadyBusy;
+        long ownershipGeneration = 0;
         lock (_gate)
         {
             alreadyBusy = _isBusy;
@@ -216,6 +218,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 _isBusy = true;
                 _subscriptionCts = cts;
+                ownershipGeneration = ++_runOwnershipGeneration;
             }
         }
 
@@ -269,7 +272,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 return false;
             }
 
-            PublishCreatedRun(run, cts, token, onAccepted);
+            PublishCreatedRun(run, ownershipGeneration, token, onAccepted);
             accepted = true;
             await FollowRunStreamAsync(run.RunId, 0, token).ConfigureAwait(false);
             return true;
@@ -333,7 +336,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private void PublishCreatedRun(
         AgentRunModel run,
-        CancellationTokenSource createCts,
+        long ownershipGeneration,
         CancellationToken token,
         Action? onAccepted)
     {
@@ -341,7 +344,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             lock (_gate)
             {
-                if (!ReferenceEquals(_subscriptionCts, createCts) || token.IsCancellationRequested) return;
+                if (_runOwnershipGeneration != ownershipGeneration || token.IsCancellationRequested) return;
             }
 
             CurrentRun = run;
@@ -429,6 +432,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         lock (_gate)
         {
             _subscriptionCts = cts;
+            _runOwnershipGeneration++;
             // Hand the run id over before the first UI frame: the delta/activity
             // handlers read it on the SSE thread, and a UI-queued assignment lets
             // the opening frames arrive while it is still null and be dropped.
@@ -552,6 +556,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             string? runId = _currentRunId;
             if (_subscriptionCts is not null || runId is not null)
             {
+                _runOwnershipGeneration++;
                 _subscriptionCts?.Cancel();
                 _isCancelRequested = true;
             }
@@ -1376,6 +1381,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         CancellationTokenSource? subscription;
         lock (_gate)
         {
+            _runOwnershipGeneration++;
             subscription = _subscriptionCts;
             _subscriptionCts = null;
             subscription?.Cancel();

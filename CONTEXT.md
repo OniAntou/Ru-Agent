@@ -223,8 +223,10 @@ _Avoid_: current settings as restart fallback
 
 **Provider Continuation**:
 The bounded, typed, encrypted `InternalOnly` payload holding exact provider
-items required to continue a successful native Responses tool step, bound to
-the run, provider, protocol, model, and model-step ID. It remains outside the
+items required to continue a successful native Responses or Anthropic Messages
+tool step, bound to the run, provider, protocol, model, and model-step ID. For
+Anthropic this preserves ordered text, signed thinking, redacted thinking, and
+tool-use blocks exactly. It remains outside the
 visible AssistantStep, canonical model context, client payload reads, and
 telemetry; rehydration pairs it with the exact ordered normalized tool-call
 batch before dispatch. A provider-native capability is enabled only by an

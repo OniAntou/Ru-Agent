@@ -20,6 +20,6 @@ internal sealed class SyntheticCatalogHandler : HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
         Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("""{"data":[{"id":"deepseek-v4-flash-free"},{"id":"gpt-5.6-luna"}]}"""),
+            Content = new StringContent("""{"data":[{"id":"deepseek-v4-flash-free"},{"id":"gpt-5.6-luna"},{"id":"claude-fable-5"}]}"""),
         });
 }

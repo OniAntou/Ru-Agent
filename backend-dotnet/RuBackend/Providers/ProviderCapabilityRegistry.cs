@@ -49,12 +49,12 @@ public static class ProviderCapabilityRegistry
                 ["thinking"] = new JsonObject { ["type"] = "adaptive", ["display"] = "omitted" },
                 ["output_config"] = new JsonObject { ["effort"] = effort },
             };
-        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", options, maxOutput);
+        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", options, maxOutput, SupportsNativeTools: true);
     }
 
     private static void RegisterAnthropicDefaultOnly(string modelId, int maxOutput)
     {
-        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", new Dictionary<string, JsonObject>(StringComparer.Ordinal), maxOutput);
+        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", new Dictionary<string, JsonObject>(StringComparer.Ordinal), maxOutput, SupportsNativeTools: true);
     }
 
     private static string Key(string alias, string modelId) => alias + "\n" + modelId;

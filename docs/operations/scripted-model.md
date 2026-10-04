@@ -67,12 +67,11 @@ run as evidence that a provider path works.
 
 ## Consecutive tool steps
 
-The offline workflow runner has one deterministic edit-tool-cycle oracle: the scripted model
-attempts an `edit_no_match`, receives the Broker result, performs a successful edit, and
-finishes with the expected file content through the actual CLI, managed Host and Broker.
-This checks integration and file effects. The steps are predetermined, so the run does not
-measure provider behaviour or prove that a model read or followed the recovery note. Other
-multi-step tool chains require their own executors and oracles.
+The offline workflow runner currently has one deterministic edit-tool-cycle oracle. It
+checks the actual CLI, managed Host, Broker result and final file content. Its predetermined
+steps verify wiring and effects only; they do not measure provider behaviour or prove that a
+model read or followed a recovery note. Other workflow chains require their own executors
+and effect oracles.
 
 Assertions about the prompt contract itself live in `ScriptedModelReceiptTests`, which
 covers both capabilities renderings directly.

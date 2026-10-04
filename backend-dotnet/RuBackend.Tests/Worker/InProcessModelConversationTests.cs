@@ -14,6 +14,44 @@ namespace RuBackend.Tests.Worker;
 public sealed class InProcessModelConversationTests
 {
     [Fact]
+    public void Anthropic_native_history_keeps_signed_blocks_order_and_pairs_results_with_is_error()
+    {
+        var arguments = System.Text.Json.JsonDocument.Parse("{\"path\":\"a.txt\"}").RootElement.Clone();
+        var secondArguments = System.Text.Json.JsonDocument.Parse("{\"path\":\"b.txt\"}").RootElement.Clone();
+        var turns = new[]
+        {
+            new ModelTurn("assistant", "Reading both files.",
+            [
+                new ModelFunctionCall("toolu_read_a", "read", arguments),
+                new ModelFunctionCall("toolu_read_b", "read", secondArguments),
+            ]),
+            new ModelTurn("tool", "first result", toolCallId: "toolu_read_a", toolResultCode: "read_failed"),
+            new ModelTurn("tool", "second result", toolCallId: "toolu_read_b", toolResultCode: "ok"),
+        };
+        var continuation = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
+        [
+            new JsonObject { ["type"] = "text", ["text"] = "Reading both files." },
+            new JsonObject { ["type"] = "thinking", ["thinking"] = "private", ["signature"] = "signed-by-provider" },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_a", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"a.txt\"}") },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_b", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"b.txt\"}") },
+        ]);
+
+        var messages = AnthropicMessagesHistoryProjector.Project(turns, [continuation], "claude-fable-5");
+
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("assistant", messages[0]["role"]!.GetValue<string>());
+        var assistantBlocks = messages[0]["content"]!.AsArray();
+        Assert.Equal(["text", "thinking", "tool_use", "tool_use"], assistantBlocks.Select(block => block!["type"]!.GetValue<string>()));
+        Assert.Equal("signed-by-provider", assistantBlocks[1]!["signature"]!.GetValue<string>());
+        Assert.Equal("user", messages[1]["role"]!.GetValue<string>());
+        var results = messages[1]["content"]!.AsArray();
+        Assert.Equal(["toolu_read_a", "toolu_read_b"], results.Select(result => result!["tool_use_id"]!.GetValue<string>()));
+        Assert.True(results[0]!["is_error"]!.GetValue<bool>());
+        Assert.False(results[1]!["is_error"]!.GetValue<bool>());
+        Assert.Equal(1, messages.Count(message => message["role"]!.GetValue<string>() == "assistant"));
+    }
+
+    [Fact]
     public void Responses_projection_replays_opaque_output_and_call_bound_result_without_merging_json_into_narration()
     {
         var continuation = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,

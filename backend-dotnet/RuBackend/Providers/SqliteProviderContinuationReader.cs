@@ -17,6 +17,12 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         ProviderBootstrapData bootstrap,
         CancellationToken cancellationToken)
     {
+        var provider = bootstrap.Protocol switch
+        {
+            "openai_responses" => "openai",
+            "anthropic_messages" => "anthropic",
+            _ => throw new ProviderCatalogException("provider_continuation_invalid"),
+        };
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -46,27 +52,34 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         foreach (var reference in references)
         {
             var content = await payloads.ReadProviderContinuationAsync(
-                runId, reference.PayloadId, reference.ModelStepId, "openai", bootstrap.Protocol, bootstrap.Model, cancellationToken)
+                runId, reference.PayloadId, reference.ModelStepId, provider, bootstrap.Protocol, bootstrap.Model, cancellationToken)
                 .ConfigureAwait(false);
             aggregateBytes = checked(aggregateBytes + content.Plaintext.Length);
             if (aggregateBytes > MaximumHistoryBytes) throw new ProviderCatalogException("model_history_too_large");
-            result.Add(Parse(content.Plaintext, bootstrap));
+            result.Add(Parse(content.Plaintext, bootstrap, provider));
         }
         return result;
     }
 
-    private static ProviderContinuation Parse(ReadOnlyMemory<byte> bytes, ProviderBootstrapData bootstrap)
+    private static ProviderContinuation Parse(ReadOnlyMemory<byte> bytes, ProviderBootstrapData bootstrap, string provider = "openai")
     {
-        using var document = System.Text.Json.JsonDocument.Parse(bytes);
-        var root = document.RootElement;
-        var items = root.GetProperty("output_items").EnumerateArray()
-            .Select(item => System.Text.Json.Nodes.JsonNode.Parse(item.GetRawText())!.AsObject())
-            .ToArray();
         try
         {
-            return new ProviderContinuation("openai", bootstrap.Protocol, bootstrap.Model, 1, items);
+            using var document = System.Text.Json.JsonDocument.Parse(bytes);
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !root.TryGetProperty("output_items", out var outputItems)
+                || outputItems.ValueKind != System.Text.Json.JsonValueKind.Array
+                || outputItems.GetArrayLength() is < 1 or > 32)
+                throw new System.Text.Json.JsonException("Continuation output shape is invalid.");
+            var items = outputItems.EnumerateArray()
+                .Select(item => System.Text.Json.Nodes.JsonNode.Parse(item.GetRawText()) as System.Text.Json.Nodes.JsonObject
+                    ?? throw new System.Text.Json.JsonException("Continuation item is not an object."))
+                .ToArray();
+            return new ProviderContinuation(provider, bootstrap.Protocol, bootstrap.Model, 1, items);
         }
-        catch (ArgumentException)
+        catch (Exception error) when (error is System.Text.Json.JsonException
+            or InvalidOperationException or ArgumentException or KeyNotFoundException)
         {
             throw new ProviderCatalogException("provider_continuation_invalid");
         }

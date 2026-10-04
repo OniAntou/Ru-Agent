@@ -10,8 +10,10 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Protocol;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 using RuBackend.Tests.Fakes;
 using BrokerHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 using Xunit;
@@ -24,7 +26,7 @@ namespace RuBackend.Tests.Harness;
 /// rg/git processes, so it runs non-parallel.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
-public sealed class HeadlessCodingLoopTests
+public sealed partial class HeadlessCodingLoopTests
 {
     [Theory]
     [InlineData(true)]

@@ -32,6 +32,35 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Anthropic_native_step_returns_tool_call_but_never_surfaces_signed_thinking()
+    {
+        var bootstrap = new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", "synthetic", maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native, allowNativeAnthropic: true);
+        var continuation = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
+        [
+            new JsonObject { ["type"] = "text", ["text"] = "I will inspect." },
+            new JsonObject { ["type"] = "thinking", ["thinking"] = "private thought", ["signature"] = "opaque-signature" },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_1", ["name"] = "files.read", ["input"] = JsonNode.Parse("{\"path\":\"a.txt\"}") },
+        ]);
+        var provider = new FakeModelProvider(
+            new ModelDelta("I will inspect.", [], false, null),
+            new ModelDelta(null, [new ModelToolFragment("toolu_read_1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: continuation));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
+
+        Assert.Equal("I will inspect.", result.Text);
+        Assert.Null(result.ReasoningText);
+        Assert.Equal("opaque-signature", result.ProviderContinuation!.OutputItems[1]["signature"]!.GetValue<string>());
+        Assert.Equal("toolu_read_1", Assert.Single(result.ToolCalls).ProviderCallId);
+        var modelRequest = Assert.Single(provider.Requests);
+        Assert.True(modelRequest.NativeToolCalling);
+        Assert.Empty(modelRequest.AnthropicMessages);
+    }
+
+    [Fact]
     public async Task Responses_native_step_rejects_missing_or_mismatched_continuation_before_dispatch_result()
     {
         var bootstrap = ResponsesNativeBootstrap();

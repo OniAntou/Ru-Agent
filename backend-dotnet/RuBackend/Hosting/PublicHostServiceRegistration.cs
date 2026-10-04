@@ -254,7 +254,7 @@ internal static class PublicHostServiceRegistration
 
                     return list;
                 },
-                LoadResponsesContinuationsAsync = (runId, bootstrap, ct) =>
+                LoadProviderContinuationsAsync = (runId, bootstrap, ct) =>
                     services.GetRequiredService<SqliteProviderContinuationReader>().ReadAsync(runId, bootstrap, ct),
             });
         // A scripted model replaces the in-process provider call entirely when requested,

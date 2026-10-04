@@ -44,7 +44,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
     /// <summary>Loads the run's attached images from the payload store as data URLs.</summary>
     public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
 
-    public Func<RunId, ProviderBootstrapData, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadResponsesContinuationsAsync { get; init; }
+    public Func<RunId, ProviderBootstrapData, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadProviderContinuationsAsync { get; init; }
 
     // Tests shrink the backoff; production waits out transient provider limits.
     internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
@@ -84,13 +84,22 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                 var hasImages = images.Count > 0;
                 var (prompt, _, modelMessages) = BuildConversation(request.Context, hasImages);
                 IReadOnlyList<JsonObject> responsesInputItems = Array.Empty<JsonObject>();
+                IReadOnlyList<JsonObject> anthropicMessages = Array.Empty<JsonObject>();
                 if (bootstrap.Protocol == ProviderProtocols.OpenAiResponses
                     && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native)
                 {
-                    var continuations = LoadResponsesContinuationsAsync is null
+                    var continuations = LoadProviderContinuationsAsync is null
                         ? Array.Empty<ProviderContinuation>()
-                        : await LoadResponsesContinuationsAsync(request.RunId, bootstrap, cancellationToken).ConfigureAwait(false);
+                        : await LoadProviderContinuationsAsync(request.RunId, bootstrap, cancellationToken).ConfigureAwait(false);
                     responsesInputItems = OpenAiResponsesHistoryProjector.Project(modelMessages!, continuations);
+                }
+                else if (bootstrap.Protocol == ProviderProtocols.AnthropicMessages
+                    && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native)
+                {
+                    var continuations = LoadProviderContinuationsAsync is null
+                        ? Array.Empty<ProviderContinuation>()
+                        : await LoadProviderContinuationsAsync(request.RunId, bootstrap, cancellationToken).ConfigureAwait(false);
+                    anthropicMessages = AnthropicMessagesHistoryProjector.Project(modelMessages!, continuations, bootstrap.Model);
                 }
                 if (selectionFeedbackCode is not null
                     && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
@@ -110,7 +119,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                         new ModelGenerationSettings(settings["model_tools"] as JsonArray),
                         bootstrap,
                         ParseRunImages(images),
-                        responsesInputItems);
+                        responsesInputItems,
+                        anthropicMessages);
                 }
                 catch (ArgumentException error)
                 {
@@ -643,7 +653,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                 throw new AgentProtocolException("tool_contract_mismatch");
             }
 
-            tools.Add(BuildModelTool(definition.ToolId, definition.ToolVersion, definition.Scope, definition.InputSchema));
+            tools.Add(BuildModelTool(definition.ToolId, definition.ToolVersion, definition.Description, definition.Scope, definition.InputSchema));
         }
 
         return new JsonObject
@@ -657,6 +667,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
     private static JsonObject BuildModelTool(
         string toolId,
         string version,
+        string description,
         string scope,
         JsonObject schema)
     {
@@ -664,6 +675,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
         {
             ["tool_id"] = toolId,
             ["tool_version"] = version,
+            ["description"] = description,
             ["scopes"] = new JsonArray(scope),
             ["availability"] = "executable",
             ["model_enabled"] = true,

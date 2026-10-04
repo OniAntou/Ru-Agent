@@ -74,6 +74,23 @@ public sealed class ProviderBootstrapDataTests
             ProviderBootstrapData.ModeForProtocol(ProviderProtocols.OpenAiResponses));
     }
 
+    [Fact]
+    public void Anthropic_native_mode_requires_an_explicit_exact_capability_grant()
+    {
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", string.Empty, maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native));
+        var supported = new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", string.Empty, maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native, allowNativeAnthropic: true);
+
+        Assert.Equal(ProviderToolCallingMode.Native, supported.ToolCallingMode);
+        Assert.Equal(ProviderToolCallingMode.TextSelection,
+            ProviderBootstrapData.ModeForProtocol(ProviderProtocols.AnthropicMessages));
+    }
+
     [Theory]
     [InlineData("effort")]
     [InlineData("enabled")]

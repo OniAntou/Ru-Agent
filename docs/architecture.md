@@ -99,18 +99,20 @@ resolution failure before the first model call becomes a bounded durable run
 failure. Scripted offline runs do not register this resolver and do not access
 provider catalogs or credentials.
 
-New OpenAI Responses pins enable native tool calling only for the exact models
-whose `openai_responses` capability declares it. Legacy pins keep their fixed
-protocol calling mode, and unknown models do not gain support from a family
-name. Responses requests remain stateless (`store:false`). The Host translates
-the Protocol tool definitions into function declarations, validates completed
-streamed calls, and returns them through the normal scheduler and Broker path.
-For tool continuations, the Host stores the exact bounded Responses output items
-in a dedicated encrypted `InternalOnly` payload, separate from AssistantStep
-and canonical model history. A bounded indexed read rehydrates only those items
-and pairs them with the retained tool calls by provider identity and order;
-client and model-context payload readers cannot access the opaque bytes. Missing
-or mismatched continuation fails closed before another provider dispatch.
+New OpenAI Responses and Anthropic Messages pins enable native tool calling only
+for exact models whose matching protocol capability declares it. Legacy pins
+keep their fixed protocol calling mode, and unknown models do not gain support
+from a family name. Responses requests remain stateless (`store:false`). The
+Host translates Protocol tool definitions into provider declarations, validates
+completed streamed calls, and returns them through the normal scheduler and
+Broker path. OpenAI stores bounded output items; Anthropic stores the exact
+ordered text, signed thinking, redacted-thinking and `tool_use` blocks needed to
+continue with matching `tool_result` IDs and error flags. Both use a dedicated
+encrypted `InternalOnly` payload, separate from AssistantStep and canonical
+model history. A bounded indexed read rehydrates continuation data and pairs it
+with retained tool calls by provider identity and order; client and model-context
+payload readers cannot access the opaque bytes. Missing or mismatched
+continuation fails closed before another provider dispatch.
 
 The existing run-detail response optionally exposes `provider_backend` and
 `provider_model` from the durable selection only. An unselected or legacy run

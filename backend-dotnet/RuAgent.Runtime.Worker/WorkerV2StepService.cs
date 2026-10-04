@@ -112,7 +112,9 @@ public sealed class WorkerV2StepService
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
                 request.Images,
-                request.ResponsesInputItems);
+                request.ResponsesInputItems,
+                nativeToolCalling,
+                request.AnthropicMessages);
         }
         catch (WorkerV2StepException)
         {
@@ -188,7 +190,7 @@ public sealed class WorkerV2StepService
                     {
                         if (providerContinuation is not null
                             || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native
-                            || providerBootstrap.Protocol != ProviderProtocols.OpenAiResponses
+                            || providerBootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages)
                             || continuation.Model != providerBootstrap.Model)
                             throw new WorkerV2StepException("protocol_failure", retryable: false);
                         providerContinuation = continuation;
@@ -248,7 +250,7 @@ public sealed class WorkerV2StepService
         }
 
         if (providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native
-            && providerBootstrap.Protocol == ProviderProtocols.OpenAiResponses
+            && providerBootstrap.Protocol is ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages
             && calls.Count > 0 && providerContinuation is null)
             throw new WorkerV2StepException("provider_continuation_missing", retryable: false);
         return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
@@ -283,7 +285,8 @@ public sealed class WorkerV2StepService
         ProviderContinuation? continuation,
         IReadOnlyList<ModelToolCall> calls)
     {
-        if (bootstrap.Protocol != ProviderProtocols.OpenAiResponses || bootstrap.ToolCallingMode != ProviderToolCallingMode.Native)
+        if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
+            || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
         {
             if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
             return;
@@ -293,16 +296,23 @@ public sealed class WorkerV2StepService
             if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
             return;
         }
-        if (continuation is null || continuation.Provider != "openai" || continuation.Protocol != bootstrap.Protocol || continuation.Model != bootstrap.Model)
+        var expectedProvider = bootstrap.Protocol == ProviderProtocols.AnthropicMessages ? "anthropic" : "openai";
+        if (continuation is null || continuation.Provider != expectedProvider || continuation.Protocol != bootstrap.Protocol || continuation.Model != bootstrap.Model)
             throw new WorkerV2StepException("provider_continuation_missing", false);
-        var nativeCalls = continuation.OutputItems.Where(item => item["type"]?.GetValue<string>() == "function_call").ToArray();
+        var nativeCalls = continuation.OutputItems
+            .Where(item => item["type"]?.GetValue<string>() == (expectedProvider == "anthropic" ? "tool_use" : "function_call"))
+            .ToArray();
         if (nativeCalls.Length != calls.Count) throw new WorkerV2StepException("protocol_failure", false);
         for (var index = 0; index < calls.Count; index++)
         {
             var item = nativeCalls[index];
-            if (item["call_id"]?.GetValue<string>() != calls[index].ProviderCallId
+            var callId = expectedProvider == "anthropic" ? item["id"]?.GetValue<string>() : item["call_id"]?.GetValue<string>();
+            var arguments = expectedProvider == "anthropic"
+                ? item["input"]?.ToJsonString()
+                : item["arguments"]?.GetValue<string>();
+            if (callId != calls[index].ProviderCallId
                 || item["name"]?.GetValue<string>() != calls[index].ToolId
-                || item["arguments"]?.GetValue<string>() is not { } arguments
+                || arguments is null
                 || !System.Text.Json.Nodes.JsonNode.DeepEquals(
                     System.Text.Json.Nodes.JsonNode.Parse(arguments),
                     System.Text.Json.Nodes.JsonNode.Parse(calls[index].Arguments.GetRawText())))

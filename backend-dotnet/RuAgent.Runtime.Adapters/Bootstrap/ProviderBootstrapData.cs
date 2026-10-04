@@ -19,7 +19,8 @@ public sealed record ProviderBootstrapData
         JsonObject? requestOptions = null,
         int? maximumOutputTokens = null,
         ProviderToolCallingMode? toolCallingMode = null,
-        bool allowNativeResponses = false)
+        bool allowNativeResponses = false,
+        bool allowNativeAnthropic = false)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -36,10 +37,10 @@ public sealed record ProviderBootstrapData
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
         MaximumOutputTokens = ValidateOutputCap(protocol, maximumOutputTokens);
         var protocolMode = ModeForProtocol(Protocol);
-        var isSupportedNativeResponses = allowNativeResponses
-            && Protocol == ProviderProtocols.OpenAiResponses
-            && toolCallingMode == ProviderToolCallingMode.Native;
-        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode && !isSupportedNativeResponses)
+        var isSupportedNativeMode = toolCallingMode == ProviderToolCallingMode.Native
+            && ((allowNativeResponses && Protocol == ProviderProtocols.OpenAiResponses)
+                || (allowNativeAnthropic && Protocol == ProviderProtocols.AnthropicMessages));
+        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode && !isSupportedNativeMode)
         {
             throw new ArgumentException("Tool calling mode does not match the provider protocol.", nameof(toolCallingMode));
         }

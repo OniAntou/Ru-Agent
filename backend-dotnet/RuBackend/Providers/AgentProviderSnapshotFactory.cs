@@ -86,7 +86,8 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowVersion,
             outputTokenReserve);
         var snapshot = CreateSnapshot(selected, key, options, maximumOutput, toolCallingMode,
-            allowNativeResponses: IsDeclaredNativeResponses(selected));
+            allowNativeResponses: IsDeclaredNativeResponses(selected),
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected));
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         if (pin != proposed)
@@ -125,7 +126,8 @@ public sealed class AgentProviderSnapshotFactory(
             _ => throw new ProviderCatalogException("provider_selection_invalid"),
         };
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens, toolCallingMode,
-            allowNativeResponses: IsDeclaredNativeResponses(selected));
+            allowNativeResponses: IsDeclaredNativeResponses(selected),
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected));
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -238,7 +240,8 @@ public sealed class AgentProviderSnapshotFactory(
         JsonObject options,
         int? maximumOutput,
         ProviderToolCallingMode toolCallingMode,
-        bool allowNativeResponses = false)
+        bool allowNativeResponses = false,
+        bool allowNativeAnthropic = false)
     {
         try
         {
@@ -251,7 +254,8 @@ public sealed class AgentProviderSnapshotFactory(
                 options,
                 maximumOutput,
                 toolCallingMode,
-                allowNativeResponses);
+                allowNativeResponses,
+                allowNativeAnthropic);
         }
         catch (ArgumentException)
         {
@@ -260,12 +264,18 @@ public sealed class AgentProviderSnapshotFactory(
     }
 
     private static ProviderToolCallingMode ResolveNewCallingMode(ProviderSelection selected) =>
-        IsDeclaredNativeResponses(selected)
+        IsDeclaredNativeResponses(selected) || IsDeclaredNativeAnthropic(selected)
             ? ProviderToolCallingMode.Native
             : ProviderBootstrapData.ModeForProtocol(selected.Protocol);
 
     private static bool IsDeclaredNativeResponses(ProviderSelection selected) =>
         selected.Protocol == ProviderProtocols.OpenAiResponses
+        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
+        && capability.Protocol == selected.Protocol
+        && capability.SupportsNativeTools;
+
+    private static bool IsDeclaredNativeAnthropic(ProviderSelection selected) =>
+        selected.Protocol == ProviderProtocols.AnthropicMessages
         && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
         && capability.Protocol == selected.Protocol
         && capability.SupportsNativeTools;

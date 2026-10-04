@@ -68,7 +68,7 @@ public sealed class AgentProviderSnapshotFactory(
         var contextWindowVersion = contextWindowTokens is null
             ? "unknown-v1"
             : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
-        var toolCallingMode = ProviderBootstrapData.ModeForProtocol(selected.Protocol);
+        var toolCallingMode = ResolveNewCallingMode(selected);
         var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
@@ -85,7 +85,8 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowSource,
             contextWindowVersion,
             outputTokenReserve);
-        var snapshot = CreateSnapshot(selected, key, options, maximumOutput, toolCallingMode);
+        var snapshot = CreateSnapshot(selected, key, options, maximumOutput, toolCallingMode,
+            allowNativeResponses: IsDeclaredNativeResponses(selected));
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         if (pin != proposed)
@@ -123,7 +124,8 @@ public sealed class AgentProviderSnapshotFactory(
             "text_selection" => ProviderToolCallingMode.TextSelection,
             _ => throw new ProviderCatalogException("provider_selection_invalid"),
         };
-        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens, toolCallingMode);
+        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens, toolCallingMode,
+            allowNativeResponses: IsDeclaredNativeResponses(selected));
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -235,7 +237,8 @@ public sealed class AgentProviderSnapshotFactory(
         string key,
         JsonObject options,
         int? maximumOutput,
-        ProviderToolCallingMode toolCallingMode)
+        ProviderToolCallingMode toolCallingMode,
+        bool allowNativeResponses = false)
     {
         try
         {
@@ -247,13 +250,25 @@ public sealed class AgentProviderSnapshotFactory(
                 key,
                 options,
                 maximumOutput,
-                toolCallingMode);
+                toolCallingMode,
+                allowNativeResponses);
         }
         catch (ArgumentException)
         {
             throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
+
+    private static ProviderToolCallingMode ResolveNewCallingMode(ProviderSelection selected) =>
+        IsDeclaredNativeResponses(selected)
+            ? ProviderToolCallingMode.Native
+            : ProviderBootstrapData.ModeForProtocol(selected.Protocol);
+
+    private static bool IsDeclaredNativeResponses(ProviderSelection selected) =>
+        selected.Protocol == ProviderProtocols.OpenAiResponses
+        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
+        && capability.Protocol == selected.Protocol
+        && capability.SupportsNativeTools;
 
     private static string CallingModeValue(ProviderToolCallingMode mode) => mode switch
     {

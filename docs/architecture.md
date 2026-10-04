@@ -99,6 +99,19 @@ resolution failure before the first model call becomes a bounded durable run
 failure. Scripted offline runs do not register this resolver and do not access
 provider catalogs or credentials.
 
+New OpenAI Responses pins enable native tool calling only for the exact models
+whose `openai_responses` capability declares it. Legacy pins keep their fixed
+protocol calling mode, and unknown models do not gain support from a family
+name. Responses requests remain stateless (`store:false`). The Host translates
+the Protocol tool definitions into function declarations, validates completed
+streamed calls, and returns them through the normal scheduler and Broker path.
+For tool continuations, the Host stores the exact bounded Responses output items
+in a dedicated encrypted `InternalOnly` payload, separate from AssistantStep
+and canonical model history. A bounded indexed read rehydrates only those items
+and pairs them with the retained tool calls by provider identity and order;
+client and model-context payload readers cannot access the opaque bytes. Missing
+or mismatched continuation fails closed before another provider dispatch.
+
 The existing run-detail response optionally exposes `provider_backend` and
 `provider_model` from the durable selection only. An unselected or legacy run
 has null metadata; reading the response never selects a provider. CLI retained-run
@@ -120,6 +133,8 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Legacy-schema fixtures remove later artifacts before testing
 upgrade and rollback; they do not reinterpret a newer database as an older one.
+Schema v15 adds the partial run/kind/sequence index used for bounded provider
+continuation rehydration, including the v14 upgrade path.
 
 ## Agent autonomy and trust boundary
 

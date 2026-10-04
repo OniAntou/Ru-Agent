@@ -13,6 +13,48 @@ namespace RuAgent.Runtime.Worker.Tests;
 public sealed class WorkerV2StepServiceTests
 {
     [Fact]
+    public async Task Responses_native_step_requires_exact_bounded_continuation_for_normalized_call_batch()
+    {
+        var bootstrap = ResponsesNativeBootstrap();
+        var continuation = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "reasoning", ["id"] = "reason-1", ["encrypted_content"] = "opaque" },
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "call-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+        ]);
+        var provider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls",
+            providerContinuation: continuation));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
+
+        Assert.Equal(continuation.SerializedOutputItems.ToArray(), result.ProviderContinuation!.SerializedOutputItems.ToArray());
+        Assert.Equal("call-1", Assert.Single(result.ToolCalls).ProviderCallId);
+    }
+
+    [Fact]
+    public async Task Responses_native_step_rejects_missing_or_mismatched_continuation_before_dispatch_result()
+    {
+        var bootstrap = ResponsesNativeBootstrap();
+        var provider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls"));
+        var missing = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        Assert.Equal("provider_continuation_missing", missing.Code);
+
+        var mismatch = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "other-call", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" }]);
+        var mismatchedProvider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: mismatch));
+        var invalid = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(mismatchedProvider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        Assert.Equal("protocol_failure", invalid.Code);
+    }
+
+    private static ProviderBootstrapData ResponsesNativeBootstrap() => new(
+        "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1/responses"),
+        "gpt-5.6-luna", "synthetic", toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+
+    [Fact]
     public async Task Step_service_composes_once_and_returns_one_done_with_receipt()
     {
         var provider = new FakeModelProvider(

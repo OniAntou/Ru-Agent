@@ -16,7 +16,8 @@ public sealed record ModelRequest
         Uri endpoint,
         string credential,
         int? maximumOutputTokens = null,
-        IReadOnlyList<ModelImage>? images = null)
+        IReadOnlyList<ModelImage>? images = null,
+        IReadOnlyList<JsonObject>? responsesInputItems = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -50,6 +51,14 @@ public sealed record ModelRequest
         }
 
         ValidateModelHistory(turns);
+        if (responsesInputItems is { Count: > 256 }
+            || responsesInputItems?.Any(item => !IsSupportedResponsesInputItem(item)) == true)
+            throw new ArgumentException("Responses input history is invalid.", nameof(responsesInputItems));
+        var historyBytes = responsesInputItems is { Count: > 0 }
+            ? MeasureResponsesInputBytes(responsesInputItems)
+            : MeasureModelMessagesBytes(turns);
+        if (historyBytes > MaxModelMessagesBytes)
+            throw new ArgumentException("Model history exceeds the adapter byte cap.", nameof(responsesInputItems));
 
         ArgumentNullException.ThrowIfNull(settings);
         if (settings.ToJsonString().Length > 128 * 1024)
@@ -117,6 +126,7 @@ public sealed record ModelRequest
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
         MaximumOutputTokens = maximumOutputTokens;
         Images = Array.AsReadOnly(images is null ? Array.Empty<ModelImage>() : images.ToArray());
+        ResponsesInputItems = Array.AsReadOnly(responsesInputItems?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
     }
 
     public string Model { get; }
@@ -136,6 +146,32 @@ public sealed record ModelRequest
     public int? MaximumOutputTokens { get; }
 
     public IReadOnlyList<ModelImage> Images { get; }
+
+    public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
+
+    public static long MeasureResponsesInputBytes(IReadOnlyList<JsonObject>? items)
+    {
+        if (items is null || items.Count == 0) return 0;
+        long bytes = 2;
+        for (var index = 0; index < items.Count; index++)
+        {
+            bytes = checked(bytes + Encoding.UTF8.GetByteCount(items[index].ToJsonString()));
+            if (index > 0) bytes = checked(bytes + 1);
+        }
+
+        return bytes;
+    }
+
+    private static bool IsSupportedResponsesInputItem(JsonObject? item)
+    {
+        if (item is null) return false;
+        var type = item["type"]?.GetValue<string>();
+        if (type is "function_call" or "function_call_output" or "reasoning" or "message") return true;
+        var role = item["role"]?.GetValue<string>();
+        return role is "user" or "assistant"
+            && item["content"] is JsonValue content
+            && content.TryGetValue<string>(out _);
+    }
 
     public static long MeasureModelMessagesBytes(IReadOnlyList<ModelTurn> messages)
     {

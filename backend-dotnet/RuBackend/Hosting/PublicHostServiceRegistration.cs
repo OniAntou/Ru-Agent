@@ -27,6 +27,7 @@ using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
@@ -227,6 +228,9 @@ internal static class PublicHostServiceRegistration
                 var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
                 return run is null || run.TerminalAt.HasValue;
             }));
+        services.AddSingleton(services => new SqliteProviderContinuationReader(
+            services.GetRequiredService<HarnessSqliteOptions>(),
+            services.GetRequiredService<HarnessPayloadStore>()));
         services.AddSingleton(services =>
             new InProcessModelStepRunner(services.GetRequiredService<WorkerV2StepService>())
             {
@@ -250,6 +254,8 @@ internal static class PublicHostServiceRegistration
 
                     return list;
                 },
+                LoadResponsesContinuationsAsync = (runId, bootstrap, ct) =>
+                    services.GetRequiredService<SqliteProviderContinuationReader>().ReadAsync(runId, bootstrap, ct),
             });
         // A scripted model replaces the in-process provider call entirely when requested,
         // so the whole product can be exercised without a provider key. Registered before

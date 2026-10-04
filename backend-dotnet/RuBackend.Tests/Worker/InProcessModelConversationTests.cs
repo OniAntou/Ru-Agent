@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Harness.Worker;
 using Xunit;
@@ -11,6 +13,37 @@ namespace RuBackend.Tests.Worker;
 
 public sealed class InProcessModelConversationTests
 {
+    [Fact]
+    public void Responses_projection_replays_opaque_output_and_call_bound_result_without_merging_json_into_narration()
+    {
+        var continuation = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "reasoning", ["id"] = "reason-1", ["encrypted_content"] = "signed-bytes", ["summary"] = new JsonArray() },
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+        ]);
+        var turns = new[]
+        {
+            new ModelTurn("assistant", "Reading the file.", [new ModelFunctionCall("provider-1", "files.read", Json("{\"path\":\"a.txt\"}"))]),
+            new ModelTurn("tool", "file contents", toolCallId: "provider-1", toolResultCode: "ok"),
+        };
+
+        var items = OpenAiResponsesHistoryProjector.Project(turns, [continuation]);
+
+        Assert.Equal("Reading the file.", items[0]!["content"]!.GetValue<string>());
+        Assert.Equal("reasoning", items[1]!["type"]!.GetValue<string>());
+        Assert.Equal("signed-bytes", items[1]!["encrypted_content"]!.GetValue<string>());
+        Assert.Equal("provider-1", items[2]!["call_id"]!.GetValue<string>());
+        Assert.Equal("provider-1", items[3]!["call_id"]!.GetValue<string>());
+        Assert.Equal("file contents", items[3]!["output"]!.GetValue<string>());
+        Assert.DoesNotContain("path", items[0]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var mismatched = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"b.txt\"}" },
+        ]);
+        Assert.Throws<WorkerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched]));
+    }
+
     [Fact]
     public void First_step_uses_typed_messages_without_history()
     {

@@ -40,6 +40,7 @@ public sealed class HarnessSqliteSchemaTests
         "ix_workspace_change_journal_sequence",
         "ix_agent_session_preset_snapshots_expiry",
         "ix_agent_session_preset_snapshots_session",
+        "ix_agent_events_provider_continuation",
     ];
 
     [Fact]
@@ -158,6 +159,30 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Contains(details, detail => detail.Contains(
             "ix_agent_runs_session_created_run",
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Migrating_from_fourteen_adds_bounded_provider_continuation_lookup_index()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP INDEX IF EXISTS ix_agent_events_provider_continuation; PRAGMA user_version = 14;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+        SqliteConnection.ClearAllPools();
+
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(15, health.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        await using var index = verify.CreateCommand();
+        index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_agent_events_provider_continuation'";
+        Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
     }
 
     [Fact]

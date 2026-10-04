@@ -15,7 +15,8 @@ public sealed record WorkerV2StepResult(
     string FinishReason,
     SystemPromptReceipt PromptReceipt,
     ModelUsage? Usage,
-    string? ReasoningText = null);
+    string? ReasoningText = null,
+    ProviderContinuation? ProviderContinuation = null);
 
 public sealed class WorkerV2StepException : Exception
 {
@@ -110,7 +111,8 @@ public sealed class WorkerV2StepService
                 providerBootstrap.Endpoint,
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
-                request.Images);
+                request.Images,
+                request.ResponsesInputItems);
         }
         catch (WorkerV2StepException)
         {
@@ -144,6 +146,7 @@ public sealed class WorkerV2StepService
             var text = new StringBuilder();
             var reasoning = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
+            ProviderContinuation? providerContinuation = null;
             string? finishReason = null;
             ModelUsage? usage = null;
             IModelProvider provider;
@@ -181,6 +184,15 @@ public sealed class WorkerV2StepService
                     }
 
                     toolFragments.AddRange(delta.ToolFragments);
+                    if (delta.ProviderContinuation is { } continuation)
+                    {
+                        if (providerContinuation is not null
+                            || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native
+                            || providerBootstrap.Protocol != ProviderProtocols.OpenAiResponses
+                            || continuation.Model != providerBootstrap.Model)
+                            throw new WorkerV2StepException("protocol_failure", retryable: false);
+                        providerContinuation = continuation;
+                    }
                     // Long argument streams arrive as one fragment per SSE chunk;
                     // the per-chunk shape limit lives in the adapter. This cap only
                     // bounds memory, and the byte cap on reassembled arguments
@@ -229,12 +241,17 @@ public sealed class WorkerV2StepService
         {
             finishReason = "tool_calls";
         }
+        ValidateProviderContinuation(providerBootstrap, providerContinuation, calls);
         if (calls.Count == 0)
         {
             await holdback.ReleaseAsync().ConfigureAwait(false);
         }
 
-        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text));
+        if (providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native
+            && providerBootstrap.Protocol == ProviderProtocols.OpenAiResponses
+            && calls.Count > 0 && providerContinuation is null)
+            throw new WorkerV2StepException("provider_continuation_missing", retryable: false);
+        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
         }
         catch (OperationCanceledException)
         {
@@ -258,6 +275,38 @@ public sealed class WorkerV2StepService
             {
                 _providerGate.Release();
             }
+        }
+    }
+
+    private static void ValidateProviderContinuation(
+        ProviderBootstrapData bootstrap,
+        ProviderContinuation? continuation,
+        IReadOnlyList<ModelToolCall> calls)
+    {
+        if (bootstrap.Protocol != ProviderProtocols.OpenAiResponses || bootstrap.ToolCallingMode != ProviderToolCallingMode.Native)
+        {
+            if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
+            return;
+        }
+        if (calls.Count == 0)
+        {
+            if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
+            return;
+        }
+        if (continuation is null || continuation.Provider != "openai" || continuation.Protocol != bootstrap.Protocol || continuation.Model != bootstrap.Model)
+            throw new WorkerV2StepException("provider_continuation_missing", false);
+        var nativeCalls = continuation.OutputItems.Where(item => item["type"]?.GetValue<string>() == "function_call").ToArray();
+        if (nativeCalls.Length != calls.Count) throw new WorkerV2StepException("protocol_failure", false);
+        for (var index = 0; index < calls.Count; index++)
+        {
+            var item = nativeCalls[index];
+            if (item["call_id"]?.GetValue<string>() != calls[index].ProviderCallId
+                || item["name"]?.GetValue<string>() != calls[index].ToolId
+                || item["arguments"]?.GetValue<string>() is not { } arguments
+                || !System.Text.Json.Nodes.JsonNode.DeepEquals(
+                    System.Text.Json.Nodes.JsonNode.Parse(arguments),
+                    System.Text.Json.Nodes.JsonNode.Parse(calls[index].Arguments.GetRawText())))
+                throw new WorkerV2StepException("protocol_failure", false);
         }
     }
 

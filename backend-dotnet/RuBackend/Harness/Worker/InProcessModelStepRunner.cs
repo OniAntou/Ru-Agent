@@ -44,6 +44,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
     /// <summary>Loads the run's attached images from the payload store as data URLs.</summary>
     public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
 
+    public Func<RunId, ProviderBootstrapData, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadResponsesContinuationsAsync { get; init; }
+
     // Tests shrink the backoff; production waits out transient provider limits.
     internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
 
@@ -81,6 +83,15 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                 var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
                 var hasImages = images.Count > 0;
                 var (prompt, _, modelMessages) = BuildConversation(request.Context, hasImages);
+                IReadOnlyList<JsonObject> responsesInputItems = Array.Empty<JsonObject>();
+                if (bootstrap.Protocol == ProviderProtocols.OpenAiResponses
+                    && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native)
+                {
+                    var continuations = LoadResponsesContinuationsAsync is null
+                        ? Array.Empty<ProviderContinuation>()
+                        : await LoadResponsesContinuationsAsync(request.RunId, bootstrap, cancellationToken).ConfigureAwait(false);
+                    responsesInputItems = OpenAiResponsesHistoryProjector.Project(modelMessages!, continuations);
+                }
                 if (selectionFeedbackCode is not null
                     && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
                 {
@@ -98,7 +109,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                         request.PromptContext,
                         new ModelGenerationSettings(settings["model_tools"] as JsonArray),
                         bootstrap,
-                        ParseRunImages(images));
+                        ParseRunImages(images),
+                        responsesInputItems);
                 }
                 catch (ArgumentException error)
                 {
@@ -147,7 +159,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
                     MapFinishReason(result.FinishReason),
                     estimatedInputTokens: 0,
                     result.Usage);
-                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText);
+                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText, result.ProviderContinuation);
             }
             catch (WorkerV2StepException error) when (
                 error.Retryable

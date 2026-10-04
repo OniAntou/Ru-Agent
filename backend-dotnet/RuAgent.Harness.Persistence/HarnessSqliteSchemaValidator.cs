@@ -187,10 +187,11 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_workspace_change_journal_sequence',
                   'ix_agent_session_preset_snapshots_expiry',
                   'ix_agent_session_preset_snapshots_session',
-                  'ix_agent_runs_session_created_run')
+                  'ix_agent_runs_session_created_run',
+                  'ix_agent_events_provider_continuation')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 10;
+            .ConfigureAwait(false) ?? 0L) == 11;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

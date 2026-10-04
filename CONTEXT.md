@@ -213,12 +213,24 @@ _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Run Provider Selection**:
 The secret-free durable choice pinned after successful bootstrap validation and
-before a run's first model request: backend, alias, endpoint, protocol, model,
-credential account name, reasoning options and output-token limit. Reopening a
-run rebuilds its in-memory credential snapshot from this selection; current
+before a run's first model request: backend, alias, endpoint, protocol, model
+and display label, credential account name, reasoning options, calling mode,
+catalog context-window metadata and output-token reserve. Reopening a run
+rebuilds its in-memory credential snapshot from this selection; current
 settings cannot substitute a different provider or model. A legacy run without
 the selection fails closed. Credential values never enter this record.
 _Avoid_: current settings as restart fallback
+
+**Provider Continuation**:
+The bounded, typed, encrypted `InternalOnly` payload holding exact provider
+items required to continue a successful native Responses tool step, bound to
+the run, provider, protocol, model, and model-step ID. It remains outside the
+visible AssistantStep, canonical model context, client payload reads, and
+telemetry; rehydration pairs it with the exact ordered normalized tool-call
+batch before dispatch. A provider-native capability is enabled only by an
+exact registry declaration, never by a model-name pattern. Broker remains the
+sole tool Execution Authority.
+_Avoid_: hidden reasoning in chat history or reconstructed prose
 
 **Policy Snapshot**:
 The immutable, versioned, SHA-256-canonical binding of preset, trusted

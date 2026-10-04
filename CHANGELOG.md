@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+- **feat(runtime)**: OpenAI Responses uses native function calls for exact registry-declared models. Tool outputs follow their provider call IDs; bounded encrypted continuation items stay internal and survive run/Host restart, while approvals are re-evaluated under the current Broker lease. Unsupported capability and malformed continuation fail closed without protocol substitution. Offline fake-wire and Host/Broker tests verify wiring; they do not measure live provider quality.
 - **fix(harness,persistence)**: Run provider pins now persist the model label, protocol, calling mode, exact known context window and source/version, plus output reserve. Prompt identity and compaction budget read the same pin after settings changes/restart; unknown windows use a conservative bounded cap, and bootstrap failures are persisted before model invocation. Native batching wording is limited to native mode; text-selection remains one JSON object.
 
 - **fix(client,gui)**: Parser response tạo run nhận và kiểm tra hai trường provider/model tuỳ chọn từ Host, cùng giới hạn với run-detail. Trước đây Host đã tạo run nhưng client ném `unknown_field` với `provider_backend`, khiến GUI không gửi được chat và không theo dõi run đã tạo.

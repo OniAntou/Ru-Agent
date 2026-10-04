@@ -1,3 +1,5 @@
+extern alias Broker;
+
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -8,6 +10,10 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
+using RuAgent.Protocol;
+using RuBackend.Business.Settings;
+using RuBackend.Tests.Fakes;
+using BrokerHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -20,6 +26,106 @@ namespace RuBackend.Tests.Harness;
 [Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class HeadlessCodingLoopTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Native_responses_batch_continuation_survives_approval_restart_and_returns_to_provider(bool keepBrokerProcess)
+    {
+        using var workspace = GitWorkspace.Create();
+        using var approvalFile = ApprovalFile.Create();
+        var settings = new SettingsStore(workspace.DataPaths);
+        await settings.SaveAsync((await settings.ReadAsync(default)) with
+        {
+            Backend = "OpenAI",
+            OpenAiModel = "gpt-5.6-luna",
+        }, default);
+        var credentials = new EphemeralTestCredentialStore();
+        await credentials.SetAsync("Ru", "openai_api_key", "synthetic-test-key", default);
+        var provider = new ScriptedResponsesHandler(approvalFile.Path);
+        var callIds = provider.CallIds;
+        using var broker = keepBrokerProcess ? SharedBrokerSession.Create() : null;
+        string runId;
+        string approvalId;
+        var firstFactory = new BackendWebApplicationFactory(
+            dataPaths: workspace.DataPaths,
+            credentialStore: credentials,
+            settingsStore: settings,
+            withInProcessBroker: true,
+            providerHandler: provider,
+            sharedBrokerDescriptorPath: broker?.DescriptorPath);
+        using (firstFactory)
+        {
+            using var client = firstFactory.CreateAuthenticatedClient();
+            runId = await CreateTrustedRunAsync(client, workspace.Path);
+            Assert.True(
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval", "completed", "failed" }, TimeSpan.FromSeconds(30)),
+                "native run did not reach a durable state");
+            var observedStatus = await GetStatusAsync(client, runId);
+            using var runState = await client.GetAsync($"/agent/v1/runs/{runId}");
+            var stateBody = await runState.Content.ReadAsStringAsync();
+            var observedEvents = await ReadEventsAsync(client, runId);
+            Assert.True(observedStatus == "waiting_approval", $"status={observedStatus}; providerRequests={provider.Requests.Count}; run={stateBody}; events={JsonSerializer.Serialize(observedEvents)}");
+
+            var events = await ReadEventsAsync(client, runId);
+            approvalId = events.Last(item => item.GetProperty("event_type").GetString() == "approval.requested")
+                .GetProperty("approval_id").GetString()!;
+            Assert.Equal(2, provider.Requests.Count);
+            Assert.Equal(2, events.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
+            Assert.DoesNotContain(events, item => item.GetProperty("event_type").GetString() == "model.provider_continuation_recorded");
+
+            var payloadStore = firstFactory.Services.GetRequiredService<HarnessPayloadStore>();
+            var internalPayloads = await payloadStore.ListPayloadIdsAsync(
+                new RunId(runId), HarnessPayloadKind.ProviderContinuation, CancellationToken.None);
+            Assert.Equal(2, internalPayloads.Count);
+            foreach (var payloadId in internalPayloads)
+            {
+                var clientRead = await Assert.ThrowsAsync<HarnessStoreException>(() => payloadStore.ReadForClientAsync(
+                    new RunId(runId), payloadId, CancellationToken.None));
+                Assert.Equal("payload_client_forbidden", clientRead.Code);
+                var modelRead = await Assert.ThrowsAsync<HarnessStoreException>(() => payloadStore.ReadForModelAsync(
+                    new RunId(runId), payloadId, CancellationToken.None));
+                Assert.Equal("payload_model_forbidden", modelRead.Code);
+            }
+
+        }
+
+        using var restartedFactory = new BackendWebApplicationFactory(
+            dataPaths: workspace.DataPaths,
+            credentialStore: credentials,
+            settingsStore: settings,
+            withInProcessBroker: true,
+            providerHandler: provider,
+            sharedBrokerDescriptorPath: broker?.DescriptorPath);
+        using var restartedClient = restartedFactory.CreateAuthenticatedClient();
+        Assert.True(await WaitForApprovalCountAsync(restartedClient, runId, 2, TimeSpan.FromSeconds(30)),
+            "restart did not re-evaluate and publish a fresh approval for the retained proposal");
+        var rehydratedEvents = await ReadEventsAsync(restartedClient, runId);
+        var refreshedApprovalId = rehydratedEvents.Last(item => item.GetProperty("event_type").GetString() == "approval.requested")
+            .GetProperty("approval_id").GetString()!;
+        Assert.NotEqual(approvalId, refreshedApprovalId);
+        using var staleApproval = await restartedClient.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+            new { command = "allow_once" });
+        Assert.Equal(HttpStatusCode.Conflict, staleApproval.StatusCode);
+        var staleBody = await staleApproval.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("approval_stale", staleBody.GetProperty("error_code").GetString());
+        using var approve = await restartedClient.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/approvals/{refreshedApprovalId}",
+            new { command = "allow_once" });
+        Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
+        Assert.True(
+            await WaitForStatusAsync(restartedClient, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)),
+            $"native run did not complete after approval; status={await GetStatusAsync(restartedClient, runId)}");
+        Assert.Equal("completed", await GetStatusAsync(restartedClient, runId));
+        var finalEvents = await ReadEventsAsync(restartedClient, runId);
+        Assert.Equal(3, finalEvents.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
+        Assert.Equal(3, provider.Requests.Count);
+        Assert.Equal(new[] { "call-read-a", "call-read-b" }, callIds.Take(2));
+        AssertRequestHasBatchOutputs(provider.Requests[1], new[] { "call-read-a", "call-read-b" });
+        AssertRequestHasBatchOutputs(provider.Requests[2], new[] { "call-approval" });
+        Assert.All(provider.Requests, body => Assert.False(body["store"]!.GetValue<bool>()));
+    }
+
     [Fact]
     public async Task Deterministic_headless_loop_inspects_edits_runs_and_stops_at_terminal_approval()
     {
@@ -271,6 +377,180 @@ public sealed class HeadlessCodingLoopTests
     // Fixtures and helpers.
     // ------------------------------------------------------------------
 
+    private static void AssertRequestHasBatchOutputs(JsonObject request, IReadOnlyList<string> callIds)
+    {
+        var input = request["input"]!.AsArray();
+        foreach (var callId in callIds)
+        {
+            Assert.Contains(input, item => item?["type"]?.GetValue<string>() == "function_call_output"
+                && item["call_id"]?.GetValue<string>() == callId);
+        }
+
+        Assert.Contains(input, item => item?["type"]?.GetValue<string>() == "reasoning"
+            && item["encrypted_content"]?.GetValue<string>() == "opaque-test-signature");
+    }
+
+    private sealed class ScriptedResponsesHandler(string approvalReadPath) : HttpMessageHandler
+    {
+        private readonly List<JsonObject> _requests = new();
+        private readonly object _gate = new();
+
+        public IReadOnlyList<JsonObject> Requests
+        {
+            get { lock (_gate) return _requests.Select(request => (JsonObject)request.DeepClone()).ToArray(); }
+        }
+
+        public IReadOnlyList<string> CallIds => new[] { "call-read-a", "call-read-b", "call-approval" };
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var body = JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!.AsObject();
+            int index;
+            lock (_gate)
+            {
+                index = _requests.Count;
+                _requests.Add((JsonObject)body.DeepClone());
+            }
+
+            var events = index switch
+            {
+                0 => NativeBatch("call-read-a", "item-read-a", "read", "{\"path\":\"seed.txt\"}",
+                    "call-read-b", "item-read-b", "read", "{\"path\":\"other.txt\"}"),
+                1 => NativeBatch("call-approval", "item-approval", "read",
+                    JsonSerializer.Serialize(new { path = approvalReadPath })),
+                _ => TextCompletion("native continuation resumed"),
+            };
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(events, Encoding.UTF8, "text/event-stream"),
+            };
+        }
+
+        private static string NativeBatch(params string[] calls)
+        {
+            var output = new JsonArray();
+            var sse = new StringBuilder();
+            for (var i = 0; i < calls.Length; i += 4)
+            {
+                var (callId, itemId, name, arguments) = (calls[i], calls[i + 1], calls[i + 2], calls[i + 3]);
+                output.Add(new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = itemId, ["call_id"] = callId,
+                    ["name"] = name, ["arguments"] = arguments,
+                });
+                var index = i / 4;
+                sse.Append(Event("response.output_item.added", new JsonObject
+                {
+                    ["type"] = "response.output_item.added", ["output_index"] = index,
+                    ["item"] = new JsonObject
+                    {
+                        ["type"] = "function_call", ["id"] = itemId, ["call_id"] = callId,
+                        ["name"] = name, ["arguments"] = "",
+                    },
+                }));
+                sse.Append(Event("response.function_call_arguments.delta", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.delta", ["output_index"] = index,
+                    ["item_id"] = itemId, ["delta"] = arguments,
+                }));
+                sse.Append(Event("response.function_call_arguments.done", new JsonObject
+                {
+                    ["type"] = "response.function_call_arguments.done", ["output_index"] = index,
+                    ["item_id"] = itemId, ["arguments"] = arguments,
+                }));
+            }
+
+            var reasoning = new JsonObject
+            {
+                ["type"] = "reasoning", ["id"] = "reasoning-test", ["encrypted_content"] = "opaque-test-signature",
+                ["summary"] = new JsonArray(),
+            };
+            output.Add((JsonObject)reasoning.DeepClone());
+            sse.Append(Event("response.completed", new JsonObject
+            {
+                ["type"] = "response.completed",
+                ["response"] = new JsonObject { ["model"] = "gpt-5.6-luna", ["status"] = "completed", ["output"] = output },
+            }));
+            return sse.ToString();
+        }
+
+        private static string TextCompletion(string text) =>
+            Event("response.output_text.delta", new JsonObject { ["type"] = "response.output_text.delta", ["delta"] = text })
+            + Event("response.completed", new JsonObject
+            {
+                ["type"] = "response.completed",
+                ["response"] = new JsonObject { ["model"] = "gpt-5.6-luna", ["status"] = "completed", ["output"] = new JsonArray() },
+            });
+
+        private static string Event(string name, JsonObject data) => $"event: {name}\ndata: {data.ToJsonString()}\n\n";
+    }
+
+    private sealed class ApprovalFile : IDisposable
+    {
+        public string Path { get; }
+
+        private ApprovalFile(string path) => Path = path;
+
+        public static ApprovalFile Create()
+        {
+            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ru-approval-read-" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllText(path, "offline approval read fixture");
+            return new ApprovalFile(path);
+        }
+
+        public void Dispose()
+        {
+            if (File.Exists(Path)) File.Delete(Path);
+        }
+    }
+
+    private sealed class SharedBrokerSession : IDisposable
+    {
+        private readonly string _root;
+        private readonly BrokerHostHost _host;
+
+        public string DescriptorPath { get; }
+
+        private SharedBrokerSession(string root, string descriptorPath, BrokerHostHost host)
+        {
+            _root = root;
+            DescriptorPath = descriptorPath;
+            _host = host;
+        }
+
+        public static SharedBrokerSession Create()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ru-shared-broker-" + Guid.NewGuid().ToString("N"));
+            var sessionRoot = System.IO.Path.Combine(root, "broker-session");
+            Directory.CreateDirectory(sessionRoot);
+            var descriptorPath = System.IO.Path.Combine(sessionRoot, "broker.json");
+            var descriptor = new BrokerSessionDescriptor(
+                "http://127.0.0.1:" + GetFreePort(),
+                "broker-test-" + Guid.NewGuid().ToString("N"),
+                1,
+                sessionRoot,
+                DateTimeOffset.UtcNow.AddHours(2));
+            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+            var host = BrokerHostHost.StartAsync(descriptorPath).GetAwaiter().GetResult();
+            return new SharedBrokerSession(root, descriptorPath, host);
+        }
+
+        public void Dispose()
+        {
+            _host.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+        }
+    }
+
+    private static int GetFreePort()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
     private sealed class ScriptedRunner : IModelStepRunner
     {
         private readonly Queue<AssistantStep> _steps = new();
@@ -384,6 +664,23 @@ public sealed class HeadlessCodingLoopTests
             {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> WaitForApprovalCountAsync(HttpClient client, string runId, int count, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            var events = await ReadEventsAsync(client, runId).ConfigureAwait(false);
+            if (events.Count(item => item.GetProperty("event_type").GetString() == "approval.requested") >= count)
+            {
+                return true;
+            }
+
+            await Task.Delay(100).ConfigureAwait(false);
         }
 
         return false;

@@ -18,7 +18,8 @@ public sealed record ProviderBootstrapData
         string credential,
         JsonObject? requestOptions = null,
         int? maximumOutputTokens = null,
-        ProviderToolCallingMode? toolCallingMode = null)
+        ProviderToolCallingMode? toolCallingMode = null,
+        bool allowNativeResponses = false)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -35,7 +36,10 @@ public sealed record ProviderBootstrapData
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
         MaximumOutputTokens = ValidateOutputCap(protocol, maximumOutputTokens);
         var protocolMode = ModeForProtocol(Protocol);
-        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode)
+        var isSupportedNativeResponses = allowNativeResponses
+            && Protocol == ProviderProtocols.OpenAiResponses
+            && toolCallingMode == ProviderToolCallingMode.Native;
+        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode && !isSupportedNativeResponses)
         {
             throw new ArgumentException("Tool calling mode does not match the provider protocol.", nameof(toolCallingMode));
         }

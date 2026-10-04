@@ -73,7 +73,8 @@ public sealed record ModelGenerationRequest
         SystemPromptContext systemPromptContext,
         ModelGenerationSettings settings,
         ProviderBootstrapData providerBootstrap,
-        IReadOnlyList<ModelImage>? images = null)
+        IReadOnlyList<ModelImage>? images = null,
+        IReadOnlyList<JsonObject>? responsesInputItems = null)
     {
         ArgumentNullException.ThrowIfNull(modelMessages);
         ArgumentNullException.ThrowIfNull(systemPromptContext);
@@ -93,6 +94,11 @@ public sealed record ModelGenerationRequest
 
         ValidatePrompt(prompt, copiedImages.Length > 0);
         ValidateModelMessages(modelMessages);
+        if (responsesInputItems is { Count: > ModelGenerationBounds.MaxModelMessages }
+            || responsesInputItems?.Any(item => item is null) == true
+            || ModelRequest.MeasureResponsesInputBytes(responsesInputItems)
+                + (responsesInputItems is { Count: > 0 } ? 0 : ModelRequest.MeasureModelMessagesBytes(modelMessages)) > ModelGenerationBounds.MaxModelMessagesBytes)
+            throw new ArgumentException("Responses input history exceeds the generation cap.", nameof(responsesInputItems));
 
         Prompt = prompt;
         ModelMessages = Array.AsReadOnly(modelMessages.ToArray());
@@ -100,6 +106,7 @@ public sealed record ModelGenerationRequest
         Settings = settings;
         ProviderBootstrap = providerBootstrap;
         Images = Array.AsReadOnly(copiedImages);
+        ResponsesInputItems = Array.AsReadOnly(responsesInputItems?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
     }
 
     public string Prompt { get; }
@@ -113,6 +120,8 @@ public sealed record ModelGenerationRequest
     public ProviderBootstrapData ProviderBootstrap { get; }
 
     public IReadOnlyList<ModelImage> Images { get; }
+
+    public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
 
     private static void ValidatePrompt(string prompt, bool hasImages)
     {

@@ -264,6 +264,7 @@ public sealed class AgentRunCoordinator
         var promptComposedEvent = invocation.PromptComposedEvent;
         var modelDroppedCount = invocation.ModelDroppedCount;
         var reasoningText = invocation.ReasoningText;
+        var providerContinuation = invocation.ProviderContinuation;
 
         if (step.ToolCalls.Count > 0)
         {
@@ -307,7 +308,8 @@ public sealed class AgentRunCoordinator
                     promptReceiptPayload,
                     promptComposedEvent,
                     cancellationToken,
-                    reasoningText)
+                    reasoningText,
+                    providerContinuation)
                 .ConfigureAwait(false);
         }
 
@@ -336,7 +338,8 @@ public sealed class AgentRunCoordinator
                 promptReceiptPayload,
                 promptComposedEvent,
                 cancellationToken,
-                reasoningText)
+                reasoningText,
+                providerContinuation)
             .ConfigureAwait(false);
     }
 

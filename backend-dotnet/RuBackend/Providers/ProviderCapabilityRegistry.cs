@@ -7,7 +7,8 @@ public sealed record ProviderCapability(
     string ModelId,
     string Protocol,
     IReadOnlyDictionary<string, JsonObject> ReasoningOptions,
-    int? DocumentedMaxOutputTokens);
+    int? DocumentedMaxOutputTokens,
+    bool SupportsNativeTools = false);
 
 public static class ProviderCapabilityRegistry
 {
@@ -36,7 +37,7 @@ public static class ProviderCapabilityRegistry
         var options = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         foreach (var effort in new[] { "none", "low", "medium", "high", "xhigh", "max" })
             options[effort] = new JsonObject { ["reasoning"] = new JsonObject { ["effort"] = effort } };
-        Capabilities[Key("openai", modelId)] = new("openai", modelId, "openai_responses", options, null);
+        Capabilities[Key("openai", modelId)] = new("openai", modelId, "openai_responses", options, null, SupportsNativeTools: true);
     }
 
     private static void RegisterAnthropicAdaptive(string modelId, string[] efforts, int maxOutput)

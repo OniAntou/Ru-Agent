@@ -284,7 +284,8 @@ internal sealed class AgentModelInvocation
             promptReceiptPayload,
             promptComposedEvent,
             modelDroppedCount,
-            modelResult.ReasoningText);
+            modelResult.ReasoningText,
+            modelResult.ProviderContinuation);
     }
 
     /// <summary>
@@ -478,5 +479,6 @@ internal sealed class AgentModelInvocation
         HarnessPayloadIntent PromptReceiptPayload,
         HarnessEventIntent PromptComposedEvent,
         int ModelDroppedCount,
-        string? ReasoningText = null);
+        string? ReasoningText = null,
+        ProviderContinuation? ProviderContinuation = null);
 }

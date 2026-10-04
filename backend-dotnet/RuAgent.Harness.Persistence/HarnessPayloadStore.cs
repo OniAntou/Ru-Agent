@@ -114,6 +114,10 @@ public sealed partial class HarnessPayloadStore
                 HarnessPayloadIntent.MaximumByteCap,
                 HarnessPayloadAudience.InternalOnly,
                 [HarnessPayloadEncoding.Opaque]),
+            [HarnessPayloadKind.ProviderContinuation] = new(
+                RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumEnvelopeBytes,
+                HarnessPayloadAudience.InternalOnly,
+                [HarnessPayloadEncoding.Opaque]),
             [HarnessPayloadKind.AssistantStep] = new(
                 2 * 1024 * 1024,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
@@ -197,7 +201,7 @@ public sealed partial class HarnessPayloadStore
             throw new HarnessStoreException("payload_encoding_invalid");
         }
 
-        var protectedPlaintext = intent.Kind == HarnessPayloadKind.RecoveryOpaque
+        var protectedPlaintext = intent.Kind is HarnessPayloadKind.RecoveryOpaque or HarnessPayloadKind.ProviderContinuation
             ? intent.Plaintext.ToArray()
             : _redactor.RedactPayload(intent.Encoding, intent.Plaintext);
         if (protectedPlaintext.Length > policy.MaximumBytes)
@@ -245,6 +249,35 @@ public sealed partial class HarnessPayloadStore
             CanReadForModel,
             "payload_model_forbidden",
             cancellationToken);
+
+    public async Task<HarnessPayloadContent> ReadProviderContinuationAsync(
+        RunId runId, PayloadId payloadId, ModelStepId modelStepId, string provider, string protocol, string model, CancellationToken cancellationToken)
+    {
+        var content = await ReadAsync(runId, payloadId,
+            intent => intent.Kind == HarnessPayloadKind.ProviderContinuation
+                && intent.Audience == HarnessPayloadAudience.InternalOnly
+                && intent.Encoding == HarnessPayloadEncoding.Opaque,
+            "provider_continuation_forbidden", cancellationToken).ConfigureAwait(false);
+        if (content.Plaintext.Length > RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumEnvelopeBytes)
+            throw new HarnessStoreException("provider_continuation_invalid");
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(content.Plaintext);
+            var root = document.RootElement;
+            if (root.GetProperty("model_step_id").GetString() != modelStepId.Value
+                || root.GetProperty("Provider").GetString() != provider
+                || root.GetProperty("Protocol").GetString() != protocol
+                || root.GetProperty("Model").GetString() != model
+                || root.GetProperty("Version").GetInt32() != 1
+                || root.GetProperty("output_items").ValueKind != System.Text.Json.JsonValueKind.Array)
+                throw new HarnessStoreException("provider_continuation_invalid");
+        }
+        catch (Exception error) when (error is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            throw new HarnessStoreException("provider_continuation_invalid", error);
+        }
+        return content;
+    }
 
     /// <summary>
     /// Lists the payload ids of one kind for a run in insertion order. Callers
@@ -308,14 +341,14 @@ public sealed partial class HarnessPayloadStore
     public static bool CanReadForClient(HarnessPayloadIntent intent)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        return intent.Kind != HarnessPayloadKind.RecoveryOpaque
+        return intent.Kind is not (HarnessPayloadKind.RecoveryOpaque or HarnessPayloadKind.ProviderContinuation)
             && intent.Audience.HasFlag(HarnessPayloadAudience.AuthenticatedClient);
     }
 
     public static bool CanReadForModel(HarnessPayloadIntent intent)
     {
         ArgumentNullException.ThrowIfNull(intent);
-        return intent.Kind != HarnessPayloadKind.RecoveryOpaque
+        return intent.Kind is not (HarnessPayloadKind.RecoveryOpaque or HarnessPayloadKind.ProviderContinuation)
             && intent.Audience.HasFlag(HarnessPayloadAudience.ModelContext);
     }
 

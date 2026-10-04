@@ -59,6 +59,21 @@ public sealed class ProviderBootstrapDataTests
             "model-a", string.Empty, toolCallingMode: ProviderToolCallingMode.Native));
     }
 
+    [Fact]
+    public void Declared_new_responses_native_mode_requires_an_explicit_capability_grant()
+    {
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "gpt-5.6-luna", string.Empty, toolCallingMode: ProviderToolCallingMode.Native));
+        var supported = new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "gpt-5.6-luna", string.Empty, toolCallingMode: ProviderToolCallingMode.Native,
+            allowNativeResponses: true);
+        Assert.Equal(ProviderToolCallingMode.Native, supported.ToolCallingMode);
+        Assert.Equal(ProviderToolCallingMode.TextSelection,
+            ProviderBootstrapData.ModeForProtocol(ProviderProtocols.OpenAiResponses));
+    }
+
     [Theory]
     [InlineData("effort")]
     [InlineData("enabled")]

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence.Privacy;
 using Xunit;
 
@@ -129,6 +130,61 @@ public sealed class HarnessPayloadStoreTests
         Assert.Equal(recoveryBytes, decryptedRecovery.ToArray());
         Assert.False(HarnessPayloadStore.CanReadForClient(recovery));
         Assert.False(HarnessPayloadStore.CanReadForModel(recovery));
+    }
+
+    [Fact]
+    public async Task Provider_continuation_preserves_opaque_bytes_and_is_denied_to_client_and_model()
+    {
+        const string secret = "ru-owned-secret-token";
+        var cryptography = new HarnessPayloadCryptography(new FakeHarnessKeyStore());
+        var store = new HarnessPayloadStore(cryptography, new KnownSecretRedactor([secret]));
+        var bytes = Encoding.UTF8.GetBytes($"{{\"encrypted_content\":\"{secret}\"}}");
+        var intent = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(71),
+            HarnessPayloadKind.ProviderContinuation,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Opaque,
+            bytes.Length,
+            bytes);
+        var runId = HarnessStoreTestFixture.Run(71);
+
+        var protectedPayload = await store.ProtectAsync(runId, intent, CancellationToken.None);
+        var roundTrip = await cryptography.DecryptAsync(runId, protectedPayload.Intent, protectedPayload.Encrypted, CancellationToken.None);
+
+        Assert.Equal(bytes, roundTrip.ToArray());
+        Assert.False(HarnessPayloadStore.CanReadForClient(protectedPayload.Intent));
+        Assert.False(HarnessPayloadStore.CanReadForModel(protectedPayload.Intent));
+        Assert.Contains(secret, Encoding.UTF8.GetString(roundTrip.Span), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Provider_continuation_reader_binds_run_step_provider_protocol_and_model()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(72);
+        var stepValue = "step_" + new string('a', 32);
+        var stepId = new ModelStepId(stepValue);
+        var bytes = Encoding.UTF8.GetBytes($"{{\"model_step_id\":\"{stepValue}\",\"Provider\":\"openai\",\"Protocol\":\"openai_responses\",\"Model\":\"gpt-5.6-luna\",\"Version\":1,\"output_items\":[{{\"type\":\"function_call\",\"id\":\"item-72\",\"call_id\":\"call-72\",\"name\":\"files.read\",\"arguments\":\"{{}}\"}}]}}");
+        var continuation = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(72), HarnessPayloadKind.ProviderContinuation,
+            HarnessPayloadAudience.InternalOnly, HarnessPayloadEncoding.Opaque,
+            ProviderContinuation.MaximumBytes + 2048, bytes);
+        var request = fixture.NewRun(72, 72, 72, payloads: [continuation]);
+        await fixture.CreateEventStore().TryCreateRunAsync(request, CancellationToken.None);
+
+        var content = await fixture.PayloadStore.ReadProviderContinuationAsync(
+            request.Run.RunId, continuation.PayloadId, stepId, "openai", "openai_responses", "gpt-5.6-luna", CancellationToken.None);
+        Assert.Equal(bytes, content.Plaintext.ToArray());
+        var wrongStep = await Assert.ThrowsAsync<HarnessStoreException>(() => fixture.PayloadStore.ReadProviderContinuationAsync(
+            request.Run.RunId, continuation.PayloadId, new ModelStepId("step_" + new string('b', 32)), "openai", "openai_responses", "gpt-5.6-luna", CancellationToken.None));
+        var wrongModel = await Assert.ThrowsAsync<HarnessStoreException>(() => fixture.PayloadStore.ReadProviderContinuationAsync(
+            request.Run.RunId, continuation.PayloadId, stepId, "openai", "openai_responses", "other-model", CancellationToken.None));
+        Assert.Equal("provider_continuation_invalid", wrongStep.Code);
+        Assert.Equal("provider_continuation_invalid", wrongModel.Code);
+        await Assert.ThrowsAsync<HarnessStoreException>(() => fixture.PayloadStore.ReadForClientAsync(
+            request.Run.RunId, continuation.PayloadId, CancellationToken.None));
+        await Assert.ThrowsAsync<HarnessStoreException>(() => fixture.PayloadStore.ReadForModelAsync(
+            request.Run.RunId, continuation.PayloadId, CancellationToken.None));
     }
 
     [Fact]

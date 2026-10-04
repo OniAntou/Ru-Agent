@@ -115,7 +115,15 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   endpoint `https://api.openai.com/v1/models` / `https://api.openai.com/v1/responses`,
   credential `openai_api_key`, `Authorization: Bearer`, `store:false`, source-dated
   `2026-09-01` registry `gpt-5.6-sol`/`gpt-5.6-terra`/`gpt-5.6-luna` with efforts
-  `none`/`low`/`medium`/`high`/`xhigh`/`max` as `reasoning: {effort}`.
+  `none`/`low`/`medium`/`high`/`xhigh`/`max` as `reasoning: {effort}`. These
+  exact Responses model entries also declare native tool support. New pins use
+  the Responses function-call interface; legacy pins retain their recorded
+  calling mode. Other or unknown model IDs do not inherit native support from
+  a family-name match. Tool declarations keep the Protocol JSON Schemas
+  unchanged and send `strict:false` because those schemas intentionally include
+  optional properties; strict mode requires every declared property to be
+  required ([OpenAI function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode)).
+  Host, Worker, and Broker validation remains authoritative for every call.
 - Anthropic (`anthropic`, `anthropic_messages`, `https://api.anthropic.com/v1`):
   fixed endpoint `https://api.anthropic.com/v1/models` / `https://api.anthropic.com/v1/messages`,
   credential `anthropic_api_key`, `x-api-key` + `anthropic-version: 2023-06-01`,

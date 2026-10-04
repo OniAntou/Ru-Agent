@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Cli.TerminalGui;
+using RuAgent.Cli.Tui;
 using RuAgent.Client;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
@@ -2200,6 +2201,13 @@ public sealed partial class AgentCommands
                     {
                         tgWindow.FocusComposer();
                         return false;
+                    });
+                tgApp.AddTimeout(
+                    TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
+                    () =>
+                    {
+                        tgWindow.Landing.Tick();
+                        return true;
                     });
                 tgApp.Run(tgWindow);
                 // A stop that did not come from /exit (window closed under us) must still

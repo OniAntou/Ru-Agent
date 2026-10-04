@@ -60,7 +60,7 @@ public sealed class TgChatWindow : Window
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
 
-    /// <summary>The centered two-tone wordmark shown until the transcript has content.</summary>
+    /// <summary>The aurora/gray wordmark shown until the transcript has content.</summary>
     public TgLandingView Landing { get; }
 
     private void HideLanding()

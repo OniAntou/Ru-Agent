@@ -5,6 +5,8 @@ public enum TuiToken
 {
     Brand,
     Brand2,
+    Aurora,
+    AuroraDim,
     Ink,
     Meta,
     Line,
@@ -214,6 +216,8 @@ public static class TuiPalette
     {
         TuiToken.Brand => (92, 156, 245),
         TuiToken.Brand2 => (157, 124, 216),
+        TuiToken.Aurora => (0, 230, 118),
+        TuiToken.AuroraDim => (0, 175, 95),
         TuiToken.Meta => (128, 128, 128),
         TuiToken.Line => (72, 72, 72),
         TuiToken.Ok => (127, 216, 143),
@@ -239,6 +243,8 @@ public static class TuiPalette
     {
         TuiToken.Brand => 75,
         TuiToken.Brand2 => 140,
+        TuiToken.Aurora => 48,
+        TuiToken.AuroraDim => 35,
         TuiToken.Meta => 244,
         TuiToken.Line => 238,
         TuiToken.Ok => 79,
@@ -252,6 +258,8 @@ public static class TuiPalette
     {
         TuiToken.Brand => 12,
         TuiToken.Brand2 => 13,
+        TuiToken.Aurora => 10,
+        TuiToken.AuroraDim => 2,
         TuiToken.Meta => 7,
         TuiToken.Line => 8,
         TuiToken.Ok => 10,

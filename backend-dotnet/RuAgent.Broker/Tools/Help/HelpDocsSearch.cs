@@ -44,7 +44,7 @@ public sealed class HelpDocsSearch
                 item.Section.DocumentId,
                 item.Section.Title,
                 item.Section.Section,
-                Excerpt(item.Section.Text, normalizedQuery, queryTokens, out var truncated),
+                Excerpt(item.Section.Text, normalizedQuery, queryTokens, item.HeadingPhrase, out var truncated),
                 truncated))
             .ToArray();
     }
@@ -62,7 +62,12 @@ public sealed class HelpDocsSearch
             : new Ranked(section, headingPhrase, headingTokenCount, bodyPhrase, bodyTokenCount);
     }
 
-    private static string Excerpt(string text, string query, IReadOnlyList<string> tokens, out bool truncated)
+    private static string Excerpt(
+        string text,
+        string query,
+        IReadOnlyList<string> tokens,
+        bool headingPhrase,
+        out bool truncated)
     {
         const int maxChars = 2_000;
         truncated = false;
@@ -71,25 +76,40 @@ public sealed class HelpDocsSearch
             return text;
         }
 
-        var normalized = Normalize(text);
-        var index = normalized.IndexOf(query, StringComparison.Ordinal);
-        if (index < 0)
+        var index = 0;
+        if (!headingPhrase)
         {
-            index = tokens.Select(token => normalized.IndexOf(token, StringComparison.Ordinal)).Where(value => value >= 0).DefaultIfEmpty(0).Min();
+            var normalized = Normalize(text);
+            index = normalized.IndexOf(query, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                index = tokens.Select(token => normalized.IndexOf(token, StringComparison.Ordinal)).Where(value => value >= 0).DefaultIfEmpty(0).Min();
+            }
         }
 
-        var start = Math.Max(0, index - maxChars / 3);
-        var end = Math.Min(text.Length, start + maxChars);
+        var start = Math.Clamp(index - maxChars / 3, 0, text.Length);
         if (start > 0)
         {
             var line = text.LastIndexOf('\n', start - 1);
             if (line >= 0) start = line + 1;
         }
+        if (start > 0 && start < text.Length && char.IsLowSurrogate(text[start])) start--;
+
+        const int ellipsisLength = 1;
+        var prefixLength = start > 0 ? ellipsisLength : 0;
+        var suffixLength = text.Length > maxChars ? ellipsisLength : 0;
+        var end = Math.Min(text.Length, start + maxChars - prefixLength - suffixLength);
+        if (end > 0 && end < text.Length
+            && char.IsHighSurrogate(text[end - 1])
+            && char.IsLowSurrogate(text[end]))
+        {
+            end--;
+        }
 
         if (end < text.Length)
         {
-            var line = text.IndexOf('\n', end);
-            if (line >= 0) end = line;
+            var line = text.LastIndexOf('\n', end - 1);
+            if (line >= start) end = line;
         }
 
         var excerpt = text[start..end].Trim();

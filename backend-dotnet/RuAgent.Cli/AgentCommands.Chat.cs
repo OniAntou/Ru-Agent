@@ -14,11 +14,12 @@ namespace RuAgent.Cli;
 
 public sealed partial class AgentCommands
 {
-    /// <summary>How many of a reopened session's newest messages a chat replay may show.</summary>
-    private const int SessionReplayMessageLimit = 20;
-
-    /// <summary>Per-message character cap for a chat replay; longer text is shortened with a marker.</summary>
-    private const int SessionReplayMaxChars = 2000;
+    private static string? ReadSettingString(JsonElement settings, string propertyName) =>
+        settings.ValueKind == JsonValueKind.Object
+        && settings.TryGetProperty(propertyName, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()?.Trim()
+            : null;
 
     private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
     {
@@ -163,6 +164,21 @@ public sealed partial class AgentCommands
 
         var pendingImages = new List<Images.CliImageAttachment>();
         var pendingTexts = new List<Attachments.CliTextAttachment>();
+        ChatSubmissionSnapshot? retryableSubmission = null;
+        void HoldSubmissionForRetry(ChatSubmissionSnapshot? submission)
+        {
+            if (submission is null)
+            {
+                return;
+            }
+
+            retryableSubmission ??= submission;
+            tgLoop?.PauseQueuedSubmissions();
+            foreach (var image in submission.Images)
+            {
+                DeleteTempFile(image);
+            }
+        }
         if (cmd.Images is { Count: > 0 })
         {
             foreach (var image in cmd.Images)
@@ -209,14 +225,20 @@ public sealed partial class AgentCommands
         // Best effort: the header's percent and cost need the catalog's published context
         // window and rates; a catalog that cannot answer leaves both off rather than
         // inventing numbers.
-        async Task RefreshModelUsageInfoAsync(CancellationToken ct)
+        async Task RefreshModelUsageInfoAsync(
+            CancellationToken ct,
+            string? retainedBackend = null,
+            string? retainedModel = null,
+            bool isRetainedRun = false)
         {
             usage.ContextLimit = null;
             usage.InputRate = null;
             usage.OutputRate = null;
             // The usage cluster only exists on the TG header; a sequential/data-only
             // chat must not pay a catalog read for numbers it never shows.
-            if (!tgMode || activeModel.Length == 0)
+            var usageBackend = isRetainedRun ? retainedBackend : backendName;
+            var usageModel = isRetainedRun ? retainedModel : activeModel;
+            if (!tgMode || string.IsNullOrWhiteSpace(usageModel) || (isRetainedRun && string.IsNullOrWhiteSpace(usageBackend)))
             {
                 return;
             }
@@ -224,7 +246,7 @@ public sealed partial class AgentCommands
             try
             {
                 var details = await _settingsClient
-                    .GetModelDetailsAsync(backendName is "(provider unknown)" ? null : backendName, activeModel, ct)
+                    .GetModelDetailsAsync(usageBackend is "(provider unknown)" ? null : usageBackend, usageModel, ct)
                     .ConfigureAwait(false);
                 if (details is null)
                 {
@@ -246,6 +268,23 @@ public sealed partial class AgentCommands
             {
                 Tui.TuiDebug.Log("usage", $"model details read failed: {CliErrorText.ShortMessage(ex.Message)}");
             }
+        }
+
+        async Task ShowRetainedRunProviderAsync(GetAgentRunResponse run)
+        {
+            if (!tgMode)
+            {
+                return;
+            }
+
+            var retainedBackend = string.IsNullOrWhiteSpace(run.ProviderBackend) ? "(provider unknown)" : run.ProviderBackend;
+            var retainedModel = string.IsNullOrWhiteSpace(run.ProviderModel) ? "(model unknown)" : run.ProviderModel;
+            RunOnTgUi(() => tgWindow!.Composer.SetMeta(run.Preset, retainedModel, retainedBackend));
+            await RefreshModelUsageInfoAsync(
+                cancellationToken,
+                run.ProviderBackend,
+                run.ProviderModel,
+                isRetainedRun: true).ConfigureAwait(false);
         }
 
         // Best effort and bounded: a fresh session may not have a title until the host has
@@ -286,6 +325,7 @@ public sealed partial class AgentCommands
         CancellationTokenSource? turnCts = null;
         string? activeRunId = null;
         string? parkedRunId = null;
+        string? followableRunId = null;
         var assistantPayloadRefs = new List<string>();
 
         // Slash-command surfaces: the pickers run through the TG panels or the sequential
@@ -1032,8 +1072,12 @@ public sealed partial class AgentCommands
         {
             // A reopened session shows where the conversation stopped; a fresh session
             // (or one whose replay cannot be read) keeps the landing screen.
-            var replay = await LoadSessionReplayAsync(sessionId).ConfigureAwait(false);
-            if (replay.Messages.Count > 0)
+            var replay = await ChatSessionReplay.LoadAsync(_sessionClient, sessionId, cancellationToken).ConfigureAwait(false);
+            if (replay.Title is not null)
+            {
+                sessionTitle = replay.Title;
+            }
+            if (replay.Messages.Length > 0)
             {
                 landingScreenVisible = false;
                 RenderSessionReplay(sessionId, replay);
@@ -1114,6 +1158,7 @@ public sealed partial class AgentCommands
                 if (TryReadParkedTransition(frame, out var parkedRun))
                 {
                     parkedRunId = parkedRun;
+                    followableRunId = null;
                     turnCts?.Cancel();
                 }
 
@@ -1350,6 +1395,14 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            if (!string.Equals(run.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
+                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /resume {run.SessionId} before continuing it.")).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
             if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
             {
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
@@ -1375,11 +1428,14 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+
             turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
             activeRunId = targetRunId;
+            followableRunId = targetRunId;
             var wasParkedRun = string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal);
             assistantPayloadRefs.Clear();
 
@@ -1407,6 +1463,7 @@ public sealed partial class AgentCommands
                 // run stays waiting server-side. Wind the turn down and let the caller
                 // exit the chat instead of settling for a "continue_error" line.
                 await FinishTurnAsync().ConfigureAwait(false);
+                followableRunId = targetRunId;
                 throw;
             }
             catch (AgentApiException ex)
@@ -1424,113 +1481,27 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Loads the bounded replay for a session reopened with --session. The wire payload
-        /// (POST /sessions/{id}/activate) carries user/ai text only -- tool rows and thinking
-        /// belong to runs and never travel in the session document -- so only those roles are
-        /// kept. The newest <see cref="SessionReplayMessageLimit"/> messages are considered and
-        /// each kept message is capped at <see cref="SessionReplayMaxChars"/> characters.
-        /// Fail-soft: a read fault returns the bounded one-line reason and no messages.
-        /// </summary>
-        async Task<(List<(string Role, string Text)> Messages, int Hidden, int Shortened, string? Error)>
-            LoadSessionReplayAsync(string targetSessionId)
-        {
-            JsonElement root;
-            try
-            {
-                root = await _sessionClient.GetSessionAsync(targetSessionId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return ([], 0, 0, CliErrorText.ShortMessage(ex.Message));
-            }
-
-            var all = new List<(string Role, string Text)>();
-            if (root.TryGetProperty("session", out var sessionElement)
-                && sessionElement.ValueKind == JsonValueKind.Object)
-            {
-                if (sessionElement.TryGetProperty("title", out var titleElement)
-                    && titleElement.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(titleElement.GetString()))
-                {
-                    sessionTitle = titleElement.GetString()!.Trim();
-                }
-
-                if (sessionElement.TryGetProperty("messages", out var messagesElement)
-                    && messagesElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var message in messagesElement.EnumerateArray())
-                    {
-                        var role = message.TryGetProperty("role", out var roleElement) && roleElement.ValueKind == JsonValueKind.String
-                            ? roleElement.GetString()!.Trim().ToLowerInvariant()
-                            : string.Empty;
-                        var content = message.TryGetProperty("content", out var contentElement) && contentElement.ValueKind == JsonValueKind.String
-                            ? contentElement.GetString() ?? string.Empty
-                            : string.Empty;
-                        if (string.IsNullOrWhiteSpace(content))
-                        {
-                            continue;
-                        }
-
-                        all.Add((role, content.Trim()));
-                    }
-                }
-            }
-
-            var tail = all.Count > SessionReplayMessageLimit
-                ? all.GetRange(all.Count - SessionReplayMessageLimit, SessionReplayMessageLimit)
-                : all;
-
-            var messages = new List<(string Role, string Text)>(tail.Count);
-            var hidden = 0;
-            var shortened = 0;
-            foreach (var (role, text) in tail)
-            {
-                if (role is not ("user" or "ai" or "assistant"))
-                {
-                    // Tool/thinking/other rows are not replayed; the count is marked once.
-                    hidden++;
-                    continue;
-                }
-
-                var bounded = text;
-                if (bounded.Length > SessionReplayMaxChars)
-                {
-                    bounded = bounded[..SessionReplayMaxChars].TrimEnd() + " …";
-                    shortened++;
-                }
-
-                messages.Add((role, bounded));
-            }
-
-            return (messages, hidden, shortened, null);
-        }
-
-        /// <summary>
         /// Reprints the loaded replay through the same renderer a live turn uses: the prompt
         /// echo for user rows and the streaming/markdown assistant path for replies. Nothing
         /// is invented here, so a replay row reads exactly like the row the turn produced.
         /// </summary>
         void RenderSessionReplay(
             string targetSessionId,
-            (List<(string Role, string Text)> Messages, int Hidden, int Shortened, string? Error) replay)
+            ChatSessionReplayResult replay)
         {
             sessionRenderer.Note(
-                $"↺ replayed the last {replay.Messages.Count} messages from session {targetSessionId}",
+                $"↺ replayed the last {replay.Messages.Length} messages from session {targetSessionId}",
                 Tui.TuiToken.Meta);
-            foreach (var (role, text) in replay.Messages)
+            foreach (var message in replay.Messages)
             {
-                if (string.Equals(role, "user", StringComparison.Ordinal))
+                if (string.Equals(message.Role, "user", StringComparison.Ordinal))
                 {
                     sessionRenderer.Surface.WriteLine(
-                        Tui.InteractiveLineReader.BuildSubmitEcho(text, width: sessionRenderer.Width));
+                        Tui.InteractiveLineReader.BuildSubmitEcho(message.Text, width: sessionRenderer.Width));
                 }
                 else
                 {
-                    sessionRenderer.Transcript.AppendAssistant(text);
+                    sessionRenderer.Transcript.AppendAssistant(message.Text);
                     sessionRenderer.Flush();
                     // The streaming path leaves the reply row open for the next delta;
                     // a replay message is final, so the row must end before the next one.
@@ -1558,8 +1529,8 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Takes over the session's newest run when the session was reopened with
-        /// --session. After a host restart a parked run is invisible otherwise: the CLI
+        /// Takes over the newest active run when the session was reopened with
+        /// --session. After a host restart a parked or approval-waiting run is invisible otherwise: the CLI
         /// claims no parked run, so bare Continue would send an ordinary prompt and the
         /// run would sit parked forever. The newest run only is adopted, matching the
         /// GUI. Fail-soft: a read fault prints nothing and never breaks the REPL start.
@@ -1571,47 +1542,50 @@ public sealed partial class AgentCommands
                 var runIds = await _agentClient
                     .ListSessionRunIdsAsync(targetSessionId, cancellationToken)
                     .ConfigureAwait(false);
-                if (runIds.Count == 0)
+                foreach (var candidateRunId in runIds.TakeLast(100).Reverse())
                 {
-                    return;
-                }
+                    var run = await _agentClient.GetRunAsync(candidateRunId, cancellationToken).ConfigureAwait(false);
+                    if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
+                    {
+                        continue;
+                    }
 
-                // The client reverses the wire's newest-first order, so the tail is newest.
-                var newestRunId = runIds[^1];
-                var run = await _agentClient.GetRunAsync(newestRunId, cancellationToken).ConfigureAwait(false);
-                if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
-                {
-                    return;
-                }
+                    if (IsParkedRunStatus(run.Status))
+                    {
+                        await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+                        parkedRunId = candidateRunId;
+                        followableRunId = null;
+                        var notice = Tui.TuiTranscript.FormatParkedNotice(candidateRunId, run.Status);
+                        if (cmd.Json)
+                        {
+                            await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            sessionRenderer.Note(notice, Tui.TuiToken.Warn);
+                        }
+                        return;
+                    }
 
-                if (IsParkedRunStatus(run.Status))
-                {
-                    // Bare Continue and /continue act on this run immediately: the parked
-                    // path the operator would otherwise have to discover by run id.
-                    parkedRunId = newestRunId;
-                    var notice = Tui.TuiTranscript.FormatParkedNotice(newestRunId, run.Status);
+                    if (!ChatRunWorkflow.IsFollowable(run))
+                    {
+                        continue;
+                    }
+
+                    await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+                    followableRunId = candidateRunId;
+                    var followNotice = string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
+                        ? $"run {candidateRunId} is waiting for approval · use /follow {candidateRunId}"
+                        : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or follow with '/follow {candidateRunId}'";
                     if (cmd.Json)
                     {
-                        await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
+                        await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.DimPaint(followNotice)).ConfigureAwait(false);
                     }
                     else
                     {
-                        sessionRenderer.Note(notice, Tui.TuiToken.Warn);
+                        sessionRenderer.Note(followNotice, Tui.TuiToken.Meta);
                     }
-                }
-                else if (string.Equals(run.Status, "running", StringComparison.OrdinalIgnoreCase))
-                {
-                    // An in-flight run is only pointed at: following it here would hijack
-                    // the composer with output the operator did not ask to watch.
-                    var notice = Tui.TuiTranscript.FormatAttachNotice(newestRunId);
-                    if (cmd.Json)
-                    {
-                        await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.DimPaint(notice)).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        sessionRenderer.Note(notice, Tui.TuiToken.Meta);
-                    }
+                    return;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1631,8 +1605,416 @@ public sealed partial class AgentCommands
         // and dispatcherExitCode carries the paths that used to return from ChatAsync.
         int? dispatcherExitCode = null;
 
-        async Task HandlePromptLineAsync(string promptLine, CancellationToken ct)
+        var sessionCommands = new ChatSessionCommands(
+            () => turnCts is not null,
+            () => sessionId,
+            ct => _sessionClient.CreateAsync(ct),
+            async (query, ct) => ChatSessionWorkflow.Filter(await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
+            SwitchSessionAsync,
+            _slashCommands.Picker,
+            WriteDiagnosticLineAsync,
+            humanOut,
+            _err,
+            cmd.Json);
+
+        Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
+            sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);
+
+        async Task HandleProjectFilesAsync(string? query)
         {
+            try
+            {
+                var choices = ChatProjectFileWorkflow.FindCandidates(canonicalWorkspace, query, cancellationToken);
+                if (choices.Count == 0)
+                {
+                    await WriteDiagnosticLineAsync(humanOut, "no safe project files match").ConfigureAwait(false);
+                    return;
+                }
+
+                if (cmd.Json || _slashCommands.Picker is null)
+                {
+                    await WriteDiagnosticLineAsync(humanOut, "Project files (interactive selection required to attach; limited results, refine the search):").ConfigureAwait(false);
+                    foreach (var choice in choices)
+                    {
+                        await WriteDiagnosticLineAsync(humanOut, $"  {choice.Display}").ConfigureAwait(false);
+                    }
+
+                    return;
+                }
+
+                var selected = await _slashCommands.Picker(
+                    ChatProjectFileWorkflow.ToChoiceList(choices),
+                    cancellationToken).ConfigureAwait(false);
+                if (!int.TryParse(selected, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
+                    || index < 0
+                    || index >= choices.Count)
+                {
+                    return;
+                }
+
+                var loaded = await ChatProjectFileWorkflow.LoadSelectedAsync(
+                    choices[index].Path,
+                    canonicalWorkspace,
+                    cancellationToken).ConfigureAwait(false);
+                if (loaded.Error is not null)
+                {
+                    await WriteDiagnosticLineAsync(_err, loaded.Error).ConfigureAwait(false);
+                    return;
+                }
+
+                var image = loaded.Image;
+                var text = loaded.Text;
+                var count = pendingImages.Count + pendingTexts.Count;
+                var bytes = checked(pendingImages.Sum(attachment => attachment.ByteSize)
+                    + pendingTexts.Sum(attachment => attachment.ByteSize)
+                    + (image?.ByteSize ?? text?.ByteSize ?? 0));
+                if (count >= ChatProjectFileWorkflow.MaxPendingAttachments
+                    || bytes > ChatProjectFileWorkflow.MaxPendingAttachmentBytes
+                    || image is not null && pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
+                {
+                    await WriteDiagnosticLineAsync(_err, "project_file_limit: detach an attachment before selecting another file").ConfigureAwait(false);
+                    return;
+                }
+
+                if (image is not null)
+                {
+                    pendingImages.Add(image);
+                    if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
+                    {
+                        await WriteDiagnosticLineAsync(_err, $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
+                    }
+                }
+                else if (text is not null)
+                {
+                    pendingTexts.Add(text);
+                }
+
+                RefreshAttachmentLabels();
+                var label = image?.Label ?? text?.Label ?? "file";
+                await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {label}").ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await WriteDiagnosticLineAsync(
+                    _err,
+                    $"project_file_error: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), 180)}").ConfigureAwait(false);
+            }
+        }
+
+        async Task FollowRetainedRunAsync(string? runIdArg)
+        {
+            if (turnCts is not null)
+            {
+                await WriteDiagnosticLineAsync(_err, "run_busy: finish or cancel the active run before following another run").ConfigureAwait(false);
+                return;
+            }
+
+            var targetRunId = string.IsNullOrWhiteSpace(runIdArg)
+                ? followableRunId ?? activeRunId
+                : runIdArg.Trim();
+            if (string.IsNullOrWhiteSpace(targetRunId))
+            {
+                targetRunId = await FindNewestFollowableRunAsync().ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrWhiteSpace(targetRunId))
+            {
+                await WriteDiagnosticLineAsync(humanOut, "no running or approval-waiting run · use /continue for a parked run").ConfigureAwait(false);
+                return;
+            }
+
+            GetAgentRunResponse run;
+            try
+            {
+                run = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (AgentApiException ex)
+            {
+                await WriteDiagnosticLineAsync(_err, CliErrorText.Format(ex)).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                await WriteDiagnosticLineAsync(_err, $"follow_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                return;
+            }
+
+            if (!string.Equals(run.SessionId, sessionId, StringComparison.Ordinal))
+            {
+                await WriteDiagnosticLineAsync(
+                    _err,
+                    $"run_session_mismatch: run belongs to {run.SessionId}; resume that session with /resume {run.SessionId} before following it").ConfigureAwait(false);
+                return;
+            }
+
+            if (!ChatRunWorkflow.IsFollowable(run))
+            {
+                var hint = IsParkedRunStatus(run.Status)
+                    ? $"run {targetRunId} is parked · use /continue {targetRunId}"
+                    : $"run_not_followable: run {targetRunId} is {run.Status}";
+                await WriteDiagnosticLineAsync(_err, hint).ConfigureAwait(false);
+                return;
+            }
+
+            followableRunId = targetRunId;
+            var pendingApproval = default(RuAgent.Protocol.Harness.HarnessSafeEventEnvelope);
+            if (string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
+            {
+                var recovery = await ChatRunWorkflow.ReadPendingApprovalAsync(_sseClient, run, cancellationToken).ConfigureAwait(false);
+                if (recovery.Error is not null || recovery.Pending is null)
+                {
+                    await WriteDiagnosticLineAsync(_err, recovery.Error ?? "approval_recovery_incomplete: pending request was unavailable").ConfigureAwait(false);
+                    return;
+                }
+
+                var refreshed = await _agentClient.GetRunAsync(targetRunId, cancellationToken).ConfigureAwait(false);
+                if (!ChatRunWorkflow.SameSnapshot(run, refreshed)
+                    || !string.Equals(refreshed.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteDiagnosticLineAsync(_err, $"run_changed: run {targetRunId} changed during approval recovery; use /follow again").ConfigureAwait(false);
+                    return;
+                }
+
+                pendingApproval = recovery.Pending;
+                if (cmd.Json)
+                {
+                    await WriteDiagnosticLineAsync(
+                        _err,
+                        $"approval_required: run {targetRunId} is waiting for approval {pendingApproval.ApprovalId}. Answer it with 'ru agent approve {targetRunId} {pendingApproval.ApprovalId}' or deny it with 'ru agent deny {targetRunId} {pendingApproval.ApprovalId}'.").ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+
+            turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            activeRunId = targetRunId;
+            parkedRunId = null;
+            assistantPayloadRefs.Clear();
+            sessionRenderer.Width = Tui.TuiViewport.Width();
+            sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
+            sessionRenderer.BeginTurn();
+
+            try
+            {
+                if (pendingApproval is not null)
+                {
+                    var decision = await RequestApprovalAsync(
+                        Tui.ApprovalPrompt.For(pendingApproval.SafeSummary),
+                        turnCts.Token).ConfigureAwait(false);
+                    var latest = await _agentClient.GetRunAsync(targetRunId, turnCts.Token).ConfigureAwait(false);
+                    if (!ChatRunWorkflow.SameSnapshot(run, latest)
+                        || !string.Equals(latest.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sessionRenderer.Note($"run_changed: approval for {targetRunId} is no longer current · follow again", Tui.TuiToken.Warn);
+                        await FinishTurnAsync().ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (decision == Tui.ApprovalPrompt.Deny)
+                    {
+                        await _agentClient.DenyAsync(targetRunId, pendingApproval.ApprovalId!, turnCts.Token).ConfigureAwait(false);
+                        sessionRenderer.Note("denied · this tool call aborts", Tui.TuiToken.Err);
+                    }
+                    else
+                    {
+                        await _agentClient.ApproveAsync(targetRunId, pendingApproval.ApprovalId!, decision, turnCts.Token).ConfigureAwait(false);
+                        var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session"
+                            : decision == Tui.ApprovalPrompt.AllowAlways ? "remembered for this project"
+                            : "once";
+                        sessionRenderer.Note("approved · " + scope, Tui.TuiToken.Ok);
+                    }
+                }
+
+                await FollowRunAsync(targetRunId, run.LastSequence, turnCts.Token).ConfigureAwait(false);
+                await FinishTurnAsync().ConfigureAwait(false);
+                activeRunId = null;
+                followableRunId = null;
+            }
+            catch (RunWaitingApprovalException)
+            {
+                await FinishTurnAsync().ConfigureAwait(false);
+                followableRunId = targetRunId;
+            }
+            catch (OperationCanceledException)
+            {
+                await ReportInterruptionAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await FinishTurnAsync().ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(_err, $"follow_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+            }
+        }
+
+        async Task<string?> FindNewestFollowableRunAsync()
+        {
+            try
+            {
+                return await ChatRunWorkflow.FindNewestFollowableRunIdAsync(
+                    _agentClient,
+                    sessionId,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await WriteDiagnosticLineAsync(_err, $"follow_discovery_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+            }
+
+            return null;
+        }
+
+        async Task SwitchSessionAsync(string targetSessionId)
+        {
+            if (!ChatSessionWorkflow.IsValidSessionId(targetSessionId))
+            {
+                await WriteDiagnosticLineAsync(_err, "invalid_session_id: expected a bounded session identifier").ConfigureAwait(false);
+                return;
+            }
+
+            if (string.Equals(targetSessionId, sessionId, StringComparison.Ordinal))
+            {
+                await WriteDiagnosticLineAsync(humanOut, $"already in session {sessionId}").ConfigureAwait(false);
+                return;
+            }
+
+            var replay = await ChatSessionReplay.LoadAsync(_sessionClient, targetSessionId, cancellationToken).ConfigureAwait(false);
+            if (replay.Error is not null)
+            {
+                await WriteDiagnosticLineAsync(_err, replay.Error).ConfigureAwait(false);
+                return;
+            }
+
+            sessionId = targetSessionId;
+            sessionTitle = replay.Title;
+            activeRunId = null;
+            parkedRunId = null;
+            followableRunId = null;
+            assistantPayloadRefs.Clear();
+            sessionTitleProbes = 0;
+            turn = 0;
+            lastTotalTokens = null;
+            usage = new Tui.TuiUsageTracker();
+            await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var attachment in pendingImages)
+            {
+                DeleteTempFile(attachment);
+            }
+
+            pendingImages.Clear();
+            pendingTexts.Clear();
+            RefreshAttachmentLabels();
+
+            sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
+            sessionRenderer.Width = Tui.TuiViewport.Width();
+            if (tgMode)
+            {
+                RunOnTgUi(() =>
+                {
+                    tgWindow!.ResetTranscript();
+                    tgWindow.Header.SetTitle(sessionTitle ?? "");
+                    tgWindow.Composer.SetMeta(cmd.Preset, activeModel, backendName ?? "(provider unknown)");
+                });
+            }
+
+            landingScreenVisible = replay.Messages.Length == 0;
+            if (replay.Messages.Length > 0 && !cmd.Json)
+            {
+                RenderSessionReplay(targetSessionId, replay);
+            }
+            else
+            {
+                RenderLandingScreen();
+            }
+
+            await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);
+
+            await UpdateLegendAsync().ConfigureAwait(false);
+            var otherWorkspace = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
+                _sessionClient,
+                targetSessionId,
+                cancellationToken).ConfigureAwait(false);
+            if (otherWorkspace is { } recordedWorkspace
+                && !string.Equals(recordedWorkspace.Path, canonicalWorkspace, StringComparison.OrdinalIgnoreCase))
+            {
+                var currentWorkspaceLabel = ChatDisplayText.Sanitize(
+                    Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 64), 64);
+                var workspaceArgument = ChatDisplayText.Sanitize(recordedWorkspace.Path, 512);
+                if (string.Equals(workspaceArgument, recordedWorkspace.Path, StringComparison.Ordinal))
+                {
+                    await WriteDiagnosticLineAsync(
+                        humanOut,
+                        $"session_workspace_diff: session was last used in {recordedWorkspace.Label}; this chat remains in {currentWorkspaceLabel}. Open 'ru agent chat --workspace \"{workspaceArgument}\" --session {targetSessionId}' to use its recorded workspace.").ConfigureAwait(false);
+                }
+            }
+
+            await WriteDiagnosticLineAsync(humanOut, $"switched to session {targetSessionId}").ConfigureAwait(false);
+        }
+
+        async Task HandlePromptLineAsync(
+            string promptLine,
+            CancellationToken ct,
+            ChatSubmissionSnapshot? submission = null)
+        {
+            var submissionSessionId = submission?.SessionId ?? sessionId;
+            var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
+            var submissionPreset = submission?.Preset ?? cmd.Preset;
+            IReadOnlyList<Images.CliImageAttachment> submissionImages = submission is null
+                ? pendingImages
+                : submission.Images;
+            IReadOnlyList<Attachments.CliTextAttachment> submissionTexts = submission is null
+                ? pendingTexts
+                : submission.Texts;
+            if (submission is not null
+                && (!string.Equals(submission.SessionId, sessionId, StringComparison.Ordinal)
+                    || !string.Equals(submission.WorkspacePath, canonicalWorkspace, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(submission.Preset, cmd.Preset, StringComparison.Ordinal)
+                    || !string.Equals(submission.Backend, backendName, StringComparison.Ordinal)
+                    || !string.Equals(submission.Model, activeModel, StringComparison.Ordinal)))
+            {
+                HoldSubmissionForRetry(submission);
+                await WriteDiagnosticLineAsync(_err, "submission_context_changed: queued prompt is held; restore its session/model selection and use /retry").ConfigureAwait(false);
+                return;
+            }
+
+            if (submission is not null)
+            {
+                try
+                {
+                    var liveSettings = await _settingsClient.GetAsync(ct).ConfigureAwait(false);
+                    var liveBackend = ReadSettingString(liveSettings, "backend");
+                    var modelKey = liveBackend switch
+                    {
+                        "OpenAI" => "openai_model",
+                        "Anthropic" => "anthropic_model",
+                        _ => "model",
+                    };
+                    var liveModel = ReadSettingString(liveSettings, modelKey);
+                    if (!string.Equals(liveBackend, submission.Backend, StringComparison.Ordinal)
+                        || !string.Equals(liveModel, submission.Model, StringComparison.Ordinal))
+                    {
+                        HoldSubmissionForRetry(submission);
+                        await WriteDiagnosticLineAsync(_err, "submission_context_changed: backend/model settings changed; restore the admitted selection and use /retry").ConfigureAwait(false);
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    HoldSubmissionForRetry(submission);
+                    await WriteDiagnosticLineAsync(_err, "submission_settings_unavailable: queued prompt is held; restore settings access and use /retry").ConfigureAwait(false);
+                    return;
+                }
+            }
+
             // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
             // that literal when a parked run is known: otherwise it is an ordinary prompt.
             if (parkedRunId is not null
@@ -1668,49 +2050,52 @@ public sealed partial class AgentCommands
             }
 
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
-                sessionId,
-                cmd.Preset,
+                submissionSessionId,
+                submissionPreset,
                 cmd.ConfirmFullAccess,
                 ct).ConfigureAwait(false);
             if (presetUpdate is null)
             {
+                HoldSubmissionForRetry(submission);
                 dispatcherExitCode = 1;
                 return;
             }
 
-            var idempotencyKey = Guid.NewGuid().ToString("N");
-            var promptText = Attachments.AttachedPrompt.Compose(promptLine, pendingTexts);
-            var imagePayloads = pendingImages.Count == 0
+            var idempotencyKey = submission?.IdempotencyKey ?? Guid.NewGuid().ToString("N");
+            var promptText = Attachments.AttachedPrompt.Compose(promptLine, submissionTexts);
+            var imagePayloads = submissionImages.Count == 0
                 ? null
-                : pendingImages.Select(image => image.ToDataUrl()).ToList();
+                : submissionImages.Select(image => image.ToDataUrl()).ToList();
             var attachmentLabels = new List<string>();
-            for (var i = 0; i < pendingImages.Count; i++)
+            for (var i = 0; i < submissionImages.Count; i++)
             {
-                attachmentLabels.Add($"[image {i + 1}: {pendingImages[i].FileName}]");
+                attachmentLabels.Add($"[image {i + 1}: {submissionImages[i].FileName}]");
             }
 
-            for (var i = 0; i < pendingTexts.Count; i++)
+            for (var i = 0; i < submissionTexts.Count; i++)
             {
-                attachmentLabels.Add($"[file {i + 1}: {pendingTexts[i].FileName}]");
+                attachmentLabels.Add($"[file {i + 1}: {submissionTexts[i].FileName}]");
             }
 
             var request = new CreateAgentRunRequest(
-                sessionId,
-                canonicalWorkspace,
+                submissionSessionId,
+                submissionWorkspace,
                 promptText,
-                cmd.Preset,
+                submissionPreset,
                 presetUpdate.Version,
                 idempotencyKey,
                 imagePayloads);
             const int MaxComposedPromptChars = 16_000;
             if (promptText.Length > MaxComposedPromptChars)
             {
+                HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(
                     _err,
-                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {MaxComposedPromptChars}); detach or shorten attachments").ConfigureAwait(false);
+                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {MaxComposedPromptChars}); detach or shorten attachments; prompt held for /retry").ConfigureAwait(false);
                 return;
             }
             var presetCommitted = false;
+            var hostAccepted = false;
             var sentImages = new List<Images.CliImageAttachment>();
             var sentTexts = new List<Attachments.CliTextAttachment>();
 
@@ -1721,6 +2106,7 @@ public sealed partial class AgentCommands
                 // guard can never POST a cancel against a park left over from a prior turn.
                 activeRunId = null;
                 parkedRunId = null;
+                followableRunId = null;
                 assistantPayloadRefs.Clear();
                 sessionRenderer.Width = Tui.TuiViewport.Width();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
@@ -1733,17 +2119,24 @@ public sealed partial class AgentCommands
                 }
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
+                hostAccepted = true;
+                retryableSubmission = null;
+                tgLoop?.ResumeQueuedSubmissions();
                 activeRunId = resp.RunId;
+                followableRunId = resp.RunId;
 
-                if (pendingImages.Count > 0 || pendingTexts.Count > 0)
+                if (submissionImages.Count > 0 || submissionTexts.Count > 0)
                 {
                     // The run owns the attachments now. The lists clear immediately, but
                     // the temp files wait for the trust gate: a declined challenge restores
                     // the lists intact, so the files must still exist then.
-                    sentImages = pendingImages.ToList();
-                    sentTexts = pendingTexts.ToList();
-                    pendingImages.Clear();
-                    pendingTexts.Clear();
+                    sentImages = submissionImages.ToList();
+                    sentTexts = submissionTexts.ToList();
+                    if (submission is null)
+                    {
+                        pendingImages.Clear();
+                        pendingTexts.Clear();
+                    }
                     RefreshAttachmentLabels();
                 }
 
@@ -1765,8 +2158,8 @@ public sealed partial class AgentCommands
                     ? await ResolveTrust().ConfigureAwait(false)
                     : await _runStartCore.HandleWorkspaceTrustAsync(
                             resp,
-                            sessionId,
-                            cmd.Preset,
+                            submissionSessionId,
+                            submissionPreset,
                             cmd.TrustWorkspace,
                             cmd.Json,
                             turnCts.Token)
@@ -1776,9 +2169,9 @@ public sealed partial class AgentCommands
                 {
                     var outcome = await ResolveWorkspaceTrustInPlaceAsync(
                             resp,
-                            sessionId,
-                            cmd.Preset,
-                            canonicalWorkspace,
+                            submissionSessionId,
+                            submissionPreset,
+                            submissionWorkspace,
                             cmd.Json,
                             turnCts.Token)
                         .ConfigureAwait(false);
@@ -1833,6 +2226,8 @@ public sealed partial class AgentCommands
 
                 await FollowRunAsync(resp.RunId, 0, turnCts.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
+                activeRunId = null;
+                followableRunId = null;
             }
             catch (RunWaitingApprovalException)
             {
@@ -1842,11 +2237,24 @@ public sealed partial class AgentCommands
                 // answers it with `ru agent approve` instead of this process reading a
                 // prompt it must not consume.
                 await FinishTurnAsync().ConfigureAwait(false);
+                followableRunId = activeRunId;
                 dispatcherExitCode = 0;
                 return;
             }
             catch (OperationCanceledException)
             {
+                if (!hostAccepted)
+                {
+                    HoldSubmissionForRetry(submission);
+                }
+                else if (submission is not null)
+                {
+                    foreach (var image in submission.Images)
+                    {
+                        DeleteTempFile(image);
+                    }
+                }
+
                 // The token only stops local streaming; the run must be cancelled server-side
                 // too, like one-shot `agent run` and the GUI Stop, or it keeps the workspace
                 // lock -- unless the run parked itself, which makes it the user's to resume.
@@ -1873,6 +2281,18 @@ public sealed partial class AgentCommands
             }
             catch (AgentApiException ex)
             {
+                if (!hostAccepted)
+                {
+                    HoldSubmissionForRetry(submission);
+                }
+                else if (submission is not null)
+                {
+                    foreach (var image in submission.Images)
+                    {
+                        DeleteTempFile(image);
+                    }
+                }
+
                 // Pre-run rejections (missing credential, no model) already name
                 // themselves: one error line, no supplementary text.
                 await FinishTurnAsync().ConfigureAwait(false);
@@ -1880,6 +2300,18 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
+                if (!hostAccepted)
+                {
+                    HoldSubmissionForRetry(submission);
+                }
+                else if (submission is not null)
+                {
+                    foreach (var image in submission.Images)
+                    {
+                        DeleteTempFile(image);
+                    }
+                }
+
                 if (!presetCommitted
                     && !await _runStartCore.RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                 {
@@ -1974,6 +2406,18 @@ public sealed partial class AgentCommands
                     dispatcherExitCode = 0;
                     return true;
                 }
+                if (slashCmd == "/retry")
+                {
+                    if (retryableSubmission is null)
+                    {
+                        await WriteDiagnosticLineAsync(humanOut, "no held submission to retry").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    var retry = retryableSubmission;
+                    await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
+                    return true;
+                }
                 if (slashCmd is "/history")
                 {
                     // The TG loop owns its own Up/Down history; the sequential reader never
@@ -2012,6 +2456,11 @@ public sealed partial class AgentCommands
                     }
                     RenderLandingScreen();
                     await humanOut.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (await HandleSessionWorkflowAsync(slashCmd, arg).ConfigureAwait(false))
+                {
+                    await UpdateLegendAsync().ConfigureAwait(false);
                     return true;
                 }
                 if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
@@ -2131,6 +2580,18 @@ public sealed partial class AgentCommands
                     }
                     return true;
                 }
+                if (slashCmd == "/files")
+                {
+                    await HandleProjectFilesAsync(arg).ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/follow")
+                {
+                    await FollowRetainedRunAsync(arg).ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    return true;
+                }
                 await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 return true;
             }
@@ -2145,10 +2606,73 @@ public sealed partial class AgentCommands
             {
                 var loop = new TgChatLoop(tgWindow!, cancellationToken);
                 tgLoop = loop;
-                var guiDispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
-                loop.SetPromptHandler(async (line, _, ct) =>
+                var guiDispatcher = new ChatLineDispatcher(
+                    HandleSlashLineAsync,
+                    (prompt, ct) => HandlePromptLineAsync(prompt, ct));
+                loop.SetSubmissionSnapshotFactory(line =>
                 {
-                    await guiDispatcher.DispatchAsync(line, ct).ConfigureAwait(false);
+                    var isSlashCommand = line.TrimStart().StartsWith('/');
+                    var isPausedControlCommand = ChatSubmissionSnapshot.IsPausedControlCommand(line);
+                    if (isSlashCommand
+                        && (pendingImages.Count > 0 || pendingTexts.Count > 0)
+                        && !isPausedControlCommand)
+                    {
+                        return null;
+                    }
+
+                    if (parkedRunId is not null
+                        && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase)
+                        && (pendingImages.Count > 0 || pendingTexts.Count > 0))
+                    {
+                        return null;
+                    }
+
+                    var snapshot = ChatSubmissionSnapshot.Create(
+                        line,
+                        sessionId,
+                        canonicalWorkspace,
+                        cmd.Preset,
+                        backendName ?? string.Empty,
+                activeModel,
+                        isSlashCommand ? Array.Empty<Images.CliImageAttachment>() : pendingImages,
+                        isSlashCommand ? Array.Empty<Attachments.CliTextAttachment>() : pendingTexts);
+                    return Attachments.AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > 16_000
+                        ? null
+                        : snapshot;
+                });
+                loop.SetSubmissionOwnershipHandlers(
+                    snapshot =>
+                    {
+                        foreach (var image in snapshot.Images)
+                        {
+                            pendingImages.Remove(image);
+                        }
+
+                        foreach (var file in snapshot.Texts)
+                        {
+                            pendingTexts.Remove(file);
+                        }
+
+                        RefreshAttachmentLabels();
+                    },
+                    snapshot =>
+                    {
+                        foreach (var image in snapshot.Images)
+                        {
+                            DeleteTempFile(image);
+                        }
+                    });
+                loop.SetStateChangingCommandClassifier(IsStateChangingSlashCommand);
+                loop.SetSubmissionHandler(async (submission, _, ct) =>
+                {
+                    if (submission.Prompt.TrimStart().StartsWith('/'))
+                    {
+                        await guiDispatcher.DispatchAsync(submission.Prompt, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
+                    }
                     if (dispatcherExitCode is not null)
                     {
                         // /exit and the fatal prompt paths record an exit code; the TG frame
@@ -2216,7 +2740,9 @@ public sealed partial class AgentCommands
                 await loop.Completion.ConfigureAwait(false);
             }
 
-            var dispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
+            var dispatcher = new ChatLineDispatcher(
+                HandleSlashLineAsync,
+                (prompt, ct) => HandlePromptLineAsync(prompt, ct));
             await dispatcher.DispatchAsync(line, cancellationToken).ConfigureAwait(false);
             if (dispatcherExitCode is int exitCode)
             {
@@ -2310,6 +2836,17 @@ public sealed partial class AgentCommands
             || status.Equals("failed", StringComparison.OrdinalIgnoreCase)
             || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
             || status.Equals("interrupted", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsStateChangingSlashCommand(string line)
+    {
+        var command = line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (command is null || !command.StartsWith('/'))
+        {
+            return false;
+        }
+
+        return command.ToLowerInvariant() is not ("/help" or "/history" or "/sessions" or "/status" or "/usage" or "/budget" or "/attachments");
+    }
 
     private static bool IsParkedRunStatus(string? status) =>
         string.Equals(status, "waiting_user", StringComparison.OrdinalIgnoreCase)

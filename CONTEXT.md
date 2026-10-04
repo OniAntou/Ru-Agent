@@ -211,6 +211,15 @@ remembers the exact intent as a project-scope allow rule; `allow_once` and
 session grants stay single-use.
 _Avoid_: reusable confirmation flag or approval-time reissue
 
+**Run Provider Selection**:
+The secret-free durable choice pinned after successful bootstrap validation and
+before a run's first model request: backend, alias, endpoint, protocol, model,
+credential account name, reasoning options and output-token limit. Reopening a
+run rebuilds its in-memory credential snapshot from this selection; current
+settings cannot substitute a different provider or model. A legacy run without
+the selection fails closed. Credential values never enter this record.
+_Avoid_: current settings as restart fallback
+
 **Policy Snapshot**:
 The immutable, versioned, SHA-256-canonical binding of preset, trusted
 workspace identity, and ordered `PolicyRule`/`PolicyMatcher` list that Broker v2

@@ -84,6 +84,49 @@ public sealed class ContextCompactionPlannerTests
         Assert.Null(plan);
     }
 
+    [Fact]
+    public async Task Planner_preserves_current_run_prompt_when_base_history_has_higher_sequence()
+    {
+        var baseEntries = new List<ModelContextEntry>();
+        for (var turn = 0; turn < 8; turn++)
+        {
+            var sequence = turn * 2L + 1;
+            baseEntries.Add(ModelContextEntry.Text(
+                $"base:turn:{turn}:user", sequence, ModelContextRole.User, new string('p', 200)));
+            baseEntries.Add(ModelContextEntry.Assistant(
+                $"base:turn:{turn}:assistant", sequence + 1,
+                new AssistantStep(new string('r', 200), [], AssistantFinishReason.Stop, 0)));
+        }
+
+        const string currentSource = "event:evt_00000000000000000000000000000001";
+        var runEntries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Text(currentSource, 1, ModelContextRole.User, new string('c', 500)),
+        };
+        for (var turn = 0; turn < 6; turn++)
+        {
+            runEntries.Add(ModelContextEntry.Assistant(
+                $"event:evt_{turn + 2:00000000000000000000000000000000}",
+                turn + 2,
+                new AssistantStep(new string('r', 300), [], AssistantFinishReason.Stop, 0)));
+        }
+        var snapshot = await new AgentContextAssembler(new FixedMergedSource(
+                baseEntries.ToArray(),
+                runEntries.ToArray()))
+            .AssembleAsync(RunId, CancellationToken.None);
+        var before = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var decision = new ContextBudgetDecision(
+            before, 100, 100, 20, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(
+            snapshot, decision, "compact-current-run-prompt", ContextCompactionReason.Automatic);
+
+        Assert.NotNull(plan);
+        Assert.DoesNotContain(plan!.CoveredEntries, entry => entry.SourceId == currentSource);
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == currentSource);
+        Assert.True(plan.AfterTokens < plan.BeforeTokens);
+    }
+
     private static async Task<ModelContextSnapshot> AssembleAsync(params ModelContextEntry[] entries)
     {
         var source = new FixedSource(entries);
@@ -96,5 +139,15 @@ public sealed class ContextCompactionPlannerTests
             RunId runId,
             CancellationToken cancellationToken) =>
             Task.FromResult(new ModelContextSourceSnapshot(Array.Empty<ModelContextEntry>(), entries));
+    }
+
+    private sealed class FixedMergedSource(
+        ModelContextEntry[] sessionBase,
+        ModelContextEntry[] runLocal) : IModelContextSource
+    {
+        public Task<ModelContextSourceSnapshot> LoadAsync(
+            RunId runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModelContextSourceSnapshot(sessionBase, runLocal));
     }
 }

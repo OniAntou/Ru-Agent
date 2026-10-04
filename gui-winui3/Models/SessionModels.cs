@@ -70,6 +70,9 @@ namespace RuApp.Models
 
     public class SessionListResponse
     {
+        [JsonPropertyName("sessions_truncated")]
+        public bool SessionsTruncated { get; set; }
+
         [JsonPropertyName("active_session_id")]
         public string ActiveSessionId { get; set; } = string.Empty;
 

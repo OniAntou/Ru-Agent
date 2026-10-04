@@ -91,12 +91,14 @@ public sealed class ChatFollowContractTests
 
         var restore = GuiSource.MethodBody(code, "RestoreComposerDraft");
         Assert.Contains("_composerDrafts", restore, StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.RestoreAttachments", restore, StringComparison.Ordinal);
 
         // The view moves text; it does not decide what the text is. A body that reads
         // the box to answer that would be re-deriving the rule the store already owns.
         Assert.DoesNotContain("_composerDrafts.Save", restore, StringComparison.Ordinal);
 
         Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.Save", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OpenSessionAsync"), StringComparison.Ordinal);
     }
 }

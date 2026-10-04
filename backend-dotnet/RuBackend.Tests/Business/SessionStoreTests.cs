@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using RuBackend.Business;
 using RuBackend.Business.Sessions;
 using Xunit;
@@ -64,6 +65,150 @@ public sealed class SessionStoreTests
         var sessions = await store.ListAsync(CancellationToken.None);
 
         Assert.Equal([first, second], sessions.Select(session => session.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task List_honors_cancellation_even_when_the_session_directory_is_missing()
+    {
+        var (store, _) = CreateStore();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.ListAsync(cancellation.Token));
+    }
+
+    [Fact]
+    public async Task List_refreshes_cached_summaries_after_append_and_delete()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        Assert.Single(await store.ListAsync(CancellationToken.None));
+
+        Assert.True(await store.AppendAsync(
+            sessionId,
+            [new SessionMessage("user", "A searchable conversation")],
+            CancellationToken.None));
+        var updated = Assert.Single(await store.ListAsync(CancellationToken.None));
+
+        Assert.Equal("A searchable conversation", updated.Title);
+        Assert.Equal(1, updated.MessageCount);
+        Assert.True(await store.DeleteAsync(sessionId, CancellationToken.None));
+        Assert.Empty(await store.ListAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task List_selects_newest_file_metadata_before_loading_a_bounded_recent_subset()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(paths.SessionDirectory);
+        for (var index = 0; index < 1201; index++)
+        {
+            var id = index.ToString("x32");
+            await File.WriteAllTextAsync(
+                Path.Combine(paths.SessionDirectory, id + ".json"),
+                JsonSerializer.Serialize(new
+                {
+                    id,
+                    title = $"session-{index}",
+                    created_at = DateTimeOffset.UnixEpoch,
+                    updated_at = DateTimeOffset.UnixEpoch.AddSeconds(index),
+                    messages = Array.Empty<object>(),
+                }));
+        }
+
+        var enumerated = Directory.GetFiles(paths.SessionDirectory, "*.json");
+        var newestPath = enumerated[1000];
+        var newestId = Path.GetFileNameWithoutExtension(newestPath);
+        await File.WriteAllTextAsync(
+            newestPath,
+            JsonSerializer.Serialize(new
+            {
+                id = newestId,
+                title = "newest by filesystem metadata",
+                created_at = DateTimeOffset.UnixEpoch,
+                updated_at = DateTimeOffset.UnixEpoch.AddYears(100),
+                messages = Array.Empty<object>(),
+            }));
+        File.SetLastWriteTimeUtc(newestPath, DateTime.UtcNow.AddMinutes(1));
+
+        var listing = await store.ListWithMetadataAsync(CancellationToken.None);
+
+        Assert.Equal(500, listing.Sessions.Count);
+        Assert.Equal(newestId, listing.Sessions[0].Id);
+        Assert.True(listing.IsTruncated);
+    }
+
+    [Fact]
+    public async Task List_refreshes_same_size_replacement_after_cache_lifetime_when_timestamps_are_preserved()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 10, 4, 0, 0, 0, TimeSpan.Zero));
+        var (store, paths) = CreateStore(clock);
+        const string sessionId = "22222222222222222222222222222222";
+        Directory.CreateDirectory(paths.SessionDirectory);
+        var path = Path.Combine(paths.SessionDirectory, sessionId + ".json");
+        await File.WriteAllTextAsync(path, SessionJson(sessionId, "Old title"));
+        var originalInfo = new FileInfo(path);
+        var originalWriteTime = originalInfo.LastWriteTimeUtc;
+        var originalCreationTime = originalInfo.CreationTimeUtc;
+        Assert.Equal("Old title", Assert.Single(await store.ListAsync(CancellationToken.None)).Title);
+
+        await File.WriteAllTextAsync(path, SessionJson(sessionId, "New title"));
+        File.SetLastWriteTimeUtc(path, originalWriteTime);
+        File.SetCreationTimeUtc(path, originalCreationTime);
+        var replacementInfo = new FileInfo(path);
+        Assert.Equal(originalInfo.Length, replacementInfo.Length);
+        Assert.Equal(originalWriteTime, replacementInfo.LastWriteTimeUtc);
+        Assert.Equal(originalCreationTime, replacementInfo.CreationTimeUtc);
+        clock.Advance(TimeSpan.FromSeconds(61));
+
+        var refreshed = await store.ListAsync(CancellationToken.None);
+
+        Assert.Equal("New title", Assert.Single(refreshed).Title);
+    }
+
+    [Fact]
+    public async Task List_bounds_uncached_json_bytes_and_resumes_with_completed_cache_entries()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(paths.SessionDirectory);
+        var padding = new string('x', 13 * 1024 * 1024);
+        foreach (var (id, second) in new[]
+        {
+            ("33333333333333333333333333333333", 2),
+            ("44444444444444444444444444444444", 1),
+            ("66666666666666666666666666666666", 0),
+        })
+        {
+            var path = Path.Combine(paths.SessionDirectory, id + ".json");
+            await File.WriteAllTextAsync(path, $$"""
+                {"id":"{{id}}","title":"large","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:0{{second}}Z","messages":[],"padding":"{{padding}}"}
+                """);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(second));
+        }
+
+        var first = await store.ListWithMetadataAsync(CancellationToken.None);
+        var resumed = await store.ListWithMetadataAsync(CancellationToken.None);
+
+        Assert.Equal(2, first.Sessions.Count);
+        Assert.True(first.IsTruncated);
+        Assert.Equal(3, resumed.Sessions.Count);
+        Assert.False(resumed.IsTruncated);
+    }
+
+    [Fact]
+    public async Task List_preserves_caller_cancellation_when_internal_work_is_bounded()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(paths.SessionDirectory, "55555555555555555555555555555555.json"),
+            SessionJson("55555555555555555555555555555555", "cancel"));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.ListWithMetadataAsync(cancellation.Token));
     }
 
     [Theory]
@@ -451,6 +596,16 @@ public sealed class SessionStoreTests
             Path.Combine(root, "activity.jsonl"));
         return (new SessionStore(paths, clock), paths);
     }
+
+    private static string SessionJson(string id, string title) =>
+        JsonSerializer.Serialize(new
+        {
+            id,
+            title,
+            created_at = DateTimeOffset.UnixEpoch,
+            updated_at = DateTimeOffset.UnixEpoch,
+            messages = Array.Empty<object>(),
+        });
 
     private sealed class MutableTimeProvider(DateTimeOffset current) : TimeProvider
     {

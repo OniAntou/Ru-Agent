@@ -122,7 +122,7 @@ public sealed class SqliteModelContextSource : IModelContextSource
               ON p.run_id = c.run_id
              AND p.payload_id = c.summary_payload_id
             WHERE c.run_id = $run_id
-            ORDER BY c.created_at_utc, c.compaction_id
+            ORDER BY c.expected_run_version, c.compaction_id
             """;
         command.Parameters.AddWithValue("$run_id", runId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken)

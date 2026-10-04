@@ -98,7 +98,7 @@ public sealed class GuiSourceTests
 
         Assert.Contains("_composerDrafts", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
         Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.Save", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
     }
 
     [Fact]

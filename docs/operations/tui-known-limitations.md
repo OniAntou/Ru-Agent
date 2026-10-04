@@ -1,8 +1,8 @@
 # TUI: known limitations and how to debug it
 
-What the terminal UI (`agent chat`) still cannot do, and the tooling for
-investigating it. Everything here was measured on a real run; nothing is
-inferred from reading the code.
+Current terminal limits, debugging guidance and dated runtime observations.
+The [capability and acceptance map](coding-agent-capabilities.md) separates
+source/test evidence from native-terminal and live-provider acceptance.
 
 ## Telling a bad key apart from a bad model
 
@@ -16,8 +16,8 @@ with different fixes. Two checks separate them in under a minute.
 Invoke-WebRequest https://openrouter.ai/api/v1/key -Headers @{ Authorization = "Bearer $key" }
 ```
 
-`200` means the credential is fine and the fault is elsewhere. Do this before
-reading any application code: a valid key rules out the entire auth story.
+`200` confirms that this endpoint accepted the credential. Completion access,
+model availability and account permissions still need their own checks.
 
 **Does the model exist?** A model id the provider does not serve returns **404**
 on the completion, and the adapters map that to `model_unavailable`
@@ -38,12 +38,13 @@ Two traps that cost real time here:
   (`ProviderCatalogService.RefreshIfNeededAsync`). Two runs inside that window
   both report the first failure, which makes a transient fault look permanent.
   Wait out the window, or restart, before concluding anything.
-- **A models.dev model is not validated against the catalog.** The snapshot
-  factory checks the model only for `openai`/`anthropic`, so a models.dev id that
-  does not exist travels all the way to the provider and comes back as a 404.
-  `chat` and `run` now warn once at start when the id is missing from the live
-  catalog (`model_not_in_catalog`; `model_check_unavailable` when the catalog
-  cannot be read), but the run still proceeds because the catalog can be stale.
+- **Catalog validation precedes the first model request.** Every provider's
+  selected model must exist in its usable catalog and support the selected
+  protocol. Missing models fail as `model_unavailable`; stale/unavailable
+  catalogs retain their named failure. CLI startup warnings are advisory;
+  the Host remains authoritative. A resumed run uses its durable provider
+  selection, so changing settings does not repair that run by selecting a
+  different model.
 
 ## Colour output
 
@@ -65,7 +66,7 @@ $env:RU_TUI_COLOR=truecolor   # truecolor | 256 | 16 | none
 
 ## Open limitations
 
-### Free-tier models are unreliable, and it is the model's choice whether to act
+### Earlier free-tier observations (not rerun for the current build)
 
 This started as "a free model can chat but never calls a tool": across 31 runs read
 from the session database there were **0 tool activity records and 0
@@ -77,14 +78,14 @@ from the session database there were **0 tool activity records and 0
   workspace are auto-allowed by `PolicySnapshotEvaluator`'s effective fallback,
   so a `read` would not have been blocked.
 
-**Resolved: the tool pipeline does execute end to end against a real provider.**
+**The pipeline executed end to end in that earlier live observation.**
 `cohere/north-mini-code:free` asked to list the workspace produced
 `tool.proposed` → `tool.execution_requested (read_only)` →
 `tool.execution_completed (ok)` → `run.state_changed (completed)`. So the earlier
 zero-tool runs were the model choosing to answer in prose, not a broken pipeline.
 
-What remains is model selection, not a defect in Ru. Measured on OpenRouter's free
-tier in one sitting:
+These observations do not establish current model availability or eliminate
+Harness defects. Results from OpenRouter's free tier in that sitting:
 
 | Model | Result |
 |---|---|
@@ -94,12 +95,11 @@ tier in one sitting:
 | `qwen/qwen3.8-27b:free` | `provider_rate_limited` |
 | `google/gemma-4-31b-it:free` | `provider_rate_limited` |
 
-Roughly a third of the free list answered 429 on the first attempt. Capacity comes
-and goes, so a `provider_rate_limited` on a free model means retry or switch, not
-that the setup is wrong. Other free-tier failure modes seen: `empty_model_reply`,
-and 404s when capacity runs out. `z-ai/glm-5.2:free` advertises `tool_call=False`,
-so it can never run an agent loop; the picker marks such rows as unsupported for
-that reason.
+Roughly a third of that free list answered 429 on the first attempt. Other
+observed failures included `empty_model_reply` and 404s. Verify current catalog
+and provider responses before using those model IDs. The picker marks catalog
+rows without tool-call support as unsupported. An explicitly continued run
+retries its pinned provider/model; choosing a different model requires a new run.
 
 ### The models.dev cache on a developer machine can be stale
 
@@ -141,10 +141,11 @@ runs are not adopted and need an explicit `/continue <run-id>`, and a resumed
 (`HarnessRecoveryScanner` re-registering its runtime root) because the drive
 loop starts `Running` runs and rehydrates `WaitingApproval` runs, but never
 picks up an unregistered one. An
-adopted `running` run is only pointed at (`ru agent attach <run-id>`) and is
-never followed automatically.
+adopted `running` run offers `/follow <run-id>` and
+`ru agent attach <run-id>`; it is never followed automatically. In-chat
+`/continue` and `/follow` accept only runs belonging to the current session.
 
-### An adopted `waiting_approval` run cannot be re-armed
+### Retained approval recovery differs between GUI and TUI
 
 Adoption reads a run summary, which carries no approval id, so the approval
 panel cannot be rebuilt. The GUI now says so instead of pretending the run is
@@ -154,8 +155,11 @@ and keeps Stop enabled, without faking a pending-approval re-arm. An approval
 requested before the restart is not re-delivered on the resumed cursor, so it
 cannot be answered from the adopted session and the run fails as
 `approval_expired` once the 30-minute approval lifetime passes. The
-TUI does not adopt `waiting_approval` at all: only parked and running statuses
-are handled by `chat --session`.
+TUI adopts `waiting_approval` and offers `/follow`. That explicit command reads
+at most 2,048 durable events through the captured cursor with a four-second
+deadline, recovers the latest approval and checks a fresh run version before
+posting the user's decision. Missing/incomplete replay fails closed. Another
+client may resolve the approval first; no approval is granted automatically.
 
 ### Session delete and `--session` replay have limits
 

@@ -187,9 +187,14 @@ public static class ContextCompactionPlanner
                 || entry.SourceId.StartsWith("base:", StringComparison.Ordinal))
             .ToHashSet();
         var latestUser = snapshot.Entries
-            .Where(entry => entry.Role == ModelContextRole.User)
+            .Where(entry => entry.Role == ModelContextRole.User
+                && !entry.SourceId.StartsWith("base:", StringComparison.Ordinal))
             .OrderByDescending(entry => entry.Sequence)
-            .FirstOrDefault();
+            .FirstOrDefault()
+            ?? snapshot.Entries
+                .Where(entry => entry.Role == ModelContextRole.User)
+                .OrderByDescending(entry => entry.Sequence)
+                .FirstOrDefault();
         if (latestUser is not null)
         {
             protectedEntries.Add(latestUser);

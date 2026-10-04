@@ -1,8 +1,6 @@
 using System.Text;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
-using Terminal.Gui.Drivers;
-using Terminal.Gui.Input;
 
 namespace RuAgent.Cli.TerminalGui;
 
@@ -22,19 +20,32 @@ public sealed class TgChatLoop
     private const string SpinnerFrame = "⠋";
     private const string QueueHint = "enter queues · esc cancels";
     private const string QueueFullHint = "queue full · enter retries";
+    private const string SubmissionTooLargeHint = "submission too large · shorten or detach files";
+    private const string SubmissionUnavailableHint = "cannot queue this command with pending attachments";
+    private const string StateChangeBusyHint = "finish queued prompts before changing session or model";
+    private const long MaxQueuedSubmissionBytes = 32L * 1024 * 1024;
+    private const int MaxSubmissionPromptChars = 16_000;
 
     /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing waiters.</summary>
     private static readonly TimeSpan StopDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly TgChatWindow _window;
     private readonly List<string> _history = [];
-    private readonly Queue<string> _queued = new();
+    private readonly Queue<ChatSubmissionSnapshot> _queued = new();
     private readonly object _queueGate = new();
     private readonly object _historyGate = new();
     private readonly CancellationToken _outerToken;
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TgChatKeyboardBindings _keyboardBindings;
     private Func<string, TranscriptStream, CancellationToken, Task> _promptHandler =
         (_, _, _) => Task.CompletedTask;
+    private Func<ChatSubmissionSnapshot, TranscriptStream, CancellationToken, Task> _submissionHandler =
+        (submission, stream, ct) => Task.CompletedTask;
+    private Func<string, ChatSubmissionSnapshot?>? _snapshotFactory;
+    private Func<string, bool>? _stateChangingCommandClassifier;
+    private Action<ChatSubmissionSnapshot>? _submissionAccepted;
+    private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
+    private long _queuedSubmissionBytes;
     private Func<string>? _attachmentLabelProvider;
     private Func<int>? _attachmentCountProvider;
     private Func<Task>? _pasteHandler;
@@ -45,12 +56,20 @@ public sealed class TgChatLoop
     private string _draft = string.Empty;
     private volatile bool _busy;
     private volatile bool _stopped;
+    private bool _queuePaused;
 
     public TgChatLoop(TgChatWindow window, CancellationToken cancellationToken = default)
     {
         _window = window;
         _outerToken = cancellationToken;
-        window.Composer.Input.KeyDown += OnComposerKey;
+        _keyboardBindings = new TgChatKeyboardBindings(
+            window,
+            () => _busy,
+            Submit,
+            Cancel,
+            NavigateHistory,
+            CompleteCommand,
+            Paste);
         // Stop() is the explicit signal, but the window can also wind down on its own
         // (app stop/close); the runnable leaving its running state must release waiters.
         window.IsRunningChanged += (_, args) =>
@@ -79,8 +98,55 @@ public sealed class TgChatLoop
         }
     }
 
-    public void SetPromptHandler(Func<string, TranscriptStream, CancellationToken, Task> handler) =>
+    public void SetPromptHandler(Func<string, TranscriptStream, CancellationToken, Task> handler)
+    {
         _promptHandler = handler;
+        _submissionHandler = (submission, stream, ct) => _promptHandler(submission.Prompt, stream, ct);
+    }
+
+    internal void SetSubmissionSnapshotFactory(Func<string, ChatSubmissionSnapshot?> factory) =>
+        _snapshotFactory = factory;
+
+    internal void SetStateChangingCommandClassifier(Func<string, bool> classifier) =>
+        _stateChangingCommandClassifier = classifier;
+
+    internal void PauseQueuedSubmissions()
+    {
+        lock (_queueGate)
+        {
+            _queuePaused = true;
+        }
+    }
+
+    internal void ResumeQueuedSubmissions()
+    {
+        ChatSubmissionSnapshot? next = null;
+        lock (_queueGate)
+        {
+            _queuePaused = false;
+            if (!_busy && !_stopped && _queued.Count > 0)
+            {
+                next = _queued.Dequeue();
+                _queuedSubmissionBytes -= next.OwnedBytes;
+            }
+        }
+
+        if (next is not null)
+        {
+            StartTurn(next);
+        }
+    }
+
+    internal void SetSubmissionHandler(Func<ChatSubmissionSnapshot, TranscriptStream, CancellationToken, Task> handler) =>
+        _submissionHandler = handler;
+
+    internal void SetSubmissionOwnershipHandlers(
+        Action<ChatSubmissionSnapshot> accepted,
+        Action<ChatSubmissionSnapshot> discarded)
+    {
+        _submissionAccepted = accepted;
+        _submissionDiscarded = discarded;
+    }
 
     /// <summary>Feeds the hint row's idle label; the provider owns the count/workspace wording.</summary>
     public void SetAttachmentLabelProvider(Func<string> provider) => _attachmentLabelProvider = provider;
@@ -129,11 +195,44 @@ public sealed class TgChatLoop
             return;
         }
 
+        var isRetryWhilePaused = false;
+        var isRepairCommandWhilePaused = false;
+        lock (_queueGate)
+        {
+            isRetryWhilePaused = _queuePaused && !_busy && IsRetryCommand(line);
+            isRepairCommandWhilePaused = _queuePaused && !_busy && ChatSubmissionSnapshot.IsPausedControlCommand(line);
+            if ((_busy || _queued.Count > 0 || _queuePaused)
+                && !isRetryWhilePaused
+                && !isRepairCommandWhilePaused
+                && _stateChangingCommandClassifier?.Invoke(line) is true)
+            {
+                _window.Hints.SetBusy(SpinnerFrame, StateChangeBusyHint);
+                return;
+            }
+        }
+
+        var submission = _snapshotFactory?.Invoke(line);
+        if (_snapshotFactory is not null && submission is null)
+        {
+            _window.Hints.SetBusy(SpinnerFrame, SubmissionUnavailableHint);
+            return;
+        }
+
+        submission ??= ChatSubmissionSnapshot.Create(line, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, [], []);
+        if (submission.Prompt.Length > MaxSubmissionPromptChars
+            || submission.OwnedBytes > MaxQueuedSubmissionBytes)
+        {
+            TuiDebug.Log("submit", "refused: submission exceeds the bounded prompt or attachment cap");
+            _window.Hints.SetBusy(SpinnerFrame, SubmissionTooLargeHint);
+            return;
+        }
+
         var queued = false;
         var refused = false;
         lock (_queueGate)
         {
-            if (_busy)
+            var mustQueue = _busy || _queuePaused || _queued.Count > 0;
+            if (mustQueue && !isRetryWhilePaused && !isRepairCommandWhilePaused)
             {
                 if (_queued.Count >= MaxQueueDepth)
                 {
@@ -143,8 +242,16 @@ public sealed class TgChatLoop
                 }
                 else
                 {
-                    _queued.Enqueue(line);
-                    queued = true;
+                    if (_queuedSubmissionBytes + submission.OwnedBytes > MaxQueuedSubmissionBytes)
+                    {
+                        refused = true;
+                    }
+                    else
+                    {
+                        _queued.Enqueue(submission);
+                        _queuedSubmissionBytes += submission.OwnedBytes;
+                        queued = true;
+                    }
                 }
             }
         }
@@ -157,6 +264,7 @@ public sealed class TgChatLoop
         }
 
         _window.Composer.Input.Text = string.Empty;
+        _submissionAccepted?.Invoke(submission);
         Remember(line);
         _historyIndex = _history.Count;
         _draft = string.Empty;
@@ -169,7 +277,7 @@ public sealed class TgChatLoop
         }
 
         TuiDebug.Log("submit", $"start turn len={line.Length} attachments={hasAttachments}");
-        StartTurn(line);
+        StartTurn(submission);
     }
 
     public void Cancel()
@@ -193,7 +301,11 @@ public sealed class TgChatLoop
         lock (_queueGate)
         {
             _stopped = true;
-            _queued.Clear();
+            while (_queued.TryDequeue(out var submission))
+            {
+                _queuedSubmissionBytes -= submission.OwnedBytes;
+                _submissionDiscarded?.Invoke(submission);
+            }
             turnDone = _turnDone?.Task ?? Task.CompletedTask;
         }
 
@@ -236,7 +348,10 @@ public sealed class TgChatLoop
         }
     }
 
-    private void StartTurn(string line)
+    private static bool IsRetryCommand(string line) =>
+        line.Trim().Equals("/retry", StringComparison.OrdinalIgnoreCase);
+
+    private void StartTurn(ChatSubmissionSnapshot submission)
     {
         TaskCompletionSource turnDone;
         lock (_queueGate)
@@ -245,6 +360,7 @@ public sealed class TgChatLoop
             {
                 _busy = false;
                 _turnDone = null;
+                _submissionDiscarded?.Invoke(submission);
                 return;
             }
 
@@ -256,13 +372,13 @@ public sealed class TgChatLoop
             _turnDone = turnDone;
         }
 
-        Dispatch(() => _window.Transcript.Append(" ▌ " + line, TranscriptStyle.User));
+        Dispatch(() => _window.Transcript.Append(" ▌ " + submission.Prompt, TranscriptStyle.User));
         var stream = new TranscriptStream(_window.Transcript, Dispatch);
-        _ = RunTurnAsync(line, stream, _turn.Token, turnDone);
+        _ = RunTurnAsync(submission, stream, _turn.Token, turnDone);
     }
 
     private async Task RunTurnAsync(
-        string line,
+        ChatSubmissionSnapshot submission,
         TranscriptStream stream,
         CancellationToken ct,
         TaskCompletionSource turnDone)
@@ -270,26 +386,32 @@ public sealed class TgChatLoop
         try
         {
             Dispatch(() => _window.Hints.SetBusy(SpinnerFrame, HasQueued ? QueueHint : null));
-            await _promptHandler(line, stream, ct).ConfigureAwait(false);
+            await _submissionHandler(submission, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            _submissionDiscarded?.Invoke(submission);
             stream.Append(" esc interrupted", TranscriptStyle.Meta);
         }
         catch (Exception ex)
         {
+            _submissionDiscarded?.Invoke(submission);
             stream.Append(" " + ex.Message, TranscriptStyle.Error);
         }
         finally
         {
-            string? next;
+            ChatSubmissionSnapshot? next;
             lock (_queueGate)
             {
                 // The handler settled: the per-turn source (and its outer-token link) has no
                 // further use. Disposing under the gate keeps Cancel from racing the dispose.
                 _turn?.Dispose();
                 _turn = null;
-                next = _stopped || _queued.Count == 0 ? null : _queued.Dequeue();
+                next = _stopped || _queuePaused || _queued.Count == 0 ? null : _queued.Dequeue();
+                if (next is not null)
+                {
+                    _queuedSubmissionBytes -= next.OwnedBytes;
+                }
                 if (next is null)
                 {
                     _busy = false;
@@ -349,68 +471,6 @@ public sealed class TgChatLoop
         }
     }
 
-    private void OnComposerKey(object? sender, Terminal.Gui.Input.Key key)
-    {
-        if (TuiDebug.IsEnabled)
-        {
-            // RU_TUI_DEBUG=1: what the driver actually delivered, so a swallowed Enter
-            // (IME/console quirks) can be told apart from a handler mismatch.
-            TuiDebug.Log(
-                "keys",
-                $"code={(int)key.KeyCode} rune={key.AsRune.Value} ctrl={key.IsCtrl} alt={key.IsAlt} shift={key.IsShift}");
-        }
-
-        if (TryHandleDropdownKey(key))
-        {
-            key.Handled = true;
-            return;
-        }
-
-        if (IsSubmitKey(key))
-        {
-            Submit();
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.Esc && _busy)
-        {
-            Cancel();
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.CursorUp)
-        {
-            NavigateHistory(-1);
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.CursorDown)
-        {
-            NavigateHistory(1);
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.Tab)
-        {
-            CompleteCommand();
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.V.WithCtrl && _pasteHandler is not null)
-        {
-            Paste();
-            key.Handled = true;
-        }
-        else if (key == Terminal.Gui.Input.Key.O.WithCtrl)
-        {
-            _window.Transcript.ToggleExpanded();
-            key.Handled = true;
-        }
-    }
-
-    /// <summary>
-    /// Enter as the terminal drivers deliver it: <see cref="KeyCode.Enter"/> (CR) normally,
-    /// but some IME/console paths hand over a line feed (<c>(KeyCode)10</c>) instead — treat
-    /// both as submit so a synthesized Enter can never dead-end the composer.
-    /// </summary>
-    private static bool IsSubmitKey(Terminal.Gui.Input.Key key) =>
-        key.KeyCode is KeyCode.Enter || key.AsRune.Value is 13 or 10;
-
     /// <summary>
     /// Ctrl+V claims the key whenever a paste handler is wired: the handler reads the
     /// Windows clipboard itself (image or text), so the composer must not also paste.
@@ -444,45 +504,6 @@ public sealed class TgChatLoop
                 // The session wound down before the failure could be reported.
             }
         }
-    }
-
-    /// <summary>
-    /// While the slash dropdown is open it owns the navigation keys, but the composer keeps
-    /// focus so typing still filters the list. Enter/Tab accept the selection into the
-    /// composer; Escape dismisses the list without clearing what was typed.
-    /// </summary>
-    private bool TryHandleDropdownKey(Terminal.Gui.Input.Key key)
-    {
-        if (!_window.IsSlashDropdownOpen)
-        {
-            return false;
-        }
-
-        if (key == Terminal.Gui.Input.Key.CursorUp)
-        {
-            _window.MoveSlashDropdown(-1);
-            return true;
-        }
-
-        if (key == Terminal.Gui.Input.Key.CursorDown)
-        {
-            _window.MoveSlashDropdown(1);
-            return true;
-        }
-
-        if (key == Terminal.Gui.Input.Key.Enter || key == Terminal.Gui.Input.Key.Tab)
-        {
-            _window.AcceptSlashDropdown();
-            return true;
-        }
-
-        if (key == Terminal.Gui.Input.Key.Esc)
-        {
-            _window.HideSlashDropdown();
-            return true;
-        }
-
-        return false;
     }
 
     /// <summary>

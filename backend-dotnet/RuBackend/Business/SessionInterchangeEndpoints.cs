@@ -190,17 +190,38 @@ public static class SessionInterchangeEndpoints
                 .ConfigureAwait(false);
             if (!appended)
             {
-                // The session exists and is empty. Saying so beats reporting success and
-                // leaving the caller with a session that looks imported but is not.
+                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 return Results.Ok(new
                 {
                     status = "error",
                     message = "Tạo được session nhưng không ghi được nội dung.",
-                    session = new { id = sessionId },
                 });
             }
 
             var document = await sessions.GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            if (document is null)
+            {
+                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new
+                {
+                    status = "error",
+                    message = "Không đọc được nội dung session sau khi import.",
+                });
+            }
+
+            var persistedMessages = document.Messages.Count;
+            var droppedEntries = Math.Max(0, transcript.Entries.Count - persistedMessages);
+            if (persistedMessages == 0)
+            {
+                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new
+                {
+                    status = "error",
+                    message = "Session không có tin nhắn nào có thể lưu.",
+                    dropped_entries = droppedEntries,
+                    partial_import = true,
+                });
+            }
 
             return Results.Ok(new
             {
@@ -209,10 +230,11 @@ public static class SessionInterchangeEndpoints
                 session = new
                 {
                     id = sessionId,
-                    title = document?.Title,
-                    messages = messages.Count,
+                    title = document.Title,
+                    messages = persistedMessages,
                 },
-                dropped_entries = transcript.Entries.Count - messages.Count,
+                dropped_entries = droppedEntries,
+                partial_import = droppedEntries > 0,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

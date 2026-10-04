@@ -27,19 +27,22 @@ public static class CliImagePolicy
     public static string TooManyImagesStatus =>
         $"Maximum {MaxImageCount} images per turn; please remove some images before sending.";
 
-    public static async Task<byte[]?> ReadBoundedBytesAsync(Stream stream, int maximumBytes)
+    public static async Task<byte[]?> ReadBoundedBytesAsync(
+        Stream stream,
+        int maximumBytes,
+        CancellationToken cancellationToken = default)
     {
         using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
         var buffer = new byte[Math.Min(maximumBytes, 81920)];
         int read;
-        while ((read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
         {
             if (output.Length > maximumBytes - read)
             {
                 return null;
             }
 
-            await output.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
 
         return output.ToArray();

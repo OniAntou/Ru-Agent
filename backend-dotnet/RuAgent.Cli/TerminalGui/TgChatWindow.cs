@@ -20,6 +20,9 @@ public sealed class TgChatWindow : Window
     private const int MaxSecretChars = 4096;
 
     private TgSlashDropdown? _slashDropdown;
+    private readonly TgCommandPalette _commandPalette = new();
+    private TgCommandPaletteView? _commandPaletteView;
+    private string? _commandPaletteDraft;
     private TgPanelHost? _panel;
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
@@ -48,6 +51,7 @@ public sealed class TgChatWindow : Window
         // first row (or /clear) toggles it exactly like the classic landing screen.
         Transcript.FirstContentAppended += HideLanding;
         Transcript.ContentCleared += ShowLanding;
+        Transcript.UnseenOutputChanged += hasUnseenOutput => Hints.SetTranscriptUnread(hasUnseenOutput);
 
         // The dropdown is driven from the composer text itself: every edit (typed, history,
         // programmatic) refreshes it, and accepting writes the command back through the same
@@ -76,6 +80,9 @@ public sealed class TgChatWindow : Window
     }
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
+    public bool IsCommandPaletteOpen => _commandPaletteView?.SuperView is not null;
+    public bool IsModalPanelOpen => _panel?.SuperView is not null;
+    public string CommandPaletteQuery => _commandPalette.Query;
 
     /// <summary>
     /// Set once the live terminal shrinks below the 80x24 floor: the window stops the app
@@ -151,6 +158,90 @@ public sealed class TgChatWindow : Window
     public void MoveSlashDropdown(int delta) => _slashDropdown?.Move(delta);
 
     public void AcceptSlashDropdown() => _slashDropdown?.Accept();
+
+    public void OpenCommandPalette()
+    {
+        if (IsModalPanelOpen || IsCommandPaletteOpen)
+        {
+            return;
+        }
+
+        HideSlashDropdown();
+        _commandPaletteDraft = Composer.Input.Text?.ToString() ?? string.Empty;
+        _commandPalette.Reset();
+        _commandPaletteView ??= new TgCommandPaletteView(_commandPalette);
+        _commandPaletteView.X = 0;
+        _commandPaletteView.Width = Dim.Fill();
+        var paletteHeight = Math.Min(
+            TgCommandPalette.MaxVisibleCommands + 2,
+            Math.Max(3, Transcript.Viewport.Height));
+        _commandPaletteView.Height = paletteHeight;
+        _commandPaletteView.Y = Pos.AnchorEnd(7 + paletteHeight);
+        Add(_commandPaletteView);
+        Composer.Input.SetFocus();
+        SetNeedsDraw();
+    }
+
+    public void SetCommandPaletteQuery(string query)
+    {
+        if (!IsCommandPaletteOpen)
+        {
+            return;
+        }
+
+        _commandPalette.SetQuery(query);
+        _commandPaletteView?.SetNeedsDraw();
+    }
+
+    public void MoveCommandPaletteSelection(int delta)
+    {
+        if (!IsCommandPaletteOpen)
+        {
+            return;
+        }
+
+        _commandPalette.Move(delta);
+        _commandPaletteView?.SetNeedsDraw();
+    }
+
+    public string? SelectedCommandPaletteCommand => IsCommandPaletteOpen ? _commandPalette.SelectedCommand : null;
+
+    public void AcceptCommandPaletteSelection()
+    {
+        if (SelectedCommandPaletteCommand is not { } command)
+        {
+            return;
+        }
+
+        Composer.Input.Text = command + " ";
+        CloseCommandPalette(restoreDraft: false);
+    }
+
+    public void DismissCommandPalette() => CloseCommandPalette(restoreDraft: true);
+
+    public void ShowCommandPaletteBusyHint()
+    {
+        _commandPalette.SetStatusMessage("active turn in progress · apply command after it finishes");
+        _commandPaletteView?.SetNeedsDraw();
+        Hints.SetBusy("⠋", "finish turn before applying command");
+    }
+
+    private void CloseCommandPalette(bool restoreDraft)
+    {
+        if (_commandPaletteView?.SuperView is not null)
+        {
+            Remove(_commandPaletteView);
+        }
+
+        if (restoreDraft && _commandPaletteDraft is not null)
+        {
+            Composer.Input.Text = _commandPaletteDraft;
+        }
+
+        _commandPaletteDraft = null;
+        Composer.Input.SetFocus();
+        SetNeedsDraw();
+    }
 
     /// <summary>
     /// The approval panel for an already-built prompt: the caller's choices (including a

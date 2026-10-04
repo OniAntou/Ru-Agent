@@ -1,12 +1,87 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Persistence;
+using RuBackend.Business.Settings;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
 public sealed class AgentRunIdempotencyTests
 {
+    [Fact]
+    public async Task Get_run_returns_durable_provider_pin_after_settings_change()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        using var created = await client.PostAsJsonAsync("/agent/v1/runs", new
+        {
+            session_id = sessionId,
+            workspace_path = tmp.Path,
+            prompt = "provider metadata",
+            preset = "standard",
+            idempotency_key = "provider-metadata-" + Guid.NewGuid().ToString("N"),
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var createdJson = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = createdJson.GetProperty("run_id").GetString()!;
+
+        var selections = factory.Services.GetRequiredService<SqliteAgentRunProviderSelectionStore>();
+        await selections.PinAsync(new RunId(runId), new AgentRunProviderSelection(
+            "Custom OpenAI", "custom", "chat_completions", "https://provider-a.invalid/v1",
+            "model-a", null, "{}", null), default);
+        var settings = factory.Services.GetRequiredService<ISettingsStore>();
+        var current = await settings.ReadAsync(default);
+        await settings.SaveAsync(current with
+        {
+            Backend = "Custom OpenAI",
+            CustomModel = "model-b",
+            CustomUrl = "https://provider-b.invalid/v1",
+        }, default);
+
+        using var response = await client.GetAsync($"/agent/v1/runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Custom OpenAI", body.GetProperty("provider_backend").GetString());
+        Assert.Equal("model-a", body.GetProperty("provider_model").GetString());
+    }
+
+    [Fact]
+    public async Task Get_run_leaves_provider_metadata_null_when_run_has_no_pin()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        using var created = await client.PostAsJsonAsync("/agent/v1/runs", new
+        {
+            session_id = sessionId,
+            workspace_path = tmp.Path,
+            prompt = "unselected provider metadata",
+            preset = "standard",
+            idempotency_key = "provider-metadata-empty-" + Guid.NewGuid().ToString("N"),
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var createdJson = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = createdJson.GetProperty("run_id").GetString()!;
+
+        using var response = await client.GetAsync($"/agent/v1/runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        AssertNullOrMissing(body, "provider_backend");
+        AssertNullOrMissing(body, "provider_model");
+    }
+
+    private static void AssertNullOrMissing(JsonElement body, string propertyName)
+    {
+        Assert.True(!body.TryGetProperty(propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Null);
+    }
+
     [Fact]
     public async Task Create_returns_201_and_idempotent_replay_returns_200_same_run()
     {
@@ -133,17 +208,13 @@ public sealed class AgentRunIdempotencyTests
         };
 
         using var r1 = await client.PostAsJsonAsync("/agent/v1/runs", body1);
-        // First may be 201 or 409 if workspace busy from previous? Use fresh tmp so should be 201
-        // Cancel previous run if needed to allow second
-        if (r1.StatusCode == HttpStatusCode.Created)
-        {
-            var runId = (await r1.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("run_id").GetString()!;
-            await client.PostAsync($"/agent/v1/runs/{runId}/cancel", null);
-        }
-        else
-        {
-            Assert.True(r1.StatusCode == HttpStatusCode.Created || (int)r1.StatusCode == 409);
-        }
+        var firstBody = await r1.Content.ReadAsStringAsync();
+        Assert.True(
+            r1.StatusCode == HttpStatusCode.Created,
+            $"Fresh workspace run should be created before the version mismatch request. "
+                + $"Actual status: {(int)r1.StatusCode}; body: {firstBody}");
+        var runId = JsonDocument.Parse(firstBody).RootElement.GetProperty("run_id").GetString()!;
+        await client.PostAsync($"/agent/v1/runs/{runId}/cancel", null);
 
         // Second attempt with mismatched version
         var body2 = new

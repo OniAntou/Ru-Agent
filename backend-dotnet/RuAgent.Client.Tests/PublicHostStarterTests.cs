@@ -73,6 +73,36 @@ public sealed class PublicHostStarterTests : IDisposable
     }
 
     [Fact]
+    public async Task Caller_cancellation_during_default_health_probe_is_not_reported_as_port_conflict()
+    {
+        var port = FindFreePort();
+        using var listener = new TcpListener(IPAddress.Loopback, port);
+        listener.Start();
+        var locator = new PublicHostLocator(Path.Combine(_root, "cancel-health-" + Guid.NewGuid().ToString("N")));
+        var process = System.Diagnostics.Process.GetCurrentProcess();
+        var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(
+            1,
+            $"http://127.0.0.1:{port}/",
+            new string('c', 64),
+            process.Id,
+            process.StartTime.ToUniversalTime().ToString("O"),
+            new string('d', 32),
+            DateTimeOffset.UtcNow.ToString("O"));
+        Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+        File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(
+            descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+        using var starter = new PublicHostStarter(locator, publicPort: port);
+        using var cancellation = new CancellationTokenSource();
+
+        var startTask = starter.GetOrStartAsync(_root, cancellation.Token);
+        using var accepted = await listener.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => startTask);
+        Assert.True(IsPortOccupied(port));
+    }
+
+    [Fact]
     public async Task NeverStartsWorkerBrokerDirectly()
     {
         var port = FindFreePort();

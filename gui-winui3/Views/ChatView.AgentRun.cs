@@ -30,6 +30,8 @@ namespace RuApp.Views
 {
     public sealed partial class ChatView
     {
+        private long _agentTurnGeneration;
+
         private void ShowAgentInlineStatus(string status)
         {
             _localComposerStatus = status;
@@ -505,6 +507,7 @@ namespace RuApp.Views
 
         private void ResetAgentState()
         {
+            _agentTurnGeneration++;
             ClearAgentActivities();
             ClearTodoPanel();
             // The queue belongs to the session that was on screen; a queue that
@@ -592,6 +595,14 @@ namespace RuApp.Views
                 if (item != null)
                 {
                     PendingAttachments.Remove(item);
+                    if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox.Text, PendingAttachments))
+                    {
+                        ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+                    }
+                    else if (_localComposerStatus == ComposerDraftStore.RetentionLimitStatus)
+                    {
+                        ClearComposerStatus();
+                    }
                 }
                 if (PendingAttachments.Count == 0)
                 {
@@ -742,9 +753,12 @@ namespace RuApp.Views
                 return;
             }
 
+            string submittedSessionId = _activeSessionId;
+            long submittedGeneration = _agentTurnGeneration;
             try
             {
                 string text = ChatInputTextBox.Text.Trim();
+                string composerText = ChatInputTextBox.Text;
                 var attachments = PendingAttachments.ToList();
 
                 if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
@@ -773,25 +787,46 @@ namespace RuApp.Views
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
 
-                ChatInputTextBox.Text = string.Empty;
-                PendingAttachments.Clear();
-                AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
-                ClearComposerDraft(_activeSessionId);
-                await SendAgentTurnAsync(
+                bool accepted = await SendAgentTurnAsync(
                     BuildEffectivePrompt(text, attachments),
                     CancellationToken.None,
                     attachments: attachments,
-                    displayUserText: text);
+                    displayUserText: text,
+                    onAccepted: () =>
+                    {
+                        if (submittedGeneration != _agentTurnGeneration
+                            || !string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                            || !string.Equals(ChatInputTextBox.Text, composerText, StringComparison.Ordinal)
+                            || !PendingAttachments.SequenceEqual(attachments))
+                        {
+                            return;
+                        }
+
+                        ChatInputTextBox.Text = string.Empty;
+                        PendingAttachments.Clear();
+                        AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                        ClearComposerDraft(submittedSessionId);
+                    });
+                if (!accepted && submittedGeneration == _agentTurnGeneration)
+                {
+                    UpdateSendButtonMode(isAgentRunning: false);
+                }
             }
             catch (Exception ex)
             {
-                FailActiveAgentReply(ex);
-                ShowAgentError(ex);
+                if (submittedGeneration == _agentTurnGeneration)
+                {
+                    FailActiveAgentReply(ex);
+                    ShowAgentError(ex);
+                }
             }
             finally
             {
-                _isSendingUserTurn = false;
-                UpdateAgentInlineState();
+                if (submittedGeneration == _agentTurnGeneration)
+                {
+                    _isSendingUserTurn = false;
+                    UpdateAgentInlineState();
+                }
             }
         }
 
@@ -994,7 +1029,8 @@ namespace RuApp.Views
             bool allowSessionRecovery = true,
             List<ImageAttachmentItem>? attachments = null,
             string? displayUserText = null,
-            bool addUserMessage = true)
+            bool addUserMessage = true,
+            Action? onAccepted = null)
         {
             if (allowSessionRecovery)
             {
@@ -1020,6 +1056,7 @@ namespace RuApp.Views
 
             _agentWorkspace = workspace;
 
+            string? submittedSessionId = null;
             try
             {
                 AgentPermissionPreset preset = SelectedAgentPreset();
@@ -1050,8 +1087,9 @@ namespace RuApp.Views
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
                     .ToList();
 
+                submittedSessionId = _activeSessionId;
                 var request = new CreateAgentRunRequest(
-                    _activeSessionId,
+                    submittedSessionId,
                     workspace,
                     text,
                     wirePreset,
@@ -1061,20 +1099,35 @@ namespace RuApp.Views
 
                 _activeWorkspaceId = null;
 
-                StartNewAgentActivityRun();
-                BeginAgentReply(text, attachments, displayUserText, addUserMessage);
-                JumpToLatestForNewTurn();
-                ScrollChatToBottom();
-                AgentStopButton.Visibility = Visibility.Collapsed;
-                UpdateSendButtonMode(isAgentRunning: true);
-                UpdateAgentInlineState();
-                await _agentController.CreateAndRunAsync(request, cancellationToken);
+                bool accepted = await _agentController.CreateAndRunAsync(
+                    request,
+                    cancellationToken,
+                    () => BeginAcceptedAgentTurn(
+                        submittedSessionId,
+                        text,
+                        attachments,
+                        displayUserText,
+                        addUserMessage,
+                        onAccepted));
+                if (!string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal))
+                {
+                    return accepted;
+                }
+
+                if (!accepted)
+                {
+                    ShowAgentInlineStatus("Coding Agent is still creating another run. This message and its attachments are still in the composer.");
+                    return false;
+                }
+
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
             }
             catch (AgentApiException error) when (
                 allowSessionRecovery
                 && AgentSessionRecovery.IsRecoverable(error)
-                && _agentSessionRecovery.TryBegin(_activeSessionId))
+                && submittedSessionId is not null
+                && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                && _agentSessionRecovery.TryBegin(submittedSessionId))
             {
                 // Preserve the completion gate while replacing the stale
                 // session and retrying this same logical turn once.
@@ -1085,7 +1138,8 @@ namespace RuApp.Views
                     cancellationToken,
                     allowSessionRecovery: false,
                     attachments: attachments,
-                    displayUserText: displayUserText);
+                    displayUserText: displayUserText,
+                    onAccepted: onAccepted);
             }
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))
@@ -1098,6 +1152,29 @@ namespace RuApp.Views
             }
             UpdateAgentInlineState();
             return true;
+        }
+
+        private void BeginAcceptedAgentTurn(
+            string sessionId,
+            string text,
+            List<ImageAttachmentItem>? attachments,
+            string? displayUserText,
+            bool addUserMessage,
+            Action? onAccepted)
+        {
+            if (!string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            StartNewAgentActivityRun();
+            BeginAgentReply(text, attachments, displayUserText, addUserMessage);
+            JumpToLatestForNewTurn();
+            ScrollChatToBottom();
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            UpdateSendButtonMode(isAgentRunning: true);
+            UpdateAgentInlineState();
+            onAccepted?.Invoke();
         }
 
         private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)

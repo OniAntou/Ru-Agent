@@ -159,6 +159,10 @@ public sealed class PublicHostStarter : IDisposable
             using var resp = await HealthProbeClient.SendAsync(req, ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
             return false;

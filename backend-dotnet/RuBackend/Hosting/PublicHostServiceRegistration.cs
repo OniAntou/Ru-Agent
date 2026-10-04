@@ -216,9 +216,12 @@ internal static class PublicHostServiceRegistration
         });
         services.AddSingleton(services => new WorkerV2StepService(
             services.GetRequiredService<IModelProviderResolver>()));
+        services.AddSingleton(services => new SqliteAgentRunProviderSelectionStore(
+            services.GetRequiredService<HarnessSqliteOptions>()));
         services.AddSingleton(services => new AgentProviderSnapshotFactory(
             services.GetRequiredService<ISettingsStore>(), services.GetRequiredService<ICredentialStore>(),
             services.GetRequiredService<ProviderCatalogService>(),
+            services.GetRequiredService<SqliteAgentRunProviderSelectionStore>(),
             async (runId, ct) =>
             {
                 var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);

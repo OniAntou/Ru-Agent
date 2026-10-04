@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-09-30.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-04.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
@@ -28,8 +28,9 @@ dynamic loopback port, binds ASP.NET Core on port 8000, waits for Broker and
 public readiness, and assigns the Broker to one Job Object. Model generation
 runs in the Host process itself (ADR-0012), so the Broker is the only managed
 child process. Managed startup is unconditional.
-The Host remains running until explicitly stopped (or the owned child exits
-unexpectedly) and does not auto-exit on idle. The owned Broker enters one Job
+The managed Host exits after ten minutes without an in-flight request, recent
+request or registered run (`RU_HOST_IDLE_MINUTES`, `0` disables this timer), or
+when explicitly stopped or its owned child exits unexpectedly. The owned Broker enters one Job
 Object, but ownership is Public Host, not WinUI. Startup succeeds only after
 public readiness; shutdown, startup failure, or an unexpected child exit
 terminates the owned Broker tree.
@@ -43,11 +44,14 @@ Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
 `<provider-id>_api_key` and resolves its base URL from the Models.dev catalog. Missing keys stay missing; aliases and other
-providers' keys are never tried. Each model step resolves a fresh typed
-in-memory provider snapshot that pins protocol
-(`chat_completions`, `openai_responses`, `anthropic_messages`), reasoning
-options, and for Anthropic the bounded `max_tokens` (min documented max,
-8192). No key migration or provider switching is performed. An endpoint that
+providers' keys are never tried. Before the first model request, successful
+catalog/bootstrap validation pins a secret-free Run Provider Selection in
+SQLite: backend, alias, endpoint, protocol, model, credential account name,
+reasoning options and bounded output-token limit. The live snapshot holds the
+credential in memory; no credential value is written to the selection record.
+After restart the same selection is rebuilt with that account's current
+credential and validated against the same provider's catalog. No key migration
+or provider switching is performed. An endpoint that
 requires a key will reject an unauthenticated request; this does not trigger a
 fallback.
 
@@ -75,12 +79,29 @@ the mapped provider model field inside the same transaction. There is no
 aggregate endpoint, no second save path and no fallback provider or model.
 
 The Host validates model/reasoning against that catalog at the first model
-step and pins model, endpoint, credential and allowlisted reasoning options
-for the run. Each step resolves a fresh in-memory provider snapshot; the typed
-step service rejects missing/invalid snapshots and strips untrusted reasoning
-fields. The Host reads credentials directly from its own store, so no per-step
-handoff file exists. Settings changes affect the next run;
-there is no retry with another provider, model, key, protocol or effort.
+step. Settings changes after the selection is pinned affect the next run.
+The typed step service rejects missing/invalid snapshots and strips untrusted
+reasoning fields. The Host reads credentials directly from its own store, so no
+per-step handoff file exists. Schema v12 adds an unselected row atomically with
+new runs; pre-v12 runs without a selection fail closed as
+`provider_selection_missing`, rather than adopting current settings. There is
+no retry with another provider, model, key, protocol or effort.
+
+The existing run-detail response optionally exposes `provider_backend` and
+`provider_model` from the durable selection only. An unselected or legacy run
+has null metadata; reading the response never selects a provider. CLI retained-run
+display uses those fields, while configured model settings remain the next-turn
+intent. Catalog-derived usage estimates stay hidden when a retained run's
+selection is unknown.
+
+Schema v13 adds the bounded session-workspace lookup index. Migration executes
+and drains every SQL result before advancing `user_version`, inside the same
+transaction; any late statement failure rolls back the entire upgrade. This
+explicit drain is needed because the pinned [Microsoft.Data.Sqlite 10.0.11
+implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Data.Sqlite.Core/SqliteCommand.cs)
+disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
+batch statements. Legacy-schema fixtures remove later artifacts before testing
+upgrade and rollback; they do not reinterpret a newer database as an older one.
 
 ## Agent autonomy and trust boundary
 
@@ -151,14 +172,12 @@ reconciliation surfaces from Phase 3:
   change who may run what without approval, so neither is taken unilaterally.
   The exposure already requires write access to a directory on `PATH`, which is
   strictly more than the same actor needs to run the program directly.
-  The same shape applies to a repository's own git configuration on the
-  terminal path: `GitCli` pins `core.fsmonitor` for the reads the Broker does
-  itself, but `StreamingProcessRunner` deliberately does not, because it also
-  carries the managed-commit calls that verify a `git diff --cached` hash
-  before committing, and an extra `-c` would break that check rather than
-  harden it. Measured on git 2.55, a repository-supplied `core.fsmonitor`
-  program is not invoked by `git status` at all, so the terminal path is
-  accepted as-is rather than hardened at the cost of that verification.
+  Read-only model Git commands are prepared by `TerminalAdapter` with
+  `core.fsmonitor=false`, an empty `diff.external`, and `--no-pager`;
+  `diff`, `log` and `show` additionally disable external diff and textconv.
+  Explicit helper/filter options require approval. This preparation occurs
+  after the managed-commit branch, preserving its preview/diff-hash contract;
+  `StreamingProcessRunner` still does not rewrite arbitrary commands.
   Writing repository-local configuration is no longer automatic: a model `git
   config` write can install the same program-selecting keys, so writes ask
   while `--get`/`--list` reads stay auto-executable.
@@ -167,6 +186,13 @@ reconciliation surfaces from Phase 3:
   substituting a second tool or a second provider. It is the one documented
   exception to the no-substitution invariant, and every request still passes
   `WebPolicy`, so it cannot widen the network boundary or bypass a denial.
+  Managed Web disables environment/system proxies and connects directly to a
+  public address validated by the connection policy.
+- Structured reads bind content and SHA-256 to one opened, authorized file
+  handle. Windows final-path and hard-link checks inspect that handle before
+  reading. Full-file hashing observes caller cancellation and a five-second
+  deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
+  owned and cannot be supplied by the model.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; it renders only safe envelope fields and exposes `agent approve`/`deny`, policy commands, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
 
@@ -289,7 +315,7 @@ an existing RuApp instance and drives only the `agent-*` scenarios.
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own the Broker child. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 41 HTTP routes (20 non-Agent + 21 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`WorkerV2StepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 41 HTTP routes (20 non-Agent + 21 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`WorkerV2StepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Broker child ownership in one kill-on-close Job Object. The managed Host exits after the configured idle window when no request or run remains active. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, then validates the hash before capabilities. The Host and the Broker project the same twelve Protocol definitions: separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, and `skill` tools. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity`; the grant is lost on restart, never shared with new sessions, and never authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. `files.apply_patch` is not advertised. The Broker has no public HTTP contract. |
 
 Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
@@ -330,7 +356,7 @@ and run handles.
 
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
-- **Backend validation & persistence:** `POST /agent/v1/runs` accepts up to 1 MB JSON requests containing `image_attachments` (data URLs). ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MB), total decoded size (<=20 MB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
 - **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `WorkerV2StepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
   - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
@@ -357,6 +383,30 @@ last one.
 `workspace_path` per session, resolved from the session's latest Harness run
 (null when the session has no runs or the workspace identity changed), so WinUI
 can group the sidebar by workspace without a second round trip.
+
+Listing scans at most 2,000 file metadata candidates, parses at most 1,000
+session documents and returns at most 500 summaries. Each list call has a
+32 MiB actual uncached JSON-read budget and a five-second deadline; cached
+summaries consume no JSON-read budget. Results are ordered by update time
+within the inspected set. Reaching the metadata cap does not establish global
+recency. `sessions_truncated` reports omitted results or an exhausted budget,
+and WinUI displays the partial-list warning. Summaries are cached against file
+length, write time and creation time with a one-minute TTL; Host writes/deletes
+invalidate them immediately. Workspace metadata is queried only for the returned
+session IDs using the v13 `(session_id, created_at_utc DESC, run_id DESC)` index.
+Import keeps the 200-message retention limit and reports the persisted count
+in `session.messages`, all omitted transcript entries in `dropped_entries`, and
+`partial_import` when any entry was omitted. An import with no persistable
+message fails without retaining an empty session.
+
+WinUI gives Creating its own cancellation lifetime, including the period before
+a run ID arrives. A late accepted response is canceled rather than attached to
+a different session. Composer text and attachments clear only after acceptance
+for the matching session/draft. Unsent drafts retain at most eight sessions and
+32 MiB of estimated serialized content (1 MiB text and 24 MiB attachments per
+session); exceeding a cap refuses the switch and leaves the active draft intact.
+Picker and clipboard image intake share validation and normalization before
+the four-image/4 MiB decoded-per-image request boundary.
 
 The canonical data-location contract is documented in
 [ADR 0004](adr/0004-canonical-ru-data-location.md).

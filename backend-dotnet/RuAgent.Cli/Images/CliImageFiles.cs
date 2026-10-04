@@ -86,6 +86,11 @@ public static class CliImageFiles
             return (null, $"image_unreadable: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
 
+        return LoadBytes(name, bytes);
+    }
+
+    internal static (CliImageAttachment? Attachment, string? Error) LoadBytes(string name, byte[] bytes)
+    {
         CliResizedImage resized;
         try
         {

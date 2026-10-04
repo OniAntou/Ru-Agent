@@ -343,6 +343,22 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void Sidebar_shows_a_persistent_notice_when_the_session_list_is_truncated()
+    {
+        var document = GuiSource.Xml("MainWindow.xaml");
+        var warning = GuiSource.Require(document, "SidebarSessionTruncationWarning");
+        var applySessions = GuiSource.MethodBody(
+            GuiSource.ViewText("MainWindow"),
+            "ApplySessions");
+
+        Assert.Equal("Collapsed", GuiSource.AttributeValue(warning, "Visibility"));
+        Assert.Contains("some sessions are hidden", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("result.SessionsTruncated", applySessions, StringComparison.Ordinal);
+        Assert.Contains("SidebarSessionTruncationWarning.Visibility", applySessions, StringComparison.Ordinal);
+        Assert.Contains("SidebarSessionTruncationWarning.Visibility != warningVisibility", applySessions, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sidebar_render_wires_projection_and_new_chat_cascade()
     {
         var code = GuiSource.ViewText("MainWindow");

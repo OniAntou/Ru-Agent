@@ -172,11 +172,19 @@ invalid saved choice remains visible and blocks the next model dispatch until
 the user selects a valid choice or Provider default. Legacy explicit choices
 are retained for validation, not silently enabled or discarded.
 
-The Host sends model/endpoint/key/reasoning through a private DPAPI handoff,
-never public catalog responses or tool arguments. A run pins its first model
-step's selection across subsequent tool steps; settings changes take effect
-on the next run. Pin storage is bounded to 64 runs; terminal pins are swept
-when a new run requests its snapshot and all pins clear at Host disposal.
+The in-process runner receives a typed snapshot directly; no handoff file is
+used. Successful catalog/bootstrap validation before the first model request
+pins a secret-free Run Provider Selection in SQLite (introduced in schema v12).
+Settings changes affect later runs. A recreated Host reads the pinned backend,
+endpoint, protocol, model, reasoning options and output-token limit, and reads
+only that selection's credential account from the credential store. A legacy
+run without a selection fails as `provider_selection_missing`.
+
+The decrypted in-memory snapshot cache is bounded to 64 runs; terminal entries
+are swept when a run requests its snapshot and the cache clears at Host
+disposal. Durable selections remain with their run and are deleted with it.
+Credential values never enter the selection table, public catalog responses
+or tool arguments.
 
 No alternate API, key, model, protocol or effort is tried after failure. No
 temperature/top-k/output-token tuning is reintroduced. Provider metadata is

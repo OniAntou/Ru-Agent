@@ -49,8 +49,9 @@ Opening a session adopts its newest non-terminal run, so a run that outlived
 the host is not invisible: WinUI re-arms Continue/Stop for it (`AdoptRunAsync`;
 a running run is subscribed from its durable `LastSequence`, a parked one waits
 for the typed Continue), the TUI adopts it when `chat --session` reopens the
-session (parked → the `/continue` path, running → an `ru agent attach` hint
-only), and switching sessions detaches a parked run instead of cancelling it.
+session (parked → the `/continue` path, running or approval-waiting → an
+explicit `/follow` action), and switching sessions detaches a parked run
+instead of cancelling it. In-chat follow/continue reject foreign-session runs.
 The Continue path is the same on both clients: a parked run
 (`waiting_user`, `reconciliation_required`) resumes only when the client
 continues or reconciles it.
@@ -74,10 +75,13 @@ Agent generation runs inside the Public Host process through the typed
 runtime/voice/STT/VTS/observation protocol was removed with the media surfaces,
 and the managed C# worker process, its loopback port, and its wire protocol
 were retired (ADR-0012). No model step crosses a process boundary, and no
-provider credential is written to disk.
+per-step credential handoff is written to disk. The credential store keeps
+its existing protected-at-rest ownership.
 
 Managed startup starts only the private `RuAgentBroker` child. Each Agent
-step resolves a fresh in-memory provider snapshot pinned to the run: the
+step resolves the run's cached in-memory provider snapshot from a secret-free
+durable Run Provider Selection. Restart rebuilds the snapshot from that same
+selection and credential account; legacy runs without it fail closed. The
 bounded protocol
 (`chat_completions`/`openai_responses`/`anthropic_messages`), verified native
 reasoning options, and for Anthropic the bounded `max_tokens`; changes to

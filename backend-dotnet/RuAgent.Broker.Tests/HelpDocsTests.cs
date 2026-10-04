@@ -57,6 +57,44 @@ public sealed class HelpDocsTests
     }
 
     [Fact]
+    public void Heading_phrase_excerpt_keeps_section_opening_when_query_token_is_late()
+    {
+        const string opening = "read list help write";
+        var documents = BundledHelpDocsCatalog.DefaultSources
+            .Select((source, index) => (source, index == 0
+                ? $"# Tools\n\n## Current capability matrix\n\n{opening} {new string('x', 2_100)} capability matrix {new string('y', 2_100)}\nlate line"
+                : $"# {source.DocumentId}\n\n## Other\n\nUnrelated text."))
+            .ToArray();
+        var search = new HelpDocsSearch(BundledHelpDocsCatalog.FromText(documents));
+
+        var result = Assert.Single(search.Search("current capability matrix", 1, out var more));
+
+        Assert.False(more);
+        Assert.True(result.WasExcerptTruncated);
+        Assert.StartsWith(opening, result.Excerpt, StringComparison.Ordinal);
+        Assert.True(result.Excerpt.Length <= 2_000);
+    }
+
+    [Fact]
+    public void Excerpt_limit_does_not_split_surrogate_pairs()
+    {
+        const string heading = "Current capability matrix";
+        const string opening = "read list help write ";
+        var body = opening + new string('x', 1_998 - opening.Length) + "😀" + new string('y', 100);
+        var documents = BundledHelpDocsCatalog.DefaultSources
+            .Select((source, index) => (source, index == 0
+                ? $"# Tools\n\n## {heading}\n\n{body}"
+                : $"# {source.DocumentId}\n\n## Other\n\nUnrelated text."))
+            .ToArray();
+        var search = new HelpDocsSearch(BundledHelpDocsCatalog.FromText(documents));
+
+        var result = Assert.Single(search.Search("current capability matrix", 1, out _));
+
+        Assert.True(result.Excerpt.Length <= 2_000);
+        Assert.True(HasWellFormedSurrogates(result.Excerpt));
+    }
+
+    [Fact]
     public void Tool_applies_defaults_bounds_and_returns_stable_json()
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
@@ -130,5 +168,25 @@ public sealed class HelpDocsTests
         var error = Assert.Throws<InvalidOperationException>(() => BundledHelpDocsCatalog.FromText(documents));
 
         Assert.StartsWith("help_docs_catalog_invalid:", error.Message, StringComparison.Ordinal);
+    }
+
+    private static bool HasWellFormedSurrogates(string value)
+    {
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (char.IsHighSurrogate(value[index]))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[++index]))
+                {
+                    return false;
+                }
+            }
+            else if (char.IsLowSurrogate(value[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

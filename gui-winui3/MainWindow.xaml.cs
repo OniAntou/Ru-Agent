@@ -934,6 +934,12 @@ namespace RuApp
 
         private void ApplySessions(SessionListResponse result)
         {
+            var warningVisibility = result.SessionsTruncated ? Visibility.Visible : Visibility.Collapsed;
+            if (SidebarSessionTruncationWarning.Visibility != warningVisibility)
+            {
+                SidebarSessionTruncationWarning.Visibility = warningVisibility;
+            }
+
             // The sessions poll fires every few seconds; rebuilding the sidebar rows
             // on every poll visibly flickers group chrome, so only re-render when
             // the list (order, membership, or row content) actually changed.

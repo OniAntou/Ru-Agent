@@ -334,10 +334,55 @@ public sealed class ChatMessageAttachmentTests
         Assert.Contains("ChatAttachmentPolicy.TooManyImagesStatus", send, StringComparison.Ordinal);
         Assert.DoesNotContain("chưa được hỗ trợ", send, StringComparison.Ordinal);
 
-        // The attachment path resizes through the shared resizer rather than sending the
-        // original bytes.
+        // Picker and clipboard attachments share one bounded image preparation path.
         var attach = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "AddFileAttachmentAsync");
-        Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", attach, StringComparison.Ordinal);
+        Assert.Contains("PrepareImageAttachmentAsync", attach, StringComparison.Ordinal);
+        Assert.Contains("CanAcceptImageAttachment", attach, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Clipboard_images_use_the_picker_normalization_and_intake_limits()
+    {
+        var view = GuiSource.ViewText("ChatView");
+        var paste = GuiSource.MethodBody(view, "TryPasteImageFromClipboardAsync");
+
+        Assert.Contains("PrepareImageAttachmentAsync", paste, StringComparison.Ordinal);
+        Assert.Contains("CanAcceptImageAttachment", paste, StringComparison.Ordinal);
+        var preparation = GuiSource.MethodBody(view, "PrepareImageAttachmentAsync");
+        Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", preparation, StringComparison.Ordinal);
+        Assert.Contains("ChatAttachmentPolicy.MimeForExtension", preparation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Final_attachment_admission_rechecks_image_cap_and_session_generation()
+    {
+        var view = GuiSource.ViewText("ChatView");
+        var admission = GuiSource.MethodBody(view, "TryAddAttachmentToComposer");
+
+        Assert.Contains("CanAcceptImageAttachment", admission, StringComparison.Ordinal);
+        Assert.Contains("sessionId", admission, StringComparison.Ordinal);
+        Assert.Contains("_activeSessionId", admission, StringComparison.Ordinal);
+        Assert.Contains("sessionGeneration != _sessionOpenGeneration", admission, StringComparison.Ordinal);
+        Assert.True(
+            admission.IndexOf("CanAcceptImageAttachment", StringComparison.Ordinal)
+                < admission.IndexOf("_composerDrafts.TrySave", StringComparison.Ordinal),
+            "the final cap check must run before the draft is saved");
+    }
+
+    [Fact]
+    public void Send_keeps_the_composer_draft_until_the_controller_accepts_the_run()
+    {
+        var view = GuiSource.ViewText("ChatView");
+        var send = GuiSource.MethodBody(view, "SendCurrentMessageAsync");
+        var turn = GuiSource.MethodBody(view, "SendAgentTurnAsync");
+
+        Assert.Contains("CreateAndRunAsync", turn, StringComparison.Ordinal);
+        Assert.Contains("if (!accepted)", turn, StringComparison.Ordinal);
+        Assert.Contains("onAccepted:", send, StringComparison.Ordinal);
+        Assert.Contains("PendingAttachments.SequenceEqual(attachments)", send, StringComparison.Ordinal);
+        int acceptedCallback = send.IndexOf("onAccepted:", StringComparison.Ordinal);
+        int clearDraft = send.IndexOf("ClearComposerDraft(submittedSessionId)", StringComparison.Ordinal);
+        Assert.True(clearDraft > acceptedCallback, "the saved draft must be cleared only after the controller accepts the run");
     }
 
     [Fact]

@@ -84,6 +84,20 @@ public static class FileHashService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    public static async ValueTask<string> ComputeStreamHashAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[StreamBufferSize];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            hash.AppendData(buffer, 0, read);
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
     public static string GetCurrentHash(string canonicalPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);

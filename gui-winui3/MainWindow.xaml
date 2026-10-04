@@ -300,9 +300,10 @@
                         <!-- Workspaces Header -->
                         <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,20,14,6">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
                                 <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
@@ -324,6 +325,11 @@
                                      AutomationProperties.Name="Search sessions"
                                      Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
                             <TextBlock x:Name="WorkspaceSearchCount" Grid.Row="2" Margin="2,4,0,0" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Visibility="Collapsed"/>
+                            <TextBlock x:Name="SidebarSessionTruncationWarning" Grid.Row="3" Margin="2,4,0,0"
+                                       Text="Session list is limited; some sessions are hidden."
+                                       FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
+                                       Visibility="Collapsed"/>
                         </Grid>
 
                         <!-- Sessions List -->

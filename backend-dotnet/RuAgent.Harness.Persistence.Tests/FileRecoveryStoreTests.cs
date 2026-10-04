@@ -178,6 +178,61 @@ public sealed class FileRecoveryStoreTests
     }
 
     [Fact]
+    public async Task Recovery_expiry_keeps_mapping_and_payload_when_payload_delete_fails()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var run = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(run, CancellationToken.None);
+
+        var store = new FileRecoveryStore(
+            fixture.Options,
+            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
+            KnownSecretRedactor.Empty);
+        var content = Encoding.UTF8.GetBytes("retained after failed cleanup");
+        var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+        var reference = await store.CreateRecoveryAsync(
+            run.Run.RunId,
+            "/tmp/workspace/atomic-expiry.txt",
+            content,
+            hash,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var terminal = connection.CreateCommand();
+            terminal.CommandText = "UPDATE agent_runs SET terminal_at_utc = $terminal, state = $state WHERE run_id = $run_id";
+            terminal.Parameters.AddWithValue("$terminal", DateTimeOffset.UtcNow.ToString("O"));
+            terminal.Parameters.AddWithValue("$state", (int)HarnessRunState.Completed);
+            terminal.Parameters.AddWithValue("$run_id", run.Run.RunId.Value);
+            await terminal.ExecuteNonQueryAsync();
+
+            await using var trigger = connection.CreateCommand();
+            trigger.CommandText = """
+                CREATE TRIGGER fail_recovery_payload_delete
+                BEFORE DELETE ON agent_payloads
+                WHEN OLD.payload_id = '$payload_id'
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced recovery payload delete failure');
+                END;
+                """.Replace("$payload_id", reference.RecoveryId.Value, StringComparison.Ordinal);
+            await trigger.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() =>
+            store.ExpireUnconsumedForRunAsync(run.Run.RunId, CancellationToken.None));
+
+        Assert.Equal(1L, await ScalarAsync(
+            fixture,
+            "SELECT COUNT(*) FROM agent_file_recovery WHERE recovery_id = '" + reference.RecoveryId.Value + "' AND consumed_at_utc IS NULL"));
+        Assert.Equal(1L, await ScalarAsync(
+            fixture,
+            "SELECT COUNT(*) FROM agent_payloads WHERE payload_id = '" + reference.RecoveryId.Value + "' AND consumed_at_utc IS NULL"));
+    }
+
+    [Fact]
     public async Task Recovery_binary_byte_identity_preserves_exact_bytes_despite_secret_redaction()
     {
         const string secret = "known-secret-sentinel-42";

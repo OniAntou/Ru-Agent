@@ -74,4 +74,17 @@ public sealed class BackendSessionTests
         Assert.Null(info.WorkspaceLabel);
         Assert.Null(info.WorkspacePath);
     }
+
+    [Fact]
+    public void SessionListResponse_deserializes_truncation_metadata()
+    {
+        const string json = """
+            {"sessions_truncated":true,"sessions":[]}
+            """;
+        var response = System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.SessionListResponse>(json)!;
+        var property = typeof(RuApp.Models.SessionListResponse).GetProperty("SessionsTruncated");
+
+        Assert.NotNull(property);
+        Assert.True((bool)property!.GetValue(response)!);
+    }
 }

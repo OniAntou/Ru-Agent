@@ -28,6 +28,7 @@ public static class WebConnectionPolicy
         new()
         {
             AllowAutoRedirect = false,
+            UseProxy = false,
             ConnectCallback = CreateConnectCallback(resolve),
         };
 

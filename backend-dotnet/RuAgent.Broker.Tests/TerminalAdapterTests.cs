@@ -95,6 +95,65 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
+    public async Task Plain_git_diff_does_not_run_the_repository_configured_external_helper()
+    {
+        var root = CreateTemporaryRoot("ru-git-configured-diff-");
+        try
+        {
+            if (!await IsGitAvailableAsync())
+            {
+                return;
+            }
+
+            var marker = await PrepareRepositoryWithConfiguredHelperAsync(root, "diff.external");
+
+            var result = await CreateAdapter(root).RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("git", ["diff"]),
+                confineWorkspace: true,
+                CancellationToken.None);
+
+            Assert.True(
+                result.Status == "succeeded",
+                $"git diff failed with exit={result.ExitCode}: {result.StderrHead}{result.StderrTail}");
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            DeleteReadOnlyTree(root);
+        }
+    }
+
+    [Fact]
+    public async Task Plain_git_status_does_not_run_the_repository_configured_fsmonitor_helper()
+    {
+        var root = CreateTemporaryRoot("ru-git-configured-fsmonitor-");
+        try
+        {
+            if (!await IsGitAvailableAsync())
+            {
+                return;
+            }
+
+            var marker = await PrepareRepositoryWithConfiguredHelperAsync(root, "core.fsmonitor");
+            var result = await CreateAdapter(root).RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("git", ["status", "--short"]),
+                confineWorkspace: true,
+                CancellationToken.None);
+
+            Assert.True(
+                result.Status == "succeeded",
+                $"git status failed with exit={result.ExitCode}: {result.StderrHead}{result.StderrTail}");
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            DeleteReadOnlyTree(root);
+        }
+    }
+
+    [Fact]
     public async Task Unrecognized_commands_require_an_intent_bound_one_time_token()
     {
         var root = CreateTemporaryRoot("ru-terminal-token-");
@@ -853,6 +912,75 @@ public sealed class TerminalAdapterTests
         var root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static async Task<bool> IsGitAvailableAsync()
+    {
+        try
+        {
+            await RunGitFixtureAsync(Environment.CurrentDirectory, "--version");
+            return true;
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task RunGitFixtureAsync(string workingDirectory, params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("git_fixture_start_failed");
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await stdout;
+        var error = await stderr;
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"git_fixture_failed: {output} {error}");
+        }
+    }
+
+    private static async Task<string> PrepareRepositoryWithConfiguredHelperAsync(string root, string configKey)
+    {
+        await RunGitFixtureAsync(root, "init", "--quiet");
+        await File.WriteAllTextAsync(Path.Combine(root, "tracked.txt"), "initial\n");
+        await RunGitFixtureAsync(root, "add", "tracked.txt");
+        await RunGitFixtureAsync(root, "-c", "user.name=Ru Test", "-c", "user.email=ru@example.invalid", "commit", "--quiet", "-m", "fixture");
+
+        var helper = Path.Combine(root, "marker-helper.sh");
+        var marker = helper + ".marker";
+        await File.WriteAllTextAsync(
+            helper,
+            "#!/bin/sh\nprintf 'helper executed\\n' > \"$0.marker\"\nexit 0\n",
+            new System.Text.UTF8Encoding(false));
+        await RunGitFixtureAsync(root, "config", configKey, helper.Replace('\\', '/'));
+        await File.WriteAllTextAsync(Path.Combine(root, "tracked.txt"), "changed\n");
+        return marker;
+    }
+
+    private static void DeleteReadOnlyTree(string root)
+    {
+        foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+        }
+
+        Directory.Delete(root, recursive: true);
     }
 
     private static void CreateJunction(string junction, string target)

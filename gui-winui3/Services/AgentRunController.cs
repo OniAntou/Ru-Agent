@@ -202,8 +202,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public async Task CreateAndRunAsync(CreateAgentRunRequest request, CancellationToken externalCancellation = default)
+    public async Task<bool> CreateAndRunAsync(
+        CreateAgentRunRequest request,
+        CancellationToken externalCancellation = default,
+        Action? onAccepted = null)
     {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
         bool alreadyBusy;
         lock (_gate)
         {
@@ -211,18 +215,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             if (!alreadyBusy)
             {
                 _isBusy = true;
+                _subscriptionCts = cts;
             }
         }
 
         if (alreadyBusy)
         {
-            return;
-        }
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
-        lock (_gate)
-        {
-            _subscriptionCts = cts;
+            cts.Dispose();
+            return false;
         }
 
         var token = cts.Token;
@@ -245,39 +245,64 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             RefreshCommands();
         });
 
+        bool accepted = false;
         try
         {
             var run = await _client.CreateRunAsync(request, token).ConfigureAwait(false);
+            bool wasCancelled;
             // Hand the run id over before subscribing: the delta/activity handlers
             // read it on the SSE thread, and a UI-queued assignment lets the first
             // frames (a fast model's opening delta) arrive while it is still null
             // and be dropped.
             lock (_gate)
             {
-                _currentRunId = run.RunId;
+                wasCancelled = token.IsCancellationRequested || !ReferenceEquals(_subscriptionCts, cts);
+                if (!wasCancelled)
+                {
+                    _currentRunId = run.RunId;
+                }
+            }
+
+            if (wasCancelled)
+            {
+                await CancelLateCreatedRunAsync(run.RunId, cts).ConfigureAwait(false);
+                return false;
+            }
+
+            PublishCreatedRun(run, cts, token, onAccepted);
+            accepted = true;
+            await FollowRunStreamAsync(run.RunId, 0, token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_subscriptionCts, cts))
+                {
+                    return accepted;
+                }
             }
 
             RunOnUi(() =>
             {
-                CurrentRun = run;
-                _waitKind = WaitKindFor(run);
-                _statusText = $"Running: {run.RunId}";
-                RefreshCommands();
-            });
-
-            await FollowRunStreamAsync(run.RunId, 0, token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            RunOnUi(() =>
-            {
-                _statusText = "Event monitoring stopped.";
+                _statusText = accepted ? "Event monitoring stopped." : "Ready";
+                _isCancelRequested = false;
                 _isBusy = false;
                 RefreshCommands();
             });
+            return accepted;
         }
         catch (Exception ex)
         {
+            lock (_gate)
+            {
+                if (token.IsCancellationRequested && !ReferenceEquals(_subscriptionCts, cts))
+                {
+                    return accepted;
+                }
+            }
+
             RunOnUi(() =>
             {
                 // The stream died before the run's terminal snapshot, so the host
@@ -303,6 +328,65 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
 
             cts.Dispose();
+        }
+    }
+
+    private void PublishCreatedRun(
+        AgentRunModel run,
+        CancellationTokenSource createCts,
+        CancellationToken token,
+        Action? onAccepted)
+    {
+        RunOnUi(() =>
+        {
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_subscriptionCts, createCts) || token.IsCancellationRequested) return;
+            }
+
+            CurrentRun = run;
+            _waitKind = WaitKindFor(run);
+            _statusText = $"Running: {run.RunId}";
+            RefreshCommands();
+            onAccepted?.Invoke();
+        });
+    }
+
+    private async Task CancelLateCreatedRunAsync(string runId, CancellationTokenSource createCts)
+    {
+        try
+        {
+            await _client.CancelAsync(runId).ConfigureAwait(false);
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_subscriptionCts, createCts)) return;
+                _currentRunId = null;
+                _subscriptionCts = null;
+                _isCancelRequested = false;
+            }
+
+            RunOnUi(() =>
+            {
+                _isBusy = false;
+                _isCancelRequested = false;
+                _statusText = "Ready";
+                RefreshCommands();
+            });
+        }
+        catch (Exception ex)
+        {
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_subscriptionCts, createCts)) return;
+                _currentRunId = runId;
+                _isCancelRequested = false;
+            }
+
+            RunOnUi(() =>
+            {
+                _statusText = $"Could not cancel the run after the session changed: {ex.Message}";
+                RefreshCommands();
+            });
         }
     }
 
@@ -403,7 +487,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             RunOnUi(() =>
             {
                 _statusText = $"Cancel error: {ex.Message}";
-                _isBusy = false;
+                _isBusy = true;
+                _isCancelRequested = false;
                 RefreshCommands();
             });
         }
@@ -465,7 +550,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         lock (_gate)
         {
             string? runId = _currentRunId;
-            if (runId is not null)
+            if (_subscriptionCts is not null || runId is not null)
             {
                 _subscriptionCts?.Cancel();
                 _isCancelRequested = true;
@@ -487,7 +572,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             if (string.Equals(_currentRunId, runId, StringComparison.Ordinal))
             {
-                _currentRunId = null;
+                lock (_gate)
+                {
+                    _currentRunId = null;
+                    _subscriptionCts = null;
+                    _isCancelRequested = false;
+                }
                 _waitKind = null;
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;

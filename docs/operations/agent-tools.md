@@ -102,8 +102,8 @@ stable sorted relative paths without content access; `grep` takes `query`
 (default false), `is_regex` (default false), `max_results` (1–64, default
 64) and `offset` (0–10000, default 0) for paging the ordinal results,
 and returns bounded match locations without raw file content; `write`
-carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
-(`run`, `shell`, `read_output`).
+carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
+`mode=shell` or `mode=read_output`.
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own

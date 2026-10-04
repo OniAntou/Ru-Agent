@@ -18,9 +18,13 @@ public sealed class FileReadAdapter
         _resolver = new CanonicalPathResolver(_workspaceRoot);
     }
 
-    public JsonObject Execute(JsonObject arguments)
+    public JsonObject Execute(JsonObject arguments) =>
+        ExecuteAsync(arguments, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+    public async ValueTask<JsonObject> ExecuteAsync(JsonObject arguments, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        cancellationToken.ThrowIfCancellationRequested();
         var path = GetRequiredString(arguments, "path");
         if (path.Length > FileToolLimits.MaxPathLength)
         {
@@ -94,45 +98,44 @@ public sealed class FileReadAdapter
             throw new FileNotFoundException("file_not_found");
         }
 
-        var info = new FileInfo(canonical);
-        long fileLength = info.Length;
-
-        HardLinkGuard.RequireSingleLink(canonical);
         var sw = Stopwatch.StartNew();
         var buffer = new byte[limit];
-        var observedFileLength = fileLength;
+        long observedFileLength;
         int bytesRead = 0;
-        using (var stream = HardLinkGuard.OpenRead(canonical, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan))
+        string sha256;
+        using (var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
         {
-            stream.Seek(offset, SeekOrigin.Begin);
-            while (bytesRead < limit)
-            {
-                if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
-                {
-                    break;
-                }
-
-                int toRead = limit - bytesRead;
-                int n = stream.Read(buffer, bytesRead, toRead);
-                if (n == 0)
-                {
-                    break;
-                }
-
-                bytesRead += n;
-            }
-
-            // FileInfo.Length is only a point-in-time snapshot. If another
-            // process appends while we read, use the largest length observed so
-            // the caller cannot mistake a moving file for a complete read.
+            budget.CancelAfter(FileToolLimits.MaxTimeMs);
             try
             {
-                observedFileLength = Math.Max(observedFileLength, stream.Length);
+                using var stream = HardLinkGuard.OpenRead(
+                    canonical,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, canonical);
+                observedFileLength = stream.Length;
+                stream.Seek(offset, SeekOrigin.Begin);
+                while (bytesRead < limit)
+                {
+                    budget.Token.ThrowIfCancellationRequested();
+                    int n = await stream.ReadAsync(buffer.AsMemory(bytesRead, limit - bytesRead), budget.Token).ConfigureAwait(false);
+                    if (n == 0)
+                    {
+                        break;
+                    }
+
+                    bytesRead += n;
+                }
+
+                stream.Seek(0, SeekOrigin.Begin);
+                sha256 = await FileHashService.ComputeStreamHashAsync(stream, budget.Token).ConfigureAwait(false);
             }
-            catch (IOException)
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                // Preserve the initial snapshot when the handle cannot report
-                // its final length; the read itself remains valid.
+                throw new IOException("read_hash_timeout");
             }
         }
 
@@ -140,9 +143,6 @@ public sealed class FileReadAdapter
         // otherwise wrap when the requested window crosses 2 GiB, incorrectly
         // reporting a complete read.
         bool isMore = ((long)offset + bytesRead) < observedFileLength;
-        // Check time truncation
-        bool timeTruncated = sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
-
         int validLength = bytesRead;
         bool utfTruncated = false;
         if (bytesRead > 0)
@@ -164,12 +164,7 @@ public sealed class FileReadAdapter
             throw new ArgumentException("invalid_utf8", ex);
         }
 
-        bool truncated = isMore || utfTruncated || timeTruncated || validLength < bytesRead;
-        // If we hit time limit, truncated true
-        if (timeTruncated)
-        {
-            truncated = true;
-        }
+        bool truncated = isMore || utfTruncated || validLength < bytesRead;
 
         var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, canonical);
         return new JsonObject
@@ -181,7 +176,7 @@ public sealed class FileReadAdapter
             ["total_bytes"] = observedFileLength,
             ["offset"] = offset,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
-            ["sha256"] = FileHashService.GetCurrentHash(canonical),
+            ["sha256"] = sha256,
         };
     }
 

@@ -1,4 +1,5 @@
 using RuApp.Services;
+using RuApp.Models;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -126,5 +127,67 @@ public sealed class ComposerDraftStoreTests
         Assert.Equal("keep me", store.Restore("session-a"));
         Assert.False(store.HasDraft("session-c"));
         Assert.Equal(1, store.Count);
+    }
+
+    [Fact]
+    public void Attachments_are_saved_per_session_and_cleared_with_the_accepted_draft()
+    {
+        var store = new ComposerDraftStore();
+        var attachment = new ImageAttachmentItem { FileName = "diagram.png", IsImage = true };
+
+        Assert.True(store.TrySave("session-a", string.Empty, new[] { attachment }));
+        Assert.True(store.TrySave("session-b", string.Empty, Array.Empty<ImageAttachmentItem>()));
+
+        Assert.True(store.HasDraft("session-a"));
+        Assert.Equal(1, store.Count);
+        var restored = Assert.Single(store.RestoreAttachments("session-a"));
+        Assert.NotSame(attachment, restored);
+        Assert.Equal(attachment.Id, restored.Id);
+        Assert.Equal(attachment.FileName, restored.FileName);
+        Assert.Null(restored.PreviewImage);
+        Assert.Empty(store.RestoreAttachments("session-b"));
+        store.Clear("session-a");
+        Assert.Empty(store.RestoreAttachments("session-a"));
+    }
+
+    [Fact]
+    public void Oversized_draft_is_rejected_without_replacing_the_retained_draft()
+    {
+        var store = new ComposerDraftStore();
+        Assert.True(store.Save("session-a", "saved draft"));
+
+        bool saved = store.Save("session-a", new string('x', ComposerDraftStore.MaxTextBytesPerSession + 1));
+
+        Assert.False(saved);
+        Assert.Equal("saved draft", store.Restore("session-a"));
+    }
+
+    [Fact]
+    public void Retained_session_limit_refuses_new_drafts_without_eviction()
+    {
+        var store = new ComposerDraftStore();
+        for (int index = 0; index < ComposerDraftStore.MaxRetainedSessions; index++)
+        {
+            Assert.True(store.Save("session-" + index, "draft"));
+        }
+
+        Assert.False(store.Save("session-new", "draft"));
+        Assert.Equal(ComposerDraftStore.MaxRetainedSessions, store.Count);
+        Assert.Equal("draft", store.Restore("session-0"));
+    }
+
+    [Fact]
+    public void Per_session_attachment_limit_refuses_without_replacing_retained_content()
+    {
+        var store = new ComposerDraftStore();
+        Assert.True(store.TrySave("session-a", "kept", Array.Empty<ImageAttachmentItem>()));
+        var attachments = Enumerable.Range(0, ComposerDraftStore.MaxAttachmentsPerSession + 1)
+            .Select(index => new ImageAttachmentItem { FileName = $"file-{index}.txt" })
+            .ToArray();
+
+        Assert.False(store.TrySave("session-a", "replacement", attachments));
+
+        Assert.Equal("kept", store.Restore("session-a"));
+        Assert.Empty(store.RestoreAttachments("session-a"));
     }
 }

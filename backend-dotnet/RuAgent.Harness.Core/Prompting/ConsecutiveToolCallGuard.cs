@@ -21,6 +21,7 @@ public static class ConsecutiveToolCallGuard
     // but a weak model gets a real chance to change its arguments first.
     public const int MaximumRepairNotes = 2;
 
+
     // Receipt codes where the tool never executed for infrastructure reasons.
     // Retrying the identical call once after one of these is self-correction,
     // not a loop. Policy denials and tool-level errors stay guarded: blindly
@@ -44,7 +45,8 @@ public static class ConsecutiveToolCallGuard
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(proposed);
-        if (!TryDescribeRepetition(context, proposed, out receiptCode))
+        if (!TryDescribeRepetition(context, proposed, out receiptCode)
+            && !FailedToolCycleGuard.TryDescribe(context, proposed, out receiptCode))
         {
             receiptCode = null;
             return RepetitionGuardVerdict.NotRepeated;
@@ -178,10 +180,10 @@ public static class ConsecutiveToolCallGuard
         return receipts.All(NeverExecuted);
     }
 
-    private static bool NeverExecuted(ToolExecutionReceipt receipt) =>
+    internal static bool NeverExecuted(ToolExecutionReceipt receipt) =>
         receipt is not null && NeverExecutedCodes.Contains(receipt.Code);
 
-    private static bool SameCall(ModelToolCall left, ModelToolCall right) =>
+    internal static bool SameCall(ModelToolCall left, ModelToolCall right) =>
         string.Equals(left.ToolId, right.ToolId, StringComparison.Ordinal)
         && string.Equals(left.ToolVersion, right.ToolVersion, StringComparison.Ordinal)
         && CanonicalJson(left.Arguments).AsSpan().SequenceEqual(CanonicalJson(right.Arguments));

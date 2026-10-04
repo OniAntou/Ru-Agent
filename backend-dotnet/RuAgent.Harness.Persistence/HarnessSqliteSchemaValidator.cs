@@ -58,6 +58,18 @@ internal static class HarnessSqliteSchemaValidator
                 "base_context_captured_at_utc",
                 "base_context_entry_count",
             ],
+            ["agent_run_provider_selections"] =
+            [
+                "run_id",
+                "backend",
+                "alias",
+                "protocol",
+                "base_uri",
+                "model",
+                "account",
+                "request_options_json",
+                "maximum_output_tokens",
+            ],
             ["agent_payloads"] =
             [
                 "payload_id",
@@ -168,10 +180,11 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_workspace_path_claims_active',
                   'ix_workspace_change_journal_sequence',
                   'ix_agent_session_preset_snapshots_expiry',
-                  'ix_agent_session_preset_snapshots_session')
+                  'ix_agent_session_preset_snapshots_session',
+                  'ix_agent_runs_session_created_run')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 9;
+            .ConfigureAwait(false) ?? 0L) == 10;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

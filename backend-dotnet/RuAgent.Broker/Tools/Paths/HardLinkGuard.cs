@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace RuAgent.Broker.Tools.Paths;
@@ -100,6 +101,45 @@ public static class HardLinkGuard
         }
     }
 
+    internal static void RequireFinalPathMatches(SafeFileHandle handle, string expectedPath)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedPath);
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        const int bufferCapacity = 32_768;
+        var buffer = new StringBuilder(bufferCapacity);
+        var length = GetFinalPathNameByHandle(handle, buffer, bufferCapacity, 0);
+        if (length == 0 || length >= (uint)bufferCapacity)
+        {
+            throw new UnauthorizedAccessException("file_identity_unverified");
+        }
+
+        var actualPath = NormalizeFinalPath(buffer.ToString());
+        var normalizedExpectedPath = NormalizeFinalPath(expectedPath);
+        if (!string.Equals(actualPath, normalizedExpectedPath, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("file_identity_changed");
+        }
+    }
+
+    private static string NormalizeFinalPath(string path)
+    {
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            path = @"\\" + path[8..];
+        }
+        else if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            path = path[4..];
+        }
+
+        return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct ByHandleFileInformation
     {
@@ -130,4 +170,11 @@ public static class HardLinkGuard
     private static extern bool GetFileInformationByHandle(
         SafeFileHandle hFile,
         out ByHandleFileInformation lpFileInformation);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle hFile,
+        StringBuilder lpszFilePath,
+        int cchFilePath,
+        uint dwFlags);
 }

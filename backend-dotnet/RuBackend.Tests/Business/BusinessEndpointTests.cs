@@ -506,6 +506,7 @@ public sealed class BusinessEndpointTests
         Assert.Equal("ok", created.GetProperty("status").GetString());
         Assert.Equal(sessionId, created.GetProperty("session").GetProperty("id").GetString());
         Assert.Equal(sessionId, listed.GetProperty("sessions")[0].GetProperty("id").GetString());
+        Assert.False(listed.GetProperty("sessions_truncated").GetBoolean());
         Assert.Equal(sessionId, activated.GetProperty("session").GetProperty("id").GetString());
         Assert.Equal("ok", (await deleteResponse.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("status").GetString());
@@ -653,6 +654,36 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Session_list_caps_results_and_reports_when_more_sessions_exist()
+    {
+        using var data = TemporaryBusinessData.Create();
+        Directory.CreateDirectory(data.Paths.SessionDirectory);
+        var now = DateTimeOffset.UtcNow;
+        for (var index = 0; index < 501; index++)
+        {
+            var id = index.ToString("x32");
+            await File.WriteAllTextAsync(
+                Path.Combine(data.Paths.SessionDirectory, id + ".json"),
+                JsonSerializer.Serialize(new
+                {
+                    id,
+                    title = $"session-{index}",
+                    created_at = now,
+                    updated_at = now.AddSeconds(index),
+                    messages = Array.Empty<object>(),
+                }));
+        }
+
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var listed = await client.GetFromJsonAsync<JsonElement>("/sessions");
+
+        Assert.Equal(500, listed.GetProperty("sessions").GetArrayLength());
+        Assert.True(listed.GetProperty("sessions_truncated").GetBoolean());
+    }
+
+    [Fact]
     public async Task Activity_routes_preserve_existing_response_shapes()
     {
         using var data = TemporaryBusinessData.Create();
@@ -751,6 +782,118 @@ public sealed class BusinessEndpointTests
         Assert.Equal(2, payload.GetProperty("session").GetProperty("messages").GetInt32());
         Assert.Equal(3, payload.GetProperty("dropped_entries").GetInt32());
     }
+
+    [Fact]
+    public async Task Session_import_reports_retention_drops_and_persists_only_the_retained_messages()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        var content = string.Join("\n", Enumerable.Range(0, 202).Select(index =>
+            ClaudeMessage(index % 2 == 0 ? "user" : "assistant", $"message-{index}")));
+
+        using var response = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "claude-code", content });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var session = payload.GetProperty("session");
+        var document = await factory.Services.GetRequiredService<ISessionStore>()
+            .GetAsync(session.GetProperty("id").GetString()!, CancellationToken.None);
+
+        Assert.Equal("ok", payload.GetProperty("status").GetString());
+        Assert.Equal(200, session.GetProperty("messages").GetInt32());
+        Assert.Equal(2, payload.GetProperty("dropped_entries").GetInt32());
+        Assert.True(payload.GetProperty("partial_import").GetBoolean());
+        Assert.NotNull(document);
+        Assert.Equal(200, document!.Messages.Count);
+        Assert.Equal("message-2", document.Messages[0].Content);
+        Assert.Equal("message-201", document.Messages[^1].Content);
+    }
+
+    [Fact]
+    public async Task Session_import_reports_oversized_messages_as_dropped()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        var content = string.Join("\n", new[]
+        {
+            ClaudeMessage("user", "kept"),
+            ClaudeMessage("assistant", new string('x', 1024 * 1024 + 1)),
+        });
+
+        using var response = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "claude-code", content });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("ok", payload.GetProperty("status").GetString());
+        Assert.Equal(1, payload.GetProperty("session").GetProperty("messages").GetInt32());
+        Assert.Equal(1, payload.GetProperty("dropped_entries").GetInt32());
+        Assert.True(payload.GetProperty("partial_import").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Session_import_does_not_create_an_empty_session_when_all_messages_are_oversized()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        var content = ClaudeMessage("user", new string('x', 1024 * 1024 + 1));
+
+        using var response = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "claude-code", content });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var sessions = await factory.Services.GetRequiredService<ISessionStore>()
+            .ListAsync(CancellationToken.None);
+
+        Assert.Equal("error", payload.GetProperty("status").GetString());
+        Assert.Empty(sessions);
+    }
+
+    [Fact]
+    public async Task Session_list_refreshes_cached_metadata_after_external_file_replacement()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var sessionId = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(data.Paths.SessionDirectory);
+        var path = Path.Combine(data.Paths.SessionDirectory, sessionId + ".json");
+        await File.WriteAllTextAsync(path, SessionJson(sessionId, "before replacement", 0));
+        using var factory = CreateAspNetFactory(data.Paths);
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+
+        var first = await store.ListAsync(CancellationToken.None);
+        Assert.Equal("before replacement", Assert.Single(first).Title);
+
+        await File.WriteAllTextAsync(path, SessionJson(sessionId, "after replacement", 1));
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(2));
+        var second = await store.ListAsync(CancellationToken.None);
+
+        Assert.Equal("after replacement", Assert.Single(second).Title);
+    }
+
+    private static string ClaudeMessage(string role, string text) =>
+        JsonSerializer.Serialize(new
+        {
+            type = role,
+            message = new
+            {
+                content = new[] { new { type = "text", text } },
+            },
+        });
+
+    private static string SessionJson(string id, string title, int messageCount) =>
+        JsonSerializer.Serialize(new
+        {
+            id,
+            title,
+            created_at = DateTimeOffset.UnixEpoch,
+            updated_at = DateTimeOffset.UnixEpoch.AddSeconds(messageCount),
+            messages = Enumerable.Range(0, messageCount)
+                .Select(index => new { role = "user", content = $"message-{index}" })
+                .ToArray(),
+        });
 
     [Fact]
     public async Task Session_import_rejects_content_above_the_shared_cap_with_a_413()

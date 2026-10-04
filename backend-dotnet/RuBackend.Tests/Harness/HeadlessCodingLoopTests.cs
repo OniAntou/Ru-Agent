@@ -135,6 +135,49 @@ public sealed class HeadlessCodingLoopTests
     }
 
     [Fact]
+    public async Task Repeated_failed_edit_cycle_stops_before_a_third_broker_traversal()
+    {
+        using var workspace = GitWorkspace.Create();
+        var runner = new ScriptedRunner();
+        var failedA = ToolCall(
+            "files.edit",
+            """{"path":"seed.txt","old_string":"missing-a","new_string":"replacement-a"}""");
+        var failedB = ToolCall(
+            "files.edit",
+            """{"path":"seed.txt","old_string":"missing-b","new_string":"replacement-b"}""");
+        runner.Enqueue(failedA);
+        runner.Enqueue(failedB);
+        runner.Enqueue(failedA);
+        runner.Enqueue(failedB);
+        runner.Enqueue(failedA);
+        runner.Enqueue(failedB);
+        runner.Enqueue(failedB);
+        runner.Enqueue(failedB);
+
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: workspace.DataPaths,
+            modelStepRunner: runner,
+            withInProcessBroker: true);
+        using var client = factory.CreateAuthenticatedClient();
+        var runId = await CreateTrustedRunAsync(client, workspace.Path);
+
+        Assert.True(
+            await WaitForStatusAsync(
+                client,
+                runId,
+                new HashSet<string>(StringComparer.Ordinal) { "waiting_user", "completed", "failed" },
+                TimeSpan.FromSeconds(30)),
+            "run did not reach a terminal or continue state");
+
+        var events = await ReadEventsAsync(client, runId);
+        Assert.Equal("waiting_user", await GetStatusAsync(client, runId));
+        Assert.Equal(5, events.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
+        Assert.Equal(5, events.Count(item => item.GetProperty("event_type").GetString() == "tool.proposed"));
+        Assert.Equal(2, events.Count(item => item.GetProperty("event_type").GetString() == "run.note_added"));
+        Assert.Equal("seed", await File.ReadAllTextAsync(Path.Combine(workspace.Path, "seed.txt")));
+    }
+
+    [Fact]
     public async Task Approval_resume_executes_parked_proposal_without_reproposal()
     {
         using var workspace = GitWorkspace.Create();

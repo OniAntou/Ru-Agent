@@ -277,8 +277,10 @@ public sealed class FileRecoveryStore
         _ = runId.Value;
         await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
         await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = connection.BeginTransaction();
         // Only expire if run is terminal
         await using var check = connection.CreateCommand();
+        check.Transaction = transaction;
         check.CommandText = "SELECT terminal_at_utc FROM agent_runs WHERE run_id = $run_id";
         check.Parameters.AddWithValue("$run_id", runId.Value);
         var terminal = await check.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -295,11 +297,13 @@ public sealed class FileRecoveryStore
 
         // Delete unconsumed recoveries for terminal run – retention policy
         await using var delMeta = connection.CreateCommand();
+        delMeta.Transaction = transaction;
         delMeta.CommandText = "DELETE FROM agent_file_recovery WHERE run_id = $run_id AND consumed_at_utc IS NULL";
         delMeta.Parameters.AddWithValue("$run_id", runId.Value);
         await delMeta.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
         await using var delPayload = connection.CreateCommand();
+        delPayload.Transaction = transaction;
         delPayload.CommandText = """
             DELETE FROM agent_payloads
             WHERE run_id = $run_id
@@ -309,6 +313,7 @@ public sealed class FileRecoveryStore
         delPayload.Parameters.AddWithValue("$run_id", runId.Value);
         delPayload.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.RecoveryOpaque);
         await delPayload.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> IsAvailableAsync(RunId runId, PayloadId recoveryId, CancellationToken cancellationToken)

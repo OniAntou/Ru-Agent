@@ -668,8 +668,7 @@ namespace RuApp.Views
         private bool _scrollRetryQueued;
         private const long ScrollChangeMinIntervalMs = 120;
 
-        // The draft rule (what survives a session switch, what an empty box means)
-        // lives in ComposerDraftStore; the view only moves text in and out of the box.
+        // ComposerDraftStore owns unsent text and attachments per session.
         private readonly ComposerDraftStore _composerDrafts = new();
         private bool _newMessagesPillWired;
         private bool _followOutput = true;
@@ -682,6 +681,16 @@ namespace RuApp.Views
             {
                 ChatInputTextBox.Text = draft;
             }
+
+            PendingAttachments.Clear();
+            foreach (var attachment in _composerDrafts.RestoreAttachments(sessionId))
+            {
+                attachment.EnsurePreviewFromBase64();
+                PendingAttachments.Add(attachment);
+            }
+            AttachmentPreviewContainer.Visibility = PendingAttachments.Count > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
@@ -856,6 +865,13 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
+                string outgoingDraft = ChatInputTextBox?.Text ?? string.Empty;
+                var outgoingAttachments = PendingAttachments.ToList();
+                if (!_composerDrafts.CanSave(_activeSessionId, outgoingDraft, outgoingAttachments))
+                {
+                    ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+                    return;
+                }
                 // A workspace is single-owner while a run is non-terminal. Wait for
                 // the cancellation commit before switching sessions; fire-and-forget
                 // cancellation races the next create request and surfaces as the
@@ -865,7 +881,11 @@ namespace RuApp.Views
                 // This attempt takes ownership of the transcript from here. Both halves of
                 // the draft move key off the active session id, so the outgoing draft is
                 // filed under the outgoing session first and the switch comes after it.
-                _composerDrafts.Save(_activeSessionId, ChatInputTextBox?.Text);
+                if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox?.Text, PendingAttachments))
+                {
+                    ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+                    return;
+                }
                 _activeSessionId = sessionId;
                 _sessionOpenGenerationSessionId = sessionId;
                 // The generation bump is what tells a load still in flight for the previous

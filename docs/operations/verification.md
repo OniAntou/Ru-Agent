@@ -6,12 +6,34 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **41 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,240 passed / 0 failed / 0 skipped** (2026-10-03, classic AltBuffer TUI removal; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,319 passed / 0 failed / 0 skipped** (2026-10-04, agent hardening and CLI workflows; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **171 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
-| Release build | `build.bat` runs **12/12** stages and publishes self-contained output: `RuApp.exe`, `RuBackend.exe`, the Broker, and `RuAgent.Cli.exe`, flattened into one directory. |
-| Managed runtime smoke | A published build starts under isolated `RU_DATA_ROOT`/`RU_LOG_ROOT`, answers `/status` 200 to the correct bearer, opens all listeners, and closes the process tree on `POST /host/shutdown` with no surviving children. Re-run it against the current build before a release; the last dated run stays below. |
+| Release build | `build.bat` passed **12/12** stages on 2026-10-04 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
+| Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Agent hardening and CLI workflows (2026-10-04)
+
+The final sequential Debug matrix passed all 12 projects: **5,319 passed / 0 failed / 0 skipped**. The original failing gates and later integration failures were retained and diagnosed before this complete green run. Workspace Trust migration tests now reconstruct the older schema without leaving later provider/table/column artifacts; their trust assertions remain strict. GUI tests still emit the existing CS8625 and xUnit2031 warnings in test sources.
+
+`build.bat` exited 0 at stage 12/12. All four executables are present in
+`gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/`,
+with the CLI also published under
+`backend-dotnet/RuAgent.Cli/bin/Release/net10.0-windows/win-x64/publish/`.
+The SDK typecheck and its 20 tests passed.
+
+After retiring the completed plans and updating current docs, the Python guards
+passed **171 tests with one skip**. The route checker confirmed **41 HTTP +
+0 WebSocket**, with every mapped contract route declared. All **12 HelpDocsTests**
+passed against the updated documentation, including inventory and excerpt caps.
+
+The [capability and acceptance map](coding-agent-capabilities.md) records the
+delivered Harness/TUI behavior, operating caps and remaining projects. Automated
+coverage includes actual Host/Harness/Broker coding-loop scenarios with a
+scripted provider; it does not measure real-model quality or native terminal
+key/resize/clipboard behavior. No native terminal/desktop UI or real provider
+was driven during this delivery.
 
 ## Model trust boundary verification (2026-09-24)
 
@@ -314,6 +336,12 @@ unit tests replace only their external process boundary and never open RuApp.
   remain unadvertised and are not counted as shipped Agent tools.
 
 ### Multimodal image attachment evidence (2026-09-03)
+
+Historical evidence below describes the then-current Worker path and request
+cap. The product now uses in-process model generation and a 26 MiB JSON run
+body cap. The current decoded image limits remain four images, 4 MiB each and
+20 MiB total; picker and clipboard intake share normalization. Current wiring
+is documented in [architecture](../architecture.md).
 
 - End-to-end multimodal image attachment pipeline implemented across WinUI 3, ASP.NET Core Public Host, Worker v2, and LLM providers (OpenAI Responses, Anthropic Messages, and OpenAI-Compatible).
 - `HarnessPayloadKind.UserImage = 11` dual audience (`AuthenticatedClient | ModelContext`) persisted atomically in SQLite `agent_payloads` table.
@@ -820,9 +848,9 @@ replace native microphone, OmniVoice, VTube Studio, or Gemini acceptance.
 
 ## Test ownership and documentation integrity
 
-Python tests cover the retained OmniVoice provider, reference fixtures and
-maintenance/harness tooling. Managed C# suites cover the Public Host, Broker,
-Worker, settings migration, session deletion, privacy and cancellation.
+Python tests cover documentation and route contracts, reference fixtures and
+repository maintenance tooling. Managed C# suites cover the Public Host, Broker,
+in-process model-step service, settings migration, session deletion, privacy and cancellation.
 Do not keep a copied implementation in a test as evidence about production.
 
 Documentation checks validate local links and ADR metadata, not exact wording,

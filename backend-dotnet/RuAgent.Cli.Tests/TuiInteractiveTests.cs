@@ -1885,6 +1885,14 @@ public sealed class TuiInteractiveTests
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.EndsWith("/sessions/sess_123", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"status\":\"ok\",\"session\":{\"id\":\"sess_123\",\"title\":\"existing\",\"messages\":[]}}",
+                        Encoding.UTF8,
+                        "application/json"),
+                };
             if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/sessions/sess_123/runs"))
             {
                 var items = JsonSerializer.Serialize(new
@@ -2125,6 +2133,73 @@ public sealed class TuiInteractiveTests
         Assert.Equal(0, exit);
         Assert.Equal(0, continuePosts);
         Assert.Contains("run_not_parked", errWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatAsync_SlashContinue_ForeignSessionRunDoesNotPostOrStream()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+        var runId = "run_" + new string('f', 32);
+        var continuePosts = 0;
+        var eventReads = 0;
+        var parked = JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_other",
+            workspace_id = "ws_test",
+            status = "waiting_user",
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 1L,
+            last_sequence = 4L,
+            created_at = "2026-09-30T00:00:00Z",
+            updated_at = "2026-09-30T00:00:03Z",
+            terminal_at = (string?)null,
+            terminal_error_code = (string?)null,
+        });
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.EndsWith("/sessions/sess_123", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"status\":\"ok\",\"session\":{\"id\":\"sess_123\",\"title\":\"current\",\"messages\":[]}}",
+                        Encoding.UTF8,
+                        "application/json"),
+                };
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(parked, Encoding.UTF8, "application/json") };
+            if (uri.Contains($"/agent/v1/runs/{runId}/events", StringComparison.Ordinal))
+            {
+                eventReads++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(string.Empty, Encoding.UTF8, "text/event-stream") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue", StringComparison.Ordinal))
+            {
+                continuePosts++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var errors = new StringWriter();
+        var output = new StringWriter();
+        var commands = new AgentCommands(session, new HttpClient(handler), output, errors, new StringReader($"/continue {runId}\n/status\n/exit\n"));
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.Equal(0, continuePosts);
+        Assert.Equal(0, eventReads);
+        Assert.Contains("run_session_mismatch", errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("sess_123", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

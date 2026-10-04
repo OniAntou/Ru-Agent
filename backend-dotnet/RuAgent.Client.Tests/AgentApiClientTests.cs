@@ -31,6 +31,65 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task GetRunStrictParsingAcceptsOptionalDurableProviderPinsAndLegacyAbsence()
+    {
+        var body = JsonSerializer.Serialize(RunSummary("OpenAI", "gpt-5"));
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            })));
+
+        var pinned = await client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        body = """{"run_id":"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","session_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","workspace_id":"ws_test","status":"running","history_wait_kind":null,"preset":"standard","policy_snapshot_version":1,"policy_snapshot_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","version":2,"last_sequence":4,"created_at":"2026-10-04T00:00:00Z","updated_at":"2026-10-04T00:00:01Z","terminal_at":null,"terminal_error_code":null}""";
+        var legacy = await client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var maxBackend = ProviderCredential.ModelsDevPrefix + new string('a', 64);
+        body = JsonSerializer.Serialize(RunSummary(maxBackend, "gpt-5"));
+        var maxModelsDevBackend = await client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        Assert.Equal("OpenAI", pinned.ProviderBackend);
+        Assert.Equal("gpt-5", pinned.ProviderModel);
+        Assert.Null(legacy.ProviderBackend);
+        Assert.Null(legacy.ProviderModel);
+        Assert.Equal(maxBackend, maxModelsDevBackend.ProviderBackend);
+    }
+
+    [Fact]
+    public async Task GetRunStrictParsingRejectsInvalidProviderPinShape()
+    {
+        foreach (var payload in new[]
+        {
+            RunSummary(1, "gpt-5"),
+            RunSummary(null, new string('m', 257)),
+        })
+        {
+            var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(payload))));
+            var error = await Assert.ThrowsAsync<AgentApiException>(() => client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+            Assert.Equal("invalid_response", error.ErrorCode);
+        }
+    }
+
+    private static object RunSummary(object? backendPin, object? modelPin) => new
+    {
+        run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        workspace_id = "ws_test",
+        status = "running",
+        history_wait_kind = (string?)null,
+        preset = "standard",
+        policy_snapshot_version = 1,
+        policy_snapshot_sha256 = new string('a', 64),
+        version = 2L,
+        last_sequence = 4L,
+        created_at = "2026-10-04T00:00:00Z",
+        updated_at = "2026-10-04T00:00:01Z",
+        terminal_at = (string?)null,
+        terminal_error_code = (string?)null,
+        provider_backend = backendPin,
+        provider_model = modelPin,
+    };
+
+    [Fact]
     public async Task GetPayloadRunBindingEnforced()
     {
         var s = Session();

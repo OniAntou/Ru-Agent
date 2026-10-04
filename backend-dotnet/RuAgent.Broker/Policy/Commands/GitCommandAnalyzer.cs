@@ -27,14 +27,15 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // Options that make git hand control to another program: `grep -O` spawns the
-    // named command, --paginate forces the pager, and --ext-diff/--textconv run a
-    // helper named by repository configuration. A ReadOnly verdict is
+    // named command, --paginate forces the pager, and diff/textconv/filter options
+    // run helpers named by repository configuration. A ReadOnly verdict is
     // auto-executable, so any of these fails closed to an approval ask.
     private static readonly string[] ProgramSelectingOptionPrefixes =
     [
         "--open-files-in-pager",
         "--ext-diff",
         "--textconv",
+        "--filters",
         "--paginate",
         "-O",
     ];

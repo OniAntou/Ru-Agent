@@ -173,6 +173,12 @@ internal static class HarnessSqliteWriteSet
             "$request_hash",
             request.CreationIdentity.NormalizedRequestSha256);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var providerSelection = connection.CreateCommand();
+        providerSelection.Transaction = transaction;
+        providerSelection.CommandText = "INSERT INTO agent_run_provider_selections(run_id) VALUES($run_id)";
+        providerSelection.Parameters.AddWithValue("$run_id", request.Run.RunId.Value);
+        await providerSelection.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task<bool> UpdateRunAsync(

@@ -6,7 +6,7 @@ namespace RuApp.Services;
 /// </summary>
 internal static class ChatAttachmentPolicy
 {
-    internal const int MaxImageAttachmentBytes = 10 * 1024 * 1024;
+    internal const int MaxImageAttachmentBytes = ImageAttachmentResizer.DefaultMaxInputBytes;
     internal const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
     internal const int MaxImageCount = 4;
 

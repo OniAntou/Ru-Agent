@@ -51,6 +51,7 @@ public sealed partial class AgentV1Service
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ISettingsStore? _settingsStore;
     private readonly Func<string, bool> _isVisionModel;
+    private readonly SqliteAgentRunProviderSelectionStore? _providerSelectionStore;
 
     /// <summary>
     /// What the provider's own catalog declares about the selected model's image input,
@@ -120,7 +121,8 @@ public sealed partial class AgentV1Service
         ISettingsStore? settingsStore = null,
         Func<string, bool>? isVisionModel = null,
         ILogger<AgentV1Service>? logger = null,
-        IMetadataPolicy? metadataPolicy = null)
+        IMetadataPolicy? metadataPolicy = null,
+        SqliteAgentRunProviderSelectionStore? providerSelectionStore = null)
     {
         _store = store;
         _options = options;
@@ -145,6 +147,7 @@ public sealed partial class AgentV1Service
         _isVisionModel = isVisionModel ?? ((string model) => ModelImage.IsVisionModel(model));
         _logger = logger;
         _metadataPolicy = metadataPolicy;
+        _providerSelectionStore = providerSelectionStore;
     }
 
     private static AgentServiceResult BoundedError(int status, string code, string message) =>

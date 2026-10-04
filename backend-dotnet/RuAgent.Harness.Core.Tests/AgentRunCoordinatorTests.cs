@@ -396,6 +396,39 @@ public sealed class AgentRunCoordinatorTests
         Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
     }
 
+    [Theory]
+    [InlineData(1, HarnessRunState.Running, "repeated_tool_call_advised")]
+    [InlineData(2, HarnessRunState.WaitingUser, "repeated_tool_call")]
+    public async Task Failed_short_cycle_is_advised_or_stopped_without_gateway_dispatch(
+        int repairNotes,
+        HarnessRunState expectedState,
+        string expectedCode)
+    {
+        var entries = FailedCycleEntries();
+        for (var index = 0; index < repairNotes; index++)
+        {
+            entries.Add(ModelContextEntry.Text(
+                $"cycle-note-{index}", entries[^1].Sequence + 1, ModelContextRole.System,
+                ConsecutiveToolCallGuard.BuildRepairNote("malformed_call")));
+        }
+
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(path: "b.cs"));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            model, gateway, store,
+            contextSource: new FixedContextSource(entries.ToArray()));
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(expectedState, result.Run.State);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted && item.SafeCode == expectedCode);
+    }
+
     [Fact]
     public async Task Exhausted_provider_transient_parks_the_run_and_continue_retries_a_fresh_step()
     {
@@ -1826,6 +1859,30 @@ public sealed class AgentRunCoordinatorTests
                 .ToArray(),
             AssistantFinishReason.ToolCalls,
             16);
+
+    private static List<ModelContextEntry> FailedCycleEntries()
+    {
+        var entries = new List<ModelContextEntry>();
+        var paths = new[] { "a.cs", "b.cs", "a.cs", "b.cs", "a.cs" };
+        for (var index = 0; index < paths.Length; index++)
+        {
+            var step = ToolStep(path: paths[index]);
+            var sequence = index * 2L + 1;
+            entries.Add(ModelContextEntry.Assistant($"cycle-assistant-{index}", sequence, step));
+            var receipt = new ToolExecutionReceipt(
+                new ExecutionId($"exec_{index + 1:D32}"),
+                new ToolCallId($"call_{index + 1:D32}"),
+                ToolExecutionOutcome.Failed,
+                "malformed_call",
+                null,
+                sideEffectsPossible: false,
+                providerCallId: "provider-call");
+            entries.Add(ModelContextEntry.ToolResult(
+                $"cycle-tool-{index}", sequence + 1, receipt, "{}"));
+        }
+
+        return entries;
+    }
 
     private static AgentRun Run(HarnessRunStatus status) =>
         new(

@@ -12,6 +12,58 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolExecutionServiceTests
 {
     [Fact]
+    public async Task Read_hashing_observes_tool_cancellation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-read-cancel-" + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(root, "workspace");
+        var sessionRoot = Path.Combine(root, "session");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(sessionRoot);
+        using (var sparse = File.Create(Path.Combine(workspace, "large.bin")))
+        {
+            sparse.SetLength(512L * 1024 * 1024);
+        }
+
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            sessionRoot,
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath);
+        const string sessionId = "session-read-cancel";
+        session.Open(sessionId, new HashSet<string>([RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal));
+        try
+        {
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+            var result = await new ToolExecutionService(session, workspace).ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "read-cancel-1",
+                    AgentMessageTypes.ToolRequest,
+                    sessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["arguments"] = new JsonObject { ["path"] = "large.bin", ["limit"] = 1 },
+                    }),
+                cancellation.Token);
+
+            Assert.Equal(ToolResultStatuses.Cancelled, result.Status);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Help_docs_executes_without_workspace_or_approval()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-help-service-" + Guid.NewGuid().ToString("N"));

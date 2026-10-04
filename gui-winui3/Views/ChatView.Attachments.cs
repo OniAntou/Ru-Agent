@@ -35,13 +35,21 @@ namespace RuApp.Views
         /// image cap and decoded for the preview thumbnail; text and code files
         /// are bounded by the text cap and read as UTF-8.
         /// </summary>
-        private async Task AddFileAttachmentAsync(Windows.Storage.StorageFile file)
+        private async Task AddFileAttachmentAsync(
+            Windows.Storage.StorageFile file,
+            string sessionId,
+            long sessionGeneration)
         {
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
                 bool isImage = IsImageFile(file.Name);
                 bool isOffice = IsOfficeDocumentFile(file.Name);
+                if (isImage && !CanAcceptImageAttachment())
+                {
+                    return;
+                }
+
                 if (!isImage && !isOffice && !IsTextOrCodeFile(file.Name))
                 {
                     ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images, text/code files, and .docx/.pptx/.xlsx documents are accepted.");
@@ -67,9 +75,7 @@ namespace RuApp.Views
                     return;
                 }
 
-                string mimeType = isImage
-                    ? Services.ChatAttachmentPolicy.MimeForExtension(file.Name)
-                    : isOffice
+                string mimeType = isOffice
                         ? "application/vnd.openxmlformats-officedocument"
                             + (Path.GetExtension(file.Name).ToLowerInvariant() switch
                             {
@@ -78,17 +84,14 @@ namespace RuApp.Views
                                 _ => "spreadsheetml.sheet",
                             })
                         : "text/plain";
+                Microsoft.UI.Xaml.Media.Imaging.BitmapImage? previewImage = null;
 
                 if (isImage)
                 {
-                    // Images are normalized on the client: over-large dimensions are
-                    // scaled down and the backend's decoded-size limit is enforced
-                    // before the bytes ever leave the desktop.
-                    using var original = new System.IO.MemoryStream(bytes);
-                    using var originalStream = original.AsRandomAccessStream();
-                    var resized = await Services.ImageAttachmentResizer.ResizeIfNeededAsync(originalStream, mimeType);
-                    bytes = resized.Bytes;
-                    mimeType = resized.MimeType;
+                    var prepared = await PrepareImageAttachmentAsync(file.Name, bytes);
+                    bytes = prepared.Bytes;
+                    mimeType = prepared.MimeType;
+                    previewImage = prepared.PreviewImage;
                 }
                 else if (isOffice)
                 {
@@ -123,19 +126,14 @@ namespace RuApp.Views
                 if (isImage)
                 {
                     item.Base64Data = Convert.ToBase64String(bytes);
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    using var previewBytes = new System.IO.MemoryStream(bytes);
-                    using var previewStream = previewBytes.AsRandomAccessStream();
-                    await bitmap.SetSourceAsync(previewStream);
-                    item.PreviewImage = bitmap;
+                    item.PreviewImage = previewImage;
                 }
                 else
                 {
                     item.TextContent = System.Text.Encoding.UTF8.GetString(bytes);
                 }
 
-                PendingAttachments.Add(item);
-                AttachmentPreviewContainer.Visibility = Visibility.Visible;
+                TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
             }
             catch (Exception ex)
             {
@@ -149,11 +147,18 @@ namespace RuApp.Views
         /// </summary>
         private async Task TryPasteImageFromClipboardAsync()
         {
+            string sessionId = _activeSessionId;
+            long sessionGeneration = _sessionOpenGeneration;
             try
             {
                 var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
                 if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
                 {
+                    if (!CanAcceptImageAttachment())
+                    {
+                        return;
+                    }
+
                     var streamRef = await package.GetBitmapAsync();
                     using var stream = await streamRef.OpenReadAsync();
                     using var readStream = stream.AsStreamForRead();
@@ -164,22 +169,18 @@ namespace RuApp.Views
                         return;
                     }
 
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    using var previewBytes = new System.IO.MemoryStream(bytes);
-                    using var previewStream = previewBytes.AsRandomAccessStream();
-                    await bitmap.SetSourceAsync(previewStream);
+                    string fileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                    var prepared = await PrepareImageAttachmentAsync(fileName, bytes);
 
-                    PendingAttachments.Add(new ImageAttachmentItem
+                    TryAddAttachmentToComposer(new ImageAttachmentItem
                     {
-                        FileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
-                        ByteSize = bytes.LongLength,
-                        Base64Data = Convert.ToBase64String(bytes),
-                        MimeType = "image/png",
+                        FileName = fileName,
+                        ByteSize = prepared.Bytes.LongLength,
+                        Base64Data = Convert.ToBase64String(prepared.Bytes),
+                        MimeType = prepared.MimeType,
                         IsImage = true,
-                        PreviewImage = bitmap,
-                    });
-
-                    AttachmentPreviewContainer.Visibility = Visibility.Visible;
+                        PreviewImage = prepared.PreviewImage,
+                    }, sessionId, sessionGeneration);
                 }
                 else if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
                 {
@@ -188,7 +189,7 @@ namespace RuApp.Views
                     {
                         if (storageItem is Windows.Storage.StorageFile file)
                         {
-                            await AddFileAttachmentAsync(file);
+                            await AddFileAttachmentAsync(file, sessionId, sessionGeneration);
                         }
                     }
                 }
@@ -199,9 +200,71 @@ namespace RuApp.Views
             }
         }
 
+        private bool CanAcceptImageAttachment()
+        {
+            if (PendingAttachments.Count(static attachment => attachment.IsImage) < ChatAttachmentPolicy.MaxImageCount)
+            {
+                return true;
+            }
+
+            ShowAgentInlineStatus(ChatAttachmentPolicy.TooManyImagesStatus);
+            return false;
+        }
+
+        private bool TryAddAttachmentToComposer(
+            ImageAttachmentItem attachment,
+            string sessionId,
+            long sessionGeneration)
+        {
+            if (sessionGeneration != _sessionOpenGeneration
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (attachment.IsImage && !CanAcceptImageAttachment())
+            {
+                return false;
+            }
+
+            var nextAttachments = PendingAttachments.Append(attachment).ToList();
+            if (!_composerDrafts.TrySave(sessionId, ChatInputTextBox.Text, nextAttachments))
+            {
+                ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+                return false;
+            }
+
+            PendingAttachments.Add(attachment);
+            AttachmentPreviewContainer.Visibility = Visibility.Visible;
+            return true;
+        }
+
+        private sealed record PreparedImageAttachment(
+            byte[] Bytes,
+            string MimeType,
+            Microsoft.UI.Xaml.Media.Imaging.BitmapImage PreviewImage);
+
+        private async Task<PreparedImageAttachment> PrepareImageAttachmentAsync(
+            string fileName,
+            byte[] sourceBytes)
+        {
+            using var original = new MemoryStream(sourceBytes, writable: false);
+            using var originalStream = original.AsRandomAccessStream();
+            var resized = await ImageAttachmentResizer.ResizeIfNeededAsync(
+                originalStream,
+                ChatAttachmentPolicy.MimeForExtension(fileName));
+            var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+            using var previewBytes = new MemoryStream(resized.Bytes, writable: false);
+            using var previewStream = previewBytes.AsRandomAccessStream();
+            await bitmap.SetSourceAsync(previewStream);
+            return new PreparedImageAttachment(resized.Bytes, resized.MimeType, bitmap);
+        }
+
 
         private async void OnAttachImageClick(object sender, RoutedEventArgs e)
         {
+            string sessionId = _activeSessionId;
+            long sessionGeneration = _sessionOpenGeneration;
             try
             {
                 var picker = new Windows.Storage.Pickers.FileOpenPicker();
@@ -219,7 +282,7 @@ namespace RuApp.Views
                 {
                     foreach (var file in files)
                     {
-                        await AddFileAttachmentAsync(file);
+                        await AddFileAttachmentAsync(file, sessionId, sessionGeneration);
                     }
                 }
             }
@@ -235,6 +298,8 @@ namespace RuApp.Views
         /// </summary>
         private async void OnInputDrop(object sender, DragEventArgs e)
         {
+            string sessionId = _activeSessionId;
+            long sessionGeneration = _sessionOpenGeneration;
             try
             {
                 if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
@@ -244,7 +309,7 @@ namespace RuApp.Views
                     {
                         if (storageItem is Windows.Storage.StorageFile file)
                         {
-                            await AddFileAttachmentAsync(file);
+                            await AddFileAttachmentAsync(file, sessionId, sessionGeneration);
                         }
                     }
                 }

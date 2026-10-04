@@ -80,6 +80,7 @@ public sealed class GitCommandAnalyzerTests
     [InlineData("diff", "--ext-diff=diff.cmd")]
     [InlineData("log", "--textconv")]
     [InlineData("show", "--textconv=cat.exe")]
+    [InlineData("cat-file", "--filters")]
     public void Options_that_make_git_execute_another_program_never_stay_read_only(
         string verb,
         string option)

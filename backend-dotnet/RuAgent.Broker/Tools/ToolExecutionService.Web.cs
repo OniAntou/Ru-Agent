@@ -22,16 +22,18 @@ public sealed partial class ToolExecutionService
     private static HttpClient CreateWebHttpClient() =>
         new(WebConnectionPolicy.CreateHandler(), disposeHandler: true);
 
-    private ValueTask<ToolExecutionOutcome> ExecuteReadAsync(
+    private async ValueTask<ToolExecutionOutcome> ExecuteReadAsync(
         ToolExecutionContext context,
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
-        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-            ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
+        var result = await ResolveTools(context, TargetPathOf(arguments))
+            .Read.ExecuteAsync(arguments, cancellationToken)
+            .ConfigureAwait(false);
+        return ToolExecutionOutcome.Succeeded(
+            result,
             ToolVerificationStates.NotRequired,
-            "Workspace file read."));
+            "Workspace file read.");
     }
 
     private ValueTask<ToolExecutionOutcome> ExecuteListAsync(

@@ -1,4 +1,6 @@
 using Microsoft.Data.Sqlite;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
 using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
@@ -8,6 +10,7 @@ public sealed class HarnessSqliteSchemaTests
     private static readonly string[] RequiredTables =
     [
         "agent_runs",
+        "agent_run_provider_selections",
         "agent_events",
         "agent_payloads",
         "agent_conversation_outbox",
@@ -28,6 +31,7 @@ public sealed class HarnessSqliteSchemaTests
     private static readonly string[] RequiredIndexes =
     [
         "ux_agent_runs_active_session",
+        "ix_agent_runs_session_created_run",
         "ux_agent_payloads_context_source",
         "ux_agent_payloads_context_sequence",
         "ix_agent_conversation_outbox_dispatch",
@@ -90,6 +94,68 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Equal(
             HarnessSqliteSchema.CurrentVersion,
             (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Migrating_from_twelve_adds_the_latest_session_run_index()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP INDEX IF EXISTS ix_agent_runs_session_created_run; PRAGMA user_version = 12;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(
+            fixture.Options,
+            CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(13, health.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        await using var plan = verify.CreateCommand();
+        plan.CommandText = "EXPLAIN QUERY PLAN SELECT run_id FROM agent_runs WHERE session_id = 'session-x' ORDER BY created_at_utc DESC, run_id DESC LIMIT 1";
+        await using var reader = await plan.ExecuteReaderAsync();
+        var details = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            details.Add(reader.GetString(3));
+        }
+
+        Assert.Contains(details, detail => detail.Contains(
+            "ix_agent_runs_session_created_run",
+            StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Migrating_from_eleven_leaves_legacy_runs_without_provider_pins()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1);
+        var created = await fixture.CreateEventStore().TryCreateRunAsync(request, CancellationToken.None);
+        Assert.Equal(CreateRunOutcome.Created, created.Outcome);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP TABLE agent_run_provider_selections; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; PRAGMA user_version = 11;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+        var legacySelection = await new SqliteAgentRunProviderSelectionStore(fixture.Options)
+            .GetAsync(request.Run.RunId, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        Assert.Null(legacySelection);
     }
 
     [Fact]
@@ -173,7 +239,7 @@ public sealed class HarnessSqliteSchemaTests
         {
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = "ALTER TABLE agent_events DROP COLUMN provider_call_id;";
+            command.CommandText = "DROP TABLE agent_run_provider_selections; DROP TABLE agent_session_preset_snapshots; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; ALTER TABLE agent_events DROP COLUMN provider_call_id;";
             await command.ExecuteNonQueryAsync();
             command.CommandText = "PRAGMA user_version = 8;";
             await command.ExecuteNonQueryAsync();
@@ -201,7 +267,9 @@ public sealed class HarnessSqliteSchemaTests
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = """
+                DROP TABLE agent_run_provider_selections;
                 DROP TABLE agent_session_preset_snapshots;
+                DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
                 PRAGMA user_version = 9;
                 INSERT INTO agent_session_settings(session_id, preset, permission_profile_version, version, updated_at_utc)
                 VALUES ('session-v9-sentinel', 'standard', 1, 6, '2026-08-24T01:02:03.0000000+00:00');
@@ -602,6 +670,8 @@ public sealed class HarnessSqliteSchemaTests
                     encoding TEXT NOT NULL,
                     captured_at_utc TEXT NOT NULL
                 );
+                DROP TABLE agent_run_provider_selections;
+                DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
                 PRAGMA user_version = 10;
                 """;
             await seed.ExecuteNonQueryAsync();
@@ -668,6 +738,12 @@ public sealed class HarnessSqliteSchemaTests
         await using var connection = new SqliteConnection(
             $"Data Source={databasePath};Mode=ReadWrite;Pooling=False");
         await connection.OpenAsync();
+        await using (var cleanup = connection.CreateCommand())
+        {
+            cleanup.CommandText = "DROP TABLE IF EXISTS agent_run_provider_selections; DROP TABLE IF EXISTS agent_session_preset_snapshots; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; ALTER TABLE agent_events DROP COLUMN provider_call_id";
+            await cleanup.ExecuteNonQueryAsync();
+        }
+
         if (await ColumnExistsAsync(connection, "agent_session_settings", "permission_profile_version"))
         {
             await using var command = connection.CreateCommand();
@@ -790,6 +866,7 @@ public sealed class HarnessSqliteSchemaTests
         await using var version = connection.CreateCommand();
         version.CommandText = "PRAGMA user_version = 7";
         await version.ExecuteNonQueryAsync();
+        SqliteConnection.ClearAllPools();
     }
 
     private static async Task<bool> ColumnExistsAsync(

@@ -138,6 +138,95 @@ public sealed class ModelContextSourceTests
         Assert.Equal(first.CanonicalUtf8.ToArray(), afterRestart.CanonicalUtf8.ToArray());
     }
 
+    [Fact]
+    public async Task Restart_replays_chained_compactions_by_run_version_when_clock_moves_back()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var prompt = TextPayload(1, HarnessPayloadKind.UserPrompt, "source prompt");
+        var requestBase = fixture.NewRun(1, 1, 1);
+        var request = new NewAgentRun(
+            requestBase.Run,
+            [new HarnessEventIntent(
+                requestBase.Events[0].EventId,
+                HarnessEventKind.RunStateChanged,
+                payloadId: prompt.PayloadId)],
+            [prompt],
+            [],
+            requestBase.CreationIdentity);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId, [], HarnessStoreTestFixture.Timestamp, CancellationToken.None);
+
+        var firstTime = HarnessStoreTestFixture.Timestamp.AddSeconds(20);
+        var afterFirst = RunAt(request.Run, 1, 2, firstTime);
+        await CommitCompactionAsync(
+            eventStore, request.Run.RunId, afterFirst, expectedVersion: 0, eventNumber: 20,
+            "compact-a", "first summary", $"event:{request.Events[0].EventId.Value}", firstTime);
+        var secondTime = HarnessStoreTestFixture.Timestamp.AddSeconds(10);
+        var afterSecond = RunAt(afterFirst, 2, 3, secondTime);
+        await CommitCompactionAsync(
+            eventStore, request.Run.RunId, afterSecond, expectedVersion: 1, eventNumber: 21,
+            "compact-b", "second summary", "compact-a", secondTime);
+
+        var context = await new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, CancellationToken.None);
+
+        var summary = Assert.Single(context.Entries);
+        Assert.Equal("compact-b", summary.SourceId);
+        Assert.Equal("second summary", summary.Content);
+    }
+
+    private static async Task CommitCompactionAsync(
+        SqliteHarnessEventStore store,
+        RunId runId,
+        AgentRun next,
+        long expectedVersion,
+        int eventNumber,
+        string compactionId,
+        string summary,
+        string coveredSourceId,
+        DateTimeOffset occurredAt)
+    {
+        var bytes = Encoding.UTF8.GetBytes(summary);
+        var payload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(eventNumber),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            4096,
+            bytes);
+        var range = new ContextEntryRange(coveredSourceId, 1, 1);
+        var outcome = await store.CommitAsync(
+            new HarnessCommit(
+                runId,
+                expectedVersion,
+                next,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(eventNumber),
+                    HarnessEventKind.ContextCompacted,
+                    safeCount: 1,
+                    safeCode: "context_compacted")],
+                [payload],
+                [],
+                new ContextCompactionIntent(
+                    runId,
+                    compactionId,
+                    payload.PayloadId,
+                    ContextCompactionStrategy.Normal,
+                    ContextCompactionReason.Manual,
+                    [range],
+                    beforeTokens: 200,
+                    afterTokens: 100,
+                    inputHash: new string('e', 64))),
+            CancellationToken.None);
+
+        Assert.Equal(HarnessCommitOutcome.Committed, outcome.Outcome);
+        Assert.Equal(occurredAt, next.UpdatedAt);
+    }
+
     [Theory]
     [InlineData("{\"text\":null,\"tool_calls\":[{\"provider_call_id\":\"provider-duplicate\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}},{\"provider_call_id\":\"provider-duplicate\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
     [InlineData("{\"text\":null,\"tool_calls\":[{\"provider_call_id\":\"provider/unsafe\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
@@ -571,4 +660,26 @@ public sealed class ModelContextSourceTests
             current.PolicySnapshotSha256,
             current.CreatedAt,
             current.UpdatedAt.AddSeconds(version));
+
+    private static AgentRun RunAt(
+        AgentRun current,
+        long version,
+        long lastSequence,
+        DateTimeOffset updatedAt) =>
+        new(
+            current.RunId,
+            current.SessionId,
+            current.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version,
+            lastSequence,
+            current.BudgetWindow,
+            current.ModelStepsInWindow,
+            current.ToolCallsInWindow,
+            current.Preset,
+            current.PolicySnapshotVersion,
+            current.PolicySnapshotSha256,
+            current.CreatedAt,
+            updatedAt,
+            permissionProfileVersion: current.PermissionProfileVersion);
 }

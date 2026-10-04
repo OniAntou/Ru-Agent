@@ -1,4 +1,9 @@
 using Xunit;
+using RuAgent.Cli.TerminalGui;
+using Terminal.Gui.App;
+using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
+using Terminal.Gui.Testing;
 
 namespace RuAgent.Cli.Tests;
 
@@ -15,5 +20,39 @@ public sealed class TgChatLoopTests
         Assert.True(await dispatcher.DispatchAsync("/status", CancellationToken.None));
         Assert.False(await dispatcher.DispatchAsync("sửa lỗi", CancellationToken.None));
         Assert.Equal(["slash:/status", "prompt:sửa lỗi"], seen);
+    }
+
+    [Fact]
+    public void CtrlHomeAndCtrlEnd_MoveBetweenTranscriptHistoryAndTail()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        _ = new TgChatLoop(window);
+        for (var index = 0; index < 60; index++)
+        {
+            window.Transcript.Append($"history row {index:D2}", TranscriptStyle.Prose);
+        }
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            window.FocusComposer();
+            app.InjectKey(Key.Home.WithCtrl);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            Assert.False(window.Transcript.IsFollowingTail);
+            Assert.Equal(0, window.Transcript.ScrollPosition);
+            app.InjectKey(Key.End.WithCtrl);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(450), () =>
+        {
+            Assert.True(window.Transcript.IsFollowingTail);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
     }
 }

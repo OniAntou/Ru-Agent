@@ -9,6 +9,11 @@ namespace RuAgent.Client;
 
 public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 {
+    private const int MaxProviderBackendChars = 64;
+    private const int MaxModelsDevProviderIdChars = 64;
+    private const int MaxProviderModelChars = 256;
+    private static readonly int MaxModelsDevBackendChars =
+        ProviderCredential.ModelsDevPrefix.Length + MaxModelsDevProviderIdChars;
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly PublicHostSession _session;
@@ -714,11 +719,30 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using (doc)
         {
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
                 throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
+
+            if (prop.Name is "provider_backend" or "provider_model")
+            {
+                if (prop.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+                {
+                    throw new AgentApiException("invalid_response", $"Invalid {prop.Name}");
+                }
+
+                var pin = prop.Value.GetString();
+                var isModelsDevBackend = prop.Name == "provider_backend"
+                    && pin?.StartsWith(ProviderCredential.ModelsDevPrefix, StringComparison.Ordinal) is true;
+                var maxChars = prop.Name == "provider_model"
+                    ? MaxProviderModelChars
+                    : isModelsDevBackend ? MaxModelsDevBackendChars : MaxProviderBackendChars;
+                if (pin is not null && pin.Length > maxChars)
+                {
+                    throw new AgentApiException("invalid_response", $"Invalid {prop.Name}");
+                }
+            }
         }
         try
         {

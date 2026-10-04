@@ -34,6 +34,14 @@ public sealed class WebConnectionPolicyTests
     }
 
     [Fact]
+    public void Handler_does_not_delegate_validated_connections_to_an_environment_proxy()
+    {
+        using var handler = WebConnectionPolicy.CreateHandler();
+
+        Assert.False(handler.UseProxy);
+    }
+
+    [Fact]
     public async Task A_rebinding_answer_with_only_private_targets_never_reaches_connect()
     {
         var failure = await Assert.ThrowsAsync<UnauthorizedAccessException>(

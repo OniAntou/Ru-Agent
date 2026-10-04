@@ -5,7 +5,7 @@ architecture decisions. Completed implementation plans and design drafts are
 kept in Git history instead of the working tree.
 
 A plan may sit in the working tree only while it is still open, and it must say
-so with a `status: pending` marker. `test_completed_implementation_archives_are_
+so with a `status: pending` or `status: in-progress` marker. `test_completed_implementation_archives_are_
 not_kept_in_the_checkout` enforces that for `docs/superpowers/plans/`,
 `docs/superpowers/specs/` and `docs/plans/`, so an unlabelled draft cannot sit
 in the checkout indefinitely.
@@ -21,6 +21,7 @@ in the checkout indefinitely.
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
+- [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
 - [Logging and diagnostics](operations/logging.md)
 - [Python dependency ownership](operations/python-dependency-ownership.md)
 - [Python runtime boundary](operations/python-runtime-boundary.md)
@@ -49,10 +50,6 @@ in the checkout indefinitely.
 - [In-process model runner](adr/0012-in-process-model-runner.md)
 
 Git history is the recovery source for removed dated plans and specifications.
-
-## Open plans
-
-- [TUI image attachments](plans/tui-image-attachments.md) — `status: pending`
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles from `RuAgent.Protocol`: `plan` allows workspace read and

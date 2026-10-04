@@ -6,10 +6,15 @@ namespace RuAgent.Cli.TerminalGui;
 /// <summary>Hint row: idle workspace left, key hints right; busy swaps in the spinner.</summary>
 public sealed class TgHintsView : View
 {
-    private const string KeysRight = "/ commands  tab complete  ctrl+o expand";
+    private static readonly string KeysRight = string.Concat(ComposerBox.HintKeySegments.Select(segment => segment.Text));
+    private static readonly string ExtendedKeysRight = KeysRight + "  ctrl+p palette  pgup/dn scroll  ctrl+end tail";
+    private static readonly string DetachedKeysRight = "↓ new output  ctrl+end tail  " + KeysRight;
+    private static readonly string ExtendedDetachedKeysRight = DetachedKeysRight + "  ctrl+p palette  pgup/dn scroll";
+    private const int ExtendedHintsMinimumWidth = 128;
     private string _left = string.Empty;
     private string? _spinnerFrame;
     private string? _busyHint;
+    private bool _hasUnseenTranscript;
 
     public TgHintsView()
     {
@@ -39,10 +44,17 @@ public sealed class TgHintsView : View
         SetNeedsDraw();
     }
 
+    public void SetTranscriptUnread(bool hasUnseenTranscript)
+    {
+        _hasUnseenTranscript = hasUnseenTranscript;
+        SetNeedsDraw();
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var width = Viewport.Width;
-        var rightWidth = TuiText.VisibleWidth(KeysRight);
+        var rightHints = GetRightHints(width);
+        var rightWidth = TuiText.VisibleWidth(rightHints);
         // Classic truncates the workspace first so the key hints always survive; the
         // remaining columns are split between the two sides.
         var leftBudget = Math.Max(0, width - rightWidth - 2);
@@ -88,19 +100,56 @@ public sealed class TgHintsView : View
     /// <summary>Bright key caps with meta words, matching ComposerBox.ComposeHints.</summary>
     private void DrawRight(int column, int maxWidth)
     {
-        IReadOnlyList<(string Text, TuiToken Token)> segments =
-        [
-            ("/", TuiToken.Bright),
-            (" commands", TuiToken.Meta),
-            ("  ", TuiToken.Meta),
-            ("tab", TuiToken.Bright),
-            (" complete", TuiToken.Meta),
-            ("  ", TuiToken.Meta),
-            ("ctrl+o", TuiToken.Bright),
-            (" expand", TuiToken.Meta),
-        ];
+        var baseHints = _hasUnseenTranscript
+            ? new List<(string Text, TuiToken Token)>
+            {
+                ("↓ new output", TuiToken.Brand),
+                ("  ctrl+end", TuiToken.Bright),
+                (" tail  ", TuiToken.Meta),
+            }
+            : new List<(string Text, TuiToken Token)>();
+        baseHints.AddRange(ComposerBox.HintKeySegments.Select(segment =>
+            (segment.Text, segment.Token ?? TuiToken.Meta)));
+
+        var width = Viewport.Width;
+        if (ShouldShowExtendedHints(width))
+        {
+            baseHints.AddRange(
+            [
+                ("  ctrl+p", TuiToken.Bright),
+                (" palette", TuiToken.Meta),
+                ("  pgup/dn", TuiToken.Bright),
+                (" scroll", TuiToken.Meta),
+            ]);
+            if (!_hasUnseenTranscript)
+            {
+                baseHints.Add(("  ctrl+end", TuiToken.Bright));
+                baseHints.Add((" tail", TuiToken.Meta));
+            }
+        }
+
+        IReadOnlyList<(string Text, TuiToken Token)> segments = baseHints;
         Draw(column, segments, maxWidth);
     }
+
+    private string GetRightHints(int width)
+    {
+        if (_hasUnseenTranscript)
+        {
+            return ShouldShowExtendedHints(width)
+                ? ExtendedDetachedKeysRight
+                : DetachedKeysRight;
+        }
+
+        return ShouldShowExtendedHints(width)
+            ? ExtendedKeysRight
+            : KeysRight;
+    }
+
+    private bool ShouldShowExtendedHints(int width) =>
+        width >= Math.Max(
+            ExtendedHintsMinimumWidth,
+            TuiText.VisibleWidth(_hasUnseenTranscript ? ExtendedDetachedKeysRight : ExtendedKeysRight) + 12);
 
     private void Draw(int column, IReadOnlyList<(string Text, TuiToken Token)> segments, int maxWidth)
     {

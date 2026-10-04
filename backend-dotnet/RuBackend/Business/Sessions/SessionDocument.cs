@@ -47,11 +47,21 @@ public sealed record SessionSummary(
     string? WorkspacePath = null,
     DateTimeOffset? LastAgentActivityAt = null);
 
+public sealed record SessionListResult(
+    IReadOnlyList<SessionSummary> Sessions,
+    bool IsTruncated);
+
 public sealed record ConversationTurn(string Prompt, string Response);
 
 public interface ISessionStore
 {
     Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken);
+
+    async Task<SessionListResult> ListWithMetadataAsync(CancellationToken cancellationToken)
+    {
+        var sessions = await ListAsync(cancellationToken).ConfigureAwait(false);
+        return new SessionListResult(sessions, IsTruncated: false);
+    }
 
     Task<SessionDocument?> GetAsync(string sessionId, CancellationToken cancellationToken);
 

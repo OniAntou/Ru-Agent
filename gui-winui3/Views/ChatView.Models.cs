@@ -788,7 +788,14 @@ namespace RuApp.Views
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
         {
-            _composerDrafts.Save(_activeSessionId, ChatInputTextBox.Text);
+            if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox.Text, PendingAttachments))
+            {
+                ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+            }
+            else if (_localComposerStatus == ComposerDraftStore.RetentionLimitStatus)
+            {
+                ClearComposerStatus();
+            }
             ScheduleContextMeterUpdate();
             if (string.IsNullOrEmpty(ChatInputTextBox.Text))
             {

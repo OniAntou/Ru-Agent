@@ -100,8 +100,13 @@ public sealed class AgentRunControllerTests
         public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
         public TaskCompletionSource<bool>? CreateRunGate;
+        public CancellationToken CreateCancellationToken;
+        public int CreateCallCount;
+        public List<string> CancelledRunIds { get; } = new();
         public async Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
         {
+            CreateCallCount++;
+            CreateCancellationToken = ct;
             if (CreateRunGate is not null)
             {
                 await CreateRunGate.Task.ConfigureAwait(false);
@@ -160,6 +165,7 @@ public sealed class AgentRunControllerTests
         public Task CancelAsync(string runId, CancellationToken ct = default)
         {
             CancelCalled = true;
+            CancelledRunIds.Add(runId);
             return Task.CompletedTask;
         }
 
@@ -1293,6 +1299,47 @@ public sealed class AgentRunControllerTests
         Assert.True(fake.CancelCalled);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.CanCancel);
+    }
+
+    [Fact]
+    public async Task Switching_sessions_cancels_a_create_and_cancels_its_late_run_without_following_it()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateRunGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+        var createTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "first turn", "standard", null, "idem-switch-during-create"));
+
+        await controller.StopForSessionSwitchAsync();
+
+        Assert.True(fake.CreateCancellationToken.IsCancellationRequested);
+        Assert.True(controller.IsBusy);
+        bool secondAcceptedCallback = false;
+        bool secondAccepted = await controller.CreateAndRunAsync(
+            new CreateAgentRunRequest("sess_2", "C:\\work", "second turn", "standard", null, "idem-send-during-create"),
+            onAccepted: () => secondAcceptedCallback = true);
+        Assert.False(secondAccepted);
+        Assert.False(secondAcceptedCallback);
+        Assert.Equal(1, fake.CreateCallCount);
+
+        fake.CreateRunGate.SetResult(true);
+        Assert.False(await createTask);
+
+        Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
+        Assert.Null(fake.SubscribeRunId);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
+    public void CreateAndRun_exposes_whether_a_submission_was_accepted()
+    {
+        var method = typeof(AgentRunController).GetMethod(nameof(AgentRunController.CreateAndRunAsync));
+
+        Assert.Equal(typeof(Task<bool>), method?.ReturnType);
     }
 
     private static AgentRunModel MakeWorkspaceTrustRun() =>

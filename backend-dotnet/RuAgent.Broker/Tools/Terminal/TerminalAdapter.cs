@@ -230,16 +230,65 @@ public sealed class TerminalAdapter
             return await ExecuteManagedCommitAsync(intent, cancellationToken).ConfigureAwait(false);
         }
 
+        var arguments = IsAutomaticGitRead(intent)
+            ? BuildSafeGitReadArguments(intent.Arguments)
+            : intent.Arguments;
+
         return await _runner.RunAsync(
             new ProcessRunSpec(
                 intent.ResolvedExecutable,
-                intent.Arguments,
+                arguments,
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
                 intent.TimeoutMs,
                 256 * 1024),
             WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsAutomaticGitRead(CanonicalCommandIntent intent) =>
+        intent.OperationClass == TerminalOperationClass.ReadOnly
+        && string.Equals(
+            GitCommandAnalyzer.BaseName(intent.ResolvedExecutable),
+            "git",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> BuildSafeGitReadArguments(IReadOnlyList<string> arguments)
+    {
+        var verbIndex = 0;
+        while (verbIndex < arguments.Count)
+        {
+            if (arguments[verbIndex] == "--no-optional-locks")
+            {
+                verbIndex++;
+                continue;
+            }
+
+            if (arguments[verbIndex] == "-c" && verbIndex + 1 < arguments.Count)
+            {
+                verbIndex += 2;
+                continue;
+            }
+
+            break;
+        }
+
+        var safe = new List<string>(arguments.Count + 8);
+        safe.AddRange(arguments.Take(verbIndex));
+        safe.AddRange(["-c", "core.fsmonitor=false", "-c", "diff.external=", "--no-pager"]);
+        if (verbIndex < arguments.Count)
+        {
+            var verb = arguments[verbIndex];
+            safe.Add(verb);
+            if (verb is "diff" or "log" or "show")
+            {
+                safe.AddRange(["--no-ext-diff", "--no-textconv"]);
+            }
+
+            safe.AddRange(arguments.Skip(verbIndex + 1));
+        }
+
+        return safe;
     }
 
     /// <summary>

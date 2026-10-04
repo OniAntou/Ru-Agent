@@ -139,4 +139,95 @@ public sealed class TgTranscriptTests
         Assert.DoesNotContain("hidden diff row", text);
         Assert.DoesNotContain("ctrl+o", text);
     }
+
+    [Fact]
+    public void Retention_BoundsRowsCharactersAndCollapsedContentWithVisibleNotice()
+    {
+        var transcript = new TgTranscriptView();
+        for (var i = 0; i < TgTranscriptView.MaxRetainedRows + 2; i++)
+        {
+            transcript.Append($"row-{i:D4}-{new string('x', TgTranscriptView.MaxRetainedLineCharacters)}", TranscriptStyle.Prose);
+        }
+
+        var hiddenRows = Enumerable.Range(0, 20)
+            .Select(_ => new string('h', TgTranscriptView.MaxRetainedLineCharacters))
+            .ToArray();
+
+        Assert.True(transcript.IsHistoryTruncated);
+        Assert.True(transcript.RetainedRowCount <= TgTranscriptView.MaxRetainedRows);
+        Assert.True(transcript.RetainedCharacterCount <= TgTranscriptView.MaxRetainedCharacters);
+        Assert.Contains(transcript.Lines, row => row.Text.Contains("earlier transcript rows truncated", StringComparison.OrdinalIgnoreCase));
+
+        var collapsed = new TgTranscriptView();
+        collapsed.AppendCollapsed("collapsed summary", hiddenRows, TranscriptStyle.Tool);
+        collapsed.ToggleExpanded();
+        Assert.True(collapsed.IsHistoryTruncated);
+        Assert.True(collapsed.CollapsedRows.Count > 0);
+        Assert.True(collapsed.RetainedRowCount <= TgTranscriptView.MaxRetainedRows);
+        Assert.True(collapsed.RetainedCharacterCount <= TgTranscriptView.MaxRetainedCharacters);
+        Assert.Contains(collapsed.Lines, row => row.Text.Contains("earlier transcript rows truncated", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void StreamingAndUnicodeLines_AreBoundedWithoutSplittingSurrogatePairs()
+    {
+        var transcript = new TgTranscriptView();
+        transcript.Append("start", TranscriptStyle.Prose);
+        transcript.AppendChunk(string.Concat(Enumerable.Repeat("😀", TgTranscriptView.MaxRetainedCharacters)));
+
+        Assert.True(transcript.RetainedCharacterCount <= TgTranscriptView.MaxRetainedCharacters);
+        Assert.DoesNotContain('\uFFFD', transcript.Lines[^1].Text);
+        Assert.True(transcript.Lines[^1].Text.EnumerateRunes().Count() <= TgTranscriptView.MaxRetainedLineCharacters);
+    }
+
+    [Fact]
+    public void DetachedViewport_MarksNewOutputAndClearsIndicatorAtTailOrClear()
+    {
+        var transcript = new TgTranscriptView();
+        transcript.ScrollToTop();
+        transcript.Append("new row", TranscriptStyle.Prose);
+        Assert.True(transcript.HasUnseenOutput);
+
+        transcript.AppendChunk(" streamed");
+        Assert.True(transcript.HasUnseenOutput);
+
+        transcript.ScrollToTail();
+        Assert.False(transcript.HasUnseenOutput);
+
+        transcript.ScrollToTop();
+        transcript.Append("another row", TranscriptStyle.Prose);
+        transcript.Clear();
+        Assert.False(transcript.HasUnseenOutput);
+    }
+
+    [Fact]
+    public void Viewport_ScrollsByRowsAndPagesAndExplicitlyReturnsToTail()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var transcript = new TgTranscriptView { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+        window.Add(transcript);
+        for (var i = 0; i < 40; i++)
+        {
+            transcript.Append($"row-{i:D2}", TranscriptStyle.Prose);
+        }
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            transcript.ScrollRows(-3);
+            var scrolledPosition = transcript.ScrollPosition;
+            transcript.AppendChunk(" streamed");
+            Assert.Equal(scrolledPosition, transcript.ScrollPosition);
+            Assert.False(transcript.IsFollowingTail);
+
+            transcript.Page(-1);
+            Assert.True(transcript.ScrollPosition < scrolledPosition);
+            transcript.ScrollToTail();
+            Assert.True(transcript.IsFollowingTail);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
 }

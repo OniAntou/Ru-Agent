@@ -205,8 +205,13 @@ public static class BusinessEndpoints
     {
         try
         {
-            var values = await sessions.ListAsync(cancellationToken).ConfigureAwait(false);
+            var listing = await sessions.ListWithMetadataAsync(cancellationToken).ConfigureAwait(false);
+            var values = listing.Sessions
+                .Take(SessionWorkspaceResolver.MaximumRequestedSessions)
+                .ToArray();
+            var isTruncated = listing.IsTruncated || listing.Sessions.Count > values.Length;
             var workspaces = await ResolveSessionWorkspacesAsync(
+                    values.Select(value => value.Id).ToArray(),
                     sqliteOptions,
                     workspaceStore,
                     trustService,
@@ -214,6 +219,7 @@ public static class BusinessEndpoints
             return Results.Ok(new
             {
                 status = "ok",
+                sessions_truncated = isTruncated,
                 sessions = values.Select(value =>
                 {
                     if (workspaces.TryGetValue(value.Id, out var workspace))
@@ -256,18 +262,30 @@ public static class BusinessEndpoints
 
     private static async Task<IReadOnlyDictionary<string, (string WorkspaceId, string Label, string Path)>>
         ResolveSessionWorkspacesAsync(
+            IReadOnlyList<string> sessionIds,
             HarnessSqliteOptions sqliteOptions,
             SqliteWorkspaceStore workspaceStore,
             WorkspaceTrustService trustService,
             CancellationToken cancellationToken)
     {
         var empty = new Dictionary<string, (string WorkspaceId, string Label, string Path)>(StringComparer.Ordinal);
+        if (sessionIds.Count == 0)
+        {
+            return empty;
+        }
+
         try
         {
             var latestBySession = new Dictionary<string, string>(StringComparer.Ordinal);
             await using var connection = await OpenHarnessConnectionAsync(sqliteOptions, cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = SessionWorkspaceResolver.LatestWorkspaceSql;
+            command.CommandText = SessionWorkspaceResolver.BuildLatestWorkspaceSql(sessionIds.Count);
+            for (var index = 0; index < sessionIds.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                command.Parameters.AddWithValue($"$session_{index}", sessionIds[index]);
+            }
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

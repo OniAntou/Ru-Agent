@@ -38,68 +38,6 @@ public sealed partial class SessionStore : ISessionStore
         _clock = clock ?? TimeProvider.System;
     }
 
-    public async Task<IReadOnlyList<SessionSummary>> ListAsync(
-        CancellationToken cancellationToken)
-    {
-        // No gate: this runs on every 3s sidebar poll, and holding the exclusive
-        // lock while loading every session file stalled chat sends behind it.
-        // Writes are atomic (temp file + move), so a concurrent read sees the
-        // old or the new file, never a torn one; a file that vanishes or fails
-        // to parse mid-listing is skipped and picked up on the next poll,
-        // exactly like a corrupt file was before.
-        try
-        {
-            if (!Directory.Exists(_sessionDirectory))
-            {
-                return [];
-            }
-
-            var sessions = new List<SessionSummary>();
-            foreach (var path in Directory.EnumerateFiles(_sessionDirectory, "*.json"))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                SessionDocument? document;
-                try
-                {
-                    document = await LoadUnlockedAsync(
-                        Path.GetFileNameWithoutExtension(path),
-                        cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
-                {
-                    continue;
-                }
-
-                if (document is null)
-                {
-                    continue;
-                }
-
-                sessions.Add(new SessionSummary(
-                    document.Id,
-                    document.Title,
-                    document.CreatedAt,
-                    document.UpdatedAt,
-                    document.Messages.Count,
-                    document.ParentSessionId,
-                    document.ForkedFromMessageId,
-                    LastAgentActivityAt: document.LastAgentActivityAt));
-            }
-
-            return sessions
-                .OrderByDescending(session => session.UpdatedAt)
-                .ToArray();
-        }
-        catch (IOException)
-        {
-            return [];
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return [];
-        }
-    }
-
     public async Task<SessionDocument?> GetAsync(
         string sessionId,
         CancellationToken cancellationToken)
@@ -169,6 +107,7 @@ public sealed partial class SessionStore : ISessionStore
             }
 
             File.Delete(path);
+            InvalidateSummaryCache(sessionId);
             return true;
         }
         catch (IOException)
@@ -312,7 +251,9 @@ public sealed partial class SessionStore : ISessionStore
 
     private async Task<SessionDocument?> LoadUnlockedAsync(
         string sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        long maximumBytes = MaximumSessionFileBytes,
+        Action<long>? bytesRead = null)
     {
         if (!IsValidSessionId(sessionId))
         {
@@ -327,7 +268,8 @@ public sealed partial class SessionStore : ISessionStore
 
         try
         {
-            if (new FileInfo(path).Length > MaximumSessionFileBytes)
+            var allowedBytes = Math.Min(maximumBytes, MaximumSessionFileBytes);
+            if (new FileInfo(path).Length > allowedBytes)
             {
                 return null;
             }
@@ -336,7 +278,11 @@ public sealed partial class SessionStore : ISessionStore
             byte[] bytes;
             try
             {
-                bytes = await ReadBoundedBytesAsync(path, MaximumSessionFileBytes, cancellationToken).ConfigureAwait(false);
+                bytes = await ReadBoundedBytesAsync(
+                    path,
+                    allowedBytes,
+                    cancellationToken,
+                    bytesRead).ConfigureAwait(false);
             }
             finally
             {
@@ -453,6 +399,7 @@ public sealed partial class SessionStore : ISessionStore
             }
 
             File.Move(temporary, target, overwrite: true);
+            InvalidateSummaryCache(document.Id);
         }
         finally
         {
@@ -467,7 +414,8 @@ public sealed partial class SessionStore : ISessionStore
     private static async Task<byte[]> ReadBoundedBytesAsync(
         string path,
         long maximumBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<long>? bytesRead = null)
     {
         await using var stream = new FileStream(
             path,
@@ -479,12 +427,20 @@ public sealed partial class SessionStore : ISessionStore
         using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
         var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
         int read;
-        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        while (output.Length < maximumBytes
+            && (read = await stream.ReadAsync(
+                buffer.AsMemory(0, (int)Math.Min(buffer.Length, maximumBytes - output.Length)),
+                cancellationToken).ConfigureAwait(false)) > 0)
         {
-            if (output.Length > maximumBytes - read)
-                throw new InvalidDataException("session_file_too_large");
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            bytesRead?.Invoke(read);
         }
+
+        if (stream.Position < stream.Length)
+        {
+            throw new InvalidDataException("session_file_too_large");
+        }
+
         return output.ToArray();
     }
 

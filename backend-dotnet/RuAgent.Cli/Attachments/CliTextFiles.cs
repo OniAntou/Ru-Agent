@@ -87,15 +87,21 @@ public static class CliTextFiles
             return (null, $"attachment_unreadable: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
 
+        return LoadBytes(name, bytes, length);
+    }
+
+    internal static (CliTextAttachment? Attachment, string? Error) LoadBytes(string name, byte[] bytes, long sourceLength)
+    {
+        var isOffice = OfficeDocumentText.IsSupported(name);
         if (!isOffice)
         {
-            return (new CliTextAttachment(name, DecodeText(bytes), length), null);
+            return (new CliTextAttachment(name, DecodeText(bytes), sourceLength), null);
         }
 
         var extraction = OfficeDocumentText.Extract(bytes);
         return extraction.Result switch
         {
-            OfficeDocumentText.Result.Ok => (new CliTextAttachment(name, extraction.Text, length), null),
+            OfficeDocumentText.Result.Ok => (new CliTextAttachment(name, extraction.Text, sourceLength), null),
             OfficeDocumentText.Result.NoContent => (null, $"empty_document: {name} has no readable text"),
             OfficeDocumentText.Result.TooLarge => (null, $"document_too_large: {name} exceeds the extraction limits"),
             _ => (null, $"invalid_document: {name} is not a readable office file"),

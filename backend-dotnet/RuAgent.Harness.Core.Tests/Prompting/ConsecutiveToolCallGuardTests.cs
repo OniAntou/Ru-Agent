@@ -120,6 +120,85 @@ public sealed class ConsecutiveToolCallGuardTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Failed_period_two_cycle_is_advised_when_next_step_completes_third_traversal()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var context = FailedCycle((a, "malformed_call"), (b, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"), (a, "malformed_call"));
+
+        Assert.Equal(RepetitionGuardVerdict.Advise, ConsecutiveToolCallGuard.Inspect(context, [b], out _));
+    }
+
+    [Fact]
+    public void Failed_period_three_cycle_is_advised_when_next_step_completes_third_traversal()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var c = Call("{\"path\":\"c.cs\"}");
+        var context = FailedCycle((a, "malformed_call"), (b, "malformed_call"), (c, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"), (c, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"));
+
+        Assert.Equal(RepetitionGuardVerdict.Advise, ConsecutiveToolCallGuard.Inspect(context, [c], out _));
+    }
+
+    [Fact]
+    public void Successful_receipt_breaks_failed_cycle_suffix()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var context = FailedCycle((a, "malformed_call"), (b, "malformed_call"),
+            (a, "malformed_call"), (b, "verified"), (a, "malformed_call"));
+
+        Assert.Equal(RepetitionGuardVerdict.NotRepeated, ConsecutiveToolCallGuard.Inspect(context, [b], out _));
+    }
+
+    [Fact]
+    public void Changed_arguments_do_not_complete_a_failed_cycle()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var changed = Call("{\"path\":\"new-file.cs\"}");
+        var context = FailedCycle((a, "malformed_call"), (b, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"), (a, "malformed_call"));
+
+        Assert.Equal(RepetitionGuardVerdict.NotRepeated,
+            ConsecutiveToolCallGuard.Inspect(context, [changed], out _));
+    }
+
+    [Fact]
+    public void Failed_cycle_detection_uses_durable_context_after_reconstruction()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var entries = FailedCycle((a, "malformed_call"), (b, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"), (a, "malformed_call")).Entries;
+        var recoveredContext = new ModelContextSnapshot(entries.ToArray(), "[]"u8.ToArray());
+
+        Assert.Equal(RepetitionGuardVerdict.Advise, ConsecutiveToolCallGuard.Inspect(recoveredContext, [b], out _));
+    }
+
+    [Fact]
+    public void Advisory_step_and_note_preserve_the_failed_cycle_until_budget_is_spent()
+    {
+        var a = Call("{\"path\":\"a.cs\"}");
+        var b = Call("{\"path\":\"b.cs\"}");
+        var entries = FailedCycle((a, "malformed_call"), (b, "malformed_call"),
+            (a, "malformed_call"), (b, "malformed_call"), (a, "malformed_call")).Entries.ToList();
+        AppendAdvice(entries, b, 1);
+
+        var advised = ConsecutiveToolCallGuard.Inspect(
+            new ModelContextSnapshot(entries, "[]"u8.ToArray()), [b], out _);
+        Assert.Equal(RepetitionGuardVerdict.Advise, advised);
+
+        AppendAdvice(entries, b, 2);
+        var stopped = ConsecutiveToolCallGuard.Inspect(
+            new ModelContextSnapshot(entries, "[]"u8.ToArray()), [b], out _);
+        Assert.Equal(RepetitionGuardVerdict.Stop, stopped);
+    }
+
     private static ModelContextSnapshot Context(ModelToolCall call, bool includeReceipt)
     {
         var entries = new List<ModelContextEntry>
@@ -180,4 +259,38 @@ public sealed class ConsecutiveToolCallGuardTests
                 sideEffectsPossible: false,
                 providerCallId: "provider_call"),
             "{}");
+
+    private static ModelContextSnapshot FailedCycle(params (ModelToolCall Call, string Code)[] completed)
+    {
+        var entries = new List<ModelContextEntry>();
+        long sequence = 1;
+        for (var index = 0; index < completed.Length; index++)
+        {
+            entries.Add(ModelContextEntry.Assistant(
+                $"assistant-{index}", sequence++,
+                new AssistantStep(null, [completed[index].Call], AssistantFinishReason.ToolCalls, 1)));
+            var receipt = new ToolExecutionReceipt(
+                new ExecutionId($"exec_{index + 1:D32}"),
+                new ToolCallId($"call_{index + 1:D32}"),
+                completed[index].Code == "verified" ? ToolExecutionOutcome.Succeeded : ToolExecutionOutcome.Failed,
+                completed[index].Code,
+                null,
+                sideEffectsPossible: false,
+                providerCallId: "provider_call");
+            entries.Add(ModelContextEntry.ToolResult($"tool-{index}", sequence++, receipt, "{}"));
+        }
+
+        return new ModelContextSnapshot(entries, "[]"u8.ToArray());
+    }
+
+    private static void AppendAdvice(List<ModelContextEntry> entries, ModelToolCall call, int note)
+    {
+        var sequence = entries[^1].Sequence;
+        entries.Add(ModelContextEntry.Assistant(
+            $"advice-{note}", sequence + 1,
+            new AssistantStep(null, [call], AssistantFinishReason.ToolCalls, 1)));
+        entries.Add(ModelContextEntry.Text(
+            $"note-{note}", sequence + 2, ModelContextRole.System,
+            ConsecutiveToolCallGuard.BuildRepairNote("malformed_call")));
+    }
 }

@@ -21,12 +21,21 @@ public enum TranscriptStyle
 /// </summary>
 public sealed class TgTranscriptView : View
 {
+    public const int MaxRetainedRows = 2000;
+    public const int MaxRetainedCharacters = 200_000;
+    public const int MaxRetainedLineCharacters = 16_000;
+    private const string HistoryTruncatedText = "  · earlier transcript rows truncated ·";
+
     private readonly List<(string Text, TranscriptStyle Style)> _lines = [];
     private readonly List<(string Text, TranscriptStyle Style)> _wrapped = [];
     private (int AfterLine, List<(string Text, TranscriptStyle Style)> Hidden)? _collapsedBlock;
     private bool _expanded;
     private int _wrapWidth = -1;
     private int _tailRows = 1;
+    private bool _historyTruncated;
+    private int _scrollTop;
+    private bool _followingTail = true;
+    private int _retainedCharacters;
 
     /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
     public bool IsExpanded => _expanded;
@@ -34,11 +43,20 @@ public sealed class TgTranscriptView : View
     /// <summary>True once at least one row exists; the landing overlay hides while this is true.</summary>
     public bool HasContent => _lines.Count > 0;
 
+    public bool IsHistoryTruncated => _historyTruncated;
+    public int RetainedRowCount => _lines.Count + (_collapsedBlock?.Hidden.Count ?? 0);
+    public int RetainedCharacterCount => _retainedCharacters;
+    public bool IsFollowingTail => _followingTail;
+    public bool HasUnseenOutput { get; private set; }
+    public int ScrollPosition => _followingTail ? Math.Max(0, _wrapped.Count - Viewport.Height) : _scrollTop;
+
     /// <summary>Raised on the 0-to-1 transition, so the window can hide its landing overlay.</summary>
     public event Action? FirstContentAppended;
 
     /// <summary>Raised when <see cref="Clear"/> empties the transcript, so the landing returns.</summary>
     public event Action? ContentCleared;
+
+    public event Action<bool>? UnseenOutputChanged;
 
     /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
     internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
@@ -59,6 +77,11 @@ public sealed class TgTranscriptView : View
         _expanded = false;
         _wrapWidth = -1;
         _tailRows = 1;
+        _historyTruncated = false;
+        _scrollTop = 0;
+        _followingTail = true;
+        _retainedCharacters = 0;
+        SetHasUnseenOutput(false);
         ContentCleared?.Invoke();
         SetNeedsDraw();
     }
@@ -66,7 +89,9 @@ public sealed class TgTranscriptView : View
     public void Append(string text, TranscriptStyle style)
     {
         var wasEmpty = _lines.Count == 0;
-        _lines.Add((text, style));
+        var bounded = BoundLine(text);
+        _lines.Add((bounded, style));
+        _retainedCharacters += CharacterCount(bounded);
         if (wasEmpty)
         {
             TuiDebug.Log("transcript", $"first append hides landing (len={text.Length})");
@@ -80,8 +105,11 @@ public sealed class TgTranscriptView : View
         }
         else if (_wrapWidth > 0)
         {
-            _tailRows = AppendWrapped(text, style, _wrapWidth);
+            _tailRows = AppendWrapped(_lines[^1].Text, style, _wrapWidth);
         }
+
+        MarkOutputUnseen();
+        EnforceRetention();
 
         SetNeedsDraw();
     }
@@ -94,15 +122,60 @@ public sealed class TgTranscriptView : View
     public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
     {
         var wasEmpty = _lines.Count == 0;
-        _lines.Add((summary, style));
+        var boundedSummary = BoundLine(summary);
+        _lines.Add((boundedSummary, style));
+        _retainedCharacters += CharacterCount(boundedSummary);
         if (wasEmpty)
         {
             FirstContentAppended?.Invoke();
         }
 
-        _collapsedBlock = (_lines.Count, hidden.Select(line => (line, style)).ToList());
+        if (_collapsedBlock is { } previousBlock)
+        {
+            _retainedCharacters -= previousBlock.Hidden.Sum(row => CharacterCount(row.Text));
+        }
+
+        var boundedHidden = new List<(string Text, TranscriptStyle Style)>();
+        var usedCharacters = RetainedCharacterCount;
+        var didDropRows = false;
+        foreach (var line in hidden)
+        {
+            var remainingRows = MaxRetainedRows - _lines.Count - boundedHidden.Count;
+            var remainingCharacters = MaxRetainedCharacters - usedCharacters;
+            if (remainingRows <= 0 || remainingCharacters <= 0)
+            {
+                didDropRows = true;
+                break;
+            }
+
+            var bounded = BoundLineParts(line);
+            var characterCount = CharacterCount(bounded);
+            if (characterCount > remainingCharacters)
+            {
+                bounded = BoundText(bounded, remainingCharacters);
+                characterCount = CharacterCount(bounded);
+                didDropRows = true;
+            }
+
+            boundedHidden.Add((bounded, style));
+            usedCharacters += characterCount;
+            _retainedCharacters += characterCount;
+            if (didDropRows)
+            {
+                break;
+            }
+        }
+
+        _collapsedBlock = (_lines.Count, boundedHidden);
         _expanded = false;
         _wrapWidth = -1;
+        MarkOutputUnseen();
+        if (didDropRows)
+        {
+            MarkHistoryTruncated();
+        }
+
+        EnforceRetention();
         SetNeedsDraw();
     }
 
@@ -122,6 +195,11 @@ public sealed class TgTranscriptView : View
     /// <summary>Appends to the tail line, the way streamed prose grows in place.</summary>
     public void AppendChunk(string text)
     {
+        if (text.Length == 0)
+        {
+            return;
+        }
+
         if (_lines.Count == 0)
         {
             Append(text, TranscriptStyle.Prose);
@@ -129,8 +207,10 @@ public sealed class TgTranscriptView : View
         }
 
         var last = _lines[^1];
-        var grown = last.Text + text;
+        var grown = BoundLineParts(last.Text, text);
         _lines[^1] = (grown, last.Style);
+        _retainedCharacters += CharacterCount(grown) - CharacterCount(last.Text);
+        MarkOutputUnseen();
         if (_expanded)
         {
             _wrapWidth = -1;
@@ -142,7 +222,45 @@ public sealed class TgTranscriptView : View
             _tailRows = AppendWrapped(grown, last.Style, _wrapWidth);
         }
 
+        EnforceRetention();
         SetNeedsDraw();
+    }
+
+    public void ScrollRows(int delta) => MoveViewport(delta);
+
+    public void Page(int delta) => MoveViewport(delta * Math.Max(1, Viewport.Height - 1));
+
+    public void ScrollToTop()
+    {
+        _followingTail = false;
+        _scrollTop = 0;
+        SetNeedsDraw();
+    }
+
+    public void ScrollToTail()
+    {
+        _followingTail = true;
+        SetHasUnseenOutput(false);
+        SetNeedsDraw();
+    }
+
+    private void MarkOutputUnseen()
+    {
+        if (!_followingTail)
+        {
+            SetHasUnseenOutput(true);
+        }
+    }
+
+    private void SetHasUnseenOutput(bool hasUnseenOutput)
+    {
+        if (HasUnseenOutput == hasUnseenOutput)
+        {
+            return;
+        }
+
+        HasUnseenOutput = hasUnseenOutput;
+        UnseenOutputChanged?.Invoke(hasUnseenOutput);
     }
 
     protected override bool OnDrawingContent(DrawContext? context)
@@ -159,7 +277,9 @@ public sealed class TgTranscriptView : View
             RebuildWrapped(width);
         }
 
-        var offset = Math.Max(0, _wrapped.Count - height);
+        var maxTop = Math.Max(0, _wrapped.Count - height);
+        var offset = _followingTail ? maxTop : Math.Clamp(_scrollTop, 0, maxTop);
+        _scrollTop = offset;
         for (var i = 0; i < height && offset + i < _wrapped.Count; i++)
         {
             var (text, style) = _wrapped[offset + i];
@@ -173,6 +293,7 @@ public sealed class TgTranscriptView : View
 
     private void RebuildWrapped(int width)
     {
+        var oldTop = _followingTail ? Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)) : _scrollTop;
         _wrapped.Clear();
         for (var i = 0; i < _lines.Count; i++)
         {
@@ -189,7 +310,165 @@ public sealed class TgTranscriptView : View
         }
 
         _wrapWidth = width;
+        _scrollTop = Math.Clamp(oldTop, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
     }
+
+    private void MoveViewport(int delta)
+    {
+        if (_followingTail)
+        {
+            _scrollTop = Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height));
+            _followingTail = false;
+        }
+
+        _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
+        SetNeedsDraw();
+    }
+
+    private void EnforceRetention()
+    {
+        var exceedsCap = RetainedRowCount > MaxRetainedRows || RetainedCharacterCount > MaxRetainedCharacters;
+        var didTrim = exceedsCap;
+        if (exceedsCap)
+        {
+            MarkHistoryTruncated();
+        }
+
+        while (RetainedRowCount > MaxRetainedRows || RetainedCharacterCount > MaxRetainedCharacters)
+        {
+            if (_historyTruncated && _lines.Count > 2)
+            {
+                RemoveLine(1);
+            }
+            else if (_collapsedBlock is { Hidden.Count: > 0 } block)
+            {
+                _retainedCharacters -= CharacterCount(block.Hidden[^1].Text);
+                block.Hidden.RemoveAt(block.Hidden.Count - 1);
+                _collapsedBlock = block;
+            }
+            else if (_lines.Count > 1)
+            {
+                RemoveLine(_historyTruncated ? 1 : 0);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        _collapsedBlock = _collapsedBlock is { } current && current.AfterLine > _lines.Count
+            ? RemoveCollapsedBlock()
+            : _collapsedBlock;
+        if (didTrim)
+        {
+            _wrapWidth = -1;
+        }
+    }
+
+    private void RemoveLine(int index)
+    {
+        if (!_followingTail && _wrapWidth > 0)
+        {
+            _scrollTop = Math.Max(0, _scrollTop - HardWrapLine(_lines[index].Text, _wrapWidth).Count);
+        }
+
+        _retainedCharacters -= CharacterCount(_lines[index].Text);
+        _lines.RemoveAt(index);
+        if (_collapsedBlock is { } block && index < block.AfterLine)
+        {
+            _collapsedBlock = (block.AfterLine - 1, block.Hidden);
+        }
+    }
+
+    private void MarkHistoryTruncated()
+    {
+        if (_historyTruncated)
+        {
+            return;
+        }
+
+        _historyTruncated = true;
+        _lines.Insert(0, (HistoryTruncatedText, TranscriptStyle.Meta));
+        _retainedCharacters += CharacterCount(HistoryTruncatedText);
+        if (!_followingTail && _wrapWidth > 0)
+        {
+            _scrollTop += HardWrapLine(HistoryTruncatedText, _wrapWidth).Count;
+        }
+        if (_collapsedBlock is { } block)
+        {
+            _collapsedBlock = (block.AfterLine + 1, block.Hidden);
+        }
+    }
+
+    private (int AfterLine, List<(string Text, TranscriptStyle Style)> Hidden)? RemoveCollapsedBlock()
+    {
+        if (_collapsedBlock is { } block)
+        {
+            _retainedCharacters -= block.Hidden.Sum(row => CharacterCount(row.Text));
+        }
+
+        return null;
+    }
+
+    private static string BoundLine(string text) => BoundLineParts(text);
+
+    private static string BoundLineParts(params string[] parts)
+    {
+        if (parts.Sum(part => (long)part.Length) <= MaxRetainedLineCharacters)
+        {
+            return string.Concat(parts);
+        }
+
+        var builder = new StringBuilder(MaxRetainedLineCharacters);
+        var count = 0;
+        var truncated = false;
+        foreach (var part in parts)
+        {
+            foreach (var rune in part.EnumerateRunes())
+            {
+                if (count + rune.Utf16SequenceLength > MaxRetainedLineCharacters)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                builder.Append(rune);
+                count += rune.Utf16SequenceLength;
+            }
+
+            if (truncated)
+            {
+                break;
+            }
+        }
+
+        if (truncated)
+        {
+            var lastRune = builder.ToString().EnumerateRunes().Last();
+            builder.Length -= lastRune.Utf16SequenceLength;
+            builder.Append('…');
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BoundText(string text, int maxCharacters)
+    {
+        var builder = new StringBuilder(Math.Max(0, maxCharacters));
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (builder.Length + rune.Utf16SequenceLength > maxCharacters)
+            {
+                break;
+            }
+
+            builder.Append(rune);
+        }
+
+        return builder.ToString();
+    }
+
+    private static int CharacterCount(string text) => text.EnumerateRunes().Count();
 
     private int AppendWrapped(string text, TranscriptStyle style, int width)
     {

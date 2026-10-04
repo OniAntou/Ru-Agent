@@ -34,4 +34,28 @@ public sealed class TgChatWindowTests
         });
         app.Run(window);
     }
+
+    [Fact]
+    public void DetachedTranscript_ShowsUnreadOutputHintUntilReturningToTail()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.ScrollToTop();
+        window.Transcript.Append("new background output", TranscriptStyle.Prose);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            Assert.Contains("↓ new output", string.Join('\n', TgSnapshot.Capture(app)));
+            window.Transcript.ScrollToTail();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
+        {
+            Assert.DoesNotContain("↓ new output", string.Join('\n', TgSnapshot.Capture(app)));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
 }

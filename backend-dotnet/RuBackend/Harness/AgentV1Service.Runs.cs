@@ -490,7 +490,15 @@ public sealed partial class AgentV1Service
         }
 
         var (trustRequestId, displayHash) = await ResolveTrustChallengeAsync(run, cancellationToken).ConfigureAwait(false);
-        return new AgentServiceResult(200, MapRun(run, trustRequestId, displayHash));
+        var providerSelection = _providerSelectionStore is null
+            ? null
+            : await _providerSelectionStore.GetAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+        var response = MapRun(run, trustRequestId, displayHash) with
+        {
+            ProviderBackend = providerSelection?.Selection?.Backend,
+            ProviderModel = providerSelection?.Selection?.Model,
+        };
+        return new AgentServiceResult(200, response);
     }
 
     /// <summary>

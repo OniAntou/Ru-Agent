@@ -343,6 +343,12 @@ public sealed class WorkspaceStoreTests
     {
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
+        await using (var cleanup = connection.CreateCommand())
+        {
+            cleanup.CommandText = "DROP TABLE IF EXISTS agent_run_provider_selections; DROP TABLE IF EXISTS agent_session_preset_snapshots; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; ALTER TABLE agent_events DROP COLUMN provider_call_id";
+            await cleanup.ExecuteNonQueryAsync();
+        }
+
         if (await ColumnExistsAsync(fixture, "agent_workspaces", "trust_source"))
         {
             await using var downgrade = connection.CreateCommand();

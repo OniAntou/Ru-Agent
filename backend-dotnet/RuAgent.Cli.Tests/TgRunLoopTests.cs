@@ -142,6 +142,164 @@ public sealed class TgRunLoopTests
     }
 
     [Fact]
+    public async Task QueuedPrompts_KeepTheAttachmentsPresentAtAdmission()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var gate = new TaskCompletionSource();
+        var pendingAttachments = new List<string>();
+        var observed = new List<string>();
+        loop.SetAttachmentCountProvider(() => pendingAttachments.Count);
+        loop.SetSubmissionSnapshotFactory(line => ChatSubmissionSnapshot.Create(
+            line,
+            "sess_current",
+            "C:\\workspace",
+            "standard",
+            "backend",
+            "model",
+            [],
+            pendingAttachments.Select(name => new RuAgent.Cli.Attachments.CliTextAttachment(name, name, name.Length))));
+        loop.SetSubmissionHandler(async (submission, _, _) =>
+        {
+            if (submission.Prompt == "active")
+            {
+                await gate.Task;
+                return;
+            }
+
+            observed.Add($"{submission.Prompt}:{string.Join(',', submission.Texts.Select(file => file.FileName))}");
+        });
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "active";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            pendingAttachments.Add("attachment-A");
+            window.Composer.Input.Text = "message-1";
+            loop.Submit();
+            pendingAttachments.Clear();
+            pendingAttachments.Add("attachment-B");
+            window.Composer.Input.Text = "message-2";
+            loop.Submit();
+            gate.SetResult();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
+        {
+            Assert.Equal(["message-1:attachment-A", "message-2:attachment-B"], observed);
+            app.RequestStop();
+            return false;
+        });
+
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    [Fact]
+    public async Task RetryPause_RepairCommandRunsImmediatelyAndPreservesPendingAttachments()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        var activeGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var seen = new List<string>();
+        var pendingAttachments = new List<RuAgent.Cli.Attachments.CliTextAttachment>();
+        loop.SetAttachmentCountProvider(() => pendingAttachments.Count);
+        loop.SetSubmissionSnapshotFactory(line => ChatSubmissionSnapshot.Create(
+            line,
+            "sess_current",
+            "C:\\workspace",
+            "standard",
+            "backend",
+            "model",
+            [],
+            ChatSubmissionSnapshot.IsPausedControlCommand(line)
+                ? Array.Empty<RuAgent.Cli.Attachments.CliTextAttachment>()
+                : pendingAttachments.ToArray()));
+        loop.SetSubmissionOwnershipHandlers(
+            submission =>
+            {
+                foreach (var attachment in submission.Texts)
+                {
+                    pendingAttachments.Remove(attachment);
+                }
+            },
+            _ => { });
+        loop.SetStateChangingCommandClassifier(command => command.StartsWith("/", StringComparison.Ordinal));
+        loop.SetSubmissionHandler(async (submission, _, _) =>
+        {
+            seen.Add(submission.Prompt);
+            if (submission.Prompt == "active")
+            {
+                await activeGate.Task;
+            }
+            else if (submission.Prompt is "message-1" or "message-2")
+            {
+                loop.PauseQueuedSubmissions();
+            }
+            else if (submission.Prompt == "/retry")
+            {
+                loop.ResumeQueuedSubmissions();
+            }
+        });
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () => { window.FocusComposer(); return false; });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            window.Composer.Input.Text = "active";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            window.Composer.Input.Text = "message-1";
+            loop.Submit();
+            window.Composer.Input.Text = "message-2";
+            loop.Submit();
+            activeGate.SetResult();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(650), () =>
+        {
+            pendingAttachments.Add(new RuAgent.Cli.Attachments.CliTextAttachment("draft.md", "draft remains", 13));
+            window.Composer.Input.Text = "/model";
+            loop.Submit();
+            Assert.Single(pendingAttachments);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
+        {
+            window.Composer.Input.Text = "/retry";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(1000), () =>
+        {
+            window.Composer.Input.Text = "/retry";
+            loop.Submit();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(1300), () =>
+        {
+            Assert.Equal(["active", "message-1", "/model", "/retry", "message-2", "/retry"], seen);
+            Assert.Single(pendingAttachments);
+            app.RequestStop();
+            return false;
+        });
+
+        app.Run(window);
+        await loop.Completion;
+    }
+
+    [Fact]
     public void Enter_SubmitsExactlyOnce_AndClearsComposer()
     {
         using IApplication app = Application.Create();

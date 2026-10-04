@@ -10,6 +10,9 @@ public static class ImageAttachmentResizer
 {
     public const int DefaultMaxDimension = 2048;
     public const int DefaultMaxBytes = 4 * 1024 * 1024; // 4MB backend decoded limit
+    public const int DefaultMaxInputBytes = 10 * 1024 * 1024;
+    private const int SignatureBufferLength = 12;
+    private static readonly byte[] PngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
 
     public static async Task<(byte[] Bytes, string MimeType, uint Width, uint Height)> ResizeIfNeededAsync(
         IRandomAccessStream inputStream,
@@ -18,11 +21,23 @@ public static class ImageAttachmentResizer
         int maxBytes = DefaultMaxBytes)
     {
         ArgumentNullException.ThrowIfNull(inputStream);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDimension);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+        if (inputStream.Size > DefaultMaxInputBytes)
+        {
+            throw new InvalidDataException("Image input exceeds the bounded decode limit.");
+        }
 
+        inputStream.Seek(0);
+        string sourceMimeType = await DetectMimeTypeAsync(inputStream);
         inputStream.Seek(0);
         var decoder = await BitmapDecoder.CreateAsync(inputStream);
         uint origWidth = decoder.PixelWidth;
         uint origHeight = decoder.PixelHeight;
+        if (origWidth == 0 || origHeight == 0)
+        {
+            throw new InvalidDataException("Image dimensions are invalid.");
+        }
 
         double scale = Math.Min(1.0, (double)maxDimension / Math.Max(origWidth, origHeight));
         bool needsResize = scale < 0.999;
@@ -31,7 +46,7 @@ public static class ImageAttachmentResizer
         // provider adapters accept only png/jpeg/webp. Passing BMP bytes through
         // unchanged under a different label would hand the model undecodable
         // bytes, so any non-wire format is re-encoded even when it is small.
-        bool needsReencode = mimeType is not ("image/png" or "image/jpeg" or "image/webp");
+        bool needsReencode = mimeType != sourceMimeType;
 
         if (!needsResize && !exceedsBytes && !needsReencode)
         {
@@ -64,7 +79,7 @@ public static class ImageAttachmentResizer
         string outMime;
         bool hasAlpha = decoder.BitmapAlphaMode != BitmapAlphaMode.Ignore;
 
-        if (mimeType == "image/png" && hasAlpha)
+        if (hasAlpha && sourceMimeType != "image/jpeg")
         {
             encoderId = BitmapEncoder.PngEncoderId;
             outMime = "image/png";
@@ -98,6 +113,10 @@ public static class ImageAttachmentResizer
             decoder.DpiY,
             pixels);
         await encoder.FlushAsync();
+        if (outputStream.Size > (ulong)maxBytes)
+        {
+            throw new InvalidDataException("Normalized image exceeds the decoded-size limit.");
+        }
 
         outputStream.Seek(0);
         using var outNetStream = outputStream.AsStreamForRead();
@@ -105,5 +124,42 @@ public static class ImageAttachmentResizer
         await outNetStream.CopyToAsync(resultMs).ConfigureAwait(false);
 
         return (resultMs.ToArray(), outMime, targetWidth, targetHeight);
+    }
+
+    private static async Task<string> DetectMimeTypeAsync(IRandomAccessStream stream)
+    {
+        byte[] signature = new byte[SignatureBufferLength];
+        using var input = stream.GetInputStreamAt(0).AsStreamForRead();
+        int totalRead = 0;
+        while (totalRead < SignatureBufferLength)
+        {
+            int read = await input.ReadAsync(signature.AsMemory(totalRead));
+            if (read == 0)
+            {
+                break;
+            }
+            totalRead += read;
+        }
+
+        if (totalRead >= PngSignature.Length && signature.AsSpan(0, PngSignature.Length).SequenceEqual(PngSignature))
+        {
+            return "image/png";
+        }
+        if (totalRead >= 3 && signature[0] == 0xFF && signature[1] == 0xD8 && signature[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+        if (totalRead >= 12
+            && signature.AsSpan(0, 4).SequenceEqual("RIFF"u8)
+            && signature.AsSpan(8, 4).SequenceEqual("WEBP"u8))
+        {
+            return "image/webp";
+        }
+        if (totalRead >= 2 && signature[0] == (byte)'B' && signature[1] == (byte)'M')
+        {
+            return "image/bmp";
+        }
+
+        throw new InvalidDataException("Image format is not supported.");
     }
 }

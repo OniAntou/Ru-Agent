@@ -83,6 +83,17 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         return await GetAsyncCore(selection, settings, refresh, ct).ConfigureAwait(false);
     }
 
+    public Task<ProviderCatalogSnapshot> GetAsync(
+        ProviderSelection selection,
+        SettingsSnapshot settings,
+        bool refresh,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(settings);
+        return GetAsyncCore(selection, settings, refresh, ct);
+    }
+
     public async Task<ProviderCatalogSnapshot> GetAsync(string alias, SettingsSnapshot settings, bool refresh, CancellationToken ct)
     {
         if (ProviderSelection.NormalizeModelsDevBackend(alias) is { } generic)

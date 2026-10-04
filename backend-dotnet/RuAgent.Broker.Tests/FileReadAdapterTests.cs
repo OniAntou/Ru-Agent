@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
+using RuAgent.Broker.Tools.Paths;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -170,6 +171,53 @@ public sealed class FileReadAdapterTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(result["sha256"]?.GetValue<string>()));
     }
 
+    [Fact]
+    public async Task Complete_read_hash_matches_the_returned_content_during_concurrent_replacement()
+    {
+        var path = FullPath("race.txt");
+        await File.WriteAllTextAsync(path, new string('A', 64), new UTF8Encoding(false));
+        using var stop = new CancellationTokenSource();
+        var writer = Task.Run(async () =>
+        {
+            var values = new[] { new string('A', 64), new string('B', 64) };
+            for (var index = 0; index < 5_000 && !stop.IsCancellationRequested; index++)
+            {
+                try
+                {
+                    await File.WriteAllTextAsync(path, values[index % values.Length], new UTF8Encoding(false));
+                }
+                catch (IOException)
+                {
+                }
+            }
+        });
+
+        var mismatch = false;
+        try
+        {
+            for (var attempt = 0; attempt < 2_000 && !mismatch; attempt++)
+            {
+                try
+                {
+                    var result = _adapter.Execute(new JsonObject { ["path"] = "race.txt" });
+                    var content = result["content"]!.GetValue<string>();
+                    mismatch = !result["truncated"]!.GetValue<bool>()
+                        && result["sha256"]!.GetValue<string>() != FileHashService.ComputeStringHash(content);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+        finally
+        {
+            stop.Cancel();
+            await writer;
+        }
+
+        Assert.False(mismatch, "A complete read must report the SHA-256 for the content it returned.");
+    }
+
     /// <summary>
     /// An NTFS hard link is reachable inside the workspace while the bytes live
     /// outside it, and it carries no reparse point, so canonicalization cannot see
@@ -215,6 +263,26 @@ public sealed class FileReadAdapterTests : IDisposable
         var result = _adapter.Execute(new JsonObject { ["path"] = "single.txt" });
 
         Assert.Equal("one name", result["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Open_handle_must_still_name_the_authorized_final_path()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var openedPath = FullPath("opened.txt");
+        var expectedPath = FullPath("authorized.txt");
+        File.WriteAllText(openedPath, "opened");
+        File.WriteAllText(expectedPath, "authorized");
+        using var stream = File.OpenRead(openedPath);
+
+        var error = Assert.Throws<UnauthorizedAccessException>(() =>
+            HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, expectedPath));
+
+        Assert.Equal("file_identity_changed", error.Message);
     }
 
     internal static bool TryCreateHardLink(string linkPath, string targetPath)

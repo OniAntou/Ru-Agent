@@ -22,6 +22,17 @@ public static class ComposerBox
     public const int Height = 3;
     public const int MinWidth = 10;
     public const int MaxWidth = 1000;
+    internal static readonly (string Text, TuiToken? Token)[] HintKeySegments =
+    [
+        ("/", TuiToken.Bright),
+        (" commands", TuiToken.Meta),
+        ("  ", null),
+        ("tab", TuiToken.Bright),
+        (" complete", TuiToken.Meta),
+        ("  ", null),
+        ("ctrl+o", TuiToken.Bright),
+        (" expand", TuiToken.Meta),
+    ];
 
     /// <summary>Rows of the full-screen composer stack: top border, padding, input, padding, meta, bottom border.</summary>
     public const int StackHeight = 6;
@@ -99,14 +110,9 @@ public static class ComposerBox
     public static string ComposeHints(int width, string? spinnerFrame, string idleLeft)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
-        var right = TuiPalette.Paint("/", TuiToken.Bright)
-            + TuiPalette.Paint(" commands", TuiToken.Meta)
-            + "  "
-            + TuiPalette.Paint("tab", TuiToken.Bright)
-            + TuiPalette.Paint(" complete", TuiToken.Meta)
-            + "  "
-            + TuiPalette.Paint("ctrl+o", TuiToken.Bright)
-            + TuiPalette.Paint(" expand", TuiToken.Meta);
+        var right = string.Concat(HintKeySegments.Select(segment => segment.Token is { } token
+            ? TuiPalette.Paint(segment.Text, token)
+            : segment.Text));
         var rightWidth = TuiText.VisibleWidth(right);
 
         var left = spinnerFrame is not null

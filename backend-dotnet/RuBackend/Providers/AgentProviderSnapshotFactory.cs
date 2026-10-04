@@ -57,6 +57,19 @@ public sealed class AgentProviderSnapshotFactory(
             selected.Model,
             ProviderReasoningPreferences.Read(current, selected));
         var maximumOutput = ResolveMaximumOutput(selected);
+        var modelMetadata = models.Catalog.FirstOrDefault(model =>
+            string.Equals(model.Id, selected.Model, StringComparison.OrdinalIgnoreCase));
+        var contextWindowTokens = modelMetadata?.ContextLength;
+        var contextWindowSource = contextWindowTokens is null
+            ? "unknown"
+            : selected.Backend.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
+                ? "models.dev"
+                : "provider_catalog";
+        var contextWindowVersion = contextWindowTokens is null
+            ? "unknown-v1"
+            : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
+        var toolCallingMode = ProviderBootstrapData.ModeForProtocol(selected.Protocol);
+        var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -65,8 +78,14 @@ public sealed class AgentProviderSnapshotFactory(
             selected.Model,
             selected.Account,
             options.ToJsonString(),
-            maximumOutput);
-        var snapshot = CreateSnapshot(selected, key, options, maximumOutput);
+            maximumOutput,
+            selected.Model,
+            CallingModeValue(toolCallingMode),
+            contextWindowTokens,
+            contextWindowSource,
+            contextWindowVersion,
+            outputTokenReserve);
+        var snapshot = CreateSnapshot(selected, key, options, maximumOutput, toolCallingMode);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         if (pin != proposed)
@@ -98,7 +117,13 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
 
-        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens);
+        var toolCallingMode = pin.CallingMode switch
+        {
+            "native" => ProviderToolCallingMode.Native,
+            "text_selection" => ProviderToolCallingMode.TextSelection,
+            _ => throw new ProviderCatalogException("provider_selection_invalid"),
+        };
+        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens, toolCallingMode);
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -133,6 +158,7 @@ public sealed class AgentProviderSnapshotFactory(
             || baseUri.Query.Length != 0
             || baseUri.Fragment.Length != 0
             || string.IsNullOrWhiteSpace(pin.Model)
+            || !string.Equals(pin.ModelLabel, pin.Model, StringComparison.Ordinal)
             || !isSupportedProvider)
         {
             throw new ProviderCatalogException("provider_selection_invalid");
@@ -208,7 +234,8 @@ public sealed class AgentProviderSnapshotFactory(
         ProviderSelection selected,
         string key,
         JsonObject options,
-        int? maximumOutput)
+        int? maximumOutput,
+        ProviderToolCallingMode toolCallingMode)
     {
         try
         {
@@ -219,13 +246,21 @@ public sealed class AgentProviderSnapshotFactory(
                 selected.Model,
                 key,
                 options,
-                maximumOutput);
+                maximumOutput,
+                toolCallingMode);
         }
         catch (ArgumentException)
         {
             throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
+
+    private static string CallingModeValue(ProviderToolCallingMode mode) => mode switch
+    {
+        ProviderToolCallingMode.Native => "native",
+        ProviderToolCallingMode.TextSelection => "text_selection",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
 
     private async Task RemoveTerminalSnapshotsAsync(CancellationToken ct)
     {

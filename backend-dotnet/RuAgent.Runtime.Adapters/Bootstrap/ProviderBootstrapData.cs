@@ -2,6 +2,12 @@ using System.Text.Json.Nodes;
 
 namespace RuAgent.Runtime.Adapters.Bootstrap;
 
+public enum ProviderToolCallingMode
+{
+    Native,
+    TextSelection,
+}
+
 public sealed record ProviderBootstrapData
 {
     public ProviderBootstrapData(
@@ -11,7 +17,8 @@ public sealed record ProviderBootstrapData
         string model,
         string credential,
         JsonObject? requestOptions = null,
-        int? maximumOutputTokens = null)
+        int? maximumOutputTokens = null,
+        ProviderToolCallingMode? toolCallingMode = null)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -27,6 +34,12 @@ public sealed record ProviderBootstrapData
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
         MaximumOutputTokens = ValidateOutputCap(protocol, maximumOutputTokens);
+        var protocolMode = ModeForProtocol(Protocol);
+        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode)
+        {
+            throw new ArgumentException("Tool calling mode does not match the provider protocol.", nameof(toolCallingMode));
+        }
+        ToolCallingMode = toolCallingMode ?? protocolMode;
     }
 
     public string Backend { get; }
@@ -42,6 +55,15 @@ public sealed record ProviderBootstrapData
     public JsonObject? RequestOptions { get; }
 
     public int? MaximumOutputTokens { get; }
+
+    public ProviderToolCallingMode ToolCallingMode { get; }
+
+    public static ProviderToolCallingMode ModeForProtocol(string protocol) => protocol switch
+    {
+        ProviderProtocols.ChatCompletions => ProviderToolCallingMode.Native,
+        ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages => ProviderToolCallingMode.TextSelection,
+        _ => throw new ArgumentException("Provider protocol is unsupported.", nameof(protocol)),
+    };
 
     private static int? ValidateOutputCap(string protocol, int? value)
     {

@@ -9,6 +9,7 @@ using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Reconciliation;
 using RuBackend.Harness.Workspace;
@@ -183,6 +184,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly InMemoryRetainedApprovalStash _retainedStash;
+    private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -201,7 +203,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IModelContextLimitProvider? contextLimit = null,
         Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null)
+        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -216,8 +219,13 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _instructionLoader = instructionLoader ?? new RuInstructionLoader();
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
+        var pinnedModelMetadataResolver = model is IProviderBackedModelStepRunner
+            ? runModelMetadataResolver
+            : null;
         _contextLimit = contextLimit
-            ?? new DynamicModelContextLimitProvider(_settings);
+            ?? (pinnedModelMetadataResolver is null
+                ? new DynamicModelContextLimitProvider(_settings)
+                : new DynamicModelContextLimitProvider(pinnedModelMetadataResolver));
         // The Broker is the execution authority for web tools, so the model is
         // told about them from the Broker's own configuration. The Host holds
         // no web adapter of its own to ask.
@@ -226,6 +234,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             WebFetchEnabled: true);
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _brokerGateways = brokerGateways;
+        _runModelMetadataResolver = pinnedModelMetadataResolver;
         _retainedStash = new InMemoryRetainedApprovalStash(_time);
     }
 
@@ -262,7 +271,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _settings,
             _time,
             availability,
-            _workspaceCoordinatorStore);
+            _workspaceCoordinatorStore,
+            _runModelMetadataResolver);
         return new AgentRunCoordinator(
             _model,
             gateway,

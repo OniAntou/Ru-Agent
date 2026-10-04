@@ -7,12 +7,44 @@ using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Worker;
+using RuBackend.Providers;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
 public sealed class RuPromptContextProviderTests
 {
+    [Fact]
+    public async Task Prompt_model_label_comes_from_the_run_pin_without_reading_current_settings()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var resolver = new FixedMetadataResolver(new AgentRunModelMetadata(
+            "model-a",
+            "openai_responses",
+            ProviderToolCallingMode.TextSelection,
+            200_000,
+            "models.dev",
+            "catalog-v1",
+            8_192));
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new ThrowingSettingsStore(),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            new AgentToolRuntimeAvailability(false, false),
+            runModelMetadataResolver: resolver);
+
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+
+        Assert.Equal("model-a", context.Environment.Model);
+        Assert.Equal(1, resolver.Calls);
+        Assert.DoesNotContain("secret", System.Text.Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Builds_fresh_root_bound_context_and_keeps_tool_results_untrusted()
     {
@@ -306,6 +338,26 @@ public sealed class RuPromptContextProviderTests
     {
         public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken) => Task.FromResult(snapshot);
         public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class ThrowingSettingsStore : ISettingsStore
+    {
+        public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Prompt metadata should not read current settings.");
+
+        public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FixedMetadataResolver(AgentRunModelMetadata metadata) : IAgentRunModelMetadataResolver
+    {
+        public int Calls { get; private set; }
+
+        public Task<AgentRunModelMetadata> ResolveAsync(RunId runId, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(metadata);
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : ITimeProvider

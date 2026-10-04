@@ -69,6 +69,12 @@ internal static class HarnessSqliteSchemaValidator
                 "account",
                 "request_options_json",
                 "maximum_output_tokens",
+                "model_label",
+                "calling_mode",
+                "context_window_tokens",
+                "context_window_source",
+                "context_window_version",
+                "output_token_reserve",
             ],
             ["agent_payloads"] =
             [

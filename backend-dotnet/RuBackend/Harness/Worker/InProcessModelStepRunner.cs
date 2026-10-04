@@ -16,7 +16,7 @@ namespace RuBackend.Harness.Worker;
 /// replaced by a typed provider snapshot: conversation build, delta sequencing,
 /// bounded retry/backoff and the durable failure mapping are unchanged.
 /// </summary>
-public sealed class InProcessModelStepRunner : IModelStepRunner
+public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner
 {
     private const int MaxModelStepAttempts = 3;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];

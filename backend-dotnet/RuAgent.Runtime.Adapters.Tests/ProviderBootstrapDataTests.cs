@@ -46,6 +46,19 @@ public sealed class ProviderBootstrapDataTests
         Assert.Null(data.RequestOptions);
     }
 
+    [Fact]
+    public void Legacy_calling_mode_is_fixed_by_protocol_and_unsupported_native_mode_fails_closed()
+    {
+        var textSelection = new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "model-a", string.Empty);
+
+        Assert.Equal(ProviderToolCallingMode.TextSelection, textSelection.ToolCallingMode);
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "model-a", string.Empty, toolCallingMode: ProviderToolCallingMode.Native));
+    }
+
     [Theory]
     [InlineData("effort")]
     [InlineData("enabled")]

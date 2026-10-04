@@ -6,6 +6,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Protocol;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness.Prompting;
@@ -31,6 +32,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     private readonly ITimeProvider _time;
     private readonly AgentToolRuntimeAvailability _availability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
 
     public RuPromptContextProvider(
         string workspaceRoot,
@@ -38,10 +40,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ISettingsStore settings,
         ITimeProvider time,
         bool webToolsEnabled = false,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
         : this(workspaceRoot, instructionLoader, settings, time,
             new AgentToolRuntimeAvailability(webToolsEnabled, webToolsEnabled),
-            workspaceCoordinatorStore)
+            workspaceCoordinatorStore,
+            runModelMetadataResolver)
     {
     }
 
@@ -51,7 +55,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ISettingsStore settings,
         ITimeProvider time,
         AgentToolRuntimeAvailability availability,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
@@ -60,6 +65,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _availability = availability;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _runModelMetadataResolver = runModelMetadataResolver;
     }
 
     public async Task<SystemPromptContext> BuildAsync(
@@ -71,11 +77,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ArgumentNullException.ThrowIfNull(modelContext);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var settings = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var model = _runModelMetadataResolver is null
+            ? SelectModel(await _settings.ReadAsync(cancellationToken).ConfigureAwait(false))
+            : (await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false)).ModelLabel;
         cancellationToken.ThrowIfCancellationRequested();
         var instructions = _instructionLoader.Load(_canonicalRoot);
         var now = _time.UtcNow;
-        var model = SelectModel(settings);
         var environment = new PromptEnvironment(
             model,
             Environment.OSVersion.Platform.ToString(),

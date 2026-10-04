@@ -9,3 +9,7 @@ public interface IModelStepRunner
         Func<AssistantDelta, ValueTask> publishDelta,
         CancellationToken cancellationToken);
 }
+
+public interface IProviderBackedModelStepRunner : IModelStepRunner
+{
+}

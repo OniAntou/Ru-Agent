@@ -14,7 +14,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -57,7 +57,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, transaction: null, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12 and not 13 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -68,7 +68,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 3)
@@ -77,7 +77,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 4)
@@ -86,7 +86,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 5)
@@ -95,7 +95,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 6)
@@ -104,7 +104,7 @@ public static class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 7)
@@ -112,7 +112,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 8)
@@ -120,7 +120,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 9)
@@ -128,7 +128,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 10)
@@ -136,7 +136,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 11)
@@ -144,7 +144,7 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 12)
@@ -152,8 +152,12 @@ public static class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionTwelveToThirteen,
+                    SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 13)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionThirteenToFourteen, cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
             {
@@ -169,7 +173,7 @@ public static class HarnessSqliteSchema
                     + SchemaVersionFiveToSix
                     + SchemaVersionSixToSeven
                     + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -853,5 +857,17 @@ public static class HarnessSqliteSchema
     private const string SchemaVersionTwelveToThirteen = """
         CREATE INDEX IF NOT EXISTS ix_agent_runs_session_created_run
             ON agent_runs(session_id, created_at_utc DESC, run_id DESC);
+        """;
+
+    private const string SchemaVersionThirteenToFourteen = """
+        ALTER TABLE agent_run_provider_selections ADD COLUMN model_label TEXT NOT NULL DEFAULT 'unknown-model';
+        ALTER TABLE agent_run_provider_selections ADD COLUMN calling_mode TEXT NOT NULL DEFAULT 'text_selection';
+        ALTER TABLE agent_run_provider_selections ADD COLUMN context_window_tokens INTEGER NULL;
+        ALTER TABLE agent_run_provider_selections ADD COLUMN context_window_source TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE agent_run_provider_selections ADD COLUMN context_window_version TEXT NOT NULL DEFAULT 'unknown-v1';
+        ALTER TABLE agent_run_provider_selections ADD COLUMN output_token_reserve INTEGER NOT NULL DEFAULT 8192;
+        UPDATE agent_run_provider_selections
+        SET model_label = COALESCE(model, 'unknown-model'),
+            calling_mode = CASE WHEN protocol = 'chat_completions' THEN 'native' ELSE 'text_selection' END;
         """;
 }

@@ -97,6 +97,26 @@ public sealed class HarnessSqliteSchemaTests
     }
 
     [Fact]
+    public async Task Schema_persists_typed_run_model_context_metadata()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(agent_run_provider_selections)";
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+
+        Assert.Contains("model_label", columns);
+        Assert.Contains("calling_mode", columns);
+        Assert.Contains("context_window_tokens", columns);
+        Assert.Contains("context_window_source", columns);
+        Assert.Contains("context_window_version", columns);
+        Assert.Contains("output_token_reserve", columns);
+    }
+
+    [Fact]
     public async Task Migrating_from_twelve_adds_the_latest_session_run_index()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
@@ -104,7 +124,16 @@ public sealed class HarnessSqliteSchemaTests
         {
             await connection.OpenAsync();
             await using var downgrade = connection.CreateCommand();
-            downgrade.CommandText = "DROP INDEX IF EXISTS ix_agent_runs_session_created_run; PRAGMA user_version = 12;";
+            downgrade.CommandText = """
+                ALTER TABLE agent_run_provider_selections DROP COLUMN output_token_reserve;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_version;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_source;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_tokens;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
+                PRAGMA user_version = 12;
+                """;
             await downgrade.ExecuteNonQueryAsync();
         }
 
@@ -114,7 +143,7 @@ public sealed class HarnessSqliteSchemaTests
             CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(13, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var plan = verify.CreateCommand();
@@ -129,6 +158,50 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Contains(details, detail => detail.Contains(
             "ix_agent_runs_session_created_run",
             StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Migrating_legacy_provider_pin_backfills_fixed_mode_and_unknown_context()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1);
+        var created = await fixture.CreateEventStore().TryCreateRunAsync(request, CancellationToken.None);
+        Assert.Equal(CreateRunOutcome.Created, created.Outcome);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                UPDATE agent_run_provider_selections
+                SET backend = 'Custom OpenAI', alias = 'custom', protocol = 'chat_completions',
+                    base_uri = 'https://provider.invalid/v1', model = 'legacy-model',
+                    account = 'custom_api_key', request_options_json = '{}', maximum_output_tokens = NULL
+                WHERE run_id = $run_id;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN output_token_reserve;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_version;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_source;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_tokens;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                PRAGMA user_version = 13;
+                """;
+            seed.Parameters.AddWithValue("$run_id", request.Run.RunId.Value);
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+        var selection = await new SqliteAgentRunProviderSelectionStore(fixture.Options)
+            .GetAsync(request.Run.RunId, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal("legacy-model", selection?.Selection?.ModelLabel);
+        Assert.Equal("native", selection?.Selection?.CallingMode);
+        Assert.Null(selection?.Selection?.ContextWindowTokens);
+        Assert.Equal("unknown", selection?.Selection?.ContextWindowSource);
+        Assert.Equal(AgentRunProviderSelection.DefaultOutputTokenReserve, selection?.Selection?.OutputTokenReserve);
     }
 
     [Fact]

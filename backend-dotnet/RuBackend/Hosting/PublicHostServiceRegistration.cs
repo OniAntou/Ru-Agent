@@ -262,6 +262,10 @@ internal static class PublicHostServiceRegistration
         else
         {
             services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<InProcessModelStepRunner>());
+            services.AddSingleton<IAgentRunModelMetadataResolver>(services =>
+                new AgentRunModelMetadataResolver(
+                    services.GetRequiredService<AgentProviderSnapshotFactory>(),
+                    services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()));
         }
         if (isManagedRuntime)
         {

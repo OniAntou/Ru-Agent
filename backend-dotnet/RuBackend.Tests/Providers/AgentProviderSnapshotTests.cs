@@ -35,14 +35,24 @@ public sealed class AgentProviderSnapshotTests : IDisposable
             store, credentials, catalog, selections, (_, _) => Task.FromResult(false));
 
         var first = await ReadAsync(factory, run.Run.RunId);
+        var metadataResolver = new AgentRunModelMetadataResolver(factory, selections);
+        var firstMetadata = await metadataResolver.ResolveAsync(run.Run.RunId, default);
         Assert.Equal("a", first.Model);
+        Assert.Equal("a", firstMetadata.ModelLabel);
+        Assert.Equal("chat_completions", firstMetadata.Protocol);
+        Assert.Equal(ProviderToolCallingMode.Native, firstMetadata.ToolCallingMode);
+        Assert.Equal(222_222, firstMetadata.ContextWindowTokens);
+        Assert.Equal("provider_catalog", firstMetadata.ContextWindowSource);
+        Assert.Equal(8_192, firstMetadata.OutputTokenReserve);
         Assert.Equal("high", first.RequestOptions?["reasoning_effort"]?.GetValue<string>());
         Assert.Equal("key-one", first.Credential);
 
         credentials.Key = "key-two";
         await store.SaveAsync((await store.ReadAsync(default)) with { CustomModel = "b" }, default);
         var stillFirst = await ReadAsync(factory, run.Run.RunId);
+        var stillFirstMetadata = await metadataResolver.ResolveAsync(run.Run.RunId, default);
         Assert.Equal("a", stillFirst.Model);
+        Assert.Equal(firstMetadata, stillFirstMetadata);
         Assert.Equal("key-one", stillFirst.Credential);
         Assert.Equal("high", stillFirst.RequestOptions?["reasoning_effort"]?.GetValue<string>());
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
@@ -66,6 +76,10 @@ public sealed class AgentProviderSnapshotTests : IDisposable
                    store, credentials, catalog, selections, (_, _) => Task.FromResult(false)))
         {
             pinned = await firstFactory.GetAsync(runId, default);
+            var firstMetadata = await new AgentRunModelMetadataResolver(firstFactory, selections)
+                .ResolveAsync(runId, default);
+            Assert.Equal("a", firstMetadata.ModelLabel);
+            Assert.Equal(222_222, firstMetadata.ContextWindowTokens);
         }
 
         await store.SaveAsync((await store.ReadAsync(default)) with
@@ -74,11 +88,15 @@ public sealed class AgentProviderSnapshotTests : IDisposable
             store, credentials, catalog, selections, (_, _) => Task.FromResult(false));
 
         var resumed = await restartedFactory.GetAsync(runId, default);
+        var resumedMetadata = await new AgentRunModelMetadataResolver(restartedFactory, selections)
+            .ResolveAsync(runId, default);
 
         Assert.Equal(pinned.Backend, resumed.Backend);
         Assert.Equal(pinned.Protocol, resumed.Protocol);
         Assert.Equal(pinned.Endpoint, resumed.Endpoint);
         Assert.Equal(pinned.Model, resumed.Model);
+        Assert.Equal("a", resumedMetadata.ModelLabel);
+        Assert.Equal(222_222, resumedMetadata.ContextWindowTokens);
     }
 
     [Fact]
@@ -271,11 +289,16 @@ public sealed class AgentProviderSnapshotTests : IDisposable
 
             using var restartedHost = new BackendWebApplicationFactory(
                 dataPaths: paths, credentialStore: credentials, settingsStore: settings);
+            var metadataResolver = restartedHost.Services.GetRequiredService<IAgentRunModelMetadataResolver>();
+            var resumedMetadata = await metadataResolver.ResolveAsync(runId, default);
             var resumed = await restartedHost.Services.GetRequiredService<AgentProviderSnapshotFactory>()
                 .GetAsync(runId, default);
 
             Assert.Equal("https://provider-a.invalid/v1/chat/completions", resumed.Endpoint.AbsoluteUri);
             Assert.Equal("deepseek-v4-flash-free", resumed.Model);
+            Assert.Equal("deepseek-v4-flash-free", resumedMetadata.ModelLabel);
+            Assert.Equal(ProviderToolCallingMode.Native, resumedMetadata.ToolCallingMode);
+            Assert.Null(resumedMetadata.ContextWindowTokens);
             await using (var connection = new SqliteConnection($"Data Source={paths.AgentHarnessDatabase};Pooling=False"))
             {
                 await connection.OpenAsync();
@@ -512,7 +535,7 @@ public sealed class AgentProviderSnapshotTests : IDisposable
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""
-                  {"data":[{"id":"a","supported_parameters":["reasoning_effort"],"reasoning_efforts":["low","high"]},{"id":"b"}]}
+                  {"data":[{"id":"a","context_length":222222,"supported_parameters":["reasoning_effort"],"reasoning_efforts":["low","high"]},{"id":"b"}]}
                   """),
             });
     }

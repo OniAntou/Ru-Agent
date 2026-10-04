@@ -82,10 +82,7 @@ public sealed class WorkerV2StepService
         // Only the OpenAI-compatible adapter exposes the host capabilities
         // through provider-native function calling; other protocols keep the
         // text selection contract.
-        var nativeToolCalling = string.Equals(
-            providerBootstrap.Protocol,
-            ProviderProtocols.ChatCompletions,
-            StringComparison.Ordinal);
+        var nativeToolCalling = providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native;
         // The receipt returned with this step must bind the text it was actually
         // composed from, not just the context shape. The text exists only here,
         // so the rendered-prompt hash is verified before the step is dispatched.

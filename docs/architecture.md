@@ -87,6 +87,18 @@ new runs; pre-v12 runs without a selection fail closed as
 `provider_selection_missing`, rather than adopting current settings. There is
 no retry with another provider, model, key, protocol or effort.
 
+
+The first validated selection also pins a typed model label, protocol, calling
+mode, catalog context window and source/version, and output-token reserve. The
+prompt label and compaction budget resolve through that same durable row, so a
+settings change or host restart cannot change an active run description or
+budget. A valid model with no context-window capability remains explicitly
+unknown and uses a conservative 32,768-token window before the pinned output
+reserve; production does not infer a window from a model name. Provider/catalog
+resolution failure before the first model call becomes a bounded durable run
+failure. Scripted offline runs do not register this resolver and do not access
+provider catalogs or credentials.
+
 The existing run-detail response optionally exposes `provider_backend` and
 `provider_model` from the durable selection only. An unselected or legacy run
 has null metadata; reading the response never selects a provider. CLI retained-run
@@ -97,7 +109,10 @@ Run creation uses the same response projection and carries these nullable fields
 The shared client validates them on both create and detail responses, with the
 same type and length bounds; unknown fields still fail closed.
 
-Schema v13 adds the bounded session-workspace lookup index. Migration executes
+Schema v13 adds the bounded session-workspace lookup index. Schema v14 adds
+the typed run-model metadata columns and backfills labels and fixed legacy
+calling modes for existing pins; unknown historic context windows remain
+unknown. Migration executes
 and drains every SQL result before advancing `user_version`, inside the same
 transaction; any late statement failure rolls back the entire upgrade. This
 explicit drain is needed because the pinned [Microsoft.Data.Sqlite 10.0.11

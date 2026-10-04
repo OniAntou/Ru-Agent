@@ -141,11 +141,24 @@ public sealed class AgentRunCoordinator
         var context = await _contextAssembler
             .AssembleAsync(runId, cancellationToken)
             .ConfigureAwait(false);
-        var preflight = await _compaction.PreflightContextAsync(
-                run,
-                context,
-                cancellationToken)
-            .ConfigureAwait(false);
+        AgentRunCompaction.ContextPreflightResult preflight;
+        try
+        {
+            preflight = await _compaction.PreflightContextAsync(
+                    run,
+                    context,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ModelContextLimitResolutionException error)
+        {
+            var failed = await _lifecycle.FailAsync(
+                    run.RunId,
+                    error.StepErrorCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return AgentRunStepResult.Blocked(failed, error.StepErrorCode);
+        }
         run = preflight.Run ?? run;
         if (preflight.ErrorCode is not null)
         {

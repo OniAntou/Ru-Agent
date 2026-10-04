@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+- **fix(harness,persistence)**: Run provider pins now persist the model label, protocol, calling mode, exact known context window and source/version, plus output reserve. Prompt identity and compaction budget read the same pin after settings changes/restart; unknown windows use a conservative bounded cap, and bootstrap failures are persisted before model invocation. Native batching wording is limited to native mode; text-selection remains one JSON object.
 
 - **fix(client,gui)**: Parser response tạo run nhận và kiểm tra hai trường provider/model tuỳ chọn từ Host, cùng giới hạn với run-detail. Trước đây Host đã tạo run nhưng client ném `unknown_field` với `provider_backend`, khiến GUI không gửi được chat và không theo dõi run đã tạo.
 - **fix(gui)**: Lỗi gửi chat giữ nguyên trên composer khi chưa tạo được run, thay vì chớp rồi biến mất do panel bị ẩn. Chat mới chụp ID session sau khi tạo session để callback acceptance xoá đúng draft; lượt gửi bị từ chối vẫn giữ prompt và attachment để thử lại. Run kết thúc trước lượt UI dispatch vẫn xác nhận acceptance; đổi session hoặc teardown vô hiệu callback cũ.
 
 ### Added
+
 - **fix(broker)**: Git read tự động chặn external diff/textconv, fsmonitor và pager của repository; nhánh managed commit giữ hợp đồng preview/hash. `cat-file --filters` cần approval. Read lấy content/SHA-256 từ cùng handle đã kiểm tra path/hard-link, hỗ trợ cancellation và deadline hash; managed Web không dùng proxy môi trường/hệ thống.
 - **fix(harness)**: Pin provider/model/endpoint/protocol và reasoning options trong SQLite trước request model đầu tiên, không lưu secret; restart dùng đúng selection đã pin, run cũ thiếu selection fail closed. Compaction bảo vệ prompt của run hiện tại và replay theo run version thay vì timestamp.
 - **fix(gui,client)**: Hủy được run ngay trong Creating; response đến muộn được cancel. Draft/attachment chỉ clear sau acceptance đúng session, được giữ riêng có giới hạn và từ chối đổi phiên nếu vượt cap. Picker/paste/drop kiểm tra lại cap và session generation sau await; clipboard image dùng cùng normalization/cap với picker. Cancellation lúc khởi động Host không còn bị báo thành port conflict.
@@ -639,6 +641,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(cli)**: Nền sao tĩnh trên landing: 5 hàng glyph thưa, dim, vị trí cố định nên resize/mở lại không nháy. Sao dồn trên/dưới, giữa thưa.
 - **feat(cli)**: Nhãn top khung nhập (`workspace · preset`) màu xanh brand thay vì xám.
 ### Added
+
 
 - **feat(harness,gui)**: **Lời dẫn của model thành một hàng trong feed.** Nửa trước (worker giữ narration trong step) đã commit ở `5bd65b82`; nay câu nói đó đi tới người đọc: kind `Narration` mới ở cả hai enum (Core + Protocol), `AgentActivityProjector.ProjectNarration` dựng hàng với **câu nói làm nội dung** (`Detail`), và `HandleToolStepAsync` phát nó **trước** hàng tool — model nói trước rồi mới gọi, và thứ tự đó được test khoá bằng `Assert.Collection`.
   Phía đọc: `DisplayText` của kind Narration trả về đúng câu nói (không có động từ mô tả hành động, không pill, không toggle), và `ShowPlainDetail` loại Narration để **câu không bị in hai lần**.

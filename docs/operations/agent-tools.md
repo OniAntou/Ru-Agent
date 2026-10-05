@@ -321,8 +321,13 @@ Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
 only: it never grants a tool, scope, path, network permission, approval, or
 Broker capability.
 
-`AGENTS.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
-the selected run root, not repo templates. Minimal format:
+`AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
+user-workspace instruction candidates below the selected run root, not repo
+templates. The loader applies final-path containment, strict UTF-8 decoding,
+normalization, a 64 KiB per-file limit, and a 256 KiB combined instruction
+limit. Their contents are untrusted guidance only; they cannot grant tools,
+scopes, paths, network access, approvals, or Broker authority.
+Example `AGENTS.md` format:
 
 ```markdown
 # Ru workspace instructions

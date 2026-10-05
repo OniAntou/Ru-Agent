@@ -116,8 +116,9 @@ untrusted references retain the bounded high-fidelity context. Unknown,
 duplicate, malformed, or digest-mismatched contracts fail before provider
 execution; wire and invariant violations remain terminal.
 
-The Host reads `AGENTS.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
-selected run root, then discovers direct-child skill directories from
+The Host reads the fixed `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and
+`.ru/CONTEXT.md` candidates below the selected run root, then discovers
+direct-child skill directories from
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
 `%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a skill
 only when it contains a case-insensitive `SKILL.md`. For example:

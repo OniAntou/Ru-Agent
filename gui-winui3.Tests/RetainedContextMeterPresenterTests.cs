@@ -79,6 +79,14 @@ public sealed class RetainedContextMeterPresenterTests
             "unknown", new AgentModelUsage(null, 30, null, 40, 20)));
     }
 
+    [Fact]
+    public void Anthropic_prompt_count_saturates_at_the_supported_integer_bound()
+    {
+        var usage = new AgentModelUsage(int.MaxValue, 0, null, int.MaxValue, int.MaxValue);
+
+        Assert.Equal(int.MaxValue, RetainedContextMeterPresenter.ResolvePromptTokens("anthropic_messages", usage));
+    }
+
     private static AgentRunModel Run(string? runId = null) => new(
         runId ?? RunId, "session-1", "workspace-1", "running", null, "standard", 1, "sha", 1,
         0, "2026-10-05", "2026-10-05", null, null, null, "identity",

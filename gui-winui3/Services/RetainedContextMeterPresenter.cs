@@ -7,6 +7,7 @@ public sealed class RetainedContextMeterPresenter
     private const string OpenAiChatProtocol = "chat_completions";
     private const string OpenAiResponsesProtocol = "openai_responses";
     private const string AnthropicMessagesProtocol = "anthropic_messages";
+    private const int MaximumPromptTokens = int.MaxValue;
 
     private string? _runId;
     private string? _sessionId;
@@ -107,9 +108,10 @@ public sealed class RetainedContextMeterPresenter
         if (protocol == AnthropicMessagesProtocol
             && (usage.InputTokens is not null || usage.CacheReadInputTokens is not null || usage.CacheWriteInputTokens is not null))
         {
-            return (usage.InputTokens ?? 0)
+            long total = (long)(usage.InputTokens ?? 0)
                 + (usage.CacheReadInputTokens ?? 0)
                 + (usage.CacheWriteInputTokens ?? 0);
+            return (int)Math.Min(MaximumPromptTokens, total);
         }
 
         return null;

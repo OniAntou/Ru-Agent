@@ -193,47 +193,13 @@ public sealed class TgTranscriptView : View
 
     private int AppendWrapped(string text, TranscriptStyle style, int width)
     {
-        var rows = HardWrapLine(text, width);
+        var rows = TuiText.HardWrapLine(text, width);
         foreach (var row in rows)
         {
             _wrapped.Add((row, style));
         }
 
         return rows.Count;
-    }
-
-    /// <summary>
-    /// Splits one line into consecutive chunks of at most <paramref name="width"/> visible
-    /// cells. Unlike <see cref="TuiText.Truncate"/> this never inserts an ellipsis or drops
-    /// characters; an empty line stays one empty row.
-    /// </summary>
-    private static List<string> HardWrapLine(string text, int width)
-    {
-        var rows = new List<string>();
-        if (text.Length == 0)
-        {
-            rows.Add(string.Empty);
-            return rows;
-        }
-
-        var current = new StringBuilder();
-        var used = 0;
-        foreach (var rune in text.EnumerateRunes())
-        {
-            var runeWidth = TuiText.RuneWidth(rune.Value);
-            if (used + runeWidth > width && current.Length > 0)
-            {
-                rows.Add(current.ToString());
-                current.Clear();
-                used = 0;
-            }
-
-            current.Append(rune);
-            used += runeWidth;
-        }
-
-        rows.Add(current.ToString());
-        return rows;
     }
 
     private static Terminal.Gui.Drawing.Attribute StyleAttribute(TranscriptStyle style) => style switch

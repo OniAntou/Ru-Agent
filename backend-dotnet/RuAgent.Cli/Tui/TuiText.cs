@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace RuAgent.Cli.Tui;
 
@@ -372,6 +373,56 @@ public static class TuiText
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// Splits one line into consecutive chunks of at most <paramref name="width"/> visible
+    /// cells, keeping every space and never dropping a character. <see cref="Wrap"/> reflows on
+    /// word boundaries and collapses runs of spaces, which is right for prose and wrong for the
+    /// column-aligned output a command prints (a session tree loses its shape), so anything
+    /// that must reproduce a line exactly — the transcript, the document panel — wraps here.
+    /// An empty line stays one empty row so blank rows survive the round trip.
+    /// </summary>
+    public static List<string> HardWrapLine(string text, int width)
+    {
+        var rows = new List<string>();
+        if (text.Length == 0)
+        {
+            rows.Add(string.Empty);
+            return rows;
+        }
+
+        var current = new StringBuilder();
+        var used = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var runeWidth = RuneWidth(rune.Value);
+            if (used + runeWidth > width && current.Length > 0)
+            {
+                rows.Add(current.ToString());
+                current.Clear();
+                used = 0;
+            }
+
+            current.Append(rune);
+            used += runeWidth;
+        }
+
+        rows.Add(current.ToString());
+        return rows;
+    }
+
+    /// <summary>Hard-wraps every line of a block, in order, as one flat list of rows.</summary>
+    public static List<string> HardWrap(IReadOnlyList<string> lines, int width)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var rows = new List<string>();
+        foreach (var line in lines)
+        {
+            rows.AddRange(HardWrapLine(line ?? string.Empty, width));
+        }
+
+        return rows;
     }
 
     private static string TakeWidth(string text, int width)

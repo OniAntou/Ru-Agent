@@ -344,8 +344,8 @@ public sealed class InProcessModelConversationTests
                     new ModelToolCall("provider_read_a", "read", "1.0.0", Json("{\"path\":\"a.txt\"}")),
                     new ModelToolCall("provider_read_b", "read", "1.0.0", Json("{\"path\":\"b.txt\"}")),
                 ]),
-            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
-            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\"}"));
+            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\",\"offset\":0}"),
+            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\",\"offset\":0}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
@@ -390,8 +390,7 @@ public sealed class InProcessModelConversationTests
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
-        Assert.Contains("previously we wrote robots.txt", prompt, StringComparison.Ordinal);
-        Assert.Contains("tiep tuc", prompt, StringComparison.Ordinal);
+        Assert.Equal("tiep tuc", prompt);
         Assert.Null(turns);
         var summary = Assert.Single(messages!);
         Assert.Equal("user", summary.Role);
@@ -428,7 +427,7 @@ public sealed class InProcessModelConversationTests
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file"),
             AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"a.txt\"}"),
-            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
+            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "{\"path\":\"a.txt\",\"content\":\"aaa\",\"offset\":0}"),
             ModelContextEntry.Assistant(
                 "src-4",
                 4,
@@ -448,13 +447,13 @@ public sealed class InProcessModelConversationTests
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file lon"),
-            AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"big.txt\"}"),
+            AssistantStepEntry("src-2", 2, "provider_read_1", "unknown_tool", "{}"),
             ToolResultEntry(
                 "src-3",
                 3,
                 "internal_call_1",
                 "provider_read_1",
-                "{\"path\":\"big.txt\",\"content\":\"" + new string('x', 40_000) + "\"}"));
+                "{\"unknown\":\"" + new string('x', 40_000)));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
@@ -463,6 +462,28 @@ public sealed class InProcessModelConversationTests
         Assert.NotNull(messages);
         Assert.True(messages[2].Content.Length <= 6_000, $"tool content length was {messages[2].Content.Length}");
         Assert.Contains("truncated", messages[2].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
+    {
+        const string prefix = "{\"unknown\":\"";
+        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 6_000));
+        var context = Snapshot(
+            ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
+            AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
+            ToolResultEntry("src-3", 3, "internal_unknown_1", "provider_unknown_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
+        const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        Assert.InRange(visible.Length, 1, 6_000);
+        var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
+        Assert.True(noteOffset >= 0);
+        var omitted = source.Length - noteOffset;
+        Assert.EndsWith($" (omitted {omitted} of {source.Length} characters)", visible, StringComparison.Ordinal);
+        _ = new UTF8Encoding(false, true).GetBytes(visible);
     }
 
     [Theory]
@@ -592,10 +613,10 @@ public sealed class InProcessModelConversationTests
                 sequence++,
                 $"internal_stale_{index}",
                 $"provider_stale_{index}",
-                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\"}}"));
+                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\",\"offset\":0}}"));
         }
         entries.Add(AssistantStepEntry("src-new-a", sequence++, "provider_fresh", "read", "{\"path\":\"fresh.txt\"}"));
-        entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
+        entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\",\"offset\":0}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
 

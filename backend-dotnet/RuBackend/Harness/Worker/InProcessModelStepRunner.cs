@@ -27,7 +27,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     private const int MaxConversationBlockChars = 6_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
-        "\n…(conversation block limit reached; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
 
     private readonly WorkerV2StepService _stepService;
 
@@ -687,11 +687,31 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             return block;
         }
 
-        var prefix = Math.Max(1, maxChars - ConversationTruncationNote.Length);
-        var omitted = block.Length - prefix;
-        return block[..prefix] + ConversationTruncationNote
-            + $" (omitted {omitted} of {block.Length} characters)";
+        var prefixLength = Math.Max(0, maxChars - ConversationTruncationNote.Length);
+        while (true)
+        {
+            prefixLength = ClampPrefixToUnicodeBoundary(block, prefixLength);
+            var omitted = block.Length - prefixLength;
+            var omission = $" (omitted {omitted} of {block.Length} characters)";
+            var nextPrefixLength = maxChars - ConversationTruncationNote.Length - omission.Length;
+            if (nextPrefixLength < 0)
+                throw new WorkerProtocolException("model_history_too_large");
+
+            nextPrefixLength = ClampPrefixToUnicodeBoundary(block, nextPrefixLength);
+            if (nextPrefixLength == prefixLength)
+                return block[..prefixLength] + ConversationTruncationNote + omission;
+
+            prefixLength = nextPrefixLength;
+        }
     }
+
+    private static int ClampPrefixToUnicodeBoundary(string value, int prefixLength) =>
+        prefixLength > 0
+        && prefixLength < value.Length
+        && char.IsHighSurrogate(value[prefixLength - 1])
+        && char.IsLowSurrogate(value[prefixLength])
+            ? prefixLength - 1
+            : prefixLength;
 
     private static JsonObject BuildSettings(SystemPromptContext context)
     {

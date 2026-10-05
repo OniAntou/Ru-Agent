@@ -12,6 +12,7 @@ function Get-ScriptedEditMetrics($Scenario, $Events) {
     $expectedStatus = Get-ExpectedAssertion $Scenario "final_status"
     $toolEvents = @($Events | Where-Object event_type -eq "tool.execution_completed" | Sort-Object { [long]$_.sequence })
     $completionEvents = @($Events | Where-Object { $_.event_type -eq "run.state_changed" -and $_.status -eq $expectedStatus })
+    $terminalEvents = @($Events | Where-Object event_type -eq "run.state_changed")
     $expectedToolCount = 1 + $expectedSuccesses
     $orderedMatches = $toolEvents.Count -eq $expectedToolCount
     if ($orderedMatches) {
@@ -40,4 +41,28 @@ function Get-ScriptedEditMetrics($Scenario, $Events) {
     return [pscustomobject]@{ tool_calls = $toolEvents.Count; failed_tool_calls = 1; approval_requests = @($Events | Where-Object event_type -eq "approval.requested").Count; model_steps = @($Events | Where-Object event_type -eq "model.step_started").Count }
 }
 
-Export-ModuleMember -Function Get-ScriptedEditMetrics
+function Get-ScriptedPagingMetrics($Scenario, $Events) {
+    $minimumCalls = [int](Get-ExpectedAssertion $Scenario "minimum_tool_calls")
+    $expectedStatus = Get-ExpectedAssertion $Scenario "final_status"
+    $toolEvents = @($Events | Where-Object event_type -eq "tool.execution_completed" | Sort-Object { [long]$_.sequence })
+    $completionEvents = @($Events | Where-Object { $_.event_type -eq "run.state_changed" -and $_.status -eq $expectedStatus })
+    $terminalEvents = @($Events | Where-Object event_type -eq "run.state_changed")
+    $completionFollowsTools = $false
+    if ($completionEvents.Count -eq 1 -and $toolEvents.Count -ge $minimumCalls) {
+        $completionFollowsTools = [long]$completionEvents[0].sequence -gt [long]$toolEvents[-1].sequence
+    }
+    if ($toolEvents.Count -lt $minimumCalls -or $completionEvents.Count -ne 1 -or -not $completionFollowsTools) {
+        $summaries = @($toolEvents | ForEach-Object safe_summary) -join ","
+        $statuses = @($terminalEvents | ForEach-Object status) -join ","
+        throw "Oracle failure: expected at least $minimumCalls tool completions and one later '$expectedStatus' completion; observed $($toolEvents.Count) tool completions [$summaries], terminal statuses [$statuses], and $(@($Events | Where-Object event_type -eq 'model.step_started').Count) model steps."
+    }
+
+    return [pscustomobject]@{
+        tool_calls = $toolEvents.Count
+        failed_tool_calls = @($toolEvents | Where-Object safe_summary -notin @("ok", "succeeded")).Count
+        approval_requests = @($Events | Where-Object event_type -eq "approval.requested").Count
+        model_steps = @($Events | Where-Object event_type -eq "model.step_started").Count
+    }
+}
+
+Export-ModuleMember -Function Get-ScriptedEditMetrics, Get-ScriptedPagingMetrics

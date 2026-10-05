@@ -173,11 +173,11 @@
     {
       "id": "read_long_utf8_file",
       "title": "Đọc file UTF-8 dài",
-      "input": "Read docs/long-utf8.txt through its pages and return the exact final sentinel UTF8-END-2049.",
+      "input": "Read docs/long-utf8.txt through its pages and return the exact final sentinel UTF8-END-251.",
       "preset": "plan",
       "capabilityAtBaseline": "bounded_paging_available",
       "baselineStatus": "not_run",
-      "workspaceSha256": "a11562943be13e6a32b034693f2ee29a372be05e76588128bdeaeb74f955bec1",
+      "workspaceSha256": "4a54d2d3a9c3a0375a73094f9f3f32e955628d81f41f2a1c3abec3e5b66e6bf0",
       "expectedFiles": [
         {
           "path": "docs/long-utf8.txt",
@@ -189,12 +189,20 @@
           "kind": "expected_utf8_sentinel_seen",
           "equals": true,
           "path": "docs/long-utf8.txt",
-          "line": 2049,
-          "sentinel": "UTF8-END-2049"
+          "line": 251,
+          "sentinel": "UTF8-END-251"
         },
         {
           "kind": "files_changed",
           "equals": 0
+        },
+        {
+          "kind": "minimum_tool_calls",
+          "equals": 2
+        },
+        {
+          "kind": "final_status",
+          "equals": "completed"
         }
       ],
       "workspaceOverlay": [
@@ -202,10 +210,36 @@
           "path": "docs/long-utf8.txt",
           "kind": "repeated_utf8",
           "line": "Dòng tiếng Việt kiểm tra đọc trang: anh/em, ngữ cảnh và giới hạn đầu ra.\n",
-          "count": 2048,
-          "suffix": "UTF8-END-2049\n"
+          "count": 250,
+          "suffix": "UTF8-END-251\n"
         }
-      ]
+      ],
+      "scriptedSteps": [
+        {
+          "tool": {
+            "id": "read",
+            "arguments": {
+              "path": "docs/long-utf8.txt",
+              "offset": 0,
+              "limit": 262144
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "read",
+            "arguments": {
+              "path": "docs/long-utf8.txt",
+              "offset": "$projection_next_offset",
+              "limit": 262144
+            }
+          }
+        },
+        {
+          "text": "Offline scripted trace complete; provider quality was not measured."
+        }
+      ],
+      "runnerKind": "scripted_paging_workflow"
     },
     {
       "id": "grep_beyond_first_page",
@@ -214,7 +248,7 @@
       "preset": "plan",
       "capabilityAtBaseline": "bounded_search_available",
       "baselineStatus": "not_run",
-      "workspaceSha256": "798a9110734211f2ef1e16015cfdc205f084e4c2e4cded2a8cb2a8cf3d76b138",
+      "workspaceSha256": "453d3ce3a29a1d6af61c9f992705d0824f1c9eb498d9fd4c6fa90497eda0757f",
       "expectedFiles": [
         {
           "path": "docs/search-results.txt",
@@ -226,25 +260,545 @@
           "kind": "marker_found_after_first_page",
           "equals": true,
           "path": "docs/search-results.txt",
-          "line": 2048,
+          "line": 1024,
           "sentinel": "NEEDLE-042"
         },
         {
           "kind": "files_changed",
           "equals": 0
+        },
+        {
+          "kind": "minimum_tool_calls",
+          "equals": 2
+        },
+        {
+          "kind": "final_status",
+          "equals": "completed"
         }
       ],
       "workspaceOverlay": [
         {
           "path": "docs/search-results.txt",
           "kind": "numbered_output",
-          "count": 2048,
+          "count": 1024,
           "linePrefix": "matching result ",
           "sentinels": {
-            "2048": "NEEDLE-042"
+            "1024": "NEEDLE-042"
           }
         }
-      ]
+      ],
+      "scriptedSteps": [
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": 0,
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "tool": {
+            "id": "grep",
+            "arguments": {
+              "query": "matching result",
+              "path": "docs/search-results.txt",
+              "offset": "$projection_next_offset",
+              "max_results": 64
+            }
+          }
+        },
+        {
+          "text": "Offline scripted trace complete; provider quality was not measured."
+        }
+      ],
+      "runnerKind": "scripted_paging_workflow"
     },
     {
       "id": "terminal_middle_output",
@@ -253,7 +807,7 @@
       "preset": "standard",
       "capabilityAtBaseline": "middle_offset_read_not_confirmed",
       "baselineStatus": "unmet",
-      "workspaceSha256": "a45fe81b631f538d2f7827fe23c6a1f2583eeef428ace87403e3eb46c9e97079",
+      "workspaceSha256": "baa3bf886a0c39fdc155d77ef67c06557188ef34974946c899d30818d20cbfa1",
       "expectedFiles": [
         {
           "path": "logs/build-output.txt",
@@ -271,6 +825,14 @@
         {
           "kind": "files_changed",
           "equals": 0
+        },
+        {
+          "kind": "minimum_tool_calls",
+          "equals": 3
+        },
+        {
+          "kind": "final_status",
+          "equals": "completed"
         }
       ],
       "workspaceOverlay": [
@@ -278,7 +840,7 @@
           "path": "logs/build-output.txt",
           "kind": "numbered_output",
           "count": 700,
-          "linePrefix": "build output line ",
+          "linePrefix": "build output line xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ",
           "sentinels": {
             "500": "MIDDLE-OUTPUT-500"
           }

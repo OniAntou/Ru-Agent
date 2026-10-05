@@ -136,6 +136,17 @@ boundary.
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
+Large structured tool results are projected into bounded prompt references while
+their durable Broker receipts stay unchanged. When a reference carries
+`projection_has_more: true`, continue the same source using
+`projection_next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
+matches from the original query offset (an omitted `offset` means zero), and
+`bash` `read_output` cursors count UTF-16 characters within the same
+`execution_id`/spool. The projection names its visible unit and retains source,
+receipt, and spool metadata; it does not claim older output exchanges remain in
+the bounded model history. Missing call context fails closed if clipping needs
+a cursor. Paging does not authorize a new operation or bypass Broker approval.
+
 ### Session folder grants and bash approval
 
 Canonical `plan` denies terminal and mutation. Canonical `standard` allows only

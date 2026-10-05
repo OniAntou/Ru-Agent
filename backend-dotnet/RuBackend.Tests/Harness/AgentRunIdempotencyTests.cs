@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Client;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using Xunit;
 
@@ -11,6 +13,41 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class AgentRunIdempotencyTests
 {
+    [Fact]
+    public async Task Shared_client_accepts_host_create_projection_and_gets_enriched_run_metadata()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var http = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(http);
+        var descriptor = new RuntimeDescriptor(
+            RuntimeDescriptor.CurrentProtocolVersion,
+            http.BaseAddress!.ToString(),
+            "test-secret",
+            Environment.ProcessId,
+            "0",
+            "test-instance",
+            DateTimeOffset.UtcNow.ToString("O"));
+        using var client = new AgentApiClient(new PublicHostSession(http.BaseAddress, "test-secret", descriptor), http);
+        var preset = await client.SetSessionPresetAsync(sessionId, "standard", 0, interactive: true);
+
+        var created = await client.CreateRunAsync(new CreateAgentRunRequest(
+            sessionId,
+            tmp.Path,
+            "created through the shared API client",
+            "standard",
+            preset.GetProperty("version").GetInt64(),
+            "create-client-metadata-" + Guid.NewGuid().ToString("N")));
+        var loaded = await client.GetRunAsync(created.RunId);
+
+        Assert.Equal(created.RunId, loaded.RunId);
+        Assert.Null(created.ProviderBackend);
+        Assert.Null(created.ProviderModel);
+        Assert.Null(loaded.ProviderProtocol);
+        Assert.Equal("available", loaded.WorkStateStatus);
+        Assert.Contains("created through the shared API client", loaded.WorkStatePreview);
+    }
+
     [Fact]
     public async Task Get_run_returns_durable_provider_pin_after_settings_change()
     {

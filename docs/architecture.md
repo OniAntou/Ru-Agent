@@ -127,15 +127,14 @@ with retained tool calls by provider identity and order; client and model-contex
 payload readers cannot access the opaque bytes. Missing or mismatched
 continuation fails closed before another provider dispatch.
 
-The existing run-detail response optionally exposes `provider_backend` and
-`provider_model` from the durable selection only. An unselected or legacy run
-has null metadata; reading the response never selects a provider. CLI retained-run
-display uses those fields, while configured model settings remain the next-turn
-intent. Catalog-derived usage estimates stay hidden when a retained run's
-selection is unknown.
-Run creation uses the same response projection and carries these nullable fields.
-The shared client validates them on both create and detail responses, with the
-same type and length bounds; unknown fields still fail closed.
+The existing run-detail response optionally exposes durable provider pins and a
+bounded safe work-state preview. An unselected or legacy run has null provider
+metadata; reading the response never selects a provider. CLI retained-run
+display uses the durable detail fields, while configured model settings remain
+the next-turn intent. Catalog-derived usage estimates stay hidden when a
+retained run's selection is unknown. Create and idempotent-replay responses keep
+their narrow create contract; the shared client validates those fields
+separately, then reads enriched metadata through run detail.
 
 Schema v13 adds the bounded session-workspace lookup index. Schema v14 adds
 the typed run-model metadata columns and backfills labels and fixed legacy
@@ -317,7 +316,13 @@ restart) without a downloader or package manager. Only `SKILL.md` is loaded;
 nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
 and are never automatically read or executed. The typed context has bounded
 references (32 KiB each), and a 512 KiB serialized-context
-cap.
+cap. The runtime context keeps at most sixteen references total, counting any
+omission notice and available workspace-activity reference. Structured tool
+output projections preserve durable receipts and attach tool-specific paging
+cursors: `read` advances UTF-8 bytes, `grep` advances match results from the
+original query offset, and terminal `read_output` advances UTF-16 characters
+within the same spool. Projection clipping never rewrites the receipt; bounded
+history may still omit older exchanges.
 
 `AGENTS.md` remains the sole persona/style source. The four fixed workspace
 instruction files and discovered skills are untrusted guidance; none can grant

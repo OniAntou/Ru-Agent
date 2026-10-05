@@ -6,6 +6,7 @@ using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Worker;
+using RuBackend.Harness.Prompting;
 
 namespace RuBackend.Harness.Worker;
 
@@ -21,10 +22,12 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     private const int MaxModelStepAttempts = 3;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
 
-    // Conversation blocks stay small; the untrusted runtime references keep the
-    // full-fidelity tool output.
+    // Conversation blocks stay small; untrusted runtime references carry bounded
+    // source output and explicit cursors when more can be fetched.
     private const int MaxConversationBlockChars = 6_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
+    private const string ConversationTruncationNote =
+        "\n…(conversation block limit reached; inspect the untrusted tool reference and continue at projection_next_offset when present)";
 
     private readonly WorkerV2StepService _stepService;
 
@@ -575,9 +578,18 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         }
 
         pendingCalls.Dequeue();
+        var projectedContent = StructuredToolOutputProjector.Project(
+            call.Name,
+            call.Arguments,
+            entry.Content ?? string.Empty,
+            MaxConversationBlockChars,
+            ToolOutputProjectionUnit.Utf16Characters,
+            ClampConversationBlock,
+            receipt.ToolCallId.Value,
+            providerCallId);
         units[^1].Add(new ModelTurn(
             "tool",
-            ClampConversationBlock(entry.Content ?? string.Empty, MaxConversationBlockChars),
+            projectedContent,
             toolCallId: call.Id,
             toolResultCode: receipt.Code));
     }
@@ -665,8 +677,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     }
 
     /// <summary>
-    /// Keeps one conversation block inside the model prompt budget while the
-    /// untrusted runtime references retain the full-fidelity tool output.
+    /// Keeps one conversation block inside the model prompt budget. Structured
+    /// outputs carry a separate cursor when a later page can recover more content.
     /// </summary>
     private static string ClampConversationBlock(string block, int maxChars)
     {
@@ -675,11 +687,10 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             return block;
         }
 
-        const int MarkerBudget = 160;
-        var prefix = Math.Max(1, maxChars - MarkerBudget);
+        var prefix = Math.Max(1, maxChars - ConversationTruncationNote.Length);
         var omitted = block.Length - prefix;
-        return block[..prefix]
-            + $"\n…(truncated: {omitted} of {block.Length} characters omitted; full output stays in the runtime references)";
+        return block[..prefix] + ConversationTruncationNote
+            + $" (omitted {omitted} of {block.Length} characters)";
     }
 
     private static JsonObject BuildSettings(SystemPromptContext context)

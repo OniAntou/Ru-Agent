@@ -138,6 +138,48 @@ Write-Output 'exact, reordered, extra, and duplicate-terminal oracle checks pass
     assert "exact, reordered, extra, and duplicate-terminal oracle checks passed" in completed.stdout
 
 
+def test_scripted_paging_oracle_requires_enough_calls_and_one_later_completion(tmp_path):
+    powershell = _powershell()
+    module = str(ROOT / "scripts" / "WorkflowEvaluationOracle.psm1").replace("'", "''")
+    script = tmp_path / "exercise-paging-oracle.ps1"
+    script.write_text(
+        f"""
+$ErrorActionPreference = 'Stop'
+Import-Module '{module}' -Force
+$scenario = [pscustomobject]@{{ id = 'paging'; assertions = @(
+    [pscustomobject]@{{ kind = 'minimum_tool_calls'; equals = 3 }},
+    [pscustomobject]@{{ kind = 'final_status'; equals = 'completed' }}
+) }}
+$first = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 2; safe_summary = 'ok' }}
+$second = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 4; safe_summary = 'succeeded' }}
+$third = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 6; safe_summary = 'ok' }}
+$done = [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 7; status = 'completed' }}
+$metrics = Get-ScriptedPagingMetrics $scenario @($first, $second, $third, $done)
+if ($metrics.tool_calls -ne 3 -or $metrics.failed_tool_calls -ne 0) {{ throw 'The exact paging trace did not pass.' }}
+foreach ($invalid in @(
+    ,@($first, $second, $done),
+    ,@($first, $second, $third, $done, [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 8; status = 'completed' }})
+)) {{
+    try {{ Get-ScriptedPagingMetrics $scenario $invalid | Out-Null }}
+    catch {{ if ($_.Exception.Message.StartsWith('Oracle failure:')) {{ continue }}; throw }}
+    throw 'The paging oracle accepted an incomplete or duplicate-terminal trace.'
+}}
+Write-Output 'paging minimum and single-terminal oracle checks passed'
+""",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [powershell, "-NoProfile", "-File", str(script)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "paging minimum and single-terminal oracle checks passed" in completed.stdout
+
+
 def _run_invalid_fixture(tmp_path, fixture, expected_error):
     powershell = _powershell()
     invalid_fixture = tmp_path / "bad-fixture.json"

@@ -39,17 +39,29 @@ public static class AgentRecoveryNotes
     public const int MaximumNotesPerWindow = 6;
 
     /// <summary>
-    /// Names the failed receipt and asks the model to redo, reroute, or report the
-    /// blocker. The code comes from the sanitized receipt code, so it is safe text.
+    /// Names the failed receipt and gives recovery guidance for known effect codes.
+    /// The code comes from the sanitized receipt code, so it is safe text.
     /// </summary>
     public static string BuildUnverifiedNote(string? receiptCode)
     {
         var code = string.IsNullOrWhiteSpace(receiptCode) ? "tool_failed" : receiptCode;
         return $"{NotePrefix} {KindMarker(AgentRecoveryKind.UnverifiedAfterToolFailure)} "
             + $"(code: {code}) - the final reply was suppressed because a tool call failed "
-            + "and its result is still unverified. Fix and redo the failed call, use a "
-            + "different tool, or report what is blocking you.";
+            + "and its result is still unverified. " + RecoveryAction(code);
     }
+
+    private static string RecoveryAction(string code) => code switch
+    {
+        "edit_no_match" => "Re-read the same file, then correct the exact old text before retrying the edit.",
+        "edit_not_unique" => "Re-read the same file and narrow old_string or set expected_occurrences to the observed match count.",
+        "workspace_changed" => "Inspect the current workspace and reconcile the change; do not overwrite stale content.",
+        "process_exit_nonzero" => "Inspect the verification diagnostics, fix the cause, then rerun that same verification.",
+        "process_start_failed" => "Inspect the executable and invocation error, then retry only after correcting it.",
+        "side_effects_possible" => "Inspect the affected state before deciding whether any retry is safe.",
+        "approval_denied" or "access_denied" or "rule_denied" or "workspace_path_outside_root" =>
+            "The action was denied; report the blocker and do not route around the same restriction.",
+        _ => "Inspect the failed receipt, correct its named cause, then retry only when the action is safe; otherwise report the blocker.",
+    };
 
     public static string BuildEmptyNote() =>
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.EmptyModelReply)} - the last model "

@@ -128,6 +128,183 @@ public sealed class InProcessModelConversationTests
     }
 
     [Fact]
+    public void Oversized_read_history_keeps_json_metadata_and_a_byte_cursor_for_visible_utf8()
+    {
+        const int sourceOffset = 17;
+        const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 1_400)) + hiddenMarker;
+        var bytesRead = Encoding.UTF8.GetByteCount(content);
+        var source = new JsonObject
+        {
+            ["path"] = "src/large.txt",
+            ["content"] = content,
+            ["truncated"] = true,
+            ["bytes_read"] = bytesRead,
+            ["total_bytes"] = sourceOffset + bytesRead + 512,
+            ["offset"] = sourceOffset,
+            ["sha256"] = new string('a', 64),
+            ["duration_ms"] = 4,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the end marker."),
+            AssistantStepEntry("src-read", 2, "provider_read_1", "read",
+                "{\"path\":\"src/large.txt\",\"offset\":17,\"limit\":65536}"),
+            ToolResultEntry("src-result", 3, "internal_read_1", "provider_read_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visible = root.GetProperty("content").GetString()!;
+        Assert.Equal("src/large.txt", root.GetProperty("path").GetString());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.Equal(bytesRead, root.GetProperty("bytes_read").GetInt32());
+        Assert.Equal(sourceOffset + bytesRead + 512, root.GetProperty("total_bytes").GetInt32());
+        Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
+        Assert.Equal(new string('a', 64), root.GetProperty("sha256").GetString());
+        Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(Encoding.UTF8.GetByteCount(visible), root.GetProperty("projection_visible_bytes").GetInt32());
+        Assert.Equal(sourceOffset + Encoding.UTF8.GetByteCount(visible),
+            root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_read_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
+        Assert.DoesNotContain('\uFFFD', visible);
+    }
+
+    [Fact]
+    public void Broker_truncated_read_page_exposes_cursor_even_when_projection_fits()
+    {
+        var source = new JsonObject
+        {
+            ["path"] = "src/large.txt",
+            ["content"] = "abc",
+            ["truncated"] = true,
+            ["bytes_read"] = 3,
+            ["total_bytes"] = 40,
+            ["offset"] = 9,
+            ["sha256"] = new string('b', 64),
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Continue reading."),
+            AssistantStepEntry("src-read", 2, "provider_read_small", "read", "{\"path\":\"src/large.txt\",\"offset\":9}"),
+            ToolResultEntry("src-result", 3, "internal_read_small", "provider_read_small", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        using var projected = JsonDocument.Parse(messages![^1].Content);
+        Assert.True(projected.RootElement.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(12, projected.RootElement.GetProperty("projection_next_offset").GetInt32());
+    }
+
+    [Fact]
+    public void Oversized_grep_history_resumes_from_original_offset_plus_visible_results()
+    {
+        const int sourceOffset = 37;
+        const string hiddenMarker = "GREP-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var results = new JsonArray();
+        for (var index = 0; index < 100; index++)
+        {
+            results.Add(new JsonObject
+            {
+                ["path"] = "docs/matches.txt",
+                ["line"] = index + 1,
+                ["text"] = index == 99 ? hiddenMarker : $"needle match detail {index:D3} {new string('x', 70)}",
+            });
+        }
+        var source = new JsonObject
+        {
+            ["results"] = results,
+            ["count"] = results.Count,
+            ["truncated"] = true,
+            ["scanned_files"] = 1,
+            ["scanned_directories"] = 1,
+            ["skipped"] = 0,
+            ["duration_ms"] = 5,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the final match."),
+            AssistantStepEntry("src-grep", 2, "provider_grep_1", "grep",
+                "{\"query\":\"needle\",\"path\":\"docs\",\"offset\":37,\"max_results\":100}"),
+            ToolResultEntry("src-result", 3, "internal_grep_1", "provider_grep_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visibleResults = root.GetProperty("results");
+        Assert.Equal(100, root.GetProperty("count").GetInt32());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.InRange(visibleResults.GetArrayLength(), 1, 99);
+        Assert.DoesNotContain(hiddenMarker, result.Content, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visibleResults.GetArrayLength(),
+            root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_grep_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
+    }
+
+    [Fact]
+    public void Oversized_grep_without_optional_offset_uses_broker_default_zero()
+    {
+        var results = new JsonArray();
+        for (var index = 0; index < 100; index++)
+            results.Add(new JsonObject { ["preview"] = new string('x', 100), ["line"] = index + 1 });
+        var source = new JsonObject { ["results"] = results, ["count"] = 100, ["truncated"] = true }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find matches."),
+            AssistantStepEntry("src-grep", 2, "provider_grep_default", "grep", "{\"query\":\"needle\",\"path\":\".\"}"),
+            ToolResultEntry("src-result", 3, "internal_grep_default", "provider_grep_default", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        using var projected = JsonDocument.Parse(messages![^1].Content);
+        var root = projected.RootElement;
+        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+    }
+
+    [Fact]
+    public void Oversized_read_output_history_uses_utf16_cursor_without_splitting_surrogates()
+    {
+        const int sourceOffset = 120;
+        const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var page = new string('s', 5_880) + "🙂" + new string('t', 300) + hiddenMarker;
+        var source = new JsonObject
+        {
+            ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
+            ["offset"] = sourceOffset,
+            ["limit"] = 7_000,
+            ["total_chars"] = 20_000,
+            ["page"] = page,
+            ["truncated"] = true,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the middle output marker."),
+            AssistantStepEntry("src-output", 2, "provider_output_1", "bash",
+                "{\"mode\":\"read_output\",\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
+            ToolResultEntry("src-result", 3, "internal_output_1", "provider_output_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visible = root.GetProperty("page").GetString()!;
+        _ = new UTF8Encoding(false, true).GetBytes(visible);
+        Assert.Equal("execution_0123456789abcdef0123456789abcdef", root.GetProperty("spool_id").GetString());
+        Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
+        Assert.Equal(20_000, root.GetProperty("total_chars").GetInt32());
+        Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_output_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
+    }
+
+    [Fact]
     public void Native_tool_exchange_uses_assistant_and_tool_messages()
     {
         var context = Snapshot(

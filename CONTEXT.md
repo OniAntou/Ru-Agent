@@ -98,6 +98,15 @@ and stable ordering. The Host runtime projection selects enabled
 `ModelVisible` definitions for both the prompt and the model-step `model_tools`.
 _Avoid_: treating a Broker manifest or adapter list as the model contract
 
+**Tool Output Projection**:
+A bounded, untrusted model-visible view of a durable Broker receipt. Structured
+`read`, `grep`, and terminal `read_output` projections retain their own cursor
+units (UTF-8 bytes, match results, and UTF-16 characters respectively); a cursor
+continues the same source or spool and never changes the receipt, tool authority,
+or approval state. Missing source identity fails closed when clipping needs a
+cursor. The bounded prompt may still omit older output exchanges.
+_Avoid_: treating projected output as a new receipt, complete history, or authority
+
 **Skill Manifest**:
 The declarative, bounded description of an allowed workflow, its named tools,
 scopes, ordered steps, schemas, and approval policy.

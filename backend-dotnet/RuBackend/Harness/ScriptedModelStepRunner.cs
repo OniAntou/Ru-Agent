@@ -22,12 +22,16 @@ namespace RuBackend.Harness;
 public sealed class ScriptedModelStepRunner : IModelStepRunner
 {
     public const string EnvironmentVariable = "RU_SCRIPTED_MODEL";
+    private const string ProjectionCursorPlaceholder = "$projection_next_offset";
+    private const string ProjectionSpoolIdPlaceholder = "$projection_spool_id";
 
     private readonly IReadOnlyList<AssistantStep> _steps;
     private readonly object _gate = new();
     private int _next;
 
     private ScriptedModelStepRunner(IReadOnlyList<AssistantStep> steps) => _steps = steps;
+
+    internal static ScriptedModelStepRunner FromJsonForTests(string json) => new(Parse(json));
 
     /// <summary>
     /// Builds a runner from the environment, or returns null when it is not requested.
@@ -56,6 +60,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     /// Each step is <c>{ "text": "...", "tool": { "id": "...", "version": "...",
     /// "arguments": { ... } } }</c>. <c>tool</c> is optional; a step with one finishes as
     /// tool calls so the runtime executes it, and a step without one finishes the turn.
+    /// In offline fixtures, <c>$projection_next_offset</c> resolves from the latest tool-result reference.
     /// </remarks>
     internal static IReadOnlyList<AssistantStep> Parse(string json)
     {
@@ -142,8 +147,139 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         // capabilities block is rendered for native function calling. There is no provider
         // here, so both renderings are tried and the one that validates is used: the
         // difference is a single block, and the check is exactly what decides between them.
+        step = ResolveProjectionCursor(step, request.PromptContext);
         var receipt = ComposeReceipt(request.PromptContext);
         return Task.FromResult(new ModelStepResult(step, receipt));
+    }
+
+    private AssistantStep ResolveProjectionCursor(AssistantStep step, SystemPromptContext promptContext)
+    {
+        var calls = step.ToolCalls.ToArray();
+        var changed = false;
+        var reference = promptContext.RuntimeContext.References.LastOrDefault(item => item.Kind == "tool_result");
+        for (var index = 0; index < calls.Length; index++)
+        {
+            var call = calls[index];
+            if (reference is null || call.Arguments.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var needsCursor = IsPlaceholder(call.Arguments, "offset", ProjectionCursorPlaceholder);
+            var needsSpoolId = IsPlaceholder(call.Arguments, "execution_id", ProjectionSpoolIdPlaceholder);
+            if (!needsCursor && !needsSpoolId)
+                continue;
+
+            var cursor = 0;
+            var hasMore = false;
+            if (needsCursor && !TryReadProjectionCursor(reference.Content, out cursor, out hasMore))
+                throw new InvalidOperationException("scripted_projection_cursor_unavailable");
+            if (needsCursor && !hasMore)
+            {
+                return TakeTerminalStep(step);
+            }
+
+            var arguments = JsonNode.Parse(call.Arguments.GetRawText())!.AsObject();
+            if (needsCursor)
+                arguments["offset"] = cursor;
+            if (needsSpoolId)
+                arguments["execution_id"] = ReadSpoolId(reference.Content);
+            using var parsedArguments = JsonDocument.Parse(arguments.ToJsonString());
+            calls[index] = new ModelToolCall(call.ProviderCallId, call.ToolId, call.ToolVersion, parsedArguments.RootElement);
+            changed = true;
+        }
+
+        return changed
+            ? new AssistantStep(step.Text, calls, step.FinishReason, step.EstimatedInputTokens, step.Usage)
+            : step;
+    }
+
+    private AssistantStep TakeTerminalStep(AssistantStep pagingStep)
+    {
+        lock (_gate)
+        {
+            while (_next < _steps.Count)
+            {
+                var terminal = _steps[_next++];
+                if (terminal.ToolCalls.Count == 1
+                    && terminal.ToolCalls[0].Arguments.ValueKind == JsonValueKind.Object
+                    && IsPlaceholder(terminal.ToolCalls[0].Arguments, "offset", ProjectionCursorPlaceholder))
+                {
+                    continue;
+                }
+
+                if (terminal.ToolCalls.Count > 0)
+                    throw new InvalidOperationException("scripted_projection_terminal_step_invalid");
+                return new AssistantStep(terminal.Text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop,
+                    terminal.EstimatedInputTokens, terminal.Usage);
+            }
+        }
+
+        return new AssistantStep(pagingStep.Text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop,
+            pagingStep.EstimatedInputTokens, pagingStep.Usage);
+    }
+
+    private static bool IsPlaceholder(JsonElement arguments, string propertyName, string placeholder) =>
+        arguments.TryGetProperty(propertyName, out var value)
+        && value.ValueKind == JsonValueKind.String
+        && string.Equals(value.GetString(), placeholder, StringComparison.Ordinal);
+
+    private static bool TryReadProjectionCursor(string content, out int cursor, out bool hasMore)
+    {
+        cursor = 0;
+        hasMore = false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            if (root.TryGetProperty("projection_next_offset", out var cursorProperty)
+                && cursorProperty.TryGetInt32(out var value)
+                && value >= 0
+                && root.TryGetProperty("projection_has_more", out var hasMoreProperty)
+                && (hasMoreProperty.ValueKind == JsonValueKind.True || hasMoreProperty.ValueKind == JsonValueKind.False))
+            {
+                cursor = value;
+                hasMore = hasMoreProperty.ValueKind == JsonValueKind.True;
+                return true;
+            }
+
+            if (IsCompleteStructuredResult(root))
+                return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static bool IsCompleteStructuredResult(JsonElement root) =>
+        root.TryGetProperty("truncated", out var truncated)
+        && truncated.ValueKind == JsonValueKind.False
+        && ((root.TryGetProperty("results", out _) && root.TryGetProperty("count", out _))
+            || (root.TryGetProperty("content", out _) && root.TryGetProperty("path", out _))
+            || (root.TryGetProperty("page", out _) && root.TryGetProperty("spool_id", out _)));
+
+    private static string ReadSpoolId(string content)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            if (document.RootElement.TryGetProperty("spool_id", out var spool)
+                && spool.ValueKind == JsonValueKind.String
+                && spool.GetString() is { Length: > 0 and <= 256 } value)
+            {
+                return value;
+            }
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("scripted_projection_cursor_unavailable");
+        }
+
+        throw new InvalidOperationException("scripted_projection_cursor_unavailable");
     }
 
     /// <summary>

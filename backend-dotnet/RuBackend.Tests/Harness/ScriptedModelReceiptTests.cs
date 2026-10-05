@@ -1,4 +1,5 @@
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness;
 using Xunit;
@@ -80,5 +81,85 @@ public sealed class ScriptedModelReceiptTests
         var text = SystemPromptComposer.Compose(context, nativeToolCalling: false).Receipt;
 
         Assert.NotEqual(native.PromptSha256, text.PromptSha256);
+    }
+
+    [Fact]
+    public async Task Scripted_projection_cursor_placeholder_uses_the_latest_runtime_reference()
+    {
+        var runner = ScriptedModelStepRunner.FromJsonForTests("""
+            [
+              { "text": "Start deterministic trace." },
+              { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": "$projection_next_offset" } } }
+            ]
+            """);
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            ContextWithProjectionCursor(8_192),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64));
+
+        await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var call = Assert.Single(result.Step.ToolCalls);
+        Assert.Equal(8_192, call.Arguments.GetProperty("offset").GetInt32());
+    }
+
+    [Fact]
+    public async Task Scripted_paging_stops_at_complete_reference_and_uses_following_final_step()
+    {
+        var runner = ScriptedModelStepRunner.FromJsonForTests("""
+            [
+              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": "$projection_next_offset" } } },
+              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": "$projection_next_offset" } } },
+              { "text": "The deterministic page sequence ended." }
+            ]
+            """);
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            ContextWithCompleteGrepReference(),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64));
+
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Empty(result.Step.ToolCalls);
+        Assert.Equal("The deterministic page sequence ended.", result.Step.Text);
+    }
+
+    private static SystemPromptContext ContextWithProjectionCursor(int cursor)
+    {
+        var context = Context();
+        return new SystemPromptContext(
+            context.SchemaVersion,
+            context.AgentProfile,
+            context.Preset,
+            context.Environment,
+            context.InstructionBlocks,
+            context.Capabilities,
+            new PromptRuntimeContext(null, null,
+            [new PromptReference("tool_result", "untrusted tool result",
+                $"{{\"projection_next_offset\":{cursor},\"projection_has_more\":true}}") ]));
+    }
+
+    private static SystemPromptContext ContextWithCompleteGrepReference()
+    {
+        var context = Context();
+        return new SystemPromptContext(
+            context.SchemaVersion,
+            context.AgentProfile,
+            context.Preset,
+            context.Environment,
+            context.InstructionBlocks,
+            context.Capabilities,
+            new PromptRuntimeContext(null, null,
+            [new PromptReference("tool_result", "untrusted tool result",
+                "{\"results\":[],\"count\":0,\"truncated\":false}") ]));
     }
 }

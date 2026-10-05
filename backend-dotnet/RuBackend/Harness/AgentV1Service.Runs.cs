@@ -444,8 +444,8 @@ public sealed partial class AgentV1Service
         {
             RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
             var resp = isTrusted
-                ? MapRun(storeResult.Run)
-                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run)
+                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(201, resp);
         }
 
@@ -457,8 +457,8 @@ public sealed partial class AgentV1Service
                 RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
             }
             var resp = isTrusted
-                ? MapRun(storeResult.Run)
-                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run)
+                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(200, resp);
         }
 
@@ -1007,6 +1007,27 @@ public sealed partial class AgentV1Service
         LastSequence: run.LastSequence,
         CreatedAt: run.CreatedAt.ToUniversalTime().ToString("O"),
         UpdatedAt: run.UpdatedAt.ToUniversalTime().ToString("O"),
+        TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
+        TerminalErrorCode: run.TerminalErrorCode,
+        TrustRequestId: trustRequestId,
+        DisplayIdentityHash: displayIdentityHash);
+
+    private static CreateAgentRunResponse MapCreateRun(
+        AgentRun run,
+        string? trustRequestId = null,
+        string? displayIdentityHash = null) => new(
+        RunId: run.RunId.Value,
+        SessionId: run.SessionId.Value,
+        WorkspaceId: run.WorkspaceId.Value,
+        Status: MapRunState(run.Status),
+        Preset: AgentPermissionPresetMapper.ToWireValue(run.Preset),
+        CreatedAt: run.CreatedAt.ToUniversalTime().ToString("O"),
+        UpdatedAt: run.UpdatedAt.ToUniversalTime().ToString("O"),
+        HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
+        PolicySnapshotVersion: run.PolicySnapshotVersion,
+        PolicySnapshotSha256: run.PolicySnapshotSha256,
+        Version: run.Version,
+        LastSequence: run.LastSequence,
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,

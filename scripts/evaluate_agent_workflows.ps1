@@ -59,7 +59,7 @@ namespace RuWorkflow {
         private readonly int limit;
         private bool exceeded;
         public BoundedProcessOutput(int limit) { this.limit = limit; }
-        public DataReceivedEventHandler Handler => Capture;
+        public DataReceivedEventHandler Handler { get { return Capture; } }
         public bool Exceeded { get { lock (gate) return exceeded; } }
         public string Text { get { lock (gate) return text.ToString(); } }
         private void Capture(object sender, DataReceivedEventArgs args) {
@@ -84,7 +84,12 @@ function Get-WorkspaceHash($Files) {
     }
 
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($builder.ToString())
-    return [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
 }
 
 function Get-FixtureContent($Entry) {
@@ -315,7 +320,10 @@ function Invoke-ScenarioCli($Scenario, $ScenarioWorkspace, $HostSession, [DateTi
     $process = [System.Diagnostics.Process]::Start($start)
     try {
         $capture = Enable-BoundedProcessOutput $process
-        if (-not $process.WaitForExit((Get-RemainingSeconds $Deadline) * 1000)) { throw "case timeout: CLI exceeded the workflow deadline." }
+        if (-not $process.WaitForExit((Get-RemainingSeconds $Deadline) * 1000)) {
+            $progress = Get-CliProgressSummary $capture.stdout.Text
+            throw "case timeout: CLI exceeded the workflow deadline. $progress"
+        }
         $process.WaitForExit()
         if ($capture.stdout.Exceeded -or $capture.stderr.Exceeded) { throw "CLI output exceeded its collection bounds." }
         if ($process.ExitCode -ne 0) { throw "CLI exited $($process.ExitCode): $($capture.stderr.Text)" }
@@ -327,11 +335,28 @@ function Invoke-ScenarioCli($Scenario, $ScenarioWorkspace, $HostSession, [DateTi
     }
 }
 
-function Test-ScriptedEditToolCycle($Scenario, $ScenarioWorkspace, $Events) {
-    $metrics = Get-ScriptedEditMetrics $Scenario $Events
+function Get-CliProgressSummary([string]$Output) {
+    $events = @()
+    foreach ($line in ($Output -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try { $events += $line | ConvertFrom-Json } catch { }
+    }
+    $types = @($events | ForEach-Object event_type | Where-Object { $_ } | Select-Object -Unique) -join ","
+    $statuses = @($events | Where-Object event_type -eq "run.state_changed" | ForEach-Object status | Where-Object { $_ }) -join ","
+    $codes = @($events | ForEach-Object code | Where-Object { $_ } | Select-Object -Unique) -join ","
+    $approvals = @($events | Where-Object event_type -eq "approval.requested").Count
+    return "CLI progress: events=[$types], terminal_statuses=[$statuses], codes=[$codes], approvals=$approvals."
+}
+
+function Test-ScriptedWorkflow($Scenario, $ScenarioWorkspace, $Events) {
+    switch ($Scenario.runnerKind) {
+        "scripted_edit_tool_cycle" { $metrics = Get-ScriptedEditMetrics $Scenario $Events }
+        "scripted_paging_workflow" { $metrics = Get-ScriptedPagingMetrics $Scenario $Events }
+        default { throw "Scenario '$($Scenario.id)' has no registered deterministic executor." }
+    }
     $filesMatch = Test-ScenarioFiles $Scenario $ScenarioWorkspace.workspace $ScenarioWorkspace.files
     if (-not $filesMatch) {
-        throw "Oracle failure: scripted edit sequence did not produce the exact expected workspace."
+        throw "Oracle failure: scripted workflow did not preserve its expected workspace files."
     }
     return $metrics
 }
@@ -351,7 +376,7 @@ function Invoke-ScriptedScenario($Scenario, $BuildEvidence) {
         $BuildEvidence.Add((Invoke-DotnetBuild (Join-Path $repoRoot "backend-dotnet/RuAgent.Cli/RuAgent.Cli.csproj") $deadline))
         $managedHost = Start-ScenarioHost $scenarioRoot $scenarioWorkspace $deadline
         $cli = Invoke-ScenarioCli $Scenario $scenarioWorkspace $managedHost $deadline
-        $metrics = Test-ScriptedEditToolCycle $Scenario $scenarioWorkspace $cli.events
+        $metrics = Test-ScriptedWorkflow $Scenario $scenarioWorkspace $cli.events
         $outcome = "scripted_wiring_pass"
     } catch {
         $failure = $_.Exception.Message
@@ -465,8 +490,7 @@ $results.Add([pscustomobject]@{
 if ($RunScripted) {
     $scenario = $fixture.scenarios | Where-Object id -eq $ScenarioId | Select-Object -First 1
     if ($null -eq $scenario) { throw "Unknown scenario id '$ScenarioId'." }
-    if ($scenario.baselineStatus -eq "unmet") { throw "Scenario '$ScenarioId' is an unmet capability and cannot be run as a pass." }
-    if ($scenario.runnerKind -ne "scripted_edit_tool_cycle" -or $null -eq $scenario.scriptedSteps) { throw "Scenario '$ScenarioId' has no registered deterministic executor." }
+    if ($scenario.runnerKind -notin @("scripted_edit_tool_cycle", "scripted_paging_workflow") -or $null -eq $scenario.scriptedSteps) { throw "Scenario '$ScenarioId' has no registered deterministic executor." }
     $results.Add((Invoke-ScriptedScenario $scenario $buildEvidence))
 }
 

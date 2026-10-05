@@ -1,4 +1,5 @@
 using RuAgent.Protocol.Harness;
+using RuAgent.Client;
 using RuApp.Services;
 using Xunit;
 
@@ -80,4 +81,93 @@ public sealed class AgentRunModelTests
             }));
         Assert.Null(RetainedRunPresentation.PublishedContextWindow(run with { ContextWindowTokens = null }, "sess_1"));
     }
+
+    [Fact]
+    public void Handoff_is_explicitly_source_dated_partial_and_workspace_aware()
+    {
+        var source = CreateWorkStateRun();
+
+        var attached = WorkStateHandoffContent.Create(source, "ws_other");
+
+        Assert.NotNull(attached);
+        Assert.Contains("Latest state source run: run_source", attached);
+        Assert.Contains("Selected run: run_selected", attached);
+        Assert.Contains("Last updated: 2026-10-04T12:00:00Z", attached);
+        Assert.Contains("different workspace", attached);
+        Assert.Contains("partial", attached);
+        Assert.Contains("unfinished task", attached);
+        Assert.Contains("old hashes are historical", attached);
+    }
+
+    [Fact]
+    public void Handoff_refuses_missing_state_and_oversized_preview()
+    {
+        var source = CreateWorkStateRun();
+
+        Assert.Null(WorkStateHandoffContent.Create(source with { WorkStateStatus = "unavailable" }, "ws_1"));
+        Assert.Null(WorkStateHandoffContent.Create(source with { WorkStatePreview = new string('x', 20_000) }, "ws_1"));
+        Assert.Contains("target workspace identity is unknown",
+            WorkStateHandoffContent.Create(source, null)!);
+    }
+
+    [Fact]
+    public void Handoff_validation_binds_selection_and_current_draft_owner()
+    {
+        var source = CreateWorkStateRun();
+        var target = new WorkStateHandoffTarget("sess_target", "ws_target", 3, 8, "draft", ["attachment-1"]);
+
+        Assert.False(WorkStateHandoffCoordinator.Prepare(source, "run_other", "sess_1", "ws_target").IsReady);
+        Assert.False(WorkStateHandoffCoordinator.Prepare(source, "run_selected", "sess_other", "ws_target").IsReady);
+        Assert.True(WorkStateHandoffCoordinator.Prepare(source, "run_selected", "sess_1", "ws_target").IsReady);
+        Assert.True(WorkStateHandoffCoordinator.IsCurrent(
+            target, "sess_target", "ws_target", 3, 8, "draft", ["attachment-1"]));
+        Assert.False(WorkStateHandoffCoordinator.IsCurrent(
+            target, "sess_changed", "ws_target", 3, 8, "draft", ["attachment-1"]));
+        Assert.False(WorkStateHandoffCoordinator.IsCurrent(
+            target, "sess_target", "ws_target", 3, 8, "edited draft", ["attachment-1"]));
+        Assert.False(WorkStateHandoffCoordinator.IsCurrent(
+            target, "sess_target", "ws_target", 3, 8, "draft", []));
+    }
+
+    [Fact]
+    public async Task Delayed_handoff_read_cannot_transfer_context_after_target_changes()
+    {
+        var pendingRead = new TaskCompletionSource<AgentRunModel?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool isTargetCurrent = true;
+        var preparationTask = WorkStateHandoffCoordinator.PrepareSelectedRunAsync(
+            "run_selected", "sess_1", "ws_target",
+            (_, _) => pendingRead.Task,
+            () => isTargetCurrent,
+            CancellationToken.None);
+
+        isTargetCurrent = false;
+        pendingRead.SetResult(CreateWorkStateRun());
+        var preparation = await preparationTask;
+
+        Assert.False(preparation.IsReady);
+        Assert.Null(preparation.Content);
+        Assert.Contains("target chat changed", preparation.Error);
+    }
+
+    [Fact]
+    public async Task Failed_handoff_read_returns_named_unavailable_result()
+    {
+        var preparation = await WorkStateHandoffCoordinator.PrepareSelectedRunAsync(
+            "run_selected", "sess_1", "ws_target",
+            (_, _) => throw new InvalidOperationException("private response detail"),
+            () => true,
+            CancellationToken.None);
+
+        Assert.False(preparation.IsReady);
+        Assert.Equal("The selected saved run could not be read.", preparation.Error);
+        Assert.DoesNotContain("private response detail", preparation.Error);
+    }
+
+    private static AgentRunModel CreateWorkStateRun() => AgentRunModel.FromGetResponse(new GetAgentRunResponse(
+        "run_selected", "sess_1", "ws_1", "succeeded", null, "standard", 1, "sha", 1, 5,
+        "2026-10-04", "2026-10-04", "2026-10-04", null, null, "hash",
+        WorkStateStatus: "available", WorkStatePartial: true, WorkStateIntentOmitted: true,
+        WorkStatePreviewOmitted: true, WorkStateSourceRunId: "run_source",
+        WorkStateSourceEventId: "evt_7", WorkStateUpdatedAt: "2026-10-04T12:00:00Z",
+        WorkStatePreview: "unfinished task; stale file hash"));
 }

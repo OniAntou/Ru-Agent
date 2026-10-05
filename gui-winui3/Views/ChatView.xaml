@@ -1061,6 +1061,17 @@
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
 
+                        <Button x:Name="HandoffWorkStateButton"
+                                Grid.Column="1"
+                                Click="OnHandoffWorkStateClick"
+                                Padding="8,4"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Choose a saved run context to hand off">
+                            <TextBlock Text="Handoff" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="1"
                                 Visibility="Collapsed"

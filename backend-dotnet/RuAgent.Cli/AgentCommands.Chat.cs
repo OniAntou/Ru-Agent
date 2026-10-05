@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Cli.Attachments;
 using RuAgent.Cli.TerminalGui;
 using RuAgent.Client;
 using RuAgent.Protocol;
@@ -165,6 +166,7 @@ public sealed partial class AgentCommands
         var pendingImages = new List<Images.CliImageAttachment>();
         var pendingTexts = new List<Attachments.CliTextAttachment>();
         ChatSubmissionSnapshot? retryableSubmission = null;
+        var handoffWorkflow = new WorkStateHandoffWorkflow();
         void HoldSubmissionForRetry(ChatSubmissionSnapshot? submission)
         {
             if (submission is null)
@@ -2544,6 +2546,52 @@ public sealed partial class AgentCommands
                     }
 
                     await AttachFileAsync(arg).ConfigureAwait(false);
+                    return true;
+                }
+                if (slashCmd is "/handoff")
+                {
+                    if (string.Equals(arg, "attach", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!handoffWorkflow.TryAttach(
+                                sessionId,
+                                pendingTexts,
+                                pendingImages.Count + pendingTexts.Count,
+                                pendingImages.Sum(image => image.ByteSize) + pendingTexts.Sum(attachment => attachment.ByteSize),
+                                ChatProjectFileWorkflow.MaxPendingAttachments))
+                        {
+                            await WriteDiagnosticLineAsync(_err, "handoff_attach_failed: preview missing, target session changed, or attachment limit reached").ConfigureAwait(false);
+                            return true;
+                        }
+
+                        RefreshAttachmentLabels();
+                        await WriteDiagnosticLineAsync(humanOut, "saved context attached; it stays in the pending list until the run is accepted").ConfigureAwait(false);
+                        return true;
+                    }
+                    if (string.Equals(arg, "cancel", StringComparison.OrdinalIgnoreCase))
+                    {
+                        handoffWorkflow.Clear();
+                        await WriteDiagnosticLineAsync(humanOut, "saved context preview cleared").ConfigureAwait(false);
+                        return true;
+                    }
+                    if (string.IsNullOrWhiteSpace(arg))
+                    {
+                        await WriteDiagnosticLineAsync(_err, "usage: /handoff <run-id> | /handoff attach | /handoff cancel").ConfigureAwait(false);
+                        return true;
+                    }
+
+                    var preview = await handoffWorkflow.PreviewAsync(
+                        arg,
+                        sessionId,
+                        (runId, ct) => _agentClient.GetRunAsync(runId, ct),
+                        () => !string.IsNullOrEmpty(sessionId),
+                        cancellationToken).ConfigureAwait(false);
+                    if (!preview.IsReady)
+                    {
+                        await WriteDiagnosticLineAsync(_err, preview.Error ?? "handoff_unavailable").ConfigureAwait(false);
+                        return true;
+                    }
+                    await WriteDiagnosticLineAsync(humanOut, preview.Preview!).ConfigureAwait(false);
+                    await WriteDiagnosticLineAsync(humanOut, "Type /handoff attach to add this preview to the current prompt, or /handoff cancel.").ConfigureAwait(false);
                     return true;
                 }
                 if (slashCmd is "/attachments")

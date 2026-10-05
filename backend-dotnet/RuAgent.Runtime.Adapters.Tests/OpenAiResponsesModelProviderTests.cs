@@ -26,13 +26,14 @@ public sealed class OpenAiResponsesModelProviderTests
             Content = new StringContent(SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } }), Encoding.UTF8, "text/event-stream")
         });
         var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
-        _ = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+        _ = await CollectAsync(provider.GenerateAsync(Request(maximumOutputTokens: 4096), CancellationToken.None));
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("test-model", body["model"]!.GetValue<string>());
         Assert.Equal("system prompt", body["instructions"]!.GetValue<string>());
         Assert.True(body["stream"]!.GetValue<bool>());
         Assert.False(body["store"]!.GetValue<bool>());
         Assert.NotNull(body["input"]);
+        Assert.Equal(4096, body["max_output_tokens"]!.GetValue<int>());
     }
 
     [Fact]
@@ -647,14 +648,16 @@ public sealed class OpenAiResponsesModelProviderTests
         Assert.Equal("vision_unsupported", ex.Code);
     }
 
-    private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null) => new(
+    private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null,
+        int? maximumOutputTokens = null) => new(
         "test-model",
         "system prompt",
         "hello",
         turns ?? Array.Empty<ModelTurn>(),
         settings ?? new JsonObject(),
         new Uri("https://provider.invalid/v1/responses"),
-        "synthetic-openai");
+        "synthetic-openai",
+        maximumOutputTokens);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

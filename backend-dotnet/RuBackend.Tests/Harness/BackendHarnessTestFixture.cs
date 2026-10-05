@@ -23,7 +23,8 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
             Options,
             new HarnessPayloadCryptography(_keyStore),
             KnownSecretRedactor.Empty);
-        EventStore = new SqliteHarnessEventStore(Options, PayloadStore);
+        EventStore = new SqliteHarnessEventStore(Options, PayloadStore,
+            new SessionWorkStateStore(Options, new SessionWorkStateCryptography(_keyStore)));
     }
 
     public static readonly DateTimeOffset Timestamp =

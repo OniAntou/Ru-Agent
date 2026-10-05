@@ -9,6 +9,7 @@ public sealed record ModelRequest
     private const int MaxModelMessagesBytes = 512 * 1024;
     private const int MaxAnthropicContentBlocks = 64;
     private const int MaxNativeArgumentsBytes = 64 * 1024;
+    public const int MaximumSerializedBodyBytes = 24 * 1024 * 1024;
     public ModelRequest(
         string model,
         string systemPrompt,
@@ -21,7 +22,9 @@ public sealed record ModelRequest
         IReadOnlyList<ModelImage>? images = null,
         IReadOnlyList<JsonObject>? responsesInputItems = null,
         bool nativeToolCalling = false,
-        IReadOnlyList<JsonObject>? anthropicMessages = null)
+        IReadOnlyList<JsonObject>? anthropicMessages = null,
+        bool useMaxCompletionTokens = false,
+        string? preparedBodyJson = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -135,6 +138,11 @@ public sealed record ModelRequest
         Endpoint = endpoint;
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
         MaximumOutputTokens = maximumOutputTokens;
+        UseMaxCompletionTokens = useMaxCompletionTokens;
+        if (preparedBodyJson is not null
+            && Encoding.UTF8.GetByteCount(preparedBodyJson) > MaximumSerializedBodyBytes)
+            throw new ArgumentException("Serialized provider body exceeds the adapter cap.", nameof(preparedBodyJson));
+        PreparedBodyJson = preparedBodyJson;
         Images = Array.AsReadOnly(images is null ? Array.Empty<ModelImage>() : images.ToArray());
         ResponsesInputItems = Array.AsReadOnly(responsesInputItems?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
         NativeToolCalling = nativeToolCalling;
@@ -156,6 +164,15 @@ public sealed record ModelRequest
     public string Credential { get; }
 
     public int? MaximumOutputTokens { get; }
+
+    public bool UseMaxCompletionTokens { get; }
+
+    public string? PreparedBodyJson { get; }
+
+    public ModelRequest WithPreparedBodyJson(string body) => new(
+        Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
+        Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
+        body);
 
     public IReadOnlyList<ModelImage> Images { get; }
 

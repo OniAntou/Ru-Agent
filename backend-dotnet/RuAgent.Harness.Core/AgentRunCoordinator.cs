@@ -141,14 +141,23 @@ public sealed class AgentRunCoordinator
         var context = await _contextAssembler
             .AssembleAsync(runId, cancellationToken)
             .ConfigureAwait(false);
+        var modelStepId = _ids.NewModelStepId();
         AgentRunCompaction.ContextPreflightResult preflight;
         try
         {
             preflight = await _compaction.PreflightContextAsync(
                     run,
                     context,
-                    cancellationToken)
+                    cancellationToken,
+                    (currentRun, currentContext, token) => _invocation.PrepareForBudgetAsync(
+                        currentRun, currentContext, modelStepId, token))
                 .ConfigureAwait(false);
+        }
+        catch (ModelStepPreparationException error)
+        {
+            var failed = await _lifecycle.FailAsync(run.RunId, error.Code, cancellationToken)
+                .ConfigureAwait(false);
+            return AgentRunStepResult.Blocked(failed, error.Code);
         }
         catch (ModelContextLimitResolutionException error)
         {
@@ -179,7 +188,6 @@ public sealed class AgentRunCoordinator
         }
 
         context = preflight.Context ?? context;
-        var modelStepId = _ids.NewModelStepId();
 
         var reservation = AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
         var startEvent = new HarnessEventIntent(
@@ -209,7 +217,8 @@ public sealed class AgentRunCoordinator
                     run,
                     context,
                     modelStepId,
-                    cancellationToken)
+                    cancellationToken,
+                    preflight.PreparedRequest)
                 .ConfigureAwait(false);
         }
         catch (ModelRepairableStepException error)

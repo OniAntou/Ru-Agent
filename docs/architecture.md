@@ -99,6 +99,19 @@ resolution failure before the first model call becomes a bounded durable run
 failure. Scripted offline runs do not register this resolver and do not access
 provider catalogs or credentials.
 
+Before each provider-backed model step, the selected adapter serializes the full
+request body once. Preflight measures that same bounded JSON body, including
+system instructions, tool declarations, typed history, current prompt, images,
+and native continuation items; dispatch reuses the prepared serialization. The
+pinned output reserve is subtracted once from the exact or conservative window,
+with the context policy's safety margin applied afterward. Admission estimates
+text conservatively at one token per four UTF-8 bytes and assigns a fixed
+4,096-token allowance per image; this is a bounded estimate, not provider-tokenizer
+output. Image base64 remains included in the serialized-wire byte cap. If
+compaction changes the request, the Host rebuilds and remeasures it. Workflow
+state is a separate history message, while the final current prompt remains
+distinct and is rejected with a bounded size error rather than prefix-clipped.
+
 New OpenAI Responses and Anthropic Messages pins enable native tool calling only
 for exact models whose matching protocol capability declares it. Legacy pins
 keep their fixed protocol calling mode, and unknown models do not gain support
@@ -137,6 +150,21 @@ batch statements. Legacy-schema fixtures remove later artifacts before testing
 upgrade and rollback; they do not reinterpret a newer database as an older one.
 Schema v15 adds the partial run/kind/sequence index used for bounded provider
 continuation rehydration, including the v14 upgrade path.
+Schema v16 also adds a partial session-receipt index; a bounded freshness query
+compares canonical receipt event order with the encrypted state source. A newer
+receipt that could not be represented because of a bounded reducer/write
+failure is projected as partial, without replaying the tool.
+
+Schema v16 adds encrypted `SessionWorkState` rows keyed by session and workspace.
+AES-GCM associated data binds the source run/event and version to the current
+workspace display-identity hash; a changed workspace identity fails closed.
+Run creation writes the bounded user-goal snapshot in the same transaction as
+its source prompt event. A successful durable `todo_write` receipt updates only
+untrusted model task candidates in the same receipt transaction. Every fact
+retains its own source run/event provenance, and session deletion removes the
+state in the artifact deletion transaction. The state is projected as untrusted
+workflow guidance on model context loads; it carries no permissions or opaque
+provider continuation data.
 
 ## Agent autonomy and trust boundary
 

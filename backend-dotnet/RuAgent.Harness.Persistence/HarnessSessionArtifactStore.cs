@@ -83,6 +83,13 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
                 "DELETE FROM agent_session_settings WHERE session_id = $session_id";
             deleteSetting.Parameters.AddWithValue("$session_id", sessionId);
             await deleteSetting.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            await using var deleteWorkState = connection.CreateCommand();
+            deleteWorkState.Transaction = transaction;
+            deleteWorkState.CommandText =
+                "DELETE FROM agent_session_work_states WHERE session_id = $session_id";
+            deleteWorkState.Parameters.AddWithValue("$session_id", sessionId);
+            await deleteWorkState.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return new HarnessSessionArtifactDeleteResult(closedRuns, deletedRuns);
         }

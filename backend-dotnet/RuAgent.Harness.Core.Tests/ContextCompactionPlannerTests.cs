@@ -127,11 +127,124 @@ public sealed class ContextCompactionPlannerTests
         Assert.True(plan.AfterTokens < plan.BeforeTokens);
     }
 
+    [Fact]
+    public async Task Planner_compacts_completed_multi_call_groups_as_a_unit()
+    {
+        using var firstArguments = JsonDocument.Parse("{}");
+        using var secondArguments = JsonDocument.Parse("{}");
+        var calls = new[]
+        {
+            new ModelToolCall("provider-call-a", "files.read", "1.0.0", firstArguments.RootElement),
+            new ModelToolCall("provider-call-b", "files.read", "1.0.0", secondArguments.RootElement),
+        };
+        var entries = new[]
+        {
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('h', 2_000)),
+            ModelContextEntry.Assistant("assistant-batch", 2,
+                new AssistantStep("checking two files", calls, AssistantFinishReason.ToolCalls, 20)),
+            ModelContextEntry.ToolResult("receipt-a", 3, Receipt("a", "provider-call-a"), new string('a', 1_000)),
+            ModelContextEntry.ToolResult("receipt-b", 4, Receipt("b", "provider-call-b"), new string('b', 1_000)),
+            ModelContextEntry.Text("current", 5, ModelContextRole.User, "keep current prompt"),
+        };
+        var snapshot = await AssembleAsync(entries);
+        var before = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var decision = new ContextBudgetDecision(before, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(snapshot, decision,
+            "compact-completed-batch", ContextCompactionReason.Automatic);
+
+        Assert.NotNull(plan);
+        var groupIds = new HashSet<string>(StringComparer.Ordinal) { "assistant-batch", "receipt-a", "receipt-b" };
+        Assert.Equal(groupIds, plan!.CoveredEntries.Where(entry => groupIds.Contains(entry.SourceId))
+            .Select(entry => entry.SourceId).ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(groupIds, plan.CoveredEntries.Where(entry => groupIds.Contains(entry.SourceId))
+            .Select(entry => entry.SourceId).ToHashSet(StringComparer.Ordinal));
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "current");
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "current");
+        Assert.Contains(plan.CoveredRanges, range => range.SourceId == "assistant-batch" && range.StartSequence == 2 && range.EndSequence == 2);
+        Assert.Contains(plan.CoveredRanges, range => range.SourceId == "receipt-a" && range.StartSequence == 3 && range.EndSequence == 3);
+        Assert.Contains(plan.CoveredRanges, range => range.SourceId == "receipt-b" && range.StartSequence == 4 && range.EndSequence == 4);
+    }
+
+    [Fact]
+    public async Task Planner_does_not_reuse_later_receipt_for_an_unresolved_repeated_call_id()
+    {
+        using var arguments = JsonDocument.Parse("{}");
+        var repeatedCall = new ModelToolCall("reused-provider-id", "files.read", "1.0.0", arguments.RootElement);
+        var entries = new[]
+        {
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('h', 2_000)),
+            ModelContextEntry.Assistant("first-batch", 2,
+                new AssistantStep("first", [repeatedCall], AssistantFinishReason.ToolCalls, 20)),
+            ModelContextEntry.Assistant("second-batch", 3,
+                new AssistantStep("second", [repeatedCall], AssistantFinishReason.ToolCalls, 20)),
+            ModelContextEntry.ToolResult("second-receipt", 4, Receipt("c", "reused-provider-id"), "second result"),
+            ModelContextEntry.Text("current", 5, ModelContextRole.User, "keep current prompt"),
+        };
+        var snapshot = await AssembleAsync(entries);
+        var before = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var decision = new ContextBudgetDecision(before, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(snapshot, decision,
+            "compact-repeated-call-id", ContextCompactionReason.Automatic);
+
+        Assert.NotNull(plan);
+        Assert.DoesNotContain(plan!.CoveredEntries, entry => entry.SourceId == "first-batch");
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "second-batch");
+        Assert.DoesNotContain(plan.CoveredEntries, entry => entry.SourceId == "second-receipt");
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "first-batch");
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "second-batch");
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "second-receipt");
+    }
+
+    [Fact]
+    public async Task Planner_compacts_separate_completed_batches_with_repeated_call_id()
+    {
+        using var arguments = JsonDocument.Parse("{}");
+        var repeatedCall = new ModelToolCall("reused-provider-id", "files.read", "1.0.0", arguments.RootElement);
+        var entries = new[]
+        {
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('h', 2_000)),
+            ModelContextEntry.Assistant("first-batch", 2,
+                new AssistantStep("first", [repeatedCall], AssistantFinishReason.ToolCalls, 20)),
+            ModelContextEntry.ToolResult("first-receipt", 3, Receipt("d", "reused-provider-id"), "first result"),
+            ModelContextEntry.Assistant("second-batch", 4,
+                new AssistantStep("second", [repeatedCall], AssistantFinishReason.ToolCalls, 20)),
+            ModelContextEntry.ToolResult("second-receipt", 5, Receipt("e", "reused-provider-id"), "second result"),
+            ModelContextEntry.Assistant("final", 6,
+                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)),
+            ModelContextEntry.Text("current", 7, ModelContextRole.User, "keep current prompt"),
+        };
+        var snapshot = await AssembleAsync(entries);
+        var before = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var decision = new ContextBudgetDecision(before, 1, 1, 1, 1, true, ContextCompactionStrategy.Normal);
+
+        var plan = ContextCompactionPlanner.Plan(snapshot, decision,
+            "compact-valid-repeated-call-id", ContextCompactionReason.Automatic);
+
+        Assert.NotNull(plan);
+        var expected = new HashSet<string>(StringComparer.Ordinal)
+            { "first-batch", "first-receipt", "second-batch", "second-receipt" };
+        Assert.Equal(expected, plan!.CoveredEntries.Where(entry => expected.Contains(entry.SourceId))
+            .Select(entry => entry.SourceId).ToHashSet(StringComparer.Ordinal));
+        Assert.Contains(plan.RemainingEntries, entry => entry.SourceId == "current");
+    }
+
     private static async Task<ModelContextSnapshot> AssembleAsync(params ModelContextEntry[] entries)
     {
         var source = new FixedSource(entries);
         return await new AgentContextAssembler(source).AssembleAsync(RunId, CancellationToken.None);
     }
+
+    private static ToolExecutionReceipt Receipt(string suffix, string providerCallId) =>
+        new(
+            new ExecutionId($"exec_{suffix}{new string('0', 31)}"),
+            new ToolCallId($"call_{suffix}{new string('0', 31)}"),
+            ToolExecutionOutcome.Succeeded,
+            "ok",
+            null,
+            false,
+            providerCallId: providerCallId);
 
     private sealed class FixedSource(ModelContextEntry[] entries) : IModelContextSource
     {

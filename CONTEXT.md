@@ -62,6 +62,16 @@ artifacts only when the application envelope returns `status: "ok"`; an HTTP
 success status alone is not deletion proof.
 _Avoid_: treating an HTTP 200 response as a successful delete
 
+**Session Work State**:
+An encrypted, bounded workflow projection keyed by Conversation Session and
+canonical Workspace identity. User intent remains linked to its original run
+and event; model task candidates are untrusted and are persisted only from a
+successful durable `todo_write` receipt. File observations and verification
+records require receipt provenance. It is context guidance only: it carries no
+approval, grant, credential, or execution authority, and a workspace identity
+change makes the state unavailable.
+_Avoid_: global memory, model prose as proof, or work state as permission
+
 **RuAgentBroker**:
 The private, process-isolated .NET service — the Host's only managed child
 process — that validates tool manifests, session scopes, approval state, and

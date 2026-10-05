@@ -497,6 +497,26 @@ public sealed partial class AgentV1Service
         {
             ProviderBackend = providerSelection?.Selection?.Backend,
             ProviderModel = providerSelection?.Selection?.Model,
+            ProviderProtocol = providerSelection?.Selection?.Protocol,
+            ProviderModelLabel = providerSelection?.Selection?.ModelLabel,
+            ProviderCallingMode = providerSelection?.Selection?.CallingMode,
+            ContextWindowTokens = providerSelection?.Selection?.ContextWindowTokens,
+            ContextWindowSource = providerSelection?.Selection?.ContextWindowSource,
+            ContextWindowVersion = providerSelection?.Selection?.ContextWindowVersion,
+            OutputTokenReserve = providerSelection?.Selection?.OutputTokenReserve,
+        };
+        var workState = await ProjectSessionWorkStateAsync(run, cancellationToken).ConfigureAwait(false);
+        response = response with
+        {
+            WorkStateStatus = workState.Status,
+            WorkStateVersion = workState.Version,
+            WorkStatePartial = workState.IsPartial,
+            WorkStateIntentOmitted = workState.IntentOmitted,
+            WorkStatePreviewOmitted = workState.PreviewOmitted,
+            WorkStateSourceRunId = workState.SourceRunId,
+            WorkStateSourceEventId = workState.SourceEventId,
+            WorkStateUpdatedAt = workState.UpdatedAt,
+            WorkStatePreview = workState.Preview,
         };
         return new AgentServiceResult(200, response);
     }

@@ -7,7 +7,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class OpenAiResponsesModelProvider : IModelProvider
+public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
     public OpenAiResponsesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -15,7 +15,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var body = BuildBody(request);
+        var body = request.PreparedBodyJson ?? BuildBody(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -209,6 +209,8 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             ["stream"] = true,
             ["store"] = false,
         };
+        if (request.MaximumOutputTokens is { } outputCap)
+            body["max_output_tokens"] = outputCap;
         if (request.Settings["model_tools"] is JsonArray modelTools)
         {
             var tools = new JsonArray();
@@ -235,6 +237,8 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
         }
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
+
+    public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
 
     private static RuAgent.Harness.Core.Prompting.ProviderContinuation? BuildContinuation(ModelRequest request, JsonArray? output, bool hasCalls)
     {

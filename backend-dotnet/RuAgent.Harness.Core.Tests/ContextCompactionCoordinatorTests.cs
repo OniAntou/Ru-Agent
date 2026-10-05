@@ -1,5 +1,6 @@
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
 
@@ -46,6 +47,70 @@ public sealed class ContextCompactionCoordinatorTests
         Assert.Equal(HarnessPayloadKind.ModelContextSummary, Assert.Single(compactionCommit.Payloads).Kind);
         Assert.Equal(HarnessEventKind.ContextCompacted, Assert.Single(compactionCommit.Events).Kind);
         Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+    }
+
+    [Fact]
+    public async Task Exact_request_is_reprepared_after_compaction_and_that_projection_is_dispatched()
+    {
+        var model = new PreparedFakeModelStepRunner();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var source = new ReloadingSource(
+            Snapshot(
+                ModelContextEntry.Text("history-a", 1, ModelContextRole.User, new string('a', 1_800)),
+                ModelContextEntry.Text("history-b", 2, ModelContextRole.User, new string('b', 1_800)),
+                ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")),
+            Snapshot(
+                ModelContextEntry.Summary("compact-test", 1, "summarized history",
+                    [new ContextEntryRange("history-a", 1, 1), new ContextEntryRange("history-b", 2, 2)]),
+                ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")));
+        var coordinator = new AgentRunCoordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            new AgentContextAssembler(source),
+            new SequenceIdGenerator(),
+            new IncrementingTimeProvider(Epoch),
+            new ToolCallScheduler(),
+            new TransientFrameBuffer(32),
+            contextLimit: new StaticModelContextLimitProvider(2_000),
+            promptContextProvider: new FakeSystemPromptContextProvider());
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, model.PreparedRequests.Count);
+        Assert.NotSame(model.PreparedRequests[0].Context, model.PreparedRequests[1].Context);
+        Assert.Same(model.PreparedProjections[1], model.DispatchedPreparation);
+        Assert.Contains(model.DispatchedPreparationContext!.Entries,
+            entry => entry.Kind == ModelContextEntryKind.Summary);
+    }
+
+    [Fact]
+    public async Task Provider_backed_runner_without_exact_projection_fails_before_dispatch()
+    {
+        var model = new UnpreparedProviderModelStepRunner();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var coordinator = new AgentRunCoordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            new AgentContextAssembler(new ReloadingSource(
+                Snapshot(ModelContextEntry.Text("current", 1, ModelContextRole.User, "current request")),
+                Snapshot(ModelContextEntry.Text("current", 1, ModelContextRole.User, "current request")))),
+            new SequenceIdGenerator(),
+            new IncrementingTimeProvider(Epoch),
+            new ToolCallScheduler(),
+            new TransientFrameBuffer(32),
+            contextLimit: new StaticModelContextLimitProvider(2_000),
+            promptContextProvider: new FakeSystemPromptContextProvider());
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal("provider_request_projection_unavailable", result.ErrorCode);
+        Assert.Equal(0, model.DispatchCount);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
     }
 
     [Fact]
@@ -209,6 +274,51 @@ public sealed class ContextCompactionCoordinatorTests
         public List<(RunId RunId, AgentActivity Activity)> Items { get; } = new();
 
         public void Publish(RunId runId, AgentActivity activity) => Items.Add((runId, activity));
+    }
+
+    private sealed class PreparedFakeModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer
+    {
+        public List<ModelStepRequest> PreparedRequests { get; } = [];
+        public List<IPreparedModelStep> PreparedProjections { get; } = [];
+        public IPreparedModelStep? DispatchedPreparation { get; private set; }
+        public ModelContextSnapshot? DispatchedPreparationContext { get; private set; }
+
+        public Task<IPreparedModelStep> PrepareAsync(ModelStepRequest request, CancellationToken cancellationToken)
+        {
+            PreparedRequests.Add(request);
+            IPreparedModelStep prepared = new TestPreparedStep(
+                PreparedRequests.Count == 1 ? 1_800 : 100, 2_000);
+            PreparedProjections.Add(prepared);
+            return Task.FromResult(prepared);
+        }
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            DispatchedPreparation = request.Preparation;
+            DispatchedPreparationContext = request.Context;
+            var receipt = SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt;
+            return Task.FromResult(new ModelStepResult(
+                new AssistantStep("done", Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0), receipt));
+        }
+
+        private sealed record TestPreparedStep(long EstimatedInputTokens, long MaxPromptTokens) : IPreparedModelStep;
+    }
+
+    private sealed class UnpreparedProviderModelStepRunner : IProviderBackedModelStepRunner
+    {
+        public int DispatchCount { get; private set; }
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            DispatchCount++;
+            throw new InvalidOperationException("Provider dispatch must not run without an exact prepared request.");
+        }
     }
 
     private static ModelContextSourceSnapshot Snapshot(params ModelContextEntry[] entries) =>

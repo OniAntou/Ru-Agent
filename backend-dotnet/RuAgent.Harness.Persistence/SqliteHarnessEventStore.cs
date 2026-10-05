@@ -1,23 +1,29 @@
 using Microsoft.Data.Sqlite;
+using System.Text;
+using System.Text.Json;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 
 namespace RuAgent.Harness.Persistence;
 
-public sealed class SqliteHarnessEventStore : IHarnessEventStore
+public sealed partial class SqliteHarnessEventStore : IHarnessEventStore
 {
     private const int ProtocolVersion = 1;
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
+    private readonly SessionWorkStateStore _workStates;
 
     public SqliteHarnessEventStore(
         HarnessSqliteOptions options,
-        HarnessPayloadStore payloadStore)
+        HarnessPayloadStore payloadStore,
+        SessionWorkStateStore workStates)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
+        _workStates = workStates ?? throw new ArgumentNullException(nameof(workStates));
     }
 
     public Task<HarnessStoreHealth> GetHealthAsync(CancellationToken cancellationToken) =>
@@ -136,6 +142,8 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                     request.Events,
                     request.Run.UpdatedAt,
                     cancellationToken)
+                .ConfigureAwait(false);
+            await SaveInitialWorkStateAsync(connection, transaction, request, cancellationToken)
                 .ConfigureAwait(false);
             await HarnessSqliteWriteSet.InsertOutboxAsync(
                     connection,
@@ -261,6 +269,8 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                     commit.Events,
                     commit.NextRun.UpdatedAt,
                     cancellationToken)
+                .ConfigureAwait(false);
+            await UpdateWorkStateFromReceiptsAsync(connection, transaction, commit, current, cancellationToken)
                 .ConfigureAwait(false);
             await HarnessSqliteWriteSet.InsertOutboxAsync(
                     connection,

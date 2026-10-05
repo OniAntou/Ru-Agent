@@ -170,6 +170,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
+    private readonly SessionWorkStateStore? _workStates;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly ITransientContentRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
@@ -204,12 +205,14 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null,
-        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
+        SessionWorkStateStore? workStates = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
+        _workStates = workStates;
         _inspectionGate = inspectionGate;
         _transientRedactor = transientRedactor;
         _liveEvents = liveEvents;
@@ -277,7 +280,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _model,
             gateway,
             _store,
-            new AgentContextAssembler(new SqliteModelContextSource(_sqliteOptions, _payloadStore)),
+            new AgentContextAssembler(new SqliteModelContextSource(_sqliteOptions, _payloadStore, _workStates)),
             new CryptographicIdGenerator(),
             _time,
             new ToolCallScheduler(),

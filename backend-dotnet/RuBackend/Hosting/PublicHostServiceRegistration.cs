@@ -146,12 +146,16 @@ internal static class PublicHostServiceRegistration
                 services.GetRequiredService<HarnessSqliteOptions>(),
                 services.GetRequiredService<HarnessPayloadCryptography>(),
                 services.GetRequiredService<KnownSecretRedactor>()));
+        services.AddSingleton<SessionWorkStateCryptography>(services =>
+            new SessionWorkStateCryptography(services.GetRequiredService<IHarnessKeyStore>()));
+        services.AddSingleton<SessionWorkStateStore>();
         services.AddSingleton<RetainedApprovalRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
         services.AddSingleton<IHarnessEventStore>(services =>
             new SqliteHarnessEventStore(
                 services.GetRequiredService<HarnessSqliteOptions>(),
-                services.GetRequiredService<HarnessPayloadStore>()));
+                services.GetRequiredService<HarnessPayloadStore>(),
+                services.GetRequiredService<SessionWorkStateStore>()));
         services.AddSingleton<HarnessLiveEventHub>();
         services.AddSingleton<AgentRunSummaryLivePublisher>();
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
@@ -254,8 +258,9 @@ internal static class PublicHostServiceRegistration
 
                     return list;
                 },
-                LoadProviderContinuationsAsync = (runId, bootstrap, ct) =>
-                    services.GetRequiredService<SqliteProviderContinuationReader>().ReadAsync(runId, bootstrap, ct),
+                LoadProviderContinuationsAsync = (runId, bootstrap, retainedAssistantEventIds, ct) =>
+                    services.GetRequiredService<SqliteProviderContinuationReader>()
+                        .ReadAsync(runId, bootstrap, retainedAssistantEventIds, ct),
             });
         // A scripted model replaces the in-process provider call entirely when requested,
         // so the whole product can be exercised without a provider key. Registered before

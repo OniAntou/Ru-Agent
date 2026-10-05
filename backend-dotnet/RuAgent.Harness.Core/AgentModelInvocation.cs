@@ -48,7 +48,8 @@ internal sealed class AgentModelInvocation
         AgentRun run,
         ModelContextSnapshot context,
         ModelStepId modelStepId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ModelStepRequest? preparedRequest = null)
     {
         var thinkingStartedAt = _time.UtcNow;
         using var telemetryActivity = HarnessTelemetry.StartModelStepActivity();
@@ -61,7 +62,14 @@ internal sealed class AgentModelInvocation
                 safeCode: "in_progress"));
 
         SystemPromptContext promptContext;
-        try
+        if (preparedRequest is not null)
+        {
+            if (preparedRequest.RunId != run.RunId || preparedRequest.ModelStepId != modelStepId
+                || !ReferenceEquals(preparedRequest.Context, context))
+                throw new InvalidOperationException("prepared_model_step_mismatch");
+            promptContext = preparedRequest.PromptContext;
+        }
+        else try
         {
             promptContext = await _promptContextProvider
                 .BuildAsync(run, context, cancellationToken)
@@ -96,14 +104,9 @@ internal sealed class AgentModelInvocation
             throw new InvalidOperationException("prompt_contract_invalid");
         }
 
-        var request = new ModelStepRequest(
-            run.RunId,
-            modelStepId,
-            context,
-            promptContext,
-            run.Preset,
-            run.PolicySnapshotVersion,
-            run.PolicySnapshotSha256);
+        var request = preparedRequest ?? new ModelStepRequest(
+            run.RunId, modelStepId, context, promptContext, run.Preset,
+            run.PolicySnapshotVersion, run.PolicySnapshotSha256);
         var droppedBefore = _frames.DroppedCount;
         var assistantStream = new TransientContentStream(
             _frames,
@@ -286,6 +289,45 @@ internal sealed class AgentModelInvocation
             modelDroppedCount,
             modelResult.ReasoningText,
             modelResult.ProviderContinuation);
+    }
+
+    public async Task<ModelStepRequest?> PrepareForBudgetAsync(
+        AgentRun run,
+        ModelContextSnapshot context,
+        ModelStepId modelStepId,
+        CancellationToken cancellationToken)
+    {
+        if (_model is not IModelStepRequestPreparer preparer)
+        {
+            if (_model is IProviderBackedModelStepRunner)
+                throw new ModelStepPreparationException(
+                    "provider_request_projection_unavailable",
+                    new InvalidOperationException("Provider-backed runners must prepare the exact dispatched request."));
+            return null;
+        }
+        try
+        {
+            var promptContext = await _promptContextProvider.BuildAsync(run, context, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException("prompt_context_null");
+            var request = new ModelStepRequest(run.RunId, modelStepId, context, promptContext,
+                run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256);
+            var prepared = await preparer.PrepareAsync(request, cancellationToken).ConfigureAwait(false);
+            return request.WithPreparation(prepared);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            var code = error is IStableStepError stable
+                ? stable.StepErrorCode
+                : error is ModelContextLimitResolutionException limit
+                    ? limit.StepErrorCode
+                    : "prompt_contract_invalid";
+            throw new ModelStepPreparationException(code, error);
+        }
     }
 
     /// <summary>
@@ -481,4 +523,10 @@ internal sealed class AgentModelInvocation
         int ModelDroppedCount,
         string? ReasoningText = null,
         ProviderContinuation? ProviderContinuation = null);
+}
+
+internal sealed class ModelStepPreparationException(string code, Exception innerException)
+    : Exception(code, innerException)
+{
+    public string Code { get; } = code;
 }

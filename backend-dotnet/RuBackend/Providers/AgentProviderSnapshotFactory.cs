@@ -85,9 +85,13 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowSource,
             contextWindowVersion,
             outputTokenReserve);
-        var snapshot = CreateSnapshot(selected, key, options, maximumOutput, toolCallingMode,
+        var snapshot = CreateSnapshot(selected, key, options, outputTokenReserve, toolCallingMode,
             allowNativeResponses: IsDeclaredNativeResponses(selected),
-            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected));
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            useMaxCompletionTokens: selected.Alias == "openai"
+                && selected.Protocol == ProviderProtocols.ChatCompletions,
+            contextWindowTokens,
+            outputTokenReserve);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         if (pin != proposed)
@@ -125,9 +129,13 @@ public sealed class AgentProviderSnapshotFactory(
             "text_selection" => ProviderToolCallingMode.TextSelection,
             _ => throw new ProviderCatalogException("provider_selection_invalid"),
         };
-        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens, toolCallingMode,
+        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: IsDeclaredNativeResponses(selected),
-            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected));
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            useMaxCompletionTokens: selected.Alias == "openai"
+                && selected.Protocol == ProviderProtocols.ChatCompletions,
+            contextWindowTokens: pin.ContextWindowTokens,
+            outputTokenReserve: pin.OutputTokenReserve);
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -241,7 +249,10 @@ public sealed class AgentProviderSnapshotFactory(
         int? maximumOutput,
         ProviderToolCallingMode toolCallingMode,
         bool allowNativeResponses = false,
-        bool allowNativeAnthropic = false)
+        bool allowNativeAnthropic = false,
+        bool useMaxCompletionTokens = false,
+        long? contextWindowTokens = null,
+        int? outputTokenReserve = null)
     {
         try
         {
@@ -255,7 +266,10 @@ public sealed class AgentProviderSnapshotFactory(
                 maximumOutput,
                 toolCallingMode,
                 allowNativeResponses,
-                allowNativeAnthropic);
+                allowNativeAnthropic,
+                useMaxCompletionTokens,
+                contextWindowTokens,
+                outputTokenReserve);
         }
         catch (ArgumentException)
         {

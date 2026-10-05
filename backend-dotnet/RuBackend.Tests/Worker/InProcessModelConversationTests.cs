@@ -96,6 +96,38 @@ public sealed class InProcessModelConversationTests
     }
 
     [Fact]
+    public void Workflow_state_is_a_separate_charged_turn_and_current_prompt_keeps_its_tail()
+    {
+        const string tail = "CURRENT-PROMPT-TAIL-8c1b";
+        var workflowState = new string('s', 15_500);
+        var currentPrompt = new string('p', 15_900 - tail.Length) + tail;
+        var context = Snapshot(
+            ModelContextEntry.Text(SessionWorkState.ContextSourceId, 1, ModelContextRole.User, workflowState),
+            ModelContextEntry.Text("event:evt_" + new string('c', 32), 2, ModelContextRole.User, currentPrompt));
+
+        var (prompt, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        Assert.Equal(currentPrompt, prompt);
+        var projectedMessages = messages!;
+        var stateMessage = Assert.Single(projectedMessages, message => message.Content == workflowState);
+        Assert.Equal("user", stateMessage.Role);
+        Assert.DoesNotContain(projectedMessages, message => message.Content == currentPrompt);
+    }
+
+    [Fact]
+    public void Oversized_current_prompt_fails_instead_of_prefix_clamping()
+    {
+        var prompt = new string('p', 16_001);
+        var context = Snapshot(
+            ModelContextEntry.Text("event:evt_" + new string('c', 32), 1, ModelContextRole.User, prompt));
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            InProcessModelStepRunner.BuildConversationForTests(context));
+
+        Assert.Equal("request_too_large", error.Code);
+    }
+
+    [Fact]
     public void Native_tool_exchange_uses_assistant_and_tool_messages()
     {
         var context = Snapshot(

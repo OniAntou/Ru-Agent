@@ -69,7 +69,8 @@ public static class ContextCompactionPlanner
         string compactionId,
         ContextCompactionReason reason,
         Func<ModelContextEntry, bool>? additionalProtection = null,
-        int maxSummaryChars = DefaultSummaryMaxChars)
+        int maxSummaryChars = DefaultSummaryMaxChars,
+        long? estimatedTokensOverride = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(decision);
@@ -80,17 +81,18 @@ public static class ContextCompactionPlanner
         }
 
         ArgumentOutOfRangeException.ThrowIfLessThan(maxSummaryChars, 128);
-        var beforeTokens = ModelContextSizeEstimator.EstimateTokens(snapshot);
+        var beforeTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(snapshot);
         if (beforeTokens <= decision.TargetTokens)
         {
             return null;
         }
 
-        var protectedEntries = BuildProtectedEntries(snapshot, additionalProtection);
-        var eligible = snapshot.Entries
-            .Where(entry => !protectedEntries.Contains(entry))
-            .OrderBy(entry => entry.Sequence)
-            .ThenBy(entry => entry.SourceId, StringComparer.Ordinal)
+        var completeBatches = FindCompleteBatches(snapshot.Entries);
+        var protectedEntries = BuildProtectedEntries(snapshot, additionalProtection, completeBatches);
+        var eligible = BuildCompactionUnits(snapshot, completeBatches)
+            .Where(unit => unit.Entries.All(entry => !protectedEntries.Contains(entry)))
+            .OrderBy(unit => unit.Sequence)
+            .ThenBy(unit => unit.Entries[0].SourceId, StringComparer.Ordinal)
             .ToArray();
         if (eligible.Length == 0)
         {
@@ -99,9 +101,9 @@ public static class ContextCompactionPlanner
 
         var covered = new List<ModelContextEntry>();
         ContextCompactionPlan? best = null;
-        foreach (var entry in eligible)
+        foreach (var unit in eligible)
         {
-            covered.Add(entry);
+            covered.AddRange(unit.Entries);
             var candidate = BuildPlan(
                 snapshot,
                 decision,
@@ -180,7 +182,8 @@ public static class ContextCompactionPlanner
 
     private static IReadOnlySet<ModelContextEntry> BuildProtectedEntries(
         ModelContextSnapshot snapshot,
-        Func<ModelContextEntry, bool>? additionalProtection)
+        Func<ModelContextEntry, bool>? additionalProtection,
+        IReadOnlyDictionary<ModelContextEntry, IReadOnlyList<ModelContextEntry>> completeBatches)
     {
         var protectedEntries = snapshot.Entries
             .Where(entry => entry.Role == ModelContextRole.System
@@ -203,6 +206,7 @@ public static class ContextCompactionPlanner
         var unfinished = snapshot.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.AssistantStep
                 && entry.AssistantStep?.FinishReason == AssistantFinishReason.ToolCalls)
+            .Where(entry => !completeBatches.ContainsKey(entry))
             .Select(entry => entry.Sequence)
             .DefaultIfEmpty(long.MaxValue)
             .Min();
@@ -219,19 +223,102 @@ public static class ContextCompactionPlanner
             }
         }
 
+        var completedGroupEntries = completeBatches
+            .SelectMany(batch => batch.Value.Prepend(batch.Key))
+            .ToHashSet();
+        foreach (var result in snapshot.Entries.Where(entry =>
+                     entry.Kind == ModelContextEntryKind.ToolResult
+                     && !completedGroupEntries.Contains(entry)))
+        {
+            protectedEntries.Add(result);
+        }
+
+        foreach (var (assistant, receipts) in completeBatches)
+        {
+            if (new[] { assistant }.Concat(receipts).Any(protectedEntries.Contains))
+            {
+                protectedEntries.Add(assistant);
+                protectedEntries.UnionWith(receipts);
+            }
+        }
         return protectedEntries;
     }
 
+    private static IReadOnlyList<CompactionUnit> BuildCompactionUnits(
+        ModelContextSnapshot snapshot,
+        IReadOnlyDictionary<ModelContextEntry, IReadOnlyList<ModelContextEntry>> completeBatches)
+    {
+        var grouped = new HashSet<ModelContextEntry>();
+        var units = new List<CompactionUnit>();
+        foreach (var (assistant, receipts) in completeBatches)
+        {
+            var members = new[] { assistant }.Concat(receipts).OrderBy(entry => entry.Sequence).ToArray();
+            foreach (var member in members) grouped.Add(member);
+            units.Add(new CompactionUnit(members[0].Sequence, members));
+        }
+
+        foreach (var entry in snapshot.Entries.Where(entry => !grouped.Contains(entry)))
+        {
+            units.Add(new CompactionUnit(entry.Sequence, [entry]));
+        }
+
+        return units;
+    }
+
+    private static IReadOnlyDictionary<ModelContextEntry, IReadOnlyList<ModelContextEntry>> FindCompleteBatches(
+        IReadOnlyList<ModelContextEntry> entries)
+    {
+        var assistantSteps = entries.Where(entry => entry.Kind == ModelContextEntryKind.AssistantStep)
+            .OrderBy(entry => entry.Sequence)
+            .ToArray();
+        var assistants = assistantSteps.Where(entry => entry.AssistantStep?.FinishReason == AssistantFinishReason.ToolCalls)
+            .ToArray();
+        var byProviderCall = entries.Where(entry => entry.Kind == ModelContextEntryKind.ToolResult)
+            .GroupBy(entry => entry.ToolReceipt!.ProviderCallId!, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        var complete = new Dictionary<ModelContextEntry, IReadOnlyList<ModelContextEntry>>();
+        for (var index = 0; index < assistants.Length; index++)
+        {
+            var assistant = assistants[index];
+            var nextAssistantSequence = assistantSteps.FirstOrDefault(entry => entry.Sequence > assistant.Sequence)?.Sequence
+                ?? long.MaxValue;
+            var receipts = MatchingReceipts(assistant, byProviderCall, nextAssistantSequence);
+            if (receipts is not null) complete.Add(assistant, receipts);
+        }
+        return complete;
+    }
+
+    private static ModelContextEntry[]? MatchingReceipts(
+        ModelContextEntry assistant,
+        IReadOnlyDictionary<string, ModelContextEntry[]> resultsByProviderCall,
+        long nextAssistantSequence)
+    {
+        var calls = assistant.AssistantStep!.ToolCalls;
+        var receipts = new List<ModelContextEntry>(calls.Count);
+        foreach (var call in calls)
+        {
+            if (!resultsByProviderCall.TryGetValue(call.ProviderCallId, out var matches)) return null;
+            var afterAssistant = matches.Where(entry => entry.Sequence > assistant.Sequence
+                && entry.Sequence < nextAssistantSequence).ToArray();
+            if (afterAssistant.Length != 1) return null;
+            receipts.Add(afterAssistant[0]);
+        }
+
+        return receipts.Distinct().Count() == calls.Count ? receipts.ToArray() : null;
+    }
+
+    private sealed record CompactionUnit(long Sequence, IReadOnlyList<ModelContextEntry> Entries);
+
     private static IReadOnlyList<ContextEntryRange> BuildRanges(
         IReadOnlyList<ModelContextEntry> entries) =>
-        entries
-            .GroupBy(entry => entry.SourceId, StringComparer.Ordinal)
-            .OrderBy(group => group.Key, StringComparer.Ordinal)
-            .Select(group => new ContextEntryRange(
-                group.Key,
-                group.Min(entry => entry.Sequence),
-                group.Max(entry => entry.Sequence)))
-            .ToArray();
+            entries
+                .GroupBy(entry => entry.SourceId, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => new ContextEntryRange(
+                    group.Key,
+                    group.Min(entry => entry.Sequence),
+                    group.Max(entry => entry.Sequence)))
+                .ToArray();
 
     private static string ComputeInputHash(
         ModelContextSnapshot covered,

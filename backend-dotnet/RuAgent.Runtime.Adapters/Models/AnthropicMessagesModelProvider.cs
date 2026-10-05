@@ -6,7 +6,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class AnthropicMessagesModelProvider : IModelProvider
+public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
     public AnthropicMessagesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -15,7 +15,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.MaximumOutputTokens is null or <= 0 or > 8192) throw new ModelProviderException("malformed_payload", false);
-        var body = BuildBody(request);
+        var body = request.PreparedBodyJson ?? BuildBody(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -344,6 +344,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         if (request.NativeToolCalling) body["tools"] = BuildTools(request.Settings["model_tools"] as JsonArray);
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
+
+    public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
 
     private static JsonArray BuildTools(JsonArray? modelTools)
     {

@@ -30,7 +30,8 @@ public sealed record ModelStepRequest
         SystemPromptContext promptContext,
         AgentPermissionPreset preset,
         long policySnapshotVersion,
-        string policySnapshotSha256)
+        string policySnapshotSha256,
+        IPreparedModelStep? preparation = null)
     {
         _ = runId.Value;
         _ = modelStepId.Value;
@@ -60,6 +61,7 @@ public sealed record ModelStepRequest
         Preset = preset;
         PolicySnapshotVersion = policySnapshotVersion;
         PolicySnapshotSha256 = policySnapshotSha256;
+        Preparation = preparation;
     }
 
     public RunId RunId { get; }
@@ -69,6 +71,11 @@ public sealed record ModelStepRequest
     public AgentPermissionPreset Preset { get; }
     public long PolicySnapshotVersion { get; }
     public string PolicySnapshotSha256 { get; }
+    public IPreparedModelStep? Preparation { get; }
+
+    public ModelStepRequest WithPreparation(IPreparedModelStep preparation) => new(
+        RunId, ModelStepId, Context, PromptContext, Preset, PolicySnapshotVersion,
+        PolicySnapshotSha256, preparation ?? throw new ArgumentNullException(nameof(preparation)));
 }
 
 public sealed record AssistantDelta

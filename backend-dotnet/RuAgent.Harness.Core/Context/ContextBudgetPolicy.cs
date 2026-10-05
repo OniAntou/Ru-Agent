@@ -81,7 +81,20 @@ public sealed class ContextBudgetPolicy
     public ContextBudgetDecision Evaluate(
         long estimatedTokens,
         long maxPromptTokens,
-        ContextCompactionStrategy strategy)
+        ContextCompactionStrategy strategy) =>
+        EvaluateCore(estimatedTokens, maxPromptTokens, strategy, _options.OutputReserveTokens);
+
+    public ContextBudgetDecision EvaluateAvailablePromptTokens(
+        long estimatedTokens,
+        long availablePromptTokens,
+        ContextCompactionStrategy strategy) =>
+        EvaluateCore(estimatedTokens, availablePromptTokens, strategy, outputReserveTokens: 0);
+
+    private ContextBudgetDecision EvaluateCore(
+        long estimatedTokens,
+        long maxPromptTokens,
+        ContextCompactionStrategy strategy,
+        long outputReserveTokens)
     {
         if (estimatedTokens < 0)
         {
@@ -100,7 +113,7 @@ public sealed class ContextBudgetPolicy
 
         var usable = Math.Max(
             1,
-            maxPromptTokens - _options.OutputReserveTokens - _options.SafetyMarginTokens);
+            maxPromptTokens - outputReserveTokens - _options.SafetyMarginTokens);
         var triggerRatio = _options.NormalTriggerRatio;
         var targetRatio = strategy == ContextCompactionStrategy.Normal
             ? _options.NormalTargetRatio

@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuApp.Models;
 using RuApp.Services;
 using Xunit;
 
@@ -697,6 +699,47 @@ public sealed class AgentRunControllerTests
 
         Assert.Equal(1, compactions);
         Assert.Equal(500, meter.Measure([], null, 0).ReportedPromptTokens);
+    }
+
+    [Fact]
+    public async Task Adopted_compacted_run_keeps_restored_history_unknown_until_owned_input_usage()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun() with { LastSequence = 11, Status = "running", ProviderProtocol = "openai_responses" },
+            PayloadContents =
+            {
+                ["payload-before-compaction"] = "{\"input_tokens\":9000,\"output_tokens\":30,\"total_tokens\":9030}",
+                ["payload-after-adoption"] = "{\"input_tokens\":500,\"output_tokens\":30,\"total_tokens\":530}",
+            },
+        };
+        fake.Stream.Add(SafeEvent(9, "model.usage_recorded", "payload-before-compaction"));
+        fake.Stream.Add(SafeEvent(10, "context.compacted"));
+        fake.Stream.Add(SafeEvent(12, "model.usage_recorded", "payload-after-adoption"));
+        var controller = new AgentRunController(fake);
+        var meter = new RetainedContextMeterPresenter();
+        (string? Content, int ImageCount, int TextAttachmentCharacters)[] restoredTranscript =
+            [(new string('x', 200_000), 0, 0)];
+        (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary) adoptedMeasure = default;
+        controller.RunAdopted += (_, adopted) =>
+        {
+            meter.ScopeToRun(adopted.Run, adopted.Run.SessionId);
+            meter.MarkHistoryBoundaryUnknown(adopted.Run.RunId, adopted.Run.SessionId, adopted.Run.LastSequence);
+            adoptedMeasure = meter.Measure(restoredTranscript, "draft", 0);
+        };
+        controller.UsageReceived += (_, usage) => meter.ObserveUsage(
+            usage.RunId, usage.SessionId, usage.Sequence, "openai_responses", usage.Usage);
+
+        Assert.True(await controller.AdoptRunAsync(fake.Run!));
+        await WaitForAdoptSettleAsync(controller);
+
+        Assert.Equal(11, fake.SubscribeAfter);
+        Assert.False(adoptedMeasure.HasKnownHistoryBoundary);
+        Assert.Equal("draft".Length, adoptedMeasure.Characters);
+        var afterOwnedUsage = meter.Measure(restoredTranscript, "draft", 0);
+        Assert.True(afterOwnedUsage.HasKnownHistoryBoundary);
+        Assert.Equal(500, afterOwnedUsage.ReportedPromptTokens);
+        Assert.Equal(500 + ModelContextSpecs.EstimateTokens("draft".Length, 0), afterOwnedUsage.UsedTokens);
     }
 
     [Fact]

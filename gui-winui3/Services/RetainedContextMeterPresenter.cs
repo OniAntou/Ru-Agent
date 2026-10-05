@@ -15,6 +15,7 @@ public sealed class RetainedContextMeterPresenter
     private long _usageSequence;
     private int _visibleMessageStart;
     private int? _reportedPromptTokens;
+    private bool _hasKnownHistoryBoundary = true;
 
     public void ScopeToRun(AgentRunModel? run, string? activeSessionId)
     {
@@ -34,6 +35,21 @@ public sealed class RetainedContextMeterPresenter
         _usageSequence = 0;
         _visibleMessageStart = 0;
         _reportedPromptTokens = null;
+        _hasKnownHistoryBoundary = true;
+    }
+
+    public void MarkHistoryBoundaryUnknown(string runId, string sessionId, long sequence = 0)
+    {
+        if (!Owns(runId, sessionId))
+        {
+            return;
+        }
+
+        _visibleMessageStart = int.MaxValue;
+        _boundarySequence = Math.Max(_boundarySequence, sequence);
+        _usageSequence = Math.Max(_usageSequence, sequence);
+        _reportedPromptTokens = null;
+        _hasKnownHistoryBoundary = false;
     }
 
     public bool ObserveCompaction(string runId, string sessionId, long sequence, int visibleMessageCount)
@@ -47,6 +63,7 @@ public sealed class RetainedContextMeterPresenter
         _usageSequence = sequence;
         _visibleMessageStart = Math.Max(0, visibleMessageCount);
         _reportedPromptTokens = null;
+        _hasKnownHistoryBoundary = true;
         return true;
     }
 
@@ -63,17 +80,23 @@ public sealed class RetainedContextMeterPresenter
 
         _reportedPromptTokens = ResolvePromptTokens(protocol, usage);
         _usageSequence = sequence.Value;
+        if (_reportedPromptTokens is not null)
+        {
+            _hasKnownHistoryBoundary = true;
+        }
         return true;
     }
 
-    public (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens) Measure(
+    public (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary) Measure(
         IReadOnlyList<(string? Content, int ImageCount, int TextAttachmentCharacters)> messages,
         string? draftText,
         int pendingImages,
         int pendingTextAttachmentCharacters = 0)
     {
         ArgumentNullException.ThrowIfNull(messages);
-        int start = Math.Clamp(_visibleMessageStart, 0, messages.Count);
+        int start = _hasKnownHistoryBoundary
+            ? Math.Clamp(_visibleMessageStart, 0, messages.Count)
+            : messages.Count;
         int historyCharacters = 0;
         int historyImages = 0;
         for (int index = start; index < messages.Count; index++)
@@ -94,7 +117,7 @@ public sealed class RetainedContextMeterPresenter
         int used = _reportedPromptTokens is { } promptTokens
             ? (int)Math.Min(int.MaxValue, (long)promptTokens + unsentEstimate)
             : estimate;
-        return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used);
+        return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used, _hasKnownHistoryBoundary);
     }
 
     public static int? ResolvePromptTokens(string? protocol, AgentModelUsage usage)

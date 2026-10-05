@@ -711,9 +711,18 @@ namespace RuApp.Views
 
             int reportedTokens = 0;
             int estimatedTokens = measured.UsedTokens;
-            ContextMessagesLegendLabel.Text = measured.ReportedPromptTokens > 0
-                ? "Reported input + draft estimate"
-                : "Visible text/image estimate";
+            if (!measured.HasKnownHistoryBoundary)
+            {
+                maxTokens = 0;
+                displayLimit = string.Empty;
+                ContextMessagesLegendLabel.Text = "Retained input unknown · draft estimate";
+            }
+            else
+            {
+                ContextMessagesLegendLabel.Text = measured.ReportedPromptTokens > 0
+                    ? "Reported input + draft estimate"
+                    : "Visible text/image estimate";
+            }
             int? overheadTokens = AgentContextMeterPolicy.OverheadTokens(estimatedTokens, reportedTokens);
             var meter = AgentContextMeterPolicy.Evaluate(maxTokens, displayLimit, estimatedTokens, reportedTokens);
             int usedTokens = meter.UsedTokens;

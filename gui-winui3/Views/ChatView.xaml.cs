@@ -352,6 +352,7 @@ namespace RuApp.Views
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
             _agentController?.ContextCompacted += OnAgentContextCompacted;
+            _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
@@ -388,6 +389,7 @@ namespace RuApp.Views
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
+                _agentController.RunAdopted -= OnAgentRunAdopted;
             }
 
             _agentController = agentController;
@@ -407,6 +409,7 @@ namespace RuApp.Views
                 _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
                 _agentController.ContextCompacted += OnAgentContextCompacted;
+                _agentController.RunAdopted += OnAgentRunAdopted;
             }
 
             UpdateAgentComposerVisuals();

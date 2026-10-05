@@ -579,6 +579,27 @@ namespace RuApp.Views
             UpdateContextUsage(force: true);
         }
 
+        private void OnAgentRunAdopted(object? sender, AgentRunAdoptedEventArgs adopted)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentRunAdopted(sender, adopted));
+                return;
+            }
+
+            if (!string.Equals(adopted.Run.SessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _retainedContextMeter.ScopeToRun(adopted.Run, _activeSessionId);
+            _retainedContextMeter.MarkHistoryBoundaryUnknown(
+                adopted.Run.RunId,
+                adopted.Run.SessionId,
+                adopted.Run.LastSequence);
+            UpdateContextUsage(force: true);
+        }
+
         private void ApplyReplySnapshot(AgentReplySnapshot snapshot)
         {
             if (_activeAgentAssistantMessage == null

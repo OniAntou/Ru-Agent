@@ -459,6 +459,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
 
             CurrentRun = run;
+            RunAdopted?.Invoke(this, new AgentRunAdoptedEventArgs(run));
             _statusText = AdoptedStatusText(run);
             RefreshCommands();
         });
@@ -1152,6 +1153,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
 
     public event EventHandler<AgentRunContextCompactedEventArgs>? ContextCompacted;
+    public event EventHandler<AgentRunAdoptedEventArgs>? RunAdopted;
 
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

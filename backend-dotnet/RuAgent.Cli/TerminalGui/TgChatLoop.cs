@@ -472,7 +472,19 @@ public sealed class TgChatLoop
 
         if (key == Terminal.Gui.Input.Key.Enter || key == Terminal.Gui.Input.Key.Tab)
         {
-            _window.AcceptSlashDropdown();
+            var picked = _window.AcceptSlashDropdown();
+
+            // Enter on a complete command runs it, so picking /model opens its card straight
+            // away instead of parking the command in the composer for a second Enter. A
+            // command that still needs an argument stays in the composer, and Tab only ever
+            // fills the command in.
+            if (key == Terminal.Gui.Input.Key.Enter
+                && picked is { } command
+                && !InteractiveLineReader.NeedsArgument(command))
+            {
+                Submit();
+            }
+
             return true;
         }
 

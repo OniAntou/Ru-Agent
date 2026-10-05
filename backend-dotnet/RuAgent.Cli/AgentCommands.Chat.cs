@@ -2137,6 +2137,55 @@ public sealed partial class AgentCommands
             }
 
             /// <summary>
+            /// Report-only slash commands print into the read-only output window instead of
+            /// scrolling straight into the transcript. Both writers the command can reach are
+            /// pointed at a capture buffer for the run, so the window shows exactly what the
+            /// command printed; when it closes the same rows are written to the transcript, so
+            /// the report is still there to scroll back to. Sequential mode keeps printing
+            /// inline: there is no window over a scrolling region to float above.
+            /// </summary>
+            async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine)
+            {
+                var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
+                if (!tgMode || !Tui.InteractiveLineReader.IsReportCommand(command))
+                {
+                    return await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
+                }
+
+                var capture = new StringWriter();
+                var transcript = humanOut;
+                humanOut = capture;
+                _slashCommands.HumanOut = capture;
+                var handled = false;
+                try
+                {
+                    handled = await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
+                }
+                finally
+                {
+                    humanOut = transcript;
+                    _slashCommands.HumanOut = transcript;
+                }
+
+                var body = capture.ToString()
+                    .Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .ToList();
+                if (body.Count > 0)
+                {
+                    await TgPanelRequests.RequestDocumentAsync(
+                        tgWindow!,
+                        command.TrimStart('/'),
+                        body,
+                        cancellationToken).ConfigureAwait(false);
+                    await transcript.WriteLineAsync(string.Join('\n', body)).ConfigureAwait(false);
+                    await transcript.FlushAsync().ConfigureAwait(false);
+                }
+
+                return handled;
+            }
+
+            /// <summary>
             /// The TG engine's entry point: the window is already built and no sequential
             /// surface fights Terminal.Gui. Slash lines and prompts go through the very same
             /// local handlers the sequential loop calls, with their writers redirected to
@@ -2146,7 +2195,7 @@ public sealed partial class AgentCommands
             {
                 var loop = new TgChatLoop(tgWindow!, cancellationToken);
                 tgLoop = loop;
-                var guiDispatcher = new ChatLineDispatcher(HandleSlashLineAsync, HandlePromptLineAsync);
+                var guiDispatcher = new ChatLineDispatcher(HandleSlashLineWithDocumentAsync, HandlePromptLineAsync);
                 loop.SetPromptHandler(async (line, _, ct) =>
                 {
                     await guiDispatcher.DispatchAsync(line, ct).ConfigureAwait(false);

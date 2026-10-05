@@ -21,6 +21,7 @@ public sealed class TgChatWindow : Window
 
     private TgSlashDropdown? _slashDropdown;
     private TgPanelHost? _panel;
+    private TgDocumentPanel? _document;
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
     private bool _secretPanel;
@@ -77,18 +78,79 @@ public sealed class TgChatWindow : Window
 
     public bool IsSlashDropdownOpen => _slashDropdown?.SuperView is not null;
 
+    /// <summary>True while the read-only output window is over the transcript.</summary>
+    public bool IsDocumentPanelOpen => _document?.SuperView is not null;
+
+    /// <summary>Test seam: the open output window.</summary>
+    public TgDocumentPanel Document => _document ?? throw new InvalidOperationException("no document window");
+
     /// <summary>
-    /// Set once the live terminal shrinks below the 80x24 floor: the window stops the app
+    /// Opens the read-only output window over the transcript for the commands that only
+    /// report. The rows stay in the transcript too: closing the window is a look, not a
+    /// discard, so the operator can still scroll back to the report afterwards.
+    /// </summary>
+    public void ShowDocument(string title, IReadOnlyList<string> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        // The window takes the keyboard, so the suggestion list must not linger behind it.
+        HideSlashDropdown();
+        HidePanel();
+        if (_document is null)
+        {
+            _document = new TgDocumentPanel { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(8) };
+            _document.Closed += HideDocument;
+        }
+
+        _document.SetContent(title, body);
+        if (_document.SuperView is null)
+        {
+            Add(_document);
+        }
+
+        SetNeedsDraw();
+        _document.SetFocus();
+    }
+
+    public void HideDocument()
+    {
+        if (_document?.SuperView is not null)
+        {
+            Remove(_document);
+            DocumentClosed?.Invoke();
+        }
+
+        SetNeedsDraw();
+        if (App is not null)
+        {
+            FocusComposer();
+        }
+    }
+
+    /// <summary>
+    /// Set once the live terminal has settled below the 80x24 floor: the window stops the app
     /// and the run loop continues the same session on the classic sequential path. One-way
     /// for the life of the window; the TG frame never reopens.
     /// </summary>
     public bool HandOverToSequential { get; private set; }
+
+    /// <summary>
+    /// How long the terminal must stay below the floor before the frame gives up. Dragging a
+    /// window edge sweeps the width through small values for a moment, and the handover cannot
+    /// be undone, so reacting to the first blip costs the operator the whole Terminal.Gui
+    /// surface over a stray pixel of drag.
+    /// </summary>
+    private const int HandoverDebounceMs = 250;
+
+    private bool _handoverScheduled;
 
     /// <summary>Decision token of a confirmed approval/trust/picker panel.</summary>
     public event Action<string>? PanelConfirmed;
 
     /// <summary>Escape on a panel: an approval denies, a picker aborts.</summary>
     public event Action? PanelCancelled;
+
+    /// <summary>The read-only output window closed, by Enter or by Escape.</summary>
+    public event Action? DocumentClosed;
 
     /// <summary>
     /// Focus must be granted after the app's first loop iterations; a SetFocus before
@@ -150,7 +212,7 @@ public sealed class TgChatWindow : Window
 
     public void MoveSlashDropdown(int delta) => _slashDropdown?.Move(delta);
 
-    public void AcceptSlashDropdown() => _slashDropdown?.Accept();
+    public string? AcceptSlashDropdown() => _slashDropdown?.Accept();
 
     /// <summary>
     /// The approval panel for an already-built prompt: the caller's choices (including a
@@ -183,18 +245,41 @@ public sealed class TgChatWindow : Window
         _approval = prompt;
         _choices = null;
         _secretPanel = false;
-        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width), null);
     }
 
     /// <summary>A picker over the transcript, navigated by the shared <see cref="ChoiceList"/> grammar.</summary>
     public void ShowPicker(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null)
     {
-        var list = new ChoiceList(title, items, selected, footer);
+        var list = new ChoiceList(title, items, selected, footer, showRowCount: true);
         _approval = null;
         _choices = list;
         _secretPanel = false;
-        ShowPanel(width => CenterPanel(list.Render(TuiFloatingPanel.ComputeWidth(width)), width));
+        ShowPanel(null, width => TuiCard.ComposeList(
+            TuiCard.ComputeWidth(width),
+            title,
+            "esc",
+            CardItems(list),
+            list.Selected,
+            PickerVisibleRows,
+            PickerFooter(list),
+            list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}"));
     }
+
+    private const string SearchHint = "Search";
+
+    /// <summary>Rows a picker spends on entries; the card frame takes the rest.</summary>
+    private const int PickerVisibleRows = 8;
+
+    private static IReadOnlyList<CardItem> CardItems(ChoiceList list) =>
+        list.Items
+            .Select(item => new CardItem(item.Label, string.IsNullOrEmpty(item.Detail) ? null : item.Detail, item.Enabled))
+            .ToList();
+
+    private static string PickerFooter(ChoiceList list) =>
+        string.IsNullOrWhiteSpace(list.Footer)
+            ? "↑↓ select · enter apply"
+            : $"{list.Footer} · {list.TotalCount} models";
 
     /// <summary>
     /// The masked secret panel: typed characters append to the buffer, Backspace trims it,
@@ -210,7 +295,7 @@ public sealed class TgChatWindow : Window
         _secretProvider = string.IsNullOrWhiteSpace(providerDisplay) ? "api key" : providerDisplay.Trim();
         ShowPanel(width => CenterPanel(
             KeyInputPanel.Compose(TuiFloatingPanel.ComputeWidth(width), _secretProvider, _secret.Length),
-            width));
+            width), null);
     }
 
     /// <summary>
@@ -269,19 +354,52 @@ public sealed class TgChatWindow : Window
 
     private void OnScreenChanged(object? sender, EventArgs<Rectangle> args)
     {
-        if (args.Value.Width < TuiViewport.MinAltBufferWidth
-            || args.Value.Height < TuiViewport.MinAltBufferHeight)
+        if (IsBelowFloor(args.Value))
         {
-            HandOverToSequential = true;
-            _resizeApp?.RequestStop();
+            // Not a handover yet: keep the frame and relayout so it stays usable while the
+            // terminal decides whether it really is too small.
+            ScheduleHandover();
+            SetNeedsLayout();
+            SetNeedsDraw();
             return;
         }
 
-        Layout();
+        SetNeedsLayout();
         SetNeedsDraw();
     }
 
-    private void ShowPanel(Func<int, IReadOnlyList<string>> render)
+    private static bool IsBelowFloor(Rectangle size) =>
+        size.Width < TuiViewport.MinAltBufferWidth || size.Height < TuiViewport.MinAltBufferHeight;
+
+    /// <summary>
+    /// Arms the one-way handover, and disarms it again if the terminal is back above the floor
+    /// by the time it fires. A settled-small terminal still loses the frame; a drag that only
+    /// passes through the floor for a moment does not.
+    /// </summary>
+    private void ScheduleHandover()
+    {
+        if (_handoverScheduled)
+        {
+            return;
+        }
+
+        _handoverScheduled = true;
+        _resizeApp?.AddTimeout(TimeSpan.FromMilliseconds(HandoverDebounceMs), () =>
+        {
+            _handoverScheduled = false;
+            var driver = _resizeApp?.Driver;
+            if (driver is not null && !IsBelowFloor(new Rectangle(0, 0, driver.Cols, driver.Rows)))
+            {
+                return false;
+            }
+
+            HandOverToSequential = true;
+            _resizeApp?.RequestStop();
+            return false;
+        });
+    }
+
+    private void ShowPanel(Func<int, IReadOnlyList<string>>? render, Func<int, IReadOnlyList<CardLine>>? card)
     {
         // A modal panel takes the keyboard; the suggestion list must not linger behind it.
         HideSlashDropdown();
@@ -291,7 +409,15 @@ public sealed class TgChatWindow : Window
             _panel.PanelKey += OnPanelKey;
         }
 
-        _panel.SetRenderer(render);
+        if (card is not null)
+        {
+            _panel.SetCard(card);
+        }
+        else
+        {
+            _panel.SetRenderer(render ?? (_ => []));
+        }
+
         if (_panel.SuperView is null)
         {
             Add(_panel);
@@ -372,6 +498,16 @@ public sealed class TgChatWindow : Window
                         ResolveConfirmed(choices.Current.Value);
                     }
 
+                    return;
+                case TgPanelKeyKind.Backspace:
+                    choices.TryTrimFilter();
+                    _panel?.SetNeedsDraw();
+                    return;
+                case TgPanelKeyKind.Character:
+                    // The card's search field: typing narrows the list, Backspace widens it.
+                    // Without this the field would be a label over a list nothing filters.
+                    choices.TryAppendFilter(key.Character);
+                    _panel?.SetNeedsDraw();
                     return;
             }
 

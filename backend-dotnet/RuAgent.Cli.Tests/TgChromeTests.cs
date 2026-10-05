@@ -81,7 +81,7 @@ public sealed class TgChromeTests
     }
 
     [Fact]
-    public void Window_HandsOverToSequentialWhenTerminalDropsBelowTheMinimum()
+    public void Window_HandsOverToSequentialWhenTerminalStaysBelowTheMinimum()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -92,10 +92,10 @@ public sealed class TgChromeTests
             app.Driver!.SetScreenSize(79, 23);
             return false;
         });
-        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        app.AddTimeout(TimeSpan.FromMilliseconds(700), () =>
         {
-            // The window must stop the app itself on the tiny handover; reaching this
-            // timeout means RequestStop never ran.
+            // The window must stop the app itself once the tiny size has settled; reaching
+            // this timeout means RequestStop never ran.
             stillRunning = true;
             app.RequestStop();
             return false;
@@ -103,6 +103,46 @@ public sealed class TgChromeTests
         app.Run(window);
         Assert.False(stillRunning);
         Assert.True(window.HandOverToSequential);
+    }
+
+    /// <summary>
+    /// Dragging a window edge sweeps the width through small values for a moment. The handover
+    /// is one-way for the life of the window, so a terminal that only blinks below the 80x24
+    /// floor must keep the Terminal.Gui surface instead of losing it permanently.
+    /// </summary>
+    [Fact]
+    public void Window_KeepsTheFrameWhenTheTerminalOnlyBlinksBelowTheFloor()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.FocusComposer();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(250), () =>
+        {
+            app.Driver!.SetScreenSize(60, 20);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(320), () =>
+        {
+            app.Driver!.SetScreenSize(110, 34);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(900), () =>
+        {
+            Assert.False(window.HandOverToSequential);
+            // The composer is still the last region on screen: the frame never went away.
+            var rows = TgSnapshot.Capture(app);
+            Assert.Contains("┌", rows[^7]);
+            Assert.Contains("/ commands", rows[^1]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        Assert.False(window.HandOverToSequential);
     }
 
     [Fact]

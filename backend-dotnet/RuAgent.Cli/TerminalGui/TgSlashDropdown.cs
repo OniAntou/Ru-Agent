@@ -8,8 +8,9 @@ namespace RuAgent.Cli.TerminalGui;
 /// The slash-command suggestion list, anchored just above the composer. Rows, border and
 /// footer are composed by the classic <see cref="SlashDropdown"/> so the copy cannot drift
 /// from the classic engine; this view only positions, colours and drives the selection.
-/// The composer keeps focus while the list is open (typing must keep filtering it), so the
-/// run loop routes navigation keys here; the KeyDown handler below serves focused use.
+/// The composer keeps focus the whole time the list is open, because typing must keep
+/// filtering it. This view is therefore not focusable and takes no keys: the run loop routes
+/// Up/Down, Enter/Tab and Escape here while every other character stays in the composer.
 /// </summary>
 public sealed class TgSlashDropdown : View
 {
@@ -21,9 +22,8 @@ public sealed class TgSlashDropdown : View
 
     public TgSlashDropdown()
     {
-        CanFocus = true;
+        CanFocus = false;
         SetScheme(TgPalette.Scheme(TuiToken.Ink));
-        KeyDown += OnKeyDown;
     }
 
     /// <summary>Raised when the selected command is accepted (Enter/Tab).</summary>
@@ -61,12 +61,16 @@ public sealed class TgSlashDropdown : View
         SetNeedsDraw();
     }
 
-    public void Accept()
+    /// <summary>Accepts the highlighted command; returns it so the caller can run it.</summary>
+    public string? Accept()
     {
-        if (SelectedCommand is { } command)
+        if (SelectedCommand is not { } command)
         {
-            CommandAccepted?.Invoke(command);
+            return null;
         }
+
+        CommandAccepted?.Invoke(command);
+        return command;
     }
 
     public void Close() => Closed?.Invoke();
@@ -100,31 +104,5 @@ public sealed class TgSlashDropdown : View
         }
 
         return true;
-    }
-
-    private void OnKeyDown(object? sender, Key key)
-    {
-        if (key == Key.CursorUp)
-        {
-            Move(-1);
-        }
-        else if (key == Key.CursorDown)
-        {
-            Move(1);
-        }
-        else if (key == Key.Enter || key == Key.Tab)
-        {
-            Accept();
-        }
-        else if (key == Key.Esc)
-        {
-            Close();
-        }
-        else
-        {
-            return;
-        }
-
-        key.Handled = true;
     }
 }

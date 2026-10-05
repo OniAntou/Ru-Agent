@@ -59,4 +59,25 @@ public sealed class AgentRunModelTests
         Assert.Equal("hash_abc", model.DisplayIdentityHash);
         Assert.Equal("cancelled_side_effects_possible", model.TerminalErrorCode);
     }
+
+    [Fact]
+    public void Retained_identity_and_window_are_from_the_run_pin_and_session()
+    {
+        var run = AgentRunModel.FromGetResponse(new GetAgentRunResponse(
+            "run_12345678901234567890123456789012", "sess_1", "ws_1", "running", null,
+            "standard", 1, "sha", 1, 0, "2026-10-05", "2026-10-05", null, null, null, "hash",
+            ProviderBackend: "openai", ProviderModel: "gpt-5", ProviderProtocol: "openai_responses",
+            ProviderModelLabel: "Pinned GPT", ProviderCallingMode: "native", ContextWindowTokens: 80_000));
+
+        Assert.Equal(80_000, RetainedRunPresentation.PublishedContextWindow(run, "sess_1"));
+        Assert.Null(RetainedRunPresentation.PublishedContextWindow(run, "sess_2"));
+        Assert.Equal("Run pin: Pinned GPT [gpt-5] · openai · openai_responses/native · window 80K (catalog/catalog-v1) · output reserve 8192",
+            RetainedRunPresentation.Identity(run with
+            {
+                ContextWindowSource = "catalog",
+                ContextWindowVersion = "catalog-v1",
+                OutputTokenReserve = 8192,
+            }));
+        Assert.Null(RetainedRunPresentation.PublishedContextWindow(run with { ContextWindowTokens = null }, "sess_1"));
+    }
 }

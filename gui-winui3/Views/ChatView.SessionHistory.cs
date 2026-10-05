@@ -1391,6 +1391,7 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
+                _agentController.ContextCompacted -= OnAgentContextCompacted;
             }
             StopAllTextSweeps();
             DetachWaveTimer();

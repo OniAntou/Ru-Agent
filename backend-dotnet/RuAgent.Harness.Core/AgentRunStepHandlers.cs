@@ -935,7 +935,7 @@ internal sealed class AgentRunStepHandlers
             HarnessEventKind.ProviderContinuationRecorded,
             modelStepId: modelStepId,
             payloadId: payloadId,
-            safeCode: "openai_responses_v1"));
+            safeCode: continuation.Protocol));
     }
 
     private static string? ClipReasoning(string? reasoningText)

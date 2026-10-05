@@ -74,6 +74,8 @@ public sealed class TuiStatusLine
         _activity = null;
         _detail = null;
         _elapsedSeconds = 0;
+        _tokens = null;
+        _tools = 0;
     }
 
     public void Render(int width)

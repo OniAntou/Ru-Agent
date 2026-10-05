@@ -10,7 +10,7 @@ public sealed class TuiUsageTracker
 {
     private long _cumulativeInput;
     private long _cumulativeOutput;
-    private long _maxStepTokens;
+    private long _maxStepInputTokens;
 
     /// <summary>Published context window for the active model, when the catalog has one.</summary>
     public long? ContextLimit { get; set; }
@@ -32,7 +32,13 @@ public sealed class TuiUsageTracker
     {
         _cumulativeInput = 0;
         _cumulativeOutput = 0;
-        _maxStepTokens = 0;
+        _maxStepInputTokens = 0;
+        ContextPercent = null;
+    }
+
+    public void ResetContextReading()
+    {
+        _maxStepInputTokens = 0;
         ContextPercent = null;
     }
 
@@ -45,9 +51,9 @@ public sealed class TuiUsageTracker
         var stepOutput = Math.Max(0, cumulativeOutput - _cumulativeOutput);
         _cumulativeInput = cumulativeInput;
         _cumulativeOutput = cumulativeOutput;
-        if (stepInput + stepOutput > 0)
+        if (stepInput > 0)
         {
-            _maxStepTokens = Math.Max(_maxStepTokens, stepInput + stepOutput);
+            _maxStepInputTokens = Math.Max(_maxStepInputTokens, stepInput);
         }
 
         if (InputRate is { } inputRate && OutputRate is { } outputRate)
@@ -56,8 +62,8 @@ public sealed class TuiUsageTracker
             CostKnown = true;
         }
 
-        ContextPercent = ContextLimit is { } limit and > 0 && _maxStepTokens > 0
-            ? (int)Math.Clamp(Math.Round(100.0 * _maxStepTokens / limit), 0, 999)
+        ContextPercent = ContextLimit is { } limit and > 0 && _maxStepInputTokens > 0
+            ? (int)Math.Clamp(Math.Round(100.0 * _maxStepInputTokens / limit), 0, 999)
             : null;
     }
 }

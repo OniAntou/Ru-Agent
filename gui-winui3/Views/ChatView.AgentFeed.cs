@@ -35,10 +35,21 @@ namespace RuApp.Views
             if (DispatcherQueue.HasThreadAccess)
             {
                 UpdateAgentInlineState();
+                if (e.PropertyName == nameof(AgentRunController.CurrentRun))
+                {
+                    UpdateContextUsage(force: true);
+                }
                 return;
             }
 
-            DispatcherQueue.TryEnqueue(UpdateAgentInlineState);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                UpdateAgentInlineState();
+                if (e.PropertyName == nameof(AgentRunController.CurrentRun))
+                {
+                    UpdateContextUsage(force: true);
+                }
+            });
         }
 
         private readonly List<AgentActivityModel> _pendingAgentActivities = new();
@@ -511,6 +522,13 @@ namespace RuApp.Views
                 return;
             }
 
+            _retainedContextMeter.ObserveUsage(
+                usage.RunId,
+                usage.SessionId,
+                usage.Sequence,
+                run.ProviderProtocol,
+                usage.Usage);
+
             _activeAgentUsage = usage.Usage;
             if (_activeAgentAssistantMessage is not null)
             {
@@ -533,6 +551,32 @@ namespace RuApp.Views
                 }
             }
             UpdateContextUsage();
+        }
+
+        private void OnAgentContextCompacted(object? sender, AgentRunContextCompactedEventArgs compacted)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentContextCompacted(sender, compacted));
+                return;
+            }
+
+            if (_agentController?.CurrentRun is not { } run
+                || !string.Equals(run.RunId, compacted.RunId, StringComparison.Ordinal)
+                || !string.Equals(run.SessionId, compacted.SessionId, StringComparison.Ordinal)
+                || !string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (compacted.Sequence is not { } sequence)
+            {
+                return;
+            }
+
+            _retainedContextMeter.ScopeToRun(run, _activeSessionId);
+            _retainedContextMeter.ObserveCompaction(run.RunId, run.SessionId, sequence, Messages.Count);
+            UpdateContextUsage(force: true);
         }
 
         private void ApplyReplySnapshot(AgentReplySnapshot snapshot)

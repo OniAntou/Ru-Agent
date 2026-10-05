@@ -664,8 +664,28 @@ namespace RuApp.Views
             string currentModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
                 ? _groupedCatalogs.State.SelectedModel
                 : _selectedModel;
-            int? catalogCtx = GetCurrentModelContextLength();
-            var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel, catalogCtx);
+            var retainedRun = _agentController?.CurrentRun;
+            bool isRetainedRun = retainedRun is not null
+                && string.Equals(retainedRun.SessionId, _activeSessionId, StringComparison.Ordinal);
+            _retainedContextMeter.ScopeToRun(isRetainedRun ? retainedRun : null, _activeSessionId);
+            int? retainedContextWindow = RetainedRunPresentation.PublishedContextWindow(retainedRun, _activeSessionId);
+            int maxTokens;
+            string displayLimit;
+            if (isRetainedRun)
+            {
+                maxTokens = retainedContextWindow ?? 0;
+                displayLimit = ModelContextSpecs.FormatPublishedContext(retainedContextWindow) ?? string.Empty;
+                RetainedRunIdentityText.Text = RetainedRunPresentation.Identity(retainedRun!);
+                RetainedRunIdentityText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                int? catalogCtx = GetCurrentModelContextLength();
+                maxTokens = catalogCtx is > 0 ? catalogCtx.Value : 0;
+                displayLimit = ModelContextSpecs.FormatPublishedContext(catalogCtx) ?? string.Empty;
+                RetainedRunIdentityText.Text = string.Empty;
+                RetainedRunIdentityText.Visibility = Visibility.Collapsed;
+            }
 
             // Include draft input so the meter moves while typing, not only after send.
             string draftText = string.Empty;
@@ -678,23 +698,22 @@ namespace RuApp.Views
                 // Input box may not be ready during init; estimate stays history-only.
             }
 
-            var (totalChars, totalImages) = AgentContextMeterPolicy.Measure(
-                Messages.Select(message => ((string?)message.Content, message.Attachments?.Count ?? 0)),
+            var measured = _retainedContextMeter.Measure(
+                Messages.Select(message => (
+                    (string?)message.Content,
+                    message.Attachments?.Count(attachment => attachment.IsImage) ?? 0,
+                    message.Attachments?.Where(attachment => !attachment.IsImage)
+                        .Sum(attachment => attachment.TextContent?.Length ?? 0) ?? 0)).ToList(),
                 draftText,
-                PendingAttachments.Count);
+                PendingAttachments.Count(attachment => attachment.IsImage),
+                PendingAttachments.Where(attachment => !attachment.IsImage)
+                    .Sum(attachment => attachment.TextContent?.Length ?? 0));
 
-            var reportedTotals = Messages
-                .Where(message => message.Usage is not null)
-                .Select(message => message.Usage!.ResolvedTotal)
-                .ToList();
-            if (_activeAgentUsage is { } activeUsage)
-            {
-                reportedTotals.Add(activeUsage.ResolvedTotal);
-            }
-
-            int reportedTokens = AgentContextMeterPolicy.MaxReportedTokens(reportedTotals);
-
-            int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
+            int reportedTokens = 0;
+            int estimatedTokens = measured.UsedTokens;
+            ContextMessagesLegendLabel.Text = measured.ReportedPromptTokens > 0
+                ? "Reported input + draft estimate"
+                : "Visible text/image estimate";
             int? overheadTokens = AgentContextMeterPolicy.OverheadTokens(estimatedTokens, reportedTokens);
             var meter = AgentContextMeterPolicy.Evaluate(maxTokens, displayLimit, estimatedTokens, reportedTokens);
             int usedTokens = meter.UsedTokens;
@@ -717,7 +736,7 @@ namespace RuApp.Views
 
                 ContextProgressRing.Foreground = brush;
 
-                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
+                ContextUsedLabel.Text = $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
                 ContextPercentLabel.Text = $"{percentage:0.#}%";
                 ContextPercentLabel.Foreground = meter.Severity == AgentContextMeterSeverity.Normal
                     ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
@@ -727,7 +746,7 @@ namespace RuApp.Views
             {
                 ContextProgressRing.Value = 0;
                 PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens, meter.MaximumTokens);
-                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} tokens";
+                ContextUsedLabel.Text = $"~{ModelContextSpecs.FormatTokens(usedTokens)} tokens";
                 ContextPercentLabel.Text = "Used";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
             }

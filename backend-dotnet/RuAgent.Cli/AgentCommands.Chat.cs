@@ -229,11 +229,19 @@ public sealed partial class AgentCommands
             CancellationToken ct,
             string? retainedBackend = null,
             string? retainedModel = null,
+            long? retainedContextWindow = null,
+            string? retainedProtocol = null,
             bool isRetainedRun = false)
         {
             usage.ContextLimit = null;
             usage.InputRate = null;
             usage.OutputRate = null;
+            if (isRetainedRun)
+            {
+                usage.ContextLimit = retainedProtocol is "openai_responses" or "chat_completions"
+                    ? retainedContextWindow
+                    : null;
+            }
             // The usage cluster only exists on the TG header; a sequential/data-only
             // chat must not pay a catalog read for numbers it never shows.
             var usageBackend = isRetainedRun ? retainedBackend : backendName;
@@ -253,7 +261,10 @@ public sealed partial class AgentCommands
                     return;
                 }
 
-                usage.ContextLimit = details.ContextLength;
+                if (!isRetainedRun)
+                {
+                    usage.ContextLimit = details.ContextLength;
+                }
                 if (details.InputCost is { } inputRate && details.OutputCost is { } outputRate)
                 {
                     usage.InputRate = inputRate;
@@ -278,12 +289,22 @@ public sealed partial class AgentCommands
             }
 
             var retainedBackend = string.IsNullOrWhiteSpace(run.ProviderBackend) ? "(provider unknown)" : run.ProviderBackend;
-            var retainedModel = string.IsNullOrWhiteSpace(run.ProviderModel) ? "(model unknown)" : run.ProviderModel;
-            RunOnTgUi(() => tgWindow!.Composer.SetMeta(run.Preset, retainedModel, retainedBackend));
+            var retainedModel = string.IsNullOrWhiteSpace(run.ProviderModelLabel)
+                ? string.IsNullOrWhiteSpace(run.ProviderModel) ? "(model unknown)" : run.ProviderModel
+                : run.ProviderModelLabel;
+            var retainedProvider = string.Join(" · ", new[]
+            {
+                retainedBackend,
+                string.IsNullOrWhiteSpace(run.ProviderProtocol) ? "protocol unknown" : run.ProviderProtocol,
+                string.IsNullOrWhiteSpace(run.ProviderCallingMode) ? "mode unknown" : run.ProviderCallingMode,
+            });
+            RunOnTgUi(() => tgWindow!.Composer.SetMeta(run.Preset, retainedModel, retainedProvider));
             await RefreshModelUsageInfoAsync(
                 cancellationToken,
                 run.ProviderBackend,
                 run.ProviderModel,
+                run.ContextWindowTokens,
+                run.ProviderProtocol,
                 isRetainedRun: true).ConfigureAwait(false);
         }
 
@@ -1295,6 +1316,29 @@ public sealed partial class AgentCommands
                         catch (System.Text.Json.JsonException)
                         {
                             // Non-conforming frame payload; token tally keeps its last value.
+                        }
+                    }
+
+                    if (!frame.IsTransient && frame.Data is not null)
+                    {
+                        try
+                        {
+                            var durableEvent = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (durableEvent?.EventType == "context.compacted")
+                            {
+                                usage.ResetContextReading();
+                                if (tgMode)
+                                {
+                                    RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
+                                        lastTotalTokens ?? 0,
+                                        null,
+                                        usage.CostKnown ? (decimal)usage.SessionCost : null));
+                                }
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            // Nonconforming event payload cannot move the context boundary.
                         }
                     }
                 }

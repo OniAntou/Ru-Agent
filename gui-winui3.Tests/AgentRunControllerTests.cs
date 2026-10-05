@@ -69,6 +69,24 @@ public sealed class AgentRunControllerTests
             TransientSequence: null,
             TransientData: null);
 
+    private static AgentEventModel SafeEvent(long sequence, string eventType, string? payloadRef = null) =>
+        AgentEventModel.FromSseFrame(new SseFrame(
+            sequence,
+            "message",
+            JsonSerializer.Serialize(new HarnessSafeEventEnvelope(
+                HarnessSafeEventEnvelope.CurrentProtocolVersion,
+                "evt_" + sequence,
+                RunId,
+                "sess_1",
+                sequence,
+                eventType,
+                "2026",
+                "running",
+                eventType,
+                payloadRef)),
+            false,
+            null));
+
     private static async Task WaitForAdoptSettleAsync(AgentRunController controller)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -99,6 +117,7 @@ public sealed class AgentRunControllerTests
         public string? SubscribeRunId;
         public long? SubscribeAfter;
         public string PayloadContent { get; set; } = "{}";
+        public Dictionary<string, string> PayloadContents { get; } = new(StringComparer.Ordinal);
         public TaskCompletionSource<bool>? SubscriptionGate;
         public TaskCompletionSource<bool>? CreateRunGate;
         public CancellationToken CreateCancellationToken;
@@ -132,7 +151,10 @@ public sealed class AgentRunControllerTests
         }
 
         public Task<AgentPayloadModel> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
-            => Task.FromResult(new AgentPayloadModel(runId, payloadId, PayloadContent));
+            => Task.FromResult(new AgentPayloadModel(
+                runId,
+                payloadId,
+                PayloadContents.TryGetValue(payloadId, out var content) ? content : PayloadContent));
 
         public Task<long> SetSessionPresetAsync(
             string sessionId,
@@ -638,6 +660,43 @@ public sealed class AgentRunControllerTests
         Assert.Equal(RunId, usage.RunId);
         Assert.Equal(0, usage.Usage.InputTokens);
         Assert.Equal("0 input · 12 output · 12 total", usage.Usage.DisplayText);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_routes_real_compaction_event_to_context_meter_before_later_usage()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            PayloadContents =
+            {
+                ["payload-1"] = "{\"input_tokens\":8000,\"output_tokens\":40,\"total_tokens\":8040}",
+                ["payload-2"] = "{\"input_tokens\":500,\"output_tokens\":40,\"total_tokens\":540}",
+            },
+        };
+        fake.Stream.Add(SafeEvent(10, "model.usage_recorded", "payload-1"));
+        fake.Stream.Add(SafeEvent(11, "context.compacted"));
+        fake.Stream.Add(SafeEvent(12, "model.usage_recorded", "payload-2"));
+        var controller = new AgentRunController(fake);
+        var run = new AgentRunModel(
+            RunId, "sess_1", "workspace_1", "running", null, "standard", 1, "sha", 1, 0,
+            "2026", "2026", null, null, null, "identity", ProviderProtocol: "openai_responses");
+        var meter = new RetainedContextMeterPresenter();
+        meter.ScopeToRun(run, "sess_1");
+        controller.UsageReceived += (_, usage) => meter.ObserveUsage(usage.RunId, usage.SessionId, usage.Sequence, run.ProviderProtocol, usage.Usage);
+        var compactions = 0;
+        controller.ContextCompacted += (_, item) =>
+        {
+            compactions++;
+            Assert.Contains(controller.Events, item => item.EventType == "context.compacted");
+            meter.ObserveCompaction(item.RunId, item.SessionId, item.Sequence!.Value, 0);
+        };
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-context-compact"));
+
+        Assert.Equal(1, compactions);
+        Assert.Equal(500, meter.Measure([], null, 0).ReportedPromptTokens);
     }
 
     [Fact]

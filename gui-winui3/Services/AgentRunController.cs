@@ -824,6 +824,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
 
             Events.Add(model);
+            if (!model.IsTransient && string.Equals(model.EventType, "context.compacted", StringComparison.Ordinal))
+            {
+                ContextCompacted?.Invoke(
+                    this,
+                    new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence));
+            }
             if (!string.IsNullOrEmpty(model.SafeSummary)
                 && !IsApprovalRequestWithPanel(model))
             {
@@ -888,7 +894,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 UsageReceived?.Invoke(
                     this,
-                    new AgentUsageReceivedEventArgs(model.RunId, model.SessionId, usage));
+                    new AgentUsageReceivedEventArgs(model.RunId, model.SessionId, usage, model.Sequence));
             }
 
             RefreshCommands();
@@ -1144,6 +1150,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentToolOutputModel>? ToolOutputReceived;
 
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
+
+    public event EventHandler<AgentRunContextCompactedEventArgs>? ContextCompacted;
 
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

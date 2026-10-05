@@ -1280,6 +1280,12 @@
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <StackPanel Spacing="6">
+                                            <TextBlock x:Name="RetainedRunIdentityText"
+                                                       Visibility="Collapsed"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="10.5"
+                                                       Foreground="{StaticResource RuMutedBrush}"
+                                                       TextWrapping="Wrap" />
                                             <Grid ColumnDefinitions="*,Auto">
                                                 <TextBlock x:Name="ContextUsedLabel"
                                                            Text="0 / 128K"
@@ -1326,8 +1332,9 @@
                                                         CornerRadius="{StaticResource AppPillCornerRadius}"
                                                         Background="{StaticResource RuAccentBrush}"
                                                         VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1"
-                                                           Text="Messages"
+                                                <TextBlock x:Name="ContextMessagesLegendLabel"
+                                                           Grid.Column="1"
+                                                           Text="Visible text/image estimate"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="11.5"
                                                            Foreground="{StaticResource RuMutedBrush}"

@@ -1,3 +1,4 @@
+using System.Text;
 using RuAgent.Cli.Tui;
 using Xunit;
 
@@ -180,6 +181,36 @@ public sealed class TuiHeaderTests : IDisposable
     }
 
     [Fact]
+    public void Starfield_AnewSeedMovesTheStarsSomewhereElse()
+    {
+        const int Width = 160;
+        const int Height = 50;
+        var sky = new List<string>();
+        for (var seed = 0; seed < 4; seed++)
+        {
+            var view = new StringBuilder();
+            for (var row = 0; row < Height; row++)
+            {
+                for (var col = 0; col < Width; col++)
+                {
+                    view.Append(TuiHeader.StarCell(col, row, seed) is null ? ' ' : '*');
+                }
+            }
+
+            sky.Add(view.ToString());
+        }
+
+        // Reseeding has to actually change the sky, or the stars never look random.
+        Assert.Equal(4, sky.Distinct().Count());
+
+        // Every seed stays sparse, otherwise a scattered sky becomes a busy one.
+        foreach (var view in sky)
+        {
+            Assert.InRange(view.Count(c => c == '*'), 10, 120);
+        }
+    }
+
+    [Fact]
     public void Meteor_FallsAsDotClumpThenPausesAndLoops()
     {
         var first = TuiHeader.MeteorCells(0, 80, 24);
@@ -220,7 +251,7 @@ public sealed class TuiHeaderTests : IDisposable
         // A meteor repeats on its own cooldown, not on a shared short one.
         var period = TuiHeader.MeteorCooldownSeconds * 1000 / TuiHeader.MeteorFrameMilliseconds;
         Assert.Equal(period, TuiHeader.MeteorCooldownTicks);
-        Assert.Equal(25, TuiHeader.MeteorCooldownSeconds);
+        Assert.Equal(14, TuiHeader.MeteorCooldownSeconds);
         Assert.True(
             TuiHeader.MeteorCooldownTicks > TuiHeader.MeteorTravelTicks * 10,
             "the meteors would come round too often to read as a cooldown");
@@ -320,14 +351,13 @@ public sealed class TuiHeaderTests : IDisposable
             }
         }
 
-        // Longest stretch with nobody in the sky. The loop wraps, so the real gap is the longest
-        // run plus the run that straddles the end of the cycle.
-        // Longest stretch with nobody in the sky. Turns are a third of the cooldown apart, less one
-        // flight each, so the empty run has to cover most of that share.
+        // Longest stretch with nobody in the sky. Turns are an equal share of the cooldown apart,
+        // so the empty run covers that share less the one flight it interrupts.
         var longest = emptyRuns.Max();
+        var share = TuiHeader.MeteorCooldownTicks / TuiHeader.MeteorCount;
         Assert.True(
-            longest > (TuiHeader.MeteorCooldownTicks / TuiHeader.MeteorCount) - TuiHeader.MeteorTravelTicks,
-            $"the gap between meteors is too short to read as a cooldown: {longest} ticks");
+            longest >= share - TuiHeader.MeteorTravelTicks,
+            $"the gap between meteors is too short to read as a cooldown: {longest} ticks, want {share - TuiHeader.MeteorTravelTicks}");
     }
 
     [Fact]

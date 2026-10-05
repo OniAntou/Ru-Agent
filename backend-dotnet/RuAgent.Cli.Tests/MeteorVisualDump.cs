@@ -33,7 +33,8 @@ public sealed class MeteorVisualDump
             {
                 for (var col = 0; col < Width; col++)
                 {
-                    if (TuiHeader.StarCell(col, row) is not { } star)
+                    if (TuiHeader.StarCell(col, row, tick / TuiHeader.MeteorCooldownTicks)
+                        is not { } star)
                     {
                         continue;
                     }

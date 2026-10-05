@@ -15,6 +15,7 @@ public sealed class TgLandingView : View
     private int _meteorTick;
     private bool _meteorTicked;
     private bool _meteorWasVisible;
+    private int _skySeed;
 
     public TgLandingView()
     {
@@ -39,9 +40,17 @@ public sealed class TgLandingView : View
 
         _meteorTick++;
         _meteorTicked = true;
+
+        // The sky reshuffles once per meteor cooldown, so the stars land somewhere new each
+        // round instead of sitting in the same cells for the whole session. A seed rather than
+        // a random number per frame: the new sky then holds still until its turn comes round.
+        var seed = _meteorTick / TuiHeader.MeteorCooldownTicks;
+        var reseeded = seed != _skySeed;
+        _skySeed = seed;
+
         var cells = TuiHeader.MeteorCells(_meteorTick, Viewport.Width, Viewport.Height);
         var visible = cells.Count > 0;
-        if (visible || _meteorWasVisible)
+        if (visible || _meteorWasVisible || reseeded)
         {
             SetNeedsDraw();
         }
@@ -83,7 +92,7 @@ public sealed class TgLandingView : View
             Move(0, r);
             for (var c = 0; c < width; c++)
             {
-                var star = TuiHeader.StarCell(c, r);
+                var star = TuiHeader.StarCell(c, r, _skySeed);
                 var token = star?.Token;
                 if (token != current)
                 {

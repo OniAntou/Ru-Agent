@@ -148,12 +148,14 @@ public static class TuiHeader
     private const string StarGlyphs = "✦✧⋆·⁺";
 
     /// <summary>
-    /// Deterministic landing-sky star for a background cell, null for empty space. The hash
-    /// pins each star to its cell, so repaints and resizes never make the sky flicker.
+    /// Landing-sky star for a background cell, null for empty space. The hash pins each star to
+    /// its cell for a given <paramref name="seed"/>, so repaints and resizes never make the sky
+    /// flicker. A different seed scatters the stars somewhere else entirely, which is how the
+    /// view gets a new sky without ever making one shimmer.
     /// </summary>
-    public static (char Glyph, TuiToken Token)? StarCell(int col, int row)
+    public static (char Glyph, TuiToken Token)? StarCell(int col, int row, int seed = 0)
     {
-        uint hash = (uint)(col * 73856093) ^ (uint)(row * 19349663);
+        uint hash = (uint)(col * 73856093) ^ (uint)(row * 19349663) ^ (uint)(seed * 83492791);
         hash ^= hash >> 13;
         hash *= 1274126177u;
         hash ^= hash >> 16;
@@ -190,7 +192,7 @@ public static class TuiHeader
     /// Idle time each meteor waits between flights. The meteors never fly together: they take
     /// turns, so this is the gap between one arriving and the next.
     /// </summary>
-    public const int MeteorCooldownSeconds = 25;
+    public const int MeteorCooldownSeconds = 14;
 
     /// <summary>
     /// Cooldown in ticks. The takeoff of meteor <c>m</c> is offset by an equal share of it, so

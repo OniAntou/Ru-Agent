@@ -1,3 +1,4 @@
+using System.Globalization;
 using RuApp.Services;
 using Xunit;
 
@@ -224,5 +225,31 @@ public sealed class AgentContextMeterPolicyTests
         string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateContextUsage");
         Assert.Contains("RetainedRunPinWell", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_flyout_content_fits_inside_its_presenter_frame()
+    {
+        // The presenter Width includes its padding and border; a content panel
+        // wider than the remaining inner area clips its right edge, which cut
+        // the last glyph off the legend value. The content must fit the frame.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var flyout = GuiSource.Require(document, "ContextWindowFlyout");
+        var style = flyout.Descendants().Single(element => element.Name.LocalName == "Style");
+        double StyleNumber(string property) => double.Parse(
+            style.Elements()
+                .Single(element => element.Name.LocalName == "Setter"
+                    && string.Equals((string?)element.Attribute("Property"), property, StringComparison.Ordinal))
+                .Attribute("Value")!.Value.Split(',')[0],
+            CultureInfo.InvariantCulture);
+
+        var content = GuiSource.Require(document, "RetainedRunPinWell").Parent!;
+        int contentWidth = GuiSource.IntAttribute(content, "Width");
+        double innerWidth = StyleNumber("Width")
+            - (2 * StyleNumber("Padding"))
+            - (2 * StyleNumber("BorderThickness"));
+
+        Assert.True(innerWidth >= contentWidth,
+            $"The {contentWidth}px content needs {innerWidth}px inside the presenter frame.");
     }
 }

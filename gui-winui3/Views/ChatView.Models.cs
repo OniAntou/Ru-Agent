@@ -746,7 +746,7 @@ namespace RuApp.Views
                 ContextProgressRing.Foreground = brush;
 
                 ContextUsedLabel.Text = $"~{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
-                ContextPercentLabel.Text = $"{percentage:0.#}%";
+                ContextPercentLabel.Text = percentage.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
                 ContextPercentLabel.Foreground = meter.Severity == AgentContextMeterSeverity.Normal
                     ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
                     : brush;

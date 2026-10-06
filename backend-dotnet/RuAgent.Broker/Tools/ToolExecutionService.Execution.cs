@@ -88,6 +88,7 @@ public sealed partial class ToolExecutionService
             try
             {
                 ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
+                ValidateTerminalTimeoutCeiling(toolId, arguments);
             }
             catch (ToolSchemaException error)
             {
@@ -412,6 +413,42 @@ public sealed partial class ToolExecutionService
             == PresetTerminalAuthority.WindowsCurrentUser;
     }
 
+    /// <summary>
+    /// The schema accepts the background lifetime ceiling so one schema serves
+    /// both modes; the foreground hard maximum stays enforced here, before any
+    /// adapter work, for callers that reach execution without policy
+    /// evaluation.
+    /// </summary>
+    private static void ValidateTerminalTimeoutCeiling(string toolId, JsonObject arguments)
+    {
+        if (!string.Equals(toolId, "bash", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var mode = arguments["mode"] is JsonValue modeValue && modeValue.TryGetValue<string>(out var text)
+            ? text
+            : "run";
+        if (mode is not ("run" or "shell"))
+        {
+            return;
+        }
+
+        if (arguments["background"] is JsonValue backgroundValue
+            && backgroundValue.TryGetValue<bool>(out var background)
+            && background)
+        {
+            return;
+        }
+
+        if (arguments["timeout_ms"] is JsonValue timeoutValue
+            && timeoutValue.TryGetValue<int>(out var timeout)
+            && timeout > TerminalLimits.HardMaxTimeoutMs)
+        {
+            throw new ToolSchemaException("invalid_arguments");
+        }
+    }
+
     private async Task<ToolResult> ExecuteBindingAsync(
         AgentEnvelope receiptRequest,
         AgentEnvelope contextRequest,
@@ -427,6 +464,7 @@ public sealed partial class ToolExecutionService
         try
         {
             ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
+            ValidateTerminalTimeoutCeiling(ReadString(contextRequest.Payload, "tool_id"), arguments);
         }
         catch (ToolSchemaException error)
         {

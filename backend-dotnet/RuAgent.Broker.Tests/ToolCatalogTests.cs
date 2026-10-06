@@ -108,12 +108,15 @@ public sealed class ToolCatalogTests
         Assert.True(properties.ContainsKey("working_directory"));
         Assert.True(properties.ContainsKey("timeout_ms"));
         Assert.True(properties.ContainsKey("network_intent"));
+        Assert.True(properties.ContainsKey("background"));
         Assert.False(properties.ContainsKey("shell"));
         Assert.False(properties.ContainsKey("network"));
 
         var timeoutSchema = properties["timeout_ms"]!.AsObject();
         Assert.Equal(1, timeoutSchema["minimum"]!.GetValue<int>());
-        Assert.Equal(TerminalLimits.HardMaxTimeoutMs, timeoutSchema["maximum"]!.GetValue<int>());
+        Assert.Equal(TerminalLimits.BackgroundMaxLifetimeMs, timeoutSchema["maximum"]!.GetValue<int>());
+        var modeSchema = properties["mode"]!.AsObject();
+        Assert.Contains("kill", modeSchema["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
         var argumentsSchema = properties["arguments"]!.AsObject();
         Assert.Equal(TerminalLimits.MaxArguments, argumentsSchema["maxItems"]!.GetValue<int>());
 
@@ -165,7 +168,7 @@ public sealed class ToolCatalogTests
                     {
                         ["mode"] = "run",
                         ["executable"] = "git",
-                        ["timeout_ms"] = TerminalLimits.HardMaxTimeoutMs + 1,
+                        ["timeout_ms"] = TerminalLimits.BackgroundMaxLifetimeMs + 1,
                     })).Code);
         Assert.Equal(
             "invalid_arguments",

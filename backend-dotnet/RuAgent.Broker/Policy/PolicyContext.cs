@@ -91,7 +91,8 @@ public sealed record PolicyContext(
     ResolvedPath? WorkingDirectory = null,
     CommandAnalysis? TerminalAnalysis = null,
     string? ToolOp = null,
-    string? BashMode = null)
+    string? BashMode = null,
+    bool Background = false)
 {
     public static readonly IReadOnlyList<string> EmptyArgv = Array.Empty<string>();
 }

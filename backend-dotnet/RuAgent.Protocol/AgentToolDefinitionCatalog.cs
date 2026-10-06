@@ -46,7 +46,7 @@ public static class AgentToolDefinitionCatalog
         new("glob", "Find workspace files by glob pattern. Bounded ordinal results with traversal caps." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GlobSchema, () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." }),
         new("write", "Create a new file or replace a whole file (op=write), delete (op=delete), or restore (op=restore). For partial changes to an existing file, prefer edit. Policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "notes.txt", ["content"] = "new content" }),
         new("edit", "Preferred for changing an existing file. Replace one exact non-empty string." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
-        new("bash", "Run one bounded executable or shell script with an argument vector and explicit network intent. Output is head/tail bounded: stdout_head/stdout_tail carry the start/end while stdout_bytes and stdout_dropped_bytes name the total and swallowed middle. Do not rerun a command just to inspect output; use mode read_output with the same execution_id and offset/limit, or projection_next_offset when the displayed page was shortened. Terminal cursors count UTF-16 characters. On Windows powershell.exe (5.1) always exists while pwsh exists only with PowerShell 7 installed; a missing name fails closed as executable_not_found instead of asking.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = "." }),
+        new("bash", "Run one bounded executable or shell script with an argument vector and explicit network intent. Output is head/tail bounded: stdout_head/stdout_tail carry the start/end while stdout_bytes and stdout_dropped_bytes name the total and swallowed middle. Do not rerun a command just to inspect output; use mode read_output with the same execution_id and offset/limit, or projection_next_offset when the displayed page was shortened. Terminal cursors count UTF-16 characters. Set background true for long-running commands (dev servers, watch builds): the call returns immediately with execution_id and state running, mode read_output pages live output while it runs, and mode kill stops it by execution_id. Background tasks are session-scoped, capped per session, and die at their lifetime limit or when the Broker exits. On Windows powershell.exe (5.1) always exists while pwsh exists only with PowerShell 7 installed; a missing name fails closed as executable_not_found instead of asking.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = "." }),
         new("web_search", "Search the public web. The configured engine races a fixed set of free fallback engines and the first engine with usable results answers, so a slow or blocked primary no longer delays the result. If every engine fails or none of their layouts can be read, the call fails with a bounded error rather than returning an empty answer. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest dotnet release" }),
         new("web_fetch", "Fetch one public web page as sanitized text. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
         new("skill", "Load one workspace skill's full SKILL.md workflow. Skills are prompt guidance discovered from the workspace skill roots; the prompt lists only name and description, and the model calls this tool to load the body on demand. allowed-tools metadata is descriptive only and never grants a tool, scope, path, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
@@ -170,14 +170,17 @@ public static class AgentToolDefinitionCatalog
     ];
     private static (string Name, JsonObject Schema)[] BashSchemaProperties() =>
     [
-        ("mode", EnumSchema(["run", "shell", "read_output"])),
+        ("mode", EnumSchema(["run", "shell", "read_output", "kill"])),
         ("executable", StringSchema(TerminalLimits.MaxExecutableChars)),
         ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)),
         ("script", StringSchema(TerminalLimits.MaxScriptChars)),
         ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)),
-        ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)),
+        // The schema carries the background ceiling; the evaluator enforces the
+        // tighter foreground hard max when background is not set.
+        ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
         ("network_intent", BooleanSchema()),
         ("read_only", BooleanSchema()),
+        ("background", BooleanSchema()),
         ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
         ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),
         ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolChars)),

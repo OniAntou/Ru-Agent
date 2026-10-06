@@ -955,6 +955,78 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Background_terminal_uses_its_lifetime_cap_instead_of_the_window_gate()
+    {
+        var valid = PolicyRequestInvariants.Valid;
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluator = new PolicySnapshotEvaluator();
+
+        var background = factory.Create("bash", "1.0.0", new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("test"),
+            ["background"] = true,
+            ["timeout_ms"] = TerminalLimits.BackgroundDefaultLifetimeMs,
+        });
+        var allowed = evaluator.Evaluate(lease.Snapshot, background, valid, Now);
+        Assert.Equal("allow", allowed.Decision);
+
+        var overCap = factory.Create("bash", "1.0.0", new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("test"),
+            ["background"] = true,
+            ["timeout_ms"] = TerminalLimits.BackgroundMaxLifetimeMs + 1,
+        });
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, overCap, valid, Now), "timeout_exceeds_hard_max");
+
+        // Foreground keeps both gates: the standard-window ask and the 30-minute
+        // hard maximum.
+        var foreground = factory.Create("bash", "1.0.0", new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("test"),
+            ["timeout_ms"] = TerminalLimits.StandardApprovalThresholdMs + 1,
+        });
+        var foregroundAsk = evaluator.Evaluate(lease.Snapshot, foreground, valid, Now);
+        Assert.Equal("ask", foregroundAsk.Decision);
+        Assert.Equal("terminal_timeout_requires_approval", foregroundAsk.ReasonCode);
+    }
+
+    [Fact]
+    public void Task_kill_and_spool_read_classify_as_reads()
+    {
+        var valid = PolicyRequestInvariants.Valid;
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluator = new PolicySnapshotEvaluator();
+
+        var kill = evaluator.Evaluate(
+            lease.Snapshot,
+            factory.Create("bash", "1.0.0", new JsonObject
+            {
+                ["mode"] = "kill",
+                ["execution_id"] = "req-background-1",
+            }),
+            valid,
+            Now);
+        Assert.Equal("allow", kill.Decision);
+
+        var read = evaluator.Evaluate(
+            lease.Snapshot,
+            factory.Create("bash", "1.0.0", new JsonObject
+            {
+                ["mode"] = "read_output",
+                ["execution_id"] = "req-background-1",
+            }),
+            valid,
+            Now);
+        Assert.Equal("allow", read.Decision);
+    }
+
+    [Fact]
     public void Safe_terminal_run_is_automatic_shell_always_asks()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());

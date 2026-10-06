@@ -43,6 +43,14 @@ public sealed class PolicyContextFactory
 
         var resolver = new CanonicalPathResolver(_canonicalRoot);
         var operationClass = OperationClassFor(toolId, arguments);
+        var background = IsTrue(arguments, "background");
+        if (background && !string.Equals(operationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
+        {
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: "background is only valid with bash mode \"run\" or \"shell\".");
+        }
+
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
         int? timeoutMs = null;
         if (arguments.ContainsKey("timeout_ms"))
@@ -192,16 +200,24 @@ public sealed class PolicyContextFactory
                     op = "edit";
                     break;
                 case "bash":
-                    // Only the spool read reaches this branch: run/shell classify
-                    // as Terminal above. Anything else claiming Read is rejected.
-                    if (!IsSpoolRead(arguments))
+                    // Only the spool read and task kill reach this branch:
+                    // run/shell classify as Terminal above. Anything else
+                    // claiming Read is rejected.
+                    if (IsSpoolRead(arguments))
+                    {
+                        op = "read_output";
+                    }
+                    else if (IsTaskKill(arguments))
+                    {
+                        op = "kill";
+                    }
+                    else
                     {
                         throw new PolicyContextException(
                             "malformed_call",
-                            hint: "bash mode must be \"run\" (executable plus arguments), \"shell\" (script), or \"read_output\" (execution_id).");
+                            hint: "bash mode must be \"run\" (executable plus arguments), \"shell\" (script), \"read_output\" (execution_id), or \"kill\" (execution_id).");
                     }
 
-                    op = "read_output";
                     break;
                 case "grep":
                     op = "grep";
@@ -300,7 +316,8 @@ public sealed class PolicyContextFactory
             WorkingDirectory: terminalWorkingDirectory,
             TerminalAnalysis: terminalAnalysis,
             ToolOp: toolId is "read" or "write" ? ReadOpOf(toolId, arguments) : null,
-            BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null);
+            BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
+            Background: background);
     }
 
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)
@@ -345,16 +362,21 @@ public sealed class PolicyContextFactory
         "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
         "edit" => PolicyOperationClasses.Edit,
-        // A spool read executes nothing: it pages back output the same session
-        // already received, so it classifies as a read and inherits read policy
-        // (profile allows, explicit deny rules still match by tool id).
-        "bash" => IsSpoolRead(arguments) ? PolicyOperationClasses.Read : PolicyOperationClasses.Terminal,
+        // A spool read or a background-task kill executes nothing: the read
+        // pages back output the same session already received and the kill
+        // stops a process the same session already started, so both classify
+        // as a read and inherit read policy (profile allows, explicit deny
+        // rules still match by tool id).
+        "bash" => IsSpoolRead(arguments) || IsTaskKill(arguments) ? PolicyOperationClasses.Read : PolicyOperationClasses.Terminal,
         "web_search" or "web_fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
 
     private static bool IsSpoolRead(JsonObject arguments) =>
         string.Equals(OptionalText(arguments, "mode"), "read_output", StringComparison.Ordinal);
+
+    private static bool IsTaskKill(JsonObject arguments) =>
+        string.Equals(OptionalText(arguments, "mode"), "kill", StringComparison.Ordinal);
 
     private static string WriteOpClass(string? op) => op switch
     {
@@ -368,10 +390,12 @@ public sealed class PolicyContextFactory
         toolId == "help"
         || toolId == "todo_write"
         || toolId is "web_search" or "web_fetch"
-        // A spool read names a session-scoped output id, not a path; the
-        // execution leg still fails closed on unknown or foreign ids.
+        // A spool read names a session-scoped output id, not a path; a task
+        // kill names a session-scoped task id. The execution leg still fails
+        // closed on unknown or foreign ids.
         || (string.Equals(toolId, "bash", StringComparison.Ordinal)
-            && string.Equals(op, "read_output", StringComparison.Ordinal));
+            && (string.Equals(op, "read_output", StringComparison.Ordinal)
+                || string.Equals(op, "kill", StringComparison.Ordinal)));
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>
         toolId is "read" or "write" ? OptionalText(arguments, "op") : null;

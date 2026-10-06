@@ -103,7 +103,8 @@ stable sorted relative paths without content access; `grep` takes `query`
 128) and `offset` (0–10000, default 0) for paging the ordinal results,
 and returns bounded match locations without raw file content; `write`
 carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
-`mode=shell` or `mode=read_output`.
+`mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
+flag on `run`/`shell`.
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
@@ -130,7 +131,7 @@ boundary.
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, harness-protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling) instead |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
@@ -308,6 +309,13 @@ cleanliness is irrelevant. Full Access still has hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup. Structured protected paths
 (harness key/database files and runtime descriptors) remain denied, but they do
 not re-impose terminal confinement.
+
+Background terminal tasks are session-scoped and owned by the Broker: at most
+`TerminalLimits.MaxBackgroundTasksPerSession` run at once, a task that reaches
+its lifetime is killed (`expired`), `mode=kill` stops it (`killed`), and a
+Broker restart drops every task (a stale id fails closed). The kill path kills
+the process tree by parentage first and then the Job Object, so a descendant
+created before the job assignment landed cannot survive.
 
 The managed Git commit workflow retains temporary-index isolation, path rollback
 attribution, and refusal when the real index already contains staged user

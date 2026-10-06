@@ -33,6 +33,25 @@ public static class TerminalLimits
     public const int DefaultTimeoutMs = 120_000;
     public const int HardMaxTimeoutMs = 1_800_000;
     public const int StandardApprovalThresholdMs = 900_000;
+
+    /// <summary>
+    /// Concurrent background terminal tasks one session may keep alive. Past
+    /// this the start fails closed with background_task_limit_reached.
+    /// </summary>
+    public const int MaxBackgroundTasksPerSession = 4;
+
+    /// <summary>
+    /// Background lifetime when the call omits timeout_ms.
+    /// </summary>
+    public const int BackgroundDefaultLifetimeMs = 30 * 60_000;
+
+    /// <summary>
+    /// Hard ceiling on a background task's lifetime. The lifetime cap replaces
+    /// the standard-window approval gate for background calls because they do
+    /// not block the turn.
+    /// </summary>
+    public const int BackgroundMaxLifetimeMs = 2 * 60 * 60_000;
+
     public const int MaxArguments = 64;
     public const int MaxArgumentChars = 1024;
     public const int MaxScriptChars = 16_000;

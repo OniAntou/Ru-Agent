@@ -68,10 +68,10 @@ public sealed class StreamingProcessRunner
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        // The protocol maximum is the single source of truth: the tool schema and
-        // the policy evaluator both accept up to TerminalLimits.HardMaxTimeoutMs,
-        // so a runner with a tighter private cap would reject an approved request.
-        if (spec.TimeoutMs is < 1 or > RuAgent.Protocol.TerminalLimits.HardMaxTimeoutMs
+        // The protocol schema accepts up to the background lifetime ceiling, so a
+        // runner with a tighter private cap would reject an approved request; the
+        // evaluator enforces the tighter foreground hard maximum.
+        if (spec.TimeoutMs is < 1 or > RuAgent.Protocol.TerminalLimits.BackgroundMaxLifetimeMs
             || spec.OutputLimitBytes < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(spec));
@@ -125,21 +125,7 @@ public sealed class StreamingProcessRunner
             }
 
             process?.Dispose();
-            return new StreamingProcessResult(
-                Status: "failed",
-                ExitCode: null,
-                DurationMs: (int)stopwatch.Elapsed.TotalMilliseconds,
-                StdoutHead: string.Empty,
-                StdoutTail: string.Empty,
-                StderrHead: "process_start_failed",
-                StderrTail: string.Empty,
-                StdoutBytes: 0,
-                StderrBytes: 0,
-                StdoutDroppedBytes: 0,
-                StderrDroppedBytes: 0,
-                FramesEmitted: 0,
-                FramesDropped: 0,
-                WorkingDirectory: spec.WorkingDirectory);
+            return StartFailure(spec, stopwatch.ElapsedMilliseconds);
         }
 
         using var registered = process;
@@ -174,9 +160,9 @@ public sealed class StreamingProcessRunner
         var status = "running";
         try
         {
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            await registered.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
             status = "succeeded";
-            if (process.ExitCode != 0)
+            if (registered.ExitCode != 0)
             {
                 status = "failed";
             }
@@ -184,10 +170,24 @@ public sealed class StreamingProcessRunner
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             status = cancellationToken.IsCancellationRequested ? "cancelled" : "timed_out";
+            // Kill by parentage first: a descendant created before the job
+            // assignment landed is not in the job, and after the parent dies the
+            // tree walk can no longer find it. The job kill stays as the backup.
+            try
+            {
+                if (!registered.HasExited)
+                {
+                    registered.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
             job.KillTree();
             try
             {
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                await registered.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (InvalidOperationException)
             {
@@ -199,7 +199,7 @@ public sealed class StreamingProcessRunner
         stopwatch.Stop();
         return new StreamingProcessResult(
             Status: status,
-            ExitCode: process.HasExited ? process.ExitCode : null,
+            ExitCode: registered.HasExited ? registered.ExitCode : null,
             DurationMs: (int)stopwatch.Elapsed.TotalMilliseconds,
             StdoutHead: stdoutBuffer.Head,
             StdoutTail: stdoutBuffer.Tail,
@@ -247,6 +247,22 @@ public sealed class StreamingProcessRunner
             }
         }
     }
+
+    private static StreamingProcessResult StartFailure(ProcessRunSpec spec, long elapsedMs) => new(
+        Status: "failed",
+        ExitCode: null,
+        DurationMs: (int)elapsedMs,
+        StdoutHead: string.Empty,
+        StdoutTail: string.Empty,
+        StderrHead: "process_start_failed",
+        StderrTail: string.Empty,
+        StdoutBytes: 0,
+        StderrBytes: 0,
+        StdoutDroppedBytes: 0,
+        StderrDroppedBytes: 0,
+        FramesEmitted: 0,
+        FramesDropped: 0,
+        WorkingDirectory: spec.WorkingDirectory);
 
     private static ProcessStartInfo BuildStartInfo(ProcessRunSpec spec)
     {

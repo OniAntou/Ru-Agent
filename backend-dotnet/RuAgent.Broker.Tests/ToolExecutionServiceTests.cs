@@ -1248,6 +1248,293 @@ public sealed class ToolExecutionServiceTests
         }
     }
 
+    /// <summary>
+    /// A background run returns immediately with its execution id, pages live
+    /// output while it runs, and stops on mode kill. The task is owned by the
+    /// session registry, not by the tool call, so the call returns before the
+    /// process finishes.
+    /// </summary>
+    [Fact]
+    public async Task Background_terminal_task_starts_polls_live_output_and_kills()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-background-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-background";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var runRequestId = "req-bg-" + Guid.NewGuid().ToString("N");
+            var started = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, runRequestId, new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "echo bg-hello & ping -n 30 127.0.0.1 > nul"),
+                    ["background"] = true,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, started.Status);
+            Assert.Equal(runRequestId, started.Output["execution_id"]!.GetValue<string>());
+            Assert.Equal("running", started.Output["state"]!.GetValue<string>());
+            Assert.Equal(runRequestId, started.Output["spool_id"]!.GetValue<string>());
+
+            // While the task runs, a read reports the live state. The output
+            // itself may still be in flight under a loaded test host; the
+            // completion test below pins the content.
+            var live = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-live-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "read_output",
+                    ["execution_id"] = runRequestId,
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, live.Status);
+            Assert.Equal("running", live.Output["state"]!.GetValue<string>());
+
+            var killed = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-kill-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "kill",
+                    ["execution_id"] = runRequestId,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, killed.Status);
+            Assert.Equal("killing", killed.Output["state"]!.GetValue<string>());
+
+            var final = await WaitForBackgroundStateAsync(service, sessionId, runRequestId, "killed");
+            Assert.Equal("killed", final.Output["state"]!.GetValue<string>());
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
+    [Fact]
+    public async Task Background_terminal_task_reports_exit_code_when_it_finishes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-background-done-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-background-done";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var runRequestId = "req-bg-done-" + Guid.NewGuid().ToString("N");
+            var started = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, runRequestId, new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "echo bg-done"),
+                    ["background"] = true,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal("running", started.Output["state"]!.GetValue<string>());
+
+            var done = await WaitForBackgroundStateAsync(service, sessionId, runRequestId, "exited");
+            Assert.Equal(0, done.Output["exit_code"]!.GetValue<int>());
+            Assert.Contains("bg-done", done.Output["page"]!.GetValue<string>(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
+    [Fact]
+    public async Task Background_task_cap_and_unknown_ids_fail_closed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-background-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-background-cap";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var ids = new List<string>();
+            for (var index = 0; index < TerminalLimits.MaxBackgroundTasksPerSession; index++)
+            {
+                var id = $"req-bg-cap-{index}-" + Guid.NewGuid().ToString("N");
+                ids.Add(id);
+                var started = await service.ExecuteAuthenticatedV2Async(
+                    TerminalV2Request(sessionId, id, new JsonObject
+                    {
+                        ["mode"] = "run",
+                        ["executable"] = "cmd.exe",
+                        ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
+                        ["background"] = true,
+                    }),
+                    CancellationToken.None);
+                Assert.Equal("running", started.Output["state"]!.GetValue<string>());
+            }
+
+            var over = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-bg-over-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
+                    ["background"] = true,
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Failed, over.Status);
+            Assert.Equal("background_task_limit_reached", over.ErrorCode);
+
+            var unknown = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-kill-unknown-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "kill",
+                    ["execution_id"] = "req-no-such-task",
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Failed, unknown.Status);
+            Assert.Equal("unknown_background_task", unknown.ErrorCode);
+
+            foreach (var id in ids)
+            {
+                var kill = await service.ExecuteAuthenticatedV2Async(
+                    TerminalV2Request(sessionId, "req-kill-" + Guid.NewGuid().ToString("N"), new JsonObject
+                    {
+                        ["mode"] = "kill",
+                        ["execution_id"] = id,
+                    }),
+                    CancellationToken.None);
+                Assert.Equal(ToolResultStatuses.Succeeded, kill.Status);
+            }
+
+            await WaitForBackgroundStateAsync(service, sessionId, ids[0], "killed");
+            var notRunning = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-kill-again-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "kill",
+                    ["execution_id"] = ids[0],
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Failed, notRunning.Status);
+            Assert.Equal("background_task_not_running", notRunning.ErrorCode);
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
+    private static async Task DeleteBackgroundRootAsync(string root)
+    {
+        // The killed process tree releases its working-directory handle a
+        // moment after the parent exits; retry instead of racing the OS. The
+        // window is generous because the suite runs many real processes in
+        // parallel and termination is asynchronous.
+        for (var attempt = 0; attempt < 300; attempt++)
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+                return;
+            }
+            catch (IOException)
+            {
+                await Task.Delay(100);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        Directory.Delete(root, recursive: true);
+    }
+
+    private static async Task<ToolResult> WaitForBackgroundStateAsync(
+        ToolExecutionService service,
+        string sessionId,
+        string executionId,
+        string expectedState)
+    {
+        ToolResult? last = null;
+        for (var attempt = 0; attempt < 300; attempt++)
+        {
+            var page = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-state-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "read_output",
+                    ["execution_id"] = executionId,
+                }),
+                CancellationToken.None);
+            last = page;
+            if (page.Status == ToolResultStatuses.Succeeded
+                && page.Output["state"] is System.Text.Json.Nodes.JsonNode state
+                && string.Equals(state.GetValue<string>(), expectedState, StringComparison.Ordinal))
+            {
+                return page;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new Xunit.Sdk.XunitException(
+            $"Background task never reached state '{expectedState}' (last={last?.Output["state"]?.GetValue<string>()}).");
+    }
+
     private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments, string? requestId = null) => new(
         AgentEnvelopeCodec.ProtocolVersion,
         requestId ?? "req-" + Guid.NewGuid().ToString("N"),

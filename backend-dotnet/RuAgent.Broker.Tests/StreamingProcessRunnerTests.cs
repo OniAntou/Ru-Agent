@@ -64,7 +64,7 @@ public sealed class StreamingProcessRunnerTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             runner.RunAsync(
-                CmdSpec("echo too-long", TerminalLimits.HardMaxTimeoutMs + 1),
+                CmdSpec("echo too-long", TerminalLimits.BackgroundMaxLifetimeMs + 1),
                 null,
                 CancellationToken.None));
     }

@@ -123,8 +123,11 @@ public sealed class PolicySnapshotEvaluator
             return Deny("intent_hash_invalid");
         }
 
+        // A background task does not block the turn, so it is bounded by its
+        // own lifetime cap instead of the foreground hard maximum.
         if (IsTerminal(context)
-            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.HardMaxTimeoutMs)
+            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs)
+                > (context.Background ? TerminalLimits.BackgroundMaxLifetimeMs : TerminalLimits.HardMaxTimeoutMs))
         {
             return Deny("timeout_exceeds_hard_max");
         }
@@ -210,11 +213,14 @@ public sealed class PolicySnapshotEvaluator
 
         // Above the standard window the protocol requires an explicit approval before
         // execution, unless the profile already auto-allows arbitrary terminal
-        // (full_access, the skip-all mode). It is a profile-level gate, so it is
-        // applied after the ordered rules: an explicit allow or deny the user wrote
-        // still decides, and the hard maximum and the protected-path deny have
-        // already been enforced above.
+        // (full_access, the skip-all mode) or the call is a background task: a
+        // background call returns immediately and is bounded by its lifetime cap,
+        // so the blocking-window gate does not apply. It is a profile-level gate,
+        // so it is applied after the ordered rules: an explicit allow or deny the
+        // user wrote still decides, and the hard maximum and the protected-path
+        // deny have already been enforced above.
         if (IsTerminal(context)
+            && !context.Background
             && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs
             && AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(AgentPolicySubject.RiskyTerminal)
                 != AgentPolicyDecision.Allow)

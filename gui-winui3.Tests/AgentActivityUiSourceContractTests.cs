@@ -431,16 +431,18 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void A_replayed_row_puts_its_wall_clock_time_on_the_row()
+    public void The_feed_does_not_render_a_clock()
     {
-        // The label has to sit with the row's metadata, not replace it: duration,
-        // diff counts and safe code are what explain the step, the clock is only
-        // what lets a reader line it up against the durable log.
+        // Removed by owner request: the wall-clock label added a second time
+        // surface to read, and every live row showed a dash for it. The durable
+        // log keeps the timestamps; the feed does not repeat them.
         var template = ActivityTemplate();
 
-        Assert.True(
-            Binds(template, "OccurredAtLabel"),
-            "AgentActivityTemplate must bind OccurredAtLabel.");
+        Assert.False(Binds(template, "OccurredAtLabel"));
+        Assert.DoesNotContain(
+            "When this step happened",
+            GuiSource.Text("Views", "ChatView.xaml"),
+            StringComparison.Ordinal);
     }
 
     [Fact]

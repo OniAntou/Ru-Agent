@@ -24,8 +24,7 @@ public sealed record AgentActivityModel(
     long? DurableSequence,
     long? TransientSequence,
     string? Detail = null,
-    IReadOnlyList<AgentTodoWire>? Todos = null,
-    DateTimeOffset? OccurredAt = null)
+    IReadOnlyList<AgentTodoWire>? Todos = null)
 {
     public static bool TryParse(SseFrame frame, out AgentActivityModel? activity)
     {

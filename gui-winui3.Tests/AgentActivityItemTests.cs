@@ -795,45 +795,6 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void A_row_with_no_durable_timestamp_shows_a_dash_not_a_fake_time()
-    {
-        // Live frames carry no timestamp. A blank or a guessed clock would let a
-        // reader line a row up against the log on a time that never happened.
-        var item = new AgentActivityItem(Activity(AgentActivityState.Completed));
-
-        Assert.Null(item.OccurredAt);
-        Assert.Equal("—", item.OccurredAtLabel);
-    }
-
-    [Fact]
-    public void A_replayed_row_shows_its_wall_clock_time()
-    {
-        var occurredAt = new DateTimeOffset(2026, 5, 4, 12, 30, 15, TimeSpan.Zero);
-        var item = new AgentActivityItem(Activity(
-            AgentActivityState.Completed,
-            occurredAt: occurredAt));
-
-        // Local time, because the reader compares the row against a local clock.
-        Assert.Equal(
-            occurredAt.ToLocalTime().ToString("HH:mm:ss"),
-            item.OccurredAtLabel);
-    }
-
-    [Fact]
-    public void A_live_update_does_not_wipe_the_timestamp_replay_filled_in()
-    {
-        var occurredAt = new DateTimeOffset(2026, 5, 4, 12, 30, 15, TimeSpan.Zero);
-        var item = new AgentActivityItem(Activity(
-            AgentActivityState.Completed,
-            occurredAt: occurredAt));
-
-        // Settlement frames arrive with no timestamp; the label must survive them.
-        item.UpdateFrom(Activity(AgentActivityState.Completed));
-
-        Assert.Equal(occurredAt.ToLocalTime().ToString("HH:mm:ss"), item.OccurredAtLabel);
-    }
-
-    [Fact]
     public void A_settled_row_keeps_its_detail_line()
     {
         // The feed has one density only. A finished step still says what it did,
@@ -859,8 +820,7 @@ public sealed class AgentActivityItemTests
         int? durationMs = null,
         string safeCode = "succeeded",
         string? toolDisplay = null,
-        string? detail = null,
-        DateTimeOffset? occurredAt = null) =>
+        string? detail = null) =>
         new(
             "act_11111111111111111111111111111111",
             kind,
@@ -878,6 +838,5 @@ public sealed class AgentActivityItemTests
             null,
             1,
             detail,
-            Todos: null,
-            OccurredAt: occurredAt);
+            Todos: null);
 }

@@ -345,18 +345,6 @@ public sealed class AgentRunActivitiesTests
         {
             Assert.Contains(entry.GetProperty("activity_id").GetString()!, activityIds);
         }
-
-        // Every replayed row carries its wall-clock time so the feed can show
-        // when each step happened, not just how long it took.
-        Assert.True(activities.Length > 0);
-        foreach (var activity in activities)
-        {
-            Assert.True(
-                activity.TryGetProperty("occurred_at", out var occurredAt)
-                    && occurredAt.ValueKind == JsonValueKind.String
-                    && DateTimeOffset.TryParse(occurredAt.GetString(), out _),
-                "replayed activity row misses a parseable occurred_at");
-        }
     }
 
     /// <summary>

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -331,19 +330,6 @@ namespace RuApp.Services
                         continue;
                     }
 
-                    // The wire carries an ISO-8601 instant; a row without one is still shown, its
-                    // label just reads a dash. Replay is not worth refusing over a clock.
-                    DateTimeOffset? occurredAt = null;
-                    if (!string.IsNullOrWhiteSpace(wire.OccurredAt)
-                        && DateTimeOffset.TryParse(
-                            wire.OccurredAt,
-                            CultureInfo.InvariantCulture,
-                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                            out var parsedAt))
-                    {
-                        occurredAt = parsedAt;
-                    }
-
                     rows.Add(new AgentActivityModel(
                         wire.ActivityId,
                         wire.Kind,
@@ -361,8 +347,7 @@ namespace RuApp.Services
                         DurableSequence: wire.DurableSequence,
                         TransientSequence: null,
                         wire.Detail,
-                        wire.Todos,
-                        occurredAt));
+                        wire.Todos));
                 }
 
                 return new RunActivityReplay(rows, ReadTranscript(document.RootElement));

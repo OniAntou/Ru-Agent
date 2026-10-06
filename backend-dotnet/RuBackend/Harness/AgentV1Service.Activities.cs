@@ -112,7 +112,7 @@ public sealed partial class AgentV1Service
                     int? durationMs = startedAt == default
                         ? null
                         : (int?)Math.Max(0, (evt.OccurredAt - startedAt).TotalMilliseconds);
-                    thinking.Add(new ThinkingReplayRow(finishedStep, durationMs, evt.Sequence, evt.OccurredAt));
+                    thinking.Add(new ThinkingReplayRow(finishedStep, durationMs, evt.Sequence));
                     if (evt.PayloadId is { } stepPayloadId)
                     {
                         stepTexts.Add(new StepTextReplayRow(stepPayloadId, evt.Sequence));
@@ -132,7 +132,7 @@ public sealed partial class AgentV1Service
                     break;
                 case "context.compacted"
                     when string.Equals(evt.SafeCode, "context_compacted", StringComparison.Ordinal):
-                    compactions.Add(new CompactionReplayRow(evt.Sequence, evt.OccurredAt, evt.SafeCount));
+                    compactions.Add(new CompactionReplayRow(evt.Sequence, evt.SafeCount));
                     break;
             }
         }
@@ -147,8 +147,7 @@ public sealed partial class AgentV1Service
                     CoreActivityKind.Compaction,
                     CoreActivityState.Completed,
                     Count: compaction.CoveredCount,
-                    SafeCode: "context_compacted"),
-                compaction.OccurredAt));
+                    SafeCode: "context_compacted")));
         }
         foreach (var call in completed)
         {
@@ -184,7 +183,7 @@ public sealed partial class AgentV1Service
                 AgentActivityProjector.ProjectTool(proposal, state, receipt, durationMs),
                 proposal);
 
-            rows.Add(new ReplayedActivityRow(call.Sequence, activity, call.CompletedAt));
+            rows.Add(new ReplayedActivityRow(call.Sequence, activity));
 
             // The task list rides on the same durable completion as the tool row it came
             // from, because that is where it lives: the payload the model received. Emitting
@@ -197,8 +196,7 @@ public sealed partial class AgentV1Service
                 rows.Add(new ReplayedActivityRow(
                     call.Sequence,
                     AgentActivityProjector.ProjectTodos(
-                        $"act_todo_replay_{call.ToolCallId.Value}", todos),
-                    call.CompletedAt));
+                        $"act_todo_replay_{call.ToolCallId.Value}", todos)));
             }
         }
 
@@ -222,7 +220,7 @@ public sealed partial class AgentV1Service
             var pending = runTerminal
                 ? AgentActivityProjector.ProjectTool(proposal, CoreActivityState.Failed, safeCode: "interrupted")
                 : AgentActivityProjector.ProjectTool(proposal, CoreActivityState.Started);
-            rows.Add(new ReplayedActivityRow(entry.Sequence, WithEditPreview(pending, proposal), null));
+            rows.Add(new ReplayedActivityRow(entry.Sequence, WithEditPreview(pending, proposal)));
         }
 
         // Reasoning is recorded beside the step completion, so join it back onto
@@ -251,8 +249,7 @@ public sealed partial class AgentV1Service
             reasoningDetails.TryGetValue(row.ModelStepId.Value, out var detail);
             rows.Add(new ReplayedActivityRow(
                 row.Sequence,
-                AgentActivityProjector.ProjectModelStep(row.ModelStepId, CoreActivityState.Completed, row.DurationMs, detail: detail),
-                row.OccurredAt));
+                AgentActivityProjector.ProjectModelStep(row.ModelStepId, CoreActivityState.Completed, row.DurationMs, detail: detail)));
         }
 
         var wires = new List<JsonElement>();
@@ -262,7 +259,7 @@ public sealed partial class AgentV1Service
             JsonElement wire;
             try
             {
-                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity, row.OccurredAt, row.Sequence))).RootElement.Clone();
+                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity, row.Sequence))).RootElement.Clone();
             }
             catch (JsonException)
             {
@@ -560,7 +557,7 @@ public sealed partial class AgentV1Service
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    private static ProtocolActivityWire MapActivity(AgentActivity activity, DateTimeOffset? occurredAt, long durableSequence) =>
+    private static ProtocolActivityWire MapActivity(AgentActivity activity, long durableSequence) =>
         new(
             activity.ActivityId,
             MapActivityKind(activity.Kind),
@@ -577,7 +574,6 @@ public sealed partial class AgentV1Service
             activity.ToolDisplay,
             activity.Detail,
             activity.Todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray(),
-            occurredAt?.ToString("O"),
             durableSequence);
 
     private static ProtocolActivityKind MapActivityKind(CoreActivityKind kind) => kind switch
@@ -625,10 +621,10 @@ public sealed partial class AgentV1Service
         DateTimeOffset CompletedAt,
         long Sequence);
 
-    private sealed record ThinkingReplayRow(ModelStepId ModelStepId, int? DurationMs, long Sequence, DateTimeOffset OccurredAt);
+    private sealed record ThinkingReplayRow(ModelStepId ModelStepId, int? DurationMs, long Sequence);
 
     private sealed record ReasoningReplayCall(PayloadId PayloadId, long Sequence);
 
-    private sealed record ReplayedActivityRow(long Sequence, AgentActivity Activity, DateTimeOffset? OccurredAt);
-    private sealed record CompactionReplayRow(long Sequence, DateTimeOffset OccurredAt, int? CoveredCount);
+    private sealed record ReplayedActivityRow(long Sequence, AgentActivity Activity);
+    private sealed record CompactionReplayRow(long Sequence, int? CoveredCount);
 }

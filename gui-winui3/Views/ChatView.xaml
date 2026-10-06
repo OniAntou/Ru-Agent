@@ -249,12 +249,6 @@
                                   Orientation="Horizontal"
                                   Spacing="6"
                                   VerticalAlignment="Center">
-                      <TextBlock Text="{x:Bind OccurredAtLabel, Mode=OneWay}"
-                                         ToolTipService.ToolTip="When this step happened"
-                                         FontFamily="{StaticResource RuMonoFontFamily}"
-                                         FontSize="11"
-                                         Foreground="{StaticResource RuMutedBrush}"
-                                         VerticalAlignment="Center" />
                       <Border Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                               Background="{StaticResource RuSurfaceBrush}"
                               BorderBrush="{StaticResource RuLineBrush}"

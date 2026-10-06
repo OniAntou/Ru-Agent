@@ -69,7 +69,6 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("tool_display")] string? ToolDisplay = null,
     [property: JsonPropertyName("detail")] string? Detail = null,
     [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null,
-    [property: JsonPropertyName("occurred_at")] string? OccurredAt = null,
     [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null);
 
 public static class AgentActivityWireCodec
@@ -130,7 +129,6 @@ public static class AgentActivityWireValidator
     public const int MaximumCount = 1_000_000;
     public const int MaximumDurationMilliseconds = 86_400_000;
     public const int MaximumSafeCodeLength = 64;
-    public const int MaximumOccurredAtLength = 64;
     public const int MaximumToolDisplayLength = 32;
     public const int MaximumDetailLength = 4_000;
     public const int MaximumTodos = 64;
@@ -153,7 +151,6 @@ public static class AgentActivityWireValidator
         "tool_display",
         "detail",
         "todos",
-        "occurred_at",
         "durable_sequence",
     };
 
@@ -286,14 +283,6 @@ public static class AgentActivityWireValidator
             {
                 throw new JsonException($"Activity field '{propertyName}' is required.");
             }
-        }
-
-        if (root.TryGetProperty("occurred_at", out var occurredAt)
-            && (occurredAt.ValueKind != JsonValueKind.String
-                || occurredAt.GetString() is not { Length: > 0 and <= MaximumOccurredAtLength } text
-                || !DateTimeOffset.TryParse(text, out _)))
-        {
-            throw new JsonException("Activity timestamp is invalid.");
         }
 
         if (root.TryGetProperty("durable_sequence", out var sequence)

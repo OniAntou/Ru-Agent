@@ -18,7 +18,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     private int? _added;
     private int? _removed;
     private int? _durationMs;
-    private DateTimeOffset? _occurredAt;
     private string _safeCode = "succeeded";
     private string? _toolDisplay;
     private string? _detail;
@@ -118,24 +117,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         get => _durationMs;
         private set => SetProperty(ref _durationMs, value);
     }
-
-    /// <summary>
-    /// When the durable event behind a replayed row happened. Live rows carry
-    /// none until they settle through replay; the label then reads a dash.
-    /// </summary>
-    public DateTimeOffset? OccurredAt
-    {
-        get => _occurredAt;
-        private set
-        {
-            if (SetProperty(ref _occurredAt, value))
-            {
-                OnPropertyChanged(nameof(OccurredAtLabel));
-            }
-        }
-    }
-
-    public string OccurredAtLabel => _occurredAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—";
 
     public string SafeCode
     {
@@ -762,12 +743,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         Added = activity.Added;
         Removed = activity.Removed;
         DurationMs = activity.DurationMs;
-        // A live frame carries no timestamp; only overwrite with a real one so
-        // replay fills the label in without live updates blanking it.
-        if (activity.OccurredAt is not null)
-        {
-            OccurredAt = activity.OccurredAt;
-        }
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
         // Producer only sends @@ old ==> new on Started; Completed carries

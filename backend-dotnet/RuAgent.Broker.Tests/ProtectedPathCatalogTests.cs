@@ -6,21 +6,9 @@ namespace RuAgent.Broker.Tests;
 public sealed class ProtectedPathCatalogTests
 {
     [Fact]
-    public void Catalog_version_is_locked_at_1()
+    public void Catalog_version_is_locked_at_2()
     {
-        Assert.Equal("1", ProtectedPathCatalog.Version);
-    }
-
-    [Theory]
-    [InlineData(@"C:\ws\repo\.git")]
-    [InlineData(@"C:\ws\repo\.git\config")]
-    [InlineData(@"C:\ws\repo\.git\objects\ab\cd1234")]
-    [InlineData(@"C:\ws\repo\.env")]
-    [InlineData(@"C:\ws\repo\.env.local")]
-    [InlineData(@"C:\ws\repo\sub\.env.production")]
-    public void Git_and_env_paths_are_protected(string path)
-    {
-        Assert.True(ProtectedPathCatalog.IsProtected(path));
+        Assert.Equal("2", ProtectedPathCatalog.Version);
     }
 
     [Theory]
@@ -32,6 +20,24 @@ public sealed class ProtectedPathCatalogTests
     public void Harness_database_key_and_descriptor_locations_are_protected(string path)
     {
         Assert.True(ProtectedPathCatalog.IsProtected(path));
+    }
+
+    [Theory]
+    [InlineData(@"C:\ws\repo\.git")]
+    [InlineData(@"C:\ws\repo\.git\config")]
+    [InlineData(@"C:\ws\repo\.git\objects\ab\cd1234")]
+    [InlineData(@"C:\ws\repo\.env")]
+    [InlineData(@"C:\ws\repo\.env.local")]
+    [InlineData(@"C:\ws\repo\sub\.env.production")]
+    [InlineData(@"C:\Users\u\.ssh\id_rsa")]
+    [InlineData(@"C:\Users\u\.aws\credentials")]
+    [InlineData(@"D:\srv\.git-credentials")]
+    [InlineData(@"D:\notes\.netrc")]
+    public void Developer_and_credential_paths_are_ordinary_targets(string path)
+    {
+        // Mainstream agents read .git/.env/.ssh through normal permission rules
+        // instead of a hard deny list, so these paths follow the preset profile.
+        Assert.False(ProtectedPathCatalog.IsProtected(path, _ => null));
     }
 
     [Fact]
@@ -72,57 +78,62 @@ public sealed class ProtectedPathCatalogTests
     [InlineData(@"D:\work\credential-rotation-notes.md")]
     public void Files_merely_named_like_credentials_stay_editable(string path)
     {
-        // The old rule blocked every path *containing* the substring
-        // "credential", which stopped legitimate work and never covered the
-        // stores that actually hold secrets.
         Assert.False(ProtectedPathCatalog.IsProtected(path, _ => null));
     }
 
     [Theory]
-    [InlineData(@"C:\Users\u\.ssh\config")]
-    [InlineData(@"C:\Users\u\.ssh\keys\work")]
-    [InlineData(@"C:\Users\u\AppData\Roaming\Microsoft\Protect\S-1-5\AAB")]
-    [InlineData(@"C:\Users\u\AppData\Local\Microsoft\Credentials\cvid\c")]
-    [InlineData(@"C:\Users\u\.aws\credentials")]
-    [InlineData(@"C:\Users\u\.kube\config")]
-    public void Anchored_credential_stores_are_protected(string path)
+    [InlineData(@"D:\srv\runtime_descriptor.json.")]
+    [InlineData(@"D:\srv\runtime_descriptor.json ")]
+    [InlineData(@"D:\srv\harness_key.dat.")]
+    [InlineData(@"D:\srv\AGENT_HARNESS.db")]
+    public void Trailing_dots_and_spaces_cannot_alias_protected_names(string path)
     {
-        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["USERPROFILE"] = @"C:\Users\u",
-            ["APPDATA"] = @"C:\Users\u\AppData\Roaming",
-            ["LOCALAPPDATA"] = @"C:\Users\u\AppData\Local",
-        };
-        Assert.True(ProtectedPathCatalog.IsProtected(path, name =>
-            env.TryGetValue(name, out var value) ? value : null));
+        // Win32 drops trailing dots and spaces when it opens an existing name, so
+        // `runtime_descriptor.json.` is `runtime_descriptor.json`; the catalog
+        // must normalize before matching.
+        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => null));
     }
 
-    [Theory]
-    [InlineData(@"D:\notes\.netrc")]
-    [InlineData(@"D:\srv\.git-credentials")]
-    [InlineData(@"C:\deploy\id_ed25519")]
-    public void Credential_bearing_file_names_are_protected_anywhere(string path)
+    [Fact]
+    public void Extra_paths_from_the_environment_join_the_hard_deny_list()
     {
-        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => null));
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ProtectedPathCatalog.ExtraPathsEnvironmentVariable] =
+                @"C:\secrets; D:\work\.env;",
+        };
+
+        Assert.True(ProtectedPathCatalog.IsProtected(
+            @"C:\secrets\api.txt",
+            name => environment.TryGetValue(name, out var value) ? value : null));
+        Assert.True(ProtectedPathCatalog.IsProtected(
+            @"D:\work\.env",
+            name => environment.TryGetValue(name, out var value) ? value : null));
+        Assert.False(ProtectedPathCatalog.IsProtected(
+            @"C:\secrets-notes\readme.md",
+            name => environment.TryGetValue(name, out var value) ? value : null));
+        Assert.False(ProtectedPathCatalog.IsProtected(
+            @"D:\work\src\program.cs",
+            name => environment.TryGetValue(name, out var value) ? value : null));
+    }
+
+    [Fact]
+    public void Extra_path_entries_that_are_not_paths_are_ignored()
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ProtectedPathCatalog.ExtraPathsEnvironmentVariable] = "not a path\0;",
+        };
+
+        Assert.False(ProtectedPathCatalog.IsProtected(
+            @"C:\ws\repo\src\main.cpp",
+            name => environment.TryGetValue(name, out var value) ? value : null));
     }
 
     [Fact]
     public void Public_surface_without_environment_still_covers_name_rules()
     {
-        Assert.True(ProtectedPathCatalog.IsProtected(@"D:\srv\.git-credentials"));
+        Assert.True(ProtectedPathCatalog.IsProtected(@"D:\srv\harness_key.dat"));
         Assert.False(ProtectedPathCatalog.IsProtected(@"D:\project\src\credentials.json"));
-    }
-
-    [Theory]
-    [InlineData(@"D:\srv\id_rsa.")]
-    [InlineData(@"D:\srv\id_rsa ")]
-    [InlineData(@"D:\srv\.netrc.")]
-    [InlineData(@"C:\ws\repo\.git \config")]
-    [InlineData(@"C:\Users\u\.ssh\id_ed25519.")]
-    public void Trailing_dots_and_spaces_cannot_alias_protected_names(string path)
-    {
-        // Win32 drops trailing dots and spaces when it opens an existing name, so
-        // `id_rsa.` is `id_rsa`; the catalog must normalize before matching.
-        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => @"C:\Users\u"));
     }
 }

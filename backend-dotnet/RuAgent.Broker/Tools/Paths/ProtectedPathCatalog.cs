@@ -1,49 +1,34 @@
 namespace RuAgent.Broker.Tools.Paths;
 
 /// <summary>
-/// The hard deny list: paths no preset, grant, or approval may open. Rules are
-/// anchored to real credential storage locations and content-bearing file
-/// names, not to loose substrings -- a substring match over the whole path
-/// both denied legitimate work (any file whose directory name happened to
-/// contain the word "credential") and missed the directories that actually
-/// hold secrets (.ssh, DPAPI, cloud CLIs).
+/// The hard deny list: the harness's own key material and runtime descriptors,
+/// plus any paths the user adds through <see cref="ExtraPathsEnvironmentVariable"/>.
+/// Credential stores and developer files (.ssh, .env, .git, cloud CLI homes) are
+/// ordinary paths: they follow the preset profile like any other target, matching
+/// the mainstream agents that read them through normal permission rules. The core
+/// rules stay anchored to the files that would let a tool impersonate the Broker
+/// or read the harness key, so no preset or approval can open them.
 /// </summary>
 public static class ProtectedPathCatalog
 {
-    public const string Version = "1";
+    public const string Version = "2";
 
-    /// <summary>Environment variables the anchored rules resolve against.</summary>
+    /// <summary>Semicolon-separated absolute paths that join the hard deny list.</summary>
+    public const string ExtraPathsEnvironmentVariable = "RU_PROTECTED_PATHS";
+
+    /// <summary>Environment variables the extra-path rules resolve against.</summary>
     public delegate string? EnvironmentAccessor(string name);
-
-    // Credential stores reachable by the terminal on this machine: the SSH key
-    // ring, DPAPI master keys and credential blobs, cloud CLI homes, and
-    // kube/docker configs. The comparison is anchored to the resolved base
-    // directory, so a workspace file named "credentials" stays editable while
-    // the real stores never open.
-    private static readonly (string EnvName, string Tail)[] SensitiveDirectories =
-    [
-        ("USERPROFILE", ".ssh"),
-        ("APPDATA", @"Microsoft\Credentials"),
-        ("APPDATA", @"Microsoft\Protect"),
-        ("LOCALAPPDATA", @"Microsoft\Credentials"),
-        ("LOCALAPPDATA", @"Microsoft\Vault"),
-        ("USERPROFILE", ".aws"),
-        ("USERPROFILE", ".azure"),
-        ("USERPROFILE", ".gnupg"),
-        ("USERPROFILE", ".kube"),
-        ("USERPROFILE", ".docker"),
-    ];
 
     private static readonly string[] ProtectedFileNames =
     [
-        ".netrc",
-        ".git-credentials",
-        "id_rsa",
-        "id_dsa",
-        "id_ecdsa",
-        "id_ed25519",
         "runtime_descriptor.json",
         "broker.json",
+    ];
+
+    private static readonly string[] ProtectedFilePrefixes =
+    [
+        "agent_harness",
+        "harness_key",
     ];
 
     public static bool IsProtected(string canonicalPath) =>
@@ -64,33 +49,19 @@ public static class ProtectedPathCatalog
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
 
-        // .git/** at any depth, and .env* files at any depth. Segments are trimmed
-        // of the trailing dots/spaces Win32 ignores, so `.git ` cannot alias `.git`.
-        foreach (var rawSegment in segments)
-        {
-            var segment = rawSegment.TrimEnd('.', ' ');
-            if (string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (segment.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
         var fileName = segments.Length > 0 ? segments[^1] : string.Empty;
-        // Win32 opens `id_rsa.` / `id_rsa ` as `id_rsa` when the file exists, and
-        // the resolver keeps the raw leaf for a missing create target: normalize
-        // trailing dots and spaces before matching so the alias cannot slip past.
+        // Win32 opens `runtime_descriptor.json.` as `runtime_descriptor.json` when
+        // the file exists, and the resolver keeps the raw leaf for a missing
+        // create target: normalize trailing dots and spaces before matching so
+        // the alias cannot slip past.
         var normalizedFileName = fileName.TrimEnd('.', ' ');
 
-        // Agent harness key/descriptor/database artifacts, wherever they live.
-        if (normalizedFileName.StartsWith("agent_harness", StringComparison.OrdinalIgnoreCase)
-            || normalizedFileName.StartsWith("harness_key", StringComparison.OrdinalIgnoreCase))
+        foreach (var prefix in ProtectedFilePrefixes)
         {
-            return true;
+            if (normalizedFileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
         }
 
         foreach (var protectedName in ProtectedFileNames)
@@ -101,39 +72,40 @@ public static class ProtectedPathCatalog
             }
         }
 
-        // Credential stores reachable by the terminal on this machine: the
-        // SSH key ring, DPAPI master keys and credential blobs, cloud CLI
-        // homes, and kube/docker configs. The comparison is anchored to the
-        // resolved base directory, so a workspace file named "credentials"
-        // stays editable while the real stores never open.
-        foreach (var (envName, tail) in SensitiveDirectories)
+        return IsExtraProtected(normalized, environment);
+    }
+
+    private static bool IsExtraProtected(string normalized, EnvironmentAccessor environment)
+    {
+        var configured = environment(ExtraPathsEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(configured))
         {
-            var baseValue = environment(envName);
-            if (string.IsNullOrWhiteSpace(baseValue))
+            return false;
+        }
+
+        foreach (var rawEntry in configured.Split(
+            ';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string root;
+            try
+            {
+                root = Path.GetFullPath(rawEntry.TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar));
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
             {
                 continue;
             }
 
-            var sensitiveRoot = CombineSafe(baseValue, tail);
-            if (sensitiveRoot is not null && IsAtOrBelow(normalized, sensitiveRoot))
+            if (IsAtOrBelow(normalized, root))
             {
                 return true;
             }
         }
 
         return false;
-    }
-
-    private static string? CombineSafe(string basePath, string tail)
-    {
-        try
-        {
-            return Path.GetFullPath(Path.Combine(basePath, tail));
-        }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return null;
-        }
     }
 
     private static bool IsAtOrBelow(string candidate, string root) =>

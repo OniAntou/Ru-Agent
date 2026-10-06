@@ -24,9 +24,9 @@ The accepted matrix is:
 
 | Preset | Profile behavior |
 | --- | --- |
-| `plan` | Workspace read and Web are automatic; terminal and mutation are denied. |
+| `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
 | `standard` | Bounded-local in-workspace mutation is automatic; external structured access, path escape, and risky terminal intent ask. |
-| `full_access` | External structured files and arbitrary terminal are automatic; structured protected paths and hard-invalid requests remain denied. |
+| `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
 
 `standard` is the session-scoped default. `full_access` requires an explicit
 GUI confirmation or CLI `--confirm-full-access`; `--json` does not bypass that
@@ -109,7 +109,7 @@ selection without making it a Broker execution authority.
 The following remain true for every preset and client:
 
 - RuAgentBroker is the sole execution authority.
-- Structured protected paths and hard-invalid requests are denied.
+- Structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests are denied.
 - Canonical/symlink/junction/hard-link checks remain active for structured file tools.
 - Terminal hard timeout, output cap, cancellation, and process-tree cleanup remain enforced.
 - Workspace trust is explicit and bound to the canonical identity independently of the active lease.

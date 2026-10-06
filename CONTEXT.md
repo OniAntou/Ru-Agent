@@ -158,12 +158,16 @@ _Avoid_: global allowlist
 The session-scoped Agent preset (`plan`, `standard`, opt-in `full_access`) mapped
 to the immutable `AgentPolicyProfileCatalog` in `RuAgent.Protocol`. The catalog,
 not prompt text or a client switch, is the canonical source used by both the
-effective-policy prompt projector and Broker fallback evaluation. `plan` allows
-workspace reads and Web, and denies terminal and mutation. `standard` allows
-workspace reads, Web, in-workspace mutation, and bounded-local terminal; it asks
-for external structured files and risky terminal intent. `full_access` allows
-external structured files and risky/arbitrary terminal intent, but structured
-protected paths and hard-invalid requests remain denied. Standard is the
+effective-policy prompt projector and Broker fallback evaluation. `plan` is a
+read-only preset: workspace reads and Web are automatic, terminal and mutation
+are denied outright (no per-change asks), and external structured files ask like
+Standard. `standard` allows workspace reads, Web, in-workspace mutation, and
+bounded-local terminal; it asks for external structured files and risky
+terminal intent. `full_access` is the skip-all mode: external structured files
+and risky/arbitrary terminal intent are automatic, and structured protected
+paths (the harness key/database files and runtime descriptors, plus any
+user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain
+denied. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
 twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),

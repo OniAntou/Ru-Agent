@@ -129,7 +129,7 @@ public sealed class FileToolRootSelectorTests : IDisposable
             _leaseResolver.CanonicalRoot,
             Array.Empty<string>(),
             AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
-            Path.Combine(_leaseRoot, ".env.local")));
+            Path.Combine(_leaseRoot, "runtime_descriptor.json")));
 
         Assert.Equal("protected_path", error.Message);
     }
@@ -137,15 +137,14 @@ public sealed class FileToolRootSelectorTests : IDisposable
     [Fact]
     public void Full_access_external_protected_target_remains_denied()
     {
-        var protectedDirectory = Path.Combine(_granted, ".env");
-        Directory.CreateDirectory(protectedDirectory);
-        File.WriteAllText(Path.Combine(protectedDirectory, "secret.txt"), "secret");
+        var protectedFile = Path.Combine(_granted, "harness_key.dat");
+        File.WriteAllText(protectedFile, "secret");
         var error = Assert.Throws<UnauthorizedAccessException>(() => FileToolRootSelector.SelectRoot(
             _leaseResolver,
             _leaseResolver.CanonicalRoot,
             Array.Empty<string>(),
             AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
-            Path.Combine(protectedDirectory, "secret.txt")));
+            protectedFile));
 
         Assert.Equal("protected_path", error.Message);
     }

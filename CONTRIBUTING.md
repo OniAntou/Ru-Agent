@@ -101,7 +101,8 @@ trustworthy. A change that weakens one is rejected even if every test passes.
    routes.
 6. **Permissions are session-scoped.** Approval tokens are single-use and
    bound to the exact canonical arguments; no grant survives a restart.
-   Protected paths deny at every preset.
+   The harness self-protection paths (harness key/database files and runtime
+   descriptors) deny at every preset; `RU_PROTECTED_PATHS` adds more.
 7. **Skills are untrusted prompt guidance.** `allowed-tools` metadata never
    grants a tool, scope, path, network permission, or approval.
 8. **Bounded everything.** Every tool output, request body, stream, and

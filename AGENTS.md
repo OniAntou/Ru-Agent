@@ -48,7 +48,9 @@ product.
 - **Loopback + bearer only.** The Public Contract is the 41 routes in
   `public-route-contract.json`. No new public transport, no WebSocket routes.
 - **Permissions are session-scoped.** Approval tokens are single-use,
-  argument-bound, and survive nothing. Protected paths deny at every preset.
+  argument-bound, and survive nothing. The harness self-protection paths
+  (harness key/database files and runtime descriptors) deny at every preset;
+  users can add more with `RU_PROTECTED_PATHS`.
 - **Bounded everything.** New outputs, requests, and listings get a cap.
 
 ## Working rules

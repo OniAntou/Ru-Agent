@@ -31,7 +31,6 @@ public sealed class AgentApprovalUiContractTests
     [InlineData(AgentApprovalSummaryPresentation.GitDirectoryOverrideRequiresApproval, "different directory")]
     [InlineData(AgentApprovalSummaryPresentation.GitConfigOverrideRequiresApproval, "for one run")]
     [InlineData(AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval, "changes git configuration")]
-    [InlineData(AgentApprovalSummaryPresentation.PlanPresetRequiresApproval, "Plan preset")]
     [InlineData(AgentApprovalSummaryPresentation.RuleAsks, "project rules")]
     public void Every_broker_ask_reason_has_its_own_sentence(string reasonCode, string expectedFragment)
     {
@@ -66,7 +65,6 @@ public sealed class AgentApprovalUiContractTests
             "git_directory_override_requires_approval",
             "git_config_override_requires_approval",
             "git_config_mutation_requires_approval",
-            "plan_preset_requires_approval",
             "rule_asks",
         };
 
@@ -194,12 +192,9 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void A_plan_preset_or_rule_ask_is_never_remembered()
+    public void A_user_rule_ask_is_never_remembered()
     {
-        // Remembering the Plan preset's ask would defeat the preset, and
-        // remembering a user rule's ask would silently override the rule.
-        Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
-            AgentApprovalSummaryPresentation.PlanPresetRequiresApproval));
+        // Remembering a user rule's ask would silently override the rule.
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.RuleAsks));
     }
@@ -209,7 +204,6 @@ public sealed class AgentApprovalUiContractTests
     [InlineData(AgentApprovalSummaryPresentation.TerminalNetworkRequiresApproval, true)]
     [InlineData(AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval, true)]
     [InlineData(AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval, false)]
-    [InlineData(AgentApprovalSummaryPresentation.PlanPresetRequiresApproval, false)]
     [InlineData(AgentApprovalSummaryPresentation.RuleAsks, false)]
     [InlineData(AgentApprovalSummaryPresentation.ExternalDirectoryRequired, false)]
     [InlineData("future_reason_code", false)]
@@ -341,8 +335,8 @@ public sealed class AgentApprovalUiContractTests
                     ?? string.Empty));
         Assert.NotNull(copy);
 
-        Assert.Contains("Plan: read + Web auto; terminal and edits ask.", copy, StringComparison.Ordinal);
+        Assert.Contains("Plan: read + Web auto; edits and terminal deny.", copy, StringComparison.Ordinal);
         Assert.Contains("Standard: workspace edits auto; outside asks.", copy, StringComparison.Ordinal);
-        Assert.Contains("Full Access: edits and terminal auto; protected paths deny", copy, StringComparison.Ordinal);
+        Assert.Contains("Full Access: skip all approvals; harness key files stay denied", copy, StringComparison.Ordinal);
     }
 }

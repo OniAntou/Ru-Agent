@@ -309,10 +309,13 @@ The typed model-step settings advertise twelve tools, one purpose each:
 `grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` and `web_fetch`. The canonical matrix is: `plan` allows workspace
-read and Web but denies terminal and mutation; `standard` auto-allows
-bounded-local in-workspace mutation and asks for external/escape/risky intent;
-`full_access` auto-allows external structured files and arbitrary terminal while
-structured protected paths and hard-invalid requests remain denied.
+read and Web but denies terminal and mutation outright (read-only, no
+per-change asks) and asks for external structured access; `standard`
+auto-allows bounded-local in-workspace mutation and asks for
+external/escape/risky intent; `full_access` is the skip-all mode — external
+structured files and arbitrary terminal auto-allow while structured protected
+paths (harness key/database files and runtime descriptors) and hard-invalid
+requests remain denied.
 Repository cleanliness never changes the decision.
 
 Standard structured-file access outside the trusted root may create a

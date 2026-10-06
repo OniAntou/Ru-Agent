@@ -228,11 +228,11 @@ public sealed class FilePatchAdapterTests : IDisposable
         var ex1 = Assert.ThrowsAny<Exception>(() => adapter.Prepare(argsEscape));
         Assert.True(ex1 is UnauthorizedAccessException || ex1 is ArgumentException);
 
-        var protectedPatch = BuildPatch(".env.local", "old", "new");
+        var protectedPatch = BuildPatch("runtime_descriptor.json", "old", "new");
         var argsProtected = new JsonObject
         {
             ["patch"] = protectedPatch,
-            ["expected_hashes"] = new JsonObject { [".env.local"] = hash }
+            ["expected_hashes"] = new JsonObject { ["runtime_descriptor.json"] = hash }
         };
         var ex2 = Assert.ThrowsAny<Exception>(() => adapter.Prepare(argsProtected));
         Assert.True(ex2 is UnauthorizedAccessException || ex2 is ArgumentException);

@@ -41,12 +41,14 @@ a bounded result, never a frozen app.
 Every run uses one of three canonical, session-scoped presets:
 
 - **`plan`**: workspace reads and Web run automatically; terminal and mutation
-  requests are denied.
+  requests are denied outright (read-only, no per-change asks); external
+  structured access asks like Standard.
 - **`standard`**: bounded-local in-workspace mutation runs automatically;
   external structured access, path escape, and risky terminal intent ask first.
-- **`full_access`**: external structured files and arbitrary terminal commands
-  run automatically; structured protected paths and hard-invalid requests are
-  still denied.
+- **`full_access`**: the skip-all mode — external structured files and arbitrary
+  terminal commands run automatically; structured protected paths (the harness's
+  own key/database files and runtime descriptors, plus any user-added
+  `RU_PROTECTED_PATHS` entries) and hard-invalid requests are still denied.
 
 Workspace trust is separate from the session preset and must be approved
 **explicitly once per canonical identity**. The GUI shows a confirmation

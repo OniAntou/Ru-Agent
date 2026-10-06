@@ -1116,7 +1116,7 @@ public sealed class BrokerHostTests
         await SendAsync(
             socket,
             Evaluate("evaluate-full-protected", sessionId, runId, "read",
-                new JsonObject { ["path"] = Path.Combine(fixture.Root, ".env.full-access") }),
+                new JsonObject { ["path"] = Path.Combine(fixture.Root, "runtime_descriptor.json") }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
         Assert.Equal("deny", decision.Payload["decision"]!.GetValue<string>());
@@ -1125,13 +1125,42 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task V2_full_access_env_file_read_is_allowed()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-full-env";
+        const string runId = "run_full_env111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-full-env", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        // .env files are ordinary workspace targets now: the mainstream agents
+        // read them through normal permission rules instead of a hard deny.
+        await SendAsync(
+            socket,
+            Evaluate("evaluate-full-env", sessionId, runId, "read",
+                new JsonObject { ["path"] = Path.Combine(fixture.Root, ".env.full-access") }),
+            cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        Assert.True(decision.Payload.ContainsKey("authorization_token"));
+    }
+
+    [Fact]
     public async Task V2_full_access_external_protected_structured_path_remains_denied()
     {
         await using var fixture = await HostFixture.StartAsync();
         var external = Path.Combine(Path.GetTempPath(), "ru-full-protected-external-" + Guid.NewGuid().ToString("N"));
-        var protectedDirectory = Path.Combine(external, ".env");
-        Directory.CreateDirectory(protectedDirectory);
-        File.WriteAllText(Path.Combine(protectedDirectory, "secret.txt"), "secret");
+        var protectedFile = Path.Combine(external, "runtime_descriptor.json");
+        Directory.CreateDirectory(external);
+        File.WriteAllText(protectedFile, "descriptor");
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -1150,7 +1179,7 @@ public sealed class BrokerHostTests
             await SendAsync(
                 socket,
                 Evaluate("evaluate-full-protected-external", sessionId, runId, "read",
-                    new JsonObject { ["path"] = Path.Combine(protectedDirectory, "secret.txt") }),
+                    new JsonObject { ["path"] = protectedFile }),
                 cts.Token);
             var decision = await ReceiveAsync(socket, cts.Token);
             Assert.Equal("deny", decision.Payload["decision"]!.GetValue<string>());

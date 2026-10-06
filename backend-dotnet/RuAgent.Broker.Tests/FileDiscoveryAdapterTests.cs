@@ -188,13 +188,13 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     [Fact]
     public void List_skips_protected_and_counts_skipped()
     {
-        Directory.CreateDirectory(Path.Combine(_root, ".git"));
-        File.WriteAllText(Path.Combine(_root, ".git", "config"), "secret");
+        Directory.CreateDirectory(Path.Combine(_root, "harness_key"));
+        File.WriteAllText(Path.Combine(_root, "harness_key", "config"), "secret");
         File.WriteAllText(Path.Combine(_root, "normal.txt"), "ok");
         var result = _list.Execute(new JsonObject { ["path"] = "." });
         var paths = result["entries"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
-        Assert.DoesNotContain(".git/config", paths);
-        Assert.DoesNotContain(".git", paths);
+        Assert.DoesNotContain("harness_key/config", paths);
+        Assert.DoesNotContain("harness_key", paths);
         Assert.Contains("normal.txt", paths);
         Assert.True(result["skipped"]!.GetValue<int>() >= 1);
     }
@@ -518,7 +518,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        var protectedCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
+        var protectedCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = "runtime_descriptor.json" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protectedCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("deny", protEval.Decision);
         Assert.Equal("protected_path", protEval.ReasonCode);
@@ -542,8 +542,8 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        // Full-access cannot override protected paths.
-        var protCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
+        // Full-access cannot override the harness self-protection deny.
+        var protCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = "runtime_descriptor.json" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("deny", protEval.Decision);
         Assert.Equal("protected_path", protEval.ReasonCode);
@@ -553,7 +553,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         Assert.Throws<PolicyContextException>(() => factory.Create("read", "1.0.0", new JsonObject { ["path"] = "a\0b" }));
 
         // Adapter also denies if forced
-        var ex = Assert.Throws<UnauthorizedAccessException>(() => _read.Execute(new JsonObject { ["path"] = ".env.local" }));
+        var ex = Assert.Throws<UnauthorizedAccessException>(() => _read.Execute(new JsonObject { ["path"] = "runtime_descriptor.json" }));
         Assert.Contains("protected_path", ex.Message);
     }
 

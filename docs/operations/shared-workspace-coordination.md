@@ -17,9 +17,11 @@ canonical identity. Full Access additionally requires the GUI gate or CLI
 `--confirm-full-access`.
 
 The canonical profiles are `plan` (workspace read/Web auto; terminal and
-mutation deny), `standard` (bounded-local in-workspace mutation auto;
-external/escape ask), and `full_access` (external structured file and arbitrary
-terminal auto; structured protected paths deny). Full Access terminal runs as
+mutation deny outright, read-only; external structured access asks), `standard`
+(bounded-local in-workspace mutation auto; external/escape ask), and
+`full_access` (external structured file and arbitrary terminal auto; only
+structured protected paths — harness key/database files and runtime descriptors
+— deny). Full Access terminal runs as
 the current Windows user, can affect data outside the workspace, and is not a
 network/path sandbox. Hard timeout, output cap, cancellation, and process-tree
 cleanup remain enforced. Shared coordination still serializes active runs

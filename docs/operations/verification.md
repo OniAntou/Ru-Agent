@@ -112,10 +112,13 @@ is `tool_calls`. The actual runner command above runs
 `InProcessModelStepRunnerTests`, `StepStartCapabilityDigestTests`, and
 `WorkerV2ContractTests` from `RuBackend.Tests`.
 
-The current session-scoped matrix is: `plan` auto workspace read + Web and denies
-terminal/mutation; `standard` auto bounded-local in-workspace mutation and asks
-external/escape; `full_access` auto external structured files + arbitrary
-terminal while structured protected paths deny. Workspace trust is explicit once
+The current session-scoped matrix is: `plan` auto workspace read + Web, denies
+terminal/mutation outright (read-only, no per-change asks), and asks for
+external structured access; `standard` auto bounded-local in-workspace mutation
+and asks external/escape; `full_access` is the skip-all mode — external
+structured files + arbitrary terminal auto while only structured protected
+paths (harness key/database files and runtime descriptors, plus
+`RU_PROTECTED_PATHS` additions) deny. Workspace trust is explicit once
 per canonical identity: the GUI confirms it, while CLI `run`/`chat` require
 `--trust-workspace`; Full Access additionally requires the GUI gate or CLI
 `--confirm-full-access`. Full-access terminal runs as the current Windows user,

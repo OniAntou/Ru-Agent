@@ -32,7 +32,6 @@ public static class AgentApprovalSummaryPresentation
     public const string GitDirectoryOverrideRequiresApproval = "git_directory_override_requires_approval";
     public const string GitConfigOverrideRequiresApproval = "git_config_override_requires_approval";
     public const string GitConfigMutationRequiresApproval = "git_config_mutation_requires_approval";
-    public const string PlanPresetRequiresApproval = "plan_preset_requires_approval";
     public const string RuleAsks = "rule_asks";
 
     /// <summary>
@@ -59,7 +58,6 @@ public static class AgentApprovalSummaryPresentation
         GitDirectoryOverrideRequiresApproval,
         GitConfigOverrideRequiresApproval,
         GitConfigMutationRequiresApproval,
-        PlanPresetRequiresApproval,
         RuleAsks,
     ];
 
@@ -109,8 +107,6 @@ public static class AgentApprovalSummaryPresentation
                 "This git command overrides git configuration for one run.",
             GitConfigMutationRequiresApproval =>
                 "This git command changes git configuration.",
-            PlanPresetRequiresApproval =>
-                "The Plan preset asks before every change; approve once or switch preset.",
             RuleAsks =>
                 "One of your project rules asks before this action.",
             "" => "Agent is requesting an action that requires approval.",

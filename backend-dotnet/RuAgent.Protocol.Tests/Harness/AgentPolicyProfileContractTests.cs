@@ -12,7 +12,7 @@ public sealed class AgentPolicyProfileContractTests
     [InlineData("plan", AgentPolicySubject.Web, AgentPolicyDecision.Allow)]
     [InlineData("plan", AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Deny)]
-    [InlineData("plan", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Deny)]
+    [InlineData("plan", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask)]
     [InlineData("plan", AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny)]

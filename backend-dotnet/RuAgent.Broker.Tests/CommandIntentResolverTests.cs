@@ -93,7 +93,7 @@ public sealed class CommandIntentResolverTests
         Directory.CreateDirectory(workspace);
         var outside = Path.Combine(parent, "outside");
         Directory.CreateDirectory(outside);
-        var protectedDirectory = Path.Combine(workspace, ".git");
+        var protectedDirectory = Path.Combine(workspace, "harness_key");
         Directory.CreateDirectory(protectedDirectory);
         var subDirectory = Path.Combine(workspace, "sub", "dir");
         Directory.CreateDirectory(subDirectory);
@@ -109,7 +109,7 @@ public sealed class CommandIntentResolverTests
             var outsideIntent = resolver.ResolveRun(new CanonicalCommandRequest(executable, WorkingDirectory: outside));
             Assert.Equal(PathClassification.OutsideWorkspace, outsideIntent.WorkingDirectoryClass);
 
-            var protectedIntent = resolver.ResolveRun(new CanonicalCommandRequest(executable, WorkingDirectory: ".git"));
+            var protectedIntent = resolver.ResolveRun(new CanonicalCommandRequest(executable, WorkingDirectory: "harness_key"));
             Assert.Equal(PathClassification.Protected, protectedIntent.WorkingDirectoryClass);
         }
         finally

@@ -168,7 +168,7 @@ public sealed class TerminalIntentClassifierTests
     {
         using var workspace = new TemporaryWorkspace();
         var factory = CreateFactory(workspace.Root);
-        var secret = Path.Combine(workspace.Root, ".env");
+        var secret = Path.Combine(workspace.Root, "harness_key.dat");
 
         var result = _classifier.Classify(Terminal(factory, "dotnet", "test", secret));
 
@@ -182,7 +182,7 @@ public sealed class TerminalIntentClassifierTests
     {
         using var workspace = new TemporaryWorkspace();
         var factory = CreateFactory(workspace.Root);
-        var protectedDirectory = Path.Combine(workspace.Outside, ".git");
+        var protectedDirectory = Path.Combine(workspace.Outside, "agent_harness");
         Directory.CreateDirectory(protectedDirectory);
 
         var result = _classifier.Classify(TerminalAt(

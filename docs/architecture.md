@@ -172,9 +172,9 @@ source for the effective-policy prompt projection and Broker fallback:
 
 | Preset | Canonical behavior |
 | --- | --- |
-| `plan` | Workspace read and Web are automatic; terminal and mutation are denied. |
+| `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
 | `standard` | Bounded-local in-workspace mutation is automatic; external structured access, path escape, and risky terminal intent ask. |
-| `full_access` | External structured files and arbitrary terminal are automatic; structured protected paths and hard-invalid requests remain denied. |
+| `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
 
 Preset selection is session-scoped. Workspace trust is a separate explicit
 decision, once per canonical `WorkspaceIdentity`; the GUI presents a guarded

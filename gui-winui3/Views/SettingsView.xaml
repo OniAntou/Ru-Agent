@@ -335,11 +335,11 @@
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
                                     <TextBlock Style="{StaticResource SettingDescStyle}">
-                                        <Run Text="Plan: read + Web auto; terminal and edits ask." />
+                                        <Run Text="Plan: read + Web auto; edits and terminal deny." />
                                         <LineBreak />
                                         <Run Text="Standard: workspace edits auto; outside asks." />
                                         <LineBreak />
-                                        <Run Text="Full Access: edits and terminal auto; protected paths deny" />
+                                        <Run Text="Full Access: skip all approvals; harness key files stay denied" />
                                     </TextBlock>
                                 </StackPanel>
                                 <Button x:Name="PresetButton"

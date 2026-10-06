@@ -125,12 +125,15 @@ public sealed class WorkerBrokerLaunchPlan
 
         // Web options are configured on the Host and forwarded to the Broker
         // process through the environment; unset variables keep web disabled.
+        // RU_PROTECTED_PATHS lets the user add paths to the Broker's hard deny
+        // list; the Broker reads it directly.
         foreach (var name in (string[])
             [
                 "RU_AGENT_BROKER_WEB_ENABLED",
                 "RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT",
                 "RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES",
                 "RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL",
+                "RU_PROTECTED_PATHS",
             ])
         {
             var value = Environment.GetEnvironmentVariable(name);

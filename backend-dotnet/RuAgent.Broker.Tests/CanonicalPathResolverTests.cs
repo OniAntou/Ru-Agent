@@ -86,17 +86,17 @@ public sealed class CanonicalPathResolverTests : IDisposable
     [Fact]
     public void Protected_target_is_typed_protected_not_rejected()
     {
-        var gitDir = Path.Combine(_root, ".git");
-        Directory.CreateDirectory(gitDir);
+        var protectedDir = Path.Combine(_root, "harness_key");
+        Directory.CreateDirectory(protectedDir);
         try
         {
-            var resolved = _resolver.Resolve(".git");
+            var resolved = _resolver.Resolve("harness_key");
 
             Assert.Equal(PathClassification.Protected, resolved.Classification);
         }
         finally
         {
-            Directory.Delete(gitDir, true);
+            Directory.Delete(protectedDir, true);
         }
     }
 

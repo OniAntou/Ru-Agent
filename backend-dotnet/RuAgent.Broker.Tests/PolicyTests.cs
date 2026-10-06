@@ -129,7 +129,7 @@ public sealed class PolicyEvaluationTests
         { "plan", AgentPolicySubject.Web, "allow" },
         { "plan", AgentPolicySubject.WorkspaceMutation, "deny" },
         { "plan", AgentPolicySubject.BoundedLocalTerminal, "deny" },
-        { "plan", AgentPolicySubject.ExternalStructuredFile, "deny" },
+        { "plan", AgentPolicySubject.ExternalStructuredFile, "ask" },
         { "plan", AgentPolicySubject.RiskyTerminal, "deny" },
         { "plan", AgentPolicySubject.StructuredProtectedPath, "deny" },
         { "plan", AgentPolicySubject.HardInvalid, "deny" },
@@ -273,7 +273,7 @@ public sealed class PolicyEvaluationTests
         string expectedDecision)
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-policy-protected-cwd-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(root, ".git"));
+        Directory.CreateDirectory(Path.Combine(root, "harness_key"));
         try
         {
             var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset), root);
@@ -285,7 +285,7 @@ public sealed class PolicyEvaluationTests
                     ["mode"] = "run",
                     ["executable"] = "git",
                     ["arguments"] = new JsonArray("status"),
-                    ["working_directory"] = ".git",
+                    ["working_directory"] = "harness_key",
                 });
 
             var evaluation = new PolicySnapshotEvaluator().Evaluate(
@@ -353,7 +353,7 @@ public sealed class PolicyEvaluationTests
 
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            FileCall(factory, "files.write", ".env.local"),
+            FileCall(factory, "files.write", "runtime_descriptor.json"),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -726,6 +726,11 @@ public sealed class PolicyEvaluationTests
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var protectedPath = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = "runtime_descriptor.json" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        var envFile = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
             factory.Create("read", "1.0.0", new JsonObject { ["path"] = ".env.local" }),
             PolicyRequestInvariants.Valid,
             Now);
@@ -747,6 +752,9 @@ public sealed class PolicyEvaluationTests
 
         Assert.Equal("deny", protectedPath.Decision);
         Assert.Equal("protected_path", protectedPath.ReasonCode);
+        // .env files follow the preset profile now: the workspace read is a
+        // normal auto-allowed read instead of a hard deny.
+        Assert.Equal("allow", envFile.Decision);
         Assert.Equal("allow", delete.Decision);
         Assert.Equal("allow", restore.Decision);
         Assert.Equal("allow", networked.Decision);
@@ -931,10 +939,11 @@ public sealed class PolicyEvaluationTests
 
         var fullExtended = full.Evaluate(
             fullLease.Snapshot, Terminal(fullFactory, "dotnet", "test", 1_200_000), valid, Now);
-        // The standard-window gate is profile-independent: it sits above the profile
-        // matrix, so even full_access asks before granting a run longer than 15 minutes.
-        Assert.Equal("ask", fullExtended.Decision);
-        Assert.Equal("terminal_timeout_requires_approval", fullExtended.ReasonCode);
+        // full_access is the skip-all mode: the profile already auto-allows
+        // arbitrary terminal, so the standard-window gate does not ask. The hard
+        // maximum still bounds the run.
+        Assert.Equal("allow", fullExtended.Decision);
+        Assert.Equal("full_access_allow", fullExtended.ReasonCode);
 
         var fullOverCap = full.Evaluate(
             fullLease.Snapshot, Terminal(fullFactory, "dotnet", "test", 1_900_000), valid, Now);
@@ -1051,7 +1060,7 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", write.Decision);
-        Assert.Equal("plan_preset_requires_approval", write.ReasonCode);
+        Assert.Equal("plan_preset_read_only", write.ReasonCode);
 
         var edit = evaluator.Evaluate(
             lease.Snapshot,
@@ -1059,7 +1068,7 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", edit.Decision);
-        Assert.Equal("plan_preset_requires_approval", edit.ReasonCode);
+        Assert.Equal("plan_preset_read_only", edit.ReasonCode);
 
         var terminal = evaluator.Evaluate(
             lease.Snapshot,
@@ -1067,7 +1076,7 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", terminal.Decision);
-        Assert.Equal("plan_preset_requires_approval", terminal.ReasonCode);
+        Assert.Equal("plan_preset_read_only", terminal.ReasonCode);
 
         var shell = evaluator.Evaluate(
             lease.Snapshot,
@@ -1075,7 +1084,7 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", shell.Decision);
-        Assert.Equal("plan_preset_requires_approval", shell.ReasonCode);
+        Assert.Equal("plan_preset_read_only", shell.ReasonCode);
 
         var web = evaluator.Evaluate(
             lease.Snapshot,
@@ -1095,7 +1104,7 @@ public sealed class PolicyEvaluationTests
 
         var protectedRead = evaluator.Evaluate(
             lease.Snapshot,
-            FileCall(factory, "files.read", ".env.local"),
+            FileCall(factory, "files.read", "runtime_descriptor.json"),
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", protectedRead.Decision);
@@ -1129,7 +1138,8 @@ public sealed class PolicyEvaluationTests
         networked = networked with { NetworkIntent = "declared", NetworkDeclared = true };
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, networked, valid, Now).Decision);
 
-        AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now), "protected_path");
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", "runtime_descriptor.json"), valid, Now), "protected_path");
         AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", "a.txt"), Inv(schemaValid: false), Now), "schema_invalid");
     }
 
@@ -1237,7 +1247,7 @@ public sealed class PolicyEvaluationTests
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",
             "1.0.0",
-            new JsonObject { ["path"] = ".env.local" }),
+            new JsonObject { ["path"] = "runtime_descriptor.json" }),
         AgentPolicySubject.HardInvalid => Terminal(
             factory,
             "git",

@@ -43,7 +43,7 @@ public sealed class SystemPromptComposerTests
         Assert.True(instructionIndex >= 0);
         Assert.True(profileIndex < instructionIndex);
         Assert.Contains(
-            "effective_policy:\nprofile_version: 1\npreset: plan\nterminal_authority: denied\nworkspace_read=allow\nweb=allow\nworkspace_mutation=deny\nbounded_local_terminal=deny\nexternal_structured_file=deny\nrisky_terminal=deny\nstructured_protected_path=deny\nhard_invalid=deny\nbroker_authority: true",
+            "effective_policy:\nprofile_version: 1\npreset: plan\nterminal_authority: denied\nworkspace_read=allow\nweb=allow\nworkspace_mutation=deny\nbounded_local_terminal=deny\nexternal_structured_file=ask\nrisky_terminal=deny\nstructured_protected_path=deny\nhard_invalid=deny\nbroker_authority: true",
             snapshot.Text,
             StringComparison.Ordinal);
     }

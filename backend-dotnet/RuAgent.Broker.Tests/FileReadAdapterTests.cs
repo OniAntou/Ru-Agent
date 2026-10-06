@@ -133,9 +133,8 @@ public sealed class FileReadAdapterTests : IDisposable
     [Fact]
     public void Read_protected_path_is_denied()
     {
-        Directory.CreateDirectory(Path.Combine(_root, ".git"));
-        File.WriteAllText(Path.Combine(_root, ".git", "config"), "secret");
-        var ex = Assert.Throws<UnauthorizedAccessException>(() => _adapter.Execute(new JsonObject { ["path"] = ".git/config" }));
+        File.WriteAllText(FullPath("runtime_descriptor.json"), "secret");
+        var ex = Assert.Throws<UnauthorizedAccessException>(() => _adapter.Execute(new JsonObject { ["path"] = "runtime_descriptor.json" }));
         Assert.Contains("protected_path", ex.Message);
     }
 

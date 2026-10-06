@@ -89,11 +89,13 @@ bounded `truncated`),
 `recovery_too_large` beyond 4 MiB,
 `recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` allows
-workspace read and Web while denying terminal and mutation. `standard`
+the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
+read-only: workspace read and Web auto while terminal and mutation deny outright
+and external structured access asks. `standard`
 auto-allows bounded-local in-workspace mutation and asks for external/escape or
-risky terminal intent. `full_access` auto-allows external structured files and
-arbitrary terminal while structured protected paths and hard-invalid requests
+risky terminal intent. `full_access` is the skip-all mode: external structured
+files and arbitrary terminal auto-allow while structured protected paths
+(harness key/database files and runtime descriptors) and hard-invalid requests
 remain denied. Repository cleanliness and prompt text never change this matrix.
 
 Workspace trust is explicit once per canonical `WorkspaceIdentity`, independent

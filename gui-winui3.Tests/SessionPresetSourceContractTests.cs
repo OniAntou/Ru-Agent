@@ -35,7 +35,7 @@ public sealed class SessionPresetSourceContractTests
         // standard: a Full Access session reopened in the GUI came back
         // Standard, a Standard one came back Plan, and neither said so on
         // screen. The plan downgrade also reached the user as an unrelated
-        // `protocol failure` instead of `plan_preset_requires_approval`.
+        // `protocol failure` instead of the plan preset's own read-only refusal.
         Assert.DoesNotContain(
             "AgentPresetBox.SelectedIndex = 0",
             Body("ChatView.SessionHistory.cs", "public async Task OpenSessionAsync"),

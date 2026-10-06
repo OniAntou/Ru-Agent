@@ -175,6 +175,15 @@ public sealed class PolicySnapshotEvaluator
             return Deny("rule_denied", matchedRuleId);
         }
 
+        // Plan is a read-only preset: every mutation is denied outright, even when
+        // a remembered rule would allow it. Mainstream plan modes work the same
+        // way -- the agent researches and proposes, and the user switches mode to
+        // execute -- so no approval prompt appears mid-plan.
+        if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
+        {
+            return Deny("plan_preset_read_only", matchedRuleId);
+        }
+
         if (structuredTarget is { IsOutsideWorkspace: true })
         {
             var external = ProfileDecision(
@@ -192,12 +201,6 @@ public sealed class PolicySnapshotEvaluator
 
         if (matchedDecision is not null)
         {
-            // plan is a read-only gate: every mutation asks, nothing auto-allows.
-            if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
-            {
-                return Ask("plan_preset_requires_approval", matchedRuleId);
-            }
-
             return matchedDecision switch
             {
                 "allow" => new PolicyEvaluation("allow", "rule_matched", matchedRuleId),
@@ -206,11 +209,15 @@ public sealed class PolicySnapshotEvaluator
         }
 
         // Above the standard window the protocol requires an explicit approval before
-        // execution. It is a profile-level gate, so it is applied after the ordered
-        // rules: an explicit allow or deny the user wrote still decides, and the hard
-        // maximum and the protected-path deny have already been enforced above.
+        // execution, unless the profile already auto-allows arbitrary terminal
+        // (full_access, the skip-all mode). It is a profile-level gate, so it is
+        // applied after the ordered rules: an explicit allow or deny the user wrote
+        // still decides, and the hard maximum and the protected-path deny have
+        // already been enforced above.
         if (IsTerminal(context)
-            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs)
+            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs
+            && AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(AgentPolicySubject.RiskyTerminal)
+                != AgentPolicyDecision.Allow)
         {
             return Ask("terminal_timeout_requires_approval");
         }
@@ -276,10 +283,7 @@ public sealed class PolicySnapshotEvaluator
         var effectiveReason = wireDecision == BrokerPolicyContracts.AllowWireValue
             && string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal)
                 ? "full_access_allow"
-                : wireDecision == BrokerPolicyContracts.DenyWireValue
-                    && string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal)
-                    ? "plan_preset_requires_approval"
-                    : reasonCode;
+                : reasonCode;
         return new PolicyEvaluation(
             wireDecision,
             effectiveReason,

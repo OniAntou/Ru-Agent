@@ -129,7 +129,7 @@ public sealed class AgentPolicyProfileParityTests
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",
             "1.0.0",
-            new JsonObject { ["path"] = ".env.local" }),
+            new JsonObject { ["path"] = "runtime_descriptor.json" }),
         AgentPolicySubject.HardInvalid => factory.Create(
             "bash",
             "1.0.0",

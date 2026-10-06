@@ -126,9 +126,9 @@ boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external deny; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, structured protected path deny |
+| `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, harness-protected path deny |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
-| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, structured protected path deny; preimage mismatch returns `workspace_changed` |
+| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, harness-protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
@@ -164,9 +164,10 @@ session-scoped `CanonicalDirectoryIdentity` for structured descendants; it is
 not shared with another session, lost on restart, and never authorizes
 terminal intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
-Structured protected paths remain denied in every preset, and canonical,
-symlink, junction, and hard-link checks stay active. An ambiguous mutation
-pauses for inspection until explicit Continue.
+Structured protected paths (harness key/database files and runtime descriptors,
+plus user-added `RU_PROTECTED_PATHS` entries) remain denied in every preset,
+and canonical, symlink, junction, and hard-link checks stay active. An ambiguous
+mutation pauses for inspection until explicit Continue.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture
@@ -305,7 +306,8 @@ arbitrary `bash` as the current Windows user against any path and may open
 sockets; this is terminal delegation, not a network/path sandbox. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup. Structured protected paths
-remain denied, but they do not re-impose terminal confinement.
+(harness key/database files and runtime descriptors) remain denied, but they do
+not re-impose terminal confinement.
 
 The managed Git commit workflow retains temporary-index isolation, path rollback
 attribution, and refusal when the real index already contains staged user
@@ -424,10 +426,12 @@ or private payload content.
 
 Every Agent run is session-scoped. The chat composer offers canonical `Plan`,
 `Standard` (default), and opt-in `Full Access`; the Broker remains the only
-authority. Plan allows workspace read/Web and denies terminal/mutation.
-Standard auto-allows bounded-local in-workspace mutation and asks for
-external/escape/risky intent. Full Access auto-allows external structured files
-and arbitrary terminal while structured protected paths remain denied.
+authority. Plan is read-only: workspace read/Web auto, terminal/mutation denied
+outright, external structured access asks. Standard auto-allows bounded-local
+in-workspace mutation and asks for external/escape/risky intent. Full Access is
+the skip-all mode: external structured files and arbitrary terminal auto while
+only structured protected paths (harness key/database files and runtime
+descriptors) remain denied.
 
 Workspace trust is not a preset. It is explicit once per canonical identity:
 the GUI requires a guarded Approve action, while CLI `run`/`chat` require
@@ -451,18 +455,18 @@ reason code:
   The approval returns an ephemeral one-time terminal token, never a
   reusable rule.
 - `terminal_protected_path_requires_approval` — Lệnh terminal này trỏ vào một
-  **vị trí được bảo vệ** (`.ssh`, `.aws`, `.gnupg`, `.env*`, `.git/**`,
-  `id_rsa`, credential store của Windows). Terminal vốn **không** bị
-  protected-path confinement — `full_access` vẫn chạy như user hiện tại, đúng
-  như `README.md` đã ghi — nên reason này **không** nâng quyền lên deny; nó
-  chỉ để người duyệt thấy đúng câu hỏi thay vì một thư mục "ngoài" trung
-  tính. Approval này **không thể nhớ lâu dài**: GUI và CLI đều không hiện lựa
-  chọn `allow_always` cho reason này, nên một lần duyệt không biến thành quyền
-  truy cập thường trực vào thư mục credential.
-- `terminal_timeout_requires_approval` — compatibility reason retained for an
-  explicit ask rule. Canonical profile fallback no longer creates a 900-second
-  approval gate; a timeout above the protocol hard maximum is denied in every
-  preset.
+  **file tự bảo vệ của harness** (`agent_harness*`, `harness_key*`, runtime
+  descriptor) hoặc một path user tự thêm qua `RU_PROTECTED_PATHS`. Terminal vốn
+  **không** bị protected-path confinement — `full_access` vẫn chạy như user
+  hiện tại, đúng như `README.md` đã ghi — nên reason này **không** nâng quyền
+  lên deny; nó chỉ để người duyệt thấy đúng câu hỏi thay vì một thư mục "ngoài"
+  trung tính. Approval này **không thể nhớ lâu dài**: GUI và CLI đều không hiện
+  lựa chọn `allow_always` cho reason này, nên một lần duyệt không biến thành
+  quyền truy cập thường trực vào vị trí được bảo vệ.
+- `terminal_timeout_requires_approval` — the standard-window gate: a terminal
+  call above 15 minutes asks under `standard`, is automatic under `full_access`
+  (the skip-all mode), and is denied under `plan` with the rest of terminal; a
+  timeout above the protocol hard maximum is denied in every preset.
 - `web_approval_required` — compatibility reason emitted only when an explicit
   ordered rule asks for Web. Canonical `plan`, `standard`, and `full_access`
   otherwise allow Web automatically; the returned authorization is

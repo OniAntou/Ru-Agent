@@ -121,6 +121,8 @@ public sealed class AgentRunControllerTests
         public string PayloadContent { get; set; } = "{}";
         public Dictionary<string, string> PayloadContents { get; } = new(StringComparer.Ordinal);
         public TaskCompletionSource<bool>? SubscriptionGate;
+        public TaskCompletionSource<bool>? CallbacksQueued;
+        public TaskCompletionSource<bool>? CallbackReleaseGate;
         public TaskCompletionSource<bool>? CreateRunGate;
         public CancellationToken CreateCancellationToken;
         public int CreateCallCount;
@@ -267,6 +269,12 @@ public sealed class AgentRunControllerTests
                 }
             }
 
+            CallbacksQueued?.TrySetResult(true);
+            if (CallbackReleaseGate is not null)
+            {
+                await CallbackReleaseGate.Task.WaitAsync(ct).ConfigureAwait(false);
+            }
+
         }
     }
 
@@ -291,14 +299,16 @@ public sealed class AgentRunControllerTests
             ToolDisplay: null,
             null,
             1));
-        var received = new List<AgentActivityModel>();
+        var received = new List<AgentRunActivityEventArgs>();
         var controller = new AgentRunController(fake);
         controller.ActivityReceived += (_, activity) => received.Add(activity);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-activity"));
 
         var activity = Assert.Single(received);
-        Assert.Equal("act_11111111111111111111111111111111", activity.ActivityId);
+        Assert.Equal("act_11111111111111111111111111111111", activity.Activity.ActivityId);
+        Assert.Equal(RunId, activity.RunId);
+        Assert.True(controller.IsCurrentFeedOwner(activity.RunId, activity.OwnershipGeneration));
         Assert.Single(controller.Events);
         Assert.DoesNotContain(controller.Events, item => item.IsTransient);
     }
@@ -317,14 +327,15 @@ public sealed class AgentRunControllerTests
             0,
             null,
             2));
-        var received = new List<AgentRunSummaryModel>();
+        var received = new List<AgentRunSummaryEventArgs>();
         var controller = new AgentRunController(fake);
         controller.SummaryReceived += (_, summary) => received.Add(summary);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-summary"));
 
         var summary = Assert.Single(received);
-        Assert.Equal("verified", summary.VerificationState);
+        Assert.Equal("verified", summary.Summary.VerificationState);
+        Assert.Equal(RunId, summary.RunId);
         Assert.Empty(controller.Events);
     }
 
@@ -662,6 +673,61 @@ public sealed class AgentRunControllerTests
         Assert.Equal(RunId, usage.RunId);
         Assert.Equal(0, usage.Usage.InputTokens);
         Assert.Equal("0 input · 12 output · 12 total", usage.Usage.DisplayText);
+    }
+
+    [Fact]
+    public async Task Old_run_activity_and_summary_callbacks_are_dropped_after_new_run_adoption()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRunWith("waiting_user", historyWaitKind: "waiting_user"),
+            CallbacksQueued = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+            CallbackReleaseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        fake.ActivityStream.Add(new AgentActivityModel(
+            "act_11111111111111111111111111111111",
+            AgentActivityKind.Terminal,
+            AgentActivityState.Waiting,
+            null, null, null, null, null, null, null, null,
+            "approval_required",
+            null,
+            null,
+            1,
+            "dangerous command"));
+        fake.SummaryStream.Add(new AgentRunSummaryModel("failed", "old run summary", "Test Agent", 2, 1, 0, 0, null, 2));
+        var queued = new List<Action>();
+        var controller = new AgentRunController(fake, synchronize: queued.Add);
+        var receivedActivities = new List<AgentRunActivityEventArgs>();
+        var receivedSummaries = new List<AgentRunSummaryEventArgs>();
+        controller.ActivityReceived += (_, activity) => receivedActivities.Add(activity);
+        controller.SummaryReceived += (_, summary) => receivedSummaries.Add(summary);
+
+        var create = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "run A", "standard", null, "stale-feed-owner"));
+        await fake.CallbacksQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await controller.DetachCurrentRunAsync();
+        var releaseA = queued[^1];
+        queued.RemoveAt(queued.Count - 1);
+        releaseA();
+        await create;
+
+        fake.ActivityStream.Clear();
+        fake.SummaryStream.Clear();
+        fake.CallbackReleaseGate = null;
+        fake.CallbacksQueued = null;
+        fake.Run = MakeRunWith("waiting_user", historyWaitKind: "waiting_user") with
+        {
+            RunId = "run_22222222222222222222222222222222",
+        };
+        Assert.True(await controller.AdoptRunAsync(fake.Run));
+        var newRunId = fake.Run.RunId;
+        DrainUiQueue(queued);
+
+        Assert.Equal(newRunId, controller.CurrentRun?.RunId);
+        Assert.Empty(receivedActivities);
+        Assert.Empty(receivedSummaries);
+        Assert.Null(controller.PendingApprovalCommand);
     }
 
     [Fact]

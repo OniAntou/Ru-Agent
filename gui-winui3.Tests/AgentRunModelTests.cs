@@ -8,6 +8,31 @@ namespace RuApp.Tests;
 public sealed class AgentRunModelTests
 {
     [Fact]
+    public void Compaction_activity_is_linked_to_its_durable_sequence_without_payload_text()
+    {
+        var activity = AgentRunEvidenceActivityMapper.Compaction("run_1", 42);
+
+        Assert.Equal("act_compaction_run_1_42", activity.ActivityId);
+        Assert.Equal(AgentActivityKind.Compaction, activity.Kind);
+        Assert.Equal(AgentActivityState.Completed, activity.State);
+        Assert.Equal(42, activity.DurableSequence);
+        Assert.Equal("context_compacted", activity.SafeCode);
+        Assert.Null(activity.Detail);
+        Assert.Null(activity.Todos);
+    }
+
+    [Fact]
+    public void Compaction_activity_identity_includes_run_and_sequence_for_replay_live_deduplication()
+    {
+        var firstReplay = AgentRunEvidenceActivityMapper.Compaction("run_first", 42);
+        var secondReplay = AgentRunEvidenceActivityMapper.Compaction("run_second", 42);
+        var firstLive = AgentRunEvidenceActivityMapper.Compaction("run_first", 42);
+
+        Assert.NotEqual(firstReplay.ActivityId, secondReplay.ActivityId);
+        Assert.Equal(firstReplay.ActivityId, firstLive.ActivityId);
+    }
+
+    [Fact]
     public void FromCreateResponse_maps_fields()
     {
         var response = new CreateAgentRunResponse(

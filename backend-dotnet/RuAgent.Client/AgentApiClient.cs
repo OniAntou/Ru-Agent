@@ -232,7 +232,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
                     wire.DurationMs,
                     wire.SafeCode,
                     wire.ToolDisplay,
-                    DurableSequence: null,
+                    DurableSequence: wire.DurableSequence,
                     TransientSequence: null,
                     wire.Detail,
                     wire.Todos));
@@ -489,7 +489,15 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         {
             var code = ExtractErrorCode(body) ?? "policy_create_failed";
             var msg = ExtractErrorMessage(body) ?? (string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}" : body);
-            throw new AgentApiException(code, msg, (int)resp.StatusCode);
+            var presetVersion = code == "preset_version_conflict" && (int)resp.StatusCode == 409
+                ? ExtractPresetVersionConflict(body)
+                : (SessionId: (string?)null, Version: (long?)null);
+            throw new AgentApiException(
+                code,
+                msg,
+                (int)resp.StatusCode,
+                presetSessionId: presetVersion.SessionId,
+                currentPresetVersion: presetVersion.Version);
         }
         try
         {
@@ -993,6 +1001,35 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         }
         catch { }
         return null;
+    }
+
+    private static (string? SessionId, long? Version) ExtractPresetVersionConflict(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return (null, null);
+            }
+
+            var sessionId = root.TryGetProperty("session_id", out var session)
+                && session.ValueKind == JsonValueKind.String
+                ? session.GetString()
+                : null;
+            var version = root.TryGetProperty("current_version", out var current)
+                && current.ValueKind == JsonValueKind.Number
+                && current.TryGetInt64(out var parsed)
+                && parsed >= 0
+                ? parsed
+                : (long?)null;
+            return (sessionId, version);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
     }
 
     /// <summary>

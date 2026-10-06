@@ -5,6 +5,7 @@ using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
 using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
 using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
+using CoreAgentActivity = RuAgent.Harness.Core.AgentActivity;
 using ProtocolActivityKind = RuAgent.Protocol.Harness.AgentActivityKind;
 using ProtocolActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 using ProtocolActivityWire = RuAgent.Protocol.Harness.AgentActivityWire;
@@ -60,6 +61,7 @@ public sealed partial class AgentV1Service
         var thinking = new List<ThinkingReplayRow>();
         var reasoning = new Dictionary<string, ReasoningReplayCall>(StringComparer.Ordinal);
         var stepTexts = new List<StepTextReplayRow>();
+        var compactions = new List<CompactionReplayRow>();
 
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
@@ -128,10 +130,26 @@ public sealed partial class AgentV1Service
                     when evt.PayloadId is { } blockedPayloadId:
                     stepTexts.Add(new StepTextReplayRow(blockedPayloadId, evt.Sequence));
                     break;
+                case "context.compacted"
+                    when string.Equals(evt.SafeCode, "context_compacted", StringComparison.Ordinal):
+                    compactions.Add(new CompactionReplayRow(evt.Sequence, evt.OccurredAt, evt.SafeCount));
+                    break;
             }
         }
 
         var rows = new List<ReplayedActivityRow>();
+        foreach (var compaction in compactions)
+        {
+            rows.Add(new ReplayedActivityRow(
+                compaction.Sequence,
+                new CoreAgentActivity(
+                    $"act_compaction_{runId}_{compaction.Sequence}",
+                    CoreActivityKind.Compaction,
+                    CoreActivityState.Completed,
+                    Count: compaction.CoveredCount,
+                    SafeCode: "context_compacted"),
+                compaction.OccurredAt));
+        }
         foreach (var call in completed)
         {
             if (!proposed.TryGetValue(call.ToolCallId.Value, out var proposalCall))
@@ -244,7 +262,7 @@ public sealed partial class AgentV1Service
             JsonElement wire;
             try
             {
-                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity, row.OccurredAt))).RootElement.Clone();
+                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity, row.OccurredAt, row.Sequence))).RootElement.Clone();
             }
             catch (JsonException)
             {
@@ -542,7 +560,7 @@ public sealed partial class AgentV1Service
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    private static ProtocolActivityWire MapActivity(AgentActivity activity, DateTimeOffset? occurredAt) =>
+    private static ProtocolActivityWire MapActivity(AgentActivity activity, DateTimeOffset? occurredAt, long durableSequence) =>
         new(
             activity.ActivityId,
             MapActivityKind(activity.Kind),
@@ -559,7 +577,8 @@ public sealed partial class AgentV1Service
             activity.ToolDisplay,
             activity.Detail,
             activity.Todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray(),
-            occurredAt?.ToString("O"));
+            occurredAt?.ToString("O"),
+            durableSequence);
 
     private static ProtocolActivityKind MapActivityKind(CoreActivityKind kind) => kind switch
     {
@@ -611,4 +630,5 @@ public sealed partial class AgentV1Service
     private sealed record ReasoningReplayCall(PayloadId PayloadId, long Sequence);
 
     private sealed record ReplayedActivityRow(long Sequence, AgentActivity Activity, DateTimeOffset? OccurredAt);
+    private sealed record CompactionReplayRow(long Sequence, DateTimeOffset OccurredAt, int? CoveredCount);
 }

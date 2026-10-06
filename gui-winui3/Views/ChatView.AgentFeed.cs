@@ -52,31 +52,37 @@ namespace RuApp.Views
             });
         }
 
-        private readonly List<AgentActivityModel> _pendingAgentActivities = new();
+        private readonly List<PendingRunActivity> _pendingAgentActivities = new();
         private DispatcherQueueTimer? _activityFlushTimer;
 
-        private void OnAgentActivityReceived(object? sender, AgentActivityModel activity)
+        private void OnAgentActivityReceived(object? sender, AgentRunActivityEventArgs activity)
         {
             if (DispatcherQueue.HasThreadAccess)
             {
-                EnqueueAgentActivity(activity);
+                EnqueueAgentActivity(activity.Activity, activity.RunId, activity.OwnershipGeneration);
                 return;
             }
 
-            if (!DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity)))
+            if (!DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity.Activity, activity.RunId, activity.OwnershipGeneration)))
             {
                 GuiDiagnosticWriter.AppendTraceLine("[ChatView] Dropped activity frame: dispatcher queue rejected enqueue.");
             }
         }
 
-        private void EnqueueAgentActivity(AgentActivityModel activity)
+        private void EnqueueAgentActivity(AgentActivityModel activity, string? runId = null, long ownershipGeneration = 0)
         {
+            if (runId is not null
+                && _agentController?.IsCurrentFeedOwner(runId, ownershipGeneration) != true)
+            {
+                return;
+            }
+
             // An activity frame may arrive while the turn is armed but the
             // controller has not flipped busy yet (the Thinking Started frame
             // is published before the first model call completes): arm the
             // assistant anchor now so the first frames are never dropped.
             EnsureAgentActivityAnchor();
-            _pendingAgentActivities.Add(activity);
+            _pendingAgentActivities.Add(new PendingRunActivity(activity, runId, ownershipGeneration));
             if (_pendingAgentActivities.Count == 1 && _activityFlushTimer?.IsRunning != true)
             {
                 // Lone frame: render on the next dispatcher turn instead of
@@ -120,7 +126,10 @@ namespace RuApp.Views
             _pendingAgentActivities.Clear();
             foreach (var activity in batch)
             {
-                ApplyAgentActivity(activity);
+                if (OwnsPendingActivity(activity))
+                {
+                    ApplyAgentActivity(activity.Activity);
+                }
             }
 
             AgentActivityGrouper.Reconcile(AgentActivities);
@@ -142,7 +151,10 @@ namespace RuApp.Views
                 _pendingAgentActivities.Clear();
                 foreach (var activity in queued)
                 {
-                    ApplyAgentActivity(activity, allowWhenIdle: true);
+                    if (OwnsPendingActivity(activity))
+                    {
+                        ApplyAgentActivity(activity.Activity, allowWhenIdle: true);
+                    }
                 }
             }
 
@@ -383,15 +395,24 @@ namespace RuApp.Views
             }
         }
 
-        private void OnAgentSummaryReceived(object? sender, AgentRunSummaryModel summary)
+        private void OnAgentSummaryReceived(object? sender, AgentRunSummaryEventArgs summary)
         {
             if (DispatcherQueue.HasThreadAccess)
             {
-                ApplyAgentRunSummary(summary);
+                if (_agentController?.IsCurrentFeedOwner(summary.RunId, summary.OwnershipGeneration) == true)
+                {
+                    ApplyAgentRunSummary(summary.Summary);
+                }
                 return;
             }
 
-            DispatcherQueue.TryEnqueue(() => ApplyAgentRunSummary(summary));
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_agentController?.IsCurrentFeedOwner(summary.RunId, summary.OwnershipGeneration) == true)
+                {
+                    ApplyAgentRunSummary(summary.Summary);
+                }
+            });
         }
 
         private void ApplyAgentRunSummary(AgentRunSummaryModel summary)
@@ -553,6 +574,12 @@ namespace RuApp.Views
             UpdateContextUsage();
         }
 
+        private bool OwnsPendingActivity(PendingRunActivity activity) =>
+            activity.RunId is null
+            || _agentController?.IsCurrentFeedOwner(activity.RunId, activity.OwnershipGeneration) == true;
+
+        private sealed record PendingRunActivity(AgentActivityModel Activity, string? RunId, long OwnershipGeneration);
+
         private void OnAgentContextCompacted(object? sender, AgentRunContextCompactedEventArgs compacted)
         {
             if (!DispatcherQueue.HasThreadAccess)
@@ -574,6 +601,10 @@ namespace RuApp.Views
                 return;
             }
 
+            EnqueueAgentActivity(
+                AgentRunEvidenceActivityMapper.Compaction(compacted.RunId, sequence),
+                compacted.RunId,
+                compacted.OwnershipGeneration);
             _retainedContextMeter.ScopeToRun(run, _activeSessionId);
             _retainedContextMeter.ObserveCompaction(run.RunId, run.SessionId, sequence, Messages.Count);
             UpdateContextUsage(force: true);

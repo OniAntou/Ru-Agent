@@ -358,7 +358,7 @@ namespace RuApp.Services
                         wire.DurationMs,
                         wire.SafeCode,
                         wire.ToolDisplay,
-                        DurableSequence: null,
+                        DurableSequence: wire.DurableSequence,
                         TransientSequence: null,
                         wire.Detail,
                         wire.Todos,

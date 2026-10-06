@@ -67,17 +67,20 @@ run as evidence that a provider path works.
 
 ## Consecutive tool steps
 
-The offline workflow runner has deterministic edit-recovery, UTF-8 read-paging and
-grep-paging executors. They invoke the actual CLI and managed Host with a temporary
-workspace, use the real Broker, and check bounded event counts and file oracles. Paging
-scripts resolve `$projection_next_offset` and `$projection_spool_id` only from the latest
-bounded `tool_result` prompt reference. These predetermined steps verify wiring and effects;
-they do not measure provider behavior or prove that a model found a sentinel or followed a
-recovery note. The terminal middle-output scenario remains unmet in unattended CLI mode:
-the standard-preset command pauses for an explicit approval and the bounded runner records
-that timeout instead of approving it. Separate Broker integration tests cover spool cursor
-recovery without rerunning the command. Cross-turn, handoff, approval-aware terminal, and
-other workflow chains still need their own executors and effect oracles.
+The offline workflow runner registers one bounded executor for each of the twelve declared
+scenarios: Vietnamese text, a ten-turn constraint sequence, restart continuation, selected
+handoff, independent read batches, UTF-8 read paging, sparse grep paging, terminal
+middle-output paging, dependent multi-file edits, edit recovery, failed-test repair, and
+explicit denial. They invoke the actual CLI and managed Host with a temporary workspace,
+use the real Broker, and check bounded event counts, receipt identities, and file oracles.
+Approval-gated cases drive the existing explicit `agent approve`/`deny` commands and read
+only public SSE history; restart and handoff cases restart the managed Host against the
+same data root. Paging scripts resolve `$projection_next_offset` and `$projection_spool_id`
+from the exact preceding tool call, and context oracles can require a marker to be present
+or absent in the assembled model context. These predetermined steps verify wiring and
+effects; they do not measure provider behavior or prove that a real model would find a
+sentinel or follow a recovery note. A failed terminal command keeps a bounded `spool_id`
+in its failure content so its retained output stays pageable without rerunning it.
 
 Assertions about the prompt contract itself live in `ScriptedModelReceiptTests`, which
 covers both capabilities renderings directly.

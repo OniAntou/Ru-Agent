@@ -14,7 +14,6 @@ namespace RuAgent.Cli;
 /// </summary>
 internal sealed class RunStartCore
 {
-    private const int PresetVersionRetryLimit = 3; // value currently in AgentCommands
 
     private readonly SessionApiClient _sessionClient;
     private readonly AgentApiClient _agentClient;
@@ -48,18 +47,20 @@ internal sealed class RunStartCore
         CancellationToken cancellationToken)
     {
         var snapshotToken = CreateSnapshotToken();
-        for (var expectedVersion = 0; expectedVersion <= PresetVersionRetryLimit; expectedVersion++)
+        try
         {
-            try
-            {
-                var response = await _agentClient.SetSessionPresetAsync(
+            var response = await SessionPresetVersionNegotiator.ExecuteAsync(
                     sessionId,
-                    preset,
-                    expectedVersion,
-                    interactive,
-                    cancellationToken,
-                    snapshotToken).ConfigureAwait(false);
-                if (!response.TryGetProperty("version", out var versionElement)
+                    expectedVersion => _agentClient.SetSessionPresetAsync(
+                        sessionId,
+                        preset,
+                        expectedVersion,
+                        interactive,
+                        cancellationToken,
+                        snapshotToken),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.TryGetProperty("version", out var versionElement)
                     || versionElement.ValueKind != JsonValueKind.Number
                     || !versionElement.TryGetInt64(out var version)
                     || version <= 0
@@ -72,81 +73,62 @@ internal sealed class RunStartCore
                     || response.TryGetProperty("snapshot_token", out var tokenElement)
                     && (tokenElement.ValueKind != JsonValueKind.String
                         || !string.Equals(tokenElement.GetString(), snapshotToken, StringComparison.Ordinal)))
-                {
-                    await _err.WriteLineAsync("preset_update_failed: invalid preset update response.").ConfigureAwait(false);
-                    if (!await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                        .ConfigureAwait(false))
-                    {
-                        return null;
-                    }
-
-                    return null;
-                }
-
-                return new SessionPresetUpdateResult(sessionId, version, snapshotToken);
-            }
-            catch (AgentApiException ex) when (
-                IsDeterministicPresetVersionConflict(ex) &&
-                expectedVersion < PresetVersionRetryLimit)
             {
-            }
-            catch (AgentApiException ex) when (IsDeterministicPresetVersionConflict(ex))
-            {
-                await _err.WriteLineAsync("preset_version_conflict: preset_version_conflict").ConfigureAwait(false);
-                return null;
-            }
-            catch (AgentApiException ex)
-            {
-                if (IsPreCommitPresetError(ex))
-                {
-                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                    return null;
-                }
-
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                await _err.WriteLineAsync("preset_update_failed: invalid preset update response.").ConfigureAwait(false);
+                if (!await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     .ConfigureAwait(false))
                 {
-                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                     return null;
                 }
 
+                return null;
+            }
+
+            return new SessionPresetUpdateResult(sessionId, version, snapshotToken);
+        }
+        catch (AgentApiException ex)
+        {
+            if (IsPreCommitPresetError(ex))
+            {
                 await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                 return null;
             }
-            catch (OperationCanceledException)
-            {
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                    .ConfigureAwait(false))
-                {
-                    throw;
-                }
 
+            if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                .ConfigureAwait(false))
+            {
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return null;
+            }
+
+            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                .ConfigureAwait(false))
+            {
                 throw;
             }
-            catch (Exception ex)
-            {
-                if (!await RestorePresetOrReportAsync(
-new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
-                    .ConfigureAwait(false))
-                {
-                    await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
-                    return null;
-                }
 
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                .ConfigureAwait(false))
+            {
                 await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
                 return null;
             }
+
+            await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
+            return null;
         }
-
-        return null;
-    }
-
-    private static bool IsDeterministicPresetVersionConflict(AgentApiException error)
-    {
-        return error.StatusCode == 409
-            && error.ErrorCode == "preset_version_conflict";
     }
 
     private static bool IsPreCommitPresetError(AgentApiException error)

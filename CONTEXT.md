@@ -63,6 +63,16 @@ success status alone is not deletion proof.
 _Avoid_: treating an HTTP 200 response as a successful delete
 
 **Session Work State**:
+The bounded, encrypted workflow record attached to one Conversation Session and
+canonical workspace identity: user goal and constraints, the latest task list,
+receipt-backed observations and verification codes, blockers, and next actions
+with provenance, capped at 16 KiB with at most 16 entries per list. It is
+untrusted model guidance, not authority: it carries no approvals, grants,
+credentials, or raw terminal output, and a new session stays independent until
+the user explicitly previews and attaches a selected handoff.
+_Avoid_: global memory, cross-session authority
+
+**Session Work State**:
 An encrypted, bounded workflow projection keyed by Conversation Session and
 canonical Workspace identity. User intent remains linked to its original run
 and event; model task candidates are untrusted and are persisted only from a

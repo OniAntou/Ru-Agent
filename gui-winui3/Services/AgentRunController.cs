@@ -274,7 +274,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             PublishCreatedRun(run, ownershipGeneration, token, onAccepted);
             accepted = true;
-            await FollowRunStreamAsync(run.RunId, 0, token).ConfigureAwait(false);
+            await FollowRunStreamAsync(run.RunId, 0, ownershipGeneration, token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -429,10 +429,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
+        long ownershipGeneration;
         lock (_gate)
         {
             _subscriptionCts = cts;
-            _runOwnershipGeneration++;
+            ownershipGeneration = ++_runOwnershipGeneration;
             // Hand the run id over before the first UI frame: the delta/activity
             // handlers read it on the SSE thread, and a UI-queued assignment lets
             // the opening frames arrive while it is still null and be dropped.
@@ -464,7 +465,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             RefreshCommands();
         });
 
-        _ = FollowAdoptedRunAsync(run.RunId, run.LastSequence, token, cts);
+        _ = FollowAdoptedRunAsync(run.RunId, run.LastSequence, ownershipGeneration, token, cts);
         return Task.FromResult(true);
     }
 
@@ -764,7 +765,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
 
 
-    private async Task OnEventAsync(AgentEventModel model)
+    private async Task OnEventAsync(AgentEventModel model, string runId, long ownershipGeneration)
     {
         if (model.IsTransient)
         {
@@ -819,6 +820,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         RunOnUi(() =>
         {
+            lock (_gate)
+            {
+                if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested)
+                {
+                    return;
+                }
+            }
+
             if (Events.Count > 200)
             {
                 Events.RemoveAt(0);
@@ -829,7 +838,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 ContextCompacted?.Invoke(
                     this,
-                    new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence));
+                    new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence, ownershipGeneration));
             }
             if (!string.IsNullOrEmpty(model.SafeSummary)
                 && !IsApprovalRequestWithPanel(model))
@@ -904,11 +913,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         await Task.CompletedTask;
     }
 
-    private Task OnActivityAsync(AgentActivityModel model)
+    private Task OnActivityAsync(AgentActivityModel model, string runId, long ownershipGeneration)
     {
         lock (_gate)
         {
-            if (!_isBusy || _isCancelRequested)
+            if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested)
             {
                 return Task.CompletedTask;
             }
@@ -920,7 +929,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 lock (_gate)
                 {
-                    if (!_isBusy || _isCancelRequested)
+                    if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested)
                     {
                         return;
                     }
@@ -931,7 +940,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     PendingApprovalCommand = model.Detail;
                 }
 
-                ActivityReceived?.Invoke(this, model);
+                ActivityReceived?.Invoke(this, new AgentRunActivityEventArgs(runId, ownershipGeneration, model));
             }
             catch
             {
@@ -942,11 +951,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         return Task.CompletedTask;
     }
 
-    private Task OnSummaryAsync(AgentRunSummaryModel model)
+    private Task OnSummaryAsync(AgentRunSummaryModel model, string runId, long ownershipGeneration)
     {
         lock (_gate)
         {
-            if (!_isBusy || _isCancelRequested)
+            if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested)
             {
                 return Task.CompletedTask;
             }
@@ -958,13 +967,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 lock (_gate)
                 {
-                    if (!_isBusy || _isCancelRequested)
+                    if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested)
                     {
                         return;
                     }
                 }
 
-                SummaryReceived?.Invoke(this, model);
+                SummaryReceived?.Invoke(this, new AgentRunSummaryEventArgs(runId, ownershipGeneration, model));
             }
             catch
             {
@@ -1142,9 +1151,22 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public event EventHandler<AgentActivityModel>? ActivityReceived;
+    public event EventHandler<AgentRunActivityEventArgs>? ActivityReceived;
 
-    public event EventHandler<AgentRunSummaryModel>? SummaryReceived;
+    public event EventHandler<AgentRunSummaryEventArgs>? SummaryReceived;
+
+    public bool IsCurrentFeedOwner(string runId, long ownershipGeneration)
+    {
+        lock (_gate)
+        {
+            return OwnsFeedLocked(runId, ownershipGeneration);
+        }
+    }
+
+    private bool OwnsFeedLocked(string runId, long ownershipGeneration) =>
+        _runOwnershipGeneration == ownershipGeneration
+        && (string.Equals(_currentRunId, runId, StringComparison.Ordinal)
+            || (_currentRunId is null && !_isBusy));
 
     public event EventHandler<AgentAssistantDeltaModel>? AssistantDeltaReceived;
 
@@ -1214,6 +1236,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private async Task FollowRunStreamAsync(
         string runId,
         long afterSequence,
+        long ownershipGeneration,
         CancellationToken token,
         Action? onFrame = null)
     {
@@ -1223,18 +1246,18 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 model =>
                 {
                     onFrame?.Invoke();
-                    return OnEventAsync(model);
+                    return OnEventAsync(model, runId, ownershipGeneration);
                 },
                 token,
                 model =>
                 {
                     onFrame?.Invoke();
-                    return OnActivityAsync(model);
+                    return OnActivityAsync(model, runId, ownershipGeneration);
                 },
                 model =>
                 {
                     onFrame?.Invoke();
-                    return OnSummaryAsync(model);
+                    return OnSummaryAsync(model, runId, ownershipGeneration);
                 },
                 model =>
                 {
@@ -1302,13 +1325,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private async Task FollowAdoptedRunAsync(
         string runId,
         long afterSequence,
+        long ownershipGeneration,
         CancellationToken token,
         CancellationTokenSource cts)
     {
         var sawFrame = false;
         try
         {
-            await FollowRunStreamAsync(runId, afterSequence, token, () => sawFrame = true).ConfigureAwait(false);
+            await FollowRunStreamAsync(runId, afterSequence, ownershipGeneration, token, () => sawFrame = true).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {

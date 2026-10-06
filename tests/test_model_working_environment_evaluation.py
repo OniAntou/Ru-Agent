@@ -148,19 +148,25 @@ $ErrorActionPreference = 'Stop'
 Import-Module '{module}' -Force
 $scenario = [pscustomobject]@{{ id = 'paging'; assertions = @(
     [pscustomobject]@{{ kind = 'minimum_tool_calls'; equals = 3 }},
+    [pscustomobject]@{{ kind = 'expected_utf8_sentinel_seen'; equals = $true; path = 'docs/page.txt'; line = 3; sentinel = 'PAGE-SENTINEL' }},
     [pscustomobject]@{{ kind = 'final_status'; equals = 'completed' }}
 ) }}
 $first = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 2; safe_summary = 'ok' }}
 $second = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 4; safe_summary = 'succeeded' }}
 $third = [pscustomobject]@{{ event_type = 'tool.execution_completed'; sequence = 6; safe_summary = 'ok' }}
 $done = [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 7; status = 'completed' }}
-$metrics = Get-ScriptedPagingMetrics $scenario @($first, $second, $third, $done)
+$payloads = @(
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; content = '{{"path":"docs/page.txt","offset":0,"content":"head","truncated":true}}' }},
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; content = '{{"path":"docs/page.txt","offset":4,"content":"PAGE-SENTINEL tail","truncated":false}}' }},
+    [pscustomobject]@{{ event_type = 'tool.execution_completed'; content = '{{"path":"docs/page.txt","offset":23,"content":"tail","truncated":false}}' }}
+)
+$metrics = Get-ScriptedPagingMetrics $scenario @($first, $second, $third, $done) $payloads $null
 if ($metrics.tool_calls -ne 3 -or $metrics.failed_tool_calls -ne 0) {{ throw 'The exact paging trace did not pass.' }}
 foreach ($invalid in @(
     ,@($first, $second, $done),
     ,@($first, $second, $third, $done, [pscustomobject]@{{ event_type = 'run.state_changed'; sequence = 8; status = 'completed' }})
 )) {{
-    try {{ Get-ScriptedPagingMetrics $scenario $invalid | Out-Null }}
+    try {{ Get-ScriptedPagingMetrics $scenario $invalid $payloads $null | Out-Null }}
     catch {{ if ($_.Exception.Message.StartsWith('Oracle failure:')) {{ continue }}; throw }}
     throw 'The paging oracle accepted an incomplete or duplicate-terminal trace.'
 }}
@@ -220,6 +226,17 @@ def _scenario_files(document, scenario):
             sentinels = entry.get("sentinels", {})
             prefix = entry.get("linePrefix", "line ")
             content = "".join(f"{sentinels.get(str(line), f'{prefix}{line}')}\n" for line in range(1, entry["count"] + 1))
+        elif kind == "sparse_search_output":
+            sentinels = entry.get("sentinels", {})
+            prefix = entry.get("linePrefix", "line ")
+            match_every = entry["matchEvery"]
+            lines = []
+            for line in range(1, entry["count"] + 1):
+                if line % match_every == match_every - 1:
+                    lines.append(sentinels.get(str(line), f"{prefix}{line}"))
+                else:
+                    lines.append(f"unrelated note {line}")
+            content = "".join(f"{line}\n" for line in lines)
         else:
             raise AssertionError(f"Unknown workspace overlay kind: {kind}")
         files[entry["path"]] = content

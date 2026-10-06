@@ -1,3 +1,7 @@
 namespace RuApp.Services;
 
-public sealed record AgentRunContextCompactedEventArgs(string RunId, string SessionId, long? Sequence);
+public sealed record AgentRunContextCompactedEventArgs(
+    string RunId,
+    string SessionId,
+    long? Sequence,
+    long OwnershipGeneration);

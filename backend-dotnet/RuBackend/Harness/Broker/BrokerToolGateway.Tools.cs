@@ -300,7 +300,8 @@ public sealed partial class BrokerToolGateway
                         body["error_code"]?.GetValue<string>() is { Length: > 0 } errorCode
                             ? errorCode
                             : "tool_failed",
-                        body["safe_summary"]?.GetValue<string>());
+                        body["safe_summary"]?.GetValue<string>(),
+                        body["output"] as JsonObject);
             }
         }
         catch (ToolTransportException error) when (
@@ -395,12 +396,18 @@ public sealed partial class BrokerToolGateway
     private static ToolExecutionReceipt FailedReceipt(
         PreparedToolExecution execution,
         string code,
-        string? safeSummary = null)
+        string? safeSummary = null,
+        JsonObject? output = null)
     {
         var content = new JsonObject { ["error"] = code };
         if (BoundRepairHint(safeSummary) is { } hint)
         {
             content["hint"] = hint;
+        }
+
+        if (BoundSpoolId(output) is { } spoolId)
+        {
+            content["spool_id"] = spoolId;
         }
 
         return new ToolExecutionReceipt(
@@ -450,12 +457,31 @@ public sealed partial class BrokerToolGateway
             : cleaned;
     }
 
+    /// <summary>
+    /// Carries a terminal execution's retained-output identity into failure content
+    /// so a failed command can still be inspected with mode read_output. Only the
+    /// bounded identity crosses; the raw output never does.
+    /// </summary>
+    internal static string? BoundSpoolId(JsonObject? output)
+    {
+        if (output?["spool_id"] is JsonValue value
+            && value.TryGetValue<string>(out var spoolId)
+            && !string.IsNullOrWhiteSpace(spoolId)
+            && spoolId.Length <= 256
+            && !spoolId.Contains('\0'))
+        {
+            return spoolId;
+        }
+
+        return null;
+    }
+
     private static bool IsPostDispatchExecuteFailure(
         ExecutionDispatchState dispatch,
         ToolAccessKind accessKind,
         Exception error) =>
         dispatch.IsDispatched
-        && accessKind != ToolAccessKind.ReadOnly
+        && (accessKind != ToolAccessKind.ReadOnly || error is not OperationCanceledException)
         && error is (
             ToolTransportException
             or WebSocketException
@@ -473,10 +499,12 @@ public sealed partial class BrokerToolGateway
         return new ToolExecutionReceipt(
             execution.ExecutionId,
             execution.ToolCallId,
-            ToolExecutionOutcome.OutcomeUnknown,
+            execution.AccessKind == ToolAccessKind.ReadOnly
+                ? ToolExecutionOutcome.Failed
+                : ToolExecutionOutcome.OutcomeUnknown,
             "transport_failure",
             null,
-            sideEffectsPossible: true);
+            sideEffectsPossible: execution.AccessKind != ToolAccessKind.ReadOnly);
     }
 
     internal static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) =>

@@ -607,6 +607,63 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Failed_execution_keeps_a_bounded_spool_id_for_paged_diagnostics()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('5', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+        try
+        {
+            gateway.ExecutionReplyTextTransform = text =>
+            {
+                var envelope = System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject();
+                envelope["payload"]!.AsObject()["output"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["spool_id"] = "req-123",
+                    ["stderr_head"] = "raw diagnostic that must not cross",
+                };
+                return envelope.ToJsonString();
+            };
+
+            var proposal = Proposal(runId, "read", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = "notes/missing.txt",
+            });
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_" + new string('5', 32)),
+                    decision.CanonicalIntentToken!,
+                    decision.GatewayGeneration),
+                CancellationToken.None);
+
+            var receipt = await gateway.ExecuteAsync(
+                prepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            var content = System.Text.Json.Nodes.JsonNode.Parse(
+                System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
+            Assert.Equal("req-123", content["spool_id"]!.GetValue<string>());
+            Assert.False(content.ContainsKey("stderr_head"));
+        }
+        finally
+        {
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    [Fact]
     public void BoundRepairHint_strips_lines_clamps_and_rejects_forbidden_fields()
     {
         Assert.Null(global::RuBackend.Harness.Broker.BrokerToolGateway.BoundRepairHint(null));
@@ -1129,8 +1186,10 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             }
             else
             {
-                var transport = await Assert.ThrowsAsync<ToolTransportException>(() => execution);
-                Assert.Equal("broker_connection_closed", transport.Message);
+                var receipt = await execution;
+                Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+                Assert.False(receipt.SideEffectsPossible);
+                Assert.Equal("transport_failure", receipt.Code);
                 var retry = await gateway.ExecuteAsync(
                     prepared,
                     _ => ValueTask.CompletedTask,

@@ -69,7 +69,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("tool_display")] string? ToolDisplay = null,
     [property: JsonPropertyName("detail")] string? Detail = null,
     [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null,
-    [property: JsonPropertyName("occurred_at")] string? OccurredAt = null);
+    [property: JsonPropertyName("occurred_at")] string? OccurredAt = null,
+    [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null);
 
 public static class AgentActivityWireCodec
 {
@@ -153,6 +154,7 @@ public static class AgentActivityWireValidator
         "detail",
         "todos",
         "occurred_at",
+        "durable_sequence",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -293,6 +295,14 @@ public static class AgentActivityWireValidator
         {
             throw new JsonException("Activity timestamp is invalid.");
         }
+
+        if (root.TryGetProperty("durable_sequence", out var sequence)
+            && (sequence.ValueKind != JsonValueKind.Number
+                || !sequence.TryGetInt64(out var sequenceValue)
+                || sequenceValue <= 0))
+        {
+            throw new JsonException("Activity durable sequence is invalid.");
+        }
     }
 
     public static void Validate(AgentActivityWire activity)
@@ -310,6 +320,11 @@ public static class AgentActivityWireValidator
         if (!Enum.IsDefined(activity.Kind) || !Enum.IsDefined(activity.State))
         {
             throw new JsonException("Activity kind or state is invalid.");
+        }
+
+        if (activity.DurableSequence is <= 0)
+        {
+            throw new JsonException("Activity durable sequence is invalid.");
         }
 
         ValidateFileName(activity.FileName);

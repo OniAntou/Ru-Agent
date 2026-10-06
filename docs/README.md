@@ -51,6 +51,10 @@ in the checkout indefinitely.
 
 Git history is the recovery source for removed dated plans and specifications.
 
+## Open planning work
+
+- [Model working environment](plans/2026-10-04-model-working-environment.md) — in-progress implementation with Luna and offline verification; delivered capabilities are recorded in the capability map and verification documents.
+
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles from `RuAgent.Protocol`: `plan` allows workspace read and
 Web while denying terminal and mutation; `standard` auto-allows bounded-local

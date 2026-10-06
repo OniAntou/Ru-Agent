@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Persistence;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -64,6 +68,79 @@ public sealed class AgentRunActivitiesTests
         Assert.True(json.TryGetProperty("activities", out var activities));
         Assert.Equal(JsonValueKind.Array, activities.ValueKind);
         Assert.Equal(0, activities.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Replayed_activities_include_durable_compaction_sequence_without_summary_payload()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(client, session, tmp.Path, "compaction replay", "compact-replay-" + Guid.NewGuid().ToString("N"));
+        var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+        var run = await store.GetRunAsync(new RunId(runId), CancellationToken.None);
+        Assert.NotNull(run);
+
+        const string hiddenSummary = "[context_compaction id=compact-replay untrusted=true]bounded internal summary[/context_compaction]";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(hiddenSummary);
+        var payload = new HarnessPayloadIntent(
+            new PayloadId("payload_" + Guid.NewGuid().ToString("N")),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            bytes.Length,
+            bytes);
+        var eventId = new EventId("evt_" + Guid.NewGuid().ToString("N"));
+        var occurredAt = DateTimeOffset.UtcNow;
+        var nextRun = new AgentRun(
+            run.RunId,
+            run.SessionId,
+            run.WorkspaceId,
+            run.Status,
+            checked(run.Version + 1),
+            checked(run.LastSequence + 1),
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            run.Preset,
+            run.PolicySnapshotVersion,
+            run.PolicySnapshotSha256,
+            run.CreatedAt,
+            occurredAt,
+            run.Status.State.IsTerminal() ? occurredAt : null,
+            run.Status.State.IsTerminal() ? run.TerminalErrorCode : null,
+            run.PermissionProfileVersion);
+        var commit = await store.CommitAsync(
+            new HarnessCommit(
+                run.RunId,
+                run.Version,
+                nextRun,
+                [new HarnessEventIntent(eventId, HarnessEventKind.ContextCompacted, safeCount: 3, safeCode: "context_compacted")],
+                [payload],
+                [],
+                new ContextCompactionIntent(
+                    run.RunId,
+                    "compact-replay",
+                    payload.PayloadId,
+                    ContextCompactionStrategy.Normal,
+                    ContextCompactionReason.Manual,
+                    [new ContextEntryRange($"event:{eventId.Value}", 1, 1)],
+                    100,
+                    40,
+                    new string('a', 64))),
+            CancellationToken.None);
+        Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+
+        using var response = await client.GetAsync($"/agent/v1/runs/{runId}/activities");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var compaction = Assert.Single(json.GetProperty("activities").EnumerateArray(), item =>
+            item.GetProperty("safe_code").GetString() == "context_compacted");
+        Assert.Equal("compaction", compaction.GetProperty("kind").GetString());
+        Assert.Equal(run.LastSequence + 1, compaction.GetProperty("durable_sequence").GetInt64());
+        Assert.Equal(3, compaction.GetProperty("count").GetInt32());
+        Assert.DoesNotContain(hiddenSummary, json.GetRawText(), StringComparison.Ordinal);
     }
 
     /// <summary>

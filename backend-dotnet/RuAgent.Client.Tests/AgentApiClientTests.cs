@@ -77,6 +77,49 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task SetSessionPresetConflictParsesExactSessionAndCurrentVersion()
+    {
+        const string sessionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(
+                    "{\"error_code\":\"preset_version_conflict\",\"message\":\"conflict\",\"session_id\":\"" + sessionId + "\",\"current_version\":17}",
+                    Encoding.UTF8,
+                    "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.SetSessionPresetAsync(sessionId, "standard", 0, interactive: true));
+
+        Assert.Equal(409, error.StatusCode);
+        Assert.Equal("preset_version_conflict", error.ErrorCode);
+        Assert.Equal(sessionId, error.PresetSessionId);
+        Assert.Equal(17, error.CurrentPresetVersion);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{\"error_code\":\"preset_version_conflict\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"current_version\":\"17\"}")]
+    public async Task SetSessionPresetMalformedConflictMetadataRemainsUntrusted(string body)
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.SetSessionPresetAsync("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard", 0, interactive: true));
+
+        Assert.Equal(
+            body.StartsWith("{", StringComparison.Ordinal) ? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" : null,
+            error.PresetSessionId);
+        Assert.Null(error.CurrentPresetVersion);
+    }
+
+    [Fact]
     public async Task GetRunStrictParsingRejectsInvalidWorkStateAndProviderMetadata()
     {
         foreach (var metadata in new object[]

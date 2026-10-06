@@ -1445,33 +1445,27 @@ namespace RuApp.Views
                 AgentPermissionPreset.FullAccess => "full_access",
                 _ => "standard",
             };
-            AgentApiException? lastConflict = null;
-            for (long expectedVersion = 0; expectedVersion <= 3; expectedVersion++)
+            string requestedSessionId = _activeSessionId;
+            long requestedGeneration = _sessionOpenGeneration;
+            long version = await SessionPresetVersionNegotiator.ExecuteAsync(
+                requestedSessionId,
+                expectedVersion => _agentController.SetSessionPresetAsync(
+                    requestedSessionId,
+                    wirePreset,
+                    expectedVersion,
+                    interactive: true,
+                    cancellationToken),
+                cancellationToken);
+            if (requestedGeneration != _sessionOpenGeneration
+                || !string.Equals(requestedSessionId, _activeSessionId, StringComparison.Ordinal))
             {
-                try
-                {
-                    long version = await _agentController.SetSessionPresetAsync(
-                        _activeSessionId,
-                        wirePreset,
-                        expectedVersion,
-                        interactive: true,
-                        cancellationToken);
-                    _agentPresetSessionId = _activeSessionId;
-                    _agentPresetVersion = version;
-                    return version;
-                }
-                catch (AgentApiException ex) when (ex.ErrorCode == "preset_version_conflict")
-                {
-                    lastConflict = ex;
-                }
+                throw new AgentApiException("session_changed", "Active session changed during permission update.");
             }
 
-            if (lastConflict is not null)
-            {
-                throw lastConflict;
-            }
-
-            throw new InvalidOperationException("Could not update the Agent permission preset.");
+            _agentPresetSessionId = requestedSessionId;
+            _agentPreset = preset;
+            _agentPresetVersion = version;
+            return version;
         }
 
         private async Task<bool> ConfirmFullAccessAsync()

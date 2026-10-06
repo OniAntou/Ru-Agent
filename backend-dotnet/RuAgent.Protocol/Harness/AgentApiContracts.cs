@@ -107,7 +107,11 @@ public sealed record AgentErrorResponse(
     [property: JsonPropertyName("blocking_run_id")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunId = null,
     [property: JsonPropertyName("blocking_run_status")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunStatus = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunStatus = null,
+    [property: JsonPropertyName("session_id")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SessionId = null,
+    [property: JsonPropertyName("current_version")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CurrentVersion = null);
 
 public sealed record SessionRunsResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<GetAgentRunResponse> Items,

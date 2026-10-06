@@ -87,7 +87,7 @@ public sealed record AgentActivityModel(
                 wire.DurationMs,
                 wire.SafeCode,
                 wire.ToolDisplay,
-                frame.DurableSequence,
+                frame.DurableSequence ?? wire.DurableSequence,
                 frame.TransientSequence,
                 wire.Detail,
                 wire.Todos);

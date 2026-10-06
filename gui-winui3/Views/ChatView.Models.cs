@@ -676,7 +676,7 @@ namespace RuApp.Views
                 maxTokens = retainedContextWindow ?? 0;
                 displayLimit = ModelContextSpecs.FormatPublishedContext(retainedContextWindow) ?? string.Empty;
                 RetainedRunIdentityText.Text = RetainedRunPresentation.Identity(retainedRun!);
-                RetainedRunIdentityText.Visibility = Visibility.Visible;
+                RetainedRunPinWell.Visibility = Visibility.Visible;
             }
             else
             {
@@ -684,7 +684,7 @@ namespace RuApp.Views
                 maxTokens = catalogCtx is > 0 ? catalogCtx.Value : 0;
                 displayLimit = ModelContextSpecs.FormatPublishedContext(catalogCtx) ?? string.Empty;
                 RetainedRunIdentityText.Text = string.Empty;
-                RetainedRunIdentityText.Visibility = Visibility.Collapsed;
+                RetainedRunPinWell.Visibility = Visibility.Collapsed;
             }
 
             // Include draft input so the meter moves while typing, not only after send.

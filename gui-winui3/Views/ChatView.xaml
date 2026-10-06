@@ -1361,34 +1361,42 @@
                                                 <Setter Property="BorderThickness" Value="1" />
                                                 <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
                                                 <Setter Property="Padding" Value="12,10" />
-                                                <Setter Property="MinWidth" Value="208" />
-                                                <Setter Property="MaxWidth" Value="248" />
+                                                <Setter Property="Width" Value="288" />
+                                                <Setter Property="MinWidth" Value="288" />
+                                                <Setter Property="MaxWidth" Value="288" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
-                                        <StackPanel Spacing="8">
-                                            <TextBlock x:Name="RetainedRunIdentityText"
-                                                       Visibility="Collapsed"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="10.5"
-                                                       Foreground="{StaticResource RuMutedBrush}"
-                                                       TextWrapping="Wrap" />
+                                        <StackPanel Spacing="8" Width="264">
                                             <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock x:Name="ContextUsedLabel"
-                                                           Text="0 / 128K"
+                                                <TextBlock Text="Context window"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="13"
+                                                           FontSize="12.5"
                                                            FontWeight="SemiBold"
                                                            Foreground="{StaticResource RuInkBrush}"
                                                            VerticalAlignment="Center" />
-                                                <TextBlock x:Name="ContextPercentLabel"
-                                                           Grid.Column="1"
-                                                           Text="0%"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11.5"
-                                                           Foreground="{StaticResource RuMutedBrush}"
-                                                           VerticalAlignment="Center" />
+                                                <Border Grid.Column="1"
+                                                        Background="{StaticResource RuCanvasBrush}"
+                                                        BorderBrush="{StaticResource RuLineBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                        Padding="8,2"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock x:Name="ContextPercentLabel"
+                                                               Text="0%"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="11.5"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{StaticResource RuMutedBrush}" />
+                                                </Border>
                                             </Grid>
-
+                                            <TextBlock x:Name="ContextUsedLabel"
+                                                       Text="0 / 128K"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="16"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource RuInkBrush}" />
                                             <Border Height="6"
                                                     CornerRadius="{StaticResource AppMicroPillCornerRadius}"
                                                     Background="{StaticResource RuLineBrush}">
@@ -1410,51 +1418,62 @@
                                                     </Border>
                                                 </Grid>
                                             </Border>
-
-                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                                                <Border Width="8"
-                                                        Height="8"
-                                                        CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                        Background="{StaticResource RuAccentBrush}"
-                                                        VerticalAlignment="Center" />
-                                                <TextBlock x:Name="ContextMessagesLegendLabel"
-                                                           Grid.Column="1"
-                                                           Text="Visible text/image estimate"
+                                            <StackPanel Spacing="6">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                    <Border Width="8"
+                                                            Height="8"
+                                                            CornerRadius="{StaticResource AppPillCornerRadius}"
+                                                            Background="{StaticResource RuAccentBrush}"
+                                                            VerticalAlignment="Center" />
+                                                    <TextBlock x:Name="ContextMessagesLegendLabel"
+                                                               Grid.Column="1"
+                                                               Text="Visible text/image estimate"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock x:Name="ContextMessagesLabel"
+                                                               Grid.Column="2"
+                                                               Text="0"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuInkBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </Grid>
+                                                <Grid x:Name="ContextOverheadRow"
+                                                      ColumnDefinitions="Auto,*,Auto"
+                                                      ColumnSpacing="8">
+                                                    <Border Width="8"
+                                                            Height="8"
+                                                            CornerRadius="{StaticResource AppPillCornerRadius}"
+                                                            Background="{StaticResource RuVioletBrush}"
+                                                            VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="System + tools"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock x:Name="ContextOverheadLabel"
+                                                               Grid.Column="2"
+                                                               Text="0"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuInkBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </Grid>
+                                            </StackPanel>
+                                            <Border x:Name="RetainedRunPinWell"
+                                                    Visibility="Collapsed"
+                                                    Background="{StaticResource RuCanvasBrush}"
+                                                    CornerRadius="{StaticResource AppInsetCornerRadius}"
+                                                    Padding="8,6">
+                                                <TextBlock x:Name="RetainedRunIdentityText"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="12"
+                                                           FontSize="10.5"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock x:Name="ContextMessagesLabel"
-                                                           Grid.Column="2"
-                                                           Text="0"
-                                                           FontFamily="{StaticResource RuMonoFontFamily}"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource RuInkBrush}"
-                                                           VerticalAlignment="Center" />
-                                            </Grid>
-
-                                            <Grid x:Name="ContextOverheadRow"
-                                                  ColumnDefinitions="Auto,*,Auto"
-                                                  ColumnSpacing="8">
-                                                <Border Width="8"
-                                                        Height="8"
-                                                        CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                        Background="{StaticResource RuVioletBrush}"
-                                                        VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="1"
-                                                           Text="System + tools"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource RuMutedBrush}"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock x:Name="ContextOverheadLabel"
-                                                           Grid.Column="2"
-                                                           Text="0"
-                                                           FontFamily="{StaticResource RuMonoFontFamily}"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource RuInkBrush}"
-                                                           VerticalAlignment="Center" />
-                                            </Grid>
+                                                           TextWrapping="Wrap" />
+                                            </Border>
                                         </StackPanel>
                                     </Flyout>
                                 </Button.Flyout>

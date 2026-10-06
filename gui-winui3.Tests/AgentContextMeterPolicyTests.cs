@@ -203,4 +203,26 @@ public sealed class AgentContextMeterPolicyTests
         // already observed.
         Assert.Equal(9_000, AgentContextMeterPolicy.MaxReportedTokens([9_000, 100]));
     }
+
+    [Fact]
+    public void The_pin_identity_wraps_inside_a_width_bounded_well()
+    {
+        // The identity string carries unbreakable model ids, so without an explicit
+        // content width the flyout clipped it mid-id instead of wrapping. The well
+        // is the seam: the meter update shows and hides it, never the bare text.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var well = GuiSource.Require(document, "RetainedRunPinWell");
+        var identity = GuiSource.Require(document, "RetainedRunIdentityText");
+        Assert.True(GuiSource.IsDescendantOf(identity, well));
+        Assert.Equal("Wrap", GuiSource.AttributeValue(identity, "TextWrapping"));
+
+        var content = well.Parent;
+        Assert.NotNull(content);
+        Assert.Equal("StackPanel", content!.Name.LocalName);
+        Assert.True(GuiSource.IntAttribute(content, "Width") > 0);
+
+        string code = GuiSource.ViewText("ChatView");
+        string update = GuiSource.MethodBody(code, "UpdateContextUsage");
+        Assert.Contains("RetainedRunPinWell", update, StringComparison.Ordinal);
+    }
 }

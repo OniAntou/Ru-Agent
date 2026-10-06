@@ -41,6 +41,12 @@ namespace RuApp.Views
         private const double ContextColumnWidth = 40;
 
         /// <summary>
+        /// Radius of the free chip. The scale's chip step is the control radius;
+        /// a lozenge would read as a button rather than as a note beside the name.
+        /// </summary>
+        private const double FreeChipCornerRadius = 6;
+
+        /// <summary>
         /// Width held by the margin beside the selection bar, whether or not this row
         /// is the selected one.
         /// </summary>
@@ -230,17 +236,17 @@ namespace RuApp.Views
             SearchTextChanged?.Invoke(this, PickerSearchBox.Text);
 
         /// <summary>
-        /// Repaints the field's rule when it takes or loses the caret.
+        /// Repaints the well's border when it takes or loses the caret.
         /// </summary>
         /// <remarks>
         /// The TextBox carries no border of its own, so without this there is no cue at
         /// all that the field is focused: a transparent field in a list of rows looks
-        /// like a label. The accent is the app's own, and a rule rather than a glow,
-        /// because the field is already bounded on three sides by nothing at all.
+        /// like a label. The accent is the app's own, and the well is already the one
+        /// bounded surface on the panel, so focus has an edge to answer on.
         /// </remarks>
         private void OnSearchFocusChanged(object sender, RoutedEventArgs e)
         {
-            PickerSearchField.Background = PickerSearchBox.FocusState == FocusState.Unfocused
+            PickerSearchWell.BorderBrush = PickerSearchBox.FocusState == FocusState.Unfocused
                 ? _brushes.Line
                 : _brushes.Accent;
         }
@@ -258,6 +264,7 @@ namespace RuApp.Views
             Brush Accent,
             Brush Warning,
             Brush Danger,
+            Brush Canvas,
             Brush Rest,
             Brush Cursor,
             Style RowStyle)
@@ -273,6 +280,7 @@ namespace RuApp.Views
                     (Brush)resources["RuAccentBrush"],
                     (Brush)resources["RuWarningBrush"],
                     (Brush)resources["RuDangerBrush"],
+                    (Brush)resources["RuCanvasBrush"],
                     new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     // The app already uses this for a hovered dropdown row, so the
                     // keyboard cursor is the colour a pointer row has always been
@@ -352,7 +360,7 @@ namespace RuApp.Views
             return new Border
             {
                 Child = heading,
-                Padding = new Thickness(11, isFirstGroup ? 3 : 11, 6, 2),
+                Padding = new Thickness(11, isFirstGroup ? 8 : 14, 8, 4),
                 IsHitTestVisible = false,
             };
         }
@@ -404,7 +412,7 @@ namespace RuApp.Views
                 {
                     Width = 3,
                     Background = _brushes.Accent,
-                    Margin = new Thickness(2, 0, 0, 0),
+                    Margin = new Thickness(4, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Stretch,
                 };
                 Grid.SetColumn(tick, 0);
@@ -443,15 +451,26 @@ namespace RuApp.Views
 
             if (row.IsFree)
             {
-                // Informational, not a fault: the same muted ink the context column
-                // uses, so the free tag cannot read as an error.
-                tags.Children.Add(new TextBlock
+                // Informational, not a fault: a muted chip on the canvas fill with
+                // the same ink the context column uses, so the free tag cannot read
+                // as an error. A bare word floated in the tag row; the chip gives it
+                // an edge to sit on without spending a second colour.
+                tags.Children.Add(new Border
                 {
-                    Text = ProviderModelPickerProjection.FreeAnnotation,
-                    FontFamily = _brushes.FontFamily,
-                    FontSize = 10,
-                    Foreground = _brushes.Muted,
+                    Background = _brushes.Canvas,
+                    BorderBrush = _brushes.Line,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(FreeChipCornerRadius),
+                    Padding = new Thickness(6, 1, 6, 2),
                     VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = ProviderModelPickerProjection.FreeAnnotation,
+                        FontFamily = _brushes.FontFamily,
+                        FontSize = 9.5,
+                        Foreground = _brushes.Muted,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
                 });
             }
 

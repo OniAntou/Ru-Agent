@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+- **feat(gui)**: Model picker redesign: the search field is a rounded well on the canvas fill with an accent focus border, rows grow to 34px with 2px gaps and rounded hover, the free tag becomes a muted chip, and section headings get room to separate groups; the flyout widens to 352px with bottom breathing room.
 - **fix(gui)**: Agent-feed labels ("Thought for x", "Searched", "Edited"…) drop the SemiBold weight: beside 14px regular message text the bold label read as a heading bigger than the message it describes. The two-steps-smaller size and the ink color stay, so the message remains the visual focus.
 - **fix(gui)**: The message composer now takes its text size from the shared message typography (default 14) instead of a fixed 16, so typing matches the transcript and the Message text size setting applies while a session is open.
 - **fix(backend)**: A read that loses the Broker connection after dispatch now returns the bounded `{"error":"transport_failure"}` result instead of empty content; previously the model history had no tool result for that call and the next step failed as `model_history_invalid`. Mutations keep `OutcomeUnknown` and a reconciled resume keeps a result to project.

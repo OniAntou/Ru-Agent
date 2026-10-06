@@ -207,15 +207,15 @@ public sealed class ChatMessageAttachmentTests
     }
 
     /// <summary>
-    /// The search field's two edges sit on the same lines as the two columns it filters.
+    /// The search well's inner edges sit on the same lines as the two columns it filters.
     /// </summary>
     /// <remarks>
-    /// Both numbers are derived, not chosen: the left inset is the list's own padding
-    /// plus the width the row reserves for the selection bar, and the right inset is the
-    /// list's padding plus the row's right padding, which is where the context figures
-    /// end. Change any one of those three and this fails, because the alternative is a
-    /// field hanging out of line with a column of numbers in a panel whose whole argument
-    /// is that column.
+    /// Both numbers are derived, not chosen: the well's outer margin is the list's own
+    /// padding, and its inner padding is the width the row reserves for the selection bar
+    /// on the left and the row's right padding on the right, which is where the context
+    /// figures end. Change any one of those three and this fails, because the alternative
+    /// is a field hanging out of line with a column of numbers in a panel whose whole
+    /// argument is that column.
     ///
     /// Pinned rather than computed on purpose: if it read the constants out of the
     /// code-behind it would follow any edit to them and never once object. The failure
@@ -226,18 +226,20 @@ public sealed class ChatMessageAttachmentTests
     {
         const int listPadding = 6;
         const int selectionColumn = 11;
-        const int rowRightPadding = 6;
-        const int expectedLeft = listPadding + selectionColumn;   // 17
-        const int expectedRight = listPadding + rowRightPadding;  // 12
+        const int rowRightPadding = 8;
 
         string xaml = File.ReadAllText(PickerXamlPath());
 
         Assert.Contains(
-            $"Margin=\"{expectedLeft},10,{expectedRight},0\"",
+            $"Margin=\"{listPadding},8,{listPadding},0\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            $"Padding=\"{listPadding},6,{listPadding},6\"",
+            $"Padding=\"{selectionColumn},0,{rowRightPadding},0\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"Padding=\"{listPadding},6,{listPadding},10\"",
             xaml,
             StringComparison.Ordinal);
     }

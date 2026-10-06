@@ -1137,10 +1137,10 @@
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
                                                 <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
-                                                <Setter Property="Padding" Value="3" />
-                                                <Setter Property="Width" Value="336" />
-                                                <Setter Property="MinWidth" Value="336" />
-                                                <Setter Property="MaxWidth" Value="336" />
+                                                <Setter Property="Padding" Value="4" />
+                                                <Setter Property="Width" Value="352" />
+                                                <Setter Property="MinWidth" Value="352" />
+                                                <Setter Property="MaxWidth" Value="352" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
@@ -1148,7 +1148,7 @@
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <views:ProviderModelPicker x:Name="ModelPicker"
-                                                                   Width="328"
+                                                                   Width="344"
                                                                    SearchTextChanged="OnModelPickerSearchTextChanged"
                                                                    ModelSelected="OnModelPickerModelSelected"
                                                                    DismissRequested="OnModelPickerDismissRequested" />

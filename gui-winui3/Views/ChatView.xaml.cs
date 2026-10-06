@@ -134,6 +134,7 @@ namespace RuApp.Views
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private AgentModelUsage? _activeAgentUsage;
+        private readonly RetainedContextMeterPresenter _retainedContextMeter = new();
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;
@@ -350,6 +351,8 @@ namespace RuApp.Views
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
+            _agentController?.ContextCompacted += OnAgentContextCompacted;
+            _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
@@ -385,6 +388,8 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
+                _agentController.ContextCompacted -= OnAgentContextCompacted;
+                _agentController.RunAdopted -= OnAgentRunAdopted;
             }
 
             _agentController = agentController;
@@ -403,6 +408,8 @@ namespace RuApp.Views
                 _agentController.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
+                _agentController.ContextCompacted += OnAgentContextCompacted;
+                _agentController.RunAdopted += OnAgentRunAdopted;
             }
 
             UpdateAgentComposerVisuals();

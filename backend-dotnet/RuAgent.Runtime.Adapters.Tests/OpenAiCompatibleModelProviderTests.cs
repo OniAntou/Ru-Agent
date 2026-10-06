@@ -9,6 +9,65 @@ namespace RuAgent.Runtime.Adapters.Tests;
 
 public sealed class OpenAiCompatibleModelProviderTests
 {
+    [Fact]
+    public async Task GenerateAsync_sends_the_protected_output_cap_not_a_settings_override()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var request = new ModelRequest("test-model", "system", "hello", [],
+            new JsonObject { ["max_tokens"] = 12000 }, new Uri("https://provider.invalid/v1/chat/completions"),
+            "synthetic", 8192);
+
+        _ = await provider.GenerateAsync(request, CancellationToken.None).ToListAsync();
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal(8192, body["max_tokens"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_dispatches_the_exact_projected_body()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var request = new ModelRequest("test-model", "system", "hello", [],
+            new JsonObject { ["reasoning_effort"] = "high" },
+            new Uri("https://provider.invalid/v1/chat/completions"), "synthetic", 8192);
+        var projected = provider.ProjectRequestBody(request);
+        var prepared = request.WithPreparedBodyJson(projected);
+
+        _ = await provider.GenerateAsync(prepared, CancellationToken.None).ToListAsync();
+
+        Assert.Equal(projected, handler.RequestBody);
+        var actual = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal(8192, actual["max_tokens"]!.GetValue<int>());
+        Assert.Equal("high", actual["reasoning_effort"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_uses_openai_chat_completion_cap_field_when_pinned()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var request = new ModelRequest("o-model", "system", "hello", [], new JsonObject(),
+            new Uri("https://api.openai.com/v1/chat/completions"), "synthetic", 8192,
+            useMaxCompletionTokens: true);
+
+        _ = await provider.GenerateAsync(request, CancellationToken.None).ToListAsync();
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal(8192, body["max_completion_tokens"]!.GetValue<int>());
+        Assert.False(body.ContainsKey("max_tokens"));
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"reasoning_effort\":\"high\"}")]

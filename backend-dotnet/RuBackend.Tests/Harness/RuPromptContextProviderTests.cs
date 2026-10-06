@@ -1,18 +1,53 @@
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Persistence;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Worker;
+using RuBackend.Providers;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
 public sealed class RuPromptContextProviderTests
 {
+    [Fact]
+    public async Task Prompt_model_label_comes_from_the_run_pin_without_reading_current_settings()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var resolver = new FixedMetadataResolver(new AgentRunModelMetadata(
+            "model-a",
+            "openai_responses",
+            ProviderToolCallingMode.TextSelection,
+            200_000,
+            "models.dev",
+            "catalog-v1",
+            8_192));
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new ThrowingSettingsStore(),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            new AgentToolRuntimeAvailability(false, false),
+            runModelMetadataResolver: resolver);
+
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+
+        Assert.Equal("model-a", context.Environment.Model);
+        Assert.Equal(1, resolver.Calls);
+        Assert.DoesNotContain("secret", System.Text.Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Builds_fresh_root_bound_context_and_keeps_tool_results_untrusted()
     {
@@ -230,6 +265,159 @@ public sealed class RuPromptContextProviderTests
         Assert.All(context.RuntimeContext.References, reference => Assert.Equal("tool_result", reference.Kind));
     }
 
+    [Fact]
+    public async Task Runtime_reference_cap_preserves_workspace_activity_and_newest_results()
+    {
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        await harness.SeedRunAsync();
+        var coordinator = new WorkspaceCoordinatorStore(harness.Options);
+        var run = TestRun();
+        await coordinator.GetOrCreateAsync(run.WorkspaceId, CancellationToken.None);
+        await coordinator.AppendChangeAsync(
+            run.WorkspaceId,
+            null,
+            "external-change-1",
+            "external.txt",
+            new string('a', 64),
+            new string('b', 64),
+            new EncryptedWorkspaceJournal(WorkspaceJournalProtector.CurrentProtectionVersion, new byte[12], new byte[] { 1 }, new byte[16]),
+            "committed",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        using var instructions = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            instructions.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            workspaceCoordinatorStore: coordinator);
+
+        var context = await provider.BuildAsync(run, ToolResultSnapshot(16), CancellationToken.None);
+
+        Assert.Equal(PromptRuntimeContext.MaxRuntimeReferences, context.RuntimeContext.References.Count);
+        Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "tool_result_omitted");
+        Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "workspace_activity"
+            && reference.Content.Contains("external.txt", StringComparison.Ordinal));
+        Assert.Equal(14, context.RuntimeContext.References.Count(reference => reference.Kind == "tool_result"));
+        Assert.Contains(context.RuntimeContext.References, reference => reference.Content.Contains("tool output 999", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Runtime_grep_reference_uses_exact_call_offset_and_keeps_source_receipt_unchanged()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+        var results = new JsonArray();
+        for (var index = 0; index < 4_000; index++)
+            results.Add(new JsonObject { ["path"] = "notes.txt", ["line"] = index + 1, ["text"] = new string('x', 25) });
+        var source = new JsonObject
+        {
+            ["results"] = results,
+            ["count"] = results.Count,
+            ["truncated"] = true,
+            ["scanned_files"] = 1,
+            ["scanned_directories"] = 1,
+            ["skipped"] = 0,
+            ["duration_ms"] = 1,
+        }.ToJsonString();
+        using var argsDocument = JsonDocument.Parse("{\"query\":\"needle\",\"path\":\".\",\"offset\":41,\"max_results\":4000}");
+        var receipt = new ToolExecutionReceipt(
+            new ExecutionId("exec_22222222222222222222222222222222"),
+            new ToolCallId("call_22222222222222222222222222222222"),
+            ToolExecutionOutcome.Succeeded,
+            "ok",
+            null,
+            sideEffectsPossible: false,
+            providerCallId: "provider_grep");
+        var snapshot = new ModelContextSnapshot(
+        [
+            ModelContextEntry.Assistant("assistant", 1, new AssistantStep(null,
+            [new ModelToolCall("provider_grep", "grep", "1.0.0", argsDocument.RootElement)],
+                AssistantFinishReason.ToolCalls, 1)),
+            ModelContextEntry.ToolResult("result", 2, receipt, source),
+        ], Array.Empty<byte>());
+
+        var context = await provider.BuildAsync(TestRun(), snapshot, CancellationToken.None);
+
+        var reference = Assert.Single(context.RuntimeContext.References);
+        using var projected = JsonDocument.Parse(reference.Content);
+        var root = projected.RootElement;
+        Assert.InRange(Encoding.UTF8.GetByteCount(reference.Content), 1, PromptReference.ContentMaxBytes);
+        Assert.Equal(4_000, root.GetProperty("count").GetInt32());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.InRange(root.GetProperty("results").GetArrayLength(), 1, 4_000);
+        Assert.Equal(41 + root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("call_22222222222222222222222222222222", root.GetProperty("projection_tool_call_id").GetString());
+        Assert.Equal("provider_grep", root.GetProperty("projection_provider_call_id").GetString());
+        Assert.Equal(source, snapshot.Entries[^1].Content);
+    }
+
+    [Fact]
+    public async Task Oversized_grep_reference_without_exact_call_arguments_fails_with_a_named_code()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+        var results = new JsonArray();
+        for (var index = 0; index < 4_000; index++)
+            results.Add(new JsonObject { ["path"] = "notes.txt", ["line"] = index + 1, ["text"] = new string('x', 25) });
+        var source = new JsonObject
+        {
+            ["results"] = results,
+            ["count"] = results.Count,
+            ["truncated"] = true,
+            ["scanned_files"] = 1,
+            ["scanned_directories"] = 1,
+            ["skipped"] = 0,
+            ["duration_ms"] = 1,
+        }.ToJsonString();
+        var snapshot = new ModelContextSnapshot(
+        [ModelContextEntry.ToolResult(
+            "result",
+            1,
+            new ToolExecutionReceipt(
+                new ExecutionId("exec_33333333333333333333333333333333"),
+                new ToolCallId("call_33333333333333333333333333333333"),
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false,
+                providerCallId: "provider_unknown"),
+            source)],
+            Array.Empty<byte>());
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            provider.BuildAsync(TestRun(), snapshot, CancellationToken.None));
+
+        Assert.Equal("tool_output_projection_invalid", error.Code);
+    }
+
+    [Fact]
+    public async Task Unknown_underbudget_json_reference_preserves_legacy_content()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+        const string source = "{\"results\":[{\"value\":1}],\"count\":1,\"truncated\":false}";
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(
+            [ModelContextEntry.ToolResult("result", 1, ToolReceipt(1), source)], Array.Empty<byte>()),
+            CancellationToken.None);
+
+        Assert.Equal(source, Assert.Single(context.RuntimeContext.References).Content);
+    }
+
     private static ModelContextSnapshot ToolResultSnapshot(int count)
     {
         var entries = new List<ModelContextEntry>
@@ -306,6 +494,26 @@ public sealed class RuPromptContextProviderTests
     {
         public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken) => Task.FromResult(snapshot);
         public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class ThrowingSettingsStore : ISettingsStore
+    {
+        public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Prompt metadata should not read current settings.");
+
+        public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FixedMetadataResolver(AgentRunModelMetadata metadata) : IAgentRunModelMetadataResolver
+    {
+        public int Calls { get; private set; }
+
+        public Task<AgentRunModelMetadata> ResolveAsync(RunId runId, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(metadata);
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : ITimeProvider

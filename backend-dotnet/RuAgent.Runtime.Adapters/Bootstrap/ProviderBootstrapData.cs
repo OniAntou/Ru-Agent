@@ -2,6 +2,12 @@ using System.Text.Json.Nodes;
 
 namespace RuAgent.Runtime.Adapters.Bootstrap;
 
+public enum ProviderToolCallingMode
+{
+    Native,
+    TextSelection,
+}
+
 public sealed record ProviderBootstrapData
 {
     public ProviderBootstrapData(
@@ -11,7 +17,13 @@ public sealed record ProviderBootstrapData
         string model,
         string credential,
         JsonObject? requestOptions = null,
-        int? maximumOutputTokens = null)
+        int? maximumOutputTokens = null,
+        ProviderToolCallingMode? toolCallingMode = null,
+        bool allowNativeResponses = false,
+        bool allowNativeAnthropic = false,
+        bool useMaxCompletionTokens = false,
+        long? contextWindowTokens = null,
+        int? outputTokenReserve = null)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -27,6 +39,25 @@ public sealed record ProviderBootstrapData
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
         MaximumOutputTokens = ValidateOutputCap(protocol, maximumOutputTokens);
+        if (useMaxCompletionTokens && protocol != ProviderProtocols.ChatCompletions)
+            throw new ArgumentException("The selected output-cap field is invalid for this protocol.", nameof(useMaxCompletionTokens));
+        UseMaxCompletionTokens = useMaxCompletionTokens;
+        if (contextWindowTokens is <= 0 or > 10_000_000)
+            throw new ArgumentException("Context window metadata is invalid.", nameof(contextWindowTokens));
+        ContextWindowTokens = contextWindowTokens;
+        OutputTokenReserve = outputTokenReserve ?? maximumOutputTokens ?? 8192;
+        if (OutputTokenReserve is < 1 or > 128_000
+            || maximumOutputTokens is not null && maximumOutputTokens != OutputTokenReserve)
+            throw new ArgumentException("Output cap must match the pinned reserve.", nameof(outputTokenReserve));
+        var protocolMode = ModeForProtocol(Protocol);
+        var isSupportedNativeMode = toolCallingMode == ProviderToolCallingMode.Native
+            && ((allowNativeResponses && Protocol == ProviderProtocols.OpenAiResponses)
+                || (allowNativeAnthropic && Protocol == ProviderProtocols.AnthropicMessages));
+        if (toolCallingMode is { } selectedMode && selectedMode != protocolMode && !isSupportedNativeMode)
+        {
+            throw new ArgumentException("Tool calling mode does not match the provider protocol.", nameof(toolCallingMode));
+        }
+        ToolCallingMode = toolCallingMode ?? protocolMode;
     }
 
     public string Backend { get; }
@@ -43,6 +74,21 @@ public sealed record ProviderBootstrapData
 
     public int? MaximumOutputTokens { get; }
 
+    public bool UseMaxCompletionTokens { get; }
+
+    public long? ContextWindowTokens { get; }
+
+    public int OutputTokenReserve { get; }
+
+    public ProviderToolCallingMode ToolCallingMode { get; }
+
+    public static ProviderToolCallingMode ModeForProtocol(string protocol) => protocol switch
+    {
+        ProviderProtocols.ChatCompletions => ProviderToolCallingMode.Native,
+        ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages => ProviderToolCallingMode.TextSelection,
+        _ => throw new ArgumentException("Provider protocol is unsupported.", nameof(protocol)),
+    };
+
     private static int? ValidateOutputCap(string protocol, int? value)
     {
         if (value is null)
@@ -52,8 +98,8 @@ public sealed record ProviderBootstrapData
             return null;
         }
         if (value is < 1 or > 128000) throw new ArgumentException("Output cap is invalid.", nameof(value));
-        if (protocol != ProviderProtocols.AnthropicMessages) throw new ArgumentException("Only Anthropic uses an output cap.", nameof(value));
-        if (value > 8192) throw new ArgumentException("Output cap exceeds 8192.", nameof(value));
+        if (protocol == ProviderProtocols.AnthropicMessages && value > 8192)
+            throw new ArgumentException("Anthropic output cap exceeds 8192.", nameof(value));
         return value;
     }
 

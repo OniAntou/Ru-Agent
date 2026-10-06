@@ -12,13 +12,16 @@ public sealed class SqliteModelContextSource : IModelContextSource
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
+    private readonly SessionWorkStateStore? _workStates;
 
     public SqliteModelContextSource(
         HarnessSqliteOptions options,
-        HarnessPayloadStore payloadStore)
+        HarnessPayloadStore payloadStore,
+        SessionWorkStateStore? workStates = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
+        _workStates = workStates;
     }
 
     public async Task<ModelContextSourceSnapshot> LoadAsync(
@@ -95,7 +98,29 @@ public sealed class SqliteModelContextSource : IModelContextSource
             throw new HarnessStoreException("context_base_incomplete");
         }
 
+        await AppendSessionWorkStateAsync(connection, runId, sessionBase, cancellationToken)
+            .ConfigureAwait(false);
+
         return new ModelContextSourceSnapshot(sessionBase, runLocal);
+    }
+
+    private async Task AppendSessionWorkStateAsync(
+        SqliteConnection connection,
+        RunId runId,
+        List<ModelContextEntry> sessionBase,
+        CancellationToken cancellationToken)
+    {
+        if (_workStates is null) return;
+        var run = await HarnessSqliteQueries.GetRunAsync(connection, null, runId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new HarnessStoreException("run_not_found");
+        var snapshot = await _workStates.GetSnapshotAsync(run.SessionId, run.WorkspaceId, cancellationToken)
+            .ConfigureAwait(false);
+        if (snapshot is null) return;
+        var sequence = sessionBase.Count == 0 ? 1 : checked(sessionBase.Max(entry => entry.Sequence) + 1);
+        sessionBase.Add(ModelContextEntry.Text(
+            SessionWorkState.ContextSourceId, sequence, ModelContextRole.User,
+            SessionWorkStateRenderer.Render(snapshot.State, snapshot.HasUnrepresentedReceipts)));
     }
 
     private async Task ApplyCompactionsAsync(

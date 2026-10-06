@@ -29,6 +29,20 @@ public sealed class TuiStatusLineTests
     }
 
     [Fact]
+    public void Reset_clears_counters_from_the_previous_run()
+    {
+        var status = Create();
+        status.IsLive = true;
+        status.SetCounters(12_400, 3);
+        status.Reset();
+
+        var row = TuiText.Strip(status.Compose(80));
+
+        Assert.DoesNotContain("12.4K", row);
+        Assert.DoesNotContain("3 tools", row);
+    }
+
+    [Fact]
     public void Thinking_row_uses_brand_frame_and_line_elapsed()
     {
         TuiPalette.Level = TuiColorLevel.TrueColor;

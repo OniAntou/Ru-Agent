@@ -58,9 +58,242 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.Equal("system prompt", body["system"]!.GetValue<string>());
         Assert.True(body["stream"]!.GetValue<bool>());
         Assert.Equal(8192, body["max_tokens"]!.GetValue<int>());
+        Assert.False(body.ContainsKey("tools"));
         Assert.NotNull(body["thinking"]);
         Assert.NotNull(body["output_config"]);
         Assert.NotNull(body["messages"]);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_tool_use_emits_declarations_and_retains_signed_blocks_privately()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = "" } })
+            + ContentBlockDeltaText(0, "Reading the file.") + ContentBlockStop(0)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = new JsonObject { ["type"] = "thinking", ["thinking"] = "" } })
+            + ContentBlockDeltaThinking(1, "private thought")
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "opaque-" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "signature" } })
+            + ContentBlockStop(1)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 2, ["content_block"] = new JsonObject { ["type"] = "redacted_thinking", ["data"] = "opaque-redacted-bytes" } })
+            + ContentBlockStop(2)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 3, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_1", ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 3, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 3, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "\"seed.txt\"}" } })
+            + ContentBlockStop(3) + MessageDelta("tool_use") + MessageStop();
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var settings = NativeToolSettings();
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(settings, 8192, nativeToolCalling: true), CancellationToken.None));
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal("read", body["tools"]![0]!["name"]!.GetValue<string>());
+        Assert.Equal(System.Text.Json.JsonValueKind.Object, body["tools"]![0]!["input_schema"]!.GetValueKind());
+        Assert.Equal("Reading the file.", string.Concat(deltas.Where(delta => delta.Text is not null).Select(delta => delta.Text)));
+        Assert.DoesNotContain(deltas, delta => delta.Reasoning is not null);
+        var call = Assert.Single(deltas.SelectMany(delta => delta.ToolFragments));
+        Assert.Equal("toolu_read_1", call.ProviderCallId);
+        Assert.Equal("read", call.ToolName);
+        Assert.Equal("{\"path\":\"seed.txt\"}", call.ArgumentsFragment);
+        var continuation = Assert.IsType<RuAgent.Harness.Core.Prompting.ProviderContinuation>(deltas[^1].ProviderContinuation);
+        Assert.Equal("anthropic_messages", continuation.Protocol);
+        Assert.Equal(["text", "thinking", "redacted_thinking", "tool_use"], continuation.OutputItems.Select(item => item["type"]!.GetValue<string>()));
+        Assert.Equal("private thought", continuation.OutputItems[1]["thinking"]!.GetValue<string>());
+        Assert.Equal("opaque-signature", continuation.OutputItems[1]["signature"]!.GetValue<string>());
+        Assert.Equal("opaque-redacted-bytes", continuation.OutputItems[2]["data"]!.GetValue<string>());
+        Assert.True(deltas[^1].Completed);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_history_replays_exact_assistant_blocks_and_error_result_ids()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(FullLifecycle(), Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var messages = new[]
+        {
+            new JsonObject
+            {
+                ["role"] = "assistant",
+                ["content"] = new JsonArray(
+                    new JsonObject { ["type"] = "text", ["text"] = "I will inspect." },
+                    new JsonObject { ["type"] = "thinking", ["thinking"] = "private", ["signature"] = "opaque-signature" },
+                    new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_1", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"seed.txt\"}") }),
+            },
+            new JsonObject
+            {
+                ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "tool_result", ["tool_use_id"] = "toolu_read_1", ["content"] = "denied", ["is_error"] = true,
+                }),
+            },
+        };
+        var request = new ModelRequest("test-model", "system prompt", "continue", Array.Empty<ModelTurn>(),
+            NativeToolSettings(), new Uri("https://provider.invalid/v1/messages"), "synthetic-anthropic", 8192,
+            nativeToolCalling: true, anthropicMessages: messages);
+
+        _ = await CollectAsync(provider.GenerateAsync(request, CancellationToken.None));
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        var replayed = body["messages"]!.AsArray();
+        Assert.Equal("opaque-signature", replayed[0]!["content"]![1]!["signature"]!.GetValue<string>());
+        Assert.Equal("toolu_read_1", replayed[0]!["content"]![2]!["id"]!.GetValue<string>());
+        Assert.Equal("toolu_read_1", replayed[1]!["content"]![0]!["tool_use_id"]!.GetValue<string>());
+        Assert.True(replayed[1]!["content"]![0]!["is_error"]!.GetValue<bool>());
+        Assert.Equal("continue", replayed[^1]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_stream_rejects_duplicate_tool_use_identity()
+    {
+        var toolBlock = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_duplicate", ["name"] = "read", ["input"] = new JsonObject() };
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = (JsonObject)toolBlock.DeepClone() })
+            + ContentBlockStop(0)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = (JsonObject)toolBlock.DeepClone() });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", failure.Code);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(-1, -1)]
+    [InlineData(0, 2)]
+    public async Task GenerateAsync_native_stream_rejects_nonsequential_content_indexes(int firstIndex, int secondIndex)
+    {
+        static string ToolBlock(int index, string id) =>
+            Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = index,
+                ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = index,
+                ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(index);
+        var lifecycle = MessageStart() + ToolBlock(firstIndex, "toolu_first") + ToolBlock(secondIndex, "toolu_second")
+            + MessageDelta("tool_use") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
+        var deltas = new List<ModelDelta>();
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+        {
+            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None))
+                deltas.Add(delta);
+        });
+
+        Assert.Equal("malformed_payload", failure.Code);
+        Assert.DoesNotContain(deltas, delta => delta.Completed);
+        Assert.DoesNotContain(deltas, delta => delta.ProviderContinuation is not null);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_stream_rejects_thinking_after_signature_starts()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0,
+                ["content_block"] = new JsonObject { ["type"] = "thinking", ["thinking"] = "" } })
+            + ContentBlockDeltaThinking(0, "signed content")
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "part-one" } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0,
+                ["delta"] = new JsonObject { ["type"] = "signature_delta", ["signature"] = "part-two" } })
+            + ContentBlockDeltaThinking(0, " changed")
+            + ContentBlockStop(0) + MessageDelta("end_turn") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", failure.Code);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_partial_tool_stream_never_marks_a_completed_step()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_partial", ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 0, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(0);
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var deltas = new List<ModelDelta>();
+
+        await Assert.ThrowsAsync<ModelProviderException>(async () =>
+        {
+            await foreach (var delta in provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None))
+                deltas.Add(delta);
+        });
+
+        Assert.Contains(deltas, delta => delta.ToolFragments.Count == 1);
+        Assert.DoesNotContain(deltas, delta => delta.Completed);
+        Assert.DoesNotContain(deltas, delta => delta.ProviderContinuation is not null);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_legacy_mode_rejects_native_redacted_thinking_blocks()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "redacted_thinking", ["data"] = "opaque" } });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
+            provider.GenerateAsync(Request(null, 8192), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", failure.Code);
+        Assert.DoesNotContain("tools", JsonNode.Parse(handler.RequestBody!)!.AsObject().Select(pair => pair.Key));
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_continuation_preserves_text_present_in_block_start()
+    {
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = "starting narration" } })
+            + ContentBlockStop(0)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_start", ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 1, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(1) + MessageDelta("tool_use") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None));
+
+        Assert.Equal("starting narration", Assert.Single(deltas, delta => delta.Text is not null).Text);
+        Assert.Equal("starting narration", deltas[^1].ProviderContinuation!.OutputItems[0]["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_native_aggregate_continuation_overflow_is_a_bounded_provider_error()
+    {
+        const int blockLength = 64_000;
+        var text = new string('x', blockLength);
+        var lifecycle = MessageStart()
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 0, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
+            + ContentBlockStop(0)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 1, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
+            + ContentBlockStop(1)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 2, ["content_block"] = new JsonObject { ["type"] = "text", ["text"] = text } })
+            + ContentBlockStop(2)
+            + Sse("content_block_start", new JsonObject { ["type"] = "content_block_start", ["index"] = 3, ["content_block"] = new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_overflow", ["name"] = "read", ["input"] = new JsonObject() } })
+            + Sse("content_block_delta", new JsonObject { ["type"] = "content_block_delta", ["index"] = 3, ["delta"] = new JsonObject { ["type"] = "input_json_delta", ["partial_json"] = "{\"path\":\"seed.txt\"}" } })
+            + ContentBlockStop(3) + MessageDelta("tool_use") + MessageStop();
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream") })));
+
+        var failure = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(
+            provider.GenerateAsync(Request(NativeToolSettings(), 8192, nativeToolCalling: true), CancellationToken.None)));
+
+        Assert.Equal("response_too_large", failure.Code);
     }
 
     [Fact]
@@ -189,8 +422,7 @@ public sealed class AnthropicMessagesModelProviderTests
     [Fact]
     public async Task GenerateAsync_surfaces_thinking_delta_as_reasoning()
     {
-        var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(0, "text") + ContentBlockDeltaText(0, "answer") + ContentBlockStop(0) + MessageDelta() + MessageStop();
-        // Note: second block uses same index after first closed — provider expects new blockIndex free, index 0 reused; still valid after stop
+        var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(1, "text") + ContentBlockDeltaText(1, "answer") + ContentBlockStop(1) + MessageDelta() + MessageStop();
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
         var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
@@ -462,10 +694,20 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.Equal("vision_unsupported", ex.Code);
     }
 
+    private static JsonObject NativeToolSettings() => new()
+    {
+        ["model_tools"] = new JsonArray(new JsonObject
+        {
+            ["tool_id"] = "read", ["tool_version"] = "1", ["description"] = "Read a file",
+            ["input_schema"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } }, ["required"] = new JsonArray("path"), ["additionalProperties"] = false },
+        }),
+    };
+
     private static ModelRequest Request(
         JsonObject? settings,
         int? maxTokens,
-        IReadOnlyList<ModelTurn>? turns = null) => new(
+        IReadOnlyList<ModelTurn>? turns = null,
+        bool nativeToolCalling = false) => new(
         "test-model",
         "system prompt",
         "hello",
@@ -473,7 +715,8 @@ public sealed class AnthropicMessagesModelProviderTests
         settings ?? new JsonObject(),
         new Uri("https://provider.invalid/v1/messages"),
         "synthetic-anthropic",
-        maxTokens);
+        maxTokens,
+        nativeToolCalling: nativeToolCalling);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

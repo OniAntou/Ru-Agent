@@ -117,7 +117,8 @@ internal sealed class AgentRunCompaction
     internal async Task<ContextPreflightResult> PreflightContextAsync(
         AgentRun run,
         ModelContextSnapshot context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<AgentRun, ModelContextSnapshot, CancellationToken, Task<ModelStepRequest?>>? prepareStep = null)
     {
         long? providerLimit = _contextLimit is null
             ? null
@@ -133,8 +134,14 @@ internal sealed class AgentRunCompaction
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var decision = _contextBudgetPolicy.Evaluate(
-                ModelContextSizeEstimator.EstimateTokens(context),
+            var preparedRequest = prepareStep is null
+                ? null
+                : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
+            if (preparedRequest?.Preparation is { } preparation
+                && preparation.MaxPromptTokens != limitTokens)
+                return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
+            var decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
+                EstimateInputTokens(context, preparedRequest),
                 limitTokens,
                 ContextCompactionStrategy.Normal);
             if (decision.NeedsCompaction)
@@ -145,7 +152,9 @@ internal sealed class AgentRunCompaction
                         limitTokens,
                         ContextCompactionStrategy.Normal,
                         ContextCompactionReason.Automatic,
-                        cancellationToken)
+                        cancellationToken,
+                        outputReserveAlreadyAccounted: true,
+                        estimatedTokensOverride: EstimateInputTokens(context, preparedRequest))
                     .ConfigureAwait(false);
                 if (compaction.Outcome == ContextCompactionOutcome.Committed)
                 {
@@ -153,8 +162,14 @@ internal sealed class AgentRunCompaction
                     context = await _contextAssembler
                         .AssembleAsync(run.RunId, cancellationToken)
                         .ConfigureAwait(false);
-                    decision = _contextBudgetPolicy.Evaluate(
-                        ModelContextSizeEstimator.EstimateTokens(context),
+                    preparedRequest = prepareStep is null
+                        ? null
+                        : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
+                    if (preparedRequest?.Preparation is { } compactedPreparation
+                        && compactedPreparation.MaxPromptTokens != limitTokens)
+                        return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
+                    decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
+                        EstimateInputTokens(context, preparedRequest),
                         limitTokens,
                         ContextCompactionStrategy.Normal);
                 }
@@ -168,9 +183,9 @@ internal sealed class AgentRunCompaction
                 }
             }
 
-            return ModelContextSizeEstimator.EstimateTokens(context) > decision.UsablePromptTokens
+            return EstimateInputTokens(context, preparedRequest) > decision.UsablePromptTokens
                 ? new ContextPreflightResult(run, null, "context_limit_reached")
-                : new ContextPreflightResult(run, context, null);
+                : new ContextPreflightResult(run, context, null, preparedRequest);
         }
         finally
         {
@@ -178,25 +193,34 @@ internal sealed class AgentRunCompaction
         }
     }
 
+    private static long EstimateInputTokens(
+        ModelContextSnapshot context,
+        ModelStepRequest? preparedRequest) =>
+        preparedRequest?.Preparation?.EstimatedInputTokens
+            ?? ModelContextSizeEstimator.EstimateTokens(context);
+
     private async Task<ContextCompactionResult> CompactSnapshotLockedAsync(
         AgentRun run,
         ModelContextSnapshot context,
         long limitTokens,
         ContextCompactionStrategy strategy,
         ContextCompactionReason reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool outputReserveAlreadyAccounted = false,
+        long? estimatedTokensOverride = null)
     {
         var startedAt = _time.UtcNow;
-        var decision = _contextBudgetPolicy.Evaluate(
-            ModelContextSizeEstimator.EstimateTokens(context),
-            limitTokens,
-            strategy);
+        var estimatedTokens = estimatedTokensOverride ?? ModelContextSizeEstimator.EstimateTokens(context);
+        var decision = outputReserveAlreadyAccounted
+            ? _contextBudgetPolicy.EvaluateAvailablePromptTokens(estimatedTokens, limitTokens, strategy)
+            : _contextBudgetPolicy.Evaluate(estimatedTokens, limitTokens, strategy);
         var eventId = _ids.NewEventId();
         var plan = ContextCompactionPlanner.Plan(
             context,
             decision,
             "compact-" + eventId.Value,
-            reason);
+            reason,
+            estimatedTokensOverride: estimatedTokensOverride);
         if (plan is null)
         {
             return ContextCompactionResult.NoOp(run, strategy);
@@ -265,7 +289,7 @@ internal sealed class AgentRunCompaction
         };
         PublishCompactionActivity(
             run.RunId,
-            eventId,
+            run.LastSequence + 1,
             result.Outcome == ContextCompactionOutcome.Committed,
             plan.CoveredEntries.Count,
             result.ErrorCode,
@@ -280,7 +304,7 @@ internal sealed class AgentRunCompaction
     /// </summary>
     private void PublishCompactionActivity(
         RunId runId,
-        EventId eventId,
+        long sequence,
         bool committed,
         int coveredEntries,
         string? errorCode,
@@ -297,7 +321,8 @@ internal sealed class AgentRunCompaction
             _activitySink,
             runId,
             AgentActivityProjector.ProjectCompaction(
-                eventId,
+                runId.Value,
+                sequence,
                 committed ? AgentActivityState.Completed : AgentActivityState.Failed,
                 coveredEntries,
                 milliseconds is >= 0 and <= 86_400_000 ? (int)milliseconds : null,
@@ -313,5 +338,6 @@ internal sealed class AgentRunCompaction
     internal sealed record ContextPreflightResult(
         AgentRun? Run,
         ModelContextSnapshot? Context,
-        string? ErrorCode);
+        string? ErrorCode,
+        ModelStepRequest? PreparedRequest = null);
 }

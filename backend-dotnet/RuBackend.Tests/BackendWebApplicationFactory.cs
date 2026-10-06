@@ -25,6 +25,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ISettingsStore? _settingsStore;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
     private readonly bool _withInProcessBroker;
+    private readonly HttpMessageHandler? _providerHandler;
+    private readonly string? _sharedBrokerDescriptorPath;
     private BrokerHostHost? _brokerHost;
     private string? _brokerDescriptorPath;
     private string? _brokerRoot;
@@ -35,7 +37,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ISettingsStore? settingsStore = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
-        bool withInProcessBroker = false)
+        bool withInProcessBroker = false,
+        HttpMessageHandler? providerHandler = null,
+        string? sharedBrokerDescriptorPath = null)
     {
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
@@ -46,7 +50,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _diagnosticEmitter = diagnosticEmitter;
         ModelStepRunnerOverride = modelStepRunner;
         _withInProcessBroker = withInProcessBroker;
-        if (_withInProcessBroker)
+        _providerHandler = providerHandler;
+        _sharedBrokerDescriptorPath = sharedBrokerDescriptorPath;
+        if (_withInProcessBroker && _sharedBrokerDescriptorPath is null)
         {
             // The Broker host builds its own generic host; starting it inside
             // ConfigureWebHost would recurse through the hosting startup
@@ -92,6 +98,14 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             services.AddSingleton<ICredentialStore>(_credentialStore ?? new EphemeralTestCredentialStore());
             services.AddHttpClient("ProviderCatalog")
                 .ConfigurePrimaryHttpMessageHandler(() => new SyntheticCatalogHandler());
+            if (_providerHandler is not null)
+            {
+                services.RemoveAll<HttpClient>();
+                services.AddSingleton(new HttpClient(_providerHandler, disposeHandler: false)
+                {
+                    Timeout = Timeout.InfiniteTimeSpan,
+                });
+            }
 
             if (_settingsStore is not null)
             {
@@ -109,7 +123,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<RuBackend.Harness.Broker.BrokerToolGatewayFactory>();
                 services.AddSingleton(_ =>
-                    new RuBackend.Harness.Broker.BrokerToolGatewayFactory(_brokerDescriptorPath));
+                    new RuBackend.Harness.Broker.BrokerToolGatewayFactory(_sharedBrokerDescriptorPath ?? _brokerDescriptorPath));
             }
 
         });

@@ -1,4 +1,5 @@
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness;
 using Xunit;
@@ -80,5 +81,109 @@ public sealed class ScriptedModelReceiptTests
         var text = SystemPromptComposer.Compose(context, nativeToolCalling: false).Receipt;
 
         Assert.NotEqual(native.PromptSha256, text.PromptSha256);
+    }
+
+    [Fact]
+    public async Task Scripted_projection_cursor_placeholder_uses_the_exact_preceding_call_reference()
+    {
+        var runner = ScriptedModelStepRunner.FromJsonForTests("""
+            [
+              { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": 0 } } },
+              { "tool": { "id": "read", "arguments": { "path": "large.txt", "offset": "$projection_next_offset" } } }
+            ]
+            """);
+        var context = new ModelContextSnapshot(
+            [ModelContextEntry.ToolResult(
+                "tool:first",
+                1,
+                Receipt("ru_call_script_1", "call_11111111111111111111111111111111"),
+                "{\"path\":\"large.txt\",\"offset\":0,\"content\":\"head\",\"truncated\":true}")],
+            ReadOnlyMemory<byte>.Empty);
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            context,
+            ContextWithProjectionCursor(8_192, "ru_call_script_1", "call_11111111111111111111111111111111"),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64));
+
+        await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var call = Assert.Single(result.Step.ToolCalls);
+        Assert.Equal(8_192, call.Arguments.GetProperty("offset").GetInt32());
+    }
+
+    [Fact]
+    public async Task Scripted_paging_stops_at_complete_reference_and_uses_following_final_step()
+    {
+        var runner = ScriptedModelStepRunner.FromJsonForTests("""
+            [
+              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": 0 } } },
+              { "tool": { "id": "grep", "arguments": { "query": "needle", "offset": "$projection_next_offset" } } },
+              { "text": "The deterministic page sequence ended." }
+            ]
+            """);
+        var context = new ModelContextSnapshot(
+            [ModelContextEntry.ToolResult(
+                "tool:first",
+                1,
+                Receipt("ru_call_script_1", "call_11111111111111111111111111111111"),
+                "{\"results\":[],\"count\":0,\"truncated\":false}")],
+            ReadOnlyMemory<byte>.Empty);
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            context,
+            ContextWithCompleteGrepReference("ru_call_script_1", "call_11111111111111111111111111111111"),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64));
+
+        await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Empty(result.Step.ToolCalls);
+        Assert.Equal("The deterministic page sequence ended.", result.Step.Text);
+    }
+
+    private static ToolExecutionReceipt Receipt(string providerCallId, string toolCallId) => new(
+        new ExecutionId("exec_11111111111111111111111111111111"),
+        new ToolCallId(toolCallId),
+        ToolExecutionOutcome.Succeeded,
+        "ok",
+        null,
+        sideEffectsPossible: false,
+        providerCallId: providerCallId);
+
+    private static SystemPromptContext ContextWithProjectionCursor(int cursor, string providerCallId, string toolCallId)
+    {
+        var context = Context();
+        return new SystemPromptContext(
+            context.SchemaVersion,
+            context.AgentProfile,
+            context.Preset,
+            context.Environment,
+            context.InstructionBlocks,
+            context.Capabilities,
+            new PromptRuntimeContext(null, null,
+            [new PromptReference("tool_result", "untrusted tool result",
+                $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"projection_next_offset\":{cursor},\"projection_has_more\":true}}") ]));
+    }
+
+    private static SystemPromptContext ContextWithCompleteGrepReference(string providerCallId, string toolCallId)
+    {
+        var context = Context();
+        return new SystemPromptContext(
+            context.SchemaVersion,
+            context.AgentProfile,
+            context.Preset,
+            context.Environment,
+            context.InstructionBlocks,
+            context.Capabilities,
+            new PromptRuntimeContext(null, null,
+            [new PromptReference("tool_result", "untrusted tool result",
+                $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"results\":[],\"count\":0,\"truncated\":false}}") ]));
     }
 }

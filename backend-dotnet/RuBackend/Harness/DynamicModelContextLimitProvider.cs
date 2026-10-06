@@ -2,12 +2,16 @@
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Reconciliation;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 
 namespace RuBackend.Harness;
 
 public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvider
 {
-    private readonly ISettingsStore _settings;
+    public const long ConservativeUnknownContextWindowTokens = 32_768;
+
+    private readonly ISettingsStore? _settings;
+    private readonly IAgentRunModelMetadataResolver? _metadataResolver;
     private (DateTimeOffset ExpiresAt, SettingsSnapshot Snapshot)? _cache;
     private readonly object _lock = new();
 
@@ -16,8 +20,18 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
 
+    public DynamicModelContextLimitProvider(IAgentRunModelMetadataResolver metadataResolver)
+    {
+        _metadataResolver = metadataResolver ?? throw new ArgumentNullException(nameof(metadataResolver));
+    }
+
     public async ValueTask<long?> MaxPromptTokensAsync(RunId runId, CancellationToken cancellationToken)
     {
+        if (_metadataResolver is not null)
+        {
+            return await ResolvePinnedLimitAsync(runId, cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
             var now = DateTimeOffset.UtcNow;
@@ -32,7 +46,7 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
 
             if (snapshot is null)
             {
-                snapshot = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+                snapshot = await _settings!.ReadAsync(cancellationToken).ConfigureAwait(false);
                 lock (_lock)
                 {
                     _cache = (now.AddSeconds(5), snapshot);
@@ -51,7 +65,33 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         {
             // A failing settings read must not fail the run: keep a conservative
             // window so compaction still bounds the prompt.
-            return 32_768;
+            return ConservativeUnknownContextWindowTokens;
+        }
+    }
+
+    private async ValueTask<long> ResolvePinnedLimitAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var metadata = await _metadataResolver!.ResolveAsync(runId, cancellationToken).ConfigureAwait(false);
+            var window = metadata.ContextWindowTokens ?? ConservativeUnknownContextWindowTokens;
+            return Math.Max(1, window - metadata.OutputTokenReserve);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ProviderCatalogException error)
+        {
+            throw new ModelContextLimitResolutionException(error.Code, error);
+        }
+        catch (ModelContextLimitResolutionException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            throw new ModelContextLimitResolutionException("provider_metadata_unavailable", error);
         }
     }
 
@@ -117,6 +157,6 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
             return 65_536;
         }
 
-        return 32_768;
+        return ConservativeUnknownContextWindowTokens;
     }
 }

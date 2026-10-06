@@ -6,12 +6,22 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **41 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,326 passed / 0 failed / 0 skipped** (2026-10-04, GUI chat create-response compatibility and acceptance lifecycle; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
-| Python suite | **171 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,475 passed / 0 failed / 0 skipped** (2026-10-06, model working environment delivery; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| Python suite | **178 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-04 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Model working environment delivery (2026-10-06)
+
+The full sequential Debug matrix passed all **12 projects**: **5,475 passed / 0 failed / 0 skipped** (including **1,193 GUI tests**). Recorded from the `feat/model-working-environment` branch after commits `1f9971f1` (Task 7 closure) and `51a264db` (review fixes), plus the matrix-closure commit that carries this record. The delivery was verified offline only; no live provider, desktop automation, native keyboard/resize, or token/cost measurement was run. The Python guards passed **178 tests with one skip**.
+
+All twelve declared workflow scenarios now have a registered offline executor with fresh evidence under `.superpowers` (`task-7-evidence`): Vietnamese text, ten-turn constraint sequence, restart continuation (renewed approval identity, exactly one execution), selected handoff (marker-present target vs marker-absent control), independent read batch, UTF-8 read paging, sparse grep paging, terminal middle-output paging (explicit approval, UTF-16 cursors, single execution), dependent three-file edits with hash-bound receipts and a fixture verification run, edit recovery, failed-test repair (fail → `read_output` diagnostics → edit → identical rerun), and explicit denial without bypass. Each scenario asserts client-readable receipts, ordered identities, and the exact workspace file set; they prove wiring and effects, not model quality.
+
+The full matrix surfaced and closed several latent defects that focused filters had missed: a culture-sensitive duration/size rendering in the CLI TUI and GUI (now invariant), a stale prompt-composition golden (Task-2 wording), two test fixtures that predated the work-state-on-create and v16-schema contracts, an image-only prompt that failed run creation on an empty work-state goal, and a Task-5 regression where the prepared-body guard failed every provider retry closed as `invalid_request` (fixed with a genuine RED/GREEN regression; the two native Anthropic loop tests now pass). Independent formal Task 7 and whole-branch reviews returned no load-bearing findings; their four non-blocking items were fixed or recorded. One transient `agent_store_unavailable` 503 flaked once under parallel load and passed isolated and in the recorded green run.
+
+`build.bat` (Release) was not rerun for this delivery; CI covers the Release builds. Managed-runtime smoke, native GUI acceptance, and live-provider quality remain not run.
 
 ## GUI chat create-response compatibility (2026-10-04)
 
@@ -56,6 +66,30 @@ coverage includes actual Host/Harness/Broker coding-loop scenarios with a
 scripted provider; it does not measure real-model quality or native terminal
 key/resize/clipboard behavior. No native terminal/desktop UI or real provider
 was driven during this delivery.
+
+## Model working environment baseline (2026-10-04)
+
+`scripts/evaluate_agent_workflows.ps1 -ValidateOnly` validated all twelve scenario
+oracles against workspace SHA-256
+`d5de862ab22f1e8f9b5960f40a8a1e8d143f4de34139c4392dde33f10a92560e`.
+`-RunScripted -ScenarioId recover_edit_no_match` built the CLI and Public Host,
+started an isolated loopback Host/Broker with a temporary data root and workspace,
+and invoked `RuAgent.Cli agent run --preset standard --workspace <temporary-workspace>
+--json --trust-workspace <fixture-input>`. The Broker returned `edit_no_match` for
+the first edit; the scripted corrective edit returned `ok`, changed only `seed.txt`
+to `fixed`, and the run completed. The run used 3 predetermined scripted model
+steps, 2 edit calls, 1 failed tool call and 0 approval requests. This does not show
+that a model read or followed the recovery note. Tokens, cost, provider/model
+quality, and live-provider results are unknown/not run. The other catalog entries
+retain their explicit `not_run` or `unmet` statuses; this is wiring evidence, not
+a task-quality score.
+
+The focused Python runner/fixture tests and documentation/route guards passed
+**26 tests**. Baseline headless Harness + model conversation tests passed **21
+tests**. The route contract was not changed. After Tasks B–F add supported
+workflows, extend the runner's explicit scenario dispatch and add a concrete
+offline oracle for each newly supported case; do not infer passes from unrelated
+tests.
 
 ## Model trust boundary verification (2026-09-24)
 

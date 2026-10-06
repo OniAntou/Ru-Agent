@@ -19,6 +19,7 @@ public enum HarnessEventKind
     ModelUsageRecorded,
     RunNoteAdded,
     ModelReasoningRecorded,
+    ProviderContinuationRecorded,
 }
 
 public sealed record HarnessEventIntent

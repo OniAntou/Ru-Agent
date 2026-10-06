@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Client;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using Xunit;
 
@@ -11,6 +13,41 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class AgentRunIdempotencyTests
 {
+    [Fact]
+    public async Task Shared_client_accepts_host_create_projection_and_gets_enriched_run_metadata()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var http = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(http);
+        var descriptor = new RuntimeDescriptor(
+            RuntimeDescriptor.CurrentProtocolVersion,
+            http.BaseAddress!.ToString(),
+            "test-secret",
+            Environment.ProcessId,
+            "0",
+            "test-instance",
+            DateTimeOffset.UtcNow.ToString("O"));
+        using var client = new AgentApiClient(new PublicHostSession(http.BaseAddress, "test-secret", descriptor), http);
+        var preset = await client.SetSessionPresetAsync(sessionId, "standard", 0, interactive: true);
+
+        var created = await client.CreateRunAsync(new CreateAgentRunRequest(
+            sessionId,
+            tmp.Path,
+            "created through the shared API client",
+            "standard",
+            preset.GetProperty("version").GetInt64(),
+            "create-client-metadata-" + Guid.NewGuid().ToString("N")));
+        var loaded = await client.GetRunAsync(created.RunId);
+
+        Assert.Equal(created.RunId, loaded.RunId);
+        Assert.Null(created.ProviderBackend);
+        Assert.Null(created.ProviderModel);
+        Assert.Null(loaded.ProviderProtocol);
+        Assert.Equal("available", loaded.WorkStateStatus);
+        Assert.Contains("created through the shared API client", loaded.WorkStatePreview);
+    }
+
     [Fact]
     public async Task Get_run_returns_durable_provider_pin_after_settings_change()
     {
@@ -33,7 +70,8 @@ public sealed class AgentRunIdempotencyTests
         var selections = factory.Services.GetRequiredService<SqliteAgentRunProviderSelectionStore>();
         await selections.PinAsync(new RunId(runId), new AgentRunProviderSelection(
             "Custom OpenAI", "custom", "chat_completions", "https://provider-a.invalid/v1",
-            "model-a", null, "{}", null), default);
+            "model-a", null, "{}", null, "Model A", "text_selection", 32_000,
+            "provider_catalog", "catalog-test-v1", 4096), default);
         var settings = factory.Services.GetRequiredService<ISettingsStore>();
         var current = await settings.ReadAsync(default);
         await settings.SaveAsync(current with
@@ -48,6 +86,19 @@ public sealed class AgentRunIdempotencyTests
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("Custom OpenAI", body.GetProperty("provider_backend").GetString());
         Assert.Equal("model-a", body.GetProperty("provider_model").GetString());
+        Assert.Equal("chat_completions", body.GetProperty("provider_protocol").GetString());
+        Assert.Equal("Model A", body.GetProperty("provider_model_label").GetString());
+        Assert.Equal("text_selection", body.GetProperty("provider_calling_mode").GetString());
+        Assert.Equal(32_000, body.GetProperty("context_window_tokens").GetInt64());
+        Assert.Equal("provider_catalog", body.GetProperty("context_window_source").GetString());
+        Assert.Equal("catalog-test-v1", body.GetProperty("context_window_version").GetString());
+        Assert.Equal(4096, body.GetProperty("output_token_reserve").GetInt32());
+        Assert.Equal("available", body.GetProperty("work_state_status").GetString());
+        Assert.Contains("provider metadata", body.GetProperty("work_state_preview").GetString());
+        Assert.False(body.GetProperty("work_state_preview_omitted").GetBoolean());
+        Assert.Equal(runId, body.GetProperty("work_state_source_run_id").GetString());
+        Assert.StartsWith("evt_", body.GetProperty("work_state_source_event_id").GetString());
+        Assert.True(DateTimeOffset.TryParse(body.GetProperty("work_state_updated_at").GetString(), out _));
     }
 
     [Fact]
@@ -74,6 +125,8 @@ public sealed class AgentRunIdempotencyTests
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         AssertNullOrMissing(body, "provider_backend");
         AssertNullOrMissing(body, "provider_model");
+        AssertNullOrMissing(body, "provider_protocol");
+        Assert.Equal("available", body.GetProperty("work_state_status").GetString());
     }
 
     private static void AssertNullOrMissing(JsonElement body, string propertyName)

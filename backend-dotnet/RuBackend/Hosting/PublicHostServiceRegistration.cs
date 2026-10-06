@@ -27,6 +27,7 @@ using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
@@ -145,12 +146,16 @@ internal static class PublicHostServiceRegistration
                 services.GetRequiredService<HarnessSqliteOptions>(),
                 services.GetRequiredService<HarnessPayloadCryptography>(),
                 services.GetRequiredService<KnownSecretRedactor>()));
+        services.AddSingleton<SessionWorkStateCryptography>(services =>
+            new SessionWorkStateCryptography(services.GetRequiredService<IHarnessKeyStore>()));
+        services.AddSingleton<SessionWorkStateStore>();
         services.AddSingleton<RetainedApprovalRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
         services.AddSingleton<IHarnessEventStore>(services =>
             new SqliteHarnessEventStore(
                 services.GetRequiredService<HarnessSqliteOptions>(),
-                services.GetRequiredService<HarnessPayloadStore>()));
+                services.GetRequiredService<HarnessPayloadStore>(),
+                services.GetRequiredService<SessionWorkStateStore>()));
         services.AddSingleton<HarnessLiveEventHub>();
         services.AddSingleton<AgentRunSummaryLivePublisher>();
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
@@ -227,6 +232,9 @@ internal static class PublicHostServiceRegistration
                 var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
                 return run is null || run.TerminalAt.HasValue;
             }));
+        services.AddSingleton(services => new SqliteProviderContinuationReader(
+            services.GetRequiredService<HarnessSqliteOptions>(),
+            services.GetRequiredService<HarnessPayloadStore>()));
         services.AddSingleton(services =>
             new InProcessModelStepRunner(services.GetRequiredService<WorkerV2StepService>())
             {
@@ -250,6 +258,9 @@ internal static class PublicHostServiceRegistration
 
                     return list;
                 },
+                LoadProviderContinuationsAsync = (runId, bootstrap, retainedAssistantEventIds, ct) =>
+                    services.GetRequiredService<SqliteProviderContinuationReader>()
+                        .ReadAsync(runId, bootstrap, retainedAssistantEventIds, ct),
             });
         // A scripted model replaces the in-process provider call entirely when requested,
         // so the whole product can be exercised without a provider key. Registered before
@@ -262,6 +273,10 @@ internal static class PublicHostServiceRegistration
         else
         {
             services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<InProcessModelStepRunner>());
+            services.AddSingleton<IAgentRunModelMetadataResolver>(services =>
+                new AgentRunModelMetadataResolver(
+                    services.GetRequiredService<AgentProviderSnapshotFactory>(),
+                    services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()));
         }
         if (isManagedRuntime)
         {

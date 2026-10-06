@@ -6,6 +6,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Protocol;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness.Prompting;
@@ -19,11 +20,11 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     /// <summary>
-    /// How many tool results may appear as references. One slot of
-    /// <see cref="PromptRuntimeContext.MaxRuntimeReferences"/> is reserved for the
-    /// workspace-activity reference.
+    /// Maximum retained tool results before accounting for the omission notice
+    /// and any available workspace-activity reference.
     /// </summary>
-    private const int ToolResultReferenceBudget = PromptRuntimeContext.MaxRuntimeReferences - 1;
+    private const int ToolResultReferenceBudget = PromptRuntimeContext.MaxRuntimeReferences;
+    private const int ToolCallAssociationEntryLimit = 512;
 
     private readonly string _canonicalRoot;
     private readonly RuInstructionLoader _instructionLoader;
@@ -31,6 +32,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     private readonly ITimeProvider _time;
     private readonly AgentToolRuntimeAvailability _availability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
 
     public RuPromptContextProvider(
         string workspaceRoot,
@@ -38,10 +40,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ISettingsStore settings,
         ITimeProvider time,
         bool webToolsEnabled = false,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
         : this(workspaceRoot, instructionLoader, settings, time,
             new AgentToolRuntimeAvailability(webToolsEnabled, webToolsEnabled),
-            workspaceCoordinatorStore)
+            workspaceCoordinatorStore,
+            runModelMetadataResolver)
     {
     }
 
@@ -51,7 +55,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ISettingsStore settings,
         ITimeProvider time,
         AgentToolRuntimeAvailability availability,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        IAgentRunModelMetadataResolver? runModelMetadataResolver = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
@@ -60,6 +65,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _availability = availability;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _runModelMetadataResolver = runModelMetadataResolver;
     }
 
     public async Task<SystemPromptContext> BuildAsync(
@@ -71,11 +77,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ArgumentNullException.ThrowIfNull(modelContext);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var settings = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var model = _runModelMetadataResolver is null
+            ? SelectModel(await _settings.ReadAsync(cancellationToken).ConfigureAwait(false))
+            : (await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false)).ModelLabel;
         cancellationToken.ThrowIfCancellationRequested();
         var instructions = _instructionLoader.Load(_canonicalRoot);
         var now = _time.UtcNow;
-        var model = SelectModel(settings);
         var environment = new PromptEnvironment(
             model,
             Environment.OSVersion.Platform.ToString(),
@@ -187,10 +194,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ModelContextSnapshot modelContext,
         CancellationToken cancellationToken)
     {
-        // Tool output keeps its full-fidelity channel here as untrusted data;
-        // the model conversation additionally carries the exchange history
-        // (see InProcessModelStepRunner.BuildConversation) so the model knows
-        // which calls already ran.
+        // Durable tool receipts preserve full output. Runtime references are bounded
+        // projections, and the conversation carries each retained call/result pairing.
         //
         // Each reference is fitted to the bound a reference accepts. A reference over it is
         // rejected, and a rejected reference fails the prompt, which fails the run -- so a
@@ -198,23 +203,21 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         // of costing the model the tail of one result. The marker says the output was cut,
         // because a silently shortened result reads as a complete one.
         //
-        // The count is bound the same way the size is. The runtime context accepts at most
-        // PromptRuntimeContext.MaxRuntimeReferences in total, and a context over that bound
-        // is rejected just as hard -- so a run that had accumulated one reference per tool
-        // result eventually ended with prompt_contract_invalid rather than losing anything.
-        // Only the newest results are kept: the oldest ones describe work the model has
-        // already acted on, and the conversation turns still carry the exchange (truncated)
-        // so the model is not told a call it made never happened.
+        // Keep only the newest bounded tool references. Older durable receipts remain in
+        // the run store, but the final model history may omit their conversation exchanges.
+        var toolCallByReceiptId = BuildToolCallAssociations(modelContext);
         var toolResults = modelContext.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
                 && !string.IsNullOrWhiteSpace(entry.Content))
             .OrderBy(entry => entry.Sequence)
             .ToList();
-        // One slot is reserved for the workspace-activity reference appended below, so a
-        // run that is also watching external writers cannot overflow the bound either.
-        var newestResults = toolResults.Count <= ToolResultReferenceBudget
+        var workspaceActivity = await BuildWorkspaceActivityReferenceAsync(run, cancellationToken).ConfigureAwait(false);
+        var maximumResultReferences = ToolResultReferenceBudget - (workspaceActivity is null ? 0 : 1);
+        var hasOmittedResults = toolResults.Count > maximumResultReferences;
+        var resultReferenceBudget = maximumResultReferences - (hasOmittedResults ? 1 : 0);
+        var newestResults = toolResults.Count <= resultReferenceBudget
             ? toolResults
-            : toolResults.GetRange(toolResults.Count - ToolResultReferenceBudget, ToolResultReferenceBudget);
+            : toolResults.GetRange(toolResults.Count - resultReferenceBudget, resultReferenceBudget);
         var omittedResults = toolResults.Count - newestResults.Count;
 
         var references = new List<PromptReference>();
@@ -223,42 +226,31 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             references.Add(new PromptReference(
                 "tool_result_omitted",
                 "untrusted tool results omitted from the prompt",
-                $"{omittedResults} older tool result(s) are not carried here. They are still in "
-                + "the conversation history, and the newest results below are complete."));
+                $"{omittedResults} older tool result(s) are omitted from this bounded reference list. "
+                + "Their durable receipts remain stored for this run, but older exchanges may not be in model history. "
+                + "The newest results below may include projection cursors."));
         }
 
-        references.AddRange(newestResults.Select(entry => new PromptReference(
-            "tool_result",
-            "untrusted tool result",
-            FitReferenceContent(entry.Content!))));
-
-        if (_workspaceCoordinatorStore is not null)
+        references.AddRange(newestResults.Select(entry =>
         {
-            try
-            {
-                var changes = await _workspaceCoordinatorStore
-                    .ListChangesAsync(run.WorkspaceId, 0, 16, cancellationToken)
-                    .ConfigureAwait(false);
-                var external = changes
-                    .Where(change => change.RunId is null)
-                    .TakeLast(8)
-                    .Select(change =>
-                        $"sequence={change.CommitSequence}; path={change.NormalizedPath}; before={change.BeforeSha256 ?? "missing"}; observed={change.AfterSha256 ?? "missing"}")
-                    .ToArray();
-                if (external.Length > 0 && references.Count < PromptRuntimeContext.MaxRuntimeReferences)
-                {
-                    references.Add(new PromptReference(
-                        "workspace_activity",
-                        "untrusted workspace activity",
-                        string.Join("\n", external)));
-                }
-            }
-            catch (HarnessStoreException)
-            {
-                // Prompt construction remains available if the optional activity
-                // journal is unavailable; terminal/file guards remain authoritative.
-            }
-        }
+            var receipt = entry.ToolReceipt!;
+            toolCallByReceiptId.TryGetValue(receipt.ToolCallId.Value, out var call);
+            return new PromptReference(
+                "tool_result",
+                "untrusted tool result",
+                StructuredToolOutputProjector.Project(
+                    call?.ToolId ?? string.Empty,
+                    call?.Arguments,
+                    entry.Content!,
+                    PromptReference.ContentMaxBytes,
+                    ToolOutputProjectionUnit.Utf8Bytes,
+                    (value, _) => FitReferenceContent(value),
+                    receipt.ToolCallId.Value,
+                    receipt.ProviderCallId));
+        }));
+
+        if (workspaceActivity is not null)
+            references.Add(workspaceActivity);
 
         // The reservation above is arithmetic, not a guarantee: a third source of
         // references added later would overflow the Core bound silently, and the run would
@@ -271,6 +263,60 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         }
 
         return new PromptRuntimeContext(null, null, references);
+    }
+
+    private async Task<PromptReference?> BuildWorkspaceActivityReferenceAsync(
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (_workspaceCoordinatorStore is null)
+            return null;
+
+        try
+        {
+            var changes = await _workspaceCoordinatorStore
+                .ListChangesAsync(run.WorkspaceId, 0, 16, cancellationToken)
+                .ConfigureAwait(false);
+            var external = changes
+                .Where(change => change.RunId is null)
+                .TakeLast(8)
+                .Select(change =>
+                    $"sequence={change.CommitSequence}; path={change.NormalizedPath}; before={change.BeforeSha256 ?? "missing"}; observed={change.AfterSha256 ?? "missing"}")
+                .ToArray();
+            return external.Length == 0
+                ? null
+                : new PromptReference(
+                    "workspace_activity",
+                    "untrusted workspace activity",
+                    string.Join("\n", external));
+        }
+        catch (HarnessStoreException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, ModelToolCall> BuildToolCallAssociations(ModelContextSnapshot modelContext)
+    {
+        var pendingByProviderId = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
+        var byReceiptId = new Dictionary<string, ModelToolCall>(StringComparer.Ordinal);
+        foreach (var entry in modelContext.Entries.TakeLast(ToolCallAssociationEntryLimit))
+        {
+            if (entry.Kind == ModelContextEntryKind.AssistantStep && entry.AssistantStep is { } step)
+            {
+                foreach (var call in step.ToolCalls)
+                    pendingByProviderId[call.ProviderCallId] = call;
+                continue;
+            }
+
+            if (entry.Kind != ModelContextEntryKind.ToolResult || entry.ToolReceipt is not { } receipt)
+                continue;
+
+            if (pendingByProviderId.Remove(receipt.ProviderCallId!, out var matched))
+                byReceiptId[receipt.ToolCallId.Value] = matched;
+        }
+
+        return byReceiptId;
     }
 
     private static string WorkspaceLabel(string canonicalRoot)

@@ -5,4 +5,5 @@ namespace RuApp.Services;
 public sealed record AgentUsageReceivedEventArgs(
     string RunId,
     string SessionId,
-    AgentModelUsage Usage);
+    AgentModelUsage Usage,
+    long? Sequence);

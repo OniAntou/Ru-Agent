@@ -281,19 +281,27 @@ public static class AgentActivityProjector
     /// entries and the elapsed time cross the sink boundary; summary text never does.
     /// </summary>
     public static AgentActivity ProjectCompaction(
-        EventId compactionEventId,
+        string runId,
+        long sequence,
         AgentActivityState state,
         int? coveredEntries = null,
         int? durationMs = null,
         string? safeCode = null) =>
         new(
-            ActivityId(compactionEventId.Value),
+            CompactionActivityId(runId, sequence),
             AgentActivityKind.Compaction,
             state,
             Count: ClampCount(coveredEntries),
             DurationMs: ClampDuration(durationMs),
             SafeCode: SafeCodeFor(state, safeCode),
             ToolDisplay: null);
+
+    /// <summary>
+    /// The compaction activity identity shared by the live sink, durable replay, and the
+    /// client event synthesis, so one compaction cannot render twice.
+    /// </summary>
+    public static string CompactionActivityId(string runId, long sequence) =>
+        $"act_compaction_{runId}_{sequence}";
 
     /// <summary>
     /// Projects a tool retry attempt. The activity carries the same bounded metadata as

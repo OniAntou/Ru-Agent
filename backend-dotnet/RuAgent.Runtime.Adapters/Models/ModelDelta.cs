@@ -1,6 +1,7 @@
 namespace RuAgent.Runtime.Adapters.Models;
 
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
 
 public sealed record ModelDelta
 {
@@ -10,7 +11,8 @@ public sealed record ModelDelta
         bool completed,
         string? finishReason,
         ModelUsage? usage = null,
-        string? reasoning = null)
+        string? reasoning = null,
+        ProviderContinuation? providerContinuation = null)
     {
         if (text is not null && (text.Length > 64 * 1024 || text.Contains('\0')))
         {
@@ -39,6 +41,7 @@ public sealed record ModelDelta
         FinishReason = finishReason;
         Usage = usage;
         Reasoning = reasoning;
+        ProviderContinuation = providerContinuation;
     }
 
     public string? Text { get; }
@@ -54,4 +57,6 @@ public sealed record ModelDelta
     /// <summary>Provider-supplied reasoning excerpt, if any. Observational
     /// only: never fed back into prompts, only surfaced as activity detail.</summary>
     public string? Reasoning { get; }
+
+    public ProviderContinuation? ProviderContinuation { get; }
 }

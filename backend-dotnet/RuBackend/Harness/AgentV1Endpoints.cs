@@ -314,13 +314,10 @@ public static class AgentV1Endpoints
             await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
             {
                 any = true;
-                // Prompt receipts are durable host-internal evidence. Advance the
+                // Prompt receipts and provider continuations are durable host-internal evidence. Advance the
                 // durable cursor without mapping or exposing their payload reference;
                 // reconnecting clients must not replay the suppressed event.
-                if (string.Equals(
-                        envelope.Event.Kind,
-                        "model.prompt_composed",
-                        StringComparison.Ordinal))
+                if (envelope.Event.Kind is "model.prompt_composed" or "model.provider_continuation_recorded")
                 {
                     lastSent = envelope.Event.Sequence;
                     continue;

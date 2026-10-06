@@ -7,6 +7,9 @@ public sealed record ModelRequest
 {
     private const int MaxModelMessages = 256;
     private const int MaxModelMessagesBytes = 512 * 1024;
+    private const int MaxAnthropicContentBlocks = 64;
+    private const int MaxNativeArgumentsBytes = 64 * 1024;
+    public const int MaximumSerializedBodyBytes = 24 * 1024 * 1024;
     public ModelRequest(
         string model,
         string systemPrompt,
@@ -16,7 +19,12 @@ public sealed record ModelRequest
         Uri endpoint,
         string credential,
         int? maximumOutputTokens = null,
-        IReadOnlyList<ModelImage>? images = null)
+        IReadOnlyList<ModelImage>? images = null,
+        IReadOnlyList<JsonObject>? responsesInputItems = null,
+        bool nativeToolCalling = false,
+        IReadOnlyList<JsonObject>? anthropicMessages = null,
+        bool useMaxCompletionTokens = false,
+        string? preparedBodyJson = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -50,6 +58,20 @@ public sealed record ModelRequest
         }
 
         ValidateModelHistory(turns);
+        if (responsesInputItems is { Count: > 256 }
+            || responsesInputItems?.Any(item => !IsSupportedResponsesInputItem(item)) == true)
+            throw new ArgumentException("Responses input history is invalid.", nameof(responsesInputItems));
+        var historyBytes = responsesInputItems is { Count: > 0 }
+            ? MeasureResponsesInputBytes(responsesInputItems)
+            : MeasureModelMessagesBytes(turns);
+        if (historyBytes > MaxModelMessagesBytes)
+            throw new ArgumentException("Model history exceeds the adapter byte cap.", nameof(responsesInputItems));
+        if (anthropicMessages is { Count: > MaxModelMessages }
+            || anthropicMessages?.Any(message => !IsSupportedAnthropicMessage(message)) == true
+            || MeasureJsonArrayBytes(anthropicMessages) > MaxModelMessagesBytes)
+            throw new ArgumentException("Anthropic history exceeds the adapter cap.", nameof(anthropicMessages));
+        if (anthropicMessages is { Count: > 0 } && responsesInputItems is { Count: > 0 })
+            throw new ArgumentException("Provider history cannot mix protocol shapes.", nameof(anthropicMessages));
 
         ArgumentNullException.ThrowIfNull(settings);
         if (settings.ToJsonString().Length > 128 * 1024)
@@ -116,7 +138,15 @@ public sealed record ModelRequest
         Endpoint = endpoint;
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
         MaximumOutputTokens = maximumOutputTokens;
+        UseMaxCompletionTokens = useMaxCompletionTokens;
+        if (preparedBodyJson is not null
+            && Encoding.UTF8.GetByteCount(preparedBodyJson) > MaximumSerializedBodyBytes)
+            throw new ArgumentException("Serialized provider body exceeds the adapter cap.", nameof(preparedBodyJson));
+        PreparedBodyJson = preparedBodyJson;
         Images = Array.AsReadOnly(images is null ? Array.Empty<ModelImage>() : images.ToArray());
+        ResponsesInputItems = Array.AsReadOnly(responsesInputItems?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
+        NativeToolCalling = nativeToolCalling;
+        AnthropicMessages = Array.AsReadOnly(anthropicMessages?.Select(item => (JsonObject)item.DeepClone()).ToArray() ?? Array.Empty<JsonObject>());
     }
 
     public string Model { get; }
@@ -135,7 +165,118 @@ public sealed record ModelRequest
 
     public int? MaximumOutputTokens { get; }
 
+    public bool UseMaxCompletionTokens { get; }
+
+    public string? PreparedBodyJson { get; }
+
+    public ModelRequest WithPreparedBodyJson(string body) => new(
+        Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
+        Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
+        body);
+
     public IReadOnlyList<ModelImage> Images { get; }
+
+    public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
+
+    public bool NativeToolCalling { get; }
+
+    public IReadOnlyList<JsonObject> AnthropicMessages { get; }
+
+    public static long MeasureJsonArrayBytes(IReadOnlyList<JsonObject>? items)
+    {
+        if (items is null || items.Count == 0) return 0;
+        long bytes = 2;
+        for (var index = 0; index < items.Count; index++)
+        {
+            bytes = checked(bytes + Encoding.UTF8.GetByteCount(items[index].ToJsonString()));
+            if (index > 0) bytes = checked(bytes + 1);
+        }
+        return bytes;
+    }
+
+    private static bool IsSupportedAnthropicMessage(JsonObject? message)
+    {
+        if (message is null || message.Count != 2
+            || !message.Select(property => property.Key).Order(StringComparer.Ordinal).SequenceEqual(["content", "role"], StringComparer.Ordinal)
+            || !TryGetString(message["role"], out var role)
+            || role is not ("user" or "assistant")
+            || message["content"] is not JsonArray content
+            || content.Count is < 1 or > MaxAnthropicContentBlocks)
+            return false;
+
+        var hasToolResult = false;
+        foreach (var node in content)
+        {
+            if (node is not JsonObject block || !IsSupportedAnthropicBlock(role, block, out var isToolResult)) return false;
+            hasToolResult |= isToolResult;
+        }
+        return role != "assistant" || !hasToolResult;
+    }
+
+    private static bool IsSupportedAnthropicBlock(string role, JsonObject block, out bool isToolResult)
+    {
+        isToolResult = false;
+        if (!TryGetString(block["type"], out var type)) return false;
+        var fields = type switch
+        {
+            "text" when role == "assistant" || role == "user" => new[] { "text", "type" },
+            "thinking" when role == "assistant" => new[] { "signature", "thinking", "type" },
+            "redacted_thinking" when role == "assistant" => new[] { "data", "type" },
+            "tool_use" when role == "assistant" => new[] { "id", "input", "name", "type" },
+            "tool_result" when role == "user" => new[] { "content", "is_error", "tool_use_id", "type" },
+            _ => Array.Empty<string>(),
+        };
+        if (fields.Length == 0 || !block.Select(property => property.Key).Order(StringComparer.Ordinal).SequenceEqual(fields, StringComparer.Ordinal))
+            return false;
+        if (type == "text") return TryGetBoundedString(block["text"], 64_000);
+        if (type == "thinking") return TryGetBoundedString(block["thinking"], 64_000) && TryGetBoundedString(block["signature"], 16_384);
+        if (type == "redacted_thinking") return TryGetBoundedString(block["data"], 32_768);
+        if (type == "tool_use")
+            return TryGetBoundedString(block["id"], 256) && TryGetBoundedString(block["name"], 128)
+                && block["input"] is JsonObject input && Encoding.UTF8.GetByteCount(input.ToJsonString()) <= MaxNativeArgumentsBytes;
+        isToolResult = true;
+        return TryGetBoundedString(block["tool_use_id"], 256)
+            && TryGetBoundedString(block["content"], 64_000)
+            && block["is_error"] is JsonValue error && error.TryGetValue<bool>(out _);
+    }
+
+    private static bool TryGetString(JsonNode? node, out string value)
+    {
+        if (node is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var stringValue))
+        {
+            value = stringValue;
+            return true;
+        }
+        value = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetBoundedString(JsonNode? node, int maximum) =>
+        TryGetString(node, out var value) && value.Length <= maximum && !value.Contains('\0');
+
+    public static long MeasureResponsesInputBytes(IReadOnlyList<JsonObject>? items)
+    {
+        if (items is null || items.Count == 0) return 0;
+        long bytes = 2;
+        for (var index = 0; index < items.Count; index++)
+        {
+            bytes = checked(bytes + Encoding.UTF8.GetByteCount(items[index].ToJsonString()));
+            if (index > 0) bytes = checked(bytes + 1);
+        }
+
+        return bytes;
+    }
+
+    private static bool IsSupportedResponsesInputItem(JsonObject? item)
+    {
+        if (item is null) return false;
+        var type = item["type"]?.GetValue<string>();
+        if (type is "function_call" or "function_call_output" or "reasoning" or "message") return true;
+        var role = item["role"]?.GetValue<string>();
+        return role is "user" or "assistant"
+            && item["content"] is JsonValue content
+            && content.TryGetValue<string>(out _);
+    }
 
     public static long MeasureModelMessagesBytes(IReadOnlyList<ModelTurn> messages)
     {

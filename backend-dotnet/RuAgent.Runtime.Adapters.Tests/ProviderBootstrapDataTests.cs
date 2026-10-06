@@ -46,6 +46,51 @@ public sealed class ProviderBootstrapDataTests
         Assert.Null(data.RequestOptions);
     }
 
+    [Fact]
+    public void Legacy_calling_mode_is_fixed_by_protocol_and_unsupported_native_mode_fails_closed()
+    {
+        var textSelection = new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "model-a", string.Empty);
+
+        Assert.Equal(ProviderToolCallingMode.TextSelection, textSelection.ToolCallingMode);
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "model-a", string.Empty, toolCallingMode: ProviderToolCallingMode.Native));
+    }
+
+    [Fact]
+    public void Declared_new_responses_native_mode_requires_an_explicit_capability_grant()
+    {
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "gpt-5.6-luna", string.Empty, toolCallingMode: ProviderToolCallingMode.Native));
+        var supported = new ProviderBootstrapData(
+            "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1"),
+            "gpt-5.6-luna", string.Empty, toolCallingMode: ProviderToolCallingMode.Native,
+            allowNativeResponses: true);
+        Assert.Equal(ProviderToolCallingMode.Native, supported.ToolCallingMode);
+        Assert.Equal(ProviderToolCallingMode.TextSelection,
+            ProviderBootstrapData.ModeForProtocol(ProviderProtocols.OpenAiResponses));
+    }
+
+    [Fact]
+    public void Anthropic_native_mode_requires_an_explicit_exact_capability_grant()
+    {
+        Assert.Throws<ArgumentException>(() => new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", string.Empty, maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native));
+        var supported = new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", string.Empty, maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native, allowNativeAnthropic: true);
+
+        Assert.Equal(ProviderToolCallingMode.Native, supported.ToolCallingMode);
+        Assert.Equal(ProviderToolCallingMode.TextSelection,
+            ProviderBootstrapData.ModeForProtocol(ProviderProtocols.AnthropicMessages));
+    }
+
     [Theory]
     [InlineData("effort")]
     [InlineData("enabled")]

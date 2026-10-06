@@ -6,7 +6,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class AnthropicMessagesModelProvider : IModelProvider
+public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
     public AnthropicMessagesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -15,7 +15,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.MaximumOutputTokens is null or <= 0 or > 8192) throw new ModelProviderException("malformed_payload", false);
-        var body = BuildBody(request);
+        var body = request.PreparedBodyJson ?? BuildBody(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -39,7 +39,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                 var phase = Phase.ExpectMessageStart;
                 string? stopReason = null;
                 int? blockIndex = null;
+                var nextBlockIndex = 0;
                 string blockType = string.Empty;
+                var nativeContent = new AnthropicNativeContentAssembly();
                 ModelUsage? usage = null;
 
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
@@ -90,13 +92,24 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                         {
                             if (phase is not Phase.InMessage and not Phase.InBlock) throw new ModelProviderException("malformed_payload", false);
                             var idx = ReadInt(data["index"]);
-                            if (idx is null) throw new ModelProviderException("malformed_payload", false);
+                            if (idx is null || idx != nextBlockIndex) throw new ModelProviderException("malformed_payload", false);
                             if (blockIndex is not null) throw new ModelProviderException("malformed_payload", false);
                             var block = data["content_block"] as JsonObject ?? throw new ModelProviderException("malformed_payload", false);
                             var t = ReadString(block["type"]) ?? throw new ModelProviderException("malformed_payload", false);
-                            if (t == "fallback" || t == "tool_use") throw new ModelProviderException("malformed_payload", false);
-                            if (t != "text" && t != "thinking") throw new ModelProviderException("malformed_payload", false);
+                            if (t == "fallback" || (!request.NativeToolCalling && t is "tool_use" or "redacted_thinking")) throw new ModelProviderException("malformed_payload", false);
+                            if (t is not ("text" or "thinking" or "redacted_thinking" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
+                            nativeContent.BeginBlock(block, t, request.NativeToolCalling);
+                            if (t == "text")
+                            {
+                                if (nativeContent.Text.Length > 0) yield return new ModelDelta(nativeContent.Text, [], false, null);
+                            }
+                            else if (t == "thinking")
+                            {
+                                if (!request.NativeToolCalling && nativeContent.Text.Length > 0)
+                                    yield return new ModelDelta(null, [], false, null, null, nativeContent.Text);
+                            }
                             blockIndex = idx;
+                            nextBlockIndex++;
                             blockType = t;
                             phase = Phase.InBlock;
                             break;
@@ -113,19 +126,16 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                 if (blockType != "text") throw new ModelProviderException("malformed_payload", false);
                                 var text = ReadString(delta["text"]) ?? throw new ModelProviderException("malformed_payload", false);
                                 if (text.Length == 0) throw new ModelProviderException("malformed_payload", false);
+                                nativeContent.AppendText(text, request.NativeToolCalling);
                                 yield return new ModelDelta(text, [], false, null);
                             }
                             else if (deltaType == "thinking_delta")
                             {
                                 if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
-                                // Thinking is the model's deliberation: surface it as
-                                // reasoning for the activity feed, never as visible chat
-                                // text. Empty fragments carry nothing and are skipped.
-                                // Signatures stay dropped: they authenticate the block
-                                // but read as noise.
                                 var thinking = ReadString(delta["thinking"])
                                     ?? throw new ModelProviderException("malformed_payload", false);
-                                if (thinking.Length > 0)
+                                nativeContent.AppendThinking(thinking, request.NativeToolCalling);
+                                if (!request.NativeToolCalling && thinking.Length > 0)
                                 {
                                     yield return new ModelDelta(null, [], false, null, null, thinking);
                                 }
@@ -133,6 +143,17 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                             else if (deltaType == "signature_delta")
                             {
                                 if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
+                                var signature = ReadString(delta["signature"]) ?? throw new ModelProviderException("malformed_payload", false);
+                                if (request.NativeToolCalling)
+                                {
+                                    nativeContent.AppendSignature(signature, isNative: true);
+                                }
+                            }
+                            else if (deltaType == "input_json_delta")
+                            {
+                                if (blockType != "tool_use" || !request.NativeToolCalling) throw new ModelProviderException("malformed_payload", false);
+                                var partial = ReadString(delta["partial_json"]) ?? throw new ModelProviderException("malformed_payload", false);
+                                nativeContent.AppendInputJson(partial);
                             }
                             else throw new ModelProviderException("malformed_payload", false);
                             break;
@@ -142,6 +163,12 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                             if (phase != Phase.InBlock || blockIndex is null) throw new ModelProviderException("malformed_payload", false);
                             var idx = ReadInt(data["index"]);
                             if (idx != blockIndex) throw new ModelProviderException("malformed_payload", false);
+                            if (request.NativeToolCalling && blockType == "tool_use")
+                            {
+                                nativeContent.CompleteBlock(isNative: true);
+                                yield return new ModelDelta(null, [nativeContent.ToolFragments[^1]], false, null);
+                            }
+                            else nativeContent.CompleteBlock(request.NativeToolCalling);
                             blockIndex = null;
                             blockType = string.Empty;
                             phase = Phase.InMessage;
@@ -154,17 +181,19 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                 ?? throw new ModelProviderException("malformed_payload", false);
                             var reason = ReadString(delta["stop_reason"]);
                             if (reason is null) throw new ModelProviderException("malformed_payload", false);
-                            if (reason == "tool_use") throw new ModelProviderException("malformed_payload", false);
-                            if (reason is not ("end_turn" or "stop_sequence" or "max_tokens")) throw new ModelProviderException("malformed_payload", false);
+                            if (reason == "tool_use" && (!request.NativeToolCalling || !nativeContent.HasTools)) throw new ModelProviderException("malformed_payload", false);
+                            if (reason is not ("end_turn" or "stop_sequence" or "max_tokens" or "tool_use")) throw new ModelProviderException("malformed_payload", false);
+                            if (nativeContent.HasTools && reason != "tool_use") throw new ModelProviderException("malformed_payload", false);
                             usage = MergeUsage(usage, ReadUsage(data["usage"], request.Model));
-                            stopReason = reason == "max_tokens" ? "length" : "stop";
+                            stopReason = reason == "max_tokens" ? "length" : reason == "tool_use" ? "tool_calls" : "stop";
                             phase = Phase.GotDelta;
                             break;
                         }
                         case "message_stop":
                         {
                             if (phase != Phase.GotDelta) throw new ModelProviderException("malformed_payload", false);
-                            yield return new ModelDelta(null, [], true, stopReason ?? "stop", usage);
+                            var continuation = request.NativeToolCalling ? nativeContent.CreateContinuation(request.Model) : null;
+                            yield return new ModelDelta(null, [], true, stopReason ?? "stop", usage, providerContinuation: continuation);
                             yield break;
                         }
                         case "error":
@@ -263,11 +292,19 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
             throw new ModelProviderException("vision_unsupported", false);
 
         var messages = new JsonArray();
-        foreach (var turn in request.Turns)
+        if (request.NativeToolCalling)
         {
-            if (turn.Role is not ("user" or "assistant"))
-                throw new ModelProviderException("malformed_payload", false);
-            messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+            foreach (var item in request.AnthropicMessages)
+                messages.Add(item.DeepClone());
+        }
+        else
+        {
+            foreach (var turn in request.Turns)
+            {
+                if (turn.Role is not ("user" or "assistant"))
+                    throw new ModelProviderException("malformed_payload", false);
+                messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+            }
         }
 
         if (request.Images.Count > 0)
@@ -304,7 +341,30 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         };
         if (request.Settings["thinking"] is JsonObject thinking) body["thinking"] = (JsonObject)thinking.DeepClone();
         if (request.Settings["output_config"] is JsonObject oc) body["output_config"] = (JsonObject)oc.DeepClone();
+        if (request.NativeToolCalling) body["tools"] = BuildTools(request.Settings["model_tools"] as JsonArray);
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
+
+    private static JsonArray BuildTools(JsonArray? modelTools)
+    {
+        if (modelTools is null || modelTools.Count is < 1 or > 16) throw new ModelProviderException("malformed_payload", false);
+        var tools = new JsonArray();
+        foreach (var item in modelTools.OfType<JsonObject>())
+        {
+            var name = ReadString(item["tool_id"]);
+            var schema = item["input_schema"] as JsonObject;
+            if (name is null || schema is null) throw new ModelProviderException("malformed_payload", false);
+            tools.Add(new JsonObject
+            {
+                ["name"] = name,
+                ["description"] = ReadString(item["description"]) ?? string.Empty,
+                ["input_schema"] = schema.DeepClone(),
+            });
+        }
+        if (tools.Count != modelTools.Count) throw new ModelProviderException("malformed_payload", false);
+        return tools;
     }
 
     private static ModelProviderException MapStatus(HttpStatusCode s) => s switch

@@ -636,7 +636,8 @@ internal sealed class AgentRunStepHandlers
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
-        string? reasoningText = null)
+        string? reasoningText = null,
+        ProviderContinuation? providerContinuation = null)
     {
         var reservation = AgentBudgetPolicy.ReserveToolCalls(
             run,
@@ -679,6 +680,7 @@ internal sealed class AgentRunStepHandlers
         var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
         var stepEvents = new List<HarnessEventIntent> { promptComposedEvent, stepCompletedEvent };
         var stepPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, modelPayload };
+        if (reservation.Granted) AddProviderContinuation(stepEvents, stepPayloads, modelStepId, providerContinuation);
         if (reasoningEvent is not null && reasoningPayload is not null)
         {
             stepEvents.Add(reasoningEvent);
@@ -724,7 +726,8 @@ internal sealed class AgentRunStepHandlers
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken,
-        string? reasoningText = null)
+        string? reasoningText = null,
+        ProviderContinuation? providerContinuation = null)
     {
         if (string.IsNullOrEmpty(step.Text))
         {
@@ -762,6 +765,8 @@ internal sealed class AgentRunStepHandlers
             Math.Max(bytes.Length, 1),
             bytes);
         var payloads = new List<HarnessPayloadIntent> { promptReceiptPayload, payload };
+        var continuationEvents = new List<HarnessEventIntent>();
+        AddProviderContinuation(continuationEvents, payloads, modelStepId, providerContinuation);
         PayloadId? usagePayloadId = null;
         if (step.Usage is not null)
         {
@@ -789,6 +794,7 @@ internal sealed class AgentRunStepHandlers
                 modelStepId: modelStepId,
                 payloadId: payloadId),
         };
+        events.AddRange(continuationEvents);
         if (usagePayloadId is { } usageId)
         {
             events.Add(new HarnessEventIntent(
@@ -896,6 +902,40 @@ internal sealed class AgentRunStepHandlers
             payloadId: payloadId,
             safeCode: "recorded");
         return (payload, evt);
+    }
+
+    private void AddProviderContinuation(
+        List<HarnessEventIntent> events,
+        List<HarnessPayloadIntent> payloads,
+        ModelStepId modelStepId,
+        ProviderContinuation? continuation)
+    {
+        if (continuation is null) return;
+        var envelope = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            model_step_id = modelStepId.Value,
+            continuation.Provider,
+            continuation.Protocol,
+            continuation.Model,
+            continuation.Version,
+            output_items = continuation.OutputItems,
+        });
+        if (envelope.Length > ProviderContinuation.MaximumEnvelopeBytes)
+            throw new InvalidOperationException("provider_continuation_too_large");
+        var payloadId = _ids.NewPayloadId();
+        payloads.Add(new HarnessPayloadIntent(
+            payloadId,
+            HarnessPayloadKind.ProviderContinuation,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Opaque,
+            ProviderContinuation.MaximumEnvelopeBytes,
+            envelope));
+        events.Add(new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.ProviderContinuationRecorded,
+            modelStepId: modelStepId,
+            payloadId: payloadId,
+            safeCode: continuation.Protocol));
     }
 
     private static string? ClipReasoning(string? reasoningText)

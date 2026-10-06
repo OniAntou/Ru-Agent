@@ -62,6 +62,21 @@ artifacts only when the application envelope returns `status: "ok"`; an HTTP
 success status alone is not deletion proof.
 _Avoid_: treating an HTTP 200 response as a successful delete
 
+**Session Work State**:
+The bounded, encrypted workflow record attached to one Conversation Session and
+canonical workspace identity: user goal and constraints, the latest task list,
+receipt-backed observations and verification codes, blockers, and next actions
+with provenance, capped at 16 KiB with at most 16 entries per list. User intent
+remains linked to its original run and event; model task candidates are
+untrusted and persisted only from a successful durable `todo_write` receipt,
+and file observations and verification records require receipt provenance. It
+is context guidance only: it carries no approvals, grants, credentials, raw
+terminal output, or execution authority, and a workspace identity change makes
+the state unavailable. A new session stays independent until the user
+explicitly previews and attaches a selected handoff.
+_Avoid_: global memory, cross-session authority, model prose as proof, or work
+state as permission
+
 **RuAgentBroker**:
 The private, process-isolated .NET service — the Host's only managed child
 process — that validates tool manifests, session scopes, approval state, and
@@ -87,6 +102,15 @@ description, canonical scope, exposure flags, strict proposal schema, example,
 and stable ordering. The Host runtime projection selects enabled
 `ModelVisible` definitions for both the prompt and the model-step `model_tools`.
 _Avoid_: treating a Broker manifest or adapter list as the model contract
+
+**Tool Output Projection**:
+A bounded, untrusted model-visible view of a durable Broker receipt. Structured
+`read`, `grep`, and terminal `read_output` projections retain their own cursor
+units (UTF-8 bytes, match results, and UTF-16 characters respectively); a cursor
+continues the same source or spool and never changes the receipt, tool authority,
+or approval state. Missing source identity fails closed when clipping needs a
+cursor. The bounded prompt may still omit older output exchanges.
+_Avoid_: treating projected output as a new receipt, complete history, or authority
 
 **Skill Manifest**:
 The declarative, bounded description of an allowed workflow, its named tools,
@@ -213,12 +237,26 @@ _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Run Provider Selection**:
 The secret-free durable choice pinned after successful bootstrap validation and
-before a run's first model request: backend, alias, endpoint, protocol, model,
-credential account name, reasoning options and output-token limit. Reopening a
-run rebuilds its in-memory credential snapshot from this selection; current
+before a run's first model request: backend, alias, endpoint, protocol, model
+and display label, credential account name, reasoning options, calling mode,
+catalog context-window metadata and output-token reserve. Reopening a run
+rebuilds its in-memory credential snapshot from this selection; current
 settings cannot substitute a different provider or model. A legacy run without
 the selection fails closed. Credential values never enter this record.
 _Avoid_: current settings as restart fallback
+
+**Provider Continuation**:
+The bounded, typed, encrypted `InternalOnly` payload holding exact provider
+items required to continue a successful native Responses or Anthropic Messages
+tool step, bound to the run, provider, protocol, model, and model-step ID. For
+Anthropic this preserves ordered text, signed thinking, redacted thinking, and
+tool-use blocks exactly. It remains outside the
+visible AssistantStep, canonical model context, client payload reads, and
+telemetry; rehydration pairs it with the exact ordered normalized tool-call
+batch before dispatch. A provider-native capability is enabled only by an
+exact registry declaration, never by a model-name pattern. Broker remains the
+sole tool Execution Authority.
+_Avoid_: hidden reasoning in chat history or reconstructed prose
 
 **Policy Snapshot**:
 The immutable, versioned, SHA-256-canonical binding of preset, trusted

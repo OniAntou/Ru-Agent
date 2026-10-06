@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Protocol.Harness;
 using Xunit;
 
@@ -49,6 +50,12 @@ public sealed class AgentApiClientTests
 
         Assert.Equal("OpenAI", pinned.ProviderBackend);
         Assert.Equal("gpt-5", pinned.ProviderModel);
+        Assert.Equal("chat_completions", pinned.ProviderProtocol);
+        Assert.Equal("native", pinned.ProviderCallingMode);
+        Assert.Equal(128_000, pinned.ContextWindowTokens);
+        Assert.Equal(8192, pinned.OutputTokenReserve);
+        Assert.Equal("available", pinned.WorkStateStatus);
+        Assert.Contains("bounded preview", pinned.WorkStatePreview);
         Assert.Null(legacy.ProviderBackend);
         Assert.Null(legacy.ProviderModel);
         Assert.Equal(maxBackend, maxModelsDevBackend.ProviderBackend);
@@ -69,6 +76,76 @@ public sealed class AgentApiClientTests
         }
     }
 
+    [Fact]
+    public async Task SetSessionPresetConflictParsesExactSessionAndCurrentVersion()
+    {
+        const string sessionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(
+                    "{\"error_code\":\"preset_version_conflict\",\"message\":\"conflict\",\"session_id\":\"" + sessionId + "\",\"current_version\":17}",
+                    Encoding.UTF8,
+                    "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.SetSessionPresetAsync(sessionId, "standard", 0, interactive: true));
+
+        Assert.Equal(409, error.StatusCode);
+        Assert.Equal("preset_version_conflict", error.ErrorCode);
+        Assert.Equal(sessionId, error.PresetSessionId);
+        Assert.Equal(17, error.CurrentPresetVersion);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{\"error_code\":\"preset_version_conflict\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"current_version\":\"17\"}")]
+    public async Task SetSessionPresetMalformedConflictMetadataRemainsUntrusted(string body)
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.SetSessionPresetAsync("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard", 0, interactive: true));
+
+        Assert.Equal(
+            body.StartsWith("{", StringComparison.Ordinal) ? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" : null,
+            error.PresetSessionId);
+        Assert.Null(error.CurrentPresetVersion);
+    }
+
+    [Fact]
+    public async Task GetRunStrictParsingRejectsInvalidWorkStateAndProviderMetadata()
+    {
+        foreach (var metadata in new object[]
+        {
+            new { provider_calling_mode = "fallback" },
+            new { context_window_tokens = 0 },
+            new { output_token_reserve = 128001 },
+            new { work_state_status = "ready" },
+            new { work_state_preview = new string('x', 12 * 1024 + 1) },
+        })
+        {
+            var root = JsonNode.Parse(JsonSerializer.Serialize(RunSummary("OpenAI", "gpt-5")))!.AsObject();
+            foreach (var property in JsonSerializer.SerializeToNode(metadata)!.AsObject())
+                root[property.Key] = property.Value?.DeepClone();
+            var json = root.ToJsonString();
+            var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                })));
+            var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+                client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+            Assert.Equal("invalid_response", error.ErrorCode);
+        }
+    }
+
     private static object RunSummary(object? backendPin, object? modelPin) => new
     {
         run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -85,6 +162,35 @@ public sealed class AgentApiClientTests
         updated_at = "2026-10-04T00:00:01Z",
         terminal_at = (string?)null,
         terminal_error_code = (string?)null,
+        provider_backend = backendPin,
+        provider_model = modelPin,
+        provider_protocol = "chat_completions",
+        provider_model_label = "GPT-5",
+        provider_calling_mode = "native",
+        context_window_tokens = 128_000,
+        context_window_source = "provider_catalog",
+        context_window_version = "catalog-v1",
+        output_token_reserve = 8192,
+        work_state_status = "available",
+        work_state_version = 1,
+        work_state_partial = false,
+        work_state_intent_omitted = false,
+        work_state_preview_omitted = false,
+        work_state_source_run_id = "run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        work_state_source_event_id = "evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        work_state_updated_at = "2026-10-04T00:00:02.0000000+00:00",
+        work_state_preview = "bounded preview",
+    };
+
+    private static object CreateRunSummary(object? backendPin, object? modelPin) => new
+    {
+        run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        workspace_id = "ws_test",
+        status = "running",
+        preset = "standard",
+        created_at = "2026-10-04T00:00:00Z",
+        updated_at = "2026-10-04T00:00:01Z",
         provider_backend = backendPin,
         provider_model = modelPin,
     };
@@ -151,8 +257,8 @@ public sealed class AgentApiClientTests
     {
         foreach (var payload in new[]
         {
-            RunSummary(1, "gpt-5"),
-            RunSummary(null, new string('m', 257)),
+            CreateRunSummary(1, "gpt-5"),
+            CreateRunSummary(null, new string('m', 257)),
         })
         {
             var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(payload))));

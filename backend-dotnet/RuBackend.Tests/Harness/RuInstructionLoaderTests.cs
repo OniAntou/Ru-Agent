@@ -13,6 +13,7 @@ public sealed class RuInstructionLoaderTests
     {
         using var fixture = TempRoot.Create();
         File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "root guidance\r\n", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "CONTEXT.md"), "workflow context", new UTF8Encoding(false));
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), "agent guidance", new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), "context guidance", new UTF8Encoding(false));
@@ -22,9 +23,11 @@ public sealed class RuInstructionLoaderTests
         var result = new RuInstructionLoader().Load(fixture.Root);
 
         Assert.Equal(
-            new[] { "root:AGENTS.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
+            new[] { "root:AGENTS.md", "root:CONTEXT.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
             result.Blocks.Select(block => block.SourceId));
         Assert.Equal("root guidance", result.Blocks[0].Content);
+        Assert.Equal("workflow context", result.Blocks[1].Content);
+        Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[1].Origin);
         Assert.Equal(
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("root guidance"))).ToLowerInvariant(),
             result.Blocks[0].ContentSha256);
@@ -38,6 +41,7 @@ public sealed class RuInstructionLoaderTests
         using var fixture = TempRoot.Create();
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
         File.WriteAllBytes(Path.Combine(fixture.Root, "AGENTS.md"), new byte[] { 0xff, 0xfe });
+        File.WriteAllBytes(Path.Combine(fixture.Root, "CONTEXT.md"), new byte[] { 0xff, 0xfe });
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "AGENTS.md"), new string('x', 64 * 1024 + 1), new UTF8Encoding(false));
         File.WriteAllText(Path.Combine(fixture.Root, ".ru", "CONTEXT.md"), "contains\0nul", new UTF8Encoding(false));
 
@@ -45,7 +49,7 @@ public sealed class RuInstructionLoaderTests
 
         Assert.Empty(result.Blocks);
         Assert.Equal(
-            new[] { "invalid_encoding", "oversize", "contains_nul" },
+            new[] { "invalid_encoding", "invalid_encoding", "oversize", "contains_nul" },
             result.Skips.Select(skip => skip.Reason));
         Assert.All(result.Skips, skip => Assert.DoesNotContain(fixture.Root, skip.ToString(), StringComparison.Ordinal));
     }

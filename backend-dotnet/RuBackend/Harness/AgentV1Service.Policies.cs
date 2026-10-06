@@ -566,7 +566,11 @@ public sealed partial class AgentV1Service
                 .ConfigureAwait(false);
             if (result.Outcome == SessionPresetMutationOutcome.VersionConflict)
             {
-                return BoundedError(409, "preset_version_conflict", "preset_version_conflict");
+                return new AgentServiceResult(409, new AgentErrorResponse(
+                    "preset_version_conflict",
+                    "preset_version_conflict",
+                    SessionId: sessionIdRaw,
+                    CurrentVersion: result.Selection?.Version ?? 0));
             }
             if (result.Outcome == SessionPresetMutationOutcome.CapacityExceeded)
             {

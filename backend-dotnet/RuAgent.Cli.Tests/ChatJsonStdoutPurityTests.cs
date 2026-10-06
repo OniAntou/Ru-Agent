@@ -124,6 +124,68 @@ public sealed class ChatJsonStdoutPurityTests
     }
 
     [Fact]
+    public async Task ChatAsync_Selected_handoff_is_previewed_then_attached_to_the_accepted_prompt()
+    {
+        string? submittedRunBody = null;
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var reader = new ScriptedThrowingReader($"/handoff {RunId}\n/handoff attach\ncontinue this task\n/exit\n");
+        var run = new RuAgent.Protocol.Harness.GetAgentRunResponse(
+            RunId, SessionId, "ws_saved", "succeeded", null, "standard", 1, "sha", 2, 4,
+            "2026-10-04T00:00:00.0000000+00:00", "2026-10-04T00:00:00.0000000+00:00", "2026-10-04T00:00:01.0000000+00:00", null,
+            WorkStateStatus: "available", WorkStateVersion: 1, WorkStatePartial: true,
+            WorkStateIntentOmitted: false, WorkStatePreviewOmitted: false,
+            WorkStateSourceRunId: "run_" + new string('c', 32), WorkStateSourceEventId: "evt_2",
+            WorkStateUpdatedAt: "2026-10-04T00:00:00.0000000+00:00", WorkStatePreview: "saved unfinished task");
+        var commands = CreateCommands(request =>
+        {
+            var uri = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Get && uri.EndsWith("/settings", StringComparison.Ordinal))
+            {
+                return Settings();
+            }
+            if (request.Method == HttpMethod.Get && uri.EndsWith($"/agent/v1/runs/{RunId}", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(run));
+            }
+            if (request.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies", StringComparison.Ordinal))
+            {
+                return Json(JsonSerializer.Serialize(new { session_id = SessionId, preset = "standard", version = 1 }));
+            }
+            if (request.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs", StringComparison.Ordinal))
+            {
+                submittedRunBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return Json(JsonSerializer.Serialize(new
+                {
+                    run_id = "run_" + new string('b', 32), session_id = SessionId,
+                    workspace_id = "ws_target", status = "running", preset = "standard",
+                    created_at = "2026-10-04T00:00:00Z", updated_at = "2026-10-04T00:00:00Z",
+                }), HttpStatusCode.Created);
+            }
+            if (request.Method == HttpMethod.Get && uri.Contains("/events", StringComparison.Ordinal))
+            {
+                var eventBody = "id: 1\\ndata: {\\\"protocol_version\\\":1,\\\"event_id\\\":\\\"evt_done\\\",\\\"run_id\\\":\\\"run_" + new string('b', 32)
+                    + "\\\",\\\"session_id\\\":\\\"" + SessionId
+                    + "\\\",\\\"sequence\\\":1,\\\"event_type\\\":\\\"run.completed\\\",\\\"occurred_at\\\":\\\"2026-10-04T00:00:00Z\\\",\\\"status\\\":\\\"succeeded\\\",\\\"safe_summary\\\":\\\"done\\\"}\\n\\n";
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(eventBody.Replace("\\n", "\n", StringComparison.Ordinal), Encoding.UTF8, "text/event-stream"),
+                };
+            }
+            return Json("{}", HttpStatusCode.NotFound);
+        }, outWriter, errWriter, reader);
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", SessionId, "standard", Json: true), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.Contains("saved unfinished task", errWriter.ToString());
+        Assert.Contains("/handoff attach", errWriter.ToString());
+        Assert.Contains("saved unfinished task", submittedRunBody);
+        Assert.Contains("continue this task", submittedRunBody);
+        Assert.Equal(4, reader.ReadCount);
+    }
+
+    [Fact]
     public async Task ChatAsync_Json_ApprovalRequest_DoesNotPrompt_AndPointAtAgentApprove()
     {
         var mutatingCalls = new List<string>();

@@ -15,9 +15,50 @@ public sealed record WorkerV2StepResult(
     string FinishReason,
     SystemPromptReceipt PromptReceipt,
     ModelUsage? Usage,
-    string? ReasoningText = null);
+    string? ReasoningText = null,
+    ProviderContinuation? ProviderContinuation = null);
 
-public sealed class WorkerV2StepException : Exception
+public sealed class WorkerV2PreparedRequest
+{
+    internal WorkerV2PreparedRequest(
+        ModelGenerationRequest source,
+        ModelRequest request,
+        SystemPromptSnapshot snapshot,
+        JsonObject settings,
+        IModelProvider provider,
+        long estimatedInputTokens,
+        long maxPromptTokens)
+    {
+        Source = source;
+        Request = request;
+        Snapshot = snapshot;
+        Settings = settings;
+        Provider = provider;
+        EstimatedInputTokens = estimatedInputTokens;
+        MaxPromptTokens = maxPromptTokens;
+        OutputTokenCap = request.MaximumOutputTokens;
+        SerializedBodyBytes = request.PreparedBodyJson is { } body
+            ? Encoding.UTF8.GetByteCount(body)
+            : 0;
+        SerializedBodySha256 = request.PreparedBodyJson is { } serializedBody
+            ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(serializedBody)))
+                .ToLowerInvariant()
+            : null;
+    }
+
+    internal ModelGenerationRequest Source { get; }
+    internal ModelRequest Request { get; }
+    internal SystemPromptSnapshot Snapshot { get; }
+    internal JsonObject Settings { get; }
+    internal IModelProvider Provider { get; }
+    public long EstimatedInputTokens { get; }
+    public long MaxPromptTokens { get; }
+    public int SerializedBodyBytes { get; }
+    public string? SerializedBodySha256 { get; }
+    public int? OutputTokenCap { get; }
+}
+
+public sealed class WorkerV2StepException : Exception, IStableStepError
 {
     public WorkerV2StepException(string code, bool retryable, Exception? innerException = null, string? trace = null)
         : base($"worker_v2_{code}", innerException)
@@ -28,6 +69,8 @@ public sealed class WorkerV2StepException : Exception
     }
 
     public string Code { get; }
+
+    public string StepErrorCode => Code;
 
     public bool Retryable { get; }
 
@@ -44,6 +87,8 @@ public sealed class WorkerV2StepService
     /// <summary>Tail-kept provider reasoning per step. The projector clamps
     /// further for the activity wire; this cap bounds worker memory.</summary>
     private const int MaximumReasoningChars = 8_000;
+    private const int ImageInputTokenAllowance = 4_096;
+    private const long UnknownContextWindowTokens = 32_768;
     private const string DirectModelStepId = "worker";
     private readonly IModelProviderResolver _providers;
     private readonly SemaphoreSlim _providerGate = new(1, 1);
@@ -75,17 +120,21 @@ public sealed class WorkerV2StepService
         CancellationToken cancellationToken,
         string? modelStepId = null)
     {
+        var prepared = PrepareRequest(request, modelStepId, requireExactProjection: false);
+        return await RunPreparedAsync(prepared, onDelta, cancellationToken, modelStepId).ConfigureAwait(false);
+    }
+
+    public WorkerV2PreparedRequest PrepareRequest(
+        ModelGenerationRequest request,
+        string? modelStepId = null,
+        bool requireExactProjection = true)
+    {
         ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
 
         var providerBootstrap = request.ProviderBootstrap;
-        // Only the OpenAI-compatible adapter exposes the host capabilities
-        // through provider-native function calling; other protocols keep the
-        // text selection contract.
-        var nativeToolCalling = string.Equals(
-            providerBootstrap.Protocol,
-            ProviderProtocols.ChatCompletions,
-            StringComparison.Ordinal);
+        // The pinned bootstrap mode is the declared provider capability; each
+        // protocol adapter projects its own native tool-call contract.
+        var nativeToolCalling = providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native;
         // The receipt returned with this step must bind the text it was actually
         // composed from, not just the context shape. The text exists only here,
         // so the rendered-prompt hash is verified before the step is dispatched.
@@ -113,7 +162,11 @@ public sealed class WorkerV2StepService
                 providerBootstrap.Endpoint,
                 providerBootstrap.Credential,
                 providerBootstrap.MaximumOutputTokens,
-                request.Images);
+                request.Images,
+                request.ResponsesInputItems,
+                nativeToolCalling,
+                request.AnthropicMessages,
+                providerBootstrap.UseMaxCompletionTokens);
         }
         catch (WorkerV2StepException)
         {
@@ -137,6 +190,40 @@ public sealed class WorkerV2StepService
             throw new WorkerV2StepException("invalid_request", retryable: false, error);
         }
 
+        IModelProvider provider;
+        try { provider = _providers.Resolve(providerBootstrap.Protocol); }
+        catch (ArgumentException error) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, error); }
+        var estimatedInputTokens = -1L;
+        var maxPromptTokens = 0L;
+        if (provider is IModelRequestBodyProjector projector)
+        {
+            var body = projector.ProjectRequestBody(modelRequest);
+            modelRequest = modelRequest.WithPreparedBodyJson(body);
+            (estimatedInputTokens, maxPromptTokens) = MeasurePreparedRequest(modelRequest, providerBootstrap);
+        }
+        else if (requireExactProjection)
+        {
+            throw new WorkerV2StepException("provider_request_projection_unavailable", retryable: false);
+        }
+
+        return new WorkerV2PreparedRequest(
+            request, modelRequest, snapshot, settings, provider, estimatedInputTokens, maxPromptTokens);
+    }
+
+    public async Task<WorkerV2StepResult> RunPreparedAsync(
+        WorkerV2PreparedRequest prepared,
+        Func<string, ValueTask>? onDelta,
+        CancellationToken cancellationToken,
+        string? modelStepId = null)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        cancellationToken.ThrowIfCancellationRequested();
+        var request = prepared.Source;
+        var snapshot = prepared.Snapshot;
+        var modelRequest = prepared.Request;
+        var settings = prepared.Settings;
+        var providerBootstrap = request.ProviderBootstrap;
+        var provider = prepared.Provider;
         var holdback = new DeltaHoldback(onDelta);
 
         var providerGateEntered = false;
@@ -147,11 +234,9 @@ public sealed class WorkerV2StepService
             var text = new StringBuilder();
             var reasoning = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
+            ProviderContinuation? providerContinuation = null;
             string? finishReason = null;
             ModelUsage? usage = null;
-            IModelProvider provider;
-            try { provider = _providers.Resolve(providerBootstrap.Protocol); }
-            catch (ArgumentException ex) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, ex); }
             try
             {
                 // A completed delta ends the *content* of the step, not the
@@ -184,6 +269,15 @@ public sealed class WorkerV2StepService
                     }
 
                     toolFragments.AddRange(delta.ToolFragments);
+                    if (delta.ProviderContinuation is { } continuation)
+                    {
+                        if (providerContinuation is not null
+                            || providerBootstrap.ToolCallingMode != ProviderToolCallingMode.Native
+                            || providerBootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages)
+                            || continuation.Model != providerBootstrap.Model)
+                            throw new WorkerV2StepException("protocol_failure", retryable: false);
+                        providerContinuation = continuation;
+                    }
                     // Long argument streams arrive as one fragment per SSE chunk;
                     // the per-chunk shape limit lives in the adapter. This cap only
                     // bounds memory, and the byte cap on reassembled arguments
@@ -232,12 +326,17 @@ public sealed class WorkerV2StepService
         {
             finishReason = "tool_calls";
         }
+        ValidateProviderContinuation(providerBootstrap, providerContinuation, calls);
         if (calls.Count == 0)
         {
             await holdback.ReleaseAsync().ConfigureAwait(false);
         }
 
-        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text));
+        if (providerBootstrap.ToolCallingMode == ProviderToolCallingMode.Native
+            && providerBootstrap.Protocol is ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages
+            && calls.Count > 0 && providerContinuation is null)
+            throw new WorkerV2StepException("provider_continuation_missing", retryable: false);
+        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
         }
         catch (OperationCanceledException)
         {
@@ -261,6 +360,64 @@ public sealed class WorkerV2StepService
             {
                 _providerGate.Release();
             }
+        }
+    }
+
+    private static (long EstimatedInputTokens, long MaxPromptTokens) MeasurePreparedRequest(
+        ModelRequest request,
+        ProviderBootstrapData bootstrap)
+    {
+        var body = request.PreparedBodyJson
+            ?? throw new WorkerV2StepException("provider_request_projection_unavailable", false);
+        var wireBytes = Encoding.UTF8.GetByteCount(body);
+        if (wireBytes > ModelRequest.MaximumSerializedBodyBytes)
+            throw new WorkerV2StepException("request_too_large", retryable: false);
+        var imageBytes = request.Images.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data));
+        var textBytes = Math.Max(0, wireBytes - imageBytes);
+        var imageAllowance = checked((long)request.Images.Count * ImageInputTokenAllowance);
+        var inputTokens = checked((textBytes + 3) / 4 + imageAllowance);
+        var windowTokens = bootstrap.ContextWindowTokens ?? UnknownContextWindowTokens;
+        var maxPromptTokens = Math.Max(1, windowTokens - bootstrap.OutputTokenReserve);
+        return (inputTokens, maxPromptTokens);
+    }
+
+    private static void ValidateProviderContinuation(
+        ProviderBootstrapData bootstrap,
+        ProviderContinuation? continuation,
+        IReadOnlyList<ModelToolCall> calls)
+    {
+        if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
+            || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
+        {
+            if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
+            return;
+        }
+        if (calls.Count == 0)
+        {
+            if (continuation is not null) throw new WorkerV2StepException("protocol_failure", false);
+            return;
+        }
+        var expectedProvider = bootstrap.Protocol == ProviderProtocols.AnthropicMessages ? "anthropic" : "openai";
+        if (continuation is null || continuation.Provider != expectedProvider || continuation.Protocol != bootstrap.Protocol || continuation.Model != bootstrap.Model)
+            throw new WorkerV2StepException("provider_continuation_missing", false);
+        var nativeCalls = continuation.OutputItems
+            .Where(item => item["type"]?.GetValue<string>() == (expectedProvider == "anthropic" ? "tool_use" : "function_call"))
+            .ToArray();
+        if (nativeCalls.Length != calls.Count) throw new WorkerV2StepException("protocol_failure", false);
+        for (var index = 0; index < calls.Count; index++)
+        {
+            var item = nativeCalls[index];
+            var callId = expectedProvider == "anthropic" ? item["id"]?.GetValue<string>() : item["call_id"]?.GetValue<string>();
+            var arguments = expectedProvider == "anthropic"
+                ? item["input"]?.ToJsonString()
+                : item["arguments"]?.GetValue<string>();
+            if (callId != calls[index].ProviderCallId
+                || item["name"]?.GetValue<string>() != calls[index].ToolId
+                || arguments is null
+                || !System.Text.Json.Nodes.JsonNode.DeepEquals(
+                    System.Text.Json.Nodes.JsonNode.Parse(arguments),
+                    System.Text.Json.Nodes.JsonNode.Parse(calls[index].Arguments.GetRawText())))
+                throw new WorkerV2StepException("protocol_failure", false);
         }
     }
 

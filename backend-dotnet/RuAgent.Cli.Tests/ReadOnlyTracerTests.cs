@@ -707,9 +707,9 @@ public sealed class ReadOnlyTracerTests
                 using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var version = document.RootElement.GetProperty("expected_version").GetInt64();
                 versions.Add(version);
-                if (versions.Count < 4)
-                    return JsonResponse("{\"error_code\":\"preset_version_conflict\"}", HttpStatusCode.Conflict);
-                return JsonResponse(JsonSerializer.Serialize(new { session_id = sessionId, preset = "standard", version = 4 }));
+                if (version == 0)
+                    return JsonResponse(JsonSerializer.Serialize(new { error_code = "preset_version_conflict", session_id = sessionId, current_version = 17 }), HttpStatusCode.Conflict);
+                return JsonResponse(JsonSerializer.Serialize(new { session_id = sessionId, preset = "standard", version = 18 }));
             }
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
@@ -729,12 +729,12 @@ public sealed class ReadOnlyTracerTests
         var exit = await commands.RunAsync(new RunCommand(Path.GetTempPath().TrimEnd('\\', '/'), "preset retry", sessionId, "standard", false), CancellationToken.None);
 
         Assert.Equal(0, exit);
-        Assert.Equal(new long[] { 0, 1, 2, 3 }, versions);
-        Assert.Equal(4, requestVersion);
+        Assert.Equal(new long[] { 0, 17 }, versions);
+        Assert.Equal(18, requestVersion);
     }
 
     [Fact]
-    public async Task RunAsync_ReturnsStablePresetConflictAfterBoundedRetry()
+    public async Task RunAsync_FailsClosedWhenPresetConflictOmitsAuthoritativeVersion()
     {
         var sessionId = new string('7', 32);
         var versions = new List<long>();
@@ -761,7 +761,7 @@ public sealed class ReadOnlyTracerTests
         var exit = await commands.RunAsync(new RunCommand(Path.GetTempPath().TrimEnd('\\', '/'), "preset conflict", sessionId, "standard", false), CancellationToken.None);
 
         Assert.Equal(1, exit);
-        Assert.Equal(new long[] { 0, 1, 2, 3 }, versions);
+        Assert.Equal(new long[] { 0 }, versions);
         Assert.False(createCalled);
         Assert.Contains("preset_version_conflict", errWriter.ToString());
     }

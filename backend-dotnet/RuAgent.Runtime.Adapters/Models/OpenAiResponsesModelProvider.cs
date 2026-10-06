@@ -7,7 +7,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class OpenAiResponsesModelProvider : IModelProvider
+public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
     public OpenAiResponsesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -15,7 +15,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var body = BuildBody(request);
+        var body = request.PreparedBodyJson ?? BuildBody(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -36,6 +36,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             using (stream)
             {
                 ModelDelta? terminal = null;
+                var functionCalls = new Dictionary<int, FunctionCallStream>();
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -44,6 +45,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                         "response.output_text.delta" or "response.completed" or "error"
                         or "response.failed" or "response.reasoning.delta" or "response.reasoning_summary_text.delta"
                         or "response.created" or "response.in_progress" or "response.output_item.added"
+                        or "response.function_call_arguments.delta" or "response.function_call_arguments.done"
                         or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
                         or "response.reasoning.done" or "response.queued"))
                     {
@@ -77,9 +79,12 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                         var status = ReadString(responseData["status"]);
                         if (status is null) throw new ModelProviderException("malformed_payload", false);
                         var usage = ReadUsage(responseData["usage"], request.Model);
+                        var output = ReadArray(responseData["output"]);
+                        var calls = AssembleFunctionCalls(functionCalls, output);
+                        var continuation = BuildContinuation(request, output, calls.Count > 0);
                         if (status == "completed")
                         {
-                            terminal = new ModelDelta(null, [], true, "stop", usage);
+                            terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage, providerContinuation: continuation);
                             continue;
                         }
                         if (status == "incomplete")
@@ -118,6 +123,16 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                         }
                         continue;
                     }
+                    if (evt.Event == "response.output_item.added")
+                    {
+                        AddFunctionCall(functionCalls, data);
+                        continue;
+                    }
+                    if (evt.Event is "response.function_call_arguments.delta" or "response.function_call_arguments.done")
+                    {
+                        AppendFunctionArguments(functionCalls, data, evt.Event.EndsWith(".done", StringComparison.Ordinal));
+                        continue;
+                    }
                     if (evt.Event is "response.created" or "response.in_progress" or "response.output_item.added" or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
                         or "response.reasoning.done" or "response.queued")
                     {
@@ -141,8 +156,25 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             throw new ModelProviderException("vision_unsupported", false);
 
         var input = new JsonArray();
-        foreach (var turn in request.Turns)
+        var nativeToolsEnabled = request.Settings["model_tools"] is JsonArray;
+        if (request.ResponsesInputItems.Count > 0)
         {
+            foreach (var item in request.ResponsesInputItems) input.Add(item.DeepClone());
+        }
+        else foreach (var turn in request.Turns)
+        {
+            if (nativeToolsEnabled && turn.Role == "tool")
+            {
+                input.Add(new JsonObject { ["type"] = "function_call_output", ["call_id"] = turn.ToolCallId, ["output"] = turn.Content });
+                continue;
+            }
+            if (nativeToolsEnabled && turn.Role == "assistant" && turn.ToolCalls.Count > 0)
+            {
+                if (!string.IsNullOrWhiteSpace(turn.Content)) input.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
+                foreach (var call in turn.ToolCalls)
+                    input.Add(new JsonObject { ["type"] = "function_call", ["call_id"] = call.Id, ["name"] = call.Name, ["arguments"] = call.Arguments.GetRawText() });
+                continue;
+            }
             if (turn.Role is not ("user" or "assistant"))
                 throw new ModelProviderException("malformed_payload", false);
             input.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
@@ -177,6 +209,21 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             ["stream"] = true,
             ["store"] = false,
         };
+        if (request.MaximumOutputTokens is { } outputCap)
+            body["max_output_tokens"] = outputCap;
+        if (request.Settings["model_tools"] is JsonArray modelTools)
+        {
+            var tools = new JsonArray();
+            foreach (var toolNode in modelTools)
+            {
+                if (toolNode is not JsonObject tool
+                    || ReadString(tool["tool_id"]) is not { } name
+                    || tool["input_schema"] is not JsonObject schema)
+                    throw new ModelProviderException("malformed_payload", false);
+                tools.Add(new JsonObject { ["type"] = "function", ["name"] = name, ["parameters"] = schema.DeepClone(), ["strict"] = false });
+            }
+            body["tools"] = tools;
+        }
         if (request.Settings["reasoning"] is JsonObject reasoning)
         {
             var outgoing = (JsonObject)reasoning.DeepClone();
@@ -189,6 +236,76 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             body["reasoning"] = outgoing;
         }
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
+
+    private static RuAgent.Harness.Core.Prompting.ProviderContinuation? BuildContinuation(ModelRequest request, JsonArray? output, bool hasCalls)
+    {
+        if (!hasCalls || request.Settings["model_tools"] is not JsonArray || output is null) return null;
+        var continuationItems = output.OfType<JsonObject>()
+            .Where(item => ReadString(item["type"]) is "reasoning" or "function_call")
+            .ToArray();
+        return continuationItems.Length == 0
+            ? null
+            : new RuAgent.Harness.Core.Prompting.ProviderContinuation("openai", "openai_responses", request.Model, 1, continuationItems);
+    }
+
+    private static void AddFunctionCall(Dictionary<int, FunctionCallStream> calls, JsonObject data)
+    {
+        var index = ReadIndex(data["output_index"]);
+        if (data["item"] is not JsonObject item || ReadString(item["type"]) != "function_call") return;
+        var itemId = ReadString(item["id"]);
+        var callId = ReadString(item["call_id"]);
+        var name = ReadString(item["name"]);
+        if (itemId is null || callId is null || name is null || calls.ContainsKey(index)
+            || calls.Values.Any(call => call.ItemId == itemId || call.CallId == callId))
+            throw new ModelProviderException("malformed_payload", false);
+        calls.Add(index, new FunctionCallStream(itemId, callId, name));
+    }
+
+    private static void AppendFunctionArguments(Dictionary<int, FunctionCallStream> calls, JsonObject data, bool isFinal)
+    {
+        var index = ReadIndex(data["output_index"]);
+        var itemId = ReadString(data["item_id"]);
+        var delta = ReadString(data[isFinal ? "arguments" : "delta"]);
+        if (!calls.TryGetValue(index, out var call) || call.ItemId != itemId || delta is null || call.IsFinal)
+            throw new ModelProviderException("malformed_payload", false);
+        if (!isFinal) call.Arguments.Append(delta);
+        if (call.Arguments.Length > 64 * 1024) throw new ModelProviderException("response_too_large", false);
+        if (isFinal && call.Arguments.ToString() != delta) throw new ModelProviderException("malformed_payload", false);
+        if (isFinal) call.IsFinal = true;
+    }
+
+    private static IReadOnlyList<ModelToolFragment> AssembleFunctionCalls(Dictionary<int, FunctionCallStream> streams, JsonArray? output)
+    {
+        var outputCalls = output?.OfType<JsonObject>().Where(item => ReadString(item["type"]) == "function_call").ToArray() ?? [];
+        if (outputCalls.Length != streams.Count || outputCalls.Length > 16) throw new ModelProviderException("malformed_payload", false);
+        var result = new List<ModelToolFragment>(outputCalls.Length);
+        foreach (var item in outputCalls)
+        {
+            var id = ReadString(item["id"]);
+            var callId = ReadString(item["call_id"]);
+            var name = ReadString(item["name"]);
+            var arguments = ReadString(item["arguments"]);
+            var stream = streams.Values.SingleOrDefault(value => value.ItemId == id);
+            if (stream is null || !stream.IsFinal || stream.CallId != callId || stream.Name != name || stream.Arguments.ToString() != arguments || callId is null || name is null || arguments is null)
+                throw new ModelProviderException("malformed_payload", false);
+            result.Add(new ModelToolFragment(callId, name, arguments));
+        }
+        return result;
+    }
+
+    private static int ReadIndex(JsonNode? node) => node is JsonValue value && value.TryGetValue<int>(out var index) && index >= 0 ? index : throw new ModelProviderException("malformed_payload", false);
+    private static JsonArray? ReadArray(JsonNode? node) => node is null || node.GetValueKind() == JsonValueKind.Null ? null : node as JsonArray ?? throw new ModelProviderException("malformed_payload", false);
+
+    private sealed class FunctionCallStream(string itemId, string callId, string name)
+    {
+        public string ItemId { get; } = itemId;
+        public string CallId { get; } = callId;
+        public string Name { get; } = name;
+        public StringBuilder Arguments { get; } = new();
+        public bool IsFinal { get; set; }
     }
 
     private static string MapErrorCode(string code) => code switch

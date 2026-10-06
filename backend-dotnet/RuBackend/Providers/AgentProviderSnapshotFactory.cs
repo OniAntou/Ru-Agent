@@ -57,6 +57,19 @@ public sealed class AgentProviderSnapshotFactory(
             selected.Model,
             ProviderReasoningPreferences.Read(current, selected));
         var maximumOutput = ResolveMaximumOutput(selected);
+        var modelMetadata = models.Catalog.FirstOrDefault(model =>
+            string.Equals(model.Id, selected.Model, StringComparison.OrdinalIgnoreCase));
+        var contextWindowTokens = modelMetadata?.ContextLength;
+        var contextWindowSource = contextWindowTokens is null
+            ? "unknown"
+            : selected.Backend.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
+                ? "models.dev"
+                : "provider_catalog";
+        var contextWindowVersion = contextWindowTokens is null
+            ? "unknown-v1"
+            : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
+        var toolCallingMode = ResolveNewCallingMode(selected);
+        var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -65,8 +78,20 @@ public sealed class AgentProviderSnapshotFactory(
             selected.Model,
             selected.Account,
             options.ToJsonString(),
-            maximumOutput);
-        var snapshot = CreateSnapshot(selected, key, options, maximumOutput);
+            maximumOutput,
+            selected.Model,
+            CallingModeValue(toolCallingMode),
+            contextWindowTokens,
+            contextWindowSource,
+            contextWindowVersion,
+            outputTokenReserve);
+        var snapshot = CreateSnapshot(selected, key, options, outputTokenReserve, toolCallingMode,
+            allowNativeResponses: IsDeclaredNativeResponses(selected),
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            useMaxCompletionTokens: selected.Alias == "openai"
+                && selected.Protocol == ProviderProtocols.ChatCompletions,
+            contextWindowTokens,
+            outputTokenReserve);
         var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
         var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
         if (pin != proposed)
@@ -98,7 +123,19 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
 
-        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens);
+        var toolCallingMode = pin.CallingMode switch
+        {
+            "native" => ProviderToolCallingMode.Native,
+            "text_selection" => ProviderToolCallingMode.TextSelection,
+            _ => throw new ProviderCatalogException("provider_selection_invalid"),
+        };
+        return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
+            allowNativeResponses: IsDeclaredNativeResponses(selected),
+            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            useMaxCompletionTokens: selected.Alias == "openai"
+                && selected.Protocol == ProviderProtocols.ChatCompletions,
+            contextWindowTokens: pin.ContextWindowTokens,
+            outputTokenReserve: pin.OutputTokenReserve);
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -133,6 +170,7 @@ public sealed class AgentProviderSnapshotFactory(
             || baseUri.Query.Length != 0
             || baseUri.Fragment.Length != 0
             || string.IsNullOrWhiteSpace(pin.Model)
+            || !string.Equals(pin.ModelLabel, pin.Model, StringComparison.Ordinal)
             || !isSupportedProvider)
         {
             throw new ProviderCatalogException("provider_selection_invalid");
@@ -208,7 +246,13 @@ public sealed class AgentProviderSnapshotFactory(
         ProviderSelection selected,
         string key,
         JsonObject options,
-        int? maximumOutput)
+        int? maximumOutput,
+        ProviderToolCallingMode toolCallingMode,
+        bool allowNativeResponses = false,
+        bool allowNativeAnthropic = false,
+        bool useMaxCompletionTokens = false,
+        long? contextWindowTokens = null,
+        int? outputTokenReserve = null)
     {
         try
         {
@@ -219,13 +263,43 @@ public sealed class AgentProviderSnapshotFactory(
                 selected.Model,
                 key,
                 options,
-                maximumOutput);
+                maximumOutput,
+                toolCallingMode,
+                allowNativeResponses,
+                allowNativeAnthropic,
+                useMaxCompletionTokens,
+                contextWindowTokens,
+                outputTokenReserve);
         }
         catch (ArgumentException)
         {
             throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
+
+    private static ProviderToolCallingMode ResolveNewCallingMode(ProviderSelection selected) =>
+        IsDeclaredNativeResponses(selected) || IsDeclaredNativeAnthropic(selected)
+            ? ProviderToolCallingMode.Native
+            : ProviderBootstrapData.ModeForProtocol(selected.Protocol);
+
+    private static bool IsDeclaredNativeResponses(ProviderSelection selected) =>
+        selected.Protocol == ProviderProtocols.OpenAiResponses
+        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
+        && capability.Protocol == selected.Protocol
+        && capability.SupportsNativeTools;
+
+    private static bool IsDeclaredNativeAnthropic(ProviderSelection selected) =>
+        selected.Protocol == ProviderProtocols.AnthropicMessages
+        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
+        && capability.Protocol == selected.Protocol
+        && capability.SupportsNativeTools;
+
+    private static string CallingModeValue(ProviderToolCallingMode mode) => mode switch
+    {
+        ProviderToolCallingMode.Native => "native",
+        ProviderToolCallingMode.TextSelection => "text_selection",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
 
     private async Task RemoveTerminalSnapshotsAsync(CancellationToken ct)
     {

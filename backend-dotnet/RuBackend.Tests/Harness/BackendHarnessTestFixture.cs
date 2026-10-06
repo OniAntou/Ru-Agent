@@ -23,7 +23,8 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
             Options,
             new HarnessPayloadCryptography(_keyStore),
             KnownSecretRedactor.Empty);
-        EventStore = new SqliteHarnessEventStore(Options, PayloadStore);
+        EventStore = new SqliteHarnessEventStore(Options, PayloadStore,
+            new SessionWorkStateStore(Options, new SessionWorkStateCryptography(_keyStore)));
     }
 
     public static readonly DateTimeOffset Timestamp =
@@ -93,11 +94,15 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
             new string('b', 64),
             Timestamp,
             Timestamp);
+        var promptPayloadId = payloads?
+            .FirstOrDefault(payload => payload.Kind == HarnessPayloadKind.UserPrompt)?
+            .PayloadId;
         var request = new NewAgentRun(
             run,
             [new HarnessEventIntent(
                 new EventId("evt_11111111111111111111111111111111"),
-                HarnessEventKind.RunStateChanged)],
+                HarnessEventKind.RunStateChanged,
+                payloadId: promptPayloadId)],
             payloads ?? [],
             outbox ?? [],
             new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));

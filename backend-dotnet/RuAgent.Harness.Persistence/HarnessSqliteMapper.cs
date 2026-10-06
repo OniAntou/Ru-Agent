@@ -137,6 +137,7 @@ public static class HarnessSqliteMapper
         HarnessEventKind.ModelUsageRecorded => "model.usage_recorded",
         HarnessEventKind.RunNoteAdded => "run.note_added",
         HarnessEventKind.ModelReasoningRecorded => "model.reasoning_recorded",
+        HarnessEventKind.ProviderContinuationRecorded => "model.provider_continuation_recorded",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

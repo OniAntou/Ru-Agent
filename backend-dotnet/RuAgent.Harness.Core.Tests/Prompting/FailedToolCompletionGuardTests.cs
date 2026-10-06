@@ -9,6 +9,20 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class FailedToolCompletionGuardTests
 {
+    [Theory]
+    [InlineData("edit_no_match", "re-read the same file")]
+    [InlineData("edit_not_unique", "expected_occurrences")]
+    [InlineData("workspace_changed", "reconcile the change")]
+    [InlineData("process_exit_nonzero", "verification diagnostics")]
+    [InlineData("approval_denied", "report the blocker")]
+    public void Unverified_recovery_guidance_is_specific_and_does_not_bypass_policy(string code, string expected)
+    {
+        var note = AgentRecoveryNotes.BuildUnverifiedNote(code);
+
+        Assert.True(note.Contains(expected, StringComparison.OrdinalIgnoreCase), note);
+        Assert.DoesNotContain("use a different tool", note, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Trailing_failed_receipt_returns_failure_code()
     {

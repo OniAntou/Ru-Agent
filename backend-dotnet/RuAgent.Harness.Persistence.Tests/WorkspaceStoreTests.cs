@@ -345,7 +345,7 @@ public sealed class WorkspaceStoreTests
         await connection.OpenAsync();
         await using (var cleanup = connection.CreateCommand())
         {
-            cleanup.CommandText = "DROP TABLE IF EXISTS agent_run_provider_selections; DROP TABLE IF EXISTS agent_session_preset_snapshots; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; ALTER TABLE agent_events DROP COLUMN provider_call_id";
+            cleanup.CommandText = "DROP TABLE IF EXISTS agent_run_provider_selections; DROP TABLE IF EXISTS agent_session_preset_snapshots; DROP TABLE IF EXISTS agent_session_work_states; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; DROP INDEX IF EXISTS ix_agent_events_provider_continuation; DROP INDEX IF EXISTS ix_agent_events_session_receipts; ALTER TABLE agent_events DROP COLUMN provider_call_id";
             await cleanup.ExecuteNonQueryAsync();
         }
 

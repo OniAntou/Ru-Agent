@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text;
+using System.Net;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
@@ -12,6 +14,129 @@ namespace RuAgent.Runtime.Worker.Tests;
 
 public sealed class WorkerV2StepServiceTests
 {
+    [Fact]
+    public async Task Prepared_projection_is_the_exact_dispatched_body_and_counts_images_separately()
+    {
+        var provider = new ProjectingFakeProvider();
+        var service = new WorkerV2StepService(provider);
+        var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
+            new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model",
+            "credential-must-not-enter-body", maximumOutputTokens: 4096,
+            contextWindowTokens: 32_000, outputTokenReserve: 4096);
+        var plain = service.PrepareRequest(Request(bootstrap: bootstrap), requireExactProjection: true);
+        var imageRequest = Request(bootstrap: bootstrap,
+            images: [new ModelImage("image/png", new string('A', 200_000))]);
+        var withImage = service.PrepareRequest(imageRequest, requireExactProjection: true);
+
+        Assert.True(withImage.SerializedBodyBytes > 200_000);
+        Assert.InRange(withImage.EstimatedInputTokens - plain.EstimatedInputTokens, 4096, 4112);
+        Assert.Equal(4096, plain.OutputTokenCap);
+
+        var dispatched = await service.RunPreparedAsync(plain, null, CancellationToken.None);
+
+        Assert.Equal("prepared", dispatched.Text);
+        Assert.Equal(plain.SerializedBodySha256, provider.DispatchedBodySha256);
+        Assert.Equal(plain.SerializedBodyBytes, provider.DispatchedBodyBytes);
+    }
+
+    [Fact]
+    public async Task Actual_chat_wire_keeps_current_prompt_after_work_state_and_accounts_for_both()
+    {
+        const string tail = "CURRENT-PROMPT-TAIL-8c1b";
+        var currentPrompt = new string('p', 15_900 - tail.Length) + tail;
+        var state = new string('s', 15_500);
+        var handler = new RecordingHttpHandler();
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var service = new WorkerV2StepService(provider);
+        var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
+            new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model", "synthetic",
+            maximumOutputTokens: 4096, contextWindowTokens: 32_000, outputTokenReserve: 4096);
+        var withoutState = service.PrepareRequest(Request(prompt: currentPrompt, bootstrap: bootstrap), requireExactProjection: true);
+        var withState = service.PrepareRequest(Request(prompt: currentPrompt, bootstrap: bootstrap,
+            modelMessages: [new ModelTurn("user", state)]), requireExactProjection: true);
+
+        Assert.True(withState.EstimatedInputTokens > withoutState.EstimatedInputTokens);
+        Assert.True(withState.SerializedBodyBytes > withoutState.SerializedBodyBytes);
+        _ = await service.RunPreparedAsync(withState, null, CancellationToken.None);
+
+        Assert.Equal(withState.SerializedBodySha256, handler.BodySha256);
+        Assert.Equal(withState.SerializedBodyBytes, handler.BodyBytes);
+        var messages = JsonNode.Parse(handler.Body!)!["messages"]!.AsArray();
+        Assert.Equal(state, messages.Single(message => message!["content"]?.GetValue<string>() == state)!["content"]!.GetValue<string>());
+        Assert.Equal(currentPrompt, messages[^1]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Responses_native_step_requires_exact_bounded_continuation_for_normalized_call_batch()
+    {
+        var bootstrap = ResponsesNativeBootstrap();
+        var continuation = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "reasoning", ["id"] = "reason-1", ["encrypted_content"] = "opaque" },
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "call-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+        ]);
+        var provider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls",
+            providerContinuation: continuation));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
+
+        Assert.Equal(continuation.SerializedOutputItems.ToArray(), result.ProviderContinuation!.SerializedOutputItems.ToArray());
+        Assert.Equal("call-1", Assert.Single(result.ToolCalls).ProviderCallId);
+    }
+
+    [Fact]
+    public async Task Anthropic_native_step_returns_tool_call_but_never_surfaces_signed_thinking()
+    {
+        var bootstrap = new ProviderBootstrapData(
+            "Anthropic", ProviderProtocols.AnthropicMessages, new Uri("https://provider.invalid/v1/messages"),
+            "claude-fable-5", "synthetic", maximumOutputTokens: 8192,
+            toolCallingMode: ProviderToolCallingMode.Native, allowNativeAnthropic: true);
+        var continuation = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
+        [
+            new JsonObject { ["type"] = "text", ["text"] = "I will inspect." },
+            new JsonObject { ["type"] = "thinking", ["thinking"] = "private thought", ["signature"] = "opaque-signature" },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_1", ["name"] = "files.read", ["input"] = JsonNode.Parse("{\"path\":\"a.txt\"}") },
+        ]);
+        var provider = new FakeModelProvider(
+            new ModelDelta("I will inspect.", [], false, null),
+            new ModelDelta(null, [new ModelToolFragment("toolu_read_1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: continuation));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
+
+        Assert.Equal("I will inspect.", result.Text);
+        Assert.Null(result.ReasoningText);
+        Assert.Equal("opaque-signature", result.ProviderContinuation!.OutputItems[1]["signature"]!.GetValue<string>());
+        Assert.Equal("toolu_read_1", Assert.Single(result.ToolCalls).ProviderCallId);
+        var modelRequest = Assert.Single(provider.Requests);
+        Assert.True(modelRequest.NativeToolCalling);
+        Assert.Empty(modelRequest.AnthropicMessages);
+    }
+
+    [Fact]
+    public async Task Responses_native_step_rejects_missing_or_mismatched_continuation_before_dispatch_result()
+    {
+        var bootstrap = ResponsesNativeBootstrap();
+        var provider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls"));
+        var missing = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        Assert.Equal("provider_continuation_missing", missing.Code);
+
+        var mismatch = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "other-call", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" }]);
+        var mismatchedProvider = new FakeModelProvider(new ModelDelta(null,
+            [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: mismatch));
+        var invalid = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(mismatchedProvider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        Assert.Equal("protocol_failure", invalid.Code);
+    }
+
+    private static ProviderBootstrapData ResponsesNativeBootstrap() => new(
+        "OpenAI", ProviderProtocols.OpenAiResponses, new Uri("https://provider.invalid/v1/responses"),
+        "gpt-5.6-luna", "synthetic", toolCallingMode: ProviderToolCallingMode.Native, allowNativeResponses: true);
+
     [Fact]
     public async Task Step_service_composes_once_and_returns_one_done_with_receipt()
     {
@@ -997,6 +1122,64 @@ public sealed class WorkerV2StepServiceTests
     ];
 
     private static JsonElement Json(string value) => JsonDocument.Parse(value).RootElement.Clone();
+
+    private sealed class ProjectingFakeProvider : IModelProvider, IModelRequestBodyProjector
+    {
+        public string? DispatchedBodySha256 { get; private set; }
+        public int DispatchedBodyBytes { get; private set; }
+
+        public string ProjectRequestBody(ModelRequest request)
+        {
+            var body = new JsonObject
+            {
+                ["model"] = request.Model,
+                ["system"] = request.SystemPrompt,
+                ["prompt"] = request.Prompt,
+                ["max_tokens"] = request.MaximumOutputTokens,
+                ["turns"] = new JsonArray(request.Turns.Select(turn =>
+                    (JsonNode?)JsonValue.Create(turn.Role + ":" + turn.Content)).ToArray()),
+                ["images"] = new JsonArray(request.Images.Select(image =>
+                    JsonValue.Create($"data:{image.MimeType};base64,{image.Base64Data}")).ToArray()),
+            };
+            return body.ToJsonString();
+        }
+
+        public async IAsyncEnumerable<ModelDelta> GenerateAsync(
+            ModelRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            var body = request.PreparedBodyJson
+                ?? throw new InvalidOperationException("prepared body missing");
+            var bytes = Encoding.UTF8.GetBytes(body);
+            DispatchedBodyBytes = bytes.Length;
+            DispatchedBodySha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))
+                .ToLowerInvariant();
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            yield return new ModelDelta("prepared", [], true, "stop");
+        }
+    }
+
+    private sealed class RecordingHttpHandler : HttpMessageHandler
+    {
+        public string? Body { get; private set; }
+        public string? BodySha256 { get; private set; }
+        public int BodyBytes { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var bytes = Encoding.UTF8.GetBytes(Body);
+            BodyBytes = bytes.Length;
+            BodySha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        }
+    }
 
     private sealed class FakeModelProvider : IModelProvider
     {

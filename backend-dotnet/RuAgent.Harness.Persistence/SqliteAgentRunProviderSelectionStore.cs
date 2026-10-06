@@ -12,7 +12,16 @@ public sealed record AgentRunProviderSelection(
     string Model,
     string? Account,
     string RequestOptionsJson,
-    int? MaximumOutputTokens);
+    int? MaximumOutputTokens,
+    string? ModelLabel = null,
+    string? CallingMode = null,
+    long? ContextWindowTokens = null,
+    string ContextWindowSource = "unknown",
+    string ContextWindowVersion = "unknown-v1",
+    int OutputTokenReserve = AgentRunProviderSelection.DefaultOutputTokenReserve)
+{
+    public const int DefaultOutputTokenReserve = 8192;
+}
 
 public sealed record AgentRunProviderSelectionState(
     bool Exists,
@@ -35,6 +44,7 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
         CancellationToken cancellationToken)
     {
         _ = runId.Value;
+        selection = Normalize(selection);
         Validate(selection);
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: false);
@@ -61,7 +71,13 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
                 model = $model,
                 account = $account,
                 request_options_json = $request_options_json,
-                maximum_output_tokens = $maximum_output_tokens
+                maximum_output_tokens = $maximum_output_tokens,
+                model_label = $model_label,
+                calling_mode = $calling_mode,
+                context_window_tokens = $context_window_tokens,
+                context_window_source = $context_window_source,
+                context_window_version = $context_window_version,
+                output_token_reserve = $output_token_reserve
             WHERE run_id = $run_id
               AND backend IS NULL
             """;
@@ -73,6 +89,12 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
         command.Parameters.AddWithValue("$account", (object?)selection.Account ?? DBNull.Value);
         command.Parameters.AddWithValue("$request_options_json", selection.RequestOptionsJson);
         command.Parameters.AddWithValue("$maximum_output_tokens", (object?)selection.MaximumOutputTokens ?? DBNull.Value);
+        command.Parameters.AddWithValue("$model_label", selection.ModelLabel!);
+        command.Parameters.AddWithValue("$calling_mode", selection.CallingMode!);
+        command.Parameters.AddWithValue("$context_window_tokens", (object?)selection.ContextWindowTokens ?? DBNull.Value);
+        command.Parameters.AddWithValue("$context_window_source", selection.ContextWindowSource);
+        command.Parameters.AddWithValue("$context_window_version", selection.ContextWindowVersion);
+        command.Parameters.AddWithValue("$output_token_reserve", selection.OutputTokenReserve);
         command.Parameters.AddWithValue("$run_id", runId.Value);
         if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
         {
@@ -93,7 +115,9 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
         command.Transaction = transaction;
         command.CommandText = """
             SELECT backend, alias, protocol, base_uri, model, account,
-                   request_options_json, maximum_output_tokens
+                   request_options_json, maximum_output_tokens, model_label,
+                   calling_mode, context_window_tokens, context_window_source,
+                   context_window_version, output_token_reserve
             FROM agent_run_provider_selections
             WHERE run_id = $run_id
             """;
@@ -110,7 +134,12 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
         }
 
         if (Enumerable.Range(1, 4).Any(reader.IsDBNull)
-            || reader.IsDBNull(6))
+            || reader.IsDBNull(6)
+            || reader.IsDBNull(8)
+            || reader.IsDBNull(9)
+            || reader.IsDBNull(11)
+            || reader.IsDBNull(12)
+            || reader.IsDBNull(13))
         {
             throw new HarnessStoreException("provider_selection_invalid");
         }
@@ -123,7 +152,13 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
             reader.GetString(4),
             reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.GetString(6),
-            reader.IsDBNull(7) ? null : reader.GetInt32(7));
+            reader.IsDBNull(7) ? null : reader.GetInt32(7),
+            reader.GetString(8),
+            reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetInt64(10),
+            reader.GetString(11),
+            reader.GetString(12),
+            reader.GetInt32(13));
         Validate(selection);
         return new AgentRunProviderSelectionState(true, selection);
     }
@@ -141,6 +176,12 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
             || baseUri.Fragment.Length != 0
             || selection.BaseUri.Length > 2048
             || !IsBounded(selection.Model, 256)
+            || !IsBounded(selection.ModelLabel!, 256)
+            || selection.CallingMode is not ("native" or "text_selection")
+            || (selection.ContextWindowTokens is < 1 or > 100_000_000)
+            || !IsBounded(selection.ContextWindowSource, 64)
+            || !IsBounded(selection.ContextWindowVersion, 64)
+            || selection.OutputTokenReserve is < 1 or > 128_000
             || (selection.Account is not null && !IsCredentialAccount(selection.Account))
             || selection.RequestOptionsJson is not { Length: >= 2 and <= 8192 }
             || selection.MaximumOutputTokens is < 1 or > 8192)
@@ -159,6 +200,17 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
         {
             throw new HarnessStoreException("provider_selection_invalid", exception);
         }
+    }
+
+    private static AgentRunProviderSelection Normalize(AgentRunProviderSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        var callingMode = selection.CallingMode ?? (selection.Protocol == "chat_completions" ? "native" : "text_selection");
+        return selection with
+        {
+            ModelLabel = selection.ModelLabel ?? selection.Model,
+            CallingMode = callingMode,
+        };
     }
 
     private static bool IsBounded(string value, int maximum) =>

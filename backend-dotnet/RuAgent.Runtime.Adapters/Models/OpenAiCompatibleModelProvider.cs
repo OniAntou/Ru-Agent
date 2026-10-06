@@ -7,7 +7,7 @@ using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
-public sealed class OpenAiCompatibleModelProvider : IModelProvider
+public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _httpClient;
 
@@ -23,7 +23,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         ArgumentNullException.ThrowIfNull(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
-            Content = new StringContent(BuildRequestBody(request), Encoding.UTF8, "application/json"),
+            Content = new StringContent(request.PreparedBodyJson ?? BuildRequestBody(request), Encoding.UTF8, "application/json"),
         };
         if (!string.IsNullOrEmpty(request.Credential))
         {
@@ -194,6 +194,8 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         }
     }
 
+    public string ProjectRequestBody(ModelRequest request) => BuildRequestBody(request);
+
     /// <summary>
     /// Parses one SSE data chunk, returning null instead of throwing when it is not a
     /// JSON object. Callers decide whether to buffer (truncated), repair (invalid
@@ -256,6 +258,8 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             ["stream"] = true,
             ["stream_options"] = new JsonObject { ["include_usage"] = true },
         };
+        if (request.MaximumOutputTokens is { } outputCap)
+            body[request.UseMaxCompletionTokens ? "max_completion_tokens" : "max_tokens"] = outputCap;
         // OpenRouter-style gateways strip reasoning blocks from the response
         // unless the request asks for them. Other agents send this flag, which
         // is why they see thinking where Ru saw a bare answer. Only sent when
@@ -267,7 +271,8 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         }
         foreach (var property in request.Settings)
         {
-            if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"))
+            if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"
+                or "max_tokens" or "max_completion_tokens" or "max_output_tokens"))
             {
                 body[property.Key] = property.Value?.DeepClone();
             }

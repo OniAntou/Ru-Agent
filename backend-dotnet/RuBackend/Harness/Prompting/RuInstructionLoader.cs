@@ -41,6 +41,7 @@ public sealed class RuInstructionLoader
     private static readonly (string SourceId, string RelativePath, string DisplayName)[] Candidates =
     [
         ("root:AGENTS.md", "AGENTS.md", "AGENTS.md"),
+        ("root:CONTEXT.md", "CONTEXT.md", "CONTEXT.md"),
         ("ru:AGENTS.md", Path.Combine(".ru", "AGENTS.md"), ".ru/AGENTS.md"),
         ("ru:CONTEXT.md", Path.Combine(".ru", "CONTEXT.md"), ".ru/CONTEXT.md"),
     ];

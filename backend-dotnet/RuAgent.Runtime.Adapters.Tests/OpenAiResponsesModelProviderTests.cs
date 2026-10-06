@@ -26,13 +26,196 @@ public sealed class OpenAiResponsesModelProviderTests
             Content = new StringContent(SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } }), Encoding.UTF8, "text/event-stream")
         });
         var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
-        _ = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+        _ = await CollectAsync(provider.GenerateAsync(Request(maximumOutputTokens: 4096), CancellationToken.None));
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("test-model", body["model"]!.GetValue<string>());
         Assert.Equal("system prompt", body["instructions"]!.GetValue<string>());
         Assert.True(body["stream"]!.GetValue<bool>());
         Assert.False(body["store"]!.GetValue<bool>());
         Assert.NotNull(body["input"]);
+        Assert.Equal(4096, body["max_output_tokens"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_projects_native_tools_and_assembles_interleaved_calls()
+    {
+        var responseOutput = new JsonArray
+        {
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-a", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-b", ["call_id"] = "call-b", ["name"] = "files.read", ["arguments"] = "{\"path\":\"b.txt\"}" },
+            new JsonObject { ["type"] = "reasoning", ["id"] = "reason-1", ["encrypted_content"] = "opaque-secret-signature", ["summary"] = new JsonArray() },
+        };
+        var sse =
+            SseEvent("response.output_item.added", new JsonObject { ["type"] = "response.output_item.added", ["output_index"] = 0, ["item"] = new JsonObject { ["id"] = "item-a", ["type"] = "function_call", ["call_id"] = "call-a", ["name"] = "files.read", ["arguments"] = "" } }) +
+            SseEvent("response.function_call_arguments.delta", new JsonObject { ["type"] = "response.function_call_arguments.delta", ["output_index"] = 0, ["item_id"] = "item-a", ["delta"] = "{\"path\":" }) +
+            SseEvent("response.output_item.added", new JsonObject { ["type"] = "response.output_item.added", ["output_index"] = 1, ["item"] = new JsonObject { ["id"] = "item-b", ["type"] = "function_call", ["call_id"] = "call-b", ["name"] = "files.read", ["arguments"] = "" } }) +
+            SseEvent("response.function_call_arguments.delta", new JsonObject { ["type"] = "response.function_call_arguments.delta", ["output_index"] = 1, ["item_id"] = "item-b", ["delta"] = "{\"path\":" }) +
+            SseEvent("response.function_call_arguments.delta", new JsonObject { ["type"] = "response.function_call_arguments.delta", ["output_index"] = 0, ["item_id"] = "item-a", ["delta"] = "\"a.txt\"}" }) +
+            SseEvent("response.function_call_arguments.delta", new JsonObject { ["type"] = "response.function_call_arguments.delta", ["output_index"] = 1, ["item_id"] = "item-b", ["delta"] = "\"b.txt\"}" }) +
+            SseEvent("response.function_call_arguments.done", new JsonObject { ["type"] = "response.function_call_arguments.done", ["output_index"] = 0, ["item_id"] = "item-a", ["arguments"] = "{\"path\":\"a.txt\"}" }) +
+            SseEvent("response.function_call_arguments.done", new JsonObject { ["type"] = "response.function_call_arguments.done", ["output_index"] = 1, ["item_id"] = "item-b", ["arguments"] = "{\"path\":\"b.txt\"}" }) +
+            SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed", ["output"] = responseOutput } });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
+        var settings = new JsonObject { ["model_tools"] = new JsonArray { new JsonObject { ["tool_id"] = "files.read", ["tool_version"] = "1.0.0", ["input_schema"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } }, ["required"] = new JsonArray("path"), ["additionalProperties"] = false } } } };
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(settings), CancellationToken.None));
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.False(body["store"]!.GetValue<bool>());
+        Assert.Equal("files.read", body["tools"]![0]!["name"]!.GetValue<string>());
+        Assert.Equal("function", body["tools"]![0]!["type"]!.GetValue<string>());
+        Assert.False(body["tools"]![0]!["strict"]!.GetValue<bool>());
+        var fragments = deltas.SelectMany(delta => delta.ToolFragments).ToArray();
+        Assert.Equal(new[] { "call-a", "call-b" }, fragments.Select(fragment => fragment.ProviderCallId));
+        Assert.Equal(new[] { "{\"path\":\"a.txt\"}", "{\"path\":\"b.txt\"}" }, fragments.Select(fragment => fragment.ArgumentsFragment));
+        Assert.NotNull(deltas[^1].ProviderContinuation);
+        Assert.Contains(deltas[^1].ProviderContinuation!.OutputItems,
+            item => item["encrypted_content"]?.GetValue<string>() == "opaque-secret-signature");
+    }
+
+    [Fact]
+    public async Task GenerateAsync_rejects_function_call_missing_provider_identity()
+    {
+        var responseOutput = new JsonArray
+        {
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-a", ["name"] = "read", ["arguments"] = "{}" },
+        };
+        var sse = SseEvent("response.output_item.added", new JsonObject
+        {
+            ["type"] = "response.output_item.added", ["output_index"] = 0,
+            ["item"] = new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["name"] = "read", ["arguments"] = "" },
+        }) + SseEvent("response.completed", new JsonObject
+        {
+            ["type"] = "response.completed",
+            ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed", ["output"] = responseOutput },
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        })));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await CollectAsync(provider.GenerateAsync(Request(new JsonObject
+            {
+                ["model_tools"] = new JsonArray(new JsonObject { ["tool_id"] = "read", ["input_schema"] = new JsonObject { ["type"] = "object" } }),
+            }), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_rejects_completed_function_call_identity_mismatch()
+    {
+        var sse = SseEvent("response.output_item.added", new JsonObject
+        {
+            ["type"] = "response.output_item.added", ["output_index"] = 0,
+            ["item"] = new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-a", ["name"] = "read", ["arguments"] = "" },
+        }) + SseEvent("response.function_call_arguments.delta", new JsonObject
+        {
+            ["type"] = "response.function_call_arguments.delta", ["output_index"] = 0, ["item_id"] = "item-a", ["delta"] = "{}",
+        }) + SseEvent("response.function_call_arguments.done", new JsonObject
+        {
+            ["type"] = "response.function_call_arguments.done", ["output_index"] = 0, ["item_id"] = "item-a", ["arguments"] = "{}",
+        }) + SseEvent("response.completed", new JsonObject
+        {
+            ["type"] = "response.completed",
+            ["response"] = new JsonObject
+            {
+                ["model"] = "test-model", ["status"] = "completed",
+                ["output"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-other", ["name"] = "read", ["arguments"] = "{}",
+                }),
+            },
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        })));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_rejects_duplicate_provider_call_identity()
+    {
+        var sse = SseEvent("response.output_item.added", new JsonObject
+        {
+            ["type"] = "response.output_item.added", ["output_index"] = 0,
+            ["item"] = new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-a", ["name"] = "read", ["arguments"] = "" },
+        }) + SseEvent("response.output_item.added", new JsonObject
+        {
+            ["type"] = "response.output_item.added", ["output_index"] = 1,
+            ["item"] = new JsonObject { ["type"] = "function_call", ["id"] = "item-b", ["call_id"] = "call-a", ["name"] = "read", ["arguments"] = "" },
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        })));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None)));
+
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_replays_typed_tool_output_by_matching_call_id()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed", ["output"] = new JsonArray() } }), Encoding.UTF8, "text/event-stream")
+        });
+        var args = System.Text.Json.JsonDocument.Parse("{\"path\":\"a.txt\"}").RootElement.Clone();
+        var turns = new[]
+        {
+            new ModelTurn("assistant", "", [new ModelFunctionCall("call-a", "files.read", args)]),
+            new ModelTurn("tool", "file result", toolCallId: "call-a", toolResultCode: "ok"),
+        };
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var tools = new JsonObject { ["model_tools"] = new JsonArray { new JsonObject { ["tool_id"] = "files.read", ["input_schema"] = new JsonObject { ["type"] = "object" } } } };
+        _ = await CollectAsync(provider.GenerateAsync(Request(tools, turns), CancellationToken.None));
+        var input = JsonNode.Parse(handler.RequestBody!)!["input"]!.AsArray();
+        var call = Assert.Single(input, item => item!["type"]?.GetValue<string>() == "function_call");
+        var output = Assert.Single(input, item => item!["type"]?.GetValue<string>() == "function_call_output");
+        Assert.Equal("call-a", call!["call_id"]!.GetValue<string>());
+        Assert.Equal("call-a", output!["call_id"]!.GetValue<string>());
+        Assert.Equal("file result", output["output"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_accepts_bounded_projected_role_history()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SseEvent("response.completed", new JsonObject
+            {
+                ["type"] = "response.completed",
+                ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed", ["output"] = new JsonArray() },
+            }), Encoding.UTF8, "text/event-stream"),
+        });
+        var baseline = Request();
+        var request = new ModelRequest(
+            baseline.Model,
+            baseline.SystemPrompt,
+            baseline.Prompt,
+            baseline.Turns,
+            baseline.Settings,
+            baseline.Endpoint,
+            baseline.Credential,
+            responsesInputItems: new JsonObject[]
+            {
+                new() { ["role"] = "user", ["content"] = "earlier request" },
+                new() { ["role"] = "assistant", ["content"] = "earlier response" },
+                new() { ["type"] = "function_call_output", ["call_id"] = "call-a", ["output"] = "read result" },
+            });
+
+        _ = await CollectAsync(new OpenAiResponsesModelProvider(new HttpClient(handler)).GenerateAsync(request, CancellationToken.None));
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal("earlier request", body["input"]![0]!["content"]!.GetValue<string>());
+        Assert.Equal("function_call_output", body["input"]![2]!["type"]!.GetValue<string>());
     }
 
     [Fact]
@@ -465,14 +648,16 @@ public sealed class OpenAiResponsesModelProviderTests
         Assert.Equal("vision_unsupported", ex.Code);
     }
 
-    private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null) => new(
+    private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null,
+        int? maximumOutputTokens = null) => new(
         "test-model",
         "system prompt",
         "hello",
         turns ?? Array.Empty<ModelTurn>(),
         settings ?? new JsonObject(),
         new Uri("https://provider.invalid/v1/responses"),
-        "synthetic-openai");
+        "synthetic-openai",
+        maximumOutputTokens);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

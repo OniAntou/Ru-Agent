@@ -331,6 +331,9 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal((HttpStatusCode)409, resp2.StatusCode);
         var json = await resp2.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("preset_version_conflict", json.GetProperty("error_code").GetString());
+        Assert.Equal(sessionId, json.GetProperty("session_id").GetString());
+        var first = await resp1.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(first.GetProperty("version").GetInt64(), json.GetProperty("current_version").GetInt64());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear(dataPaths);

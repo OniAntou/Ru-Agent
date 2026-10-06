@@ -6,6 +6,7 @@ using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Worker;
+using RuBackend.Harness.Prompting;
 
 namespace RuBackend.Harness.Worker;
 
@@ -16,15 +17,17 @@ namespace RuBackend.Harness.Worker;
 /// replaced by a typed provider snapshot: conversation build, delta sequencing,
 /// bounded retry/backoff and the durable failure mapping are unchanged.
 /// </summary>
-public sealed class InProcessModelStepRunner : IModelStepRunner
+public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer
 {
     private const int MaxModelStepAttempts = 3;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
 
-    // Conversation blocks stay small; the untrusted runtime references keep the
-    // full-fidelity tool output.
+    // Conversation blocks stay small; untrusted runtime references carry bounded
+    // source output and explicit cursors when more can be fetched.
     private const int MaxConversationBlockChars = 6_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
+    private const string ConversationTruncationNote =
+        "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
 
     private readonly WorkerV2StepService _stepService;
 
@@ -43,6 +46,8 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
 
     /// <summary>Loads the run's attached images from the payload store as data URLs.</summary>
     public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
+
+    public Func<RunId, ProviderBootstrapData, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyList<ProviderContinuation>>>? LoadProviderContinuationsAsync { get; init; }
 
     // Tests shrink the backoff; production waits out transient provider limits.
     internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
@@ -76,38 +81,17 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         {
             try
             {
-                var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken)
-                    .ConfigureAwait(false);
-                var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
-                var hasImages = images.Count > 0;
-                var (prompt, _, modelMessages) = BuildConversation(request.Context, hasImages);
-                if (selectionFeedbackCode is not null
-                    && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
-                {
-                    prompt = ApplySelectionFeedback(prompt, selectionFeedback);
-                }
-
-                var settings = BuildSettings(request.PromptContext);
-
-                ModelGenerationRequest typedRequest;
-                try
-                {
-                    typedRequest = new ModelGenerationRequest(
-                        prompt,
-                        modelMessages ?? throw new WorkerProtocolException("model_history_invalid"),
-                        request.PromptContext,
-                        new ModelGenerationSettings(settings["model_tools"] as JsonArray),
-                        bootstrap,
-                        ParseRunImages(images));
-                }
-                catch (ArgumentException error)
-                {
-                    // A rejected typed request is deterministic input the host
-                    // assembled; report it as such instead of letting it fall
-                    // through to the generic model-failure mapping.
-                    throw new WorkerProtocolException("invalid_request", retryable: false, error);
-                }
-
+                var prepared = attempt == 0 ? request.Preparation as InProcessPreparedStep : null;
+                if (attempt == 0 && request.Preparation is not null && prepared is null)
+                    throw new WorkerProtocolException("invalid_request", retryable: false);
+                var workerPrepared = prepared?.WorkerRequest
+                    ?? _stepService.PrepareRequest(
+                        await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken)
+                            .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false);
+                if (workerPrepared.EstimatedInputTokens >= 0
+                    && workerPrepared.EstimatedInputTokens
+                        > workerPrepared.MaxPromptTokens - RequestSafetyMarginTokens)
+                    throw new WorkerV2StepException("context_limit_reached", retryable: false);
                 // A retried attempt replaces the previous attempt's answer: tell the
                 // client to drop the partial text it already rendered before any of this
                 // attempt's text arrives. Attempt 1 has nothing to supersede.
@@ -124,8 +108,8 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
 
                 // The service numbers this attempt's deltas from 1; re-base them
                 // onto the client-facing sequence already published.
-                var result = await _stepService.RunAsync(
-                        typedRequest,
+                var result = await _stepService.RunPreparedAsync(
+                        workerPrepared,
                         async text =>
                         {
                             var sequence = checked(++publishedSequences);
@@ -147,7 +131,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                     MapFinishReason(result.FinishReason),
                     estimatedInputTokens: 0,
                     result.Usage);
-                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText);
+                return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText, result.ProviderContinuation);
             }
             catch (WorkerV2StepException error) when (
                 error.Retryable
@@ -189,6 +173,68 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                 throw;
             }
         }
+    }
+
+    private const long RequestSafetyMarginTokens = 64;
+
+    public async Task<IPreparedModelStep> PrepareAsync(
+        ModelStepRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken)
+            .ConfigureAwait(false);
+        var workerRequest = _stepService.PrepareRequest(
+            generationRequest, request.ModelStepId.Value, requireExactProjection: true);
+        if (workerRequest.EstimatedInputTokens < 0 || workerRequest.MaxPromptTokens <= 0)
+            throw new WorkerV2StepException("provider_request_projection_unavailable", retryable: false);
+        return new InProcessPreparedStep(workerRequest);
+    }
+
+    private async Task<ModelGenerationRequest> BuildGenerationRequestAsync(
+        ModelStepRequest request,
+        string? selectionFeedbackCode,
+        CancellationToken cancellationToken)
+    {
+        var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0);
+        var history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
+            .ConfigureAwait(false);
+        if (selectionFeedbackCode is not null
+            && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
+            prompt = ApplySelectionFeedback(prompt, selectionFeedback);
+        var settings = BuildSettings(request.PromptContext);
+        try
+        {
+            return new ModelGenerationRequest(prompt, modelMessages!, request.PromptContext,
+                new ModelGenerationSettings(settings["model_tools"] as JsonArray), bootstrap,
+                ParseRunImages(images), history.Responses, history.Anthropic);
+        }
+        catch (ArgumentException error)
+        {
+            throw new WorkerProtocolException("invalid_request", retryable: false, error);
+        }
+    }
+
+    private async Task<NativeHistory> BuildNativeHistoryAsync(
+        ModelStepRequest request,
+        ProviderBootstrapData bootstrap,
+        IReadOnlyList<ModelTurn> modelMessages,
+        CancellationToken cancellationToken)
+    {
+        var empty = new NativeHistory(Array.Empty<JsonObject>(), Array.Empty<JsonObject>());
+        if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
+            || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
+            return empty;
+        var continuations = LoadProviderContinuationsAsync is null
+            ? Array.Empty<ProviderContinuation>()
+            : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
+                RetainedAssistantEventIds(request.Context, modelMessages), cancellationToken).ConfigureAwait(false);
+        return bootstrap.Protocol == ProviderProtocols.OpenAiResponses
+            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations), empty.Anthropic)
+            : new NativeHistory(empty.Responses,
+                AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model));
     }
 
     private async Task<ProviderBootstrapData> LoadProviderBootstrapAsync(
@@ -337,16 +383,39 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         }
     }
 
+    private static IReadOnlyList<string> RetainedAssistantEventIds(
+        ModelContextSnapshot context,
+        IReadOnlyList<ModelTurn> projectedMessages)
+    {
+        var projectedCallIds = projectedMessages.SelectMany(message => message.ToolCalls)
+            .Select(call => call.Id).ToHashSet(StringComparer.Ordinal);
+        var steps = context.Entries.Where(entry => entry.Kind == ModelContextEntryKind.AssistantStep
+            && entry.AssistantStep?.ToolCalls.Count > 0
+            && entry.AssistantStep.ToolCalls.Any(call => projectedCallIds.Contains(call.ProviderCallId!))).ToArray();
+        var eventIds = new List<string>(steps.Length);
+        foreach (var step in steps)
+        {
+            if (step.AssistantStep!.ToolCalls.Any(call => !projectedCallIds.Contains(call.ProviderCallId!)))
+                throw new WorkerProtocolException("provider_continuation_invalid");
+            if (!step.SourceId.StartsWith("event:evt_", StringComparison.Ordinal)
+                || step.SourceId.Length != 42)
+                throw new WorkerProtocolException("provider_continuation_invalid");
+            eventIds.Add(step.SourceId[6..]);
+        }
+
+        return eventIds;
+    }
+
     private static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTypedConversation(
         ModelContextSnapshot context,
         bool hasImages)
     {
         var units = new List<List<ModelTurn>>();
         var pendingUserBlocks = new List<string>();
-        var pendingPromptBlocks = new List<string>();
         var pendingCalls = new Queue<ModelFunctionCall>();
         var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
         var providerIdsByToolCall = new Dictionary<string, string>(StringComparer.Ordinal);
+        string? protectedWorkState = null;
         foreach (var entry in context.Entries)
         {
             if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System)
@@ -365,8 +434,15 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                 EnsureNoPendingCalls(pendingCalls);
                 if (!string.IsNullOrWhiteSpace(entry.Content))
                 {
+                    if (entry.SourceId == SessionWorkState.ContextSourceId)
+                    {
+                        AddPendingUserBlocks(units, pendingUserBlocks);
+                        protectedWorkState = entry.Content;
+                        units.Add([new ModelTurn("user", entry.Content)]);
+                        continue;
+                    }
+
                     pendingUserBlocks.Add(entry.Content);
-                    pendingPromptBlocks.Add(entry.Content);
                 }
                 continue;
             }
@@ -379,17 +455,12 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                     MaxConversationBlockChars);
                 AddPendingUserBlocks(units, pendingUserBlocks);
                 units.Add(new List<ModelTurn> { new("user", summary) });
-                pendingPromptBlocks.Add(summary);
                 continue;
             }
 
             if (entry.Kind == ModelContextEntryKind.AssistantStep && entry.AssistantStep is { } step)
             {
                 EnsureNoPendingCalls(pendingCalls);
-                if (step.ToolCalls.Count > 0 || !string.IsNullOrWhiteSpace(step.Text))
-                {
-                    pendingPromptBlocks.Clear();
-                }
                 AddAssistantMessages(units, pendingUserBlocks, step, providerCallIds, pendingCalls);
                 continue;
             }
@@ -405,8 +476,18 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             throw new WorkerProtocolException("model_history_invalid");
         }
 
+        if (pendingUserBlocks.Count > 1)
+        {
+            foreach (var block in pendingUserBlocks.Take(pendingUserBlocks.Count - 1))
+                units.Add([new ModelTurn("user", block)]);
+        }
         var messages = FitModelMessagesToBudget(units);
-        return (ResolveTypedPrompt(messages, pendingPromptBlocks, hasImages), messages);
+        var currentPrompt = ResolveCurrentPrompt(pendingUserBlocks, messages, hasImages);
+        if (protectedWorkState is not null
+            && !messages.Any(message => message.Role == "user"
+                && string.Equals(message.Content, protectedWorkState, StringComparison.Ordinal)))
+            throw new WorkerProtocolException("request_too_large");
+        return (currentPrompt, messages);
     }
 
     internal static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) BuildConversationForTests(
@@ -497,39 +578,38 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         }
 
         pendingCalls.Dequeue();
+        var projectedContent = StructuredToolOutputProjector.Project(
+            call.Name,
+            call.Arguments,
+            entry.Content ?? string.Empty,
+            MaxConversationBlockChars,
+            ToolOutputProjectionUnit.Utf16Characters,
+            ClampConversationBlock,
+            receipt.ToolCallId.Value,
+            providerCallId);
         units[^1].Add(new ModelTurn(
             "tool",
-            ClampConversationBlock(entry.Content ?? string.Empty, MaxConversationBlockChars),
+            projectedContent,
             toolCallId: call.Id,
             toolResultCode: receipt.Code));
     }
 
-    private static string ResolveTypedPrompt(
+    private static string ResolveCurrentPrompt(
+        List<string> pendingUserBlocks,
         IReadOnlyList<ModelTurn> messages,
-        List<string> pendingPromptBlocks,
         bool hasImages)
     {
-        if (pendingPromptBlocks.Count > 0)
+        if (pendingUserBlocks.Count > 0)
         {
-            return ClampConversationBlock(
-                string.Join("\n\n", pendingPromptBlocks),
-                ModelGenerationBounds.MaxPromptChars);
+            var currentPrompt = pendingUserBlocks[^1];
+            if (currentPrompt.Length > ModelGenerationBounds.MaxPromptChars)
+                throw new WorkerProtocolException("request_too_large");
+            return currentPrompt;
         }
-
-        if (messages.Count > 0 && messages[^1].Role == "tool")
-        {
-            return DurableToolContinuationPrompt;
-        }
-
+        if (messages.Count > 0 && messages[^1].Role == "tool") return DurableToolContinuationPrompt;
         var fallback = messages.LastOrDefault(message => message.Role == "user")?.Content;
-        if (!string.IsNullOrWhiteSpace(fallback))
-        {
-            return fallback;
-        }
-
-        return hasImages
-            ? string.Empty
-            : throw new WorkerProtocolException("missing_user_prompt");
+        if (!string.IsNullOrWhiteSpace(fallback)) return fallback;
+        return hasImages ? string.Empty : throw new WorkerProtocolException("missing_user_prompt");
     }
 
     private static IReadOnlyList<ModelTurn> FitModelMessagesToBudget(
@@ -597,8 +677,8 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
     }
 
     /// <summary>
-    /// Keeps one conversation block inside the model prompt budget while the
-    /// untrusted runtime references retain the full-fidelity tool output.
+    /// Keeps one conversation block inside the model prompt budget. Structured
+    /// outputs carry a separate cursor when a later page can recover more content.
     /// </summary>
     private static string ClampConversationBlock(string block, int maxChars)
     {
@@ -607,12 +687,31 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             return block;
         }
 
-        const int MarkerBudget = 160;
-        var prefix = Math.Max(1, maxChars - MarkerBudget);
-        var omitted = block.Length - prefix;
-        return block[..prefix]
-            + $"\n…(truncated: {omitted} of {block.Length} characters omitted; full output stays in the runtime references)";
+        var prefixLength = Math.Max(0, maxChars - ConversationTruncationNote.Length);
+        while (true)
+        {
+            prefixLength = ClampPrefixToUnicodeBoundary(block, prefixLength);
+            var omitted = block.Length - prefixLength;
+            var omission = $" (omitted {omitted} of {block.Length} characters)";
+            var nextPrefixLength = maxChars - ConversationTruncationNote.Length - omission.Length;
+            if (nextPrefixLength < 0)
+                throw new WorkerProtocolException("model_history_too_large");
+
+            nextPrefixLength = ClampPrefixToUnicodeBoundary(block, nextPrefixLength);
+            if (nextPrefixLength == prefixLength)
+                return block[..prefixLength] + ConversationTruncationNote + omission;
+
+            prefixLength = nextPrefixLength;
+        }
     }
+
+    private static int ClampPrefixToUnicodeBoundary(string value, int prefixLength) =>
+        prefixLength > 0
+        && prefixLength < value.Length
+        && char.IsHighSurrogate(value[prefixLength - 1])
+        && char.IsLowSurrogate(value[prefixLength])
+            ? prefixLength - 1
+            : prefixLength;
 
     private static JsonObject BuildSettings(SystemPromptContext context)
     {
@@ -631,7 +730,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
                 throw new AgentProtocolException("tool_contract_mismatch");
             }
 
-            tools.Add(BuildModelTool(definition.ToolId, definition.ToolVersion, definition.Scope, definition.InputSchema));
+            tools.Add(BuildModelTool(definition.ToolId, definition.ToolVersion, definition.Description, definition.Scope, definition.InputSchema));
         }
 
         return new JsonObject
@@ -645,6 +744,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
     private static JsonObject BuildModelTool(
         string toolId,
         string version,
+        string description,
         string scope,
         JsonObject schema)
     {
@@ -652,6 +752,7 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
         {
             ["tool_id"] = toolId,
             ["tool_version"] = version,
+            ["description"] = description,
             ["scopes"] = new JsonArray(scope),
             ["availability"] = "executable",
             ["model_enabled"] = true,
@@ -660,6 +761,17 @@ public sealed class InProcessModelStepRunner : IModelStepRunner
             ["input_schema"] = schema,
         };
     }
+
+    private sealed record InProcessPreparedStep(WorkerV2PreparedRequest WorkerRequest)
+        : IPreparedModelStep
+    {
+        public long EstimatedInputTokens => WorkerRequest.EstimatedInputTokens;
+        public long MaxPromptTokens => WorkerRequest.MaxPromptTokens;
+    }
+
+    private sealed record NativeHistory(
+        IReadOnlyList<JsonObject> Responses,
+        IReadOnlyList<JsonObject> Anthropic);
 }
 
 /// <summary>

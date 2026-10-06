@@ -130,11 +130,22 @@ boundary.
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, structured protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
+
+Large structured tool results are projected into bounded prompt references while
+their durable Broker receipts stay unchanged. When a reference carries
+`projection_has_more: true`, continue the same source using
+`projection_next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
+matches from the original query offset (an omitted `offset` means zero), and
+`bash` `read_output` cursors count UTF-16 characters within the same
+`execution_id`/spool. The projection names its visible unit and retains source,
+receipt, and spool metadata; it does not claim older output exchanges remain in
+the bounded model history. Missing call context fails closed if clipping needs
+a cursor. Paging does not authorize a new operation or bypass Broker approval.
 
 ### Session folder grants and bash approval
 
@@ -321,8 +332,13 @@ Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
 only: it never grants a tool, scope, path, network permission, approval, or
 Broker capability.
 
-`AGENTS.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
-the selected run root, not repo templates. Minimal format:
+`AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
+user-workspace instruction candidates below the selected run root, not repo
+templates. The loader applies final-path containment, strict UTF-8 decoding,
+normalization, a 64 KiB per-file limit, and a 256 KiB combined instruction
+limit. Their contents are untrusted guidance only; they cannot grant tools,
+scopes, paths, network access, approvals, or Broker authority.
+Example `AGENTS.md` format:
 
 ```markdown
 # Ru workspace instructions

@@ -149,6 +149,30 @@ public sealed class ModelContextLimitTests
             item => item.SafeCode == "context_limit_reached");
     }
 
+    [Fact]
+    public async Task Metadata_bootstrap_failure_is_persisted_as_a_bounded_run_failure()
+    {
+        var model = new FakeModelStepRunner();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var coordinator = Coordinator(
+            model,
+            store,
+            limitTokens: null,
+            contextLimit: new FailingContextLimitProvider());
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var failedRun = await store.GetRunAsync(RunId(), CancellationToken.None);
+        var failure = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.RunFailed);
+
+        Assert.Equal("provider_selection_missing", result.ErrorCode);
+        Assert.Equal(HarnessRunState.Failed, failedRun!.State);
+        Assert.Equal("provider_selection_missing", failure.SafeCode);
+        Assert.Empty(model.Requests);
+    }
+
     // ------------------------------------------------------------------
     // Fixtures.
     // ------------------------------------------------------------------
@@ -156,7 +180,8 @@ public sealed class ModelContextLimitTests
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         InMemoryHarnessEventStore store,
-        long? limitTokens) =>
+        long? limitTokens,
+        IModelContextLimitProvider? contextLimit = null) =>
         new(
             model,
             new FakeToolGateway(),
@@ -167,8 +192,14 @@ public sealed class ModelContextLimitTests
             new ToolCallScheduler(),
             new TransientFrameBuffer(32),
             null,
-            new StaticModelContextLimitProvider(limitTokens),
+            contextLimit ?? new StaticModelContextLimitProvider(limitTokens),
             promptContextProvider: new FakeSystemPromptContextProvider());
+
+    private sealed class FailingContextLimitProvider : IModelContextLimitProvider
+    {
+        public ValueTask<long?> MaxPromptTokensAsync(RunId runId, CancellationToken cancellationToken) =>
+            ValueTask.FromException<long?>(new ModelContextLimitResolutionException("provider_selection_missing"));
+    }
 
     private static async Task<ModelContextSnapshot> SnapshotAsync(params string[] texts)
     {

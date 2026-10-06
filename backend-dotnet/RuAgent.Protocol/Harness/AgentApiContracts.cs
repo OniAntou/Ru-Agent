@@ -50,7 +50,23 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("trust_request_id")] string? TrustRequestId = null,
     [property: JsonPropertyName("display_identity_hash")] string? DisplayIdentityHash = null,
     [property: JsonPropertyName("provider_backend")] string? ProviderBackend = null,
-    [property: JsonPropertyName("provider_model")] string? ProviderModel = null);
+    [property: JsonPropertyName("provider_model")] string? ProviderModel = null,
+    [property: JsonPropertyName("provider_protocol")] string? ProviderProtocol = null,
+    [property: JsonPropertyName("provider_model_label")] string? ProviderModelLabel = null,
+    [property: JsonPropertyName("provider_calling_mode")] string? ProviderCallingMode = null,
+    [property: JsonPropertyName("context_window_tokens")] long? ContextWindowTokens = null,
+    [property: JsonPropertyName("context_window_source")] string? ContextWindowSource = null,
+    [property: JsonPropertyName("context_window_version")] string? ContextWindowVersion = null,
+    [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null,
+    [property: JsonPropertyName("work_state_status")] string? WorkStateStatus = null,
+    [property: JsonPropertyName("work_state_version")] long? WorkStateVersion = null,
+    [property: JsonPropertyName("work_state_partial")] bool? WorkStatePartial = null,
+    [property: JsonPropertyName("work_state_intent_omitted")] bool? WorkStateIntentOmitted = null,
+    [property: JsonPropertyName("work_state_preview_omitted")] bool? WorkStatePreviewOmitted = null,
+    [property: JsonPropertyName("work_state_source_run_id")] string? WorkStateSourceRunId = null,
+    [property: JsonPropertyName("work_state_source_event_id")] string? WorkStateSourceEventId = null,
+    [property: JsonPropertyName("work_state_updated_at")] string? WorkStateUpdatedAt = null,
+    [property: JsonPropertyName("work_state_preview")] string? WorkStatePreview = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,
@@ -91,7 +107,11 @@ public sealed record AgentErrorResponse(
     [property: JsonPropertyName("blocking_run_id")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunId = null,
     [property: JsonPropertyName("blocking_run_status")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunStatus = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunStatus = null,
+    [property: JsonPropertyName("session_id")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SessionId = null,
+    [property: JsonPropertyName("current_version")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CurrentVersion = null);
 
 public sealed record SessionRunsResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<GetAgentRunResponse> Items,

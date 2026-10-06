@@ -87,17 +87,59 @@ new runs; pre-v12 runs without a selection fail closed as
 `provider_selection_missing`, rather than adopting current settings. There is
 no retry with another provider, model, key, protocol or effort.
 
-The existing run-detail response optionally exposes `provider_backend` and
-`provider_model` from the durable selection only. An unselected or legacy run
-has null metadata; reading the response never selects a provider. CLI retained-run
-display uses those fields, while configured model settings remain the next-turn
-intent. Catalog-derived usage estimates stay hidden when a retained run's
-selection is unknown.
-Run creation uses the same response projection and carries these nullable fields.
-The shared client validates them on both create and detail responses, with the
-same type and length bounds; unknown fields still fail closed.
 
-Schema v13 adds the bounded session-workspace lookup index. Migration executes
+The first validated selection also pins a typed model label, protocol, calling
+mode, catalog context window and source/version, and output-token reserve. The
+prompt label and compaction budget resolve through that same durable row, so a
+settings change or host restart cannot change an active run description or
+budget. A valid model with no context-window capability remains explicitly
+unknown and uses a conservative 32,768-token window before the pinned output
+reserve; production does not infer a window from a model name. Provider/catalog
+resolution failure before the first model call becomes a bounded durable run
+failure. Scripted offline runs do not register this resolver and do not access
+provider catalogs or credentials.
+
+Before each provider-backed model step, the selected adapter serializes the full
+request body once. Preflight measures that same bounded JSON body, including
+system instructions, tool declarations, typed history, current prompt, images,
+and native continuation items; dispatch reuses the prepared serialization. The
+pinned output reserve is subtracted once from the exact or conservative window,
+with the context policy's safety margin applied afterward. Admission estimates
+text conservatively at one token per four UTF-8 bytes and assigns a fixed
+4,096-token allowance per image; this is a bounded estimate, not provider-tokenizer
+output. Image base64 remains included in the serialized-wire byte cap. If
+compaction changes the request, the Host rebuilds and remeasures it. Workflow
+state is a separate history message, while the final current prompt remains
+distinct and is rejected with a bounded size error rather than prefix-clipped.
+
+New OpenAI Responses and Anthropic Messages pins enable native tool calling only
+for exact models whose matching protocol capability declares it. Legacy pins
+keep their fixed protocol calling mode, and unknown models do not gain support
+from a family name. Responses requests remain stateless (`store:false`). The
+Host translates Protocol tool definitions into provider declarations, validates
+completed streamed calls, and returns them through the normal scheduler and
+Broker path. OpenAI stores bounded output items; Anthropic stores the exact
+ordered text, signed thinking, redacted-thinking and `tool_use` blocks needed to
+continue with matching `tool_result` IDs and error flags. Both use a dedicated
+encrypted `InternalOnly` payload, separate from AssistantStep and canonical
+model history. A bounded indexed read rehydrates continuation data and pairs it
+with retained tool calls by provider identity and order; client and model-context
+payload readers cannot access the opaque bytes. Missing or mismatched
+continuation fails closed before another provider dispatch.
+
+The existing run-detail response optionally exposes durable provider pins and a
+bounded safe work-state preview. An unselected or legacy run has null provider
+metadata; reading the response never selects a provider. CLI retained-run
+display uses the durable detail fields, while configured model settings remain
+the next-turn intent. Catalog-derived usage estimates stay hidden when a
+retained run's selection is unknown. Create and idempotent-replay responses keep
+their narrow create contract; the shared client validates those fields
+separately, then reads enriched metadata through run detail.
+
+Schema v13 adds the bounded session-workspace lookup index. Schema v14 adds
+the typed run-model metadata columns and backfills labels and fixed legacy
+calling modes for existing pins; unknown historic context windows remain
+unknown. Migration executes
 and drains every SQL result before advancing `user_version`, inside the same
 transaction; any late statement failure rolls back the entire upgrade. This
 explicit drain is needed because the pinned [Microsoft.Data.Sqlite 10.0.11
@@ -105,6 +147,23 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Legacy-schema fixtures remove later artifacts before testing
 upgrade and rollback; they do not reinterpret a newer database as an older one.
+Schema v15 adds the partial run/kind/sequence index used for bounded provider
+continuation rehydration, including the v14 upgrade path.
+Schema v16 also adds a partial session-receipt index; a bounded freshness query
+compares canonical receipt event order with the encrypted state source. A newer
+receipt that could not be represented because of a bounded reducer/write
+failure is projected as partial, without replaying the tool.
+
+Schema v16 adds encrypted `SessionWorkState` rows keyed by session and workspace.
+AES-GCM associated data binds the source run/event and version to the current
+workspace display-identity hash; a changed workspace identity fails closed.
+Run creation writes the bounded user-goal snapshot in the same transaction as
+its source prompt event. A successful durable `todo_write` receipt updates only
+untrusted model task candidates in the same receipt transaction. Every fact
+retains its own source run/event provenance, and session deletion removes the
+state in the artifact deletion transaction. The state is projected as untrusted
+workflow guidance on model context loads; it carries no permissions or opaque
+provider continuation data.
 
 ## Agent autonomy and trust boundary
 
@@ -230,9 +289,9 @@ records which instruction bytes the step was composed against; it is not an
 attestation of the rendered system message (see the in-process model runner
 note above).
 
-The instruction loader reads the fixed `AGENTS.md`, `.ru/AGENTS.md`, and
-`.ru/CONTEXT.md` files below the selected run root, then discovers direct-child
-skill directories from these roots in precedence order:
+The bounded instruction loader reads the fixed `AGENTS.md`, `CONTEXT.md`,
+`.ru/AGENTS.md`, and `.ru/CONTEXT.md` candidates below the selected run root,
+then discovers direct-child skill directories from these roots in precedence order:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
 `%LOCALAPPDATA%\Ru\skills`. A package is recognized only when it contains a
 case-insensitive `SKILL.md`; for example:
@@ -257,13 +316,19 @@ restart) without a downloader or package manager. Only `SKILL.md` is loaded;
 nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
 and are never automatically read or executed. The typed context has bounded
 references (32 KiB each), and a 512 KiB serialized-context
-cap.
+cap. The runtime context keeps at most sixteen references total, counting any
+omission notice and available workspace-activity reference. Structured tool
+output projections preserve durable receipts and attach tool-specific paging
+cursors: `read` advances UTF-8 bytes, `grep` advances match results from the
+original query offset, and terminal `read_output` advances UTF-16 characters
+within the same spool. Projection clipping never rewrites the receipt; bounded
+history may still omit older exchanges.
 
-`AGENTS.md` remains the sole persona/style source. Skills are rendered as
-`ExternalSkill` untrusted guidance. Their `allowed-tools` metadata is
-descriptive only and cannot add capabilities, grants, paths, network access,
-or approvals. Workspace `SKILL.md` bodies are prompt guidance only and never
-execute tools.
+`AGENTS.md` remains the sole persona/style source. The four fixed workspace
+instruction files and discovered skills are untrusted guidance; none can grant
+tools, capabilities, paths, network access, or approvals. Skills are rendered
+as `ExternalSkill`, and their `allowed-tools` metadata is descriptive only.
+Workspace `SKILL.md` bodies never execute tools.
 `RuAgentBroker` remains authoritative for path
 canonicalization, tool policy, approval, and execution; runtime references and
 tool results stay untrusted.

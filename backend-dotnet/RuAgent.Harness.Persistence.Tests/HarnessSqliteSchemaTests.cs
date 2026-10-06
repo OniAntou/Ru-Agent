@@ -40,6 +40,8 @@ public sealed class HarnessSqliteSchemaTests
         "ix_workspace_change_journal_sequence",
         "ix_agent_session_preset_snapshots_expiry",
         "ix_agent_session_preset_snapshots_session",
+        "ix_agent_events_provider_continuation",
+        "ix_agent_events_session_receipts",
     ];
 
     [Fact]
@@ -97,6 +99,26 @@ public sealed class HarnessSqliteSchemaTests
     }
 
     [Fact]
+    public async Task Schema_persists_typed_run_model_context_metadata()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(agent_run_provider_selections)";
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+
+        Assert.Contains("model_label", columns);
+        Assert.Contains("calling_mode", columns);
+        Assert.Contains("context_window_tokens", columns);
+        Assert.Contains("context_window_source", columns);
+        Assert.Contains("context_window_version", columns);
+        Assert.Contains("output_token_reserve", columns);
+    }
+
+    [Fact]
     public async Task Migrating_from_twelve_adds_the_latest_session_run_index()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
@@ -104,7 +126,17 @@ public sealed class HarnessSqliteSchemaTests
         {
             await connection.OpenAsync();
             await using var downgrade = connection.CreateCommand();
-            downgrade.CommandText = "DROP INDEX IF EXISTS ix_agent_runs_session_created_run; PRAGMA user_version = 12;";
+            downgrade.CommandText = """
+                ALTER TABLE agent_run_provider_selections DROP COLUMN output_token_reserve;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_version;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_source;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_tokens;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
+                DROP TABLE IF EXISTS agent_session_work_states;
+                PRAGMA user_version = 12;
+                """;
             await downgrade.ExecuteNonQueryAsync();
         }
 
@@ -114,7 +146,7 @@ public sealed class HarnessSqliteSchemaTests
             CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(13, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var plan = verify.CreateCommand();
@@ -132,6 +164,143 @@ public sealed class HarnessSqliteSchemaTests
     }
 
     [Fact]
+    public async Task Migrating_from_an_alternate_fourteen_heals_null_provider_metadata()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = """
+                PRAGMA foreign_keys = OFF;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                ALTER TABLE agent_run_provider_selections ADD COLUMN model_label TEXT NULL;
+                ALTER TABLE agent_run_provider_selections ADD COLUMN calling_mode TEXT NULL;
+                DROP INDEX IF EXISTS ix_agent_events_provider_continuation;
+                DROP INDEX IF EXISTS ix_agent_events_session_receipts;
+                DROP TABLE IF EXISTS agent_session_work_states;
+                PRAGMA user_version = 14;
+                INSERT INTO agent_run_provider_selections
+                    (run_id, backend, alias, protocol, base_uri, model, account, request_options_json, maximum_output_tokens, model_label, calling_mode)
+                VALUES
+                    ('run_00000000000000000000000000000000', 'OpenAI', 'openai', 'chat_completions', 'https://api.openai.com/v1', 'gpt-x', 'openai_api_key', '{}', 4096, NULL, NULL);
+                """;
+            await downgrade.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        await using var row = verify.CreateCommand();
+        row.CommandText = "SELECT model_label, calling_mode FROM agent_run_provider_selections WHERE run_id = 'run_00000000000000000000000000000000'";
+        await using var reader = await row.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("gpt-x", reader.GetString(0));
+        Assert.Equal("native", reader.GetString(1));
+    }
+
+    [Fact]
+    public async Task Migrating_from_fourteen_adds_bounded_provider_continuation_lookup_index()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP INDEX IF EXISTS ix_agent_events_provider_continuation; DROP INDEX IF EXISTS ix_agent_events_session_receipts; DROP TABLE IF EXISTS agent_session_work_states; PRAGMA user_version = 14;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+        SqliteConnection.ClearAllPools();
+
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(16, health.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        await using var index = verify.CreateCommand();
+        index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_agent_events_provider_continuation'";
+        Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
+        index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_agent_events_session_receipts'";
+        Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Migrating_from_fifteen_adds_encrypted_session_work_state_table()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP INDEX ix_agent_session_work_states_workspace; DROP TABLE agent_session_work_states; PRAGMA user_version = 15;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+        SqliteConnection.ClearAllPools();
+
+        var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(migrated.IsAvailable, migrated.ErrorCode);
+        Assert.Equal(16, migrated.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        Assert.True(await ColumnExistsAsync(verify, "agent_session_work_states", "ciphertext"));
+        await using var index = verify.CreateCommand();
+        index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_agent_events_session_receipts'";
+        Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Migrating_legacy_provider_pin_backfills_fixed_mode_and_unknown_context()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1);
+        var created = await fixture.CreateEventStore().TryCreateRunAsync(request, CancellationToken.None);
+        Assert.Equal(CreateRunOutcome.Created, created.Outcome);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                UPDATE agent_run_provider_selections
+                SET backend = 'Custom OpenAI', alias = 'custom', protocol = 'chat_completions',
+                    base_uri = 'https://provider.invalid/v1', model = 'legacy-model',
+                    account = 'custom_api_key', request_options_json = '{}', maximum_output_tokens = NULL
+                WHERE run_id = $run_id;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN output_token_reserve;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_version;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_source;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN context_window_tokens;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                DROP TABLE IF EXISTS agent_session_work_states;
+                PRAGMA user_version = 13;
+                """;
+            seed.Parameters.AddWithValue("$run_id", request.Run.RunId.Value);
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+        var selection = await new SqliteAgentRunProviderSelectionStore(fixture.Options)
+            .GetAsync(request.Run.RunId, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal("legacy-model", selection?.Selection?.ModelLabel);
+        Assert.Equal("native", selection?.Selection?.CallingMode);
+        Assert.Null(selection?.Selection?.ContextWindowTokens);
+        Assert.Equal("unknown", selection?.Selection?.ContextWindowSource);
+        Assert.Equal(AgentRunProviderSelection.DefaultOutputTokenReserve, selection?.Selection?.OutputTokenReserve);
+    }
+
+    [Fact]
     public async Task Migrating_from_eleven_leaves_legacy_runs_without_provider_pins()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
@@ -144,7 +313,7 @@ public sealed class HarnessSqliteSchemaTests
         {
             await connection.OpenAsync();
             await using var downgrade = connection.CreateCommand();
-            downgrade.CommandText = "DROP TABLE agent_run_provider_selections; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; PRAGMA user_version = 11;";
+            downgrade.CommandText = "DROP TABLE agent_run_provider_selections; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; DROP TABLE IF EXISTS agent_session_work_states; PRAGMA user_version = 11;";
             await downgrade.ExecuteNonQueryAsync();
         }
 
@@ -241,7 +410,7 @@ public sealed class HarnessSqliteSchemaTests
             await using var command = connection.CreateCommand();
             command.CommandText = "DROP TABLE agent_run_provider_selections; DROP TABLE agent_session_preset_snapshots; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; ALTER TABLE agent_events DROP COLUMN provider_call_id;";
             await command.ExecuteNonQueryAsync();
-            command.CommandText = "PRAGMA user_version = 8;";
+            command.CommandText = "DROP TABLE IF EXISTS agent_session_work_states; PRAGMA user_version = 8;";
             await command.ExecuteNonQueryAsync();
             command.CommandText = "PRAGMA user_version;";
             Assert.Equal(8L, (long)(await command.ExecuteScalarAsync() ?? 0L));
@@ -270,6 +439,7 @@ public sealed class HarnessSqliteSchemaTests
                 DROP TABLE agent_run_provider_selections;
                 DROP TABLE agent_session_preset_snapshots;
                 DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
+                DROP TABLE IF EXISTS agent_session_work_states;
                 PRAGMA user_version = 9;
                 INSERT INTO agent_session_settings(session_id, preset, permission_profile_version, version, updated_at_utc)
                 VALUES ('session-v9-sentinel', 'standard', 1, 6, '2026-08-24T01:02:03.0000000+00:00');
@@ -632,6 +802,7 @@ public sealed class HarnessSqliteSchemaTests
                     operation TEXT NOT NULL,
                     state TEXT NOT NULL
                 );
+                DROP TABLE IF EXISTS agent_session_work_states;
                 PRAGMA user_version = 6;
                 """;
             await seed.ExecuteNonQueryAsync();
@@ -672,6 +843,7 @@ public sealed class HarnessSqliteSchemaTests
                 );
                 DROP TABLE agent_run_provider_selections;
                 DROP INDEX IF EXISTS ix_agent_runs_session_created_run;
+                DROP TABLE IF EXISTS agent_session_work_states;
                 PRAGMA user_version = 10;
                 """;
             await seed.ExecuteNonQueryAsync();
@@ -715,6 +887,7 @@ public sealed class HarnessSqliteSchemaTests
                 INSERT INTO agent_file_recovery
                     (recovery_id, run_id, canonical_path, content_sha256, content_length, created_at_utc, consumed_at_utc)
                 VALUES ('rec_1', 'run_1', 'C:\ws\a.txt', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 3, '2026-01-01T00:00:00Z', NULL);
+                DROP TABLE IF EXISTS agent_session_work_states;
                 PRAGMA user_version = 6;
                 """;
             await seed.ExecuteNonQueryAsync();
@@ -864,7 +1037,7 @@ public sealed class HarnessSqliteSchemaTests
         }
 
         await using var version = connection.CreateCommand();
-        version.CommandText = "PRAGMA user_version = 7";
+        version.CommandText = "DROP TABLE IF EXISTS agent_session_work_states; PRAGMA user_version = 7";
         await version.ExecuteNonQueryAsync();
         SqliteConnection.ClearAllPools();
     }
@@ -952,6 +1125,7 @@ public sealed class HarnessSqliteSchemaTests
                 await using var command = connection.CreateCommand();
                 command.CommandText = """
                     CREATE TABLE agent_runs(run_id TEXT PRIMARY KEY);
+                    DROP TABLE IF EXISTS agent_session_work_states;
                     PRAGMA user_version = 1;
                     """;
                 await command.ExecuteNonQueryAsync();
@@ -1002,6 +1176,7 @@ public sealed class HarnessSqliteSchemaTests
                     VALUES ('migration-sentinel', 0, 7, '2026-08-29T00:00:00.0000000+00:00');
                     DROP INDEX IF EXISTS ix_agent_context_compactions_run_created;
                     DROP TABLE IF EXISTS agent_context_compactions;
+                    DROP TABLE IF EXISTS agent_session_work_states;
                     PRAGMA user_version = 2;
                     """;
                 await command.ExecuteNonQueryAsync();
@@ -1084,6 +1259,7 @@ public sealed class HarnessSqliteSchemaTests
                     PRAGMA ignore_check_constraints = ON;
                     UPDATE agent_runs SET state = 99 WHERE run_id = 'run_99999999999999999999999999999999';
                     PRAGMA ignore_check_constraints = OFF;
+                    DROP TABLE IF EXISTS agent_session_work_states;
                     PRAGMA user_version = 5;
                     """;
                 await seed.ExecuteNonQueryAsync();
@@ -1159,6 +1335,7 @@ public sealed class HarnessSqliteSchemaTests
                     VALUES ('migration-sentinel', 0, 7, '2026-08-29T00:00:00.0000000+00:00');
                     INSERT INTO agent_runs(run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, session_preset_version, policy_snapshot_version, policy_snapshot_sha256, idempotency_key_sha256, normalized_request_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code, base_context_captured_at_utc, base_context_entry_count)
                     VALUES ('run_66666666666666666666666666666666', 'migration-sentinel', 'ws_55555555555555555555555555555555', 7, NULL, 0, 3, 1, 0, 0, 0, 1, 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00', NULL, NULL, NULL, 0);
+                    DROP TABLE IF EXISTS agent_session_work_states;
                     PRAGMA user_version = 5;
                     """;
                 await seed.ExecuteNonQueryAsync();

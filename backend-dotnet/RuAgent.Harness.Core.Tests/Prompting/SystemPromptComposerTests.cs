@@ -74,12 +74,24 @@ public sealed class SystemPromptComposerTests
 
         Assert.Contains("TOOL CALLING:", native.Text, StringComparison.Ordinal);
         Assert.Contains("one or more advertised calls", native.Text, StringComparison.Ordinal);
+        Assert.Contains(
+            $"Group independent read-only calls in one native batch; up to {RuAgent.Harness.Core.ToolCallScheduler.MaxReadConcurrency} may overlap.",
+            native.Text,
+            StringComparison.Ordinal);
+        Assert.Contains("Results return in model order", native.Text, StringComparison.Ordinal);
+        Assert.Contains("dependent calls wait for earlier results", native.Text, StringComparison.Ordinal);
+        Assert.Contains("mutations and terminal calls are ordered barriers", native.Text, StringComparison.Ordinal);
+        Assert.Contains("Batch execution is not a multi-file transaction", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("call one capability per step", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("re-issue the identical call", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("after the user approves, re-issue", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("TOOL SELECTION CONTRACT:", native.Text, StringComparison.Ordinal);
         Assert.Contains("TOOL SELECTION CONTRACT:", textSelection.Text, StringComparison.Ordinal);
         Assert.Contains("emit exactly one JSON object", textSelection.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("may overlap", textSelection.Text, StringComparison.Ordinal);
+        Assert.Contains("do not create a todo or call a tool just to answer a greeting", native.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("explore, then edit, then verify", native.Text, StringComparison.Ordinal);
+        Assert.Contains("what the host contract allows", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("re-issue the identical call", textSelection.Text, StringComparison.Ordinal);
         Assert.NotEqual(textSelection.Receipt.PromptSha256, native.Receipt.PromptSha256);
         native.Receipt.ValidateAgainst(context, native.Text);

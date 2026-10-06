@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuApp.Models;
 using RuApp.Services;
 using Xunit;
 
@@ -69,6 +71,24 @@ public sealed class AgentRunControllerTests
             TransientSequence: null,
             TransientData: null);
 
+    private static AgentEventModel SafeEvent(long sequence, string eventType, string? payloadRef = null) =>
+        AgentEventModel.FromSseFrame(new SseFrame(
+            sequence,
+            "message",
+            JsonSerializer.Serialize(new HarnessSafeEventEnvelope(
+                HarnessSafeEventEnvelope.CurrentProtocolVersion,
+                "evt_" + sequence,
+                RunId,
+                "sess_1",
+                sequence,
+                eventType,
+                "2026",
+                "running",
+                eventType,
+                payloadRef)),
+            false,
+            null));
+
     private static async Task WaitForAdoptSettleAsync(AgentRunController controller)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -99,7 +119,10 @@ public sealed class AgentRunControllerTests
         public string? SubscribeRunId;
         public long? SubscribeAfter;
         public string PayloadContent { get; set; } = "{}";
+        public Dictionary<string, string> PayloadContents { get; } = new(StringComparer.Ordinal);
         public TaskCompletionSource<bool>? SubscriptionGate;
+        public TaskCompletionSource<bool>? CallbacksQueued;
+        public TaskCompletionSource<bool>? CallbackReleaseGate;
         public TaskCompletionSource<bool>? CreateRunGate;
         public CancellationToken CreateCancellationToken;
         public int CreateCallCount;
@@ -132,7 +155,10 @@ public sealed class AgentRunControllerTests
         }
 
         public Task<AgentPayloadModel> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
-            => Task.FromResult(new AgentPayloadModel(runId, payloadId, PayloadContent));
+            => Task.FromResult(new AgentPayloadModel(
+                runId,
+                payloadId,
+                PayloadContents.TryGetValue(payloadId, out var content) ? content : PayloadContent));
 
         public Task<long> SetSessionPresetAsync(
             string sessionId,
@@ -243,6 +269,12 @@ public sealed class AgentRunControllerTests
                 }
             }
 
+            CallbacksQueued?.TrySetResult(true);
+            if (CallbackReleaseGate is not null)
+            {
+                await CallbackReleaseGate.Task.WaitAsync(ct).ConfigureAwait(false);
+            }
+
         }
     }
 
@@ -267,14 +299,16 @@ public sealed class AgentRunControllerTests
             ToolDisplay: null,
             null,
             1));
-        var received = new List<AgentActivityModel>();
+        var received = new List<AgentRunActivityEventArgs>();
         var controller = new AgentRunController(fake);
         controller.ActivityReceived += (_, activity) => received.Add(activity);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-activity"));
 
         var activity = Assert.Single(received);
-        Assert.Equal("act_11111111111111111111111111111111", activity.ActivityId);
+        Assert.Equal("act_11111111111111111111111111111111", activity.Activity.ActivityId);
+        Assert.Equal(RunId, activity.RunId);
+        Assert.True(controller.IsCurrentFeedOwner(activity.RunId, activity.OwnershipGeneration));
         Assert.Single(controller.Events);
         Assert.DoesNotContain(controller.Events, item => item.IsTransient);
     }
@@ -293,14 +327,15 @@ public sealed class AgentRunControllerTests
             0,
             null,
             2));
-        var received = new List<AgentRunSummaryModel>();
+        var received = new List<AgentRunSummaryEventArgs>();
         var controller = new AgentRunController(fake);
         controller.SummaryReceived += (_, summary) => received.Add(summary);
 
         await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-summary"));
 
         var summary = Assert.Single(received);
-        Assert.Equal("verified", summary.VerificationState);
+        Assert.Equal("verified", summary.Summary.VerificationState);
+        Assert.Equal(RunId, summary.RunId);
         Assert.Empty(controller.Events);
     }
 
@@ -638,6 +673,139 @@ public sealed class AgentRunControllerTests
         Assert.Equal(RunId, usage.RunId);
         Assert.Equal(0, usage.Usage.InputTokens);
         Assert.Equal("0 input · 12 output · 12 total", usage.Usage.DisplayText);
+    }
+
+    [Fact]
+    public async Task Old_run_activity_and_summary_callbacks_are_dropped_after_new_run_adoption()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRunWith("waiting_user", historyWaitKind: "waiting_user"),
+            CallbacksQueued = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+            CallbackReleaseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        fake.ActivityStream.Add(new AgentActivityModel(
+            "act_11111111111111111111111111111111",
+            AgentActivityKind.Terminal,
+            AgentActivityState.Waiting,
+            null, null, null, null, null, null, null, null,
+            "approval_required",
+            null,
+            null,
+            1,
+            "dangerous command"));
+        fake.SummaryStream.Add(new AgentRunSummaryModel("failed", "old run summary", "Test Agent", 2, 1, 0, 0, null, 2));
+        var queued = new List<Action>();
+        var controller = new AgentRunController(fake, synchronize: queued.Add);
+        var receivedActivities = new List<AgentRunActivityEventArgs>();
+        var receivedSummaries = new List<AgentRunSummaryEventArgs>();
+        controller.ActivityReceived += (_, activity) => receivedActivities.Add(activity);
+        controller.SummaryReceived += (_, summary) => receivedSummaries.Add(summary);
+
+        var create = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "run A", "standard", null, "stale-feed-owner"));
+        await fake.CallbacksQueued.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await controller.DetachCurrentRunAsync();
+        var releaseA = queued[^1];
+        queued.RemoveAt(queued.Count - 1);
+        releaseA();
+        await create;
+
+        fake.ActivityStream.Clear();
+        fake.SummaryStream.Clear();
+        fake.CallbackReleaseGate = null;
+        fake.CallbacksQueued = null;
+        fake.Run = MakeRunWith("waiting_user", historyWaitKind: "waiting_user") with
+        {
+            RunId = "run_22222222222222222222222222222222",
+        };
+        Assert.True(await controller.AdoptRunAsync(fake.Run));
+        var newRunId = fake.Run.RunId;
+        DrainUiQueue(queued);
+
+        Assert.Equal(newRunId, controller.CurrentRun?.RunId);
+        Assert.Empty(receivedActivities);
+        Assert.Empty(receivedSummaries);
+        Assert.Null(controller.PendingApprovalCommand);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_routes_real_compaction_event_to_context_meter_before_later_usage()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            PayloadContents =
+            {
+                ["payload-1"] = "{\"input_tokens\":8000,\"output_tokens\":40,\"total_tokens\":8040}",
+                ["payload-2"] = "{\"input_tokens\":500,\"output_tokens\":40,\"total_tokens\":540}",
+            },
+        };
+        fake.Stream.Add(SafeEvent(10, "model.usage_recorded", "payload-1"));
+        fake.Stream.Add(SafeEvent(11, "context.compacted"));
+        fake.Stream.Add(SafeEvent(12, "model.usage_recorded", "payload-2"));
+        var controller = new AgentRunController(fake);
+        var run = new AgentRunModel(
+            RunId, "sess_1", "workspace_1", "running", null, "standard", 1, "sha", 1, 0,
+            "2026", "2026", null, null, null, "identity", ProviderProtocol: "openai_responses");
+        var meter = new RetainedContextMeterPresenter();
+        meter.ScopeToRun(run, "sess_1");
+        controller.UsageReceived += (_, usage) => meter.ObserveUsage(usage.RunId, usage.SessionId, usage.Sequence, run.ProviderProtocol, usage.Usage);
+        var compactions = 0;
+        controller.ContextCompacted += (_, item) =>
+        {
+            compactions++;
+            Assert.Contains(controller.Events, item => item.EventType == "context.compacted");
+            meter.ObserveCompaction(item.RunId, item.SessionId, item.Sequence!.Value, 0);
+        };
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-context-compact"));
+
+        Assert.Equal(1, compactions);
+        Assert.Equal(500, meter.Measure([], null, 0).ReportedPromptTokens);
+    }
+
+    [Fact]
+    public async Task Adopted_compacted_run_keeps_restored_history_unknown_until_owned_input_usage()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun() with { LastSequence = 11, Status = "running", ProviderProtocol = "openai_responses" },
+            PayloadContents =
+            {
+                ["payload-before-compaction"] = "{\"input_tokens\":9000,\"output_tokens\":30,\"total_tokens\":9030}",
+                ["payload-after-adoption"] = "{\"input_tokens\":500,\"output_tokens\":30,\"total_tokens\":530}",
+            },
+        };
+        fake.Stream.Add(SafeEvent(9, "model.usage_recorded", "payload-before-compaction"));
+        fake.Stream.Add(SafeEvent(10, "context.compacted"));
+        fake.Stream.Add(SafeEvent(12, "model.usage_recorded", "payload-after-adoption"));
+        var controller = new AgentRunController(fake);
+        var meter = new RetainedContextMeterPresenter();
+        (string? Content, int ImageCount, int TextAttachmentCharacters)[] restoredTranscript =
+            [(new string('x', 200_000), 0, 0)];
+        (int Characters, int Images, int ReportedPromptTokens, int EstimatedTokens, int UsedTokens, bool HasKnownHistoryBoundary) adoptedMeasure = default;
+        controller.RunAdopted += (_, adopted) =>
+        {
+            meter.ScopeToRun(adopted.Run, adopted.Run.SessionId);
+            meter.MarkHistoryBoundaryUnknown(adopted.Run.RunId, adopted.Run.SessionId, adopted.Run.LastSequence);
+            adoptedMeasure = meter.Measure(restoredTranscript, "draft", 0);
+        };
+        controller.UsageReceived += (_, usage) => meter.ObserveUsage(
+            usage.RunId, usage.SessionId, usage.Sequence, "openai_responses", usage.Usage);
+
+        Assert.True(await controller.AdoptRunAsync(fake.Run!));
+        await WaitForAdoptSettleAsync(controller);
+
+        Assert.Equal(11, fake.SubscribeAfter);
+        Assert.False(adoptedMeasure.HasKnownHistoryBoundary);
+        Assert.Equal("draft".Length, adoptedMeasure.Characters);
+        var afterOwnedUsage = meter.Measure(restoredTranscript, "draft", 0);
+        Assert.True(afterOwnedUsage.HasKnownHistoryBoundary);
+        Assert.Equal(500, afterOwnedUsage.ReportedPromptTokens);
+        Assert.Equal(500 + ModelContextSpecs.EstimateTokens("draft".Length, 0), afterOwnedUsage.UsedTokens);
     }
 
     [Fact]

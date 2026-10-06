@@ -17,6 +17,7 @@ public enum HarnessPayloadKind
     ModelUsage = 12,
     ModelContextNote = 13,
     ModelReasoning = 14,
+    ProviderContinuation = 15,
 }
 
 [Flags]
@@ -125,6 +126,12 @@ public sealed record HarnessPayloadIntent
             throw new ArgumentException(
                 "RecoveryOpaque must be opaque and internal-only.",
                 nameof(kind));
+        }
+
+        if (kind == HarnessPayloadKind.ProviderContinuation
+            && (audience != HarnessPayloadAudience.InternalOnly || encoding != HarnessPayloadEncoding.Opaque))
+        {
+            throw new ArgumentException("ProviderContinuation must be opaque and internal-only.", nameof(kind));
         }
 
         if (kind == HarnessPayloadKind.ModelContextSummary

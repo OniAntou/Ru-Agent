@@ -7,7 +7,8 @@ public sealed record ProviderCapability(
     string ModelId,
     string Protocol,
     IReadOnlyDictionary<string, JsonObject> ReasoningOptions,
-    int? DocumentedMaxOutputTokens);
+    int? DocumentedMaxOutputTokens,
+    bool SupportsNativeTools = false);
 
 public static class ProviderCapabilityRegistry
 {
@@ -36,7 +37,7 @@ public static class ProviderCapabilityRegistry
         var options = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         foreach (var effort in new[] { "none", "low", "medium", "high", "xhigh", "max" })
             options[effort] = new JsonObject { ["reasoning"] = new JsonObject { ["effort"] = effort } };
-        Capabilities[Key("openai", modelId)] = new("openai", modelId, "openai_responses", options, null);
+        Capabilities[Key("openai", modelId)] = new("openai", modelId, "openai_responses", options, null, SupportsNativeTools: true);
     }
 
     private static void RegisterAnthropicAdaptive(string modelId, string[] efforts, int maxOutput)
@@ -48,12 +49,12 @@ public static class ProviderCapabilityRegistry
                 ["thinking"] = new JsonObject { ["type"] = "adaptive", ["display"] = "omitted" },
                 ["output_config"] = new JsonObject { ["effort"] = effort },
             };
-        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", options, maxOutput);
+        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", options, maxOutput, SupportsNativeTools: true);
     }
 
     private static void RegisterAnthropicDefaultOnly(string modelId, int maxOutput)
     {
-        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", new Dictionary<string, JsonObject>(StringComparer.Ordinal), maxOutput);
+        Capabilities[Key("anthropic", modelId)] = new("anthropic", modelId, "anthropic_messages", new Dictionary<string, JsonObject>(StringComparer.Ordinal), maxOutput, SupportsNativeTools: true);
     }
 
     private static string Key(string alias, string modelId) => alias + "\n" + modelId;

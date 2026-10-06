@@ -52,6 +52,8 @@ public sealed partial class AgentV1Service
     private readonly ISettingsStore? _settingsStore;
     private readonly Func<string, bool> _isVisionModel;
     private readonly SqliteAgentRunProviderSelectionStore? _providerSelectionStore;
+    private readonly SessionWorkStateStore? _workStateStore;
+    private readonly KnownSecretRedactor _workStateRedactor;
 
     /// <summary>
     /// What the provider's own catalog declares about the selected model's image input,
@@ -122,7 +124,9 @@ public sealed partial class AgentV1Service
         Func<string, bool>? isVisionModel = null,
         ILogger<AgentV1Service>? logger = null,
         IMetadataPolicy? metadataPolicy = null,
-        SqliteAgentRunProviderSelectionStore? providerSelectionStore = null)
+        SqliteAgentRunProviderSelectionStore? providerSelectionStore = null,
+        SessionWorkStateStore? workStateStore = null,
+        KnownSecretRedactor? workStateRedactor = null)
     {
         _store = store;
         _options = options;
@@ -148,6 +152,8 @@ public sealed partial class AgentV1Service
         _logger = logger;
         _metadataPolicy = metadataPolicy;
         _providerSelectionStore = providerSelectionStore;
+        _workStateStore = workStateStore;
+        _workStateRedactor = workStateRedactor ?? KnownSecretRedactor.Empty;
     }
 
     private static AgentServiceResult BoundedError(int status, string code, string message) =>

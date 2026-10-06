@@ -10,14 +10,16 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 {
-    private HarnessStoreTestFixture(string rootPath)
+    private readonly FakeHarnessKeyStore _keyStore = new();
+
+    private HarnessStoreTestFixture(string rootPath, KnownSecretRedactor redactor)
     {
         RootPath = rootPath;
         Options = new HarnessSqliteOptions(Path.Combine(rootPath, "agent_harness.db"));
         PayloadStore = new HarnessPayloadStore(
             Options,
-            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
-            KnownSecretRedactor.Empty);
+            new HarnessPayloadCryptography(_keyStore),
+            redactor);
     }
 
     public string RootPath { get; }
@@ -26,16 +28,21 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 
     public HarnessPayloadStore PayloadStore { get; }
 
-    public SqliteHarnessEventStore CreateEventStore() => new(Options, PayloadStore);
+    public SqliteHarnessEventStore CreateEventStore() => new(Options, PayloadStore, CreateWorkStateStore());
 
-    public static async Task<HarnessStoreTestFixture> CreateAsync()
+    public SessionWorkStateStore CreateWorkStateStore() => new(
+        Options,
+        new SessionWorkStateCryptography(_keyStore));
+
+    public static async Task<HarnessStoreTestFixture> CreateAsync(IEnumerable<string>? knownSecrets = null)
     {
         var rootPath = Path.Combine(
             Path.GetTempPath(),
             "ru-harness-persistence-tests",
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(rootPath);
-        var fixture = new HarnessStoreTestFixture(rootPath);
+        var fixture = new HarnessStoreTestFixture(rootPath,
+            knownSecrets is null ? KnownSecretRedactor.Empty : new KnownSecretRedactor(knownSecrets));
         var health = await HarnessSqliteSchema.InitializeAsync(
             fixture.Options,
             CancellationToken.None);
@@ -94,9 +101,12 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
             Timestamp,
             Timestamp,
             permissionProfileVersion: permissionProfileVersion);
+        var promptPayloadId = payloads?
+            .FirstOrDefault(payload => payload.Kind == HarnessPayloadKind.UserPrompt)?
+            .PayloadId;
         return new NewAgentRun(
             run,
-            [new HarnessEventIntent(Event(runNumber), HarnessEventKind.RunStateChanged)],
+            [new HarnessEventIntent(Event(runNumber), HarnessEventKind.RunStateChanged, payloadId: promptPayloadId)],
             payloads ?? [],
             outbox ?? [],
             new RunCreationIdentity(

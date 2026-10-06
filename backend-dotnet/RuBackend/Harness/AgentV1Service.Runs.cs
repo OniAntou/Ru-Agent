@@ -444,8 +444,8 @@ public sealed partial class AgentV1Service
         {
             RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
             var resp = isTrusted
-                ? MapRun(storeResult.Run)
-                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run)
+                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(201, resp);
         }
 
@@ -457,8 +457,8 @@ public sealed partial class AgentV1Service
                 RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
             }
             var resp = isTrusted
-                ? MapRun(storeResult.Run)
-                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
+                ? MapCreateRun(storeResult.Run)
+                : MapCreateRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(200, resp);
         }
 
@@ -497,6 +497,26 @@ public sealed partial class AgentV1Service
         {
             ProviderBackend = providerSelection?.Selection?.Backend,
             ProviderModel = providerSelection?.Selection?.Model,
+            ProviderProtocol = providerSelection?.Selection?.Protocol,
+            ProviderModelLabel = providerSelection?.Selection?.ModelLabel,
+            ProviderCallingMode = providerSelection?.Selection?.CallingMode,
+            ContextWindowTokens = providerSelection?.Selection?.ContextWindowTokens,
+            ContextWindowSource = providerSelection?.Selection?.ContextWindowSource,
+            ContextWindowVersion = providerSelection?.Selection?.ContextWindowVersion,
+            OutputTokenReserve = providerSelection?.Selection?.OutputTokenReserve,
+        };
+        var workState = await ProjectSessionWorkStateAsync(run, cancellationToken).ConfigureAwait(false);
+        response = response with
+        {
+            WorkStateStatus = workState.Status,
+            WorkStateVersion = workState.Version,
+            WorkStatePartial = workState.IsPartial,
+            WorkStateIntentOmitted = workState.IntentOmitted,
+            WorkStatePreviewOmitted = workState.PreviewOmitted,
+            WorkStateSourceRunId = workState.SourceRunId,
+            WorkStateSourceEventId = workState.SourceEventId,
+            WorkStateUpdatedAt = workState.UpdatedAt,
+            WorkStatePreview = workState.Preview,
         };
         return new AgentServiceResult(200, response);
     }
@@ -987,6 +1007,27 @@ public sealed partial class AgentV1Service
         LastSequence: run.LastSequence,
         CreatedAt: run.CreatedAt.ToUniversalTime().ToString("O"),
         UpdatedAt: run.UpdatedAt.ToUniversalTime().ToString("O"),
+        TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
+        TerminalErrorCode: run.TerminalErrorCode,
+        TrustRequestId: trustRequestId,
+        DisplayIdentityHash: displayIdentityHash);
+
+    private static CreateAgentRunResponse MapCreateRun(
+        AgentRun run,
+        string? trustRequestId = null,
+        string? displayIdentityHash = null) => new(
+        RunId: run.RunId.Value,
+        SessionId: run.SessionId.Value,
+        WorkspaceId: run.WorkspaceId.Value,
+        Status: MapRunState(run.Status),
+        Preset: AgentPermissionPresetMapper.ToWireValue(run.Preset),
+        CreatedAt: run.CreatedAt.ToUniversalTime().ToString("O"),
+        UpdatedAt: run.UpdatedAt.ToUniversalTime().ToString("O"),
+        HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
+        PolicySnapshotVersion: run.PolicySnapshotVersion,
+        PolicySnapshotSha256: run.PolicySnapshotSha256,
+        Version: run.Version,
+        LastSequence: run.LastSequence,
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,

@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Harness.Worker;
 using Xunit;
@@ -11,6 +13,75 @@ namespace RuBackend.Tests.Worker;
 
 public sealed class InProcessModelConversationTests
 {
+    [Fact]
+    public void Anthropic_native_history_keeps_signed_blocks_order_and_pairs_results_with_is_error()
+    {
+        var arguments = System.Text.Json.JsonDocument.Parse("{\"path\":\"a.txt\"}").RootElement.Clone();
+        var secondArguments = System.Text.Json.JsonDocument.Parse("{\"path\":\"b.txt\"}").RootElement.Clone();
+        var turns = new[]
+        {
+            new ModelTurn("assistant", "Reading both files.",
+            [
+                new ModelFunctionCall("toolu_read_a", "read", arguments),
+                new ModelFunctionCall("toolu_read_b", "read", secondArguments),
+            ]),
+            new ModelTurn("tool", "first result", toolCallId: "toolu_read_a", toolResultCode: "read_failed"),
+            new ModelTurn("tool", "second result", toolCallId: "toolu_read_b", toolResultCode: "ok"),
+        };
+        var continuation = new ProviderContinuation("anthropic", "anthropic_messages", "claude-fable-5", 1,
+        [
+            new JsonObject { ["type"] = "text", ["text"] = "Reading both files." },
+            new JsonObject { ["type"] = "thinking", ["thinking"] = "private", ["signature"] = "signed-by-provider" },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_a", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"a.txt\"}") },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_read_b", ["name"] = "read", ["input"] = JsonNode.Parse("{\"path\":\"b.txt\"}") },
+        ]);
+
+        var messages = AnthropicMessagesHistoryProjector.Project(turns, [continuation], "claude-fable-5");
+
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("assistant", messages[0]["role"]!.GetValue<string>());
+        var assistantBlocks = messages[0]["content"]!.AsArray();
+        Assert.Equal(["text", "thinking", "tool_use", "tool_use"], assistantBlocks.Select(block => block!["type"]!.GetValue<string>()));
+        Assert.Equal("signed-by-provider", assistantBlocks[1]!["signature"]!.GetValue<string>());
+        Assert.Equal("user", messages[1]["role"]!.GetValue<string>());
+        var results = messages[1]["content"]!.AsArray();
+        Assert.Equal(["toolu_read_a", "toolu_read_b"], results.Select(result => result!["tool_use_id"]!.GetValue<string>()));
+        Assert.True(results[0]!["is_error"]!.GetValue<bool>());
+        Assert.False(results[1]!["is_error"]!.GetValue<bool>());
+        Assert.Equal(1, messages.Count(message => message["role"]!.GetValue<string>() == "assistant"));
+    }
+
+    [Fact]
+    public void Responses_projection_replays_opaque_output_and_call_bound_result_without_merging_json_into_narration()
+    {
+        var continuation = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "reasoning", ["id"] = "reason-1", ["encrypted_content"] = "signed-bytes", ["summary"] = new JsonArray() },
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+        ]);
+        var turns = new[]
+        {
+            new ModelTurn("assistant", "Reading the file.", [new ModelFunctionCall("provider-1", "files.read", Json("{\"path\":\"a.txt\"}"))]),
+            new ModelTurn("tool", "file contents", toolCallId: "provider-1", toolResultCode: "ok"),
+        };
+
+        var items = OpenAiResponsesHistoryProjector.Project(turns, [continuation]);
+
+        Assert.Equal("Reading the file.", items[0]!["content"]!.GetValue<string>());
+        Assert.Equal("reasoning", items[1]!["type"]!.GetValue<string>());
+        Assert.Equal("signed-bytes", items[1]!["encrypted_content"]!.GetValue<string>());
+        Assert.Equal("provider-1", items[2]!["call_id"]!.GetValue<string>());
+        Assert.Equal("provider-1", items[3]!["call_id"]!.GetValue<string>());
+        Assert.Equal("file contents", items[3]!["output"]!.GetValue<string>());
+        Assert.DoesNotContain("path", items[0]!["content"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var mismatched = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
+        [
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"b.txt\"}" },
+        ]);
+        Assert.Throws<WorkerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched]));
+    }
+
     [Fact]
     public void First_step_uses_typed_messages_without_history()
     {
@@ -22,6 +93,215 @@ public sealed class InProcessModelConversationTests
         Assert.Equal("Tao file robots.txt roi tra loi DONE.", prompt);
         Assert.Null(turns);
         Assert.Empty(messages!);
+    }
+
+    [Fact]
+    public void Workflow_state_is_a_separate_charged_turn_and_current_prompt_keeps_its_tail()
+    {
+        const string tail = "CURRENT-PROMPT-TAIL-8c1b";
+        var workflowState = new string('s', 15_500);
+        var currentPrompt = new string('p', 15_900 - tail.Length) + tail;
+        var context = Snapshot(
+            ModelContextEntry.Text(SessionWorkState.ContextSourceId, 1, ModelContextRole.User, workflowState),
+            ModelContextEntry.Text("event:evt_" + new string('c', 32), 2, ModelContextRole.User, currentPrompt));
+
+        var (prompt, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        Assert.Equal(currentPrompt, prompt);
+        var projectedMessages = messages!;
+        var stateMessage = Assert.Single(projectedMessages, message => message.Content == workflowState);
+        Assert.Equal("user", stateMessage.Role);
+        Assert.DoesNotContain(projectedMessages, message => message.Content == currentPrompt);
+    }
+
+    [Fact]
+    public void Oversized_current_prompt_fails_instead_of_prefix_clamping()
+    {
+        var prompt = new string('p', 16_001);
+        var context = Snapshot(
+            ModelContextEntry.Text("event:evt_" + new string('c', 32), 1, ModelContextRole.User, prompt));
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            InProcessModelStepRunner.BuildConversationForTests(context));
+
+        Assert.Equal("request_too_large", error.Code);
+    }
+
+    [Fact]
+    public void Oversized_read_history_keeps_json_metadata_and_a_byte_cursor_for_visible_utf8()
+    {
+        const int sourceOffset = 17;
+        const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 1_400)) + hiddenMarker;
+        var bytesRead = Encoding.UTF8.GetByteCount(content);
+        var source = new JsonObject
+        {
+            ["path"] = "src/large.txt",
+            ["content"] = content,
+            ["truncated"] = true,
+            ["bytes_read"] = bytesRead,
+            ["total_bytes"] = sourceOffset + bytesRead + 512,
+            ["offset"] = sourceOffset,
+            ["sha256"] = new string('a', 64),
+            ["duration_ms"] = 4,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the end marker."),
+            AssistantStepEntry("src-read", 2, "provider_read_1", "read",
+                "{\"path\":\"src/large.txt\",\"offset\":17,\"limit\":65536}"),
+            ToolResultEntry("src-result", 3, "internal_read_1", "provider_read_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visible = root.GetProperty("content").GetString()!;
+        Assert.Equal("src/large.txt", root.GetProperty("path").GetString());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.Equal(bytesRead, root.GetProperty("bytes_read").GetInt32());
+        Assert.Equal(sourceOffset + bytesRead + 512, root.GetProperty("total_bytes").GetInt32());
+        Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
+        Assert.Equal(new string('a', 64), root.GetProperty("sha256").GetString());
+        Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(Encoding.UTF8.GetByteCount(visible), root.GetProperty("projection_visible_bytes").GetInt32());
+        Assert.Equal(sourceOffset + Encoding.UTF8.GetByteCount(visible),
+            root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_read_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
+        Assert.DoesNotContain('\uFFFD', visible);
+    }
+
+    [Fact]
+    public void Broker_truncated_read_page_exposes_cursor_even_when_projection_fits()
+    {
+        var source = new JsonObject
+        {
+            ["path"] = "src/large.txt",
+            ["content"] = "abc",
+            ["truncated"] = true,
+            ["bytes_read"] = 3,
+            ["total_bytes"] = 40,
+            ["offset"] = 9,
+            ["sha256"] = new string('b', 64),
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Continue reading."),
+            AssistantStepEntry("src-read", 2, "provider_read_small", "read", "{\"path\":\"src/large.txt\",\"offset\":9}"),
+            ToolResultEntry("src-result", 3, "internal_read_small", "provider_read_small", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        using var projected = JsonDocument.Parse(messages![^1].Content);
+        Assert.True(projected.RootElement.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(12, projected.RootElement.GetProperty("projection_next_offset").GetInt32());
+    }
+
+    [Fact]
+    public void Oversized_grep_history_resumes_from_original_offset_plus_visible_results()
+    {
+        const int sourceOffset = 37;
+        const string hiddenMarker = "GREP-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var results = new JsonArray();
+        for (var index = 0; index < 100; index++)
+        {
+            results.Add(new JsonObject
+            {
+                ["path"] = "docs/matches.txt",
+                ["line"] = index + 1,
+                ["text"] = index == 99 ? hiddenMarker : $"needle match detail {index:D3} {new string('x', 70)}",
+            });
+        }
+        var source = new JsonObject
+        {
+            ["results"] = results,
+            ["count"] = results.Count,
+            ["truncated"] = true,
+            ["scanned_files"] = 1,
+            ["scanned_directories"] = 1,
+            ["skipped"] = 0,
+            ["duration_ms"] = 5,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the final match."),
+            AssistantStepEntry("src-grep", 2, "provider_grep_1", "grep",
+                "{\"query\":\"needle\",\"path\":\"docs\",\"offset\":37,\"max_results\":100}"),
+            ToolResultEntry("src-result", 3, "internal_grep_1", "provider_grep_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visibleResults = root.GetProperty("results");
+        Assert.Equal(100, root.GetProperty("count").GetInt32());
+        Assert.True(root.GetProperty("truncated").GetBoolean());
+        Assert.InRange(visibleResults.GetArrayLength(), 1, 99);
+        Assert.DoesNotContain(hiddenMarker, result.Content, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visibleResults.GetArrayLength(),
+            root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_grep_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
+    }
+
+    [Fact]
+    public void Oversized_grep_without_optional_offset_uses_broker_default_zero()
+    {
+        var results = new JsonArray();
+        for (var index = 0; index < 100; index++)
+            results.Add(new JsonObject { ["preview"] = new string('x', 100), ["line"] = index + 1 });
+        var source = new JsonObject { ["results"] = results, ["count"] = 100, ["truncated"] = true }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find matches."),
+            AssistantStepEntry("src-grep", 2, "provider_grep_default", "grep", "{\"query\":\"needle\",\"path\":\".\"}"),
+            ToolResultEntry("src-result", 3, "internal_grep_default", "provider_grep_default", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        using var projected = JsonDocument.Parse(messages![^1].Content);
+        var root = projected.RootElement;
+        Assert.Equal(root.GetProperty("results").GetArrayLength(), root.GetProperty("projection_next_offset").GetInt32());
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+    }
+
+    [Fact]
+    public void Oversized_read_output_history_uses_utf16_cursor_without_splitting_surrogates()
+    {
+        const int sourceOffset = 120;
+        const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
+        var page = new string('s', 5_880) + "🙂" + new string('t', 300) + hiddenMarker;
+        var source = new JsonObject
+        {
+            ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
+            ["offset"] = sourceOffset,
+            ["limit"] = 7_000,
+            ["total_chars"] = 20_000,
+            ["page"] = page,
+            ["truncated"] = true,
+        }.ToJsonString();
+        var context = Snapshot(
+            ModelContextEntry.Text("src-user", 1, ModelContextRole.User, "Find the middle output marker."),
+            AssistantStepEntry("src-output", 2, "provider_output_1", "bash",
+                "{\"mode\":\"read_output\",\"execution_id\":\"execution_0123456789abcdef0123456789abcdef\",\"offset\":120,\"limit\":7000}"),
+            ToolResultEntry("src-result", 3, "internal_output_1", "provider_output_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var result = messages![^1];
+        using var projected = JsonDocument.Parse(result.Content);
+        var root = projected.RootElement;
+        var visible = root.GetProperty("page").GetString()!;
+        _ = new UTF8Encoding(false, true).GetBytes(visible);
+        Assert.Equal("execution_0123456789abcdef0123456789abcdef", root.GetProperty("spool_id").GetString());
+        Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
+        Assert.Equal(20_000, root.GetProperty("total_chars").GetInt32());
+        Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_output_1", result.ToolCallId);
+        Assert.Equal(source, context.Entries[^1].Content);
     }
 
     [Fact]
@@ -64,8 +344,8 @@ public sealed class InProcessModelConversationTests
                     new ModelToolCall("provider_read_a", "read", "1.0.0", Json("{\"path\":\"a.txt\"}")),
                     new ModelToolCall("provider_read_b", "read", "1.0.0", Json("{\"path\":\"b.txt\"}")),
                 ]),
-            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
-            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\"}"));
+            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\",\"offset\":0}"),
+            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\",\"offset\":0}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
@@ -110,8 +390,7 @@ public sealed class InProcessModelConversationTests
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
-        Assert.Contains("previously we wrote robots.txt", prompt, StringComparison.Ordinal);
-        Assert.Contains("tiep tuc", prompt, StringComparison.Ordinal);
+        Assert.Equal("tiep tuc", prompt);
         Assert.Null(turns);
         var summary = Assert.Single(messages!);
         Assert.Equal("user", summary.Role);
@@ -148,7 +427,7 @@ public sealed class InProcessModelConversationTests
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file"),
             AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"a.txt\"}"),
-            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
+            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "{\"path\":\"a.txt\",\"content\":\"aaa\",\"offset\":0}"),
             ModelContextEntry.Assistant(
                 "src-4",
                 4,
@@ -168,13 +447,13 @@ public sealed class InProcessModelConversationTests
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file lon"),
-            AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"big.txt\"}"),
+            AssistantStepEntry("src-2", 2, "provider_read_1", "unknown_tool", "{}"),
             ToolResultEntry(
                 "src-3",
                 3,
                 "internal_call_1",
                 "provider_read_1",
-                "{\"path\":\"big.txt\",\"content\":\"" + new string('x', 40_000) + "\"}"));
+                "{\"unknown\":\"" + new string('x', 40_000)));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
@@ -183,6 +462,28 @@ public sealed class InProcessModelConversationTests
         Assert.NotNull(messages);
         Assert.True(messages[2].Content.Length <= 6_000, $"tool content length was {messages[2].Content.Length}");
         Assert.Contains("truncated", messages[2].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
+    {
+        const string prefix = "{\"unknown\":\"";
+        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 6_000));
+        var context = Snapshot(
+            ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
+            AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
+            ToolResultEntry("src-3", 3, "internal_unknown_1", "provider_unknown_1", source));
+
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
+        const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        Assert.InRange(visible.Length, 1, 6_000);
+        var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
+        Assert.True(noteOffset >= 0);
+        var omitted = source.Length - noteOffset;
+        Assert.EndsWith($" (omitted {omitted} of {source.Length} characters)", visible, StringComparison.Ordinal);
+        _ = new UTF8Encoding(false, true).GetBytes(visible);
     }
 
     [Theory]
@@ -312,10 +613,10 @@ public sealed class InProcessModelConversationTests
                 sequence++,
                 $"internal_stale_{index}",
                 $"provider_stale_{index}",
-                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\"}}"));
+                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\",\"offset\":0}}"));
         }
         entries.Add(AssistantStepEntry("src-new-a", sequence++, "provider_fresh", "read", "{\"path\":\"fresh.txt\"}"));
-        entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
+        entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\",\"offset\":0}"));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
 

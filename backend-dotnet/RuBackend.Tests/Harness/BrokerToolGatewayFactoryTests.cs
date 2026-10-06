@@ -1101,6 +1101,14 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         }
     }
 
+    private static void AssertTransportFailureContent(ToolExecutionReceipt receipt)
+    {
+        Assert.False(receipt.ModelContent.IsEmpty);
+        var content = System.Text.Json.Nodes.JsonNode.Parse(
+            System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
+        Assert.Equal("transport_failure", content["error"]!.GetValue<string>());
+    }
+
     [Theory]
     [InlineData("write")]
     [InlineData("read")]
@@ -1183,6 +1191,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipt.Outcome);
                 Assert.True(receipt.SideEffectsPossible);
                 Assert.Equal("transport_failure", receipt.Code);
+                AssertTransportFailureContent(receipt);
             }
             else
             {
@@ -1190,6 +1199,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
                 Assert.False(receipt.SideEffectsPossible);
                 Assert.Equal("transport_failure", receipt.Code);
+                AssertTransportFailureContent(receipt);
                 var retry = await gateway.ExecuteAsync(
                     prepared,
                     _ => ValueTask.CompletedTask,

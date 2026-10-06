@@ -496,6 +496,10 @@ public sealed partial class BrokerToolGateway
 
     private static ToolExecutionReceipt TransportFailureReceipt(PreparedToolExecution execution)
     {
+        // Every requested call needs a bounded model-visible result; an empty content
+        // leaves the assistant call unmatched and the next step fails as
+        // model_history_invalid.
+        var content = new JsonObject { ["error"] = "transport_failure" };
         return new ToolExecutionReceipt(
             execution.ExecutionId,
             execution.ToolCallId,
@@ -504,7 +508,9 @@ public sealed partial class BrokerToolGateway
                 : ToolExecutionOutcome.OutcomeUnknown,
             "transport_failure",
             null,
-            sideEffectsPossible: execution.AccessKind != ToolAccessKind.ReadOnly);
+            sideEffectsPossible: execution.AccessKind != ToolAccessKind.ReadOnly,
+            modelContent: Encoding.UTF8.GetBytes(content.ToJsonString()),
+            contentEncoding: HarnessPayloadEncoding.Json);
     }
 
     internal static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) =>

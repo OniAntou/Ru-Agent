@@ -28,6 +28,17 @@ public sealed class ApprovalPrompt
         "terminal_unknown_executable",
         "terminal_timeout_requires_approval",
         "web_approval_required",
+        "terminal_external_cwd_requires_approval",
+        "terminal_cwd_untrusted",
+        "terminal_network_requires_approval",
+        "terminal_external_argv_requires_approval",
+        "terminal_external_executable_requires_approval",
+        "terminal_unparsed_shell_syntax_requires_approval",
+        "recognized_executable_unclassified_form",
+        "git_submodule_requires_approval",
+        "git_directory_override_requires_approval",
+        "git_config_override_requires_approval",
+        "git_config_mutation_requires_approval",
     };
 
     private readonly List<ApprovalChoice> _choices;

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Xml.Linq;
 using RuApp.Services;
 using Xunit;
@@ -19,6 +20,19 @@ public sealed class AgentApprovalUiContractTests
     [InlineData(AgentApprovalSummaryPresentation.TerminalTimeoutRequiresApproval, "longer than the standard window")]
     [InlineData(AgentApprovalSummaryPresentation.WebApprovalRequired, "fetch this web content")]
     [InlineData(AgentApprovalSummaryPresentation.TerminalUnknownExecutable, "has not recognized the executable")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalExternalCwdRequiresApproval, "folder outside the workspace")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalCwdUntrusted, "cannot verify")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalNetworkRequiresApproval, "network access")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalExternalArgvRequiresApproval, "points outside the workspace")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalExternalExecutableRequiresApproval, "executable outside the workspace")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalUnparsedShellSyntaxRequiresApproval, "cannot fully verify")]
+    [InlineData(AgentApprovalSummaryPresentation.RecognizedExecutableUnclassifiedForm, "not the shape")]
+    [InlineData(AgentApprovalSummaryPresentation.GitSubmoduleRequiresApproval, "submodules")]
+    [InlineData(AgentApprovalSummaryPresentation.GitDirectoryOverrideRequiresApproval, "different directory")]
+    [InlineData(AgentApprovalSummaryPresentation.GitConfigOverrideRequiresApproval, "for one run")]
+    [InlineData(AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval, "changes git configuration")]
+    [InlineData(AgentApprovalSummaryPresentation.PlanPresetRequiresApproval, "Plan preset")]
+    [InlineData(AgentApprovalSummaryPresentation.RuleAsks, "project rules")]
     public void Every_broker_ask_reason_has_its_own_sentence(string reasonCode, string expectedFragment)
     {
         string rendered = AgentApprovalSummaryPresentation.Render(reasonCode);
@@ -41,6 +55,19 @@ public sealed class AgentApprovalUiContractTests
             "web_approval_required",
             "terminal_unknown_executable",
             "terminal_protected_path_requires_approval",
+            "terminal_external_cwd_requires_approval",
+            "terminal_cwd_untrusted",
+            "terminal_network_requires_approval",
+            "terminal_external_argv_requires_approval",
+            "terminal_external_executable_requires_approval",
+            "terminal_unparsed_shell_syntax_requires_approval",
+            "recognized_executable_unclassified_form",
+            "git_submodule_requires_approval",
+            "git_directory_override_requires_approval",
+            "git_config_override_requires_approval",
+            "git_config_mutation_requires_approval",
+            "plan_preset_requires_approval",
+            "rule_asks",
         };
 
         Assert.Equal(
@@ -156,10 +183,46 @@ public sealed class AgentApprovalUiContractTests
             AgentApprovalSummaryPresentation.TerminalDeleteRequiresApproval));
         Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.TerminalUnknownExecutable));
+        Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
+            AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval));
+        Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
+            AgentApprovalSummaryPresentation.TerminalNetworkRequiresApproval));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.ExternalDirectoryRequired));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(null));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways("future_reason_code"));
+    }
+
+    [Fact]
+    public void A_plan_preset_or_rule_ask_is_never_remembered()
+    {
+        // Remembering the Plan preset's ask would defeat the preset, and
+        // remembering a user rule's ask would silently override the rule.
+        Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
+            AgentApprovalSummaryPresentation.PlanPresetRequiresApproval));
+        Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
+            AgentApprovalSummaryPresentation.RuleAsks));
+    }
+
+    [Theory]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalDeleteRequiresApproval, true)]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalNetworkRequiresApproval, true)]
+    [InlineData(AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval, true)]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval, false)]
+    [InlineData(AgentApprovalSummaryPresentation.PlanPresetRequiresApproval, false)]
+    [InlineData(AgentApprovalSummaryPresentation.RuleAsks, false)]
+    [InlineData(AgentApprovalSummaryPresentation.ExternalDirectoryRequired, false)]
+    [InlineData("future_reason_code", false)]
+    public void Tui_and_gui_offer_the_same_remember_choice(string reason, bool expected)
+    {
+        // The remember rule exists twice: the TUI prompt's reason set and the GUI
+        // presentation predicate. Nothing but this test stops one from drifting,
+        // and a drift would offer "always" on one surface only.
+        Assert.Equal(expected, AgentApprovalPresentation.CanRememberAllowAlways(reason));
+        Assert.Equal(
+            expected,
+            RuAgent.Cli.Tui.ApprovalPrompt.For(reason).Choices
+                .Any(choice => choice.Decision == RuAgent.Cli.Tui.ApprovalPrompt.AllowAlways));
     }
 
     [Fact]

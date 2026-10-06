@@ -41,6 +41,23 @@ public sealed class ApprovalPromptTests
     }
 
     [Fact]
+    public void For_NewlyRememberableAsk_OffersAlwaysChoice()
+    {
+        var prompt = ApprovalPrompt.For("git_config_mutation_requires_approval");
+
+        Assert.Equal(3, prompt.Choices.Count);
+        Assert.Equal(ApprovalPrompt.AllowAlways, prompt.Choices[2].Decision);
+    }
+
+    [Fact]
+    public void For_PlanPresetAsk_NeverOffersAlwaysChoice()
+    {
+        var prompt = ApprovalPrompt.For("plan_preset_requires_approval");
+
+        Assert.Equal(2, prompt.Choices.Count);
+    }
+
+    [Fact]
     public void For_ExternalAsk_NeverOffersAlwaysChoice()
     {
         var prompt = ApprovalPrompt.For("external_directory_required", offerDirectory: true);

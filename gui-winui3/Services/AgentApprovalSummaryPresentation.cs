@@ -21,6 +21,19 @@ public static class AgentApprovalSummaryPresentation
     public const string WebApprovalRequired = "web_approval_required";
     public const string TerminalUnknownExecutable = "terminal_unknown_executable";
     public const string TerminalProtectedPathRequiresApproval = "terminal_protected_path_requires_approval";
+    public const string TerminalExternalCwdRequiresApproval = "terminal_external_cwd_requires_approval";
+    public const string TerminalCwdUntrusted = "terminal_cwd_untrusted";
+    public const string TerminalNetworkRequiresApproval = "terminal_network_requires_approval";
+    public const string TerminalExternalArgvRequiresApproval = "terminal_external_argv_requires_approval";
+    public const string TerminalExternalExecutableRequiresApproval = "terminal_external_executable_requires_approval";
+    public const string TerminalUnparsedShellSyntaxRequiresApproval = "terminal_unparsed_shell_syntax_requires_approval";
+    public const string RecognizedExecutableUnclassifiedForm = "recognized_executable_unclassified_form";
+    public const string GitSubmoduleRequiresApproval = "git_submodule_requires_approval";
+    public const string GitDirectoryOverrideRequiresApproval = "git_directory_override_requires_approval";
+    public const string GitConfigOverrideRequiresApproval = "git_config_override_requires_approval";
+    public const string GitConfigMutationRequiresApproval = "git_config_mutation_requires_approval";
+    public const string PlanPresetRequiresApproval = "plan_preset_requires_approval";
+    public const string RuleAsks = "rule_asks";
 
     /// <summary>
     /// Every reason code that has dedicated copy. Kept public so a test can assert
@@ -35,6 +48,19 @@ public static class AgentApprovalSummaryPresentation
         WebApprovalRequired,
         TerminalUnknownExecutable,
         TerminalProtectedPathRequiresApproval,
+        TerminalExternalCwdRequiresApproval,
+        TerminalCwdUntrusted,
+        TerminalNetworkRequiresApproval,
+        TerminalExternalArgvRequiresApproval,
+        TerminalExternalExecutableRequiresApproval,
+        TerminalUnparsedShellSyntaxRequiresApproval,
+        RecognizedExecutableUnclassifiedForm,
+        GitSubmoduleRequiresApproval,
+        GitDirectoryOverrideRequiresApproval,
+        GitConfigOverrideRequiresApproval,
+        GitConfigMutationRequiresApproval,
+        PlanPresetRequiresApproval,
+        RuleAsks,
     ];
 
     /// <summary>
@@ -61,6 +87,32 @@ public static class AgentApprovalSummaryPresentation
                 "Ru has not recognized the executable for this terminal command.",
             TerminalProtectedPathRequiresApproval =>
                 "This terminal command points at a protected location (SSH keys, cloud credentials, .env).",
+            TerminalExternalCwdRequiresApproval =>
+                "This terminal command runs in a folder outside the workspace.",
+            TerminalCwdUntrusted =>
+                "This terminal command runs in a folder Ru cannot verify.",
+            TerminalNetworkRequiresApproval =>
+                "This terminal command needs network access.",
+            TerminalExternalArgvRequiresApproval =>
+                "This terminal command passes a path that points outside the workspace.",
+            TerminalExternalExecutableRequiresApproval =>
+                "This terminal command runs an executable outside the workspace.",
+            TerminalUnparsedShellSyntaxRequiresApproval =>
+                "This terminal command uses shell syntax Ru cannot fully verify.",
+            RecognizedExecutableUnclassifiedForm =>
+                "Ru recognized the executable but not the shape of this command.",
+            GitSubmoduleRequiresApproval =>
+                "This git command touches submodules.",
+            GitDirectoryOverrideRequiresApproval =>
+                "This git command points git at a different directory.",
+            GitConfigOverrideRequiresApproval =>
+                "This git command overrides git configuration for one run.",
+            GitConfigMutationRequiresApproval =>
+                "This git command changes git configuration.",
+            PlanPresetRequiresApproval =>
+                "The Plan preset asks before every change; approve once or switch preset.",
+            RuleAsks =>
+                "One of your project rules asks before this action.",
             "" => "Agent is requesting an action that requires approval.",
             _ => trimmed,
         };

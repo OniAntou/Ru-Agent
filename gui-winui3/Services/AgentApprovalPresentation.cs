@@ -31,6 +31,8 @@ public static class AgentApprovalPresentation
     private static readonly IReadOnlyList<string> OneTimeOnlyReasons =
     [
         AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval,
+        AgentApprovalSummaryPresentation.PlanPresetRequiresApproval,
+        AgentApprovalSummaryPresentation.RuleAsks,
     ];
 
     /// <summary>

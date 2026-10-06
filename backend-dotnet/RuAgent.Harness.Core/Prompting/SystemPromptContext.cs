@@ -173,7 +173,7 @@ public sealed record PromptRuntimeContext
     /// instead of costing the model the oldest results. Callers that can exceed it must
     /// keep the newest references and drop the rest.
     /// </remarks>
-    public const int MaxRuntimeReferences = 24;
+    public const int MaxRuntimeReferences = 32;
 
     public PromptRuntimeContext(
         string? mood,

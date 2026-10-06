@@ -96,11 +96,11 @@ optional `offset`/`limit` and reads one file; `list` takes `path` with optional
 session task list (at most 64 rows of `content` plus a `status` of `pending`,
 `in_progress` or `completed`) and touches neither disk nor network.
 `glob` takes `pattern`
-(required) plus optional `path` and `max_results` (1–64, default 64) and returns
+(required) plus optional `path` and `max_results` (1–128, default 128) and returns
 stable sorted relative paths without content access; `grep` takes `query`
 (1–1024 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
-(default false), `is_regex` (default false), `max_results` (1–64, default
-64) and `offset` (0–10000, default 0) for paging the ordinal results,
+(default false), `is_regex` (default false), `max_results` (1–128, default
+128) and `offset` (0–10000, default 0) for paging the ordinal results,
 and returns bounded match locations without raw file content; `write`
 carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 `mode=shell` or `mode=read_output`.

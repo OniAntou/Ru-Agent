@@ -26,7 +26,7 @@ public sealed class AgentProviderTransientParkTests
             var seeded = await fixture.SeedRunAsync(
                 new HarnessRunStatus(HarnessRunState.Running));
             var runId = seeded.Run.RunId;
-            var provider = new ScriptedProvider((_, call) => call <= 3
+            var provider = new ScriptedProvider((_, call) => call <= 5
                 ? Throws(new ModelProviderException("rate_limited", retryable: true))
                 : Deltas(new ModelDelta("done", [], completed: true, finishReason: "stop")));
             var activities = new RecordingActivitySink();
@@ -37,7 +37,7 @@ public sealed class AgentProviderTransientParkTests
             Assert.Equal(HarnessRunState.WaitingUser, parked.Run.State);
             Assert.Equal("provider_rate_limited", parked.ErrorCode);
             Assert.Null(parked.Run.TerminalErrorCode);
-            Assert.Equal(3, provider.Calls);
+            Assert.Equal(5, provider.Calls);
             var parkedEvents = await ReadEventsAsync(fixture, runId);
             Assert.Contains(parkedEvents, item =>
                 item.Kind == "run.state_changed" && item.SafeCode == "waiting_user");
@@ -57,7 +57,7 @@ public sealed class AgentProviderTransientParkTests
             Assert.Null(completed.ErrorCode);
             Assert.Equal(HarnessRunState.WaitingHistory, completed.Run.State);
             Assert.Equal(HistoryWaitKind.FinalBeforeCompletion, completed.Run.HistoryWaitKind);
-            Assert.Equal(4, provider.Calls);
+            Assert.Equal(6, provider.Calls);
         }
         finally
         {
@@ -106,7 +106,7 @@ public sealed class AgentProviderTransientParkTests
     {
         var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
         {
-            StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero],
+            StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
         };
         return new AgentRunCoordinator(

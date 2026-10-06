@@ -22,7 +22,7 @@ public interface IHarnessModelContextBootstrapper
 
 public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootstrapper
 {
-    private const int MaximumContextTurns = 16;
+    private const int MaximumContextTurns = 32;
 
     private readonly ISessionStore _sessions;
     private readonly HarnessPayloadStore _payloads;

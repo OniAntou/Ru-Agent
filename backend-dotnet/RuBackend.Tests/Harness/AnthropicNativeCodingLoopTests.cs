@@ -127,10 +127,10 @@ public sealed partial class HeadlessCodingLoopTests
 
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
         Assert.True(await WaitForStatusAsync(client, runId,
-            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(90)));
 
         Assert.Equal("failed", await GetStatusAsync(client, runId));
-        Assert.Equal(3, provider.RequestCount);
+        Assert.Equal(5, provider.RequestCount);
         Assert.All(provider.Requests, call =>
         {
             Assert.Equal("claude-fable-5", call.Model);

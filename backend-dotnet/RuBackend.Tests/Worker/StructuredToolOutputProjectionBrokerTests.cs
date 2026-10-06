@@ -26,7 +26,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
                 {
                     ["mode"] = "run",
                     ["executable"] = "cmd.exe",
-                    ["arguments"] = new JsonArray("/c", "(echo once>>ran.txt) & (for /L %i in (1,1,400) do @echo 012345678901234567890123456789) & @echo CURSOR-MIDDLE-MARKER & (for /L %i in (1,1,1000) do @echo 012345678901234567890123456789)"),
+                    ["arguments"] = new JsonArray("/c", "(echo once>>ran.txt) & (for /L %i in (1,1,950) do @echo 012345678901234567890123456789) & @echo CURSOR-MIDDLE-MARKER & (for /L %i in (1,1,1000) do @echo 012345678901234567890123456789)"),
                 }),
                 CancellationToken.None);
 
@@ -34,7 +34,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
             Assert.True(execution.Output["stdout_dropped_bytes"]!.GetValue<long>() > 0, execution.Output.ToJsonString());
             Assert.Equal(executionId, execution.Output["spool_id"]!.GetValue<string>());
 
-            const int brokerPageLimit = 14_000;
+            const int brokerPageLimit = 32_000;
             var firstRequestId = "req-page-" + Guid.NewGuid().ToString("N");
             var firstPage = await ReadOutput(service, sessionId, firstRequestId, executionId, 0, brokerPageLimit);
             var source = firstPage.Output.ToJsonString();
@@ -68,7 +68,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
     {
         using var fixture = BrokerFixture.Create();
         const string hiddenMarker = "READ-UTF8-PROJECTION-MARKER";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 1_300)) + hiddenMarker + " tail";
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 3_000)) + hiddenMarker + " tail";
         await File.WriteAllTextAsync(Path.Combine(fixture.Workspace, "large.txt"), content, new System.Text.UTF8Encoding(false));
         var originalBytes = System.Text.Encoding.UTF8.GetByteCount(content);
         const string providerCallId = "provider_read_cursor";
@@ -85,7 +85,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         var visible = view.RootElement.GetProperty("content").GetString()!;
         var cursor = view.RootElement.GetProperty("projection_next_offset").GetInt32();
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(cursor < System.Text.Encoding.UTF8.GetByteCount("\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 1_300))));
+        Assert.True(cursor < System.Text.Encoding.UTF8.GetByteCount("\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 3_000))));
         Assert.Equal(originalBytes, first.Output["bytes_read"]!.GetValue<int>());
         Assert.Equal(source, first.Output.ToJsonString());
 
@@ -106,9 +106,9 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         using var fixture = BrokerFixture.Create();
         const string hiddenMarker = "NEEDLE-GREP-PROJECTION-MARKER";
         var lines = Enumerable.Range(0, 120)
-            .Select(index => $"needle match {index:D3} {new string('x', 200)}")
+            .Select(index => $"needle match {index:D3} {new string('x', 400)}")
             .ToArray();
-        lines[45] += " " + hiddenMarker;
+        lines[60] += " " + hiddenMarker;
         await File.WriteAllLinesAsync(Path.Combine(fixture.Workspace, "matches.txt"), lines, new System.Text.UTF8Encoding(false));
         const int originalOffset = 7;
         const string providerCallId = "provider_grep_cursor";

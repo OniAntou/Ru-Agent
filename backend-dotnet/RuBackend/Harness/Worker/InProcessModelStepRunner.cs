@@ -19,12 +19,12 @@ namespace RuBackend.Harness.Worker;
 /// </summary>
 public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer
 {
-    private const int MaxModelStepAttempts = 3;
-    private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
+    private const int MaxModelStepAttempts = 5;
+    private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
-    private const int MaxConversationBlockChars = 12_000;
+    private const int MaxConversationBlockChars = 30_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
         "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";

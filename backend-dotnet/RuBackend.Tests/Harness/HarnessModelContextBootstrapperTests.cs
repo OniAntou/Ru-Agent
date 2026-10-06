@@ -46,7 +46,7 @@ public sealed class HarnessModelContextBootstrapperTests
     }
 
     [Fact]
-    public async Task Captures_the_existing_sixteen_turn_context_once_and_ignores_source_metadata()
+    public async Task Captures_the_existing_thirty_two_turn_context_once_and_ignores_source_metadata()
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var request = await fixture.SeedRunAsync();
@@ -62,7 +62,7 @@ public sealed class HarnessModelContextBootstrapperTests
             "Context",
             BackendHarnessTestFixture.Timestamp,
             BackendHarnessTestFixture.Timestamp,
-            Enumerable.Range(0, 20)
+            Enumerable.Range(0, 40)
                 .SelectMany(index => new[]
                 {
                     new SessionMessage(
@@ -104,9 +104,9 @@ public sealed class HarnessModelContextBootstrapperTests
 
         Assert.Equal(ContextBootstrapOutcome.Captured, first);
         Assert.Equal(ContextBootstrapOutcome.AlreadyCaptured, repeated);
-        Assert.Equal(32, snapshot.SessionBase.Count);
-        Assert.Equal("prompt-4", snapshot.SessionBase[0].Content);
-        Assert.Equal("reply-19", snapshot.SessionBase[^1].AssistantStep!.Text);
+        Assert.Equal(64, snapshot.SessionBase.Count);
+        Assert.Equal("prompt-8", snapshot.SessionBase[0].Content);
+        Assert.Equal("reply-39", snapshot.SessionBase[^1].AssistantStep!.Text);
         Assert.DoesNotContain(snapshot.SessionBase, entry =>
             entry.Content == "current incomplete prompt");
     }

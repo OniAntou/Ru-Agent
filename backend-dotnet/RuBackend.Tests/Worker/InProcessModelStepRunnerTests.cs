@@ -202,14 +202,14 @@ public sealed class InProcessModelStepRunnerTests
         Assert.Equal("provider_rate_limited", error.Code);
         Assert.Equal("provider_rate_limited", error.StepErrorCode);
         Assert.True(error.Retryable);
-        Assert.Equal(3, provider.Calls);
+        Assert.Equal(5, provider.Calls);
     }
 
     [Fact]
-    public void Default_retry_backoffs_stay_2s_then_5s()
+    public void Default_retry_backoffs_escalate_to_the_five_attempt_budget()
     {
         Assert.Equal(
-            [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)],
+            [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)],
             InProcessModelStepRunner.DefaultStepRetryBackoffs);
     }
 
@@ -318,7 +318,7 @@ public sealed class InProcessModelStepRunnerTests
     private static InProcessModelStepRunner Runner(ScriptedProvider provider) =>
         new(new WorkerV2StepService(provider))
         {
-            StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero],
+            StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
         };
 

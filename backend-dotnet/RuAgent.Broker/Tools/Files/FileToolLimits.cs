@@ -3,9 +3,9 @@ namespace RuAgent.Broker.Tools.Files;
 public static class FileToolLimits
 {
     public const int MaxEntries = 512;
-    public const int MaxResults = 64;
-    public const int MaxGlobResults = 64;
-    public const int MaxSearchResults = 64;
+    public const int MaxResults = 128;
+    public const int MaxGlobResults = 128;
+    public const int MaxSearchResults = 128;
     public const int MaxReadBytes = 256 * 1024;
     public const int MaxPathLength = 4096;
     public const int MaxPatternLength = 512;
@@ -14,7 +14,7 @@ public static class FileToolLimits
     public const int MaxTotalSearchBytes = 10 * 1024 * 1024;
     public const int MaxTimeMs = 5000;
     public const int DefaultMaxEntries = 512;
-    public const int DefaultMaxResults = 64;
+    public const int DefaultMaxResults = 128;
     public const int DefaultReadLimit = 256 * 1024;
     public const int MaxRecoveryBytes = 4 * 1024 * 1024;
     public const int HardMaxRecoveryBytes = MaxRecoveryBytes;

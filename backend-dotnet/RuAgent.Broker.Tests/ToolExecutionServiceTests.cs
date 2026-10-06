@@ -1478,6 +1478,143 @@ public sealed class ToolExecutionServiceTests
         }
     }
 
+    /// <summary>
+    /// A foreground command that outlives its approved window is moved to the
+    /// background instead of being killed; the receipt carries the execution id
+    /// so the model can page or stop it.
+    /// </summary>
+    [Fact]
+    public async Task Foreground_command_moves_to_background_after_its_window()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-move-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-move";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var runRequestId = "req-move-" + Guid.NewGuid().ToString("N");
+            var started = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, runRequestId, new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "cmd.exe",
+                    ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
+                    ["timeout_ms"] = 1_000,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, started.Status);
+            Assert.True(started.Output["moved_to_background"]!.GetValue<bool>());
+            Assert.Equal(runRequestId, started.Output["execution_id"]!.GetValue<string>());
+            Assert.Equal("running", started.Output["state"]!.GetValue<string>());
+
+            var killed = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-kill-move-" + Guid.NewGuid().ToString("N"), new JsonObject
+                {
+                    ["mode"] = "kill",
+                    ["execution_id"] = runRequestId,
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, killed.Status);
+
+            await WaitForBackgroundStateAsync(service, sessionId, runRequestId, "killed");
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
+    /// <summary>
+    /// The envelope deadline is a control-RPC budget, not a terminal bound: a
+    /// command that outlives it still runs to its own timeout (previously it was
+    /// cancelled at the envelope deadline, roughly ten seconds in production).
+    /// </summary>
+    [Fact]
+    public async Task Envelope_deadline_does_not_cancel_a_longer_terminal_command()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-deadline-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        const string sessionId = "session-terminal-deadline";
+        session.Open(
+            sessionId,
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
+                StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var envelope = new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersionV2,
+                "req-deadline-" + Guid.NewGuid().ToString("N"),
+                AgentMessageTypes.ToolExecute,
+                sessionId,
+                null,
+                2_000,
+                new JsonObject
+                {
+                    ["tool_id"] = "bash",
+                    ["tool_version"] = "1.0.0",
+                    ["capability_class"] = "internal",
+                    ["run_id"] = "run_" + Guid.NewGuid().ToString("N"),
+                    ["arguments"] = new JsonObject
+                    {
+                        ["mode"] = "run",
+                        ["executable"] = "cmd.exe",
+                        ["arguments"] = new JsonArray("/c", "ping -n 4 127.0.0.1 > nul"),
+                        ["timeout_ms"] = 120_000,
+                    },
+                });
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var result = await service.ExecuteAuthenticatedV2Async(envelope, CancellationToken.None);
+            stopwatch.Stop();
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.Equal(0, result.Output["exit_code"]!.GetValue<int>());
+            Assert.True(
+                stopwatch.ElapsedMilliseconds > 2_000,
+                $"command was cancelled at the envelope deadline after {stopwatch.ElapsedMilliseconds}ms");
+        }
+        finally
+        {
+            await DeleteBackgroundRootAsync(root);
+        }
+    }
+
     private static async Task DeleteBackgroundRootAsync(string root)
     {
         // The killed process tree releases its working-directory handle a

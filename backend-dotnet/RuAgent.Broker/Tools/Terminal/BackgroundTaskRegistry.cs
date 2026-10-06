@@ -18,7 +18,8 @@ public sealed record BackgroundTaskSnapshot(
     string ExecutionId,
     BackgroundTaskState State,
     int? ExitCode,
-    string Text);
+    string Text,
+    bool IsBackground);
 
 public enum BackgroundKillOutcome
 {
@@ -45,9 +46,17 @@ public sealed class BackgroundTaskRegistry
 
     /// <summary>
     /// Registers one running task. False when the session already keeps the
-    /// maximum number of running tasks, or the id is still running.
+    /// maximum number of running tasks and the caller asked for the cap, or the
+    /// id is still running. A foreground call registers cap-exempt: it becomes a
+    /// background task only when its wait window expires.
     /// </summary>
-    public bool TryStart(string sessionId, string executionId, int lifetimeMs, out CancellationToken lifetimeToken)
+    public bool TryStart(
+        string sessionId,
+        string executionId,
+        int lifetimeMs,
+        bool enforceCap,
+        bool isBackground,
+        out CancellationToken lifetimeToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(executionId);
@@ -79,17 +88,29 @@ public sealed class BackgroundTaskRegistry
                 }
             }
 
-            if (running >= TerminalLimits.MaxBackgroundTasksPerSession)
+            if (enforceCap && running >= TerminalLimits.MaxBackgroundTasksPerSession)
             {
                 lifetimeToken = default;
                 return false;
             }
 
             var lifetime = new CancellationTokenSource(Math.Max(1, lifetimeMs));
-            tasks[executionId] = new TaskEntry(executionId, lifetime, ++_sequence);
+            tasks[executionId] = new TaskEntry(executionId, lifetime, ++_sequence) { IsBackground = isBackground };
             EvictCompleted(tasks);
             lifetimeToken = lifetime.Token;
             return true;
+        }
+    }
+
+    /// <summary>Marks a foreground task as background after its wait window expired.</summary>
+    public void MarkBackground(string sessionId, string executionId)
+    {
+        lock (_gate)
+        {
+            if (TryFind(sessionId, executionId, out var entry))
+            {
+                entry.IsBackground = true;
+            }
         }
     }
 
@@ -160,7 +181,8 @@ public sealed class BackgroundTaskRegistry
                     entry.ExecutionId,
                     entry.State,
                     entry.ExitCode,
-                    entry.Text.ToString());
+                    entry.Text.ToString(),
+                    entry.IsBackground);
                 return true;
             }
         }
@@ -195,6 +217,31 @@ public sealed class BackgroundTaskRegistry
             }
 
             return BackgroundKillOutcome.Killing;
+        }
+    }
+
+    /// <summary>Bounded snapshot of one session's tasks, oldest first.</summary>
+    public IReadOnlyList<BackgroundTaskSnapshot> List(string sessionId)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var tasks))
+            {
+                return Array.Empty<BackgroundTaskSnapshot>();
+            }
+
+            var snapshots = new List<BackgroundTaskSnapshot>(tasks.Count);
+            foreach (var entry in tasks.Values.OrderBy(entry => entry.Sequence))
+            {
+                snapshots.Add(new BackgroundTaskSnapshot(
+                    entry.ExecutionId,
+                    entry.State,
+                    entry.ExitCode,
+                    entry.Text.ToString(),
+                    entry.IsBackground));
+            }
+
+            return snapshots;
         }
     }
 
@@ -254,6 +301,8 @@ public sealed class BackgroundTaskRegistry
         public int? ExitCode { get; set; }
 
         public bool Killed { get; set; }
+
+        public bool IsBackground { get; set; }
 
         public long Sequence { get; }
     }

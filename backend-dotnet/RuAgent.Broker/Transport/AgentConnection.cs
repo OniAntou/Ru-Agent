@@ -19,6 +19,7 @@ public sealed partial class AgentConnection
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _authenticatedToolHandler;
+    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _sessionTasksHandler;
     private readonly Action<string>? _sessionClosedHandler;
     private readonly PendingApprovalStore _pendingV2;
     private readonly ApprovalTokenService _authTokens;
@@ -37,7 +38,8 @@ public sealed partial class AgentConnection
         ApprovalTokenService? approvalTokenService = null,
         IReadOnlyList<string>? advertisedCapabilities = null,
         SemaphoreSlim? lifecycleGate = null,
-        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? authenticatedToolHandler = null)
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? authenticatedToolHandler = null,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? sessionTasksHandler = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
@@ -46,6 +48,7 @@ public sealed partial class AgentConnection
             StringComparer.Ordinal);
         _toolHandler = toolHandler;
         _authenticatedToolHandler = authenticatedToolHandler;
+        _sessionTasksHandler = sessionTasksHandler;
         _sessionClosedHandler = sessionClosedHandler;
         // State is scoped to the BrokerHost by callers that need reconnect support;
         // a directly constructed connection gets private state instead of sharing
@@ -355,6 +358,11 @@ public sealed partial class AgentConnection
                         () => Task.FromResult(HandleSessionGrantsRevoke(request)),
                         cancellationToken)
                     .ConfigureAwait(false);
+            case AgentMessageTypes.SessionTasks:
+                return await WithLifecycleAsync(
+                        () => HandleSessionTasksAsync(request, cancellationToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
                 {
@@ -403,6 +411,21 @@ public sealed partial class AgentConnection
             ["status"] = "succeeded",
             ["safe_summary"] = "session closed",
         });
+    }
+
+    private async Task<AgentEnvelope> HandleSessionTasksAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return ToolError(request, "broker_not_ready", "session is not open");
+        }
+
+        if (_sessionTasksHandler is null)
+        {
+            return ToolError(request, "phase_not_available", "session tasks are not available");
+        }
+
+        return await _sessionTasksHandler(request, cancellationToken).ConfigureAwait(false);
     }
 
     private AgentEnvelope HandleHello(AgentEnvelope request)

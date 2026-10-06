@@ -29,6 +29,8 @@ public static class AgentMessageTypes
     public const string ApprovalResult = "approval.result";
     public const string SessionGrantsRevoke = "session.grants.revoke";
     public const string SessionGrantsRevoked = "session.grants.revoked";
+    public const string SessionTasks = "session.tasks";
+    public const string SessionTasksResult = "session.tasks.result";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [
@@ -59,6 +61,8 @@ public static class AgentMessageTypes
             ApprovalResult,
             SessionGrantsRevoke,
             SessionGrantsRevoked,
+            SessionTasks,
+            SessionTasksResult,
         ],
         StringComparer.Ordinal);
 
@@ -79,6 +83,8 @@ public static class AgentMessageTypes
             ApprovalResult,
             SessionGrantsRevoke,
             SessionGrantsRevoked,
+            SessionTasks,
+            SessionTasksResult,
         ],
         StringComparer.Ordinal);
 }

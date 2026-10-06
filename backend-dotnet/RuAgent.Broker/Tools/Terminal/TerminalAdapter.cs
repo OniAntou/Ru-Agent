@@ -119,7 +119,8 @@ public sealed class TerminalAdapter
         TerminalRunRequest request,
         bool confineWorkspace,
         CancellationToken cancellationToken,
-        Action<string>? retainOutput = null)
+        Action<string>? retainOutput = null,
+        int? killTimeoutMs = null)
     {
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
@@ -181,14 +182,15 @@ public sealed class TerminalAdapter
             }
         }
 
-        return ExecuteIntentAsync(intent, cancellationToken, retainOutput);
+        return ExecuteIntentAsync(intent, cancellationToken, retainOutput, killTimeoutMs);
     }
 
     public async Task<StreamingProcessResult> RunApprovedShellAsync(
         TerminalShellRequest request,
         bool confineWorkspace,
         CancellationToken cancellationToken,
-        Action<string>? retainOutput = null)
+        Action<string>? retainOutput = null,
+        int? killTimeoutMs = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
@@ -214,7 +216,7 @@ public sealed class TerminalAdapter
                 intent.Arguments,
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
-                intent.TimeoutMs,
+                killTimeoutMs ?? intent.TimeoutMs,
                 256 * 1024),
             WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
@@ -223,7 +225,8 @@ public sealed class TerminalAdapter
     private async Task<StreamingProcessResult> ExecuteIntentAsync(
         CanonicalCommandIntent intent,
         CancellationToken cancellationToken,
-        Action<string>? retainOutput = null)
+        Action<string>? retainOutput = null,
+        int? killTimeoutMs = null)
     {
         if (ManagedCommitService.IsManagedCommitInvocation(intent.ResolvedExecutable, intent.Arguments))
         {
@@ -240,7 +243,7 @@ public sealed class TerminalAdapter
                 arguments,
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
-                intent.TimeoutMs,
+                killTimeoutMs ?? intent.TimeoutMs,
                 256 * 1024),
             WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);

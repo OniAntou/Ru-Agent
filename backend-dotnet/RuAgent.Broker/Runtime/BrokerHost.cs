@@ -182,7 +182,8 @@ public sealed class BrokerHost : IAsyncDisposable
             approvalTokenService: _authTokens,
             advertisedCapabilities: _session.AdvertisedCapabilities,
             lifecycleGate: _lifecycleGate,
-            authenticatedToolHandler: (request, token) => ExecuteToolAsync(request, token, isAuthenticatedV2Execution: true))
+            authenticatedToolHandler: (request, token) => ExecuteToolAsync(request, token, isAuthenticatedV2Execution: true),
+            sessionTasksHandler: (request, token) => ExecuteSessionTasksAsync(request, token))
             .RunAsync(socket, linkedCancellation.Token);
         var tracked = false;
         lock (_connectionSync)
@@ -256,6 +257,63 @@ public sealed class BrokerHost : IAsyncDisposable
                 ["adapter_invoked"] = result.AdapterInvoked,
             });
     }
+
+    private Task<RuAgent.Protocol.AgentEnvelope> ExecuteSessionTasksAsync(
+        RuAgent.Protocol.AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        string? killExecutionId = null;
+        if (request.Payload["kill_execution_id"] is System.Text.Json.Nodes.JsonValue killValue
+            && killValue.TryGetValue<string>(out var killRaw)
+            && !string.IsNullOrWhiteSpace(killRaw))
+        {
+            if (killRaw.Length > RuAgent.Protocol.TerminalLimits.MaxExecutionIdChars
+                || killRaw.Contains('\0'))
+            {
+                return Task.FromResult(SessionTasksError(request, "invalid_arguments", "kill_execution_id is invalid."));
+            }
+
+            killExecutionId = killRaw;
+        }
+
+        try
+        {
+            var payload = _tools.HandleSessionTasks(request.SessionId, killExecutionId);
+            payload["status"] = RuAgent.Protocol.ToolResultStatuses.Succeeded;
+            payload["safe_summary"] = "session tasks";
+            return Task.FromResult(new RuAgent.Protocol.AgentEnvelope(
+                request.ProtocolVersion,
+                request.RequestId,
+                RuAgent.Protocol.AgentMessageTypes.SessionTasksResult,
+                request.SessionId,
+                request.CorrelationId,
+                request.DeadlineMs,
+                payload));
+        }
+        catch (ArgumentException error)
+        {
+            return Task.FromResult(SessionTasksError(request, error.Message, "Session task control failed."));
+        }
+    }
+
+    private static RuAgent.Protocol.AgentEnvelope SessionTasksError(
+        RuAgent.Protocol.AgentEnvelope request,
+        string code,
+        string summary) =>
+        new(
+            request.ProtocolVersion,
+            request.RequestId,
+            RuAgent.Protocol.AgentMessageTypes.SessionTasksResult,
+            request.SessionId,
+            request.CorrelationId,
+            request.DeadlineMs,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["status"] = RuAgent.Protocol.ToolResultStatuses.Failed,
+                ["error_code"] = code,
+                ["safe_summary"] = summary,
+            });
 
     private bool IsAuthorized(HttpContext context)
     {

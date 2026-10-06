@@ -113,7 +113,7 @@ public sealed partial class AgentCommands
                 await _out.WriteLineAsync($"status: {result.Status}").ConfigureAwait(false);
                 await _out.WriteLineAsync($"code: {result.Code}").ConfigureAwait(false);
                 await _out.WriteLineAsync($"run_version: {result.RunVersion}").ConfigureAwait(false);
-                if (parsed.Command.Kind is RuAgent.Protocol.AgentCommandKind.Help or RuAgent.Protocol.AgentCommandKind.Skills)
+                if (parsed.Command.Kind is RuAgent.Protocol.AgentCommandKind.Help or RuAgent.Protocol.AgentCommandKind.Skills or RuAgent.Protocol.AgentCommandKind.Tasks)
                 {
                     await _out.WriteLineAsync(JsonSerializer.Serialize(result.Data)).ConfigureAwait(false);
                 }

@@ -585,6 +585,23 @@ public sealed partial class BrokerToolGateway
             expectedLease,
             expectedGeneration);
 
+    /// <summary>
+    /// Session-scoped background task listing and optional stop. The Broker
+    /// answers with the bounded task array; unknown ids come back as a failed
+    /// payload carrying their stable code.
+    /// </summary>
+    public async Task<JsonObject> ListSessionTasksAsync(
+        string? killExecutionId,
+        CancellationToken cancellationToken)
+    {
+        var reply = await RpcAsync(
+            AgentMessageTypes.SessionTasks,
+            _ => new JsonObject { ["kill_execution_id"] = killExecutionId },
+            static (reply, _) => reply,
+            cancellationToken).ConfigureAwait(false);
+        return reply.Payload;
+    }
+
     private async Task SendAsync(
         GatewayBinding binding,
         AgentEnvelope envelope,

@@ -730,7 +730,7 @@ Agent profile receives the advertised list; policy fallback behavior is
 verified separately. `files.apply_patch` remains unadvertised. Time, machine
 status, app discovery, and optional volume operations use terminal tools;
 notes use `write` with `op=write`.
-Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
+Typed commands (`/compact`, `/help`, `/skills`, `/skill`, `/tasks`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
 enabled standalone managed capabilities backed by Google HTML primary with
 fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); each call remains bounded, redirect-safe, policy-checked, and marked

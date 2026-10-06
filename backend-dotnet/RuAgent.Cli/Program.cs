@@ -169,7 +169,7 @@ public static class Program
         Console.Error.WriteLine("  agent policy list [--global] [--json]");
         Console.Error.WriteLine("  agent policy import --global FILE");
         Console.Error.WriteLine("  agent policy remove <rule-id>");
-        Console.Error.WriteLine("  agent command <run-id> \"/help|/skills|/compact ...|/skill ...\" [--json]");
+        Console.Error.WriteLine("  agent command <run-id> \"/help|/skills|/compact ...|/skill ...|/tasks ...\" [--json]");
         Console.Error.WriteLine("  agent rpc # stdio JSON-RPC 2.0 bridge for external tools");
     }
 }

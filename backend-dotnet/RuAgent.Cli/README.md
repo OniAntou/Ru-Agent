@@ -109,8 +109,9 @@ agent rpc
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `allow_once`, `allow_session_directory` (external folders only), `allow_always` (authorizes once and remembers the exact intent as a project rule), or `deny`. The Host picks the right one-time token from the pending binding (session-scoped directory grant for `external_directory_required`, ephemeral token for `terminal_delete_requires_approval`, `terminal_external_mutation_requires_approval`, or `terminal_unknown_executable`). `terminal_timeout_requires_approval` remains the standard-window gate below `full_access` and `web_approval_required` remains a compatibility reason for explicit ask rules; timeout above the protocol hard maximum is denied. `agent approve --always` sends `allow_always`; no reusable approval token is ever created. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). `--json` cannot confirm approval.
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
-- `command` forwards `/compact normal|aggressive`, `/help`, `/skills`, or
-  `/skill <name>` through `AgentApiClient.DispatchCommandAsync`.
+- `command` forwards `/compact normal|aggressive`, `/help`, `/skills`,
+  `/skill <name>`, or `/tasks [kill <execution_id>]` through
+  `AgentApiClient.DispatchCommandAsync`.
   Slash parsing is shared with the Public Host; malformed or unknown commands
   return stable `command_invalid`/`command_unknown` codes and are never sent as
   prompts. Human output prints only bounded metadata; `--json` emits the

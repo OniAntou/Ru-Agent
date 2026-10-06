@@ -11,13 +11,15 @@ public enum AgentCommandKind
     Help,
     Skills,
     Skill,
+    Tasks,
 }
 
 public sealed record AgentCommand(
     AgentCommandKind Kind,
     string? Strategy = null,
     string? SkillId = null,
-    JsonObject? JsonInput = null);
+    JsonObject? JsonInput = null,
+    string? TaskKillId = null);
 
 public sealed record AgentCommandParseResult(
     AgentCommand? Command,
@@ -38,6 +40,9 @@ public static class AgentActionRouter
     public const int MaxInputBytes = 16 * 1024;
     public const int MaxSkillJsonBytes = 8 * 1024;
     public const int MaxSkillIdLength = 128;
+    // Mirrors TerminalLimits.MaxExecutionIdChars in the Protocol layer, which
+    // the Broker's task registry enforces.
+    public const int MaxExecutionIdLength = 256;
 
     private static readonly Regex SkillIdPattern = new(
         "^[a-z][a-z0-9]*(?:\\.[a-z0-9][a-z0-9_-]*)+$",
@@ -70,8 +75,40 @@ public static class AgentActionRouter
             "help" => NoArguments(AgentCommandKind.Help, remainder, "Help lists the available Agent commands."),
             "skills" => NoArguments(AgentCommandKind.Skills, remainder, "Skills lists the skills granted to this session."),
             "skill" => ParseSkill(remainder),
+            "tasks" => ParseTasks(remainder),
             _ => new AgentCommandParseResult(null, "command_unknown", "Unknown Agent command."),
         };
+    }
+
+    private static AgentCommandParseResult ParseTasks(string remainder)
+    {
+        if (remainder.Length == 0)
+        {
+            return new AgentCommandParseResult(
+                new AgentCommand(AgentCommandKind.Tasks),
+                null,
+                "Session tasks requested.");
+        }
+
+        const string killPrefix = "kill ";
+        if (!remainder.StartsWith(killPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return Invalid("Tasks accepts no arguments or \"kill <execution_id>\".");
+        }
+
+        var executionId = remainder[killPrefix.Length..].Trim();
+        if (executionId.Length == 0
+            || executionId.Length > MaxExecutionIdLength
+            || executionId.Contains('\0')
+            || executionId.Any(char.IsWhiteSpace))
+        {
+            return Invalid("Task kill requires one execution id.");
+        }
+
+        return new AgentCommandParseResult(
+            new AgentCommand(AgentCommandKind.Tasks, TaskKillId: executionId),
+            null,
+            "Task stop requested.");
     }
 
     private static AgentCommandParseResult ParseCompact(string remainder)

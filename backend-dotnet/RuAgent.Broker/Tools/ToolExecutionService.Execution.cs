@@ -421,15 +421,7 @@ public sealed partial class ToolExecutionService
     /// </summary>
     private static void ValidateTerminalTimeoutCeiling(string toolId, JsonObject arguments)
     {
-        if (!string.Equals(toolId, "bash", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var mode = arguments["mode"] is JsonValue modeValue && modeValue.TryGetValue<string>(out var text)
-            ? text
-            : "run";
-        if (mode is not ("run" or "shell"))
+        if (!IsTerminalRunOrShellCall(toolId, arguments))
         {
             return;
         }
@@ -447,6 +439,24 @@ public sealed partial class ToolExecutionService
         {
             throw new ToolSchemaException("invalid_arguments");
         }
+    }
+
+    /// <summary>
+    /// True for a bash run/shell call. Those executions are bounded by the
+    /// terminal timeout and the runner's own kill timer, not by the envelope
+    /// deadline, which is a control-RPC budget.
+    /// </summary>
+    private static bool IsTerminalRunOrShellCall(string toolId, JsonObject arguments)
+    {
+        if (!string.Equals(toolId, "bash", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var mode = arguments["mode"] is JsonValue modeValue && modeValue.TryGetValue<string>(out var text)
+            ? text
+            : "run";
+        return mode is "run" or "shell";
     }
 
     private async Task<ToolResult> ExecuteBindingAsync(
@@ -510,7 +520,10 @@ public sealed partial class ToolExecutionService
             IsAuthenticatedV2Execution: isAuthenticatedV2Execution);
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
+        if (!IsTerminalRunOrShellCall(ReadString(contextRequest.Payload, "tool_id"), arguments))
+        {
+            deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
+        }
         try
         {
             outcome = await binding.Executor(context, arguments, deadline.Token).ConfigureAwait(false);

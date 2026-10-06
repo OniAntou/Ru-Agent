@@ -9,12 +9,24 @@ public sealed class AgentActionRouterTests
     [InlineData("/help", AgentCommandKind.Help)]
     [InlineData("/skills", AgentCommandKind.Skills)]
     [InlineData("  /compact aggressive", AgentCommandKind.Compact)]
+    [InlineData("/tasks", AgentCommandKind.Tasks)]
     public void Parser_returns_typed_commands(string text, AgentCommandKind expected)
     {
         var result = AgentActionRouter.Parse(text);
 
         Assert.True(result.Success);
         Assert.Equal(expected, result.Command!.Kind);
+    }
+
+    [Fact]
+    public void Parser_parses_task_kill_without_retaining_command_text()
+    {
+        var result = AgentActionRouter.Parse("/tasks kill req-background-1");
+
+        Assert.True(result.Success);
+        Assert.Equal(AgentCommandKind.Tasks, result.Command!.Kind);
+        Assert.Equal("req-background-1", result.Command.TaskKillId);
+        Assert.DoesNotContain("req-background-1", result.SafeMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -33,6 +45,8 @@ public sealed class AgentActionRouterTests
     [InlineData("/help now")]
     [InlineData("/skill")]
     [InlineData("/skill bad-id")]
+    [InlineData("/tasks kill")]
+    [InlineData("/tasks stop req-1")]
     public void Parser_rejects_malformed_commands_without_an_action(string text)
     {
         var result = AgentActionRouter.Parse(text);

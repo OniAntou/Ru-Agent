@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
@@ -270,6 +271,7 @@ public sealed partial class AgentV1Service
                             new { name = "/help", arguments = "", description = "List typed Agent commands." },
                             new { name = "/skills", arguments = "", description = "List workspace skills (name + description)." },
                             new { name = "/skill", arguments = "<name>", description = "Load one workspace skill's SKILL.md body." },
+                            new { name = "/tasks", arguments = "[kill <execution_id>]", description = "List this session's background tasks or stop one." },
                         },
                     },
                     run.Version);
@@ -297,9 +299,44 @@ public sealed partial class AgentV1Service
             case AgentCommandKind.Skill:
                 return DispatchSkill(run, runIdRaw, command, cancellationToken);
 
+            case AgentCommandKind.Tasks:
+                return await DispatchTasksAsync(runIdRaw, run, command, cancellationToken).ConfigureAwait(false);
+
             default:
                 return BoundedError(400, "command_invalid", "Unsupported Agent command.");
         }
+    }
+
+    private async Task<AgentServiceResult> DispatchTasksAsync(
+        string runIdRaw,
+        AgentRun run,
+        AgentCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (_brokerGateways is not { IsConfigured: true })
+        {
+            return BoundedError(503, "broker_gateway_unavailable", "The Broker is not available.");
+        }
+
+        JsonObject payload;
+        try
+        {
+            payload = await _brokerGateways
+                .ListSessionTasksAsync(runIdRaw, command.TaskKillId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ToolTransportException error)
+        {
+            return BoundedError(503, error.Message, "The Broker connection failed.");
+        }
+
+        if (!string.Equals(payload["status"]?.GetValue<string>(), ToolResultStatuses.Succeeded, StringComparison.Ordinal))
+        {
+            var code = payload["error_code"]?.GetValue<string>() ?? "session_tasks_failed";
+            return BoundedError(409, code, "Session task control failed.");
+        }
+
+        return CommandSucceeded(runIdRaw, "tasks", payload, run.Version);
     }
 
     private AgentServiceResult DispatchSkills(

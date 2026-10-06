@@ -119,6 +119,28 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
     }
 
     /// <summary>
+    /// Lists the run session's bounded background tasks and optionally stops one.
+    /// Returns a failed payload when the run has no live Broker gateway.
+    /// </summary>
+    public async Task<JsonObject> ListSessionTasksAsync(
+        string runId,
+        string? killExecutionId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        if (!_gateways.TryGetValue(runId, out var gateway))
+        {
+            return new JsonObject
+            {
+                ["status"] = "failed",
+                ["error_code"] = "broker_gateway_unavailable",
+            };
+        }
+
+        return await gateway.ListSessionTasksAsync(killExecutionId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Bridges an approval resolution from the Host approval endpoint to the
     /// Broker pending approval that produced it. Returns false when the run
     /// has no tracked Broker gateway or the Broker rejects the resolution;

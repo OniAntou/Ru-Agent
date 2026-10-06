@@ -54,7 +54,7 @@ not advertised Agent tools.
 >   under the policy/approval boundary; the managed Git commit workflow is fully shipped
 >   with temporary index isolation and path attribution rollback.
 >   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;
->   `/compact`, `/help`, `/skills`, and `/skill <name>` use the shared
+>   `/compact`, `/help`, `/skills`, `/skill <name>`, and `/tasks [kill <execution_id>]` use the shared
 >   Protocol parser and do not become model history. `/skills` lists workspace
 >   skill name + description; `/skill <name>` loads one SKILL.md body as
 >   untrusted prompt guidance. The `skill` tool lets the model load a body
@@ -390,11 +390,13 @@ for canonical paths, capabilities, scopes, approvals, and execution.
 ## Typed command channel
 
 `POST /agent/v1/runs/{runId}/commands` accepts only the bounded commands
-`/compact normal|aggressive`, `/help`, `/skills`, and `/skill <name>`.
+`/compact normal|aggressive`, `/help`, `/skills`, `/skill <name>`, and
+`/tasks [kill <execution_id>]`.
 The shared `AgentActionRouter` rejects unknown or malformed slash commands with
 stable `command_unknown`/`command_invalid` codes, without creating a prompt,
 history entry, or outbox message. `/compact` reuses the durable compaction
-contract; `/help` is static; `/skills` and `/skill` are session-scoped. The CLI
+contract; `/help` is static; `/skills` and `/skill` are session-scoped; `/tasks`
+lists the session's background tasks and stops one on request. The CLI
 adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates

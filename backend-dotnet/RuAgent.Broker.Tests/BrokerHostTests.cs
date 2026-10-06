@@ -1348,6 +1348,90 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task V2_session_tasks_lists_and_stops_a_background_task()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-tasks-control";
+        const string runId = "run_tasks_control11111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-tasks-control", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var arguments = new JsonObject
+        {
+            ["executable"] = "cmd.exe",
+            ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
+            ["working_directory"] = fixture.Root,
+            ["background"] = true,
+        };
+        await SendAsync(socket, Evaluate("evaluate-tasks-run", sessionId, runId, "terminal.run", arguments.DeepClone().AsObject()), cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+
+        await SendAsync(socket, Execute("execute-tasks-run", sessionId, runId, "terminal.run", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+        var execution = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+        var executionId = execution.Payload["output"]!["execution_id"]!.GetValue<string>();
+        Assert.Equal("running", execution.Payload["output"]!["state"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "tasks-list", AgentMessageTypes.SessionTasks, sessionId, null, 10_000, new JsonObject()),
+            cts.Token);
+        var listed = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.SessionTasksResult, listed.MessageType);
+        Assert.Equal(ToolResultStatuses.Succeeded, listed.Payload["status"]!.GetValue<string>());
+        Assert.Contains(
+            listed.Payload["tasks"]!.AsArray(),
+            task => string.Equals(task!["execution_id"]!.GetValue<string>(), executionId, StringComparison.Ordinal));
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "tasks-kill-unknown", AgentMessageTypes.SessionTasks, sessionId, null, 10_000,
+                new JsonObject { ["kill_execution_id"] = "req-no-such-task" }),
+            cts.Token);
+        var unknown = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Failed, unknown.Payload["status"]!.GetValue<string>());
+        Assert.Equal("unknown_background_task", unknown.Payload["error_code"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "tasks-kill", AgentMessageTypes.SessionTasks, sessionId, null, 10_000,
+                new JsonObject { ["kill_execution_id"] = executionId }),
+            cts.Token);
+        var killed = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.SessionTasksResult, killed.MessageType);
+        Assert.True(killed.Payload["killed"]!.GetValue<bool>());
+
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "tasks-poll-" + attempt, AgentMessageTypes.SessionTasks, sessionId, null, 10_000, new JsonObject()),
+                cts.Token);
+            var polled = await ReceiveAsync(socket, cts.Token);
+            var entry = polled.Payload["tasks"]!.AsArray()
+                .FirstOrDefault(task => string.Equals(task!["execution_id"]!.GetValue<string>(), executionId, StringComparison.Ordinal));
+            if (entry is not null && string.Equals(entry["state"]!.GetValue<string>(), "killed", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        Assert.Fail("background task never reached the killed state");
+    }
+
+    [Fact]
     public async Task V2_cancel_terminates_an_in_flight_terminal_execution()
     {
         await using var fixture = await HostFixture.StartAsync();

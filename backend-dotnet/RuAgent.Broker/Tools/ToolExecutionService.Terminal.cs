@@ -108,8 +108,12 @@ public sealed partial class ToolExecutionService
         };
         if (task is not null)
         {
-            output["background"] = true;
             output["state"] = BackgroundStateWire(task.State);
+            if (task.IsBackground)
+            {
+                output["background"] = true;
+            }
+
             if (task.ExitCode is { } exitCode)
             {
                 output["exit_code"] = exitCode;
@@ -155,33 +159,81 @@ public sealed partial class ToolExecutionService
     };
 
     /// <summary>
-    /// Starts one background task and returns its id immediately; the pump runs
-    /// on the registry's lifetime token, not the tool call's token, so the task
-    /// outlives the call and dies at its lifetime cap or on mode kill.
+    /// Session task listing for the Host: bounded task snapshots and an optional
+    /// kill. Unknown or foreign ids fail closed with the same codes as mode kill.
     /// </summary>
-    private ToolExecutionOutcome StartBackgroundTask(
+    public JsonObject HandleSessionTasks(string sessionId, string? killExecutionId)
+    {
+        var killed = false;
+        if (!string.IsNullOrWhiteSpace(killExecutionId))
+        {
+            killed = _backgroundTasks.Kill(sessionId, killExecutionId) switch
+            {
+                BackgroundKillOutcome.Killing => true,
+                BackgroundKillOutcome.NotRunning => throw new ArgumentException("background_task_not_running"),
+                _ => throw new ArgumentException("unknown_background_task"),
+            };
+        }
+
+        var tasks = new JsonArray();
+        foreach (var snapshot in _backgroundTasks.List(sessionId))
+        {
+            tasks.Add(new JsonObject
+            {
+                ["execution_id"] = snapshot.ExecutionId,
+                ["state"] = BackgroundStateWire(snapshot.State),
+                ["background"] = snapshot.IsBackground,
+                ["exit_code"] = snapshot.ExitCode,
+                ["chars"] = snapshot.Text.Length,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["tasks"] = tasks,
+            ["killed"] = killed,
+        };
+    }
+
+    /// <summary>
+    /// Registers one terminal task and starts its pump. The pump's synchronous
+    /// prefix (process create, job assign, resume) runs inline before this call
+    /// returns; the rest continues detached on the registry's lifetime token,
+    /// so the task outlives the tool call and dies at its lifetime cap or on
+    /// mode kill. A foreground call registers cap-exempt and becomes a
+    /// background task only when its wait window expires.
+    /// </summary>
+    private (string ExecutionId, Task<StreamingProcessResult> Pump) StartTerminalTask(
         ToolExecutionContext context,
-        JsonObject arguments,
+        int lifetimeMs,
+        bool isBackground,
+        string workingDirectory,
         Func<CancellationToken, Action<string>, Task<StreamingProcessResult>> run)
     {
-        var lifetimeMs = ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.BackgroundDefaultLifetimeMs;
         var executionId = context.RequestId;
         if (string.IsNullOrWhiteSpace(executionId))
         {
             throw new ArgumentException("invalid_arguments");
         }
 
-        if (!_backgroundTasks.TryStart(context.SessionId, executionId, lifetimeMs, out var lifetimeToken))
+        if (!_backgroundTasks.TryStart(
+                context.SessionId,
+                executionId,
+                lifetimeMs,
+                enforceCap: isBackground,
+                isBackground,
+                out var lifetimeToken))
         {
             throw new ArgumentException("background_task_limit_reached");
         }
 
         var retained = new StringBuilder();
-        // The pump's synchronous prefix (process create, job assign, resume)
-        // runs inline before this call returns; the rest continues detached.
-        _ = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, retained, run);
+        var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, retained, workingDirectory, run);
+        return (executionId, pump);
+    }
 
-        return ToolExecutionOutcome.Succeeded(
+    private static ToolExecutionOutcome StartedBackgroundOutcome(string executionId, int lifetimeMs) =>
+        ToolExecutionOutcome.Succeeded(
             new JsonObject
             {
                 ["execution_id"] = executionId,
@@ -192,25 +244,95 @@ public sealed partial class ToolExecutionService
             },
             ToolVerificationStates.NotRequired,
             "Background terminal task started.");
+
+    /// <summary>
+    /// Waits up to the approved window for a foreground task. A task that
+    /// finishes first returns its normal receipt; one that outlives the window
+    /// is moved to the background (the pump keeps running to the lifetime cap)
+    /// and the call returns its execution id instead of a kill.
+    /// </summary>
+    private async ValueTask<ToolExecutionOutcome> AwaitTerminalTaskAsync(
+        ToolExecutionContext context,
+        string executionId,
+        Task<StreamingProcessResult> pump,
+        int waitMs,
+        int lifetimeMs,
+        string canonicalRoot,
+        CancellationToken cancellationToken)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(waitMs, wait.Token);
+        var completed = await Task.WhenAny(pump, delay).ConfigureAwait(false);
+        if (completed == pump)
+        {
+            wait.Cancel();
+            var result = await pump.ConfigureAwait(false);
+            return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, canonicalRoot), context);
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            // The run was cancelled while the command was still foreground: stop
+            // the task and wait for the kill to reap the tree before reporting,
+            // so the receipt means the process is gone.
+            _backgroundTasks.Kill(context.SessionId, executionId);
+            try
+            {
+                await pump.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // The kill is in flight; the receipt still reports the cancellation.
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        _backgroundTasks.MarkBackground(context.SessionId, executionId);
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject
+            {
+                ["execution_id"] = executionId,
+                ["moved_to_background"] = true,
+                ["state"] = "running",
+                ["waited_ms"] = waitMs,
+                ["lifetime_ms"] = lifetimeMs,
+                ["spool_id"] = executionId,
+            },
+            ToolVerificationStates.NotRequired,
+            $"Command did not complete within its {waitMs}ms window and was moved to the background; page it with mode read_output or stop it with mode kill.");
     }
 
     /// <summary>
-    /// Drives one background task to completion: streams frames into the live
-    /// registry text, then records the final state and stores the spool. Runs
-    /// on the registry's lifetime token, not the tool call's token.
+    /// A foreground task that moves to the background keeps running to the
+    /// background lifetime so the move is useful, bounded by the protocol cap.
     /// </summary>
-    private async Task PumpBackgroundTaskAsync(
+    private static int BackgroundLifetimeFor(int waitMs) =>
+        Math.Clamp(
+            Math.Max(waitMs, TerminalLimits.BackgroundDefaultLifetimeMs),
+            1,
+            TerminalLimits.BackgroundMaxLifetimeMs);
+
+    /// <summary>
+    /// Drives one terminal task to completion: streams frames into the live
+    /// registry text, then records the final state and stores the spool. Runs
+    /// on the registry's lifetime token, not the tool call's token, and returns
+    /// the runner's result so a foreground waiter can build the normal receipt.
+    /// </summary>
+    private async Task<StreamingProcessResult> PumpBackgroundTaskAsync(
         ToolExecutionContext context,
         string executionId,
         CancellationToken lifetimeToken,
         StringBuilder retained,
+        string workingDirectory,
         Func<CancellationToken, Action<string>, Task<StreamingProcessResult>> run)
     {
         var status = ToolResultStatuses.Failed;
         int? exitCode = null;
+        StreamingProcessResult? result = null;
         try
         {
-            var result = await run(lifetimeToken, frame =>
+            result = await run(lifetimeToken, frame =>
             {
                 AppendSpoolCapped(retained, frame);
                 _backgroundTasks.Append(context.SessionId, executionId, frame);
@@ -231,6 +353,22 @@ public sealed partial class ToolExecutionService
             _backgroundTasks.Complete(context.SessionId, executionId, status, exitCode, retained.ToString());
             RetainSpool(context, retained);
         }
+
+        return result ?? new StreamingProcessResult(
+            Status: status,
+            ExitCode: exitCode,
+            DurationMs: 0,
+            StdoutHead: string.Empty,
+            StdoutTail: string.Empty,
+            StderrHead: string.Empty,
+            StderrTail: string.Empty,
+            StdoutBytes: 0,
+            StderrBytes: 0,
+            StdoutDroppedBytes: 0,
+            StderrDroppedBytes: 0,
+            FramesEmitted: 0,
+            FramesDropped: 0,
+            WorkingDirectory: workingDirectory);
     }
 
     private static void AppendSpoolCapped(StringBuilder retained, string frame)
@@ -262,53 +400,52 @@ public sealed partial class ToolExecutionService
             context.SessionId,
             context.SessionScopes ?? _session.ScopesFor(context.SessionId),
             _session.Descriptor.ExpiresAt);
-        var retained = new StringBuilder();
-        if (IsTrue(arguments, "background"))
+        var optionalMs = ReadOptionalInt(arguments, "timeout_ms");
+        // The request carries the approved window: it is what the intent hash and
+        // any one-time approval bound. The kill timer is separate.
+        var requestedMs = optionalMs ?? TerminalLimits.DefaultTimeoutMs;
+        var isBackground = IsTrue(arguments, "background");
+        var lifetimeMs = isBackground
+            ? optionalMs ?? TerminalLimits.BackgroundDefaultLifetimeMs
+            : BackgroundLifetimeFor(requestedMs);
+        var request = new TerminalRunRequest(
+            ReadOptionalString(arguments, "shell") ?? "powershell",
+            workingDirectory,
+            ReadString(arguments, "executable"),
+            ReadArguments(arguments["arguments"]),
+            requestedMs,
+            IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
+            context.ApprovalToken ?? string.Empty,
+            context.RequestId,
+            context.SessionId,
+            IsTrue(arguments, "read_only"),
+            ReadWriteSet(arguments),
+            Approved: context.Approved);
+        var (executionId, pump) = StartTerminalTask(
+            context,
+            lifetimeMs,
+            isBackground,
+            workingDirectory,
+            (token, retain) => tools.Terminal.RunAsync(
+                grant,
+                request,
+                context.ConfinementRequired,
+                token,
+                retain,
+                killTimeoutMs: lifetimeMs));
+        if (isBackground)
         {
-            var backgroundRequest = new TerminalRunRequest(
-                ReadOptionalString(arguments, "shell") ?? "powershell",
-                workingDirectory,
-                ReadString(arguments, "executable"),
-                ReadArguments(arguments["arguments"]),
-                ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.BackgroundDefaultLifetimeMs,
-                IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
-                context.ApprovalToken ?? string.Empty,
-                context.RequestId,
-                context.SessionId,
-                IsTrue(arguments, "read_only"),
-                ReadWriteSet(arguments),
-                Approved: context.Approved);
-            return StartBackgroundTask(
-                context,
-                arguments,
-                (token, retain) => tools.Terminal.RunAsync(
-                    grant,
-                    backgroundRequest,
-                    context.ConfinementRequired,
-                    token,
-                    retain));
+            return StartedBackgroundOutcome(executionId, lifetimeMs);
         }
 
-        var result = await tools.Terminal.RunAsync(
-            grant,
-            new TerminalRunRequest(
-                ReadOptionalString(arguments, "shell") ?? "powershell",
-                workingDirectory,
-                ReadString(arguments, "executable"),
-                ReadArguments(arguments["arguments"]),
-                ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
-                IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
-                context.ApprovalToken ?? string.Empty,
-                context.RequestId,
-                context.SessionId,
-                IsTrue(arguments, "read_only"),
-                ReadWriteSet(arguments),
-                Approved: context.Approved),
-            context.ConfinementRequired,
-            cancellationToken,
-            retainOutput: frame => AppendSpoolCapped(retained, frame)).ConfigureAwait(false);
-        RetainSpool(context, retained);
-        return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot), context);
+        return await AwaitTerminalTaskAsync(
+            context,
+            executionId,
+            pump,
+            requestedMs,
+            lifetimeMs,
+            tools.CanonicalRoot,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalShellAsync(
@@ -326,48 +463,47 @@ public sealed partial class ToolExecutionService
 
         var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
         var tools = ResolveRootToolSet(context, workingDirectory);
-        var retained = new StringBuilder();
-        if (IsTrue(arguments, "background"))
-        {
-            var backgroundShellRequest = new TerminalShellRequest(
-                ReadOptionalString(arguments, "shell") ?? "powershell",
-                workingDirectory,
-                ReadString(arguments, "script"),
-                ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.BackgroundDefaultLifetimeMs,
-                context.ApprovalToken ?? string.Empty,
-                context.RequestId,
-                context.SessionId,
-                IsTrue(arguments, "read_only"),
-                ReadWriteSet(arguments),
-                Approved: context.Approved);
-            return StartBackgroundTask(
-                context,
-                arguments,
-                (token, retain) => tools.Terminal.RunApprovedShellAsync(
-                    backgroundShellRequest,
-                    context.ConfinementRequired,
-                    token,
-                    retain));
-        }
-
+        var optionalMs = ReadOptionalInt(arguments, "timeout_ms");
+        var requestedMs = optionalMs ?? TerminalLimits.DefaultTimeoutMs;
+        var isBackground = IsTrue(arguments, "background");
+        var lifetimeMs = isBackground
+            ? optionalMs ?? TerminalLimits.BackgroundDefaultLifetimeMs
+            : BackgroundLifetimeFor(requestedMs);
         var shellRequest = new TerminalShellRequest(
             ReadOptionalString(arguments, "shell") ?? "powershell",
             workingDirectory,
             ReadString(arguments, "script"),
-            ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
+            requestedMs,
             context.ApprovalToken ?? string.Empty,
             context.RequestId,
             context.SessionId,
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
             Approved: context.Approved);
-        var result = await tools.Terminal.RunApprovedShellAsync(
-            shellRequest,
-            context.ConfinementRequired,
-            cancellationToken,
-            retainOutput: frame => AppendSpoolCapped(retained, frame)).ConfigureAwait(false);
-        RetainSpool(context, retained);
-        return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot), context);
+        var (executionId, pump) = StartTerminalTask(
+            context,
+            lifetimeMs,
+            isBackground,
+            workingDirectory,
+            (token, retain) => tools.Terminal.RunApprovedShellAsync(
+                shellRequest,
+                context.ConfinementRequired,
+                token,
+                retain,
+                killTimeoutMs: lifetimeMs));
+        if (isBackground)
+        {
+            return StartedBackgroundOutcome(executionId, lifetimeMs);
+        }
+
+        return await AwaitTerminalTaskAsync(
+            context,
+            executionId,
+            pump,
+            requestedMs,
+            lifetimeMs,
+            tools.CanonicalRoot,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

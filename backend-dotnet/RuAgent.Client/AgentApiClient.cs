@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Protocol;
@@ -729,7 +728,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using (doc)
         {
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "work_state_status", "work_state_version", "work_state_partial", "work_state_intent_omitted", "work_state_preview_omitted", "work_state_source_run_id", "work_state_source_event_id", "work_state_updated_at", "work_state_preview"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
@@ -784,46 +783,13 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         ValidateOptionalString(root, "provider_model_label", 256);
         ValidateOptionalString(root, "context_window_source", 64);
         ValidateOptionalString(root, "context_window_version", 128);
-        ValidateOptionalString(root, "work_state_status", 16);
-        ValidateOptionalString(root, "work_state_preview", 12 * 1024, utf8Bytes: true);
-        ValidateOptionalString(root, "work_state_source_run_id", 36);
-        ValidateOptionalString(root, "work_state_source_event_id", 36);
-        ValidateOptionalString(root, "work_state_updated_at", 40);
         ValidateOptionalInteger(root, "context_window_tokens", 1, 10_000_000);
         ValidateOptionalInteger(root, "output_token_reserve", 1, 128_000);
-        ValidateOptionalInteger(root, "work_state_version", 1, long.MaxValue);
-        ValidateOptionalBoolean(root, "work_state_partial");
-        ValidateOptionalBoolean(root, "work_state_intent_omitted");
-        ValidateOptionalBoolean(root, "work_state_preview_omitted");
         if (root.TryGetProperty("provider_calling_mode", out var mode)
             && mode.ValueKind is not JsonValueKind.Null
             && (mode.ValueKind != JsonValueKind.String
                 || mode.GetString() is not ("native" or "text_selection")))
             throw new AgentApiException("invalid_response", "Invalid provider_calling_mode");
-        if (root.TryGetProperty("work_state_status", out var status)
-            && status.ValueKind is JsonValueKind.String
-            && status.GetString() is not ("available" or "missing" or "unavailable"))
-            throw new AgentApiException("invalid_response", "Invalid work_state_status");
-        if (root.TryGetProperty("work_state_status", out status)
-            && status.ValueKind == JsonValueKind.String
-            && status.GetString() == "available")
-        {
-            if (!HasString(root, "work_state_source_run_id")
-                || !HasString(root, "work_state_source_event_id")
-                || !HasString(root, "work_state_updated_at")
-                || !HasString(root, "work_state_preview")
-                || !HasInteger(root, "work_state_version")
-                || !HasBoolean(root, "work_state_partial")
-                || !HasBoolean(root, "work_state_intent_omitted")
-                || !HasBoolean(root, "work_state_preview_omitted"))
-                throw new AgentApiException("invalid_response", "Incomplete work_state projection");
-            try { ValidateRunId(root.GetProperty("work_state_source_run_id").GetString()!); }
-            catch (AgentApiException) { throw new AgentApiException("invalid_response", "Invalid work_state_source_run_id"); }
-            if (root.GetProperty("work_state_source_event_id").GetString()!.Length is < 5 or > 64
-                || !DateTimeOffset.TryParseExact(root.GetProperty("work_state_updated_at").GetString(),
-                    "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _))
-                throw new AgentApiException("invalid_response", "Invalid work_state projection provenance");
-        }
     }
 
     private static bool HasString(JsonElement root, string name) =>
@@ -832,10 +798,6 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     private static bool HasInteger(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
             && value.TryGetInt64(out _);
-
-    private static bool HasBoolean(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var value)
-            && value.ValueKind is JsonValueKind.True or JsonValueKind.False;
 
     private static void ValidateOptionalString(JsonElement root, string name, int maximum, bool utf8Bytes = false)
     {

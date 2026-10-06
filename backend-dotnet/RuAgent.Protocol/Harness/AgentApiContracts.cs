@@ -57,16 +57,7 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("context_window_tokens")] long? ContextWindowTokens = null,
     [property: JsonPropertyName("context_window_source")] string? ContextWindowSource = null,
     [property: JsonPropertyName("context_window_version")] string? ContextWindowVersion = null,
-    [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null,
-    [property: JsonPropertyName("work_state_status")] string? WorkStateStatus = null,
-    [property: JsonPropertyName("work_state_version")] long? WorkStateVersion = null,
-    [property: JsonPropertyName("work_state_partial")] bool? WorkStatePartial = null,
-    [property: JsonPropertyName("work_state_intent_omitted")] bool? WorkStateIntentOmitted = null,
-    [property: JsonPropertyName("work_state_preview_omitted")] bool? WorkStatePreviewOmitted = null,
-    [property: JsonPropertyName("work_state_source_run_id")] string? WorkStateSourceRunId = null,
-    [property: JsonPropertyName("work_state_source_event_id")] string? WorkStateSourceEventId = null,
-    [property: JsonPropertyName("work_state_updated_at")] string? WorkStateUpdatedAt = null,
-    [property: JsonPropertyName("work_state_preview")] string? WorkStatePreview = null);
+    [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,

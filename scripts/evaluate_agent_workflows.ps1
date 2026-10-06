@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
 $Limits = @{
     FixtureBytes = 2MB
-    ScenarioCount = 12
+    ScenarioCount = 11
     WorkspaceOverlayCount = 16
     FileBytes = 256KB
     WorkspaceBytes = 1MB
@@ -53,7 +53,7 @@ $fixtureJson = [System.IO.File]::ReadAllText($fixturePath, [System.Text.UTF8Enco
 $fixture = $fixtureJson | ConvertFrom-Json
 $scenarioIds = @($fixture.scenarios | ForEach-Object { $_.id })
 if ($scenarioIds.Count -ne $Limits.ScenarioCount -or ($scenarioIds | Select-Object -Unique).Count -ne $Limits.ScenarioCount) {
-    throw "The workflow fixture must contain exactly twelve unique scenarios."
+    throw "The workflow fixture must contain exactly eleven unique scenarios."
 }
 
 if (-not ("RuWorkflow.BoundedProcessOutput" -as [type])) {
@@ -105,7 +105,7 @@ $results.Add([pscustomobject]@{
 if ($RunScripted) {
     $scenario = $fixture.scenarios | Where-Object id -eq $ScenarioId | Select-Object -First 1
     if ($null -eq $scenario) { throw "Unknown scenario id '$ScenarioId'." }
-    if ($scenario.runnerKind -notin @("scripted_denial_workflow", "scripted_edit_three_workflow", "scripted_edit_tool_cycle", "scripted_failed_test_recovery", "scripted_handoff_selection", "scripted_paging_workflow", "scripted_restart_continue", "scripted_terminal_paging", "scripted_tool_batch", "scripted_text", "scripted_turn_sequence") -or $null -eq $scenario.scriptedSteps) { throw "Scenario '$ScenarioId' has no registered deterministic executor." }
+    if ($scenario.runnerKind -notin @("scripted_denial_workflow", "scripted_edit_three_workflow", "scripted_edit_tool_cycle", "scripted_failed_test_recovery", "scripted_paging_workflow", "scripted_restart_continue", "scripted_terminal_paging", "scripted_tool_batch", "scripted_text", "scripted_turn_sequence") -or $null -eq $scenario.scriptedSteps) { throw "Scenario '$ScenarioId' has no registered deterministic executor." }
     $results.Add((Invoke-ScriptedScenario $scenario $buildEvidence))
 }
 

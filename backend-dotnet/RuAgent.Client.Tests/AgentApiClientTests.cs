@@ -54,8 +54,6 @@ public sealed class AgentApiClientTests
         Assert.Equal("native", pinned.ProviderCallingMode);
         Assert.Equal(128_000, pinned.ContextWindowTokens);
         Assert.Equal(8192, pinned.OutputTokenReserve);
-        Assert.Equal("available", pinned.WorkStateStatus);
-        Assert.Contains("bounded preview", pinned.WorkStatePreview);
         Assert.Null(legacy.ProviderBackend);
         Assert.Null(legacy.ProviderModel);
         Assert.Equal(maxBackend, maxModelsDevBackend.ProviderBackend);
@@ -120,15 +118,13 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
-    public async Task GetRunStrictParsingRejectsInvalidWorkStateAndProviderMetadata()
+    public async Task GetRunStrictParsingRejectsInvalidProviderMetadata()
     {
         foreach (var metadata in new object[]
         {
             new { provider_calling_mode = "fallback" },
             new { context_window_tokens = 0 },
             new { output_token_reserve = 128001 },
-            new { work_state_status = "ready" },
-            new { work_state_preview = new string('x', 12 * 1024 + 1) },
         })
         {
             var root = JsonNode.Parse(JsonSerializer.Serialize(RunSummary("OpenAI", "gpt-5")))!.AsObject();
@@ -171,15 +167,6 @@ public sealed class AgentApiClientTests
         context_window_source = "provider_catalog",
         context_window_version = "catalog-v1",
         output_token_reserve = 8192,
-        work_state_status = "available",
-        work_state_version = 1,
-        work_state_partial = false,
-        work_state_intent_omitted = false,
-        work_state_preview_omitted = false,
-        work_state_source_run_id = "run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        work_state_source_event_id = "evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        work_state_updated_at = "2026-10-04T00:00:02.0000000+00:00",
-        work_state_preview = "bounded preview",
     };
 
     private static object CreateRunSummary(object? backendPin, object? modelPin) => new

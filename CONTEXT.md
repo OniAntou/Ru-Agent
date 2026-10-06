@@ -72,8 +72,7 @@ untrusted and persisted only from a successful durable `todo_write` receipt,
 and file observations and verification records require receipt provenance. It
 is context guidance only: it carries no approvals, grants, credentials, raw
 terminal output, or execution authority, and a workspace identity change makes
-the state unavailable. A new session stays independent until the user
-explicitly previews and attaches a selected handoff.
+the state unavailable. A new session stays independent.
 _Avoid_: global memory, cross-session authority, model prose as proof, or work
 state as permission
 

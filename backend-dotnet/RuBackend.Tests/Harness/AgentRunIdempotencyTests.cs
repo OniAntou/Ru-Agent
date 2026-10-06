@@ -44,8 +44,6 @@ public sealed class AgentRunIdempotencyTests
         Assert.Null(created.ProviderBackend);
         Assert.Null(created.ProviderModel);
         Assert.Null(loaded.ProviderProtocol);
-        Assert.Equal("available", loaded.WorkStateStatus);
-        Assert.Contains("created through the shared API client", loaded.WorkStatePreview);
     }
 
     [Fact]
@@ -93,12 +91,6 @@ public sealed class AgentRunIdempotencyTests
         Assert.Equal("provider_catalog", body.GetProperty("context_window_source").GetString());
         Assert.Equal("catalog-test-v1", body.GetProperty("context_window_version").GetString());
         Assert.Equal(4096, body.GetProperty("output_token_reserve").GetInt32());
-        Assert.Equal("available", body.GetProperty("work_state_status").GetString());
-        Assert.Contains("provider metadata", body.GetProperty("work_state_preview").GetString());
-        Assert.False(body.GetProperty("work_state_preview_omitted").GetBoolean());
-        Assert.Equal(runId, body.GetProperty("work_state_source_run_id").GetString());
-        Assert.StartsWith("evt_", body.GetProperty("work_state_source_event_id").GetString());
-        Assert.True(DateTimeOffset.TryParse(body.GetProperty("work_state_updated_at").GetString(), out _));
     }
 
     [Fact]
@@ -126,7 +118,6 @@ public sealed class AgentRunIdempotencyTests
         AssertNullOrMissing(body, "provider_backend");
         AssertNullOrMissing(body, "provider_model");
         AssertNullOrMissing(body, "provider_protocol");
-        Assert.Equal("available", body.GetProperty("work_state_status").GetString());
     }
 
     private static void AssertNullOrMissing(JsonElement body, string propertyName)

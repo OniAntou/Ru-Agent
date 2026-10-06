@@ -67,14 +67,14 @@ run as evidence that a provider path works.
 
 ## Consecutive tool steps
 
-The offline workflow runner registers one bounded executor for each of the twelve declared
-scenarios: Vietnamese text, a ten-turn constraint sequence, restart continuation, selected
-handoff, independent read batches, UTF-8 read paging, sparse grep paging, terminal
+The offline workflow runner registers one bounded executor for each of the eleven declared
+scenarios: Vietnamese text, a ten-turn constraint sequence, restart continuation,
+independent read batches, UTF-8 read paging, sparse grep paging, terminal
 middle-output paging, dependent multi-file edits, edit recovery, failed-test repair, and
 explicit denial. They invoke the actual CLI and managed Host with a temporary workspace,
 use the real Broker, and check bounded event counts, receipt identities, and file oracles.
 Approval-gated cases drive the existing explicit `agent approve`/`deny` commands and read
-only public SSE history; restart and handoff cases restart the managed Host against the
+only public SSE history; the restart case restarts the managed Host against the
 same data root. Paging scripts resolve `$projection_next_offset` and `$projection_spool_id`
 from the exact preceding tool call, and context oracles can require a marker to be present
 or absent in the assembled model context. These predetermined steps verify wiring and

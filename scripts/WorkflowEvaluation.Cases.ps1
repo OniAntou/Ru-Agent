@@ -49,11 +49,6 @@ function Test-ScriptedWorkflow($Scenario, $ScenarioWorkspace, $HostSession, $Eve
         if (-not (Test-ScenarioFiles $Scenario $ScenarioWorkspace.workspace $ScenarioWorkspace.files)) { throw "Oracle failure: restart continuation changed the workspace file set or contents." }
         return $metrics
     }
-    if ($Scenario.runnerKind -eq "scripted_handoff_selection") {
-        $metrics = Get-ScriptedHandoffMetrics $Scenario $ScenarioWorkspace $HostSession $Events $Deadline $CliRun
-        if (-not (Test-ScenarioFiles $Scenario $ScenarioWorkspace.workspace $ScenarioWorkspace.files)) { throw "Oracle failure: selected handoff changed the workspace file set or contents." }
-        return $metrics
-    }
     $payloads = Get-ResultPayloads $Scenario $HostSession $Events $Deadline
     switch ($Scenario.runnerKind) {
         "scripted_edit_tool_cycle" { $metrics = Get-ScriptedEditMetrics $Scenario $Events }
@@ -373,56 +368,6 @@ function Get-ScriptedRestartContinueMetrics($Scenario, $ScenarioWorkspace, $Host
     return [pscustomobject]@{ tool_calls = 1; failed_tool_calls = 0; approval_requests = 2; model_steps = $steps.Count }
 }
 
-function Invoke-ScenarioHandoffWorkflow($Scenario, $ScenarioWorkspace, $HostSession, [DateTimeOffset]$Deadline) {
-    $sourceCli = Invoke-ScenarioCli $Scenario $ScenarioWorkspace $HostSession $Deadline
-    $sourceRunId = $null
-    foreach ($event in $sourceCli.events) {
-        if ([string]$event.run_id -match '^run_[0-9a-f]{32}$') { $sourceRunId = [string]$event.run_id; break }
-    }
-    if ($null -eq $sourceRunId) { throw "Oracle failure: handoff source run did not expose a bounded run identity." }
-    $sourceSnapshot = Get-ClientRunSnapshot $HostSession $sourceRunId $Deadline
-    if ([string]$sourceSnapshot.status -cne "completed") { throw "Oracle failure: handoff source run did not complete (status '$([string]$sourceSnapshot.status)')." }
-    $cleanupFailure = Stop-ProcessTree $HostSession.process
-    if ($null -ne $cleanupFailure) { throw "case environment failure: handoff source host cleanup failed." }
-    Start-Sleep -Milliseconds 300
-    $scenarioRoot = Split-Path -Parent $ScenarioWorkspace.dataRoot
-    $targetHost = Start-ScenarioHost $scenarioRoot $ScenarioWorkspace $Deadline
-    $target = Invoke-ScenarioHandoffChat $Scenario $ScenarioWorkspace $targetHost $sourceRunId $Deadline $true
-    $cleanupFailure = Stop-ProcessTree $targetHost.process
-    if ($null -ne $cleanupFailure) { throw "case environment failure: handoff target host cleanup failed." }
-    Start-Sleep -Milliseconds 300
-    $controlScript = Join-Path $scenarioRoot "handoff-control-script.json"
-    [System.IO.File]::WriteAllText($controlScript, (ConvertTo-Json -InputObject @($Scenario.controlSteps | Where-Object { $null -ne $_ }) -Depth 20), [System.Text.UTF8Encoding]::new($false))
-    $controlHost = Start-ScenarioHost $scenarioRoot $ScenarioWorkspace $Deadline $controlScript
-    $control = Invoke-ScenarioHandoffChat $Scenario $ScenarioWorkspace $controlHost $sourceRunId $Deadline $false
-    return [pscustomobject]@{ cli = $target; host = $controlHost; source_run_id = $sourceRunId; source_session_id = $sourceCli.session_id; control = $control }
-}
-
-function Get-ScriptedHandoffMetrics($Scenario, $ScenarioWorkspace, $HostSession, $Events, [DateTimeOffset]$Deadline, $CliRun) {
-    $sourceRunId = [string]$CliRun.source_run_id
-    $targetRunId = [string]$CliRun.cli.run_id
-    $controlRunId = [string]$CliRun.control.run_id
-    if ($sourceRunId -notmatch '^run_[0-9a-f]{32}$' -or $targetRunId -notmatch '^run_[0-9a-f]{32}$' -or $controlRunId -notmatch '^run_[0-9a-f]{32}$') { throw "Oracle failure: handoff workflow did not expose bounded run identities (source='$sourceRunId', target='$targetRunId', control='$controlRunId')." }
-    if ($targetRunId -eq $sourceRunId -or $controlRunId -eq $sourceRunId -or $controlRunId -eq $targetRunId) { throw "Oracle failure: handoff workflow reused a run identity." }
-    $targetSnapshot = Get-ClientRunSnapshot $HostSession $targetRunId $Deadline
-    $controlSnapshot = Get-ClientRunSnapshot $HostSession $controlRunId $Deadline
-    if ([string]$targetSnapshot.status -cne "completed" -or [string]$controlSnapshot.status -cne "completed") { throw "Oracle failure: handoff target/control runs did not complete (target='$([string]$targetSnapshot.status)', control='$([string]$controlSnapshot.status)')." }
-    if (-not [string]::IsNullOrWhiteSpace([string]$CliRun.source_session_id) -and [string]$targetSnapshot.session_id -eq [string]$CliRun.source_session_id) { throw "Oracle failure: the handoff target run did not start a new conversation session." }
-    $targetHistory = Get-PublicRunHistory $HostSession $targetRunId ([long]$targetSnapshot.last_sequence) $Deadline
-    $targetSteps = @($targetHistory | Where-Object event_type -eq "model.step_started")
-    $targetApprovals = @($targetHistory | Where-Object event_type -eq "approval.requested")
-    $targetTools = @($targetHistory | Where-Object { $_.event_type -in @("tool.execution_requested", "tool.execution_completed") })
-    if ($targetSteps.Count -ne 1 -or $targetApprovals.Count -ne 0 -or $targetTools.Count -ne 0) { throw "Oracle failure: the selected-handoff target run did not stay a single text-only step with no approval or tool effects." }
-    $controlHistory = Get-PublicRunHistory $HostSession $controlRunId ([long]$controlSnapshot.last_sequence) $Deadline
-    $controlSteps = @($controlHistory | Where-Object event_type -eq "model.step_started")
-    $controlApprovals = @($controlHistory | Where-Object event_type -eq "approval.requested")
-    $controlTools = @($controlHistory | Where-Object { $_.event_type -in @("tool.execution_requested", "tool.execution_completed") })
-    if ($controlSteps.Count -ne 1 -or $controlApprovals.Count -ne 0 -or $controlTools.Count -ne 0) { throw "Oracle failure: the handoff control run did not stay a single text-only step with no approval or tool effects." }
-    $sourceSnapshot = Get-ClientRunSnapshot $HostSession $sourceRunId $Deadline
-    if ([string]$sourceSnapshot.status -cne "completed") { throw "Oracle failure: the handoff source run was not durable after the workflow." }
-    return [pscustomobject]@{ tool_calls = 0; failed_tool_calls = 0; approval_requests = 0; model_steps = $targetSteps.Count }
-}
-
 function Invoke-ScriptedScenario($Scenario, $BuildEvidence) {
     $scenarioRoot = New-OwnedScenarioRoot
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Limits.CaseSeconds)
@@ -452,10 +397,6 @@ function Invoke-ScriptedScenario($Scenario, $BuildEvidence) {
             $restart = Invoke-ScenarioRestartToApproval $Scenario $scenarioWorkspace $managedHost $deadline
             $cli = $restart.cli
             $managedHost = $restart.host
-        } elseif ($Scenario.runnerKind -eq "scripted_handoff_selection") {
-            $handoff = Invoke-ScenarioHandoffWorkflow $Scenario $scenarioWorkspace $managedHost $deadline
-            $cli = $handoff
-            $managedHost = $handoff.host
         } else {
             $cli = Invoke-ScenarioCli $Scenario $scenarioWorkspace $managedHost $deadline
         }

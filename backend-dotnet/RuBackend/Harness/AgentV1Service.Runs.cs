@@ -505,19 +505,6 @@ public sealed partial class AgentV1Service
             ContextWindowVersion = providerSelection?.Selection?.ContextWindowVersion,
             OutputTokenReserve = providerSelection?.Selection?.OutputTokenReserve,
         };
-        var workState = await ProjectSessionWorkStateAsync(run, cancellationToken).ConfigureAwait(false);
-        response = response with
-        {
-            WorkStateStatus = workState.Status,
-            WorkStateVersion = workState.Version,
-            WorkStatePartial = workState.IsPartial,
-            WorkStateIntentOmitted = workState.IntentOmitted,
-            WorkStatePreviewOmitted = workState.PreviewOmitted,
-            WorkStateSourceRunId = workState.SourceRunId,
-            WorkStateSourceEventId = workState.SourceEventId,
-            WorkStateUpdatedAt = workState.UpdatedAt,
-            WorkStatePreview = workState.Preview,
-        };
         return new AgentServiceResult(200, response);
     }
 

@@ -172,48 +172,6 @@
       "runnerKind": "scripted_restart_continue"
     },
     {
-      "id": "selected_handoff_to_new_session",
-      "title": "Handoff được chọn sang session mới",
-      "input": "Source goal: OFFLINE-HANDOFF-42. Keep the constraint and prepare the saved work context for an explicit handoff.",
-      "preset": "plan",
-      "capabilityAtBaseline": "explicit_work_handoff_absent",
-      "baselineStatus": "unmet",
-      "workspaceSha256": "d5de862ab22f1e8f9b5960f40a8a1e8d143f4de34139c4392dde33f10a92560e",
-      "expectedFiles": [
-        {
-          "path": "README.md",
-          "state": "unchanged"
-        }
-      ],
-      "assertions": [
-        {
-          "kind": "user_selected_handoff_required",
-          "equals": true
-        },
-        {
-          "kind": "approval_token_transferred",
-          "equals": false
-        }
-      ],
-      "scriptedSteps": [
-        {
-          "text": "Selected saved work context was attached and the target run completed.",
-          "context_oracle": {
-            "also_contains": "OFFLINE-HANDOFF-42"
-          }
-        }
-      ],
-      "controlSteps": [
-        {
-          "text": "Control run completed without the selected context.",
-          "context_oracle": {
-            "not_contains": "OFFLINE-HANDOFF-42"
-          }
-        }
-      ],
-      "runnerKind": "scripted_handoff_selection"
-    },
-    {
       "id": "discover_three_independent_files",
       "title": "Khám phá ba file độc lập",
       "input": "Tìm ba file độc lập có liên quan đến Format và tóm tắt vai trò của từng file.",

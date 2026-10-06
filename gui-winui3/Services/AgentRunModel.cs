@@ -27,16 +27,7 @@ public sealed record AgentRunModel(
     long? ContextWindowTokens = null,
     string? ContextWindowSource = null,
     string? ContextWindowVersion = null,
-    int? OutputTokenReserve = null,
-    string? WorkStateStatus = null,
-    long? WorkStateVersion = null,
-    bool? WorkStatePartial = null,
-    bool? WorkStateIntentOmitted = null,
-    bool? WorkStatePreviewOmitted = null,
-    string? WorkStateSourceRunId = null,
-    string? WorkStateSourceEventId = null,
-    string? WorkStateUpdatedAt = null,
-    string? WorkStatePreview = null)
+    int? OutputTokenReserve = null)
 {
     public static AgentRunModel FromCreateResponse(CreateAgentRunResponse response) => new(
         response.RunId,
@@ -81,14 +72,5 @@ public sealed record AgentRunModel(
         response.ContextWindowTokens,
         response.ContextWindowSource,
         response.ContextWindowVersion,
-        response.OutputTokenReserve,
-        response.WorkStateStatus,
-        response.WorkStateVersion,
-        response.WorkStatePartial,
-        response.WorkStateIntentOmitted,
-        response.WorkStatePreviewOmitted,
-        response.WorkStateSourceRunId,
-        response.WorkStateSourceEventId,
-        response.WorkStateUpdatedAt,
-        response.WorkStatePreview);
+        response.OutputTokenReserve);
 }

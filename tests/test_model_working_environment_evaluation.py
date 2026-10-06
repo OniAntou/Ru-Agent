@@ -14,8 +14,8 @@ def test_workflow_oracles_are_complete_and_explicitly_unmet_at_baseline():
     document = json.loads(FIXTURE.read_text(encoding="utf-8"))
     scenarios = document["scenarios"]
 
-    assert len(scenarios) == 12
-    assert len({scenario["id"] for scenario in scenarios}) == 12
+    assert len(scenarios) == 11
+    assert len({scenario["id"] for scenario in scenarios}) == 11
     for scenario in scenarios:
         assert scenario["input"].strip()
         assert scenario["preset"] in {"plan", "standard"}
@@ -47,7 +47,7 @@ def test_runner_validate_only_emits_no_live_or_quality_claims(tmp_path):
     document = json.loads(report.read_text(encoding="utf-8-sig"))
     assert document["live_provider"] == "not_run"
     assert document["task_quality_pass_rate"] is None
-    assert len(document["scenarios"]) == 12
+    assert len(document["scenarios"]) == 11
     assert all(scenario["quality_status"] == "not_measured" for scenario in document["scenarios"])
 
 

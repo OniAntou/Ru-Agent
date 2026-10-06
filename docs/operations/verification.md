@@ -8,7 +8,7 @@
 | Public route | **41 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
 | .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,475 passed / 0 failed / 0 skipped** (2026-10-06, model working environment delivery; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **178 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
-| Release build | `build.bat` passed **12/12** stages on 2026-10-04 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
+| Release build | `build.bat` passed **12/12** stages on 2026-10-06 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
@@ -21,7 +21,7 @@ All twelve declared workflow scenarios now have a registered offline executor wi
 
 The full matrix surfaced and closed several latent defects that focused filters had missed: a culture-sensitive duration/size rendering in the CLI TUI and GUI (now invariant), a stale prompt-composition golden (Task-2 wording), two test fixtures that predated the work-state-on-create and v16-schema contracts, an image-only prompt that failed run creation on an empty work-state goal, and a Task-5 regression where the prepared-body guard failed every provider retry closed as `invalid_request` (fixed with a genuine RED/GREEN regression; the two native Anthropic loop tests now pass). Independent formal Task 7 and whole-branch reviews returned no load-bearing findings; their four non-blocking items were fixed or recorded. One transient `agent_store_unavailable` 503 flaked once under parallel load and passed isolated and in the recorded green run.
 
-`build.bat` (Release) was not rerun for this delivery; CI covers the Release builds. Managed-runtime smoke, native GUI acceptance, and live-provider quality remain not run.
+`build.bat` (Release) passed all **12/12** stages on 2026-10-06 and refreshed the self-contained flat distribution with the four executables side by side. Managed-runtime smoke, native GUI acceptance, and live-provider quality remain not run.
 
 ## GUI chat create-response compatibility (2026-10-04)
 

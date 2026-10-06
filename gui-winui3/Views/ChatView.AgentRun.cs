@@ -269,6 +269,7 @@ namespace RuApp.Views
                 InteractionPending: _agentActionPending));
 
             UpdateSendButtonMode(isAgentRunning: state.IsRunning);
+            UpdateAgentTasksButton();
 
             if (state.ShowWorkspaceTrust)
             {

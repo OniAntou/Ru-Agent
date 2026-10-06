@@ -598,6 +598,16 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         });
     }
 
+    /// <summary>
+    /// Typed Agent command for one run, e.g. "/tasks" or "/tasks kill
+    /// &lt;execution_id&gt;". The Host answers with bounded metadata.
+    /// </summary>
+    public Task<DispatchAgentCommandResponse> DispatchCommandAsync(
+        string runId,
+        string text,
+        CancellationToken cancellationToken = default)
+        => _client.DispatchCommandAsync(runId, text, cancellationToken);
+
     public async Task ContinueAsync(CancellationToken cancellationToken = default)
     {
         string? runId;

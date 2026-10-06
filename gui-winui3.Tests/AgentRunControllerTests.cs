@@ -127,6 +127,12 @@ public sealed class AgentRunControllerTests
         public CancellationToken CreateCancellationToken;
         public int CreateCallCount;
         public List<string> CancelledRunIds { get; } = new();
+        public List<string> DispatchCommands { get; } = new();
+        public Task<DispatchAgentCommandResponse> DispatchCommandAsync(string runId, string text, CancellationToken cancellationToken = default)
+        {
+            DispatchCommands.Add(text);
+            return Task.FromResult(new DispatchAgentCommandResponse(runId, "succeeded", "tasks", null, 1));
+        }
         public async Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
         {
             CreateCallCount++;

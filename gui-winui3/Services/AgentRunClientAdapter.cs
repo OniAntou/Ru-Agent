@@ -94,6 +94,12 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
     public Task CancelAsync(string runId, CancellationToken cancellationToken = default)
         => _apiClient.CancelAsync(runId, cancellationToken);
 
+    public Task<DispatchAgentCommandResponse> DispatchCommandAsync(
+        string runId,
+        string text,
+        CancellationToken cancellationToken = default)
+        => _apiClient.DispatchCommandAsync(runId, text, cancellationToken);
+
     public Task ContinueAsync(string runId, CancellationToken cancellationToken = default)
         => _apiClient.ContinueAsync(runId, cancellationToken);
 

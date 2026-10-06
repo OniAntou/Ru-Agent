@@ -34,6 +34,13 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
 
+    /// <summary>
+    /// Optional probe returning one bounded note about this session's background
+    /// terminal tasks, or null when nothing changed. The runtime loop injects it
+    /// because only it holds the Broker gateway.
+    /// </summary>
+    public Func<CancellationToken, Task<string?>>? BackgroundTaskNotes { get; init; }
+
     public RuPromptContextProvider(
         string workspaceRoot,
         RuInstructionLoader instructionLoader,
@@ -212,7 +219,9 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             .OrderBy(entry => entry.Sequence)
             .ToList();
         var workspaceActivity = await BuildWorkspaceActivityReferenceAsync(run, cancellationToken).ConfigureAwait(false);
-        var maximumResultReferences = ToolResultReferenceBudget - (workspaceActivity is null ? 0 : 1);
+        var backgroundTasks = await BuildBackgroundTaskReferenceAsync(cancellationToken).ConfigureAwait(false);
+        var reservedReferences = (workspaceActivity is null ? 0 : 1) + (backgroundTasks is null ? 0 : 1);
+        var maximumResultReferences = ToolResultReferenceBudget - reservedReferences;
         var hasOmittedResults = toolResults.Count > maximumResultReferences;
         var resultReferenceBudget = maximumResultReferences - (hasOmittedResults ? 1 : 0);
         var newestResults = toolResults.Count <= resultReferenceBudget
@@ -252,6 +261,11 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         if (workspaceActivity is not null)
             references.Add(workspaceActivity);
 
+        // The background-task note is the most actionable reference, so it stays
+        // last: the overflow guard below keeps the newest entries.
+        if (backgroundTasks is not null)
+            references.Add(backgroundTasks);
+
         // The reservation above is arithmetic, not a guarantee: a third source of
         // references added later could overflow the Core bound. Degrade instead of
         // failing the turn: keep the newest references inside the bound and fold the
@@ -273,6 +287,37 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         }
 
         return new PromptRuntimeContext(null, null, references);
+    }
+
+    private async Task<PromptReference?> BuildBackgroundTaskReferenceAsync(
+        CancellationToken cancellationToken)
+    {
+        if (BackgroundTaskNotes is null)
+        {
+            return null;
+        }
+
+        string? note;
+        try
+        {
+            note = await BackgroundTaskNotes(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // The note is advisory: a probe failure must not fail the prompt.
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(note)
+            ? null
+            : new PromptReference(
+                "background_tasks",
+                "harness background task state",
+                note);
     }
 
     private async Task<PromptReference?> BuildWorkspaceActivityReferenceAsync(

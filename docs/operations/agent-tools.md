@@ -315,7 +315,12 @@ Background terminal tasks are session-scoped and owned by the Broker: at most
 its lifetime is killed (`expired`), `mode=kill` stops it (`killed`), and a
 Broker restart drops every task (a stale id fails closed). The kill path kills
 the process tree by parentage first and then the Job Object, so a descendant
-created before the job assignment landed cannot survive.
+created before the job assignment landed cannot survive. The model context
+carries one bounded `background_tasks` reference per step naming the tasks that
+appeared or changed state since the previous step, so a task that finished
+while the model was working is noticed without polling; the GUI composer's
+Tasks flyout lists the same session tasks and stops one through the `/tasks`
+command.
 
 The managed Git commit workflow retains temporary-index isolation, path rollback
 attribution, and refusal when the real index already contains staged user

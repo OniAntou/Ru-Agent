@@ -1158,6 +1158,102 @@
 
 <Border Width="1" Height="14" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="2,0" VerticalAlignment="Center"/>
 
+                            <Button x:Name="AgentTasksButton"
+                                    AutomationProperties.AutomationId="AgentTasksButton"
+                                    AutomationProperties.Name="Background tasks"
+                                    Padding="6,4"
+                                    Margin="0"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                    Visibility="Collapsed"
+                                    VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE8FD;"
+                                              FontSize="12"
+                                              Foreground="{StaticResource RuMutedBrush}"
+                                              VerticalAlignment="Center" />
+                                    <TextBlock x:Name="AgentTasksLabel"
+                                               Text="Tasks"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuInkBrush}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <Flyout x:Name="AgentTasksFlyout" Placement="Top" Opened="OnAgentTasksFlyoutOpened">
+                                        <Flyout.FlyoutPresenterStyle>
+                                            <Style TargetType="FlyoutPresenter">
+                                                <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
+                                                <Setter Property="Padding" Value="12,10" />
+                                                <Setter Property="MinWidth" Value="280" />
+                                                <Setter Property="MaxWidth" Value="320" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
+                                            </Style>
+                                        </Flyout.FlyoutPresenterStyle>
+                                        <StackPanel Spacing="8" Width="280">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="Background tasks"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="12.5"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource RuInkBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <Button Grid.Column="1"
+                                                        Content="Refresh"
+                                                        Click="OnAgentTasksRefreshClick"
+                                                        Padding="8,3"
+                                                        AutomationProperties.Name="Refresh background tasks" />
+                                            </Grid>
+                                            <TextBlock x:Name="AgentTasksStatusText"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="11.5"
+                                                       Foreground="{StaticResource RuMutedBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <ScrollViewer MaxHeight="220"
+                                                          HorizontalScrollBarVisibility="Disabled"
+                                                          VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl x:Name="AgentTasksList"
+                                                              ItemsSource="{x:Bind AgentTasks, Mode=OneWay}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:AgentTaskRow">
+                                                            <Grid ColumnSpacing="8" Margin="0,0,0,6">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Grid.Column="0" Spacing="1">
+                                                                    <TextBlock Text="{x:Bind Label}"
+                                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                                               FontSize="11.5"
+                                                                               Foreground="{StaticResource RuInkBrush}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{x:Bind DetailText}"
+                                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                                               FontSize="11"
+                                                                               Foreground="{StaticResource RuMutedBrush}" />
+                                                                </StackPanel>
+                                                                <Button Grid.Column="1"
+                                                                        Content="Stop"
+                                                                        Tag="{x:Bind ExecutionId}"
+                                                                        Click="OnAgentTaskStopClick"
+                                                                        Padding="8,3"
+                                                                        Visibility="{x:Bind StopVisibility}"
+                                                                        VerticalAlignment="Center"
+                                                                        AutomationProperties.Name="Stop background task" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
                             <Button x:Name="ChatReasoningButton"
                                     AutomationProperties.AutomationId="ChatReasoningButton"
                                     AutomationProperties.Name="Select Reasoning Effort"

@@ -19,6 +19,51 @@ namespace RuBackend.Tests.Harness;
 public sealed class RuPromptContextProviderTests
 {
     [Fact]
+    public async Task Background_task_note_rides_along_as_a_bounded_reference()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            webToolsEnabled: false)
+        {
+            BackgroundTaskNotes = _ => Task.FromResult<string?>("task req-1: running -> exited, exit 0"),
+        };
+
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+
+        var note = context.RuntimeContext.References.Single(reference => reference.Kind == "background_tasks");
+        Assert.Contains("req-1", note.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Background_task_note_probe_failure_stays_silent()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            webToolsEnabled: false)
+        {
+            BackgroundTaskNotes = _ => throw new InvalidOperationException("probe failed"),
+        };
+
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(context.RuntimeContext.References, reference => reference.Kind == "background_tasks");
+    }
+
+    [Fact]
     public async Task Prompt_model_label_comes_from_the_run_pin_without_reading_current_settings()
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();

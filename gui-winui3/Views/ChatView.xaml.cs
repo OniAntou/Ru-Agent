@@ -146,6 +146,7 @@ namespace RuApp.Views
             // A size chosen while the transcript is open repaints the rows already on
             // screen; without this only rows created afterwards would pick it up.
             TranscriptTypography.Instance.PropertyChanged += OnTranscriptTypographyChanged;
+            RefreshTranscriptTypography();
             _replyRenderScheduler = new AgentReplyRenderScheduler(
                 _replyAccumulator,
                 callback =>

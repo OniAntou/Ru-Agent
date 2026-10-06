@@ -74,6 +74,23 @@ public sealed class TranscriptSizeUiSourceContractTests
     }
 
     [Fact]
+    public void The_composer_takes_its_size_from_the_shared_typography()
+    {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var composer = GuiSource.Require(document, "ChatInputTextBox");
+
+        // A second declared size here would drift from the transcript; the
+        // composer follows the same shared instance as the messages.
+        Assert.Null(GuiSource.AttributeValue(composer, "FontSize"));
+
+        string code = GuiSource.ViewText("ChatView");
+        string body = GuiSource.MethodBody(code, "RefreshTranscriptTypography");
+
+        Assert.Contains("ChatInputTextBox.FontSize", body, StringComparison.Ordinal);
+        Assert.Contains("TranscriptTypography.Instance.MessageFontSize", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_realised_row_applies_the_size_when_its_template_loads()
     {
         string code = GuiSource.ViewText("ChatView");

@@ -1022,7 +1022,6 @@
                              Background="Transparent"
                              BorderThickness="0"
                               FontFamily="{StaticResource RuUiFontFamily}"
-                              FontSize="16"
                               Padding="4,2,4,6"
                              Foreground="{StaticResource RuInkBrush}">
                         <TextBox.Resources>

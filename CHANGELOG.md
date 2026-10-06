@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+- **fix(gui)**: The message composer now takes its text size from the shared message typography (default 14) instead of a fixed 16, so typing matches the transcript and the Message text size setting applies while a session is open.
 - **fix(backend)**: A read that loses the Broker connection after dispatch now returns the bounded `{"error":"transport_failure"}` result instead of empty content; previously the model history had no tool result for that call and the next step failed as `model_history_invalid`. Mutations keep `OutcomeUnknown` and a reconciled resume keeps a result to project.
 - **feat(harness)**: Structured read, grep, and terminal-output prompt references retain their source metadata and expose tool-specific cursors without changing durable Broker receipts. Recovery notes now name safe next actions by failure code. Offline scripted read/grep traces exercise CLI-to-Broker wiring only; provider quality remains unmeasured, and unattended terminal paging still stops for explicit approval.
 - **fix(api)**: Run creation and idempotent replay now return the narrow create response DTO; enriched provider and work-state metadata remain on run detail. This keeps the strict shared client compatible with the Host's expanded detail response contract.

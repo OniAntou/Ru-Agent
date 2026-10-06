@@ -77,11 +77,17 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Re-applies typography to every realised message row, for a size change made
-        /// while the transcript is on screen.
+        /// Re-applies the shared conversation typography to the composer and every
+        /// realised message row, for a size change made while the transcript is on
+        /// screen.
         /// </summary>
         private void RefreshTranscriptTypography()
         {
+            if (ChatInputTextBox is not null)
+            {
+                ChatInputTextBox.FontSize = TranscriptTypography.Instance.MessageFontSize;
+            }
+
             if (ChatListView is null)
             {
                 return;

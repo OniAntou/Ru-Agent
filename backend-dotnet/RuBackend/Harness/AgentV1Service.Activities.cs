@@ -143,7 +143,7 @@ public sealed partial class AgentV1Service
             rows.Add(new ReplayedActivityRow(
                 compaction.Sequence,
                 new CoreAgentActivity(
-                    $"act_compaction_{runId}_{compaction.Sequence}",
+                    RuAgent.Harness.Core.AgentActivityProjector.CompactionActivityId(runId.Value, compaction.Sequence),
                     CoreActivityKind.Compaction,
                     CoreActivityState.Completed,
                     Count: compaction.CoveredCount,

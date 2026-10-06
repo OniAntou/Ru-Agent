@@ -164,6 +164,47 @@ public sealed class HarnessSqliteSchemaTests
     }
 
     [Fact]
+    public async Task Migrating_from_an_alternate_fourteen_heals_null_provider_metadata()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = """
+                PRAGMA foreign_keys = OFF;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN calling_mode;
+                ALTER TABLE agent_run_provider_selections DROP COLUMN model_label;
+                ALTER TABLE agent_run_provider_selections ADD COLUMN model_label TEXT NULL;
+                ALTER TABLE agent_run_provider_selections ADD COLUMN calling_mode TEXT NULL;
+                DROP INDEX IF EXISTS ix_agent_events_provider_continuation;
+                DROP INDEX IF EXISTS ix_agent_events_session_receipts;
+                DROP TABLE IF EXISTS agent_session_work_states;
+                PRAGMA user_version = 14;
+                INSERT INTO agent_run_provider_selections
+                    (run_id, backend, alias, protocol, base_uri, model, account, request_options_json, maximum_output_tokens, model_label, calling_mode)
+                VALUES
+                    ('run_00000000000000000000000000000000', 'OpenAI', 'openai', 'chat_completions', 'https://api.openai.com/v1', 'gpt-x', 'openai_api_key', '{}', 4096, NULL, NULL);
+                """;
+            await downgrade.ExecuteNonQueryAsync();
+        }
+
+        SqliteConnection.ClearAllPools();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        await using var row = verify.CreateCommand();
+        row.CommandText = "SELECT model_label, calling_mode FROM agent_run_provider_selections WHERE run_id = 'run_00000000000000000000000000000000'";
+        await using var reader = await row.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("gpt-x", reader.GetString(0));
+        Assert.Equal("native", reader.GetString(1));
+    }
+
+    [Fact]
     public async Task Migrating_from_fourteen_adds_bounded_provider_continuation_lookup_index()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

@@ -473,12 +473,13 @@ public sealed class AgentActivityProjectorTests
     public void Compaction_projection_keeps_only_bounded_counts_and_duration()
     {
         var activity = AgentActivityProjector.ProjectCompaction(
-            new EventId("evt_66666666666666666666666666666666"),
+            "run_77777777777777777777777777777777",
+            9,
             AgentActivityState.Completed,
             coveredEntries: 12,
             durationMs: 1200);
 
-        Assert.Equal("act_66666666666666666666666666666666", activity.ActivityId);
+        Assert.Equal("act_compaction_run_77777777777777777777777777777777_9", activity.ActivityId);
         Assert.Equal(AgentActivityKind.Compaction, activity.Kind);
         Assert.Equal(AgentActivityState.Completed, activity.State);
         Assert.Equal(12, activity.Count);
@@ -491,7 +492,8 @@ public sealed class AgentActivityProjectorTests
     public void Compaction_projection_clamps_out_of_range_values_and_keeps_the_error_code()
     {
         var activity = AgentActivityProjector.ProjectCompaction(
-            new EventId("evt_66666666666666666666666666666666"),
+            "run_77777777777777777777777777777777",
+            10,
             AgentActivityState.Failed,
             coveredEntries: -5,
             durationMs: 86_400_001,

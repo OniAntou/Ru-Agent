@@ -15,7 +15,7 @@ function Get-RemainingSeconds([DateTimeOffset]$Deadline) {
     return $remaining
 }
 
-function Enable-BoundedProcessOutput([System.Diagnostics.Process]$Process, [int]$StdoutLimit = $Limits.StdoutBytes, [int]$StderrLimit = $Limits.StderrBytes) {
+function Enable-BoundedProcessOutput([System.Diagnostics.Process]$Process, [int]$StdoutLimit = $Limits.StdoutChars, [int]$StderrLimit = $Limits.StderrChars) {
     $stdout = [RuWorkflow.BoundedProcessOutput]::new($StdoutLimit)
     $stderr = [RuWorkflow.BoundedProcessOutput]::new($StderrLimit)
     $Process.add_OutputDataReceived($stdout.Handler)

@@ -20,7 +20,7 @@ function Start-ScenarioHost($ScenarioRoot, $ScenarioWorkspace, [DateTimeOffset]$
     $start.Environment["RU_AGENT_BROKER_PROJECT_ROOT"] = $repoRoot
     $process = [System.Diagnostics.Process]::Start($start)
     try {
-        $capture = Enable-BoundedProcessOutput $process $Limits.HostStdoutBytes $Limits.HostStderrBytes
+        $capture = Enable-BoundedProcessOutput $process $Limits.HostStdoutChars $Limits.HostStderrChars
         Wait-HostReady $process $capture $ScenarioWorkspace.dataRoot $baseUrl $token (Get-RemainingSeconds $Deadline)
         return [pscustomobject]@{ process = $process; capture = $capture; baseUrl = $baseUrl; token = $token }
     } catch {

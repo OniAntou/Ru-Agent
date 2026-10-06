@@ -247,6 +247,8 @@ public sealed class ContextCompactionCoordinatorTests
         Assert.Equal(AgentActivityState.Completed, activity.State);
         Assert.True(activity.Count > 0);
         Assert.True(activity.DurationMs > 0);
+        Assert.StartsWith("act_compaction_", activity.ActivityId, StringComparison.Ordinal);
+        Assert.Contains(RunId().Value, activity.ActivityId, StringComparison.Ordinal);
         Assert.DoesNotContain("summarized history", activity.ToString(), StringComparison.Ordinal);
     }
 

@@ -289,7 +289,7 @@ internal sealed class AgentRunCompaction
         };
         PublishCompactionActivity(
             run.RunId,
-            eventId,
+            run.LastSequence + 1,
             result.Outcome == ContextCompactionOutcome.Committed,
             plan.CoveredEntries.Count,
             result.ErrorCode,
@@ -304,7 +304,7 @@ internal sealed class AgentRunCompaction
     /// </summary>
     private void PublishCompactionActivity(
         RunId runId,
-        EventId eventId,
+        long sequence,
         bool committed,
         int coveredEntries,
         string? errorCode,
@@ -321,7 +321,8 @@ internal sealed class AgentRunCompaction
             _activitySink,
             runId,
             AgentActivityProjector.ProjectCompaction(
-                eventId,
+                runId.Value,
+                sequence,
                 committed ? AgentActivityState.Completed : AgentActivityState.Failed,
                 coveredEntries,
                 milliseconds is >= 0 and <= 86_400_000 ? (int)milliseconds : null,

@@ -880,10 +880,19 @@ public static class HarnessSqliteSchema
             ON agent_runs(session_id, created_at_utc DESC, run_id DESC);
         """;
 
+    // The alternate v14 draft (nullable metadata columns) can leave existing pins with
+    // NULL model_label/calling_mode; heal them idempotently. No-op on the accepted v14,
+    // whose columns are NOT NULL.
     private const string SchemaVersionFourteenToFifteen = """
         CREATE INDEX IF NOT EXISTS ix_agent_events_provider_continuation
             ON agent_events(run_id, kind, sequence DESC)
             WHERE kind = 'model.provider_continuation_recorded';
+        UPDATE agent_run_provider_selections
+        SET model_label = COALESCE(model_label, model, 'unknown-model')
+        WHERE backend IS NOT NULL AND model_label IS NULL;
+        UPDATE agent_run_provider_selections
+        SET calling_mode = COALESCE(calling_mode, CASE WHEN protocol = 'chat_completions' THEN 'native' ELSE 'text_selection' END)
+        WHERE backend IS NOT NULL AND calling_mode IS NULL;
         """;
 
     private const string SchemaVersionFifteenToSixteen = """

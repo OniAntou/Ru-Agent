@@ -132,11 +132,12 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   adaptive, 128000), `claude-sonnet-4-6` (`low`/`medium`/`high`/`max`, 64000),
   `claude-haiku-4-5-20251001` (Provider default only, 64000) as
   `thinking: {type:adaptive, display:omitted}` + `output_config: {effort}`.
-  The exact Anthropic Messages registry entries also declare native tool
-  calling for new pins. The adapter streams `tool_use` inputs, pairs ordered
+  New pins use native tool calling on every supported protocol; the registry
+  entries declare reasoning options and the documented output cap. The adapter
+  streams `tool_use` inputs, pairs ordered
   `tool_result` blocks by provider ID, and stores exact signed/redacted thinking
   blocks only in encrypted internal continuation payloads. Existing text-selection
-  pins retain that fixed legacy mode; unknown IDs do not gain native support.
+  pins retain that fixed legacy mode.
 - An explicit `reasoning_efforts` enum plus a declared `reasoning_effort`
   supported parameter enables that Chat Completions mapping.
 - A provider's own `/models` frequently publishes no reasoning metadata at all

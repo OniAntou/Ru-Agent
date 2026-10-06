@@ -292,13 +292,13 @@ public sealed class RuPromptContextProviderTests
             new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
             workspaceCoordinatorStore: coordinator);
 
-        var context = await provider.BuildAsync(run, ToolResultSnapshot(16), CancellationToken.None);
+        var context = await provider.BuildAsync(run, ToolResultSnapshot(PromptRuntimeContext.MaxRuntimeReferences), CancellationToken.None);
 
         Assert.Equal(PromptRuntimeContext.MaxRuntimeReferences, context.RuntimeContext.References.Count);
         Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "tool_result_omitted");
         Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "workspace_activity"
             && reference.Content.Contains("external.txt", StringComparison.Ordinal));
-        Assert.Equal(14, context.RuntimeContext.References.Count(reference => reference.Kind == "tool_result"));
+        Assert.Equal(PromptRuntimeContext.MaxRuntimeReferences - 2, context.RuntimeContext.References.Count(reference => reference.Kind == "tool_result"));
         Assert.Contains(context.RuntimeContext.References, reference => reference.Content.Contains("tool output 999", StringComparison.Ordinal));
     }
 

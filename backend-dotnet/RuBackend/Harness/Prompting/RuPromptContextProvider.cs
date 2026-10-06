@@ -253,13 +253,23 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             references.Add(workspaceActivity);
 
         // The reservation above is arithmetic, not a guarantee: a third source of
-        // references added later would overflow the Core bound silently, and the run would
-        // fail with a code that names the prompt contract instead of this provider. Fail
-        // here, where the names say what actually went wrong.
+        // references added later could overflow the Core bound. Degrade instead of
+        // failing the turn: keep the newest references inside the bound and fold the
+        // dropped count into one note, so an assembly slip costs the oldest references
+        // rather than ending the run with a contract code.
         if (references.Count > PromptRuntimeContext.MaxRuntimeReferences)
         {
-            throw new InvalidOperationException(
-                $"prompt_references_over_core_cap:{references.Count}>{PromptRuntimeContext.MaxRuntimeReferences}");
+            int keptCount = PromptRuntimeContext.MaxRuntimeReferences - 1;
+            int droppedCount = references.Count - keptCount;
+            var kept = references.GetRange(references.Count - keptCount, keptCount);
+            references = new List<PromptReference>(PromptRuntimeContext.MaxRuntimeReferences)
+            {
+                new(
+                    "references_omitted",
+                    "untrusted references omitted from the prompt",
+                    $"{droppedCount} earlier reference(s) are omitted from this bounded reference list."),
+            };
+            references.AddRange(kept);
         }
 
         return new PromptRuntimeContext(null, null, references);

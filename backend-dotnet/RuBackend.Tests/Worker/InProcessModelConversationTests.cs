@@ -271,13 +271,13 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 120;
         const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var page = new string('s', 5_880) + "🙂" + new string('t', 300) + hiddenMarker;
+        var page = new string('s', 11_880) + "🙂" + new string('t', 300) + hiddenMarker;
         var source = new JsonObject
         {
             ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
             ["offset"] = sourceOffset,
-            ["limit"] = 7_000,
-            ["total_chars"] = 20_000,
+            ["limit"] = 13_000,
+            ["total_chars"] = 30_000,
             ["page"] = page,
             ["truncated"] = true,
         }.ToJsonString();
@@ -296,7 +296,7 @@ public sealed class InProcessModelConversationTests
         _ = new UTF8Encoding(false, true).GetBytes(visible);
         Assert.Equal("execution_0123456789abcdef0123456789abcdef", root.GetProperty("spool_id").GetString());
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
-        Assert.Equal(20_000, root.GetProperty("total_chars").GetInt32());
+        Assert.Equal(30_000, root.GetProperty("total_chars").GetInt32());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
         Assert.True(root.GetProperty("projection_has_more").GetBoolean());
         Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
@@ -460,7 +460,7 @@ public sealed class InProcessModelConversationTests
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
         Assert.NotNull(messages);
-        Assert.True(messages[2].Content.Length <= 6_000, $"tool content length was {messages[2].Content.Length}");
+        Assert.True(messages[2].Content.Length <= 12_000, $"tool content length was {messages[2].Content.Length}");
         Assert.Contains("truncated", messages[2].Content, StringComparison.Ordinal);
     }
 
@@ -468,7 +468,7 @@ public sealed class InProcessModelConversationTests
     public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
     {
         const string prefix = "{\"unknown\":\"";
-        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 6_000));
+        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 12_000));
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
             AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
@@ -478,7 +478,7 @@ public sealed class InProcessModelConversationTests
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
         const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
-        Assert.InRange(visible.Length, 1, 6_000);
+        Assert.InRange(visible.Length, 1, 12_000);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);
         var omitted = source.Length - noteOffset;

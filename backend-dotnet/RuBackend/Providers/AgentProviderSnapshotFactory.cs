@@ -68,7 +68,13 @@ public sealed class AgentProviderSnapshotFactory(
         var contextWindowVersion = contextWindowTokens is null
             ? "unknown-v1"
             : models.LastSuccessUtc?.ToString("O") ?? "catalog-v1";
-        var toolCallingMode = ResolveNewCallingMode(selected);
+        // New runs always use native tool calling: every supported protocol defines it
+        // (chat completions through function calls, Responses through function-call items,
+        // Messages through tool-use blocks). The capability registry used to gate the two
+        // block protocols to an exact declared model, which left every other model on a
+        // weaker one-object selection protocol; a model that cannot call tools now fails
+        // at the provider with a bounded, named error instead of being quietly downgraded.
+        var toolCallingMode = ProviderToolCallingMode.Native;
         var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
@@ -86,8 +92,8 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowVersion,
             outputTokenReserve);
         var snapshot = CreateSnapshot(selected, key, options, outputTokenReserve, toolCallingMode,
-            allowNativeResponses: IsDeclaredNativeResponses(selected),
-            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            allowNativeResponses: true,
+            allowNativeAnthropic: true,
             useMaxCompletionTokens: selected.Alias == "openai"
                 && selected.Protocol == ProviderProtocols.ChatCompletions,
             contextWindowTokens,
@@ -130,8 +136,8 @@ public sealed class AgentProviderSnapshotFactory(
             _ => throw new ProviderCatalogException("provider_selection_invalid"),
         };
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
-            allowNativeResponses: IsDeclaredNativeResponses(selected),
-            allowNativeAnthropic: IsDeclaredNativeAnthropic(selected),
+            allowNativeResponses: true,
+            allowNativeAnthropic: true,
             useMaxCompletionTokens: selected.Alias == "openai"
                 && selected.Protocol == ProviderProtocols.ChatCompletions,
             contextWindowTokens: pin.ContextWindowTokens,
@@ -276,23 +282,6 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
-
-    private static ProviderToolCallingMode ResolveNewCallingMode(ProviderSelection selected) =>
-        IsDeclaredNativeResponses(selected) || IsDeclaredNativeAnthropic(selected)
-            ? ProviderToolCallingMode.Native
-            : ProviderBootstrapData.ModeForProtocol(selected.Protocol);
-
-    private static bool IsDeclaredNativeResponses(ProviderSelection selected) =>
-        selected.Protocol == ProviderProtocols.OpenAiResponses
-        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
-        && capability.Protocol == selected.Protocol
-        && capability.SupportsNativeTools;
-
-    private static bool IsDeclaredNativeAnthropic(ProviderSelection selected) =>
-        selected.Protocol == ProviderProtocols.AnthropicMessages
-        && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
-        && capability.Protocol == selected.Protocol
-        && capability.SupportsNativeTools;
 
     private static string CallingModeValue(ProviderToolCallingMode mode) => mode switch
     {

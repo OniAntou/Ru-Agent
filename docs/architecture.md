@@ -316,7 +316,7 @@ restart) without a downloader or package manager. Only `SKILL.md` is loaded;
 nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
 and are never automatically read or executed. The typed context has bounded
 references (32 KiB each), and a 512 KiB serialized-context
-cap. The runtime context keeps at most sixteen references total, counting any
+cap. The runtime context keeps at most twenty-four references total, counting any
 omission notice and available workspace-activity reference. Structured tool
 output projections preserve durable receipts and attach tool-specific paging
 cursors: `read` advances UTF-8 bytes, `grep` advances match results from the

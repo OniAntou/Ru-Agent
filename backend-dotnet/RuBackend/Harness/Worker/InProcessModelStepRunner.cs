@@ -24,7 +24,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
-    private const int MaxConversationBlockChars = 6_000;
+    private const int MaxConversationBlockChars = 12_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
         "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";

@@ -26,7 +26,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
                 {
                     ["mode"] = "run",
                     ["executable"] = "cmd.exe",
-                    ["arguments"] = new JsonArray("/c", "(echo once>>ran.txt) & (for /L %i in (1,1,215) do @echo 012345678901234567890123456789) & @echo CURSOR-MIDDLE-MARKER & (for /L %i in (1,1,1000) do @echo 012345678901234567890123456789)"),
+                    ["arguments"] = new JsonArray("/c", "(echo once>>ran.txt) & (for /L %i in (1,1,400) do @echo 012345678901234567890123456789) & @echo CURSOR-MIDDLE-MARKER & (for /L %i in (1,1,1000) do @echo 012345678901234567890123456789)"),
                 }),
                 CancellationToken.None);
 
@@ -34,7 +34,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
             Assert.True(execution.Output["stdout_dropped_bytes"]!.GetValue<long>() > 0, execution.Output.ToJsonString());
             Assert.Equal(executionId, execution.Output["spool_id"]!.GetValue<string>());
 
-            const int brokerPageLimit = 7_000;
+            const int brokerPageLimit = 14_000;
             var firstRequestId = "req-page-" + Guid.NewGuid().ToString("N");
             var firstPage = await ReadOutput(service, sessionId, firstRequestId, executionId, 0, brokerPageLimit);
             var source = firstPage.Output.ToJsonString();
@@ -105,8 +105,8 @@ public sealed class StructuredToolOutputProjectionBrokerTests
     {
         using var fixture = BrokerFixture.Create();
         const string hiddenMarker = "NEEDLE-GREP-PROJECTION-MARKER";
-        var lines = Enumerable.Range(0, 100)
-            .Select(index => $"needle match {index:D3} {new string('x', 80)}")
+        var lines = Enumerable.Range(0, 120)
+            .Select(index => $"needle match {index:D3} {new string('x', 200)}")
             .ToArray();
         lines[45] += " " + hiddenMarker;
         await File.WriteAllLinesAsync(Path.Combine(fixture.Workspace, "matches.txt"), lines, new System.Text.UTF8Encoding(false));

@@ -82,12 +82,12 @@ and encrypted policy snapshots) is the current path. A model step performs
 exactly one provider generation per typed request and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
 the same twelve tools in the single Agent profile: `read`, `list`, `grep`, `glob`,
-`help`, `todo_write` and `skill` (one purpose each; `read` takes `offset`/`limit`,
-`skill` takes `name` and loads one SKILL.md body),
-bounded `truncated`),
+`help`, `todo_write` and `skill` (one purpose each; `read` takes `offset`/`limit` and
+returns a bounded `truncated` flag; `skill` takes `name` and loads one SKILL.md body),
 `write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
 `recovery_too_large` beyond 4 MiB,
-`recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
+`recovery_consumed` on replay), and `bash` with `mode=run|shell|read_output|kill`
+plus a `background` flag on run/shell, and standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
 the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
 read-only: workspace read and Web auto while terminal and mutation deny outright
@@ -118,6 +118,12 @@ profiles; `web_approval_required` remains available only to an explicit ask
 rule. `files.apply_patch` is not advertised or model-usable. The managed Git
 workflow retains temporary-index isolation, path rollback attribution, and
 refusal on dirty user index state.
+
+Background terminal tasks are session-scoped and Broker-owned: `background: true`
+returns immediately with an `execution_id` and `state=running`, a foreground
+command that outlives its approved timeout is moved to the background instead of
+being killed, and the `/tasks` command lists the session's tasks or stops one by
+id.
 
 The retired Python deterministic Harness is not used for route verification,
 so managed route tests run directly against the published C# composition. The

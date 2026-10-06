@@ -65,26 +65,12 @@ We have designed, implemented, and verified the complete multimodal image attach
 
 ## 3. Automated Test Suite Results
 
-All 13 test projects in the solution were executed and passed cleanly:
-
-| Project | Total Tests | Passed | Failed | Skipped | Duration |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| `RuAgent.Protocol.Tests` | 21 | 21 | 0 | 0 | 47 ms |
-| `RuAgent.Harness.Core.Tests` | 226 | 226 | 0 | 0 | 148 ms |
-| `RuAgent.Harness.Persistence.Tests` | 103 | 103 | 0 | 0 | 964 ms |
-| `RuAgent.Runtime.Core.Tests` | 6 | 6 | 0 | 0 | 136 ms |
-| `RuAgent.Runtime.Adapters.Tests` | 212 | 212 | 0 | 0 | 134 ms |
-| `RuAgent.Runtime.Worker.Tests` | 59 | 59 | 0 | 0 | 210 ms |
-| `gui-winui3.Tests` | 364 | 364 | 0 | 0 | 217 ms |
-| `RuAgent.Broker.Tests` | 502 | 502 | 0 | 0 | 27 s |
-| `RuAgent.Cli.Tests` | 119 | 119 | 0 | 0 | 215 ms |
-| `RuAgent.Client.Tests` | 49 | 49 | 0 | 0 | 155 ms |
-| `RuAgent.Connectors.Tests` | 3 | 3 | 0 | 0 | 17 ms |
-| `RuAgent.Hosting.Tests` | 29 | 29 | 0 | 0 | 2 s |
-| `RuBackend.Tests` | 745 | 745 | 0 | 0 | 10 m 8 s |
-| **Total** | **2,438** | **2,438** | **0** | **0** | **~11 min** |
-
-Both `gui-winui3` Debug and Release builds succeeded with 0 warnings and 0 errors:
+The full suite passed at the time of this record. The project list and totals
+from that run are deliberately not repeated here: two of those projects
+(`RuAgent.Runtime.Core.Tests`, `RuAgent.Connectors.Tests`) no longer exist, and
+the current counts live in the [verification record](../operations/verification.md)
+and the README badge. Both `gui-winui3` Debug and Release builds succeeded with
+0 warnings and 0 errors:
 ```
 dotnet build gui-winui3/RuApp.csproj -c Release -> Build succeeded (0 Warnings, 0 Errors)
 ```

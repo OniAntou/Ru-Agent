@@ -111,11 +111,6 @@ empty catalog it prints `catalog unavailable (<reason>) - showing configured
 models` and names the backend plus row count in the footer, so a short list is
 distinguishable from a failed fetch.
 
-### Two launcher scripts, one committed
-
-`bin/ruagent.cmd` duplicates `bin/ru.cmd` and is deliberately not committed.
-Edit `bin/ru.cmd`; the untracked copy is local convenience.
-
 ### Interrupting a chat turn now cancels server-side — but best-effort
 
 Escape with an empty draft and `Ctrl+C` no longer only detach the local stream:

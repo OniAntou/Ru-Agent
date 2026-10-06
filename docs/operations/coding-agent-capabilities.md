@@ -1,6 +1,6 @@
 # Coding-agent capability baseline
 
-This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity.
+This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-07: background terminal tasks (auto-move on timeout, live paging, kill, session task control and the composer tasks flyout) are implemented; live-provider task quality remains unmeasured.
 
 ## Reference workflows
 
@@ -32,8 +32,9 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 | TUI command discovery | Shared slash vocabulary, completion and Ctrl+P searchable palette | Native terminal key routing and resize acceptance |
 | TUI transcript | Bounded visible history, scroll during streaming, unread-output hint, Ctrl+Home/End, collapsed tool/diff expansion | Native terminal rendering and Unicode/resize acceptance |
 | Automation/integration | Noninteractive run, JSON-RPC bridge, TypeScript SDK | Real distribution/resource acceptance |
+| Background terminal tasks | Session-scoped Broker registry with a per-session cap and lifetime; foreground commands auto-move to the background at their timeout; live `read_output` paging; `mode=kill`; `/tasks` command, composer tasks flyout and a bounded `background_tasks` prompt reference | Live-provider long-task behavior and native flyout acceptance |
 | External instructions | Workspace AGENTS and lazy Markdown skills | Instructions remain untrusted and never confer execution authority |
-| Workflow evaluation | Twelve hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; live-provider results are not available |
+| Workflow evaluation | Eleven hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; live-provider results are not available |
 
 ## Acceptance boundary
 
@@ -43,7 +44,7 @@ Transcript navigation retains a bounded history, allows reading earlier output d
 
 Deterministic tests prove wiring, ordering, limits and cancellation. Native Windows Terminal tests prove actual keys, resize, clipboard and visual behavior. Real-provider coding tasks prove model/harness task quality; their model, version, prompt, workspace, outcome and cost must be recorded independently.
 
-The baseline runner is [`scripts/evaluate_agent_workflows.ps1`](../../scripts/evaluate_agent_workflows.ps1), with the twelve bounded oracles in [`tests/fixtures/model-working-environment-scenarios.json`](../../tests/fixtures/model-working-environment-scenarios.json). Its default `-ValidateOnly` mode checks oracle completeness, path bounds and workspace hashes without starting the Host or reading provider settings. `-RunScripted` drives a registered case through the real CLI with a temporary data root and workspace. Scripted results prove integration wiring only; quality, token usage, and cost remain unknown unless measured with a pinned live provider/model/protocol.
+The baseline runner is [`scripts/evaluate_agent_workflows.ps1`](../../scripts/evaluate_agent_workflows.ps1), with the eleven bounded oracles in [`tests/fixtures/model-working-environment-scenarios.json`](../../tests/fixtures/model-working-environment-scenarios.json). Its default `-ValidateOnly` mode checks oracle completeness, path bounds and workspace hashes without starting the Host or reading provider settings. `-RunScripted` drives a registered case through the real CLI with a temporary data root and workspace. Scripted results prove integration wiring only; quality, token usage, and cost remain unknown unless measured with a pinned live provider/model/protocol.
 
 ## Operating bounds
 

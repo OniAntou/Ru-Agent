@@ -10,13 +10,25 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-5%2C475%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-5%2C507%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#your-data-stays-local)
 
 </div>
 
 ---
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Platform** | Windows 10/11 x64 — self-contained folder, nothing to install |
+| **Surfaces** | WinUI 3 desktop app · full-screen terminal UI · stdio RPC bridge + TypeScript SDK |
+| **Model access** | Your provider, your key (Windows Credential Manager); no Ru account |
+| **Tools** | **12** bounded tools; every call executes in the Broker |
+| **Public surface** | **41 HTTP routes** on `127.0.0.1` behind a bearer token |
+| **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
+| **Tests** | 5,507 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -26,6 +38,9 @@ You open a chat, describe what you want, and Ru works on your project:
 - **Edits and writes files** — you see the diff before anything lands.
 - **Runs your build, tests, and git commands** in a terminal you can watch, with
   output streamed into the conversation.
+- **Runs long work in the background** — a command that outlives its timeout is
+  moved to a background task; Ru keeps working, pages live output, and stops it
+  on request.
 - **Searches the web** when you ask, with results sanitized and cited.
 - **Keeps a task list** for multi-step work, so progress is visible at a glance.
 - **Loads workspace skills** — a `SKILL.md` in your repository teaches Ru a
@@ -35,6 +50,18 @@ Behind that is **12 tools**, each deliberately small and bounded — reading a
 file is capped, search results are capped, terminal output is truncated, and
 every command dies with its own timeout. A pathological request degrades into
 a bounded result, never a frozen app.
+
+## How the pieces fit
+
+| Component | Path | Role |
+| --- | --- | --- |
+| **RuApp** | `gui-winui3/` | WinUI 3 desktop app — chat, approvals, terminal panel, settings |
+| **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 41 HTTP routes, SSE events, run orchestration |
+| **RuAgent.Broker** | `backend-dotnet/RuAgent.Broker/` | The single execution authority — every tool call runs here under policy and approval |
+| **RuAgent.Cli** | `backend-dotnet/RuAgent.Cli/` | Terminal tracer: one-shot runs, full-screen TUI, session tooling |
+
+The four executables ship side by side in one folder; the app starts the Host
+and the Broker itself, and the CLI can drive the same loopback surface.
 
 ## Autonomy, trust, and approval
 
@@ -84,6 +111,17 @@ or tool fallback bypasses a denial.
 > is not a network/path sandbox. Process timeout, output cap, cancellation, and
 > process-tree cleanup still apply. Structured file tools separately retain
 > canonical/symlink/junction/hard-link containment and protected-path denial.
+
+### Background tasks
+
+Long commands do not have to hold the conversation. `bash` with
+`background: true` returns immediately with an execution id; a foreground
+command that outlives its approved timeout is moved to the background instead
+of being killed. Tasks are session-scoped, capped per session, and bounded by
+a lifetime (30-minute default, 2-hour ceiling). Page live output with
+`read_output`, stop one with `kill`, or use the composer's **Tasks** flyout in
+the GUI / `/tasks` in the CLI. The model context carries a bounded note when a
+task appears or changes state, so a finished task is noticed without polling.
 
 ## Your data stays local
 
@@ -137,17 +175,17 @@ smaller viewport all stay on the sequential path, unchanged.
 Terminal.Gui or the sequential fallback.
 
 Ctrl+P opens the command palette; PageUp/PageDown and Ctrl+Home/End navigate
-output during streaming. `/new`, `/sessions`, `/resume`, `/follow` and `/files`
-control session continuity and project context. Queued prompts own their
-attachments and selection intent; a failed submission pauses the queue for
-`/retry`. See the [CLI guide](backend-dotnet/RuAgent.Cli/README.md) and
+output during streaming. `/new`, `/sessions`, `/resume`, `/follow`, `/files` and
+`/tasks` control session continuity, project context and background work. Queued
+prompts own their attachments and selection intent; a failed submission pauses the
+queue for `/retry`. See the [CLI guide](backend-dotnet/RuAgent.Cli/README.md) and
 [capability and acceptance map](docs/operations/coding-agent-capabilities.md)
 for limits and remaining gaps.
 
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,475 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,507 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -156,11 +194,14 @@ contention as a failure (exit code 75) rather than a flaky result.
 
 ## Learning more
 
-- [docs/README.md](docs/README.md) — the documentation index
-- [CONTEXT.md](CONTEXT.md) — the domain language
-- [docs/architecture.md](docs/architecture.md) — how the four executables fit together
-- [CONTRIBUTING.md](CONTRIBUTING.md) — building, testing, and the rules
-- [AGENTS.md](AGENTS.md) — the same rules for AI coding agents
+| Document | What is in it |
+| --- | --- |
+| [docs/README.md](docs/README.md) | The documentation index |
+| [docs/architecture.md](docs/architecture.md) | How the four executables fit together |
+| [CONTEXT.md](CONTEXT.md) | The domain language |
+| [docs/operations/agent-tools.md](docs/operations/agent-tools.md) | Every tool, its bounds, and the policy matrix |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Building, testing, and the rules |
+| [AGENTS.md](AGENTS.md) | The same rules for AI coding agents |
 
 ## Not done yet
 
@@ -172,5 +213,8 @@ Stated plainly so nothing above reads as a stronger claim than it is:
   the route contract and the repository guards; nothing measures CPU, memory or GPU
   of a published build yet (`scripts/measure_resources.ps1` exists and is verified).
 - **No installer.** The build produces a runnable folder, not an MSIX or an installer.
+- **No live-provider task-quality baseline.** Deterministic tests prove wiring,
+  limits and cancellation; the evaluator's scripted oracles do not measure model
+  quality, token usage or cost.
 - Out of scope for now: subagent orchestration, LSP integration, MCP discovery, and an
   OS-level filesystem or network sandbox.

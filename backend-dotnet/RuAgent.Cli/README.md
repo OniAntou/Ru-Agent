@@ -122,7 +122,8 @@ agent rpc
 
 The Agent model-step advertisement contains the twelve Protocol definitions:
 `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write` with
-`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, standalone
+`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell|read_output|kill`
+plus a `background` flag on run/shell, standalone
 `web_search`/`web_fetch`, and `skill`. A provider-native model step may return
 optional narration and one or more ordered calls; the compatibility text path
 still emits exactly one JSON selection. The shared budget is 256 tool calls per

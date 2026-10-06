@@ -1,11 +1,18 @@
 # Python Dependency Ownership
 
-Last reviewed: 2026-09-13.
+Last reviewed: 2026-10-07.
 
 This document records the consumer inventory, ownership boundaries, and version
 declarations for Python dependencies across Ru's workspace. After the
 2026-09-13 media teardown the repository has no Python product source, so the
 only Python dependencies left belong to tooling and CI.
+
+Update 2026-10-07: the working `.venv` was slimmed to the declared tooling set.
+116 legacy packages (torch, torchaudio, transformers, opencv, datasets, the
+audio/VTube stack and their transitive dependencies) were uninstalled; the
+remaining environment is the `[dev]`/`[tooling]` extras plus `pip`/`setuptools`
+and the local editable package. `pip check` reports no broken requirements and
+the Python guard suite passes with that set.
 
 ## Dependency Consumer Inventory
 

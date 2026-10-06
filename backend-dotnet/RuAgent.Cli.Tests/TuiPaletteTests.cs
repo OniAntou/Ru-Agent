@@ -12,6 +12,8 @@ public sealed class TuiPaletteTests
         {
             Assert.Equal("\u001b[38;2;92;156;245m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[38;2;157;124;216m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[38;2;0;230;118m", TuiPalette.Code(TuiToken.Aurora));
+            Assert.Equal("\u001b[38;2;0;175;95m", TuiPalette.Code(TuiToken.AuroraDim));
             Assert.Equal("\u001b[38;2;128;128;128m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[38;2;127;216;143m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[38;2;245;167;66m", TuiPalette.Code(TuiToken.Warn));
@@ -27,6 +29,8 @@ public sealed class TuiPaletteTests
         {
             Assert.Equal("\u001b[38;5;75m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[38;5;140m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[38;5;48m", TuiPalette.Code(TuiToken.Aurora));
+            Assert.Equal("\u001b[38;5;35m", TuiPalette.Code(TuiToken.AuroraDim));
             Assert.Equal("\u001b[38;5;244m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[38;5;79m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[38;5;215m", TuiPalette.Code(TuiToken.Warn));
@@ -42,6 +46,8 @@ public sealed class TuiPaletteTests
         {
             Assert.Equal("\u001b[94m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[95m", TuiPalette.Code(TuiToken.Brand2));
+            Assert.Equal("\u001b[92m", TuiPalette.Code(TuiToken.Aurora));
+            Assert.Equal("\u001b[32m", TuiPalette.Code(TuiToken.AuroraDim));
             Assert.Equal("\u001b[37m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[90m", TuiPalette.Code(TuiToken.Line));
             Assert.Equal("\u001b[92m", TuiPalette.Code(TuiToken.Ok));

@@ -19,10 +19,26 @@ public static class TgPalette
 
     public static Color ToColor((int R, int G, int B) rgb) => new(rgb.R, rgb.G, rgb.B, 255);
 
+    /// <summary>
+    /// The floating card's own fill. Lighter than <see cref="Tui.TuiPalette.SurfaceRgb"/>
+    /// (20,20,20) on purpose: that value is the terminal background, so a card painted in it
+    /// would have no edge at all.
+    /// </summary>
+    public static (int R, int G, int B) CardBgRgb() => (38, 38, 38);
+
+    /// <summary>The filled bar behind the chosen card entry, with dark text on top of it.</summary>
+    public static (int R, int G, int B) CardSelectionRgb() => (245, 167, 66);
+
+    /// <summary>Foreground used on top of <see cref="CardSelectionRgb"/>.</summary>
+    public static (int R, int G, int B) CardOnSelectionRgb() => (16, 16, 16);
+
     public static Attr Attr(TuiToken fg, TuiToken? bg = null) =>
         new(ToColor(fg), bg is { } b ? ToColor(b) : new Color(0, 0, 0, 255));
 
     public static Attr Attr(TuiToken fg, (int R, int G, int B) bg) =>
+        new(ToColor(fg), ToColor(bg));
+
+    public static Attr Attr((int R, int G, int B) fg, (int R, int G, int B) bg) =>
         new(ToColor(fg), ToColor(bg));
 
     public static Scheme Scheme(TuiToken fg)

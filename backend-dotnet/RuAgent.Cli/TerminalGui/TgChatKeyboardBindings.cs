@@ -259,7 +259,19 @@ internal sealed class TgChatKeyboardBindings
 
         if (key == Key.Enter || key == Key.Tab)
         {
-            _window.AcceptSlashDropdown();
+            var picked = _window.AcceptSlashDropdown();
+
+            // Enter on a complete command runs it, so picking /model opens its card straight
+            // away instead of parking the command in the composer for a second Enter. A
+            // command that still needs an argument stays in the composer, and Tab only ever
+            // fills the command in.
+            if (key == Key.Enter
+                && picked is { } command
+                && !InteractiveLineReader.NeedsArgument(command))
+            {
+                _submit();
+            }
+
             return true;
         }
 

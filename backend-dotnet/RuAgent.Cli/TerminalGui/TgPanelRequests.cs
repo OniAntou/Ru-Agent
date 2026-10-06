@@ -31,6 +31,50 @@ public static class TgPanelRequests
             () => window.ShowSecret(providerDisplay ?? "api key"),
             cancellationToken);
 
+    /// <summary>
+    /// Opens the read-only output window and completes when the operator closes it with Enter
+    /// or Escape. The rows are only borrowed for the window: the caller keeps printing them to
+    /// the transcript, so nothing is lost when it closes.
+    /// </summary>
+    public static async Task RequestDocumentAsync(
+        TgChatWindow window,
+        string title,
+        IReadOnlyList<string> body,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(body);
+        var closed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnClosed() => closed.TrySetResult(true);
+
+        window.App!.Invoke(() =>
+        {
+            window.DocumentClosed += OnClosed;
+            window.ShowDocument(title, body);
+        });
+
+        using var registration = cancellationToken.Register(() => closed.TrySetResult(true));
+        try
+        {
+            await closed.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                window.App.Invoke(() =>
+                {
+                    window.DocumentClosed -= OnClosed;
+                    window.HideDocument();
+                });
+            }
+            catch (NotInitializedException)
+            {
+                // The session wound down while the window was open; nothing left to close.
+            }
+        }
+    }
+
     private static async Task<string?> RunAsync(
         TgChatWindow window,
         Action show,

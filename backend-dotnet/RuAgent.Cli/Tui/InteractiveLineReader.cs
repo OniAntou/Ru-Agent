@@ -41,6 +41,35 @@ public sealed class InteractiveLineReader
 
     private static readonly string[] DefaultSlashCommands = KnownCommands.Select(c => c.Command).ToArray();
 
+    /// <summary>
+    /// Commands that only report. They have no argument to type and no side effect, so the
+    /// Terminal.Gui frame shows their output in the read-only output window instead of
+    /// scrolling it straight into the transcript; the rows still reach the transcript when
+    /// the window closes, so nothing is lost. Commands that change state stay on the composer
+    /// and the modal pickers, because those need a decision, not a reading.
+    /// </summary>
+    private static readonly HashSet<string> ReportCommands =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "/tree", "/status", "/stats", "/tokens", "/help", "/export", "/attachments", "/history",
+        };
+
+    /// <summary>True when <paramref name="slashCmd"/> is a report-only command.</summary>
+    public static bool IsReportCommand(string? slashCmd) =>
+        slashCmd is not null && ReportCommands.Contains(slashCmd.Trim());
+
+    /// <summary>
+    /// Commands that do nothing without an argument the operator has to type. Picking one of
+    /// these from the suggestion list fills the composer so the rest can be typed; every
+    /// other command is complete on its own and runs as soon as it is picked.
+    /// </summary>
+    private static readonly HashSet<string> ArgumentCommands =
+        new(StringComparer.OrdinalIgnoreCase) { "/attach", "/detach", "/rewind" };
+
+    /// <summary>True when <paramref name="slashCmd"/> cannot run without a typed argument.</summary>
+    public static bool NeedsArgument(string? slashCmd) =>
+        slashCmd is not null && ArgumentCommands.Contains(slashCmd.Trim());
+
     private const int MinBoxWidth = 10;
     private const int MaxBoxWidth = 1000;
     /// <summary>Composer never spans the whole terminal: beyond this it centers like opencode.</summary>

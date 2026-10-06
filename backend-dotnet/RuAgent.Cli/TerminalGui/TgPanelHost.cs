@@ -3,6 +3,7 @@ using RuAgent.Cli.Tui;
 using Terminal.Gui.Drivers;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
+using Attribute = Terminal.Gui.Drawing.Attribute;
 
 namespace RuAgent.Cli.TerminalGui;
 
@@ -27,15 +28,41 @@ public enum TgPanelKeyKind
 public readonly record struct TgPanelKey(TgPanelKeyKind Kind, char Digit = '\0', char Character = '\0');
 
 /// <summary>
+/// How a card row is painted: the card fill behind every row, and the chosen entry reversed
+/// onto a filled bar the way a selection reads in a floating card.
+/// </summary>
+public static class TgCard
+{
+    public static Attribute Attribute(CardRowKind kind)
+    {
+        var card = TgPalette.CardBgRgb();
+        return kind == CardRowKind.Selected
+            ? TgPalette.Attr(TgPalette.CardOnSelectionRgb(), TgPalette.CardSelectionRgb())
+            : kind switch
+            {
+                CardRowKind.Title => TgPalette.Attr(TuiToken.Bright, card),
+                CardRowKind.Section => TgPalette.Attr(TuiToken.Brand2, card),
+                CardRowKind.Search => TgPalette.Attr(TuiToken.Meta, card),
+                CardRowKind.Footer or CardRowKind.Spacer => TgPalette.Attr(TuiToken.Meta, card),
+                CardRowKind.Disabled => TgPalette.Attr(TuiToken.Line, card),
+                _ => TgPalette.Attr(TuiToken.Bright, card),
+            };
+    }
+}
+
+/// <summary>
 /// Floating panel over the transcript for the approval, trust, picker and secret surfaces.
 /// Content is composed by the classic renderers by the owner (<see cref="ApprovalPrompt"/>,
 /// <see cref="ChoiceList"/>, <see cref="KeyInputPanel"/>); the host only strips the palette
 /// escapes, centers the frame and forwards 1/2/3, arrow, Enter, Escape, Backspace and
 /// printable keys (the secret panel needs to accept a typed key).
+/// A card surface is drawn as a filled block with no border glyphs, which is what makes it
+/// read as a card floating on the dark terminal rather than a box drawn on it.
 /// </summary>
 public sealed class TgPanelHost : View
 {
     private Func<int, IReadOnlyList<string>> _render = _ => [];
+    private Func<int, IReadOnlyList<CardLine>>? _card;
 
     public TgPanelHost()
     {
@@ -52,6 +79,15 @@ public sealed class TgPanelHost : View
     {
         ArgumentNullException.ThrowIfNull(render);
         _render = render;
+        _card = null;
+        SetNeedsDraw();
+    }
+
+    /// <summary>Draws the panel as a floating card instead of a bordered box.</summary>
+    public void SetCard(Func<int, IReadOnlyList<CardLine>> card)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        _card = card;
         SetNeedsDraw();
     }
 
@@ -59,6 +95,12 @@ public sealed class TgPanelHost : View
     {
         if (Viewport.Width <= 0 || Viewport.Height <= 0)
         {
+            return true;
+        }
+
+        if (_card is { } card)
+        {
+            DrawCard(card(Viewport.Width));
             return true;
         }
 
@@ -79,6 +121,24 @@ public sealed class TgPanelHost : View
         }
 
         return true;
+    }
+
+    private void DrawCard(IReadOnlyList<CardLine> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        var width = Math.Min(lines[0].Width, Viewport.Width);
+        var left = Math.Max(0, (Viewport.Width - width) / 2);
+        var top = Math.Max(0, (Viewport.Height - lines.Count) / 2);
+        for (var i = 0; i < lines.Count && top + i < Viewport.Height; i++)
+        {
+            SetAttribute(TgCard.Attribute(lines[i].Kind));
+            Move(left, top + i);
+            AddStr(lines[i].Text);
+        }
     }
 
     private void OnKeyDown(object? sender, Key key)

@@ -146,6 +146,23 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void The_feed_labels_do_not_outweigh_the_message()
+    {
+        // A SemiBold label beside the 14px regular message text read as a heading
+        // above the reply - bigger than the message it describes. The feed is
+        // metadata: its labels keep the ink color and the two-steps-smaller size,
+        // and stay regular weight so the message remains the visual focus.
+        var template = ActivityTemplate();
+        foreach (var name in new[] { "AgentActivityText", "ThinkingLabel", "EditPreviewLabel" })
+        {
+            var label = template.Descendants().First(element =>
+                element.Name.LocalName == "TextBlock"
+                && element.Attribute(GuiSource.Xaml + "Name")?.Value == name);
+            Assert.Null(GuiSource.AttributeValue(label, "FontWeight"));
+        }
+    }
+
+    [Fact]
     public void The_activity_item_carries_no_raw_payload_or_reasoning()
     {
         // The row is presentation only: anything the host keeps private must have no

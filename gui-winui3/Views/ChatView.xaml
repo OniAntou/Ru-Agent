@@ -161,7 +161,6 @@
                                  Text="{x:Bind DisplayText, Mode=OneWay}"
                                  Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                  FontFamily="{StaticResource RuUiFontFamily}"
-                                FontWeight="SemiBold"
                                Foreground="{StaticResource RuInkBrush}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Center"
@@ -201,7 +200,6 @@
                               <TextBlock x:Name="ThinkingLabel"
                                          Text="{x:Bind DisplayText, Mode=OneWay}"
                                          FontFamily="{StaticResource RuUiFontFamily}"
-                                         FontWeight="SemiBold"
                                          Foreground="{StaticResource RuInkBrush}"
                                          TextWrapping="Wrap"
                                          VerticalAlignment="Center" />
@@ -236,7 +234,6 @@
                                <TextBlock x:Name="EditPreviewLabel"
                                           Text="{x:Bind DisplayText, Mode=OneWay}"
                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                          FontWeight="SemiBold"
                                           Foreground="{StaticResource RuInkBrush}"
                                           TextWrapping="Wrap"
                                           VerticalAlignment="Center" />

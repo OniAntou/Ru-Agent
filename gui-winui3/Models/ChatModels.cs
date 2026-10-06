@@ -486,8 +486,12 @@ namespace RuApp.Models
             get
             {
                 if (ByteSize < 1024) return $"{ByteSize} B";
-                if (ByteSize < 1024 * 1024) return $"{ByteSize / 1024.0:F1} KB";
-                return $"{ByteSize / (1024.0 * 1024.0):F1} MB";
+                if (ByteSize < 1024 * 1024)
+                {
+                    return (ByteSize / 1024.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " KB";
+                }
+
+                return (ByteSize / (1024.0 * 1024.0)).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " MB";
             }
         }
 

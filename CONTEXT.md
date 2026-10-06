@@ -70,10 +70,10 @@ with provenance, capped at 16 KiB with at most 16 entries per list. User intent
 remains linked to its original run and event; model task candidates are
 untrusted and persisted only from a successful durable `todo_write` receipt,
 and file observations and verification records require receipt provenance. It
-is context guidance only: it carries no approvals, grants, credentials, or
-execution authority, and a workspace identity change makes the state
-unavailable. A new session stays independent until the user explicitly
-previews and attaches a selected handoff.
+is context guidance only: it carries no approvals, grants, credentials, raw
+terminal output, or execution authority, and a workspace identity change makes
+the state unavailable. A new session stays independent until the user
+explicitly previews and attaches a selected handoff.
 _Avoid_: global memory, cross-session authority, model prose as proof, or work
 state as permission
 

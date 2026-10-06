@@ -293,6 +293,28 @@ public sealed class InProcessModelStepRunnerTests
         Assert.Equal(0, provider.Calls);
     }
 
+    [Fact]
+    public async Task Prepared_step_retries_a_retryable_provider_error_with_a_fresh_prepare()
+    {
+        // The production coordinator hands the runner a prepared step; a retryable
+        // provider failure must reprepare on the next attempt instead of failing
+        // closed as invalid_request.
+        var provider = new ScriptedProvider((_, attempt) => attempt == 1
+            ? Throws(new ModelProviderException("rate_limited", retryable: true))
+            : Deltas(new ModelDelta("recovered after prepare", [], completed: true, finishReason: "stop")));
+        var runner = Runner(provider);
+        var request = Request();
+        var prepared = await runner.PrepareAsync(request, CancellationToken.None);
+
+        var result = await runner.RunStepAsync(
+            request.WithPreparation(prepared),
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal("recovered after prepare", result.Step.Text);
+        Assert.Equal(2, provider.Calls);
+    }
+
     private static InProcessModelStepRunner Runner(ScriptedProvider provider) =>
         new(new WorkerV2StepService(provider))
         {
@@ -305,7 +327,8 @@ public sealed class InProcessModelStepRunnerTests
         "chat_completions",
         new Uri("https://step-provider.invalid/v1"),
         "model-b",
-        "step-secret");
+        "step-secret",
+        contextWindowTokens: 32_768);
 
     private static ModelStepRequest Request(SystemPromptContext? promptContext = null) => new(
         new RunId("run_" + new string('a', 32)),
@@ -374,13 +397,21 @@ public sealed class InProcessModelStepRunnerTests
         throw error;
     }
 
-    private sealed class ScriptedProvider(Func<ModelRequest, int, IAsyncEnumerable<ModelDelta>> script) : IModelProvider
+    private sealed class ScriptedProvider(Func<ModelRequest, int, IAsyncEnumerable<ModelDelta>> script)
+        : IModelProvider, IModelRequestBodyProjector
     {
         private int _calls;
 
         public List<ModelRequest> Requests { get; } = [];
 
         public int Calls => Volatile.Read(ref _calls);
+
+        public string ProjectRequestBody(ModelRequest request) =>
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["model"] = request.Model,
+                ["messages"] = new System.Text.Json.Nodes.JsonArray(),
+            }.ToJsonString();
 
         public IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, CancellationToken cancellationToken)
         {

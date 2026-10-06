@@ -1283,7 +1283,9 @@ public sealed class TuiTranscript
         TuiFailureCatalog.TryGet(code, out var info) ? info.Fix : null;
 
     private static string FormatDuration(int durationMs) =>
-        durationMs < 1000 ? $"{durationMs}ms" : $"{durationMs / 1000d:0.#}s";
+        durationMs < 1000
+            ? $"{durationMs}ms"
+            : (durationMs / 1000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "s";
 
     private static string Escape(string? text)
     {

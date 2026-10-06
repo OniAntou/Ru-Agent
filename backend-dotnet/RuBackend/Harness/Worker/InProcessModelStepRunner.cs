@@ -82,7 +82,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             try
             {
                 var prepared = attempt == 0 ? request.Preparation as InProcessPreparedStep : null;
-                if (request.Preparation is not null && prepared is null)
+                if (attempt == 0 && request.Preparation is not null && prepared is null)
                     throw new WorkerProtocolException("invalid_request", retryable: false);
                 var workerPrepared = prepared?.WorkerRequest
                     ?? _stepService.PrepareRequest(

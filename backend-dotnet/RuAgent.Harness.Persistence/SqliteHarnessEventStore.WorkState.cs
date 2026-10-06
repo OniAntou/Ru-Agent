@@ -180,6 +180,9 @@ public sealed partial class SqliteHarnessEventStore
         var redacted = await _payloadStore.ReadForModelAsync(connection, transaction,
             request.Run.RunId, prompt.PayloadId, cancellationToken).ConfigureAwait(false);
         var text = BoundUserText(redacted.Plaintext.Span);
+        // An image-only prompt has no textual goal to record; the state keeps its
+        // previous text intent instead of failing run creation on an empty goal.
+        if (string.IsNullOrWhiteSpace(text)) return;
         var previous = await _workStates.GetInTransactionAsync(connection, transaction,
             request.Run.SessionId, request.Run.WorkspaceId, cancellationToken).ConfigureAwait(false);
         var workspaceHash = await SessionWorkStateStore.ReadWorkspaceIdentityHashAsync(

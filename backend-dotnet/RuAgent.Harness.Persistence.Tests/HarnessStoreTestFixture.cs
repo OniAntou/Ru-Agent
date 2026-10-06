@@ -101,9 +101,12 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
             Timestamp,
             Timestamp,
             permissionProfileVersion: permissionProfileVersion);
+        var promptPayloadId = payloads?
+            .FirstOrDefault(payload => payload.Kind == HarnessPayloadKind.UserPrompt)?
+            .PayloadId;
         return new NewAgentRun(
             run,
-            [new HarnessEventIntent(Event(runNumber), HarnessEventKind.RunStateChanged)],
+            [new HarnessEventIntent(Event(runNumber), HarnessEventKind.RunStateChanged, payloadId: promptPayloadId)],
             payloads ?? [],
             outbox ?? [],
             new RunCreationIdentity(

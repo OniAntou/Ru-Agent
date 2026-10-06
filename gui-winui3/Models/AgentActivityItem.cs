@@ -682,7 +682,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 return null;
             }
 
-            return ms < 1000 ? $"{ms}ms" : $"{ms / 1000d:0.#}s";
+            return ms < 1000
+                ? $"{ms}ms"
+                : (ms / 1000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "s";
         }
     }
 

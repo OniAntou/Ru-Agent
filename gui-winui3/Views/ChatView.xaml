@@ -1211,8 +1211,8 @@
                             <Button x:Name="ContextMeterButton"
                                     AutomationProperties.AutomationId="ContextMeterButton"
                                     AutomationProperties.Name="View Context Window capacity"
-                                    Width="26"
-                                    Height="26"
+                                    Width="28"
+                                    Height="28"
                                     Padding="0"
                                     HorizontalContentAlignment="Center"
                                     VerticalContentAlignment="Center"
@@ -1231,8 +1231,8 @@
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="{TemplateBinding Background}"
                                                             CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                            Width="26"
-                                                            Height="26">
+                                                            Width="28"
+                                                            Height="28">
                                                         <ContentPresenter Content="{TemplateBinding Content}"
                                                                           ContentTemplate="{TemplateBinding ContentTemplate}"
                                                                           HorizontalAlignment="Center"
@@ -1243,14 +1243,14 @@
                                         </Setter>
                                     </Style>
                                 </Button.Resources>
-                                <Grid Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <ProgressRing x:Name="ContextProgressRing"
                                                   IsIndeterminate="False"
                                                   Value="0"
                                                   Minimum="0"
                                                   Maximum="100"
-                                                  Width="18"
-                                                  Height="18"
+                                                  Width="20"
+                                                  Height="20"
                                                   Foreground="{StaticResource RuAccentBrush}"
                                                   Background="{StaticResource RuLineBrush}"
                                                   HorizontalAlignment="Center"
@@ -1264,12 +1264,12 @@
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
                                                 <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
-                                                <Setter Property="Padding" Value="8,6" />
-                                                <Setter Property="MinWidth" Value="130" />
-                                                <Setter Property="MaxWidth" Value="180" />
+                                                <Setter Property="Padding" Value="12,10" />
+                                                <Setter Property="MinWidth" Value="208" />
+                                                <Setter Property="MaxWidth" Value="248" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
-                                        <StackPanel Spacing="6">
+                                        <StackPanel Spacing="8">
                                             <TextBlock x:Name="RetainedRunIdentityText"
                                                        Visibility="Collapsed"
                                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -1280,7 +1280,7 @@
                                                 <TextBlock x:Name="ContextUsedLabel"
                                                            Text="0 / 128K"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="12"
+                                                           FontSize="13"
                                                            FontWeight="SemiBold"
                                                            Foreground="{StaticResource RuInkBrush}"
                                                            VerticalAlignment="Center" />
@@ -1293,15 +1293,14 @@
                                                            VerticalAlignment="Center" />
                                             </Grid>
 
-                                            <Border Height="4"
-                                                    CornerRadius="0"
-                                                    Background="{StaticResource RuLineBrush}"
-                                                    Opacity="0.9">
+                                            <Border Height="6"
+                                                    CornerRadius="{StaticResource AppMicroPillCornerRadius}"
+                                                    Background="{StaticResource RuLineBrush}">
                                                 <Grid x:Name="ContextBreakdownBar"
                                                       ColumnDefinitions="*,*">
                                                     <Border x:Name="ContextBreakdownFill"
                                                             Grid.Column="0"
-                                                            CornerRadius="0"
+                                                            CornerRadius="{StaticResource AppMicroPillCornerRadius}"
                                                             HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Stretch">
                                                         <Border.Background>
@@ -1326,14 +1325,14 @@
                                                            Grid.Column="1"
                                                            Text="Visible text/image estimate"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11.5"
+                                                           FontSize="12"
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            VerticalAlignment="Center" />
                                                 <TextBlock x:Name="ContextMessagesLabel"
                                                            Grid.Column="2"
                                                            Text="0"
                                                            FontFamily="{StaticResource RuMonoFontFamily}"
-                                                           FontSize="11.5"
+                                                           FontSize="12"
                                                            Foreground="{StaticResource RuInkBrush}"
                                                            VerticalAlignment="Center" />
                                             </Grid>
@@ -1349,14 +1348,14 @@
                                                 <TextBlock Grid.Column="1"
                                                            Text="System + tools"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11.5"
+                                                           FontSize="12"
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            VerticalAlignment="Center" />
                                                 <TextBlock x:Name="ContextOverheadLabel"
                                                            Grid.Column="2"
                                                            Text="0"
                                                            FontFamily="{StaticResource RuMonoFontFamily}"
-                                                           FontSize="11.5"
+                                                           FontSize="12"
                                                            Foreground="{StaticResource RuInkBrush}"
                                                            VerticalAlignment="Center" />
                                             </Grid>

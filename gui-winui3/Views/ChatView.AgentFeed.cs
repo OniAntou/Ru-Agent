@@ -133,6 +133,7 @@ namespace RuApp.Views
             }
 
             AgentActivityGrouper.Reconcile(AgentActivities);
+            RefreshSidePanelEdits();
             ScrollChatToBottom();
         }
 

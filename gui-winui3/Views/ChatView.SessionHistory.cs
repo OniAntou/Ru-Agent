@@ -906,6 +906,8 @@ namespace RuApp.Views
                 var openToken = _sessionOpenCts.Token;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
+                _sidePanelRunRunning = null;
+                UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
                 // pushes the composer's preset onto whichever session is open,
                 // so carrying Full Access across would silently elevate a

@@ -5,38 +5,95 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using RuAgent.Protocol.Harness;
 using RuApp.Models;
 
 namespace RuApp.Views;
 
 /// <summary>
-/// The composer's background-task flyout. Rows come from the Host's typed
-/// <c>/tasks</c> command and a stop is the same command with a kill argument, so
-/// the Broker stays the only execution authority and the view never talks to it
-/// directly.
+/// The right side panel's background-task section. Rows come from the Host's
+/// typed <c>/tasks</c> command and a stop is the same command with a kill
+/// argument, so the Broker stays the only execution authority and the view
+/// never talks to it directly. The panel also carries the session's running
+/// edit totals, summed from the transcript's edit rows.
 /// </summary>
 public sealed partial class ChatView
 {
     private const int MaxRenderedAgentTasks = 16;
 
-    /// <summary>Rows the flyout binds to; rebuilt on every refresh.</summary>
+    /// <summary>Rows the panel binds to; rebuilt on every refresh.</summary>
     public ObservableCollection<AgentTaskRow> AgentTasks { get; } = new();
 
-    private void UpdateAgentTasksButton()
+    private bool? _sidePanelRunRunning;
+
+    /// <summary>
+    /// Keeps the panel fresh from run-state updates: the title and edit totals
+    /// are cheap, and the task list refreshes only when the run starts or
+    /// settles so the panel never polls while streaming.
+    /// </summary>
+    private void UpdateSidePanel(bool isRunRunning)
     {
-        if (AgentTasksButton is null)
+        if (SidePanelCard is null)
         {
             return;
         }
 
-        AgentTasksButton.Visibility = _agentController?.CurrentRun is not null
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        SidePanelTitleText.Text = _activeSessionTitle;
+        RefreshSidePanelEdits();
+
+        if (_sidePanelRunRunning != isRunRunning)
+        {
+            _sidePanelRunRunning = isRunRunning;
+            _ = RefreshAgentTasksAsync();
+        }
     }
 
-    private async void OnAgentTasksFlyoutOpened(object sender, object e)
+    /// <summary>Sum of the transcript's edit rows, shown as +added −removed.</summary>
+    private void RefreshSidePanelEdits()
     {
-        await RefreshAgentTasksAsync();
+        if (SidePanelAddedText is null || SidePanelRemovedText is null)
+        {
+            return;
+        }
+
+        int added = 0;
+        int removed = 0;
+        foreach (var activity in AgentActivities)
+        {
+            if (activity.Kind != AgentActivityKind.Edit)
+            {
+                continue;
+            }
+
+            added += activity.Added ?? 0;
+            removed += activity.Removed ?? 0;
+        }
+
+        SidePanelAddedText.Text = "+" + added;
+        SidePanelRemovedText.Text = "−" + removed;
+    }
+
+    private void OnSidePanelCollapseClick(object sender, RoutedEventArgs e)
+    {
+        if (SidePanelCard is null || SidePanelOpenButton is null)
+        {
+            return;
+        }
+
+        SidePanelCard.Visibility = Visibility.Collapsed;
+        SidePanelOpenButton.Visibility = Visibility.Visible;
+    }
+
+    private void OnSidePanelOpenClick(object sender, RoutedEventArgs e)
+    {
+        if (SidePanelCard is null || SidePanelOpenButton is null)
+        {
+            return;
+        }
+
+        SidePanelCard.Visibility = Visibility.Visible;
+        SidePanelOpenButton.Visibility = Visibility.Collapsed;
+        _ = RefreshAgentTasksAsync();
     }
 
     private async void OnAgentTasksRefreshClick(object sender, RoutedEventArgs e)

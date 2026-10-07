@@ -146,7 +146,9 @@ is not a path/network sandbox. Time, machine status, app discovery, and optional
 volume commands use the terminal; notes use `write` with `op=write`.
 `files.apply_patch` and `app.open` are not model-usable. Managed
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
-prompt guidance only and grant nothing. Subagents, LSP, extensions, plugins,
+prompt guidance only and grant nothing; a `requires: python` frontmatter entry
+fails the model's `skill` load closed with `python_unavailable` when Python is
+not on PATH. Subagents, LSP, extensions, plugins,
 and MCP are not part of this CLI surface. All commands ensure the Public Host
 is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 `PublicHostSession`.

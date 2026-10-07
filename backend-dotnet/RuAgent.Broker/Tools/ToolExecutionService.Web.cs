@@ -74,6 +74,13 @@ public sealed partial class ToolExecutionService
         {
             throw new UnauthorizedAccessException("skill_not_found");
         }
+
+        var unmet = EvaluateSkillRequirements(body.Requires);
+        if (unmet is not null)
+        {
+            return ValueTask.FromResult(unmet);
+        }
+
         return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
             new JsonObject
             {
@@ -84,6 +91,32 @@ public sealed partial class ToolExecutionService
             },
             ToolVerificationStates.NotRequired,
             "Workspace skill loaded."));
+    }
+
+    private ToolExecutionOutcome? EvaluateSkillRequirements(IReadOnlyList<string> requires)
+    {
+        foreach (var requirement in requires)
+        {
+            if (string.Equals(requirement, "python", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_pythonAvailable())
+                {
+                    return ToolExecutionOutcome.Failed(
+                        "python_unavailable",
+                        "This skill requires Python, which is not installed or not on PATH.",
+                        ToolVerificationStates.NotRequired);
+                }
+
+                continue;
+            }
+
+            return ToolExecutionOutcome.Failed(
+                "unsupported_skill_requirement",
+                $"This skill requires unsupported capability '{requirement}'. Supported requirements: python.",
+                ToolVerificationStates.NotRequired);
+        }
+
+        return null;
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(

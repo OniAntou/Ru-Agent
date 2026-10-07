@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
 using Xunit;
@@ -73,6 +74,88 @@ public sealed class SkillBodyToolTests
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
+    }
+
+    [Fact]
+    public async Task Requires_python_skill_fails_closed_when_python_is_absent()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("py.required", "---\nname: py.required\ndescription: Needs Python\nrequires: python\n---\n\nRun the script.");
+        var service = fixture.CreateService(pythonAvailable: () => false);
+
+        var result = await service.ExecuteAsync(
+            Envelope("""{"name":"py.required"}"""),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("python_unavailable", result.ErrorCode);
+        Assert.Equal(ToolVerificationStates.NotRequired, result.VerificationState);
+        Assert.DoesNotContain("Run the script", result.Output.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Requires_python_skill_loads_when_python_is_present()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("py.required", "---\nname: py.required\ndescription: Needs Python\nrequires: python\n---\n\nRun the script.");
+        var service = fixture.CreateService(pythonAvailable: () => true);
+
+        var result = await service.ExecuteAsync(
+            Envelope("""{"name":"py.required"}"""),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Contains("Run the script", result.Output["body"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Unknown_requirement_fails_closed_naming_the_token()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("node.required", "---\nname: node.required\ndescription: Needs Node\nrequires: node\n---\n\nRun the script.");
+        var service = fixture.CreateService(pythonAvailable: () => true);
+
+        var result = await service.ExecuteAsync(
+            Envelope("""{"name":"node.required"}"""),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("unsupported_skill_requirement", result.ErrorCode);
+        Assert.Contains("node", result.SafeSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("Run the script", result.Output.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Skill_without_requirements_never_probes_python()
+    {
+        using var fixture = Fixture.Create();
+        var service = fixture.CreateService(pythonAvailable: () => throw new InvalidOperationException("probe_called"));
+
+        var result = await service.ExecuteAsync(
+            Envelope("""{"name":"pdf.analyzer"}"""),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+    }
+
+    [Fact]
+    public void Frontmatter_parses_requires_as_a_bounded_list()
+    {
+        using var fixture = Fixture.Create();
+        fixture.AddSkill("multi.required", "---\nname: multi.required\ndescription: Needs several\nrequires: [python, node, python]\n---\n\nBody.");
+        fixture.AddSkill("odd.required", "---\nname: odd.required\ndescription: Needs odd\nrequires: co\"de, \"quoted\"\n---\n\nBody.");
+        var store = new SkillBodyStore(fixture.Root);
+
+        var body = store.LoadBody("multi.required");
+        var odd = store.LoadBody("odd.required");
+        var plain = store.LoadBody("pdf.analyzer");
+
+        Assert.NotNull(body);
+        Assert.Equal(new[] { "python", "node" }, body.Requires);
+        Assert.NotNull(odd);
+        Assert.Equal(new[] { "co?de", "quoted" }, odd.Requires);
+        Assert.NotNull(plain);
+        Assert.Empty(plain.Requires);
     }
 
     [Fact]
@@ -198,14 +281,24 @@ public sealed class SkillBodyToolTests
             return new Fixture(root, BrokerSession.Load(descriptorPath));
         }
 
-        public ToolExecutionService CreateService()
+        public ToolExecutionService CreateService(Func<bool>? pythonAvailable = null)
         {
             Session.Open(
                 Session_,
                 new HashSet<string>(
                     [RuAgent.Broker.Policy.ToolScope.SystemRead],
                     StringComparer.Ordinal));
-            return new ToolExecutionService(Session, Root);
+            return new ToolExecutionService(Session, Root, pythonAvailable: pythonAvailable);
+        }
+
+        public string AddSkill(string leaf, string content)
+        {
+            var directory = Directory.CreateDirectory(Path.Combine(Root, "skills", leaf)).FullName;
+            File.WriteAllText(
+                Path.Combine(directory, "SKILL.md"),
+                content,
+                new System.Text.UTF8Encoding(false));
+            return directory;
         }
 
         private const string Session_ = "skill-body-session";

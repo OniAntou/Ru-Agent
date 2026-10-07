@@ -4,10 +4,12 @@ using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Skills;
 
-public sealed record SkillBody(string Name, string Description, string Body, string BodySha256, string SourcePath);
+public sealed record SkillBody(string Name, string Description, string Body, string BodySha256, string SourcePath, IReadOnlyList<string> Requires);
 
 public sealed class SkillBodyStore
 {
+    private const int MaxRequirements = 8;
+    private const int MaxRequirementLength = 64;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly string _workspaceRoot;
 
@@ -126,7 +128,7 @@ public sealed class SkillBodyStore
 
             var parsed = ParseSkillFile(read);
             var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(parsed.Body))).ToLowerInvariant();
-            return new SkillBody(parsed.Name, parsed.Description, parsed.Body, digest, skillFile);
+            return new SkillBody(parsed.Name, parsed.Description, parsed.Body, digest, skillFile, parsed.Requires);
         }
 
         return null;
@@ -177,11 +179,12 @@ public sealed class SkillBodyStore
         }
     }
 
-    private static (string Name, string Description, string Body) ParseSkillFile(string content)
+    private static (string Name, string Description, string Body, IReadOnlyList<string> Requires) ParseSkillFile(string content)
     {
         var lines = content.Split('\n');
         string? name = null;
         string? description = null;
+        IReadOnlyList<string>? requires = null;
         var body = content;
         if (lines.Length >= 3 && string.Equals(lines[0].Trim(), "---", StringComparison.Ordinal))
         {
@@ -220,6 +223,10 @@ public sealed class SkillBodyStore
                     {
                         description ??= value;
                     }
+                    else if (string.Equals(key, "requires", StringComparison.Ordinal))
+                    {
+                        requires ??= ParseRequirements(value);
+                    }
                 }
 
                 body = string.Join('\n', lines[(closing + 1)..]).TrimStart('\n').TrimEnd();
@@ -233,7 +240,44 @@ public sealed class SkillBodyStore
 
         name = string.IsNullOrWhiteSpace(name) ? "skill" : name.Trim();
         description = string.IsNullOrWhiteSpace(description) ? "Workspace workflow guidance." : description.Trim();
-        return (name, description, body);
+        return (name, description, body, requires ?? Array.Empty<string>());
+    }
+
+    private static IReadOnlyList<string> ParseRequirements(string value)
+    {
+        var requirements = new List<string>();
+        foreach (var candidate in value.Trim('[', ']').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (requirements.Count >= MaxRequirements)
+            {
+                break;
+            }
+
+            var token = Unquote(candidate);
+            if (token.Length == 0)
+            {
+                continue;
+            }
+
+            var requirement = SanitizeRequirement(token.Length <= MaxRequirementLength ? token : token[..MaxRequirementLength]);
+            if (!requirements.Contains(requirement, StringComparer.OrdinalIgnoreCase))
+            {
+                requirements.Add(requirement);
+            }
+        }
+
+        return requirements;
+    }
+
+    private static string SanitizeRequirement(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            builder.Append(char.IsAsciiLetterOrDigit(character) || character is '_' or '-' or '.' ? character : '?');
+        }
+
+        return builder.ToString();
     }
 
     private static string Unquote(string value)

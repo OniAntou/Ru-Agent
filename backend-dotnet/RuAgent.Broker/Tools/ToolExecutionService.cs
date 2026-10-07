@@ -48,6 +48,7 @@ public sealed partial class ToolExecutionService
     private readonly TerminalAdapter _terminal;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillBodyStore _skillBodies;
+    private readonly Func<bool> _pythonAvailable;
     private readonly WebOptions _webOptions;
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
@@ -57,7 +58,8 @@ public sealed partial class ToolExecutionService
         string workspaceRoot,
         WebOptions? webOptions = null,
         HttpClient? webHttpClient = null,
-        ApprovalTokenService? approvalTokens = null)
+        ApprovalTokenService? approvalTokens = null,
+        Func<bool>? pythonAvailable = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
@@ -103,6 +105,7 @@ public sealed partial class ToolExecutionService
 
         _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
         _skillBodies = new SkillBodyStore(_workspace.Root);
+        _pythonAvailable = pythonAvailable ?? (() => PythonAvailability.IsAvailable);
     }
 
     internal int CachedRootToolSetCount => _toolSetsByRoot.Count;

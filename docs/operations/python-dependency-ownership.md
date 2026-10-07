@@ -7,6 +7,11 @@ declarations for Python dependencies across Ru's workspace. After the
 2026-09-13 media teardown the repository has no Python product source, so the
 only Python dependencies left belong to tooling and CI.
 
+Update 2026-10-08: the product ban on Python was lifted for optional
+capabilities (skills declaring `requires: python`); the default path stays
+in-process .NET, nothing is bundled, tooling ownership is unchanged, and
+bundling an interpreter requires an ADR.
+
 Update 2026-10-07: the working `.venv` was slimmed to the declared tooling set.
 116 legacy packages (torch, torchaudio, transformers, opencv, datasets, the
 audio/VTube stack and their transitive dependencies) were uninstalled; the

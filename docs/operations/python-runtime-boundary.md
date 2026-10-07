@@ -5,8 +5,11 @@ retained provider sources (`src/ru_runtime/voice` and `src/ru_runtime/speech`
 plus the persistence/policy/system mirrors) were removed together with the
 voice/STT, VTS, and screen-observation media surfaces: the OmniVoice server,
 the Python benchmarks, the `[voice]` optional extra, and the `mypy src` gate no
-longer exist. Python in this repository is tooling only — verification scripts,
-maintenance helpers, and their tests.
+longer exist. Python in this repository is tooling — verification scripts,
+maintenance helpers, and their tests. Amendment (2026-10-08): Python may also
+back optional product capabilities (skills declaring `requires: python`); the
+default path stays in-process .NET and a missing interpreter fails the
+capability closed with a named code. Bundling an interpreter requires an ADR.
 
 The deterministic inventory is generated from `%RU_ROOT%` with:
 

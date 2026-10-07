@@ -8,9 +8,11 @@ and does not repeat it.
 
 Ru is a native Windows coding agent: WinUI 3 desktop app (`gui-winui3`),
 terminal TUI (`RuAgent.Cli`), ASP.NET Core Public Host (`RuBackend`), and
-Broker. Pure .NET 10. Python under `tests/`, `scripts/`, `tools/`
-is repository tooling only — never add Python, Node, or any interpreter to the
-product.
+Broker. Pure .NET 10. Python under `tests/`, `scripts/`, `tools/` is
+repository tooling; it may also back optional product capabilities (skills,
+document tooling) when the default path stays in-process .NET and the
+capability fails closed with a named code when the interpreter is absent.
+Bundling an interpreter into the product requires an ADR.
 
 ## Read before editing
 
@@ -51,7 +53,6 @@ product.
   argument-bound, and survive nothing. The harness self-protection paths
   (harness key/database files and runtime descriptors) deny at every preset;
   users can add more with `RU_PROTECTED_PATHS`.
-- **Bounded everything.** New outputs, requests, and listings get a cap.
 
 ## Working rules
 

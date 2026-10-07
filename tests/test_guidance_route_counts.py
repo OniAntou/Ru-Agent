@@ -15,10 +15,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTE_CONTRACT = ROOT / "backend-dotnet" / "public-route-contract.json"
+TOOL_CATALOG = ROOT / "backend-dotnet" / "RuAgent.Protocol" / "AgentToolDefinitionCatalog.cs"
 
 
 def _contract_route_count() -> int:
     return len(json.loads(ROUTE_CONTRACT.read_text(encoding="utf-8")))
+
+
+def _catalog_tool_count() -> int:
+    text = TOOL_CATALOG.read_text(encoding="utf-8")
+    return len(re.findall(r'^\s*new\("[a-z_]+",', text, flags=re.MULTILINE))
 
 
 def test_agents_guidance_route_count_matches_the_contract() -> None:
@@ -73,4 +79,15 @@ def test_contributing_loopback_route_count_matches_the_contract() -> None:
     assert stated is not None, "CONTRIBUTING.md must state the loopback route count"
     assert int(stated.group(1)) == count, (
         f"CONTRIBUTING.md says {stated.group(1)} loopback routes but the contract holds {count}"
+    )
+
+
+def test_contributing_tool_count_matches_the_catalog() -> None:
+    count = _catalog_tool_count()
+    text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    stated = re.search(r"The (\d+) tool definitions", text)
+    assert stated is not None, "CONTRIBUTING.md must state the tool definition count"
+    assert int(stated.group(1)) == count, (
+        f"CONTRIBUTING.md says {stated.group(1)} tool definitions but the catalog holds {count}"
     )

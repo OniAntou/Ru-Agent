@@ -8,8 +8,10 @@ trustworthy. For how the system works, read [README.md](README.md),
 
 Ru is a native Windows coding agent: a WinUI 3 desktop app, a terminal TUI, an
 ASP.NET Core Public Host, and a private Broker child — four executables, one
-directory, nothing to install. The product is pure .NET 10. Python exists in
-this repository for tooling and guards only, never as part of the product.
+directory, nothing to install. The default product is pure .NET 10: Python may
+back optional capabilities (skills, document tooling) but never the default
+path, and a capability that needs it fails closed with a named code when the
+interpreter is absent. Bundling an interpreter requires an ADR.
 
 ## Development environment
 
@@ -93,7 +95,7 @@ trustworthy. A change that weakens one is rejected even if every test passes.
    exception is `web_search` racing a fixed set of its own upstream engines —
    one tool, one policy decision, and every request still passes `WebPolicy`,
    so it cannot widen the network boundary or bypass a denial.
-4. **The protocol is versioned and digest-bound.** The 12 tool definitions
+4. **The protocol is versioned and digest-bound.** The 13 tool definitions
    live only in `RuAgent.Protocol`. A Broker manifest that disagrees with its
    Protocol digest refuses to start.
 5. **Loopback and bearer only.** The Public Contract is the 42 loopback HTTP
@@ -105,9 +107,6 @@ trustworthy. A change that weakens one is rejected even if every test passes.
    descriptors) deny at every preset; `RU_PROTECTED_PATHS` adds more.
 7. **Skills are untrusted prompt guidance.** `allowed-tools` metadata never
    grants a tool, scope, path, network permission, or approval.
-8. **Bounded everything.** Every tool output, request body, stream, and
-   directory listing has a cap. A pathological input degrades into a bounded
-   result, never a memory spike or an unbounded hang.
 
 ## Reporting security issues
 

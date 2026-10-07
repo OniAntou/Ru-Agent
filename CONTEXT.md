@@ -135,7 +135,12 @@ Describe the review workflow here.
 ```
 
 `allowed-tools` is descriptive metadata only; it never grants a tool, scope,
-path, network permission, approval, or Broker capability. The Host discovers
+path, network permission, approval, or Broker capability. An optional
+`requires:` field names a capability the workflow needs; only `python` is
+recognized today. The Broker fails the model's `skill` load closed with
+`python_unavailable` when a Python requirement is unmet, and an unrecognized
+token fails closed as `unsupported_skill_requirement` naming the token;
+skills without `requires` are unaffected. The Host discovers
 only direct child skill directories and lists each skill lazily as
 name + description + `SKILL.md` path with the body version pinned in the
 receipt digest; the full workflow is pulled on demand with the read tool,

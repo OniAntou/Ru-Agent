@@ -355,6 +355,13 @@ Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
 only: it never grants a tool, scope, path, network permission, approval, or
 Broker capability.
 
+An optional `requires:` frontmatter entry names a capability the workflow
+needs; only `python` is recognized today. The Broker checks it when the model
+loads the body: absent Python fails the `skill` call closed with
+`python_unavailable`, an unrecognized token fails closed as
+`unsupported_skill_requirement` naming the token, and the body is not
+returned. Skills without `requires` are unaffected.
+
 `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
 user-workspace instruction candidates below the selected run root, not repo
 templates. The loader applies final-path containment, strict UTF-8 decoding,

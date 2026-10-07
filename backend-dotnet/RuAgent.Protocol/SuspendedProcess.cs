@@ -27,18 +27,24 @@ namespace RuAgent.Protocol;
 /// <c>Process.StandardOutput</c>/<c>StandardError</c> would be, and the caller's
 /// <see cref="ProcessStartInfo.Environment"/> is written to a Unicode environment
 /// block. <see cref="ProcessStartInfo.ArgumentList"/> is honored when present and
-/// <see cref="ProcessStartInfo.Arguments"/> otherwise. .NET's own automatic job
-/// object is irrelevant here: the child is out of any job once it is assigned to
-/// this one, and because it was suspended there is nothing left behind when that
-/// happens.
+/// <see cref="ProcessStartInfo.Arguments"/> otherwise. Inheritance is restricted to
+/// the child's three standard handles with <c>PROC_THREAD_ATTRIBUTE_HANDLE_LIST</c>,
+/// so an unrelated inheritable handle in this process — another start's pipe end, for
+/// example — can never cross into the child and keep a sibling's stream open. .NET's
+/// own automatic job object is irrelevant here: the child is out of any job once it
+/// is assigned to this one, and because it was suspended there is nothing left
+/// behind when that happens.
 /// </remarks>
 public static class SuspendedProcess
 {
     private const uint CreateSuspended = 0x00000004;
     private const uint CreateNoWindow = 0x08000000;
     private const uint CreateUnicodeEnvironment = 0x00000400;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const int StartfUseStdHandles = 0x00000100;
     private const uint HandleFlagInherit = 0x00000001;
+    private const int ErrorInsufficientBuffer = 122;
+    private const int ProcThreadAttributeHandleList = 0x00020002;
 
     public sealed record StartedProcess(
         Process Process,
@@ -65,6 +71,7 @@ public static class SuspendedProcess
         SafeFileHandle? stderrRead = null;
         SafeFileHandle? stderrWrite = null;
         IntPtr environmentBlock = IntPtr.Zero;
+        IntPtr attributeList = IntPtr.Zero;
         var inheritHandles = new List<SafeFileHandle>();
         try
         {
@@ -80,19 +87,26 @@ public static class SuspendedProcess
             (stderrRead, stderrWrite) = CreateInheritablePipe();
             ClearInheritance(stderrRead);
 
+            // Only the child's own standard handles may cross into it.
+            inheritHandles.Add(stdinRead);
             inheritHandles.Add(stdoutWrite);
             inheritHandles.Add(stderrWrite);
 
             var commandLine = BuildCommandLine(startInfo);
             environmentBlock = BuildEnvironmentBlock(startInfo.Environment);
+            attributeList = CreateHandleListAttribute(inheritHandles);
 
-            var startupInfo = new StartupInfo
+            var startupInfo = new StartupInfoEx
             {
-                cb = Marshal.SizeOf<StartupInfo>(),
-                dwFlags = StartfUseStdHandles,
-                hStdInput = stdinRead.DangerousGetHandle(),
-                hStdOutput = stdoutWrite.DangerousGetHandle(),
-                hStdError = stderrWrite.DangerousGetHandle(),
+                StartupInfo = new StartupInfo
+                {
+                    cb = Marshal.SizeOf<StartupInfoEx>(),
+                    dwFlags = StartfUseStdHandles,
+                    hStdInput = stdinRead.DangerousGetHandle(),
+                    hStdOutput = stdoutWrite.DangerousGetHandle(),
+                    hStdError = stderrWrite.DangerousGetHandle(),
+                },
+                lpAttributeList = attributeList,
             };
 
             var workingDirectory = string.IsNullOrWhiteSpace(startInfo.WorkingDirectory)
@@ -105,7 +119,7 @@ public static class SuspendedProcess
                 IntPtr.Zero,
                 IntPtr.Zero,
                 inheritHandles: true,
-                CreateSuspended | CreateNoWindow | CreateUnicodeEnvironment,
+                CreateSuspended | CreateNoWindow | CreateUnicodeEnvironment | ExtendedStartupInfoPresent,
                 environmentBlock,
                 workingDirectory,
                 ref startupInfo,
@@ -186,6 +200,11 @@ public static class SuspendedProcess
             SafeClose(stdinWrite);
             SafeClose(stdoutWrite);
             SafeClose(stderrWrite);
+            if (attributeList != IntPtr.Zero)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+                Marshal.FreeHGlobal(attributeList);
+            }
             if (environmentBlock != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(environmentBlock);
@@ -231,6 +250,58 @@ public static class SuspendedProcess
             handle.Dispose();
             throw new Win32Exception(error, "Could not restrict pipe handle inheritance.");
         }
+    }
+
+    private static IntPtr CreateHandleListAttribute(IReadOnlyList<SafeFileHandle> handles)
+    {
+        var size = IntPtr.Zero;
+        if (!InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size))
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error != ErrorInsufficientBuffer)
+            {
+                throw new Win32Exception(error, "Could not size the child handle list.");
+            }
+        }
+
+        var list = Marshal.AllocHGlobal(size);
+        if (!InitializeProcThreadAttributeList(list, 1, 0, ref size))
+        {
+            var error = Marshal.GetLastWin32Error();
+            Marshal.FreeHGlobal(list);
+            throw new Win32Exception(error, "Could not create the child handle list.");
+        }
+
+        var values = new IntPtr[handles.Count];
+        for (var index = 0; index < handles.Count; index++)
+        {
+            values[index] = handles[index].DangerousGetHandle();
+        }
+
+        var pinned = GCHandle.Alloc(values, GCHandleType.Pinned);
+        try
+        {
+            if (!UpdateProcThreadAttribute(
+                    list,
+                    0,
+                    (IntPtr)ProcThreadAttributeHandleList,
+                    pinned.AddrOfPinnedObject(),
+                    (IntPtr)(values.Length * IntPtr.Size),
+                    IntPtr.Zero,
+                    IntPtr.Zero))
+            {
+                var error = Marshal.GetLastWin32Error();
+                DeleteProcThreadAttributeList(list);
+                Marshal.FreeHGlobal(list);
+                throw new Win32Exception(error, "Could not restrict child handle inheritance.");
+            }
+        }
+        finally
+        {
+            pinned.Free();
+        }
+
+        return list;
     }
 
     private static string BuildCommandLine(ProcessStartInfo startInfo)
@@ -354,6 +425,13 @@ public static class SuspendedProcess
         public IntPtr hStdError;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfoEx
+    {
+        public StartupInfo StartupInfo;
+        public IntPtr lpAttributeList;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct ProcessInformation
     {
@@ -382,8 +460,30 @@ public static class SuspendedProcess
         uint dwCreationFlags,
         IntPtr lpEnvironment,
         string? lpCurrentDirectory,
-        ref StartupInfo lpStartupInfo,
+        ref StartupInfoEx lpStartupInfo,
         out ProcessInformation lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool InitializeProcThreadAttributeList(
+        IntPtr lpAttributeList,
+        int dwAttributeCount,
+        int dwFlags,
+        ref IntPtr lpSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UpdateProcThreadAttribute(
+        IntPtr lpAttributeList,
+        uint dwFlags,
+        IntPtr attribute,
+        IntPtr lpValue,
+        IntPtr cbSize,
+        IntPtr lpPreviousValue,
+        IntPtr lpReturnSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

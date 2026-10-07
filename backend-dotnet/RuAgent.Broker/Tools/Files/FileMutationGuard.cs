@@ -6,9 +6,12 @@ namespace RuAgent.Broker.Tools.Files;
 /// Serializes adapter mutations in this process and performs the final preimage
 /// check while holding the target open with a writer-denying share mode. The held
 /// handle closes the window between the preimage hash and the filesystem
-/// operation across processes: a writer can no longer slip a change under the
-/// replacement. A preimage that differs when the handle opens still fails as a
-/// bounded <c>workspace_changed</c> with zero write.
+/// operation for in-place writers, and the target's file identity is re-verified
+/// against the held handle immediately before the swap, so an editor's atomic
+/// save (rename-over) in that window still fails as a bounded
+/// <c>workspace_changed</c> with zero write. A rename-over that lands between the
+/// identity re-check and the swap itself is a residual window that path-based
+/// replacement APIs cannot close.
 /// </summary>
 internal static class FileMutationGuard
 {
@@ -48,6 +51,7 @@ internal static class FileMutationGuard
                 throw new UnauthorizedAccessException("workspace_changed");
             }
 
+            RequireSameFileIdentity(held, path);
             AtomicFileReplacement.Replace(path, content, overwrite);
             VerifyContent(path, FileHashService.ComputeBytesHash(content));
             return 0;
@@ -81,6 +85,7 @@ internal static class FileMutationGuard
                 throw new UnauthorizedAccessException("workspace_changed");
             }
 
+            RequireSameFileIdentity(held, path);
             File.Delete(path);
             if (File.Exists(path) || Directory.Exists(path))
             {
@@ -111,6 +116,33 @@ internal static class FileMutationGuard
                 FileShare.Read | FileShare.Delete,
                 BufferSize,
                 FileOptions.SequentialScan);
+        }
+        catch (IOException error) when (IsConcurrentChange(error))
+        {
+            throw new UnauthorizedAccessException("workspace_changed", error);
+        }
+    }
+
+    private static void RequireSameFileIdentity(FileStream held, string path)
+    {
+        if (!File.Exists(path))
+        {
+            throw new UnauthorizedAccessException("workspace_changed");
+        }
+
+        try
+        {
+            using var probe = HardLinkGuard.OpenRead(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                BufferSize,
+                FileOptions.None);
+            if (!HardLinkGuard.HasSameFileIdentity(held.SafeFileHandle, probe.SafeFileHandle))
+            {
+                throw new UnauthorizedAccessException("workspace_changed");
+            }
         }
         catch (IOException error) when (IsConcurrentChange(error))
         {

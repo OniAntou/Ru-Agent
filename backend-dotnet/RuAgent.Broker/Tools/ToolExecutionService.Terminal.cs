@@ -261,7 +261,7 @@ public sealed partial class ToolExecutionService
             throw new ArgumentException("background_task_limit_reached");
         }
 
-        var writer = new SpoolFileWriter(_spools.CreateFilePath(context.SessionId, executionId));
+        var writer = _spools.CreateWriter(context.SessionId, executionId);
         var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, writer, workingDirectory, run);
         return (executionId, pump);
     }
@@ -408,18 +408,19 @@ public sealed partial class ToolExecutionService
 
     private void RetainSpool(ToolExecutionContext context, SpoolFileWriter writer)
     {
-        if (string.IsNullOrWhiteSpace(context.RequestId) || writer.Window.Length == 0)
+        try
         {
-            return;
-        }
+            if (string.IsNullOrWhiteSpace(context.RequestId) || writer.Window.Length == 0)
+            {
+                return;
+            }
 
-        _spools.Store(
-            context.SessionId,
-            context.RequestId,
-            writer.Window,
-            writer.FilePath is null
-                ? null
-                : new SpoolSpill(writer.FilePath, writer.TotalChars, writer.TotalBytes, writer.Truncated));
+            _spools.Store(context.SessionId, context.RequestId, writer);
+        }
+        finally
+        {
+            writer.ReleaseBudget();
+        }
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(

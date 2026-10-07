@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Persistence;
 using RuBackend.Business;
@@ -27,7 +28,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
-        Assert.Equal(["harness", "session"], trace);
+        Assert.Equal(["tombstone", "harness", "session"], trace);
     }
 
     [Fact]
@@ -48,7 +49,28 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
-        Assert.Equal(["revoke:11111111111111111111111111111111", "harness", "session"], trace);
+        Assert.Equal(["revoke:11111111111111111111111111111111", "tombstone", "harness", "session"], trace);
+    }
+
+    [Fact]
+    public async Task Tombstone_failure_fails_the_delete_closed_before_the_session_file()
+    {
+        var trace = new List<string>();
+        var artifacts = new RecordingArtifactStore(trace)
+        {
+            MarkError = new HarnessStoreException("harness_store_unavailable"),
+        };
+        var sessions = new RecordingSessionStore(trace, deleteResult: true);
+        var coordinator = new HarnessSessionDeletionCoordinator(
+            artifacts,
+            sessions,
+            TimeProvider.System);
+
+        await Assert.ThrowsAsync<HarnessStoreException>(() => coordinator.DeleteAsync(
+            "11111111111111111111111111111111",
+            CancellationToken.None));
+        Assert.DoesNotContain("harness", trace);
+        Assert.DoesNotContain("session", trace);
     }
 
     [Fact]
@@ -89,7 +111,36 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(HarnessSessionDeletionOutcome.ArtifactsPending, outcome);
-        Assert.Equal(["harness", "session"], trace);
+        Assert.Equal(["tombstone", "harness", "session"], trace);
+    }
+
+    [Fact]
+    public async Task Deleted_session_refuses_a_late_run_creation_with_a_bounded_code()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var seeded = await fixture.SeedRunAsync();
+            var artifacts = new HarnessSessionArtifactStore(fixture.Options);
+            var sessions = new RecordingSessionStore([], deleteResult: true);
+            var coordinator = new HarnessSessionDeletionCoordinator(
+                artifacts,
+                sessions,
+                TimeProvider.System);
+
+            var outcome = await coordinator.DeleteAsync(
+                seeded.Run.SessionId.Value,
+                CancellationToken.None);
+
+            Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
+            var late = await fixture.EventStore.TryCreateRunAsync(seeded, CancellationToken.None);
+            Assert.Equal(CreateRunOutcome.Conflict, late.Outcome);
+            Assert.Equal("session_deleted", late.ErrorCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -275,7 +326,20 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     {
         public Exception? Error { get; init; }
 
+        public Exception? MarkError { get; init; }
+
         public IReadOnlyList<string> NonTerminalRunIds { get; init; } = [];
+
+        public Task MarkSessionDeletedAsync(
+            string sessionId,
+            DateTimeOffset deletedAt,
+            CancellationToken cancellationToken)
+        {
+            trace.Add("tombstone");
+            return MarkError is null
+                ? Task.CompletedTask
+                : Task.FromException(MarkError);
+        }
 
         public Task<IReadOnlyList<string>> ListNonTerminalRunIdsAsync(
             string sessionId,

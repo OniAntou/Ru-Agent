@@ -51,6 +51,18 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             throw new HarnessStoreException("broker_revoke_rejected");
         }
 
+        // The tombstone must land before any artifact row is removed: a create
+        // that read the session file before this delete would otherwise insert
+        // a run (and recreate the permission row) after cleanup. A failure here
+        // fails the whole delete closed, so a session that stays usable keeps no
+        // tombstone instead of a delete that leaves a writable hole.
+        await _artifacts
+            .MarkSessionDeletedAsync(
+                sessionId,
+                _clock.GetUtcNow().ToUniversalTime(),
+                cancellationToken)
+            .ConfigureAwait(false);
+
         // Stop in-flight runs before the artifact store marks them cancelled:
         // changing SQLite alone leaves the tool process running, and the drive
         // loop cannot notice a deleted run while it is blocked inside a step.

@@ -170,7 +170,97 @@ public sealed class PublicHostSingleInstanceTests
         }
     }
 
+    [Fact]
+    public void DataRootClaimIsExclusiveAcrossThreads()
+    {
+        var dataRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var (thread, release) = HoldOnWorkerThread(() => PublicHostSingleInstance.AcquireForDataRoot(dataRoot));
+        try
+        {
+            using var second = PublicHostSingleInstance.AcquireForDataRoot(dataRoot);
+            Assert.False(second.IsAcquired);
+            Assert.Equal(PublicHostLockState.HeldByAnother, second.State);
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public void DataRootClaimCanonicalizesPathSpelling()
+    {
+        // Windows paths are case-insensitive and tolerate a trailing separator;
+        // two hosts that name the same root differently must still conflict.
+        var dataRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var (thread, release) = HoldOnWorkerThread(() => PublicHostSingleInstance.AcquireForDataRoot(dataRoot));
+        try
+        {
+            using var second = PublicHostSingleInstance.AcquireForDataRoot(
+                dataRoot.ToUpperInvariant() + Path.DirectorySeparatorChar);
+            Assert.False(second.IsAcquired);
+            Assert.Equal(PublicHostLockState.HeldByAnother, second.State);
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public void SameDataRootOnAnotherPortFailsClosed()
+    {
+        // The single-instance lock used to be per port only: a second host on a
+        // different port acquired its own mutex and then clobbered the shared
+        // runtime descriptor and Broker session files. The data root now decides.
+        var dataRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var firstPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        var secondPort = firstPort;
+        while (secondPort == firstPort)
+        {
+            secondPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        }
+
+        var (thread, release) = HoldOnWorkerThread(
+            () => PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, dataRoot));
+        try
+        {
+            using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, dataRoot);
+            Assert.False(second.IsAcquired);
+            Assert.Equal(PublicHostLockState.HeldByAnother, second.State);
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public void DifferentDataRootsDoNotConflict()
+    {
+        var firstRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var secondRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var firstPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        var secondPort = firstPort;
+        while (secondPort == firstPort)
+        {
+            secondPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        }
+
+        using var first = PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, firstRoot);
+        using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, secondRoot);
+        Assert.True(first.IsAcquired);
+        Assert.True(second.IsAcquired);
+    }
+
     private static (Thread Thread, ManualResetEventSlim Release) HoldOnWorkerThread(string name)
+        => HoldOnWorkerThread(() => new PublicHostSingleInstance(name));
+
+    private static (Thread Thread, ManualResetEventSlim Release) HoldOnWorkerThread(
+        Func<PublicHostSingleInstance> acquire)
     {
         // Mutex ownership is per-thread, so a second handle on the acquiring
         // thread would recursively succeed. The holder must live on its own thread.
@@ -179,7 +269,7 @@ public sealed class PublicHostSingleInstanceTests
         PublicHostSingleInstance? instance = null;
         var thread = new Thread(() =>
         {
-            instance = new PublicHostSingleInstance(name);
+            instance = acquire();
             acquired.Set();
             release.Wait(TimeSpan.FromSeconds(30));
             instance.Dispose();

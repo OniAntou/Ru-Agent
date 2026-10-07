@@ -40,6 +40,11 @@ internal static class HarnessSqliteSchemaValidator
                 "authentication_tag",
                 "updated_at_utc",
             ],
+            ["agent_session_tombstones"] =
+            [
+                "session_id",
+                "deleted_at_utc",
+            ],
             ["agent_session_preset_snapshots"] =
             [
                 "snapshot_token",

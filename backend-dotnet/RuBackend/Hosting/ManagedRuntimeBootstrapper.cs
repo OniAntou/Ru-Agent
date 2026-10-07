@@ -56,11 +56,17 @@ internal static class ManagedRuntimeBootstrapper
             throw new HostStartupException("{\"error_code\":\"public_host_port_conflict\"}", 2);
         }
 
-        // Single instance mutex (global per port). A held global lock fails
-        // closed; only a namespace this account cannot create falls back to Local.
-        var managedSingleInstance = RuAgent.Hosting.PublicHostSingleInstance.AcquireWithLocalFallback(
-            $"Global\\RuPublicHost-{publicPort}",
-            $"Local\\RuPublicHost-{publicPort}");
+        // The single instance is the shared data root, not only the port: a host
+        // on another port would publish its runtime descriptor over the same
+        // path, so the root is claimed before the Broker starts and held for the
+        // host lifetime. A held lock fails closed; only a namespace this account
+        // cannot create falls back to Local.
+        var effectiveDataRoot = string.IsNullOrWhiteSpace(configDataRoot)
+            ? PublicHostRuntimeOptions.GetDefaultBusinessRoot(projectRoot)
+            : configDataRoot;
+        var managedSingleInstance = RuAgent.Hosting.PublicHostSingleInstance.AcquireForPortAndDataRoot(
+            publicPort,
+            effectiveDataRoot);
         if (!managedSingleInstance.IsAcquired)
         {
             managedSingleInstance.Dispose();

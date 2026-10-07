@@ -19,6 +19,7 @@ public sealed class HarnessSqliteSchemaTests
         "agent_run_rules",
         "agent_workspaces",
         "agent_session_settings",
+        "agent_session_tombstones",
         "agent_session_preset_snapshots",
         "agent_context_compactions",
         "workspace_coordinators",
@@ -220,7 +221,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(16, health.SchemaVersion);
+        Assert.Equal(17, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var index = verify.CreateCommand();
@@ -228,6 +229,29 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
         index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_agent_events_session_receipts'";
         Assert.Equal(1L, (long)(await index.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Migrating_from_sixteen_adds_the_session_tombstone_table()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var downgrade = connection.CreateCommand();
+            downgrade.CommandText = "DROP TABLE IF EXISTS agent_session_tombstones; PRAGMA user_version = 16;";
+            await downgrade.ExecuteNonQueryAsync();
+        }
+        SqliteConnection.ClearAllPools();
+
+        var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(migrated.IsAvailable, migrated.ErrorCode);
+        Assert.Equal(17, migrated.SchemaVersion);
+        await using var verify = fixture.CreateRawConnection();
+        await verify.OpenAsync();
+        Assert.True(await ColumnExistsAsync(verify, "agent_session_tombstones", "session_id"));
+        Assert.True(await ColumnExistsAsync(verify, "agent_session_tombstones", "deleted_at_utc"));
     }
 
     [Fact]
@@ -246,7 +270,7 @@ public sealed class HarnessSqliteSchemaTests
         var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(migrated.IsAvailable, migrated.ErrorCode);
-        Assert.Equal(16, migrated.SchemaVersion);
+        Assert.Equal(17, migrated.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         Assert.True(await ColumnExistsAsync(verify, "agent_session_work_states", "ciphertext"));

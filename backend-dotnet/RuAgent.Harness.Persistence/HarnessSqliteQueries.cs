@@ -94,6 +94,19 @@ internal static class HarnessSqliteQueries
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
+    internal static async Task<bool> SessionDeletedAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        SessionId sessionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM agent_session_tombstones WHERE session_id = $session_id";
+        command.Parameters.AddWithValue("$session_id", sessionId.Value);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+    }
+
     internal static async Task<string?> GetWorkspaceConcurrencyModeAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,

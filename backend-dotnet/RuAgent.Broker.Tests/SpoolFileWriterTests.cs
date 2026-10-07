@@ -84,6 +84,24 @@ public sealed class SpoolFileWriterTests : IDisposable
     }
 
     [Fact]
+    public void Unopenable_spill_file_keeps_the_window_and_reports_truncation()
+    {
+        Directory.CreateDirectory(_root);
+        var blocker = Path.Combine(_root, "blocked");
+        File.WriteAllText(blocker, "x");
+        var writer = new SpoolFileWriter(Path.Combine(blocker, "spill.log"));
+
+        writer.Append(new string('a', TerminalLimits.MaxSpoolChars));
+        writer.Append("tail that cannot spill");
+        writer.Complete();
+
+        Assert.True(writer.Truncated);
+        Assert.Null(writer.FilePath);
+        Assert.Equal(TerminalLimits.MaxSpoolChars, writer.Window.Length);
+        Assert.Equal(TerminalLimits.MaxSpoolChars, writer.TotalChars);
+    }
+
+    [Fact]
     public void Byte_ceiling_cuts_multi_byte_text_without_splitting_it()
     {
         var writer = new SpoolFileWriter(

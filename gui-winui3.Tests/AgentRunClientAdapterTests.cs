@@ -20,11 +20,14 @@ public sealed class AgentRunClientAdapterTests
         public List<HttpRequestMessage> Requests { get; } = new();
         public Func<HttpRequestMessage, HttpResponseMessage> Responder { get; set; } =
             _ => new HttpResponseMessage(HttpStatusCode.OK);
+        public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? AsyncResponder { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.FromResult(Responder(request));
+            return AsyncResponder is null
+                ? Task.FromResult(Responder(request))
+                : AsyncResponder(request, cancellationToken);
         }
     }
 
@@ -63,6 +66,47 @@ public sealed class AgentRunClientAdapterTests
         Assert.Contains(
             handler.Requests,
             r => r.RequestUri!.ToString().Contains("agent/v1/runs") && r.Method == HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task CreateRun_observes_the_response_after_the_caller_cancels_mid_flight()
+    {
+        // A create commits a run before it answers. A cancelled wait must not
+        // abort the response, or the controller never learns the run id and the
+        // committed run stays orphaned on the host.
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new FakeHttpHandler
+        {
+            AsyncResponder = async (_, _) =>
+            {
+                entered.TrySetResult(true);
+                await release.Task.ConfigureAwait(false);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"run_id\":\"run_12345678901234567890123456789012\",\"session_id\":\"sess_1\"," +
+                        "\"workspace_id\":\"ws_1\",\"status\":\"running\",\"preset\":\"standard\"," +
+                        "\"created_at\":\"2026\",\"updated_at\":\"2026\"}",
+                        Encoding.UTF8,
+                        "application/json"),
+                };
+            },
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        using var cts = new CancellationTokenSource();
+
+        var createTask = adapter.CreateRunAsync(
+            new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-late-create"),
+            cts.Token);
+
+        await entered.Task;
+        cts.Cancel();
+        release.TrySetResult(true);
+
+        var run = await createTask;
+        Assert.Equal(RunId, run.RunId);
     }
 
     [Fact]

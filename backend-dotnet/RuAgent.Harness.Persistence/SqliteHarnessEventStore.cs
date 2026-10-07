@@ -39,6 +39,17 @@ public sealed partial class SqliteHarnessEventStore : IHarnessEventStore
         await using var transaction = connection.BeginTransaction(deferred: false);
         try
         {
+            if (await HarnessSqliteQueries.SessionDeletedAsync(
+                    connection,
+                    transaction,
+                    request.Run.SessionId,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return CreateRunResult.Conflict(request.Run, "session_deleted");
+            }
+
             var replay = await HarnessSqliteQueries.FindIdempotentRunAsync(
                     connection,
                     transaction,

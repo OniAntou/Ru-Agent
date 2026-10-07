@@ -9,6 +9,11 @@ public sealed record HarnessSessionArtifactDeleteResult(
 
 public interface IHarnessSessionArtifactStore
 {
+    Task MarkSessionDeletedAsync(
+        string sessionId,
+        DateTimeOffset deletedAt,
+        CancellationToken cancellationToken);
+
     Task<HarnessSessionArtifactDeleteResult> CloseAndDeleteAsync(
         string sessionId,
         DateTimeOffset deletedAt,
@@ -32,6 +37,53 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
 
     public HarnessSessionArtifactStore(HarnessSqliteOptions options) =>
         _options = options ?? throw new ArgumentNullException(nameof(options));
+
+    /// <summary>
+    /// Writes the session's tombstone before any artifact row is removed. Run
+    /// creation checks it inside the insert transaction, so a create that
+    /// passed the session-file read before the delete cannot insert afterwards.
+    /// </summary>
+    public async Task MarkSessionDeletedAsync(
+        string sessionId,
+        DateTimeOffset deletedAt,
+        CancellationToken cancellationToken)
+    {
+        ValidateSessionId(sessionId);
+        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+            .ConfigureAwait(false);
+        if (!health.IsAvailable)
+        {
+            throw new HarnessStoreException(
+                health.ErrorCode ?? "harness_store_unavailable");
+        }
+
+        try
+        {
+            await using var connection = await _options.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO agent_session_tombstones(session_id, deleted_at_utc)
+                VALUES ($session_id, $deleted_at)
+                ON CONFLICT(session_id) DO UPDATE SET deleted_at_utc = excluded.deleted_at_utc
+                """;
+            command.Parameters.AddWithValue("$session_id", sessionId);
+            command.Parameters.AddWithValue("$deleted_at", HarnessSqliteMapper.Utc(deletedAt));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            throw new HarnessStoreException("harness_session_delete_failed", exception);
+        }
+    }
 
     public async Task<IReadOnlyList<string>> ListNonTerminalRunIdsAsync(
         string sessionId,

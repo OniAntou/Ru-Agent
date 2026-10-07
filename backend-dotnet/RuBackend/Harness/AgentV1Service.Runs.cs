@@ -471,6 +471,7 @@ public sealed partial class AgentV1Service
             "preset_mismatch" => BoundedError(409, "preset_mismatch", "Preset mismatch."),
             "preset_selection_required" => BoundedError(409, "preset_mismatch", "Preset selection required."),
             "preset_version_conflict" => BoundedError(409, "preset_mismatch", "Preset version conflict."),
+            "session_deleted" => BoundedError(409, "session_deleted", "Session was deleted."),
             "workspace_not_found" => BoundedError(404, "workspace_not_found", "Workspace not found."),
             _ => BoundedError(409, code, "Create conflict."),
         };

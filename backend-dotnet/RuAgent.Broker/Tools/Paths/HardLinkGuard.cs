@@ -101,6 +101,33 @@ public static class HardLinkGuard
         }
     }
 
+    internal static bool HasSameFileIdentity(SafeFileHandle left, SafeFileHandle right)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        return TryGetFileIdentity(left, out var leftIdentity)
+            && TryGetFileIdentity(right, out var rightIdentity)
+            && leftIdentity == rightIdentity;
+    }
+
+    private static bool TryGetFileIdentity(SafeFileHandle handle, out FileIdentity identity)
+    {
+        identity = default;
+        if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var information))
+        {
+            return false;
+        }
+
+        identity = new FileIdentity(
+            information.VolumeSerialNumber,
+            information.FileIndexHigh,
+            information.FileIndexLow);
+        return true;
+    }
+
     internal static void RequireFinalPathMatches(SafeFileHandle handle, string expectedPath)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -139,6 +166,8 @@ public static class HardLinkGuard
 
         return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
+
+    private readonly record struct FileIdentity(uint VolumeSerialNumber, uint FileIndexHigh, uint FileIndexLow);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ByHandleFileInformation

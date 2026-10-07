@@ -6,6 +6,11 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class FileMutationGuardTests : IDisposable
 {
+    private const int AtomicSavePreimageBytes = 32 * 1024 * 1024;
+    private const int AtomicSaveAttempts = 8;
+    private const int AtomicSaveProbeSpins = 200_000;
+    private const string EditorContent = "editor-content";
+
     private readonly string _root;
 
     public FileMutationGuardTests()
@@ -106,5 +111,86 @@ public sealed class FileMutationGuardTests : IDisposable
             () => FileMutationGuard.DeleteIfHashMatches(path, FileHashService.Missing));
         Assert.Equal("workspace_changed", error.Message);
         Assert.Equal("appeared", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Replace_fails_closed_when_an_editor_atomically_saves_over_the_target()
+    {
+        var path = Full("atomic-replace.txt");
+        var newBytes = Encoding.UTF8.GetBytes("guard-content");
+        AssertAtomicSaveFailsClosed(path, expected =>
+            FileMutationGuard.ReplaceIfHashMatches(path, newBytes, expected));
+    }
+
+    [Fact]
+    public void Delete_fails_closed_when_an_editor_atomically_saves_over_the_target()
+    {
+        var path = Full("atomic-delete.txt");
+        AssertAtomicSaveFailsClosed(path, expected =>
+            FileMutationGuard.DeleteIfHashMatches(path, expected));
+    }
+
+    private void AssertAtomicSaveFailsClosed(string path, Action<string> mutate)
+    {
+        for (var attempt = 0; attempt < AtomicSaveAttempts; attempt++)
+        {
+            File.WriteAllBytes(path, new byte[AtomicSavePreimageBytes]);
+            var expected = FileHashService.ComputeFileHash(path);
+            var swapped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var stop = new CancellationTokenSource();
+            var editor = Task.Run(() => AtomicSaveWhenHeld(path, swapped, stop.Token));
+
+            UnauthorizedAccessException? error = null;
+            try
+            {
+                mutate(expected);
+            }
+            catch (UnauthorizedAccessException caught)
+            {
+                error = caught;
+            }
+            finally
+            {
+                stop.Cancel();
+            }
+
+            editor.GetAwaiter().GetResult();
+            if (!swapped.Task.IsCompletedSuccessfully)
+            {
+                // The editor's write probe can collide with the guard's own open;
+                // that attempt is inconclusive, so retry with a fresh preimage.
+                continue;
+            }
+
+            Assert.NotNull(error);
+            Assert.Equal("workspace_changed", error!.Message);
+            Assert.Equal(EditorContent, File.ReadAllText(path));
+            return;
+        }
+
+        Assert.Fail("the editor's atomic save never landed inside the guard's window");
+    }
+
+    private static void AtomicSaveWhenHeld(string path, TaskCompletionSource<bool> swapped, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                using var probe = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+            }
+            catch (IOException)
+            {
+                var temp = path + ".editor-" + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllText(temp, EditorContent);
+                // ReplaceFileW is the editor atomic save the held share mode still
+                // permits; MoveFileEx-based overwrites are already denied.
+                File.Replace(temp, path, destinationBackupFileName: null);
+                swapped.TrySetResult(true);
+                return;
+            }
+
+            Thread.SpinWait(AtomicSaveProbeSpins);
+        }
     }
 }

@@ -181,4 +181,103 @@ public sealed class TerminalOutputSpoolTests
             }
         }
     }
+
+    [Fact]
+    public void Concurrent_writers_cannot_exceed_the_session_byte_budget()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root, maxSessionBytes: 1000);
+            var first = spool.CreateWriter("session-a", "req-1");
+            var second = spool.CreateWriter("session-a", "req-2");
+
+            first.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            first.Append(new string('b', 800));
+            second.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            second.Append(new string('b', 800));
+            first.Complete();
+            second.Complete();
+
+            Assert.False(first.Truncated);
+            Assert.True(second.Truncated);
+            Assert.Equal(800, new FileInfo(first.FilePath!).Length);
+            Assert.Equal(200, new FileInfo(second.FilePath!).Length);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Store_eviction_reclaims_spill_files_after_live_writer_claims()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var budget = 2L * Protocol.TerminalLimits.MaxSpoolChars + 800;
+            var spool = new TerminalOutputSpool(root, maxSessionBytes: budget);
+            var first = spool.CreateWriter("session-a", "req-1");
+            var second = spool.CreateWriter("session-a", "req-2");
+
+            first.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            first.Append(new string('b', 800));
+            second.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            second.Append(new string('c', 800));
+            first.Complete();
+            second.Complete();
+
+            Assert.False(first.Truncated);
+            Assert.False(second.Truncated);
+            spool.Store("session-a", "req-1", first);
+            spool.Store("session-a", "req-2", second);
+
+            Assert.False(File.Exists(first.FilePath!));
+            Assert.False(spool.TryRead("session-a", "req-1", out _));
+            Assert.True(spool.TryRead("session-a", "req-2", out _));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Unopenable_spill_file_reports_truncation_through_the_stored_page()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(root);
+            var spool = new TerminalOutputSpool(root);
+            var blockedSession = "blocked-session";
+            File.WriteAllText(Path.Combine(root, blockedSession), "x");
+            var writer = spool.CreateWriter(blockedSession, "req-1");
+
+            writer.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            writer.Append(new string('b', 64));
+            writer.Complete();
+
+            Assert.True(writer.Truncated);
+            Assert.Null(writer.FilePath);
+            spool.Store(blockedSession, "req-1", writer);
+
+            Assert.True(spool.TryReadPage(blockedSession, "req-1", 0, 8, out var page));
+            Assert.True(page.Truncated);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

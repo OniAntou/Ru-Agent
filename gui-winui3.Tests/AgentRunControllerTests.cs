@@ -1789,6 +1789,32 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task Cancelling_during_create_cancels_the_late_run_without_following_it()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateRunGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+        var createTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "first turn", "standard", null, "idem-cancel-during-create"));
+
+        await controller.CancelAsync();
+
+        Assert.True(fake.CreateCancellationToken.IsCancellationRequested);
+        Assert.True(controller.IsBusy);
+
+        fake.CreateRunGate.SetResult(true);
+        Assert.False(await createTask);
+
+        Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
+        Assert.Null(fake.SubscribeRunId);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
     public void CreateAndRun_exposes_whether_a_submission_was_accepted()
     {
         var method = typeof(AgentRunController).GetMethod(nameof(AgentRunController.CreateAndRunAsync));

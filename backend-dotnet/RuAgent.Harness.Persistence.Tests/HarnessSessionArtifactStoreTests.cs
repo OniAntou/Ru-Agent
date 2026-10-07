@@ -55,6 +55,28 @@ public sealed class HarnessSessionArtifactStoreTests
     }
 
     [Fact]
+    public async Task Run_creation_after_the_session_tombstone_is_refused_with_a_bounded_code()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1);
+        var store = new HarnessSessionArtifactStore(fixture.Options);
+
+        await store.MarkSessionDeletedAsync(
+            request.Run.SessionId.Value,
+            HarnessStoreTestFixture.Timestamp.AddMinutes(1),
+            CancellationToken.None);
+
+        var result = await fixture.CreateEventStore()
+            .TryCreateRunAsync(request, CancellationToken.None);
+
+        Assert.Equal(CreateRunOutcome.Conflict, result.Outcome);
+        Assert.Equal("session_deleted", result.ErrorCode);
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_runs"));
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_session_settings"));
+    }
+
+    [Fact]
     public async Task Non_terminal_run_listing_is_session_scoped_and_skips_terminal_runs()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 
 namespace RuAgent.Hosting;
@@ -35,15 +37,14 @@ public enum PublicHostLockState
 /// </remarks>
 public sealed class PublicHostSingleInstance : IDisposable
 {
-    private Mutex? _mutex;
-    private bool _hasHandle;
+    private readonly List<Mutex> _mutexes = new();
     private bool _disposed;
 
     public string Name { get; }
 
     public PublicHostLockState State { get; }
 
-    public bool IsAcquired => _hasHandle && !_disposed;
+    public bool IsAcquired => _mutexes.Count > 0 && !_disposed;
 
     public PublicHostSingleInstance(string name)
         : this(name, static mutexName => new Mutex(initiallyOwned: false, name: mutexName, out _))
@@ -73,8 +74,7 @@ public sealed class PublicHostSingleInstance : IDisposable
 
             if (owned)
             {
-                _mutex = mutex;
-                _hasHandle = true;
+                _mutexes.Add(mutex);
                 State = PublicHostLockState.Acquired;
             }
             else
@@ -108,6 +108,47 @@ public sealed class PublicHostSingleInstance : IDisposable
             globalName,
             localName,
             static name => new PublicHostSingleInstance(name));
+    }
+
+    /// <summary>
+    /// Claims the lock for one canonical data root. Every managed host publishes
+    /// its runtime descriptor under the root, so hosts on different ports still
+    /// conflict there.
+    /// </summary>
+    public static PublicHostSingleInstance AcquireForDataRoot(string dataRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
+        var key = ComputeDataRootKey(dataRoot);
+        return AcquireWithLocalFallback(
+            $"Global\\RuPublicHostDataRoot-{key}",
+            $"Local\\RuPublicHostDataRoot-{key}");
+    }
+
+    /// <summary>
+    /// Claims the shared data root and the public port together, so one guard
+    /// releases both for the host lifetime. The data root is claimed first: a
+    /// second host on another port must fail before it can start a Broker or
+    /// publish a descriptor over the live instance's files.
+    /// </summary>
+    public static PublicHostSingleInstance AcquireForPortAndDataRoot(int publicPort, string dataRoot)
+    {
+        var dataRootGuard = AcquireForDataRoot(dataRoot);
+        if (!dataRootGuard.IsAcquired)
+        {
+            return dataRootGuard;
+        }
+
+        var portGuard = AcquireWithLocalFallback(
+            $"Global\\RuPublicHost-{publicPort}",
+            $"Local\\RuPublicHost-{publicPort}");
+        if (!portGuard.IsAcquired)
+        {
+            dataRootGuard.Dispose();
+            return portGuard;
+        }
+
+        portGuard.TakeMutexesFrom(dataRootGuard);
+        return portGuard;
     }
 
     internal static PublicHostSingleInstance AcquireWithLocalFallback(
@@ -146,12 +187,27 @@ public sealed class PublicHostSingleInstance : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (_hasHandle)
+        foreach (var mutex in _mutexes)
         {
-            try { _mutex?.ReleaseMutex(); } catch (Exception) { }
-            _hasHandle = false;
+            try { mutex.ReleaseMutex(); } catch (Exception) { }
+            mutex.Dispose();
         }
-        _mutex?.Dispose();
-        _mutex = null;
+
+        _mutexes.Clear();
+    }
+
+    private void TakeMutexesFrom(PublicHostSingleInstance other)
+    {
+        _mutexes.AddRange(other._mutexes);
+        other._mutexes.Clear();
+        other._disposed = true;
+    }
+
+    private static string ComputeDataRootKey(string dataRoot)
+    {
+        var canonical = Path.GetFullPath(dataRoot.Trim())
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToUpperInvariant()));
+        return Convert.ToHexString(digest).ToLowerInvariant();
     }
 }

@@ -66,12 +66,19 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     public async Task<CreateAgentRunResponse> CreateRunAsync(CreateAgentRunRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ct.ThrowIfCancellationRequested();
         var url = new Uri(_session.BaseUri, "agent/v1/runs");
         var json = JsonSerializer.Serialize(request);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         EnsureAuth(httpRequest);
-        using var resp = await _httpClient.SendAsync(httpRequest, ct).ConfigureAwait(false);
-        var body = await BoundedHttpResponseReader.ReadAsync(resp.Content, ct).ConfigureAwait(false);
+        // A create commits a durable run before it answers. Aborting the wait
+        // after the request was sent would orphan that run because the caller
+        // never learns its id; the caller observes the response and cancels the
+        // run through its normal stop path instead. Cancellation is still
+        // honored before the send, and the wait stays bounded by the HTTP
+        // client's request timeout.
+        using var resp = await _httpClient.SendAsync(httpRequest, CancellationToken.None).ConfigureAwait(false);
+        var body = await BoundedHttpResponseReader.ReadAsync(resp.Content, CancellationToken.None).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if ((int)resp.StatusCode == 409)

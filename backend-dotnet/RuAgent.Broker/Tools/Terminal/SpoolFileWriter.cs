@@ -14,6 +14,7 @@ public sealed class SpoolFileWriter
 {
     private readonly string _filePath;
     private readonly int _maxBytes;
+    private readonly SpoolByteBudget? _budget;
     private readonly StringBuilder _window = new();
     private StreamWriter? _file;
     private bool _hasFile;
@@ -21,12 +22,16 @@ public sealed class SpoolFileWriter
     private long _recordedBytes;
     private bool _truncated;
 
-    public SpoolFileWriter(string filePath, int maxBytes = Protocol.TerminalLimits.MaxSpoolFileBytes)
+    public SpoolFileWriter(
+        string filePath,
+        int maxBytes = Protocol.TerminalLimits.MaxSpoolFileBytes,
+        SpoolByteBudget? budget = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
         _filePath = filePath;
         _maxBytes = maxBytes;
+        _budget = budget;
     }
 
     public string Window => _window.ToString();
@@ -83,26 +88,59 @@ public sealed class SpoolFileWriter
         if (_file is null)
         {
             // The spill file cannot open: keep only what still fits the window
-            // (bounded), never fail the command over retention.
+            // (bounded), never fail the command over retention. The dropped tail
+            // is truncation, and the receipt must say so instead of reporting a
+            // complete capture.
             var kept = Math.Min(windowRoom, frame.Length);
             _window.Append(frame, 0, kept);
             _recorded += kept;
             _recordedBytes += kept == frame.Length
                 ? frameBytes
                 : Encoding.UTF8.GetByteCount(frame.AsSpan(0, kept));
+            _truncated = true;
             return;
         }
 
         var buffered = Math.Min(windowRoom, frame.Length);
         _window.Append(frame, 0, buffered);
+        var recorded = frame.Length;
         if (frame.Length > buffered)
         {
-            _file.Write(frame.AsSpan(buffered));
+            var spill = frame.AsSpan(buffered);
+            if (_budget is not null)
+            {
+                var spillBytes = Encoding.UTF8.GetByteCount(spill);
+                var granted = _budget.TryReserve(spillBytes);
+                if (granted < spillBytes)
+                {
+                    // The session quota is spent: stop spilling and report the
+                    // dropped tail honestly rather than growing past the budget.
+                    _truncated = true;
+                    spill = granted <= 0
+                        ? ReadOnlySpan<char>.Empty
+                        : TakeUtf8Prefix(spill.ToString(), (int)granted).AsSpan();
+                    recorded = buffered + spill.Length;
+                }
+            }
+
+            if (!spill.IsEmpty)
+            {
+                _file.Write(spill);
+            }
         }
 
-        _recorded += frame.Length;
-        _recordedBytes += frameBytes;
+        _recorded += recorded;
+        _recordedBytes += recorded == frame.Length
+            ? frameBytes
+            : Encoding.UTF8.GetByteCount(frame.AsSpan(0, recorded));
     }
+
+    /// <summary>
+    /// Drops this writer's live claim on the session byte quota. Called after
+    /// the finished spool is stored, so the bytes move from live to stored
+    /// accounting instead of being counted twice.
+    /// </summary>
+    public void ReleaseBudget() => _budget?.Release();
 
     public void Complete()
     {

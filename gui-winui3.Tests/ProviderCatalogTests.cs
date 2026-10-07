@@ -465,6 +465,26 @@ public sealed class ProviderCatalogTests
         Assert.Contains("RemoveProviderAsync", File.ReadAllText(settingsCodePath), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SettingsView_moves_signed_in_providers_to_the_top_of_the_picker()
+    {
+        var settingsCodePath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml.cs");
+        if (!File.Exists(settingsCodePath))
+        {
+            return;
+        }
+
+        string code = File.ReadAllText(settingsCodePath);
+        Assert.Contains(
+            "MoveSignedInRowsToTop",
+            GuiSource.MethodBody(code, "ApplyProviderKeys"),
+            StringComparison.Ordinal);
+
+        string reorder = GuiSource.MethodBody(code, "MoveSignedInRowsToTop");
+        Assert.Contains("HasKey", reorder, StringComparison.Ordinal);
+        Assert.Contains("Move(", reorder, StringComparison.Ordinal);
+    }
+
     private sealed class TestClock : IProviderCatalogClock
     {
         public TestClock(DateTimeOffset utcNow) => UtcNow = utcNow;

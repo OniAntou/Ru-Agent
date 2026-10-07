@@ -675,6 +675,14 @@
                                                      CornerRadius="{StaticResource AppControlCornerRadius}"
                                                      PasswordRevealMode="Hidden"
                                                      PasswordChanged="OnModelsDevKeyPasswordChanged" />
+                                        <Button x:Name="ModelsDevSignOutButton"
+                                                Content="Sign out"
+                                                Click="OnSignOutActiveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                Visibility="Collapsed"
+                                                AutomationProperties.Name="Sign out of the active provider"
+                                                CornerRadius="{StaticResource AppControlCornerRadius}" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>

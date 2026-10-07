@@ -592,6 +592,31 @@ namespace RuApp.Views
                     ? _lastSettings?.HasCustomKey == true
                     : keys.Contains(row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]);
             }
+
+            MoveSignedInRowsToTop();
+        }
+
+        /// <summary>
+        /// Signed-in providers lead the picker: a stored key is the strongest signal
+        /// of intent, and the ~190-row catalog is otherwise a long scroll. The order
+        /// inside each group stays alphabetical.
+        /// </summary>
+        private void MoveSignedInRowsToTop()
+        {
+            var ordered = _providerRows
+                .OrderByDescending(row => row.HasKey)
+                .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.Value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            for (int index = 0; index < ordered.Count; index++)
+            {
+                int current = _providerRows.IndexOf(ordered[index]);
+                if (current != index)
+                {
+                    _providerRows.Move(current, index);
+                }
+            }
         }
 
         /// <summary>
@@ -848,6 +873,82 @@ namespace RuApp.Views
             {
                 CloudflareAccountIdBox.Visibility = IsCloudflareChoice(choice) ? Visibility.Visible : Visibility.Collapsed;
             }
+
+            if (ModelsDevSignOutButton is not null)
+            {
+                // Signing out only makes sense while a key is actually stored; the
+                // dot in the picker and this button read the same source.
+                ModelsDevSignOutButton.Visibility = isModelsDev && IsActiveProviderSignedIn(choice)
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>
+        /// Whether the given provider has a stored credential: the custom key flag
+        /// or one of the fetched models.dev key ids.
+        /// </summary>
+        private bool IsActiveProviderSignedIn(string choice)
+        {
+            if (string.Equals(choice, "custom", StringComparison.OrdinalIgnoreCase))
+            {
+                return _lastSettings?.HasCustomKey == true;
+            }
+
+            if (!ProviderSetupGuidance.IsModelsDevChoice(choice))
+            {
+                return false;
+            }
+
+            string id = choice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
+            return _modelsDevKeyIds.Contains(id, StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Removes the stored key of the active provider. The key can be pasted
+        /// again to sign back in, so no confirmation step is needed.
+        /// </summary>
+        private async void OnSignOutActiveProviderClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService is null || string.IsNullOrWhiteSpace(_providerChoice))
+            {
+                return;
+            }
+
+            if (sender is Button button)
+            {
+                button.IsEnabled = false;
+            }
+
+            string name = ProviderButtonLabel?.Text?.Trim() ?? _providerChoice;
+            try
+            {
+                bool removed = await _apiService.RemoveProviderAsync(_providerChoice);
+                if (removed)
+                {
+                    ClearProviderKeyInput(_providerChoice);
+                    await LoadSettingsAsync();
+                    // LoadSettingsAsync clears the status line, so the confirmation
+                    // must land after the reload, not before it.
+                    SetModelsDevKeyStatus($"Signed out of {name}. Paste a new key to sign in again.", ProviderConnectionTest.SuccessTone);
+                }
+                else
+                {
+                    SetModelsDevKeyStatus("Could not sign out; the backend did not answer.", ProviderConnectionTest.ErrorTone);
+                }
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
+                SetModelsDevKeyStatus("Could not sign out; try again.", ProviderConnectionTest.ErrorTone);
+            }
+            finally
+            {
+                if (sender is Button released)
+                {
+                    released.IsEnabled = true;
+                }
+            }
         }
 
         private bool IsCloudflareChoice(string choice) =>
@@ -968,6 +1069,12 @@ namespace RuApp.Views
 
         private void ClearProviderKeyInput(string alias)
         {
+            if (ProviderSetupGuidance.IsModelsDevChoice(alias))
+            {
+                ModelsDevApiKeyBox.Password = string.Empty;
+                return;
+            }
+
             switch (alias)
             {
                 case "custom":

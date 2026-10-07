@@ -114,12 +114,12 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.False(grep.ContainsKey("regex"));
         Assert.Equal(["query"], Required("grep"));
         Assert.Equal(1, grep["max_results"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(64, grep["max_results"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(128, grep["max_results"]!["maximum"]!.GetValue<int>());
 
         var glob = Properties("glob");
         Assert.Equal(["pattern"], Required("glob"));
         Assert.Equal(1, glob["max_results"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(64, glob["max_results"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(128, glob["max_results"]!["maximum"]!.GetValue<int>());
     }
 
     [Fact]

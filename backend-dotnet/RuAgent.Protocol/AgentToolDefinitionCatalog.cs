@@ -145,13 +145,14 @@ public static class AgentToolDefinitionCatalog
     private static JsonObject GrepSchema() => ObjectSchema(["query"], GrepSchemaProperties());
     // Query bound mirrors FileToolLimits.MaxQueryLength in RuAgent.Broker (the
     // adapter is the authority; Protocol cannot reference the Broker layer).
+    // Result caps mirror FileToolLimits.MaxResults the same way.
     // A tighter schema here false-rejects queries the adapter accepts.
     private static (string Name, JsonObject Schema)[] GrepSchemaProperties() =>
     [
         ("query", StringSchema(1024)),
         ("path", StringSchema()), ("file_glob", StringSchema()),
         ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
-        ("max_results", IntegerSchema(1, 64)),
+        ("max_results", IntegerSchema(1, 128)),
         // Paging bound mirrors FileToolLimits.MaxOffset in RuAgent.Broker (the
         // adapter is the authority; Protocol cannot reference the Broker layer).
         ("offset", IntegerSchema(0, 10000)),
@@ -160,7 +161,7 @@ public static class AgentToolDefinitionCatalog
     private static (string Name, JsonObject Schema)[] GlobSchemaProperties() =>
     [
         ("pattern", StringSchema()),
-        ("path", StringSchema()), ("max_results", IntegerSchema(1, 64)),
+        ("path", StringSchema()), ("max_results", IntegerSchema(1, 128)),
     ];
     private static (string Name, JsonObject Schema)[] WriteSchemaProperties() =>
     [

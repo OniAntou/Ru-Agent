@@ -54,7 +54,7 @@ public static class TerminalLimits
 
     public const int MaxArguments = 64;
     public const int MaxArgumentChars = 1024;
-    public const int MaxScriptChars = 16_000;
+    public const int MaxScriptChars = 32_000;
     public const int MaxExecutableChars = 2048;
     public const int MaxWorkingDirectoryChars = 2048;
 
@@ -68,7 +68,7 @@ public static class TerminalLimits
     /// <summary>
     /// Largest single page a spool read may return.
     /// </summary>
-    public const int MaxSpoolPageChars = 32 * 1024;
+    public const int MaxSpoolPageChars = 64 * 1024;
 
     /// <summary>
     /// Longest spool identifier a read may name.

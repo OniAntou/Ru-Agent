@@ -165,7 +165,7 @@ public sealed class ProviderConnectionTestPresentationTests
 
         Assert.Equal(ProviderConnectionTest.NeutralTone, testing.Tone);
         Assert.False(string.IsNullOrWhiteSpace(testing.Message));
-        Assert.Equal("Fetch models", ProviderConnectionTestPresentation.ButtonLabel);
+        Assert.Equal("Test connection", ProviderConnectionTestPresentation.ButtonLabel);
     }
 
     [Fact]

@@ -645,13 +645,13 @@
                                 </Button>
                             </Grid>
 
-                            <!-- Models.dev API Key Row: the key comes before the test. -->
+                            <!-- Provider API key row: the key comes before the test. -->
                             <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="ModelsDevApiKeyLabel" Text="Models.dev API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="Paste the key for the active provider, it saves itself" Style="{StaticResource SettingDescStyle}" />
+                                        <TextBlock x:Name="ModelsDevApiKeyLabel" Text="API key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="Stored in Windows Credential Manager; saving is automatic." Style="{StaticResource SettingDescStyle}" />
                                         <TextBlock x:Name="ModelsDevKeyStatus"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="12"
@@ -687,21 +687,29 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock x:Name="ProviderTestStatusText"
-                                               Text="Not tested yet."
-                                               Style="{StaticResource SettingDescStyle}"
-                                               TextWrapping="Wrap"
-                                               AutomationProperties.LiveSetting="Polite" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                        <FontIcon x:Name="ProviderTestStatusIcon"
+                                                  Glyph="&#xE946;"
+                                                  FontSize="12"
+                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ProviderTestStatusText"
+                                                   Grid.Column="1"
+                                                   Text="Not tested yet. The test checks the key and loads the model list."
+                                                   Style="{StaticResource SettingDescStyle}"
+                                                   TextWrapping="Wrap"
+                                                   AutomationProperties.LiveSetting="Polite" />
+                                    </Grid>
                                 </StackPanel>
                                 <Button x:Name="ProviderTestButton"
                                         Grid.Column="1"
                                         Width="260"
                                         MinHeight="36"
-                                        Content="Fetch models"
+                                        Content="Test connection"
                                         HorizontalAlignment="Stretch"
                                         HorizontalContentAlignment="Center"
-                                        Style="{StaticResource RuDropdownButtonStyle}"
-                                        AutomationProperties.Name="Fetch provider models"
+                                        Style="{StaticResource RuPrimaryButtonStyle}"
+                                        AutomationProperties.Name="Test provider connection"
                                         Click="OnProviderTestClick" />
                             </Grid>
 
@@ -750,6 +758,10 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                            <TextBlock Text="Keys are stored in Windows Credential Manager and sent only to the provider you choose."
+                                       Style="{StaticResource SettingDescStyle}"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 

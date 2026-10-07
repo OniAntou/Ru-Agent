@@ -21,12 +21,25 @@ public sealed class ProviderConnectionTestUiSourceContractTests
 
         var button = GuiSource.Require(document, "ProviderTestButton");
         var status = GuiSource.Require(document, "ProviderTestStatusText");
+        var icon = GuiSource.Require(document, "ProviderTestStatusIcon");
 
         // Both live in the models panel. A status line outside the section the button
         // is in would be read as belonging to something else.
         var modelsPanel = GuiSource.Require(document, "PanelModelsScrollViewer");
         Assert.True(GuiSource.IsDescendantOf(button, modelsPanel));
         Assert.True(GuiSource.IsDescendantOf(status, modelsPanel));
+        Assert.True(GuiSource.IsDescendantOf(icon, modelsPanel));
+    }
+
+    [Fact]
+    public void The_status_carries_a_tone_icon_and_keeps_the_raw_code_out_of_the_text()
+    {
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        string body = GuiSource.MethodBody(code, "ShowProviderTestResult");
+
+        Assert.Contains("ProviderTestStatusIcon", body, StringComparison.Ordinal);
+        Assert.Contains("SetToolTip", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("[{code}]", body, StringComparison.Ordinal);
     }
 
     [Fact]

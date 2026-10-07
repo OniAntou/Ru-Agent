@@ -362,17 +362,32 @@ namespace RuApp.Views
             }
 
             string code = errorCode?.Trim() ?? string.Empty;
-            ProviderTestStatusText.Text =
-                result.Tone == ProviderConnectionTest.ErrorTone && code.Length > 0 && code.Length <= 64
-                    ? $"{result.Message} [{code}]"
-                    : result.Message;
-            ProviderTestStatusText.Foreground = (Brush)Application.Current.Resources[
+            ProviderTestStatusText.Text = result.Message;
+            var brush = (Brush)Application.Current.Resources[
                 result.Tone switch
                 {
                     ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
                     ProviderConnectionTest.ErrorTone => "AppDangerBrush",
                     _ => "RuMutedBrush",
                 }];
+            ProviderTestStatusText.Foreground = brush;
+
+            if (ProviderTestStatusIcon is not null)
+            {
+                ProviderTestStatusIcon.Glyph = result.Tone switch
+                {
+                    ProviderConnectionTest.SuccessTone => "\uE73E",
+                    ProviderConnectionTest.ErrorTone => "\uE7BA",
+                    _ => "\uE946",
+                };
+                ProviderTestStatusIcon.Foreground = brush;
+            }
+
+            // The raw catalog code stays available for a report without sitting in
+            // the reading path; the diagnostic log keeps its own copy.
+            ToolTipService.SetToolTip(
+                ProviderTestStatusText,
+                code.Length > 0 && code.Length <= 64 ? code : null);
         }
 
         /// <summary>
@@ -813,6 +828,20 @@ namespace RuApp.Views
             if (ModelsDevApiKeyRow is not null)
             {
                 ModelsDevApiKeyRow.Visibility = isModelsDev ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (ModelsDevApiKeyLabel is not null)
+            {
+                // The button label already resolves the display name (runtime rows,
+                // then the fetched models.dev list); reuse it so the key row names
+                // the same provider the user picked.
+                string name = ProviderButtonLabel?.Text?.Trim() ?? string.Empty;
+                if (name.Length == 0 || string.Equals(name, "No provider", StringComparison.Ordinal))
+                {
+                    name = ProviderSetupGuidance.DisplayName(choice);
+                }
+
+                ModelsDevApiKeyLabel.Text = isModelsDev ? $"{name} API key" : "API key";
             }
 
             if (CloudflareAccountIdBox is not null)

@@ -1,5 +1,6 @@
 using System.Text;
 using RuAgent.Cli.Images;
+using RuAgent.Client;
 
 namespace RuAgent.Cli.Attachments;
 
@@ -98,7 +99,7 @@ public static class CliTextFiles
             return (new CliTextAttachment(name, DecodeText(bytes), sourceLength), null);
         }
 
-        var extraction = OfficeDocumentText.Extract(bytes);
+        var extraction = OfficeDocumentText.Extract(name, bytes);
         return extraction.Result switch
         {
             OfficeDocumentText.Result.Ok => (new CliTextAttachment(name, extraction.Text, sourceLength), null),

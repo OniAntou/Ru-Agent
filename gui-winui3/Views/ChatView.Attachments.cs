@@ -97,14 +97,14 @@ namespace RuApp.Views
                 {
                     // A zip of XML, not text: the bytes only become a prompt-safe
                     // attachment after the document parts are read out of them.
-                    var extraction = Services.OfficeDocumentText.Extract(bytes);
-                    if (extraction.Result != Services.OfficeDocumentText.Result.Ok)
+                    var extraction = OfficeDocumentText.Extract(file.Name, bytes);
+                    if (extraction.Result != OfficeDocumentText.Result.Ok)
                     {
                         ShowAgentInlineStatus(extraction.Result switch
                         {
-                            Services.OfficeDocumentText.Result.NoContent =>
+                            OfficeDocumentText.Result.NoContent =>
                                 $"'{file.Name}' has no readable text. It may be empty or a scan without embedded text.",
-                            Services.OfficeDocumentText.Result.TooLarge =>
+                            OfficeDocumentText.Result.TooLarge =>
                                 $"'{file.Name}' expands past the supported size once its text is extracted.",
                             _ => $"'{file.Name}' could not be opened. It may be corrupt, encrypted, or not a real {Path.GetExtension(file.Name)} file.",
                         });

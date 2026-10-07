@@ -2,12 +2,22 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using A = DocumentFormat.OpenXml.Drawing;
+using E = DocumentFormat.OpenXml.ExtendedProperties;
+using P = DocumentFormat.OpenXml.Presentation;
+using S = DocumentFormat.OpenXml.Spreadsheet;
+using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace RuApp.Tests;
 
 /// <summary>
-/// Builds real OOXML containers in memory, so the extractor is tested against the actual
-/// zip-of-XML shape it will meet rather than a stand-in.
+/// Builds real OOXML packages with the OpenXml SDK, so the extractor is tested against the
+/// actual zip-of-XML shape it will meet rather than a stand-in. Hostile shapes (a DTD, a
+/// malformed part, a reordered container) are produced by replacing or reordering entries
+/// of an otherwise valid package.
 /// </summary>
 internal static class OfficeDocumentFixtures
 {
@@ -21,43 +31,170 @@ internal static class OfficeDocumentFixtures
 </w:document>
 """;
 
-    internal const string SlideXml =
-        """
-<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
-       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-  <p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>SLIDE</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>
-</p:sld>
-""";
+    internal const string DtdDocumentXml =
+        "<!DOCTYPE r [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>"
+        + "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+        + "<w:body><w:p><w:r><w:t>&x;</w:t></w:r></w:p></w:body></w:document>";
 
-    internal static byte[] Docx(string body = DocumentXml) => Pack(
-        ("[Content_Types].xml", "<Types/>"),
-        ("word/document.xml", body),
-        ("word/styles.xml", "<styles/>"));
-
-    internal static byte[] Pptx(params (string Name, string Body)[] slides) => Pack(
-        new[]
+    /// <summary>A valid .docx; a caller-supplied body replaces the main document part.</summary>
+    internal static byte[] Docx(string? documentXml = null)
+    {
+        using var stream = new MemoryStream();
+        using (var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
         {
-            ("[Content_Types].xml", "<Types/>"),
-            ("ppt/presentation.xml", "<presentation/>"),
-        }.Concat(slides).ToArray());
+            var main = document.AddMainDocumentPart();
+            main.Document = new W.Document(new W.Body(
+                new W.Paragraph(new W.Run(new W.Text("First line"))),
+                new W.Paragraph(new W.Run(new W.Text("Second line")))));
+
+            // A text-bearing part the extractor must not read: the model wants the words,
+            // not the application metadata.
+            var extended = document.AddExtendedFilePropertiesPart();
+            extended.Properties = new E.Properties(new E.Application("styles"));
+        }
+
+        var bytes = stream.ToArray();
+        return documentXml is null ? bytes : ReplaceEntry(bytes, "word/document.xml", documentXml);
+    }
+
+    /// <summary>A table-heavy document with unicode text, in one valid package.</summary>
+    internal static byte[] DocxWithTable()
+    {
+        using var stream = new MemoryStream();
+        using (var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
+        {
+            var main = document.AddMainDocumentPart();
+            main.Document = new W.Document(new W.Body(
+                new W.Paragraph(new W.Run(new W.Text("Before table"))),
+                new W.Table(
+                    new W.TableRow(
+                        new W.TableCell(new W.Paragraph(new W.Run(new W.Text("A1")))),
+                        new W.TableCell(new W.Paragraph(new W.Run(new W.Text("B1"))))),
+                    new W.TableRow(
+                        new W.TableCell(new W.Paragraph(new W.Run(new W.Text("A2")))),
+                        new W.TableCell(new W.Paragraph(new W.Run(new W.Text("B2")))))),
+                new W.Paragraph(new W.Run(new W.Text("Tiếng Việt: đồ ăn, phở, xe máy")))));
+        }
+
+        return stream.ToArray();
+    }
+
+    /// <summary>A valid deck whose slides carry the given text in presentation order.</summary>
+    internal static byte[] Pptx(params string[] slideTexts)
+    {
+        using var stream = new MemoryStream();
+        using (var document = PresentationDocument.Create(stream, PresentationDocumentType.Presentation, autoSave: true))
+        {
+            var presentationPart = document.AddPresentationPart();
+            presentationPart.Presentation = new P.Presentation();
+            var slideIdList = presentationPart.Presentation.AppendChild(new P.SlideIdList());
+
+            var slideId = 256U;
+            foreach (var text in slideTexts)
+            {
+                var slidePart = presentationPart.AddNewPart<SlidePart>();
+                slidePart.Slide = new P.Slide(new P.CommonSlideData(new P.ShapeTree(
+                    new P.Shape(new P.TextBody(new A.Paragraph(new A.Run(new A.Text(text))))))));
+                slideIdList.Append(new P.SlideId
+                {
+                    Id = slideId++,
+                    RelationshipId = presentationPart.GetIdOfPart(slidePart),
+                });
+            }
+        }
+
+        return stream.ToArray();
+    }
 
     /// <summary>Two slides, so ordering and slide labels are observable.</summary>
-    internal static byte[] PptxTwoSlides() => Pptx(
-        ("ppt/slides/slide1.xml", SlideXml.Replace("SLIDE", "One")),
-        ("ppt/slides/slide2.xml", SlideXml.Replace("SLIDE", "Two")));
+    internal static byte[] PptxTwoSlides() => Pptx("One", "Two");
+
+    /// <summary>A slide whose text lives in a drawing table rather than a text frame.</summary>
+    internal static byte[] PptxWithTable()
+    {
+        using var stream = new MemoryStream();
+        using (var document = PresentationDocument.Create(stream, PresentationDocumentType.Presentation, autoSave: true))
+        {
+            var presentationPart = document.AddPresentationPart();
+            presentationPart.Presentation = new P.Presentation();
+            var slideIdList = presentationPart.Presentation.AppendChild(new P.SlideIdList());
+
+            var slidePart = presentationPart.AddNewPart<SlidePart>();
+            slidePart.Slide = new P.Slide(new P.CommonSlideData(new P.ShapeTree(
+                new P.GraphicFrame(
+                    new A.Graphic(
+                        new A.GraphicData(
+                            new A.Table(
+                                new A.TableRow(
+                                    new A.TableCell(new A.TextBody(new A.Paragraph(new A.Run(new A.Text("T1"))))),
+                                    new A.TableCell(new A.TextBody(new A.Paragraph(new A.Run(new A.Text("T2"))))))))
+                        {
+                            Uri = "http://schemas.openxmlformats.org/drawingml/2006/table",
+                        })))));
+            slideIdList.Append(new P.SlideId
+            {
+                Id = 256U,
+                RelationshipId = presentationPart.GetIdOfPart(slidePart),
+            });
+        }
+
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// The regression shape: slide2.xml is stored before slide1.xml in the container, while
+    /// the presentation lists slide1 first. Zip order must not reorder the deck.
+    /// </summary>
+    internal static byte[] PptxWithReorderedZipEntries() =>
+        ReorderZipEntries(
+            PptxTwoSlides(),
+            name => name switch
+            {
+                "ppt/slides/slide2.xml" => -1,
+                "ppt/slides/slide1.xml" => 1,
+                _ => 0,
+            });
+
+    /// <summary>A valid workbook: shared strings, inline strings, numbers, two ordered sheets.</summary>
+    internal static byte[] Xlsx()
+    {
+        using var stream = new MemoryStream();
+        using (var document = SpreadsheetDocument.Create(stream, SpreadsheetDocumentType.Workbook, autoSave: true))
+        {
+            var workbookPart = document.AddWorkbookPart();
+            workbookPart.Workbook = new Workbook();
+            var sheets = workbookPart.Workbook.AppendChild(new Sheets());
+
+            var shared = workbookPart.AddNewPart<SharedStringTablePart>();
+            shared.SharedStringTable = new SharedStringTable(new SharedStringItem(new S.Text("shared text")));
+
+            var first = workbookPart.AddNewPart<WorksheetPart>();
+            first.Worksheet = new Worksheet(new SheetData(
+                new Row(new Cell { DataType = CellValues.InlineString, InlineString = new InlineString(new S.Text("inline one")) }),
+                new Row(new Cell { DataType = CellValues.Number, CellValue = new CellValue("42") }),
+                // A date cell stores its serial number; the value must survive extraction.
+                new Row(new Cell { DataType = CellValues.Number, CellValue = new CellValue("45123") }),
+                new Row(new Cell { DataType = CellValues.SharedString, CellValue = new CellValue("0") })));
+            sheets.Append(new Sheet { Name = "First", SheetId = 1U, Id = workbookPart.GetIdOfPart(first) });
+
+            var second = workbookPart.AddNewPart<WorksheetPart>();
+            second.Worksheet = new Worksheet(new SheetData(
+                new Row(new Cell { DataType = CellValues.InlineString, InlineString = new InlineString(new S.Text("inline two")) })));
+            sheets.Append(new Sheet { Name = "Second", SheetId = 2U, Id = workbookPart.GetIdOfPart(second) });
+        }
+
+        return stream.ToArray();
+    }
 
     /// <summary>A renamed text file: the case that must fail closed, not be read as text.</summary>
     internal static byte[] NotAZip() => Encoding.UTF8.GetBytes("plain text pretending to be a docx");
 
-    /// <summary>A container whose only text part is empty.</summary>
-    internal static byte[] EmptyDocumentPart() => Pack(("word/document.xml", "<w:document/>"));
+    /// <summary>A valid container whose only text part is empty.</summary>
+    internal static byte[] EmptyDocumentPart() =>
+        Docx("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body/></w:document>");
 
-    /// <summary>A part carrying a DTD, which must be refused rather than resolved.</summary>
-    internal static byte[] DocumentWithDtd() => Pack(
-        ("word/document.xml",
-            "<!DOCTYPE r [<!ENTITY x SYSTEM \"file:///etc/passwd\">]>"
-            + "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
-            + "<w:body><w:t>&x;</w:t></w:body></w:document>"));
+    /// <summary>A valid package whose main part carries a DTD, which must be refused rather than resolved.</summary>
+    internal static byte[] DocumentWithDtd() => Docx(DtdDocumentXml);
 
     internal static byte[] Pack(params (string Name, string Body)[] parts)
     {
@@ -73,5 +210,53 @@ internal static class OfficeDocumentFixtures
         }
 
         return buffer.ToArray();
+    }
+
+    internal static byte[] ReplaceEntry(byte[] zip, string entryName, string body) =>
+        ReplaceEntry(zip, entryName, Encoding.UTF8.GetBytes(body));
+
+    internal static byte[] ReplaceEntry(byte[] zip, string entryName, byte[] body)
+    {
+        using var output = new MemoryStream();
+        using (var source = new MemoryStream(zip, writable: false))
+        using (var archive = new ZipArchive(source, ZipArchiveMode.Read))
+        using (var target = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entry in archive.Entries)
+            {
+                var copy = target.CreateEntry(entry.FullName);
+                using var targetStream = copy.Open();
+                if (entry.FullName == entryName)
+                {
+                    targetStream.Write(body, 0, body.Length);
+                }
+                else
+                {
+                    using var sourceStream = entry.Open();
+                    sourceStream.CopyTo(targetStream);
+                }
+            }
+        }
+
+        return output.ToArray();
+    }
+
+    private static byte[] ReorderZipEntries(byte[] zip, System.Func<string, int> rank)
+    {
+        using var output = new MemoryStream();
+        using (var source = new MemoryStream(zip, writable: false))
+        using (var archive = new ZipArchive(source, ZipArchiveMode.Read))
+        using (var target = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var entry in archive.Entries.OrderBy(entry => rank(entry.FullName)))
+            {
+                var copy = target.CreateEntry(entry.FullName);
+                using var targetStream = copy.Open();
+                using var sourceStream = entry.Open();
+                sourceStream.CopyTo(targetStream);
+            }
+        }
+
+        return output.ToArray();
     }
 }

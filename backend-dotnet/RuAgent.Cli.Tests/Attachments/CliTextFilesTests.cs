@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Text;
 using RuAgent.Cli.Attachments;
 using Xunit;
@@ -53,7 +52,8 @@ public sealed class CliTextFilesTests : IDisposable
     [Fact]
     public async Task LoadAsync_ExtractsOfficeDocumentText()
     {
-        var docx = Docx("<w:document xmlns:w=\"x\"><w:body><w:p><w:t>Quarterly report</w:t></w:p></w:body></w:document>");
+        var docx = OfficeDocumentFixtures.Docx(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Quarterly report</w:t></w:r></w:p></w:body></w:document>");
         await File.WriteAllBytesAsync(Path.Combine(_workspace, "report.docx"), docx);
 
         var (attachment, error) = await CliTextFiles.LoadAsync("report.docx", _workspace, CancellationToken.None);
@@ -105,18 +105,5 @@ public sealed class CliTextFilesTests : IDisposable
 
         Assert.Null(attachment);
         Assert.StartsWith("invalid_document:", error, StringComparison.Ordinal);
-    }
-
-    private static byte[] Docx(string documentXml)
-    {
-        using var stream = new MemoryStream();
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            var entry = archive.CreateEntry("word/document.xml");
-            using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
-            writer.Write(documentXml);
-        }
-
-        return stream.ToArray();
     }
 }

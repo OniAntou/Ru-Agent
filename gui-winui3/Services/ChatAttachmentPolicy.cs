@@ -67,7 +67,7 @@ internal static class ChatAttachmentPolicy
     /// bytes as UTF-8 would put binary noise in the prompt, so the text has to be
     /// extracted from the OOXML parts first.
     /// </summary>
-    internal static bool IsOfficeDocumentFile(string name) => OfficeDocumentText.IsSupported(name);
+    internal static bool IsOfficeDocumentFile(string name) => RuAgent.Client.OfficeDocumentText.IsSupported(name);
 
     internal static string MimeForExtension(string name)
     {

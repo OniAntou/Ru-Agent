@@ -1,6 +1,5 @@
-using System.IO.Compression;
-using System.Text;
-using RuAgent.Cli.Attachments;
+using System.Linq;
+using RuAgent.Client;
 using Xunit;
 
 namespace RuAgent.Cli.Tests.Attachments;
@@ -10,28 +9,20 @@ public sealed class OfficeDocumentTextTests
     [Fact]
     public void Extract_ReadsWordTextAndParagraphBreaks()
     {
-        var docx = Docx(("word/document.xml",
-            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>"
-            + "<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>"
-            + "<w:p><w:r><w:t>Second line</w:t></w:r></w:p>"
-            + "</w:body></w:document>"));
-
-        var result = OfficeDocumentText.Extract(docx);
+        var result = OfficeDocumentText.Extract("report.docx", OfficeDocumentFixtures.Docx());
 
         Assert.Equal(OfficeDocumentText.Result.Ok, result.Result);
-        Assert.Contains("Hello world", result.Text);
+        Assert.Contains("First line", result.Text);
         Assert.Contains("Second line", result.Text);
+        Assert.Contains('\n', result.Text);
     }
 
     [Fact]
     public void Extract_LabelsSlidesInNumericOrder()
     {
-        var pptx = Docx(
-            ("ppt/slides/slide2.xml", "<p:sld xmlns:p=\"p\" xmlns:a=\"a\"><a:t>two</a:t></p:sld>"),
-            ("ppt/slides/slide10.xml", "<p:sld xmlns:p=\"p\" xmlns:a=\"a\"><a:t>ten</a:t></p:sld>"),
-            ("ppt/slides/slide1.xml", "<p:sld xmlns:p=\"p\" xmlns:a=\"a\"><a:t>one</a:t></p:sld>"));
+        var slides = Enumerable.Range(1, 10).Select(index => $"Slide text {index}").ToArray();
 
-        var result = OfficeDocumentText.Extract(pptx);
+        var result = OfficeDocumentText.Extract("deck.pptx", OfficeDocumentFixtures.Pptx(slides));
 
         Assert.Equal(OfficeDocumentText.Result.Ok, result.Result);
         Assert.Contains("Slide 1", result.Text);
@@ -40,11 +31,40 @@ public sealed class OfficeDocumentTextTests
     }
 
     [Fact]
+    public void Extract_FollowsPresentationOrderOverZipOrder()
+    {
+        var result = OfficeDocumentText.Extract("deck.pptx", OfficeDocumentFixtures.PptxWithReorderedZipEntries());
+
+        Assert.Equal(OfficeDocumentText.Result.Ok, result.Result);
+        Assert.True(
+            result.Text.IndexOf("One", System.StringComparison.Ordinal)
+                < result.Text.IndexOf("Two", System.StringComparison.Ordinal),
+            "slide1 must precede slide2");
+    }
+
+    [Fact]
+    public void Extract_KeepsInlineStringsAndNumbers()
+    {
+        var result = OfficeDocumentText.Extract("book.xlsx", OfficeDocumentFixtures.Xlsx());
+
+        Assert.Equal(OfficeDocumentText.Result.Ok, result.Result);
+        Assert.Contains("inline one", result.Text);
+        Assert.Contains("inline two", result.Text);
+        Assert.Contains("42", result.Text);
+        Assert.Contains("shared text", result.Text);
+        Assert.True(
+            result.Text.IndexOf("Sheet: First", System.StringComparison.Ordinal)
+                < result.Text.IndexOf("Sheet: Second", System.StringComparison.Ordinal),
+            "sheets must keep workbook order");
+    }
+
+    [Fact]
     public void Extract_EmptyDocumentReportsNoContent()
     {
-        var zip = Docx(("docProps/app.xml", "<Properties/>"));
+        var empty = OfficeDocumentFixtures.Docx(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body/></w:document>");
 
-        Assert.Equal(OfficeDocumentText.Result.NoContent, OfficeDocumentText.Extract(zip).Result);
+        Assert.Equal(OfficeDocumentText.Result.NoContent, OfficeDocumentText.Extract("empty.docx", empty).Result);
     }
 
     [Fact]
@@ -53,18 +73,18 @@ public sealed class OfficeDocumentTextTests
         var bytes = new byte[128];
         Random.Shared.NextBytes(bytes);
 
-        Assert.Equal(OfficeDocumentText.Result.Malformed, OfficeDocumentText.Extract(bytes).Result);
-        Assert.Equal(OfficeDocumentText.Result.Malformed, OfficeDocumentText.Extract([]).Result);
+        Assert.Equal(OfficeDocumentText.Result.Malformed, OfficeDocumentText.Extract("broken.docx", bytes).Result);
+        Assert.Equal(OfficeDocumentText.Result.Malformed, OfficeDocumentText.Extract("broken.docx", []).Result);
     }
 
     [Fact]
     public void Extract_OneOversizedPartIsRefused()
     {
         var big = new string('x', OfficeDocumentText.MaxTextChars + 1_000);
-        var docx = Docx(("word/document.xml",
-            $"<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:t>{big}</w:t></w:body></w:document>"));
+        var docx = OfficeDocumentFixtures.Docx(
+            $"<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>{big}</w:t></w:r></w:p></w:body></w:document>");
 
-        Assert.Equal(OfficeDocumentText.Result.TooLarge, OfficeDocumentText.Extract(docx).Result);
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, OfficeDocumentText.Extract("big.docx", docx).Result);
     }
 
     [Fact]
@@ -75,21 +95,5 @@ public sealed class OfficeDocumentTextTests
         Assert.True(OfficeDocumentText.IsSupported("book.xlsx"));
         Assert.False(OfficeDocumentText.IsSupported("notes.txt"));
         Assert.False(OfficeDocumentText.IsSupported("image.png"));
-    }
-
-    private static byte[] Docx(params (string Name, string Xml)[] parts)
-    {
-        using var stream = new MemoryStream();
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            foreach (var (name, xml) in parts)
-            {
-                var entry = archive.CreateEntry(name);
-                using var writer = new StreamWriter(entry.Open(), Encoding.UTF8);
-                writer.Write(xml);
-            }
-        }
-
-        return stream.ToArray();
     }
 }

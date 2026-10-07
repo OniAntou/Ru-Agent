@@ -687,7 +687,7 @@ public sealed partial class AgentCommands
 
             if (!Images.CliImagePolicy.IsImageFile(candidate)
                 && !Images.CliImagePolicy.IsTextOrCodeFile(candidate)
-                && !Attachments.OfficeDocumentText.IsSupported(candidate))
+                && !OfficeDocumentText.IsSupported(candidate))
             {
                 return false;
             }

@@ -27,6 +27,22 @@ public sealed class AgentTasksUiContractTests
     }
 
     [Fact]
+    public void The_panel_only_shows_with_chat_content_in_a_wide_enough_window()
+    {
+        // The panel reserves its own space and hides when the chat area is
+        // narrow or the chat is empty, so it can never cover the conversation.
+        var code = GuiSource.ViewText("ChatView");
+        string layout = GuiSource.MethodBody(code, "UpdateSidePanelLayout");
+        Assert.Contains("Messages.Count > 0", layout, StringComparison.Ordinal);
+        Assert.Contains("SidePanelMinRootWidth", layout, StringComparison.Ordinal);
+        Assert.Contains("_sidePanelUserCollapsed", layout, StringComparison.Ordinal);
+        Assert.Contains(
+            "_sidePanelReserveWidth",
+            GuiSource.MethodBody(code, "ApplyInputWidth"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Task_rows_only_offer_stop_while_running()
     {
         var running = new AgentTaskRow("req-1", "running", null);

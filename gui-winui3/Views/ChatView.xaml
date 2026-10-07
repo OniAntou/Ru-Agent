@@ -735,15 +735,6 @@
                                 Orientation="Horizontal"
                                 Spacing="2"
                                 VerticalAlignment="Center">
-                        <Button x:Name="SidePanelRefreshButton"
-                                Click="OnAgentTasksRefreshClick"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="6,4"
-                                ToolTipService.ToolTip="Refresh tasks"
-                                AutomationProperties.Name="Refresh tasks">
-                            <FontIcon Glyph="&#xE72C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                        </Button>
                         <Button x:Name="SidePanelCollapseButton"
                                 Click="OnSidePanelCollapseClick"
                                 Background="Transparent"
@@ -855,7 +846,8 @@
           it trails the composer) and raised above it with a ZIndex, so a
           pending decision floats over the todo panel and the input instead
           of shoving them upward. -->
-        <Grid Grid.Row="1"
+        <Grid x:Name="ApprovalHostGrid"
+              Grid.Row="1"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Stretch"
               MaxWidth="820"

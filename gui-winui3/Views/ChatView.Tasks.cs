@@ -75,30 +75,15 @@ public sealed partial class ChatView
 
     private void OnSidePanelCollapseClick(object sender, RoutedEventArgs e)
     {
-        if (SidePanelCard is null || SidePanelOpenButton is null)
-        {
-            return;
-        }
-
-        SidePanelCard.Visibility = Visibility.Collapsed;
-        SidePanelOpenButton.Visibility = Visibility.Visible;
+        _sidePanelUserCollapsed = true;
+        ApplyInputWidth();
     }
 
     private void OnSidePanelOpenClick(object sender, RoutedEventArgs e)
     {
-        if (SidePanelCard is null || SidePanelOpenButton is null)
-        {
-            return;
-        }
-
-        SidePanelCard.Visibility = Visibility.Visible;
-        SidePanelOpenButton.Visibility = Visibility.Collapsed;
+        _sidePanelUserCollapsed = false;
+        ApplyInputWidth();
         _ = RefreshAgentTasksAsync();
-    }
-
-    private async void OnAgentTasksRefreshClick(object sender, RoutedEventArgs e)
-    {
-        await RefreshAgentTasksAsync();
     }
 
     private async void OnAgentTaskStopClick(object sender, RoutedEventArgs e)

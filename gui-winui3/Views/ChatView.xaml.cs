@@ -79,6 +79,14 @@ namespace RuApp.Views
         private const double MediumHorizontalInset = 48;
         private const double WideHorizontalInset = 96;
         private const double MinAvailableInputWidth = 160;
+        private const double SidePanelMargin = 16;
+
+        /// <summary>
+        /// The side panel only shows when the chat area is at least this wide, so
+        /// the transcript, composer and approval card keep a comfortable column
+        /// after the panel reserves its space.
+        /// </summary>
+        private const double SidePanelMinRootWidth = 1120;
         private const int MaxImageAttachmentBytes = Services.ChatAttachmentPolicy.MaxImageAttachmentBytes;
         private const int MaxTextAttachmentBytes = Services.ChatAttachmentPolicy.MaxTextAttachmentBytes;
 
@@ -114,6 +122,8 @@ namespace RuApp.Views
         private string? _requestedWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
+        private bool _sidePanelUserCollapsed;
+        private double _sidePanelReserveWidth;
         private string? _focusedApprovalId;
         private readonly AgentTurnQueue _queuedTurns = new();
         /// <summary>
@@ -270,7 +280,42 @@ namespace RuApp.Views
             {
                 ChatContentGrid.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
+            double previousReserve = _sidePanelReserveWidth;
+            UpdateSidePanelLayout();
+            if (Math.Abs(previousReserve - _sidePanelReserveWidth) > 0.5)
+            {
+                ApplyInputWidth();
+            }
             RefreshBackdropEffect();
+        }
+
+        /// <summary>
+        /// The side panel exists only while the chat has content and the window is
+        /// wide enough for it to reserve its own space; the transcript, composer
+        /// and approval card center inside the remaining width, so the panel never
+        /// covers the chat. A manual collapse hides it to the corner toggle.
+        /// </summary>
+        private void UpdateSidePanelLayout()
+        {
+            if (SidePanelCard is null || SidePanelOpenButton is null || RootGrid is null)
+            {
+                return;
+            }
+
+            bool canShow = Messages.Count > 0 && RootGrid.ActualWidth >= SidePanelMinRootWidth;
+            bool isVisible = canShow && !_sidePanelUserCollapsed;
+
+            SidePanelCard.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            SidePanelOpenButton.Visibility = canShow && _sidePanelUserCollapsed
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            _sidePanelReserveWidth = isVisible ? SidePanelCard.Width + SidePanelMargin : 0;
+
+            if (ApprovalHostGrid is not null)
+            {
+                ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
+            }
         }
 
         /// <summary>

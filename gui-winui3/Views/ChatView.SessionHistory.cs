@@ -1171,12 +1171,16 @@ namespace RuApp.Views
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
 
+            UpdateSidePanelLayout();
+
             double horizontalInset = RootGrid.ActualWidth < NarrowWidthThreshold
                 ? NarrowHorizontalInset
                 : RootGrid.ActualWidth < MediumWidthThreshold
                     ? MediumHorizontalInset
                     : WideHorizontalInset;
-            double availableWidth = Math.Max(MinAvailableInputWidth, RootGrid.ActualWidth - horizontalInset);
+            double availableWidth = Math.Max(
+                MinAvailableInputWidth,
+                RootGrid.ActualWidth - horizontalInset - _sidePanelReserveWidth);
             double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
 
             if (WelcomeHeroPanel != null)
@@ -1187,6 +1191,7 @@ namespace RuApp.Views
             if (InputContainer != null)
             {
                 InputContainer.Width = targetWidth;
+                InputContainer.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 0);
             }
 
             if (InputBorder != null)
@@ -1250,8 +1255,9 @@ namespace RuApp.Views
 
             double viewport = Math.Max(
                 0,
-                ChatListView.ActualWidth - ChatListView.Padding.Left - ChatListView.Padding.Right);
+                ChatListView.ActualWidth - ChatListView.Padding.Left - ChatListView.Padding.Right - _sidePanelReserveWidth);
             column.Width = Math.Min(MessageColumnMaxWidth, viewport);
+            column.Margin = new Thickness(0, 0, _sidePanelReserveWidth, 0);
         }
 
         private void LayoutRealizedMessageColumns()

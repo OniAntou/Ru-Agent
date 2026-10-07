@@ -321,8 +321,10 @@ omission notice and available workspace-activity reference. Structured tool
 output projections preserve durable receipts and attach tool-specific paging
 cursors: `read` advances UTF-8 bytes, `grep` advances match results from the
 original query offset, and terminal `read_output` advances UTF-16 characters
-within the same spool. Projection clipping never rewrites the receipt; bounded
-history may still omit older exchanges.
+within the same spool; output past the spool's in-memory window lives in a
+session-scoped file that dies with the session or the next Broker start.
+Projection clipping never rewrites the receipt; bounded history may still omit
+older exchanges.
 
 `AGENTS.md` remains the sole persona/style source. The four fixed workspace
 instruction files and discovered skills are untrusted guidance; none can grant

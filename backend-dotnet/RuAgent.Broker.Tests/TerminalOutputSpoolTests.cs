@@ -79,4 +79,72 @@ public sealed class TerminalOutputSpoolTests
         Assert.True(spool.TryRead("session-b", "req-1", out var text));
         Assert.Equal("b", text);
     }
+
+    [Fact]
+    public void Spilled_entry_pages_the_file_half_and_cleans_up_with_the_session()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root);
+            var prefix = new string('a', Protocol.TerminalLimits.MaxSpoolChars);
+            var filePath = spool.CreateFilePath("session-a", "req-1");
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            File.WriteAllText(filePath, "tail");
+            spool.Store("session-a", "req-1", prefix, new SpoolSpill(filePath, prefix.Length + 4, Truncated: false));
+
+            Assert.True(spool.TryReadPage(
+                "session-a",
+                "req-1",
+                Protocol.TerminalLimits.MaxSpoolChars - 2,
+                6,
+                out var page));
+            Assert.Equal("aatail", page.Text);
+            Assert.Equal(prefix.Length + 4, page.TotalChars);
+            Assert.Equal(filePath, page.FilePath);
+            Assert.False(page.Truncated);
+
+            Assert.True(spool.TryGetSpill("session-a", "req-1", out var named));
+            Assert.Equal(filePath, named);
+
+            spool.RemoveSession("session-a");
+            Assert.False(File.Exists(filePath));
+            Assert.False(spool.TryReadPage("session-a", "req-1", 0, 10, out _));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Eviction_deletes_the_evicted_spill_file()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root);
+            var first = spool.CreateFilePath("session-a", "req-0");
+            Directory.CreateDirectory(Path.GetDirectoryName(first)!);
+            File.WriteAllText(first, "x");
+            spool.Store("session-a", "req-0", "window", new SpoolSpill(first, 6, Truncated: false));
+            for (var index = 1; index <= TerminalOutputSpool.MaxSpoolsPerSession; index++)
+            {
+                spool.Store("session-a", $"req-{index}", $"output-{index}");
+            }
+
+            Assert.False(File.Exists(first));
+            Assert.False(spool.TryRead("session-a", "req-0", out _));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

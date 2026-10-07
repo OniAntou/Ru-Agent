@@ -55,8 +55,10 @@ public sealed partial class ToolExecutionService
     /// Pages back full retained output of an earlier terminal call in the same
     /// session. Fail-closed value lookup: unknown, expired, or foreign-session
     /// ids are a malformed call, never an approval and never another session's
-    /// text. No new capability: the session already received these bytes. A
-    /// background task pages live text and carries its state and exit code.
+    /// text. No new capability: the session already received these bytes.
+    /// Output past the in-memory window pages from the session spool file. A
+    /// running background task pages live text and carries its state and exit
+    /// code.
     /// </summary>
     private ToolExecutionOutcome ExecuteTerminalReadOutput(ToolExecutionContext context, JsonObject arguments)
     {
@@ -68,44 +70,70 @@ public sealed partial class ToolExecutionService
             throw new ArgumentException("invalid_arguments");
         }
 
-        BackgroundTaskSnapshot? task = null;
-        string text;
-        if (_backgroundTasks.TryRead(context.SessionId, spoolId, out var snapshot))
-        {
-            task = snapshot;
-            text = snapshot.Text;
-            if (snapshot.State != BackgroundTaskState.Running
-                && text.Length == 0
-                && _spools.TryRead(context.SessionId, spoolId, out var completedText))
-            {
-                text = completedText;
-            }
-        }
-        else if (!_spools.TryRead(context.SessionId, spoolId, out text))
-        {
-            throw new ArgumentException("unknown_spool_output");
-        }
-
         // Ranges are already enforced by schema validation; these are backstops.
         var offset = ReadOptionalInt(arguments, "offset") ?? 0;
         var limit = ReadOptionalInt(arguments, "limit") ?? DefaultSpoolPageChars;
-        if (offset < 0 || offset > TerminalLimits.MaxSpoolChars
+        if (offset < 0 || offset > TerminalLimits.MaxSpoolFileBytes
             || limit < 1 || limit > TerminalLimits.MaxSpoolPageChars)
         {
             throw new ArgumentException("invalid_arguments");
         }
 
-        var start = Math.Min(offset, text.Length);
-        var page = text.Substring(start, Math.Min(limit, text.Length - start));
+        BackgroundTaskSnapshot? task = null;
+        string page;
+        int totalChars;
+        string? spoolPath = null;
+        var isTruncated = false;
+        if (_backgroundTasks.TryRead(context.SessionId, spoolId, out var snapshot))
+        {
+            task = snapshot;
+            if (snapshot.State == BackgroundTaskState.Running
+                || !_spools.TryReadPage(context.SessionId, spoolId, offset, limit, out var completed))
+            {
+                // A running task pages its live window; a finished task whose
+                // spool is gone falls back to the same window, empty or not.
+                page = SlicePage(snapshot.Text, offset, limit);
+                totalChars = snapshot.Text.Length;
+            }
+            else
+            {
+                page = completed.Text;
+                totalChars = completed.TotalChars;
+                spoolPath = completed.FilePath;
+                isTruncated = completed.Truncated;
+            }
+        }
+        else if (_spools.TryReadPage(context.SessionId, spoolId, offset, limit, out var stored))
+        {
+            page = stored.Text;
+            totalChars = stored.TotalChars;
+            spoolPath = stored.FilePath;
+            isTruncated = stored.Truncated;
+        }
+        else
+        {
+            throw new ArgumentException("unknown_spool_output");
+        }
+
         var output = new JsonObject
         {
             ["spool_id"] = spoolId,
             ["offset"] = offset,
             ["limit"] = limit,
-            ["total_chars"] = text.Length,
+            ["total_chars"] = totalChars,
             ["page"] = page,
-            ["truncated"] = start + page.Length < text.Length,
+            ["truncated"] = offset + page.Length < totalChars,
         };
+        if (spoolPath is not null)
+        {
+            output["spool_path"] = spoolPath;
+        }
+
+        if (isTruncated)
+        {
+            output["spool_truncated"] = true;
+        }
+
         if (task is not null)
         {
             output["state"] = BackgroundStateWire(task.State);
@@ -121,6 +149,12 @@ public sealed partial class ToolExecutionService
         }
 
         return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, "Terminal output page.");
+    }
+
+    private static string SlicePage(string text, int offset, int limit)
+    {
+        var start = Math.Min(offset, text.Length);
+        return text.Substring(start, Math.Min(limit, text.Length - start));
     }
 
     /// <summary>
@@ -227,8 +261,8 @@ public sealed partial class ToolExecutionService
             throw new ArgumentException("background_task_limit_reached");
         }
 
-        var retained = new StringBuilder();
-        var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, retained, workingDirectory, run);
+        var writer = new SpoolFileWriter(_spools.CreateFilePath(context.SessionId, executionId));
+        var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, writer, workingDirectory, run);
         return (executionId, pump);
     }
 
@@ -323,7 +357,7 @@ public sealed partial class ToolExecutionService
         ToolExecutionContext context,
         string executionId,
         CancellationToken lifetimeToken,
-        StringBuilder retained,
+        SpoolFileWriter writer,
         string workingDirectory,
         Func<CancellationToken, Action<string>, Task<StreamingProcessResult>> run)
     {
@@ -334,7 +368,7 @@ public sealed partial class ToolExecutionService
         {
             result = await run(lifetimeToken, frame =>
             {
-                AppendSpoolCapped(retained, frame);
+                writer.Append(frame);
                 _backgroundTasks.Append(context.SessionId, executionId, frame);
             }).ConfigureAwait(false);
             status = result.Status;
@@ -350,8 +384,9 @@ public sealed partial class ToolExecutionService
         }
         finally
         {
-            _backgroundTasks.Complete(context.SessionId, executionId, status, exitCode, retained.ToString());
-            RetainSpool(context, retained);
+            writer.Complete();
+            _backgroundTasks.Complete(context.SessionId, executionId, status, exitCode, writer.Window);
+            RetainSpool(context, writer);
         }
 
         return result ?? new StreamingProcessResult(
@@ -371,22 +406,20 @@ public sealed partial class ToolExecutionService
             WorkingDirectory: workingDirectory);
     }
 
-    private static void AppendSpoolCapped(StringBuilder retained, string frame)
+    private void RetainSpool(ToolExecutionContext context, SpoolFileWriter writer)
     {
-        if (retained.Length >= TerminalLimits.MaxSpoolChars || string.IsNullOrEmpty(frame))
+        if (string.IsNullOrWhiteSpace(context.RequestId) || writer.Window.Length == 0)
         {
             return;
         }
 
-        retained.Append(frame, 0, Math.Min(frame.Length, TerminalLimits.MaxSpoolChars - retained.Length));
-    }
-
-    private void RetainSpool(ToolExecutionContext context, StringBuilder retained)
-    {
-        if (!string.IsNullOrWhiteSpace(context.RequestId) && retained.Length > 0)
-        {
-            _spools.Store(context.SessionId, context.RequestId, retained.ToString());
-        }
+        _spools.Store(
+            context.SessionId,
+            context.RequestId,
+            writer.Window,
+            writer.FilePath is null
+                ? null
+                : new SpoolSpill(writer.FilePath, writer.TotalChars, writer.Truncated));
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
@@ -508,13 +541,20 @@ public sealed partial class ToolExecutionService
 
     /// <summary>
     /// Names the retained output on the receipt so the model can page it back
-    /// with mode read_output instead of re-running the command.
+    /// with mode read_output instead of re-running the command, and names the
+    /// spill file when the output overflowed the in-memory window.
     /// </summary>
-    private static ToolExecutionOutcome WithSpoolId(ToolExecutionOutcome outcome, ToolExecutionContext context)
+    private ToolExecutionOutcome WithSpoolId(ToolExecutionOutcome outcome, ToolExecutionContext context)
     {
-        if (!string.IsNullOrWhiteSpace(context.RequestId))
+        if (string.IsNullOrWhiteSpace(context.RequestId))
         {
-            outcome.Output["spool_id"] = context.RequestId;
+            return outcome;
+        }
+
+        outcome.Output["spool_id"] = context.RequestId;
+        if (_spools.TryGetSpill(context.SessionId, context.RequestId, out var filePath) && filePath is not null)
+        {
+            outcome.Output["spool_path"] = filePath;
         }
 
         return outcome;

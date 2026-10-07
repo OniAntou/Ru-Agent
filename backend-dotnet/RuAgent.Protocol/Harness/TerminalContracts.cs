@@ -59,11 +59,19 @@ public static class TerminalLimits
     public const int MaxWorkingDirectoryChars = 2048;
 
     /// <summary>
-    /// Full redacted output retained per terminal call for later paging.
-    /// Matches the runner's total retention so the spool never promises more
-    /// than execution kept.
+    /// In-memory window retained per terminal call: the head of the full
+    /// redacted output, kept for receipts and live paging. Output past this
+    /// window spills to a session-scoped spool file up to
+    /// <see cref="MaxSpoolFileBytes"/>.
     /// </summary>
     public const int MaxSpoolChars = 256 * 1024;
+
+    /// <summary>
+    /// Retention ceiling for one spilled spool file. Past this the spool stops
+    /// recording and the receipt names the truncation; the command itself
+    /// keeps running to its own timeout or lifetime.
+    /// </summary>
+    public const int MaxSpoolFileBytes = 1024 * 1024 * 1024;
 
     /// <summary>
     /// Largest single page a spool read may return.

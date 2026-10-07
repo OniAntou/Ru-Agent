@@ -1669,7 +1669,7 @@ public sealed class ToolExecutionServiceTests
         }
 
         throw new Xunit.Sdk.XunitException(
-            $"Background task never reached state '{expectedState}' (last={last?.Output["state"]?.GetValue<string>()}).");
+            $"Background task never reached state '{expectedState}' (last={last?.Status}/{last?.ErrorCode}/{last?.Output["state"]?.GetValue<string>()}).");
     }
 
     private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments, string? requestId = null) => new(
@@ -1824,6 +1824,80 @@ public sealed class ToolExecutionServiceTests
         }
         finally
         {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Output past the in-memory window must stay retrievable: it spills to a
+    /// session spool file and pages back through the same read_output call,
+    /// whose receipt names the file.
+    /// </summary>
+    [Fact]
+    public async Task Spilled_terminal_output_pages_past_the_in_memory_window()
+    {
+        var fixture = CreateFullAccessService("ru-spool-spill-");
+        try
+        {
+            var run = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "spill-run",
+                    AgentMessageTypes.ToolExecute,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "python",
+                            ["arguments"] = new JsonArray(
+                                "-c",
+                                "import sys;sys.stdout.buffer.write(b'0123456789012345678901234567890123456789\\n'*20000)"),
+                            ["working_directory"] = ".",
+                        },
+                    }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, run.Status);
+            Assert.True(run.Output.ContainsKey("spool_path"), run.Output.ToJsonString());
+
+            var page = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "spill-page",
+                    AgentMessageTypes.ToolExecute,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "read_output",
+                            ["execution_id"] = "spill-run",
+                            ["offset"] = 400_000,
+                            ["limit"] = 1000,
+                        },
+                    }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, page.Status);
+            Assert.Equal(820_000, page.Output["total_chars"]!.GetValue<int>());
+            Assert.StartsWith("456789", page.Output["page"]!.GetValue<string>());
+            Assert.True(page.Output.ContainsKey("spool_path"));
+        }
+        finally
+        {
+            fixture.Service.RemoveSession(fixture.SessionId);
             Directory.Delete(fixture.Root, recursive: true);
         }
     }

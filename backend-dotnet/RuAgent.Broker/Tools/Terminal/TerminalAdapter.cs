@@ -62,7 +62,7 @@ public sealed class TerminalAdapter
         _environment = commandEnvironment ?? new AgentCommandEnvironment();
         _runner = runner ?? new StreamingProcessRunner(
             _environment.GetRedactionSeeds(),
-            256 * 1024);
+            TerminalLimits.MaxSpoolFileBytes);
         _resolver = intentResolver ?? new CommandIntentResolver(_workspace.Root);
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
         _gitCli = gitCli ?? new StreamingGitCli(_runner, _environment.ChildEnvironment);
@@ -217,7 +217,7 @@ public sealed class TerminalAdapter
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
-                256 * 1024),
+                TerminalLimits.MaxSpoolFileBytes),
             WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
     }
@@ -244,7 +244,7 @@ public sealed class TerminalAdapter
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
                 killTimeoutMs ?? intent.TimeoutMs,
-                256 * 1024),
+                TerminalLimits.MaxSpoolFileBytes),
             WrapRetain(retainOutput),
             cancellationToken).ConfigureAwait(false);
     }

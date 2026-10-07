@@ -114,9 +114,16 @@ public sealed partial class ToolExecutionService
         // session and nothing else would ever clear it.
         _todos.Remove(sessionId);
         // Retained terminal output dies with the session for the same reason: a
-        // spool id must never resolve to another session's text.
+        // spool id must never resolve to another session's text, and a spilled
+        // spool file must never outlive it.
         _spools.RemoveSession(sessionId);
     }
+
+    /// <summary>
+    /// Drops spilled spool files from a previous Broker process. Spool ids are
+    /// per-process, so a restart makes every older file unreachable.
+    /// </summary>
+    public void CleanStaleSpoolFiles() => _spools.CleanStaleRoot();
 
     public void ClearPendingApprovals() => _approvals.Clear();
 

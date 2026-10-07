@@ -55,7 +55,7 @@ public sealed class StreamingProcessRunner
         _redactionSeeds = (redactionSeeds ?? Array.Empty<string>())
             .Where(seed => !string.IsNullOrEmpty(seed))
             .ToArray();
-        _outputLimitBytes = Math.Clamp(outputLimitBytes, 1, 8 * 1024 * 1024);
+        _outputLimitBytes = Math.Clamp(outputLimitBytes, 1, RuAgent.Protocol.TerminalLimits.MaxSpoolFileBytes);
         ArgumentOutOfRangeException.ThrowIfNegative(headCapacityChars);
         ArgumentOutOfRangeException.ThrowIfNegative(tailCapacityChars);
         _headCapacityChars = headCapacityChars;

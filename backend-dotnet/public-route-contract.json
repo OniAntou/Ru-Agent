@@ -25,6 +25,7 @@
   {"method":"GET","path":"/agent/v1/runs/{runId}/activities","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ListRunActivitiesAsync"]},
   {"method":"GET","path":"/agent/v1/runs/{runId}/payloads/{payloadId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs/{runId}/approvals/{approvalId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"POST","path":"/agent/v1/runs/{runId}/inputs/{inputId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs/{runId}/trust","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs/{runId}/cancel","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs/{runId}/continue","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},

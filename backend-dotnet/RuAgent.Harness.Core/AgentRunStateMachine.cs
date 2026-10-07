@@ -43,6 +43,10 @@ public static class AgentRunStateMachine
                 Status(HarnessRunState.WaitingApproval),
             (HarnessRunState.WaitingApproval, HarnessRunTransition.ResolveApproval) =>
                 Status(HarnessRunState.Running),
+            (HarnessRunState.Running, HarnessRunTransition.RequestInput) =>
+                Status(HarnessRunState.WaitingUser),
+            (HarnessRunState.WaitingUser, HarnessRunTransition.ResolveInput) =>
+                Status(HarnessRunState.Running),
             (HarnessRunState.Running, HarnessRunTransition.ExhaustBudget) =>
                 Status(HarnessRunState.WaitingUser),
             (HarnessRunState.WaitingUser, HarnessRunTransition.Continue) =>

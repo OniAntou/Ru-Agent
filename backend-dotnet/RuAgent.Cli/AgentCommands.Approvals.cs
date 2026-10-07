@@ -397,6 +397,65 @@ public sealed partial class AgentCommands
         }
     }
 
+    public async Task<int> AnswerAsync(AnswerCommand cmd, CancellationToken cancellationToken)
+    {
+        string answer;
+        if (cmd.Answer is null)
+        {
+            await _out.WriteAsync("Answer: ").ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+            var line = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                await _err.WriteLineAsync("input_cancelled: no answer provided.").ConfigureAwait(false);
+                return 1;
+            }
+
+            answer = line;
+        }
+        else
+        {
+            answer = cmd.Answer;
+        }
+
+        try
+        {
+            var result = await _agentClient.AnswerAsync(cmd.RunId, cmd.InputId, answer, cancellationToken).ConfigureAwait(false);
+            var runState = result.TryGetProperty("run_state", out var stateNode) && stateNode.ValueKind == JsonValueKind.String
+                ? stateNode.GetString()
+                : null;
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(new
+                {
+                    v = 1,
+                    type = "input_answer",
+                    run_id = cmd.RunId,
+                    input_id = cmd.InputId,
+                    status = result.TryGetProperty("status", out var statusNode) && statusNode.ValueKind == JsonValueKind.String
+                        ? statusNode.GetString()
+                        : "answered",
+                    run_state = runState,
+                })).ConfigureAwait(false);
+            }
+            else
+            {
+                await _out.WriteLineAsync($"input {cmd.InputId} answered").ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(runState))
+                {
+                    await _out.WriteLineAsync($"run_state: {runState}").ConfigureAwait(false);
+                }
+            }
+
+            return 0;
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+            return 1;
+        }
+    }
+
     private static async Task<string> ReadBoundedBodyAsync(HttpContent content, CancellationToken cancellationToken)
     {
         try

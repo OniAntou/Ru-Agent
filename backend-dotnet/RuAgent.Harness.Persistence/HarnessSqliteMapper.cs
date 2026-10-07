@@ -128,6 +128,7 @@ public static class HarnessSqliteMapper
         HarnessEventKind.ToolExecutionRequested => "tool.execution_requested",
         HarnessEventKind.ToolExecutionCompleted => "tool.execution_completed",
         HarnessEventKind.ApprovalRequested => "approval.requested",
+        HarnessEventKind.InputRequested => "input.requested",
         HarnessEventKind.ContinueRequested => "continue.requested",
         HarnessEventKind.ReconciliationRequired => "reconciliation.required",
         HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",

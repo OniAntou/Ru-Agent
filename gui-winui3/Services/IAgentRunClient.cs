@@ -26,6 +26,7 @@ public interface IAgentRunClient
         CancellationToken cancellationToken = default);
     Task ApproveAsync(string runId, string approvalId, string scope, CancellationToken cancellationToken = default);
     Task DenyAsync(string runId, string approvalId, CancellationToken cancellationToken = default);
+    Task SubmitInputAsync(string runId, string inputId, string answer, CancellationToken cancellationToken = default);
     Task SubscribeEventsAsync(
         string runId,
         long afterSequence,

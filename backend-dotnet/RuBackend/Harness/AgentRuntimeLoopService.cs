@@ -399,6 +399,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly WorkspaceBaselineTracker _capturedBaselines = new();
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
+    private readonly RetainedInputRehydrator? _retainedInputRehydrator;
     private readonly HarnessRecoveryScanner _recoveryScanner;
 
     public AgentRuntimeLoopService(
@@ -412,7 +413,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null,
-        RetainedApprovalRehydrator? retainedApprovalRehydrator = null)
+        RetainedApprovalRehydrator? retainedApprovalRehydrator = null,
+        RetainedInputRehydrator? retainedInputRehydrator = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -425,6 +427,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         _workspaceJournalProtector = workspaceJournalProtector;
         _brokerGateways = brokerGateways;
         _retainedApprovalRehydrator = retainedApprovalRehydrator;
+        _retainedInputRehydrator = retainedInputRehydrator;
         _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
     }
 
@@ -866,6 +869,34 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 return;
             }
 
+            // A step parked on ask_user left proposals the answer route did not
+            // execute. Rebuild them from durable state and resume; a null result
+            // means the asked call was the only proposal, so stepping proceeds.
+            if (_retainedInputRehydrator is not null)
+            {
+                var retainedInput = await _retainedInputRehydrator
+                    .RehydrateAsync(runId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (retainedInput is not null)
+                {
+                    var resumedInput = await coordinator
+                        .TryResumeRetainedInputAsync(runId, retainedInput, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (resumedInput is not null
+                        && (resumedInput.Run.State != HarnessRunState.Running
+                            || resumedInput.ErrorCode is not null))
+                    {
+                        if (resumedInput.Run.State.IsTerminal())
+                        {
+                            _summaryPublisher?.TryPublishSummary(resumedInput.Run);
+                            RemoveRunRegistration(runId);
+                        }
+
+                        return;
+                    }
+                }
+            }
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 using var stepCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -1072,6 +1103,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
     private static string NormalizeDriveFailureCode(Exception error)
     {
+        if (error is InvalidDataException
+            && error.Message.StartsWith("retained_input_", StringComparison.Ordinal))
+        {
+            return "retained_input_rehydration_failed";
+        }
+
         if (error is InvalidDataException
             && error.Message.StartsWith("retained_approval_", StringComparison.Ordinal))
         {

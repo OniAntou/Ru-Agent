@@ -1162,6 +1162,84 @@ public sealed partial class AgentCommands
         string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
         /// <summary>
+        /// Reads an <c>ask_user</c> request payload referenced by an input.requested
+        /// frame so the notice can show the question and its suggested answers. A
+        /// payload that cannot be read still parks the run; the notice then names only
+        /// the input id, which is all the answer command needs.
+        /// </summary>
+        async Task<(string InputId, string Question, IReadOnlyList<string> Options)?> ReadInputRequestAsync(
+            string runId,
+            string? payloadRef,
+            CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(payloadRef))
+            {
+                return null;
+            }
+
+            try
+            {
+                var text = await _agentClient.GetPayloadAsync(runId, payloadRef, ct).ConfigureAwait(false);
+                using var document = JsonDocument.Parse(text);
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object
+                    || !root.TryGetProperty("input_id", out var inputNode)
+                    || inputNode.ValueKind != JsonValueKind.String
+                    || inputNode.GetString() is not { Length: > 0 } inputId)
+                {
+                    return null;
+                }
+
+                var question = root.TryGetProperty("question", out var questionNode)
+                    && questionNode.ValueKind == JsonValueKind.String
+                        ? questionNode.GetString() ?? string.Empty
+                        : string.Empty;
+                var options = new List<string>();
+                if (root.TryGetProperty("options", out var optionsNode)
+                    && optionsNode.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in optionsNode.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String && item.GetString() is { } option)
+                        {
+                            options.Add(option);
+                        }
+                    }
+                }
+
+                return (inputId, question, options);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        static string DescribeInputRequest(
+            string runId,
+            string inputId,
+            string question,
+            IReadOnlyList<string> options)
+        {
+            var text = $"input_required: run {runId} is waiting for input {inputId}";
+            if (!string.IsNullOrWhiteSpace(question))
+            {
+                text += $": {question}";
+            }
+
+            if (options.Count > 0)
+            {
+                text += $" (options: {string.Join(", ", options)})";
+            }
+
+            return text + $". Answer it with 'ru agent answer {runId} {inputId} \"<answer>\"'.";
+        }
+
+        /// <summary>
         /// Follows one run to its terminal frame, rendering every durable and transient
         /// event and recovering a lost assistant head once it ends. <paramref name="afterSequence"/>
         /// is the durable cursor to resume from: an interactive turn starts at 0, while a
@@ -1223,6 +1301,42 @@ public sealed partial class AgentCommands
                             throw new RunWaitingApprovalException(targetRunId, approvalEnvelope.ApprovalId!);
                         }
                     }
+
+                    // The ask_user park is answered out of band for the same reason an
+                    // approval is: --json must not consume the scripted consumer's stdin.
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"input.requested\"", StringComparison.Ordinal))
+                    {
+                        HarnessSafeEventEnvelope? inputEnvelope = null;
+                        try
+                        {
+                            var candidate = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (candidate is { EventType: "input.requested" })
+                            {
+                                inputEnvelope = candidate;
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            // Non-conforming frame payload; the NDJSON line above already
+                            // carried the event and there is no id to point the operator at.
+                        }
+
+                        if (inputEnvelope is not null)
+                        {
+                            var targetRunId = !string.IsNullOrEmpty(inputEnvelope.RunId) ? inputEnvelope.RunId : runId;
+                            var request = await ReadInputRequestAsync(targetRunId, inputEnvelope.PayloadRef, frameCt).ConfigureAwait(false);
+                            if (request is { } parkedInput)
+                            {
+                                await WriteDiagnosticLineAsync(
+                                        _err,
+                                        DescribeInputRequest(targetRunId, parkedInput.InputId, parkedInput.Question, parkedInput.Options))
+                                    .ConfigureAwait(false);
+                                await _out.FlushAsync().ConfigureAwait(false);
+                                await _err.FlushAsync().ConfigureAwait(false);
+                                throw new RunWaitingInputException(targetRunId, parkedInput.InputId);
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -1260,7 +1374,7 @@ public sealed partial class AgentCommands
                             // The operator cancelled the turn while the approval was open.
                             throw;
                         }
-                        catch (RunWaitingApprovalException)
+                        catch (RunParkedException)
                         {
                             // The TG escape above: the notice is already in the transcript and
                             // the run is deliberately left waiting server-side.
@@ -1269,6 +1383,44 @@ public sealed partial class AgentCommands
                         catch (Exception ex)
                         {
                             await WriteDiagnosticLineAsync(_err, $"inline_approval_error: {ex.Message}").ConfigureAwait(false);
+                        }
+                    }
+
+                    if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"input.requested\"", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                            if (envelope is not null && envelope.EventType == "input.requested")
+                            {
+                                var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
+                                var request = await ReadInputRequestAsync(targetRunId, envelope.PayloadRef, frameCt).ConfigureAwait(false);
+                                if (request is { } parkedInput)
+                                {
+                                    // The question is the model's, not the operator's; the
+                                    // notice points at the answer command instead of reading
+                                    // a prompt that would interleave with the next turn.
+                                    sessionRenderer.Note(
+                                        DescribeInputRequest(targetRunId, parkedInput.InputId, parkedInput.Question, parkedInput.Options),
+                                        Tui.TuiToken.Warn);
+                                    await _out.FlushAsync().ConfigureAwait(false);
+                                    throw new RunWaitingInputException(targetRunId, parkedInput.InputId);
+                                }
+                            }
+                        }
+                        catch (OperationCanceledException) when (frameCt.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (RunParkedException)
+                        {
+                            // The notice is already in the transcript and the run is
+                            // deliberately left waiting server-side.
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            await WriteDiagnosticLineAsync(_err, $"inline_input_error: {ex.Message}").ConfigureAwait(false);
                         }
                     }
 
@@ -1503,7 +1655,7 @@ public sealed partial class AgentCommands
             {
                 await ReportInterruptionAsync().ConfigureAwait(false);
             }
-            catch (RunWaitingApprovalException)
+            catch (RunParkedException)
             {
                 // The --json approval escape: the notice is already on stderr and the
                 // run stays waiting server-side. Wind the turn down and let the caller
@@ -1881,7 +2033,7 @@ public sealed partial class AgentCommands
                 activeRunId = null;
                 followableRunId = null;
             }
-            catch (RunWaitingApprovalException)
+            catch (RunParkedException)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
                 followableRunId = targetRunId;
@@ -2074,7 +2226,7 @@ public sealed partial class AgentCommands
                 {
                     await ContinueParkedRunAsync(null).ConfigureAwait(false);
                 }
-                catch (RunWaitingApprovalException)
+                catch (RunParkedException)
                 {
                     dispatcherExitCode = 0;
                     return;
@@ -2275,7 +2427,7 @@ public sealed partial class AgentCommands
                 activeRunId = null;
                 followableRunId = null;
             }
-            catch (RunWaitingApprovalException)
+            catch (RunParkedException)
             {
                 // --json approval escape: the bounded notice already went to stderr, and
                 // the run is deliberately left waiting server-side (never auto-denied).
@@ -2617,7 +2769,7 @@ public sealed partial class AgentCommands
                     {
                         await ContinueParkedRunAsync(arg).ConfigureAwait(false);
                     }
-                    catch (RunWaitingApprovalException)
+                    catch (RunParkedException)
                     {
                         // Same escape as a fresh turn: an approval under --json ends the
                         // chat rather than reading a prompt it must not answer.
@@ -3005,22 +3157,51 @@ public sealed partial class AgentCommands
     }
 
     /// <summary>
+    /// Signals that a --json chat turn stopped following a run that parked itself
+    /// on a user decision. The run is left parked server-side (never auto-answered);
+    /// the chat exits so the scripted consumer can answer it out of band.
+    /// </summary>
+    private abstract class RunParkedException : Exception
+    {
+        protected RunParkedException(string runId, string message)
+            : base(message)
+        {
+            RunId = runId;
+        }
+
+        public string RunId { get; }
+    }
+
+    /// <summary>
     /// Signals that a --json chat turn stopped following a run that is waiting for an
     /// operator approval. The run is left waiting server-side (never auto-approved or
     /// auto-denied); the chat exits so the scripted consumer can answer it with
     /// <c>ru agent approve</c>.
     /// </summary>
-    private sealed class RunWaitingApprovalException : Exception
+    private sealed class RunWaitingApprovalException : RunParkedException
     {
         public RunWaitingApprovalException(string runId, string approvalId)
-            : base($"run {runId} is waiting for approval {approvalId}")
+            : base(runId, $"run {runId} is waiting for approval {approvalId}")
         {
-            RunId = runId;
             ApprovalId = approvalId;
         }
 
-        public string RunId { get; }
-
         public string ApprovalId { get; }
+    }
+
+    /// <summary>
+    /// Signals that a --json chat turn stopped following a run parked on an
+    /// <c>ask_user</c> question. The run is left waiting server-side; the chat exits
+    /// so the operator answers it with <c>ru agent answer</c>.
+    /// </summary>
+    private sealed class RunWaitingInputException : RunParkedException
+    {
+        public RunWaitingInputException(string runId, string inputId)
+            : base(runId, $"run {runId} is waiting for input {inputId}")
+        {
+            InputId = inputId;
+        }
+
+        public string InputId { get; }
     }
 }

@@ -87,9 +87,9 @@ not advertised Agent tools.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 12 model-visible definitions (`read`,
+The immutable Protocol catalog contains 13 model-visible definitions (`read`,
 `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
-`web_search`, `web_fetch`, `skill`). Each tool has one purpose: `read` takes `path` with
+`web_search`, `web_fetch`, `skill`, `ask_user`). Each tool has one purpose: `read` takes `path` with
 optional `offset`/`limit` and reads one file; `list` takes `path` with optional
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
@@ -107,7 +107,12 @@ carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 flag on `run`/`shell`.
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
-workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
+workspace SKILL.md body as untrusted prompt guidance. `ask_user` takes
+`question` (1–2048) plus optional `options` (at most 8 strings of 512 chars) and
+is Host-intercepted before gateway dispatch: it never reaches the Broker, parks
+the run in `WaitingUser` with a durable `input.requested` event, and resumes when
+the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}` with
+the answer as that call's durable tool result. Web tools are standalone with their own
 `network.search`/`network.fetch` scopes and are automatic in the canonical
 `plan`, `standard`, and `full_access` profiles. `web_approval_required` remains
 available only when an explicit ordered rule asks; profile fallback does not
@@ -135,6 +140,7 @@ boundary.
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
+| `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
 Large structured tool results are projected into bounded prompt references while
@@ -187,7 +193,9 @@ The runtime evaluates a complete batch before executing any call. If any
 non-denied call asks, prepared authorization is discarded and the whole retained
 batch pauses for one explicit decision. Resolution re-evaluates the exact durable
 proposals under the current lease; the model is not asked to reissue an approved
-call. A denial may return a repair hint, while an exact repeated call is stopped
+call. An `ask_user` call parks the same way without a Broker decision: the asked
+call is completed by the answer route, and the durable rehydrator resumes the
+remaining retained proposals without a new model proposal. A denial may return a repair hint, while an exact repeated call is stopped
 by `repeated_tool_call` before duplicate dispatch. An empty final step is answered
 once with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`. A runner-rejected tool call or selection

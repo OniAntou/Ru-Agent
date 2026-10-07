@@ -877,6 +877,15 @@ namespace RuApp.Views
                 e.Approved ? "Submitting approval…" : "Denying approval…");
         }
 
+        private async void OnQuestionAnswerRequested(object? sender, Controls.AgentQuestionAnsweredEventArgs e)
+        {
+            // The answer is submitted through the controller, which owns the
+            // resolve route; the card clears on the same success the POST returns.
+            await RunAgentActionAsync(
+                () => _agentController?.SubmitInputAsync(e.Answer) ?? Task.CompletedTask,
+                "Submitting answer…");
+        }
+
         private async Task RunAgentActionAsync(Func<Task> action, string status)
         {
             if (_agentActionPending || _agentController is null)
@@ -1171,6 +1180,23 @@ namespace RuApp.Views
                     || cancellationToken.IsCancellationRequested)
                 {
                     return;
+                }
+
+                // A waiting_input run's question arrived before the adoption cursor,
+                // so re-arm the card from the run's durable event log; otherwise the
+                // run waits with nothing to answer.
+                if (string.Equals(run.Status, "waiting_input", StringComparison.Ordinal))
+                {
+                    var pendingInput = await _apiService.GetPendingRunInputAsync(run.RunId, cancellationToken);
+                    if (pendingInput is not null
+                        && IsCurrentOpen(generation)
+                        && !cancellationToken.IsCancellationRequested)
+                    {
+                        controller.RestorePendingInput(
+                            pendingInput.InputId,
+                            pendingInput.Question,
+                            pendingInput.Options);
+                    }
                 }
 
                 // A live run needs the monitor so its terminal frame settles the

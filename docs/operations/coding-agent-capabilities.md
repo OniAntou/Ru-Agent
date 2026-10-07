@@ -19,7 +19,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Harness Core, twelve Protocol tool definitions, Broker adapters | Real-provider task-quality baseline has not been measured |
+| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters | Real-provider task-quality baseline has not been measured |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery and explicit `/follow`/`/continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |

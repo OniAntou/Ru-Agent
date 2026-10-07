@@ -451,6 +451,22 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         return ParseJsonClone(body);
     }
 
+    public async Task<JsonElement> AnswerAsync(string runId, string inputId, string answer, CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        if (string.IsNullOrWhiteSpace(inputId)) throw new AgentApiException("invalid_input_id", "input_id invalid");
+        if (string.IsNullOrEmpty(answer)) throw new AgentApiException("invalid_answer", "answer invalid");
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/inputs/{inputId}");
+        var payload = JsonSerializer.Serialize(new { answer });
+        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "input_failed", body, (int)resp.StatusCode);
+        return ParseJsonClone(body);
+    }
+
     public async Task<IReadOnlyList<JsonElement>> ListPoliciesAsync(string? scope = null, string? workspaceId = null, CancellationToken ct = default)
     {
         var url = new Uri(_session.BaseUri, BuildPolicyListUrl(scope, workspaceId));

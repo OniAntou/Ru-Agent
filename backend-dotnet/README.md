@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 41 HTTP routes
-(20 non-Agent routes plus 21 additive
+when started as `RuBackend.exe --managed-runtime` and owns all 42 HTTP routes
+(20 non-Agent routes plus 22 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
@@ -74,22 +74,23 @@ directly; they validate the descriptor and `GET /status` bearer, and poll for a
 valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
 `v1`; the setting remains accepted by compatibility Harness construction but is
 not a product mode switch and cannot re-enable Chat. Agent v2 (in-process
-one-step model generation, `/agent/v1/*` 21 routes, SSE reconnect with durable
+one-step model generation, `/agent/v1/*` 22 routes, SSE reconnect with durable
 `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 `agent_harness.db` + AES-GCM payloads, workspace trust, session permissions,
 and encrypted policy snapshots) is the current path. A model step performs
 exactly one provider generation per typed request and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same twelve tools in the single Agent profile: `read`, `list`, `grep`, `glob`,
+the same thirteen tools in the single Agent profile: `read`, `list`, `grep`, `glob`,
 `help`, `todo_write` and `skill` (one purpose each; `read` takes `offset`/`limit` and
 returns a bounded `truncated` flag; `skill` takes `name` and loads one SKILL.md body),
 `write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
 `recovery_too_large` beyond 4 MiB,
-`recovery_consumed` on replay), and `bash` with `mode=run|shell|read_output|kill`
-plus a `background` flag on run/shell, and standalone
+`recovery_consumed` on replay), `bash` with `mode=run|shell|read_output|kill`
+plus a `background` flag on run/shell, standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
+the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek), and
+`ask_user` (Host-intercepted: it parks the run on a user question and never reaches the Broker). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
 read-only: workspace read and Web auto while terminal and mutation deny outright
 and external structured access asks. `standard`
 auto-allows bounded-local in-workspace mutation and asks for external/escape or

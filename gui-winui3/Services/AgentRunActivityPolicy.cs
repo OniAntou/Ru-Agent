@@ -13,6 +13,7 @@ public enum AgentRunActivityReason
     Sending,
     Cancellable,
     AwaitingApproval,
+    AwaitingInput,
     NeedsTrust,
 }
 
@@ -26,6 +27,7 @@ public enum AgentRunActivityReason
 /// <param name="ActiveSessionId">The session the view is showing.</param>
 /// <param name="CanCancel">The controller would accept a cancel.</param>
 /// <param name="HasPendingApproval">The controller is holding a decision for the user.</param>
+/// <param name="HasPendingInput">The controller is holding a question for the user.</param>
 /// <param name="NeedsWorkspaceTrust">The controller is waiting to grant workspace trust.</param>
 /// <param name="IsBusy">The controller's own busy flag.</param>
 public sealed record AgentRunActivityInput(
@@ -35,6 +37,7 @@ public sealed record AgentRunActivityInput(
     string? ActiveSessionId,
     bool CanCancel,
     bool HasPendingApproval,
+    bool HasPendingInput,
     bool NeedsWorkspaceTrust,
     bool IsBusy);
 
@@ -98,11 +101,13 @@ public static class AgentRunActivityPolicy
         // actually being asked for rather than the first flag that happened to be set.
         AgentRunActivityReason reason = input.HasPendingApproval
             ? AgentRunActivityReason.AwaitingApproval
-            : input.NeedsWorkspaceTrust
-                ? AgentRunActivityReason.NeedsTrust
-                : input.CanCancel
-                    ? AgentRunActivityReason.Cancellable
-                    : AgentRunActivityReason.None;
+            : input.HasPendingInput
+                ? AgentRunActivityReason.AwaitingInput
+                : input.NeedsWorkspaceTrust
+                    ? AgentRunActivityReason.NeedsTrust
+                    : input.CanCancel
+                        ? AgentRunActivityReason.Cancellable
+                        : AgentRunActivityReason.None;
 
         return new AgentRunActivityState(
             IsGuarded: reason != AgentRunActivityReason.None,
@@ -126,6 +131,6 @@ public static class AgentRunActivityPolicy
 
         return input.HasRun
             && RunBelongsToSession(input.RunSessionId, input.ActiveSessionId)
-            && (input.CanCancel || input.HasPendingApproval || input.NeedsWorkspaceTrust);
+            && (input.CanCancel || input.HasPendingApproval || input.HasPendingInput || input.NeedsWorkspaceTrust);
     }
 }

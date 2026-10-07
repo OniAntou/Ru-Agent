@@ -499,6 +499,55 @@ public sealed class AgentRunCoordinator
         }
     }
 
+    /// <summary>
+    /// Resumes a step parked by an <c>ask_user</c> wait once the answer route has
+    /// committed the resolution. The retained proposals come from the durable
+    /// rehydrator, so this works on a host that restarted while the run waited.
+    /// </summary>
+    public async Task<AgentRunStepResult?> TryResumeRetainedInputAsync(
+        RunId runId,
+        RetainedInputStep retained,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(retained);
+        AgentRun? activeRun = null;
+        try
+        {
+            activeRun = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (activeRun.State != HarnessRunState.Running)
+            {
+                return null;
+            }
+
+            var result = await _tools.ResumeRetainedInputAsync(activeRun, retained, cancellationToken)
+                .ConfigureAwait(false);
+            return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            if (activeRun is { State: HarnessRunState.Running })
+            {
+                try
+                {
+                    var failed = await _lifecycle
+                        .FailAsync(runId, "retained_input_resume_failed", CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return AgentRunStepResult.Blocked(failed, "retained_input_resume_failed");
+                }
+                catch
+                {
+                    return AgentRunStepResult.Blocked(activeRun, "retained_input_resume_failed");
+                }
+            }
+
+            return null;
+        }
+    }
+
     public async Task<AgentRunStepResult?> TryRefreshRetainedApprovalAsync(
         RunId runId,
         CancellationToken cancellationToken)

@@ -21,11 +21,13 @@ public sealed class ToolBindingRegistryTests
     }
 
     /// <summary>
-    /// The binding set must equal the canonical catalog. This is the structural half of
-    /// the <c>incomplete_tool_catalog</c> guard in the constructor: the guard fails closed
-    /// at runtime, this fails loudly in the suite and names the tool that went missing.
-    /// Order is not compared here — <see cref="ToolBindingRegistry.List"/> sorts by id
-    /// (ordinal), which is deliberately independent of the catalog's prompt ordinal.
+    /// The binding set must equal the canonical catalog minus the Host-intercepted
+    /// <c>ask_user</c> (which deliberately has no Broker binding). This is the structural
+    /// half of the <c>incomplete_tool_catalog</c> guard in the constructor: the guard
+    /// fails closed at runtime, this fails loudly in the suite and names the tool that
+    /// went missing. Order is not compared here — <see cref="ToolBindingRegistry.List"/>
+    /// sorts by id (ordinal), which is deliberately independent of the catalog's prompt
+    /// ordinal.
     /// </summary>
     [Fact]
     public void Binding_set_equals_the_canonical_catalog()
@@ -34,18 +36,22 @@ public sealed class ToolBindingRegistryTests
             .Select(binding => binding.Manifest.Id)
             .ToHashSet(StringComparer.Ordinal);
         var canonical = AgentToolDefinitionCatalog.Get()
+            .Where(definition => definition.ToolId is not "ask_user")
             .Select(definition => definition.ToolId)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Equal(canonical, bound);
 
         // Named per tool so a missing binding reports which tool, not just a count.
-        foreach (var definition in AgentToolDefinitionCatalog.Get())
+        foreach (var definition in AgentToolDefinitionCatalog.Get()
+            .Where(definition => definition.ToolId is not "ask_user"))
         {
             Assert.True(
                 bound.Contains(definition.ToolId),
                 $"The Broker has no binding for the canonical tool '{definition.ToolId}'.");
         }
+
+        Assert.DoesNotContain("ask_user", bound);
     }
 
     [Fact]

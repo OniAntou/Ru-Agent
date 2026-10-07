@@ -13,6 +13,7 @@ public enum CliCommandKind
     Status,
     Approve,
     Deny,
+    Answer,
     PolicyList,
     PolicyImport,
     PolicyRemove,
@@ -76,6 +77,17 @@ public sealed record DenyCommand(
     string RunId,
     string ApprovalId,
     bool Json) : AgentCommand(CliCommandKind.Deny, Json);
+
+/// <summary>
+/// `agent answer <run-id> <input-id> [answer] [--json]`. Without the answer
+/// argument the command asks the terminal operator; --json requires the argument
+/// because it must never prompt.
+/// </summary>
+public sealed record AnswerCommand(
+    string RunId,
+    string InputId,
+    string? Answer,
+    bool Json) : AgentCommand(CliCommandKind.Answer, Json);
 
 public sealed record PolicyListCommand(
     bool Global,
@@ -185,11 +197,13 @@ public static partial class AgentCliParser
     public const int MaxRunIdLength = 36;
     public const int MaxPresetLength = 16;
     public const int MaxApprovalIdLength = 36;
+    public const int MaxInputIdLength = 36;
     public const int MaxRuleIdLength = 37;
     public const int MaxFilePathLength = 4096;
 
     private static readonly Regex RunIdRegex = new(@"^run_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex ApprovalIdRegex = new(@"^apr_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex InputIdRegex = new(@"^inp_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex RuleIdRegex = new(@"^rule_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex SessionIdLooseRegex = new(@"^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
 
@@ -229,7 +243,7 @@ public static partial class AgentCliParser
             return Fail("unknown_command", $"Unknown command '{args[0]}'. Expected 'agent'.");
 
         if (args.Length < 2)
-            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|policy|chat|session.");
+            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|answer|policy|chat|session.");
 
         var sub = args[1];
         return sub switch
@@ -242,6 +256,7 @@ public static partial class AgentCliParser
             "status" => ParseStatus(args),
             "approve" => ParseApprove(args),
             "deny" => ParseDeny(args),
+            "answer" => ParseAnswer(args),
             "policy" => ParsePolicy(args),
             "reconcile" => ParseReconcile(args),
             "output" => ParseOutput(args),

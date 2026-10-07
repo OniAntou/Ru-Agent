@@ -14,6 +14,8 @@ public sealed class AgentRunStateMachineTests
             { History(HistoryWaitKind.UserBeforeFirstStep), HarnessRunTransition.AcknowledgeUserHistory, Status(HarnessRunState.Running) },
             { Status(HarnessRunState.Running), HarnessRunTransition.RequestApproval, Status(HarnessRunState.WaitingApproval) },
             { Status(HarnessRunState.WaitingApproval), HarnessRunTransition.ResolveApproval, Status(HarnessRunState.Running) },
+            { Status(HarnessRunState.Running), HarnessRunTransition.RequestInput, Status(HarnessRunState.WaitingUser) },
+            { Status(HarnessRunState.WaitingUser), HarnessRunTransition.ResolveInput, Status(HarnessRunState.Running) },
             { Status(HarnessRunState.Running), HarnessRunTransition.ExhaustBudget, Status(HarnessRunState.WaitingUser) },
             { Status(HarnessRunState.WaitingUser), HarnessRunTransition.Continue, Status(HarnessRunState.Running) },
             { Status(HarnessRunState.Running), HarnessRunTransition.RequireReconciliation, Status(HarnessRunState.ReconciliationRequired) },

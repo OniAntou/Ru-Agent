@@ -854,7 +854,8 @@
         <!-- Approval overlay: declared before the input (XAML parse fails when
           it trails the composer) and raised above it with a ZIndex, so a
           pending decision floats over the todo panel and the input instead
-          of shoving them upward. -->
+          of shoving them upward. The question card shares the host: a run is
+          either waiting for approval or waiting for an answer, never both. -->
         <Grid x:Name="ApprovalHostGrid"
               Grid.Row="1"
               VerticalAlignment="Bottom"
@@ -863,6 +864,7 @@
               Margin="16,0,16,24"
               Canvas.ZIndex="20">
             <controls:AgentApprovalPanelControl x:Name="ApprovalPanel" />
+            <controls:AgentQuestionPanelControl x:Name="QuestionPanel" />
         </Grid>
 
             <Grid x:Name="InputContainer"

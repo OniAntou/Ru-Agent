@@ -10,9 +10,9 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-5%2C571%20passing-3FB950)](#build-and-test)
-[![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
-[![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#your-data-stays-local)
+[![Tests](https://img.shields.io/badge/tests-5%2C627%20passing-3FB950)](#build-and-test)
+[![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
+[![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
 </div>
 
@@ -25,10 +25,10 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Platform** | Windows 10/11 x64 — self-contained folder, nothing to install |
 | **Surfaces** | WinUI 3 desktop app · full-screen terminal UI · stdio RPC bridge + TypeScript SDK |
 | **Model access** | Your provider, your key (Windows Credential Manager); no Ru account |
-| **Tools** | **12** bounded tools; every call executes in the Broker |
-| **Public surface** | **41 HTTP routes** on `127.0.0.1` behind a bearer token |
+| **Tools** | **13** bounded tools; tool calls execute in the Broker, and Host-intercepted `ask_user` parks the run for a user answer |
+| **Public surface** | **42 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 5,571 passing across 12 projects |
+| **Tests** | 5,627 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -46,7 +46,7 @@ You open a chat, describe what you want, and Ru works on your project:
 - **Loads workspace skills** — a `SKILL.md` in your repository teaches Ru a
   workflow; it stays descriptive guidance and never grants extra powers.
 
-Behind that is **12 tools**, each deliberately small and bounded — reading a
+Behind that is **13 tools**, each deliberately small and bounded — reading a
 file is capped, search results are capped, terminal output is truncated, and
 every command dies with its own timeout. A pathological request degrades into
 a bounded result, never a frozen app.
@@ -56,7 +56,7 @@ a bounded result, never a frozen app.
 | Component | Path | Role |
 | --- | --- | --- |
 | **RuApp** | `gui-winui3/` | WinUI 3 desktop app — chat, approvals, terminal panel, settings |
-| **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 41 HTTP routes, SSE events, run orchestration |
+| **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 42 HTTP routes, SSE events, run orchestration |
 | **RuAgent.Broker** | `backend-dotnet/RuAgent.Broker/` | The single execution authority — every tool call runs here under policy and approval |
 | **RuAgent.Cli** | `backend-dotnet/RuAgent.Cli/` | Terminal tracer: one-shot runs, full-screen TUI, session tooling |
 
@@ -126,7 +126,7 @@ task appears or changes state, so a finished task is noticed without polling.
 ## Your data stays local
 
 - **Everything runs on your machine.** The app's entire surface is
-  **41 HTTP routes** (20 non-Agent plus 21 under `/agent/v1/*`) bound to
+  **42 HTTP routes** (20 non-Agent plus 22 under `/agent/v1/*`) bound to
   `127.0.0.1` behind a bearer token — nothing listens on the network.
 - **Keys** go into Windows Credential Manager (DPAPI) on your side of the
   glass. The GUI holds no credential.
@@ -185,7 +185,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,571 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,627 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

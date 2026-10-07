@@ -189,7 +189,7 @@ def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> 
     assert missing == [], missing
 
 
-def test_current_worker_docs_describe_twelve_separate_tools_and_typed_results() -> None:
+def test_current_worker_docs_describe_thirteen_separate_tools_and_typed_results() -> None:
     tool_ids = (
         "read",
         "list",
@@ -203,13 +203,14 @@ def test_current_worker_docs_describe_twelve_separate_tools_and_typed_results() 
         "web_search",
         "web_fetch",
         "skill",
+        "ask_user",
     )
     for path in (
         ROOT / "docs/architecture.md",
         ROOT / "docs/operations/runtime-behavior.md",
     ):
         text = _current_text(path).lower()
-        assert "twelve" in text, path
+        assert "thirteen" in text, path
         assert "separate" in text, path
         assert "assistantstep" in text, path
         assert "receipt" in text, path

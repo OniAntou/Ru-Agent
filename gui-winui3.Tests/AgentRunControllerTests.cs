@@ -113,6 +113,8 @@ public sealed class AgentRunControllerTests
         public bool PresetCalled;
         public bool ApproveCalled;
         public bool DenyCalled;
+        public bool SubmitInputCalled;
+        public List<(string RunId, string InputId, string Answer)> SubmittedInputs { get; } = new();
         public bool ThrowOnGetRun;
         public bool ThrowOnCreate;
         public bool ThrowOnSubscribe;
@@ -196,6 +198,13 @@ public sealed class AgentRunControllerTests
         public Task DenyAsync(string runId, string approvalId, CancellationToken ct = default)
         {
             DenyCalled = true;
+            return Task.CompletedTask;
+        }
+
+        public Task SubmitInputAsync(string runId, string inputId, string answer, CancellationToken ct = default)
+        {
+            SubmitInputCalled = true;
+            SubmittedInputs.Add((runId, inputId, answer));
             return Task.CompletedTask;
         }
 
@@ -1184,6 +1193,185 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task CreateAndRun_tracks_a_pending_question_while_the_run_waits()
+    {
+        const string inputId = "inp_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingInputRun() };
+        fake.PayloadContents[InputPayloadRef] = InputRequestPayload(
+            inputId, "Which file should I edit?", new[] { "a.cs", "b.cs" });
+        fake.Stream.Add(InputRequestedEvent());
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input"));
+
+        Assert.True(controller.HasPendingInput);
+        Assert.Equal(inputId, controller.PendingInputId);
+        Assert.Equal("Which file should I edit?", controller.PendingInputQuestion);
+        Assert.Equal(new[] { "a.cs", "b.cs" }, controller.PendingInputOptions);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_keeps_a_raw_input_code_off_the_status_line()
+    {
+        // The question card already speaks for the request: pouring its machine
+        // code into the status line only prints one more raw token row.
+        const string inputId = "inp_dddddddddddddddddddddddddddddddd";
+        var fake = new FakeClient { Run = WaitingInputRun() };
+        fake.PayloadContents[InputPayloadRef] = InputRequestPayload(
+            inputId, "Which file?", Array.Empty<string>());
+        fake.Stream.Add(InputRequestedEvent());
+        var controller = new AgentRunController(fake);
+        var seenStatuses = new List<string?>();
+        controller.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(AgentRunController.StatusText), StringComparison.Ordinal))
+            {
+                seenStatuses.Add(controller.StatusText);
+            }
+        };
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input-code"));
+
+        Assert.True(controller.HasPendingInput);
+        Assert.DoesNotContain(
+            seenStatuses,
+            status => status is not null
+                && status.Contains("input_required", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CreateAndRun_clears_a_pending_question_when_the_run_reports_it_resolved()
+    {
+        const string inputId = "inp_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingInputRun() };
+        fake.PayloadContents[InputPayloadRef] = InputRequestPayload(inputId, "Which file?", Array.Empty<string>());
+        fake.Stream.Add(InputRequestedEvent());
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-resolved",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "run.state_changed",
+            OccurredAt: "2026",
+            Status: "running",
+            SafeSummary: "input_resolved",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: 4,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input-resolved"));
+
+        Assert.False(controller.HasPendingInput);
+        Assert.Null(controller.PendingInputQuestion);
+        Assert.Empty(controller.PendingInputOptions);
+    }
+
+    [Fact]
+    public async Task Refresh_clears_a_pending_question_when_the_run_leaves_waiting_input()
+    {
+        const string inputId = "inp_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingInputRun() };
+        fake.PayloadContents[InputPayloadRef] = InputRequestPayload(inputId, "Which file?", Array.Empty<string>());
+        fake.Stream.Add(InputRequestedEvent());
+        var controller = new AgentRunController(fake);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input-refresh"));
+        Assert.True(controller.HasPendingInput);
+
+        fake.Run = MakeRunWith("running");
+        await controller.RefreshAsync();
+
+        Assert.False(controller.HasPendingInput);
+    }
+
+    [Fact]
+    public async Task Submit_input_sends_the_answer_through_the_client_and_clears_the_card()
+    {
+        const string inputId = "inp_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingInputRun() };
+        fake.PayloadContents[InputPayloadRef] = InputRequestPayload(inputId, "Which file?", Array.Empty<string>());
+        fake.Stream.Add(InputRequestedEvent());
+        var controller = new AgentRunController(fake);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input-submit"));
+
+        await controller.SubmitInputAsync("a.cs");
+
+        var call = Assert.Single(fake.SubmittedInputs);
+        Assert.Equal(RunId, call.RunId);
+        Assert.Equal(inputId, call.InputId);
+        Assert.Equal("a.cs", call.Answer);
+        Assert.False(controller.HasPendingInput);
+    }
+
+    [Fact]
+    public async Task Submit_input_rejects_a_run_with_no_pending_question()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var controller = new AgentRunController(fake);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-input-none"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.SubmitInputAsync("x"));
+        Assert.Empty(fake.SubmittedInputs);
+    }
+
+    [Fact]
+    public async Task Restore_pending_input_rearms_the_card_after_adoption()
+    {
+        var run = MakeRunWith("waiting_input", lastSequence: 4);
+        var fake = new FakeClient
+        {
+            Run = run,
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+        controller.RestorePendingInput("inp_cccccccccccccccccccccccccccccccc", "Which file?", new[] { "a.cs" });
+
+        Assert.True(controller.HasPendingInput);
+        Assert.Equal("Which file?", controller.PendingInputQuestion);
+        Assert.Equal(new[] { "a.cs" }, controller.PendingInputOptions);
+
+        fake.SubscriptionGate.SetResult(true);
+        await WaitForAdoptSettleAsync(controller);
+    }
+
+    [Fact]
+    public async Task Adopt_waiting_input_says_where_to_answer_and_keeps_stop()
+    {
+        // GET /runs/{id} carries no input id, so adoption says what the run waits
+        // on until the replayed log re-arms the card. The subscription is held open
+        // like the approval one.
+        var run = MakeRunWith("waiting_input", lastSequence: 4);
+        var fake = new FakeClient
+        {
+            Run = run,
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+
+        await controller.AdoptRunAsync(run);
+
+        Assert.Contains($"Waiting for input: {RunId}", controller.StatusText, StringComparison.Ordinal);
+        Assert.Contains("cancel the run", controller.StatusText, StringComparison.Ordinal);
+        Assert.False(controller.HasPendingInput);
+        Assert.True(controller.CanCancel);
+
+        fake.SubscriptionGate.SetResult(true);
+        await WaitForAdoptSettleAsync(controller);
+    }
+
+    [Fact]
     public async Task CreateAndRun_tracks_terminal_approval_command_from_activity_stream()
     {
         const string approvalId = "apr_cccccccccccccccccccccccccccccccc";
@@ -1623,4 +1811,32 @@ public sealed class AgentRunControllerTests
     private static AgentRunModel WaitingApprovalRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "waiting_approval", "standard", "2026", "2026"));
+
+    private static AgentRunModel WaitingInputRun() =>
+        AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
+            RunId, "sess_1", "ws_1", "waiting_input", "standard", "2026", "2026"));
+
+    private const string InputPayloadRef = "payload_1111111111111111111111111111111111";
+
+    private static AgentEventModel InputRequestedEvent(long sequence = 3) =>
+        new(
+            EventId: "e-input",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "input.requested",
+            OccurredAt: "2026",
+            Status: "waiting_input",
+            SafeSummary: "input_required",
+            PayloadRef: InputPayloadRef,
+            ApprovalId: null,
+            Sequence: sequence,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null);
+
+    private static string InputRequestPayload(
+        string inputId,
+        string question,
+        IReadOnlyList<string> options) =>
+        JsonSerializer.Serialize(new { input_id = inputId, question, options });
 }

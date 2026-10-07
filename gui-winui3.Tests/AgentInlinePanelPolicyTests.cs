@@ -46,6 +46,7 @@ public sealed class AgentInlinePanelPolicyTests
     [InlineData(nameof(AgentInlinePanelInput.IsBusy))]
     [InlineData(nameof(AgentInlinePanelInput.CanCancel))]
     [InlineData(nameof(AgentInlinePanelInput.HasPendingApproval))]
+    [InlineData(nameof(AgentInlinePanelInput.HasPendingInput))]
     [InlineData(nameof(AgentInlinePanelInput.NeedsWorkspaceTrust))]
     [InlineData(nameof(AgentInlinePanelInput.CanContinue))]
     [InlineData(nameof(AgentInlinePanelInput.KeepTerminalFailureVisible))]
@@ -58,6 +59,7 @@ public sealed class AgentInlinePanelPolicyTests
             nameof(AgentInlinePanelInput.IsBusy) => Input(isBusy: true, statusText: "working"),
             nameof(AgentInlinePanelInput.CanCancel) => Input(canCancel: true, statusText: "working"),
             nameof(AgentInlinePanelInput.HasPendingApproval) => Input(hasPendingApproval: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.HasPendingInput) => Input(hasPendingInput: true, statusText: "working"),
             nameof(AgentInlinePanelInput.NeedsWorkspaceTrust) => Input(needsWorkspaceTrust: true, statusText: "working"),
             nameof(AgentInlinePanelInput.CanContinue) => Input(canContinue: true, statusText: "working"),
             nameof(AgentInlinePanelInput.KeepTerminalFailureVisible) => Input(keepTerminalFailureVisible: true, statusText: "working"),
@@ -86,6 +88,17 @@ public sealed class AgentInlinePanelPolicyTests
         var state = AgentInlinePanelPolicy.Evaluate(Input(hasPendingApproval: true, isBusy: true));
 
         Assert.True(state.ShowApproval);
+        Assert.True(state.ShowInlinePanel);
+        Assert.False(state.ShowStop);
+    }
+
+    [Fact]
+    public void A_pending_question_shows_the_question_block_and_never_the_stop_control()
+    {
+        var state = AgentInlinePanelPolicy.Evaluate(Input(hasPendingInput: true, isBusy: true));
+
+        Assert.True(state.ShowQuestion);
+        Assert.False(state.ShowApproval);
         Assert.True(state.ShowInlinePanel);
         Assert.False(state.ShowStop);
     }
@@ -217,13 +230,15 @@ public sealed class AgentInlinePanelPolicyTests
         bool keepTerminalFailureVisible = false,
         bool runPending = false,
         string statusText = "",
-        bool interactionPending = false) =>
+        bool interactionPending = false,
+        bool hasPendingInput = false) =>
         new(
             hasController,
             runBelongsToAnotherSession,
             isBusy,
             canCancel,
             hasPendingApproval,
+            hasPendingInput,
             needsWorkspaceTrust,
             canContinue,
             keepTerminalFailureVisible,

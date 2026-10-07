@@ -9,6 +9,7 @@ public sealed class CryptographicIdGenerator : IIdGenerator
     public ToolCallId NewToolCallId() => new(CreateValue("call_"));
     public ExecutionId NewExecutionId() => new(CreateValue("exec_"));
     public ApprovalId NewApprovalId() => new(CreateValue("apr_"));
+    public InputId NewInputId() => new(CreateValue("inp_"));
     public TrustRequestId NewTrustRequestId() => new(CreateValue("trust_"));
     public PolicyRuleId NewPolicyRuleId() => new(CreateValue("rule_"));
     public EventId NewEventId() => new(CreateValue("evt_"));

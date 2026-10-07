@@ -8,7 +8,12 @@ namespace RuAgent.Broker.Tools;
 public sealed class ToolCatalog
 {
     private static readonly IReadOnlyList<string> BoundIds =
-        AgentToolDefinitionCatalog.Get().Select(definition => definition.ToolId).ToArray();
+        AgentToolDefinitionCatalog.Get()
+            // ask_user is Host-intercepted before gateway dispatch, so the Broker
+            // must never receive it: it deliberately has no manifest or binding.
+            .Where(definition => definition.ToolId is not "ask_user")
+            .Select(definition => definition.ToolId)
+            .ToArray();
 
     public ToolCatalog(
         IReadOnlyDictionary<string, ToolExecutor> executors,

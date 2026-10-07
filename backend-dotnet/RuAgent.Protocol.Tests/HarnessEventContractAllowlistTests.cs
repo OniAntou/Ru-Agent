@@ -14,6 +14,7 @@ public sealed class HarnessEventContractAllowlistTests
             "context.compacted",
             "model.usage_recorded",
             "model.reasoning_recorded",
+            "input.requested",
         })
         {
             Assert.True(HarnessEventContractValidator.IsAllowedEventType(kind));

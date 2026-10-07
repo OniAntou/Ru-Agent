@@ -69,10 +69,15 @@ public static class BrokerPolicyContracts
     /// <summary>
     /// The capability set a Broker connection must advertise. Projected from the tool
     /// definition catalog so tool identity has exactly one source: a hand-maintained copy
-    /// here could fall behind the catalog and only fail at run-open.
+    /// here could fall behind the catalog and only fail at run-open. The Host-intercepted
+    /// <c>ask_user</c> is excluded because it has no Broker binding and must never be
+    /// dispatchable through the execution authority.
     /// </summary>
     public static IReadOnlyList<string> AuthoritativeFallbackCapabilities() =>
-        AgentToolDefinitionCatalog.Get().Select(definition => definition.ToolId).ToArray();
+        AgentToolDefinitionCatalog.Get()
+            .Where(definition => definition.ToolId is not "ask_user")
+            .Select(definition => definition.ToolId)
+            .ToArray();
 
     public static bool IsReadOnlyTool(string toolId) =>
         IsWebTool(toolId)

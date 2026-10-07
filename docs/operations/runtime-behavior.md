@@ -101,9 +101,12 @@ runtime context. The model then receives ordered typed user/assistant/tool
 messages; clock, mood, and references are not appended as separate system
 messages.
 
-Host capabilities are the runtime projection of twelve Protocol-owned tool
+Host capabilities are the runtime projection of thirteen Protocol-owned tool
 definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
-`edit`, `bash`, `web_search`, `web_fetch`, and `skill`. On provider-native
+`edit`, `bash`, `web_search`, `web_fetch`, `skill`, and Host-intercepted
+`ask_user`. `ask_user` never dispatches to the Broker: it parks the run in
+`WaitingUser` with a durable `input.requested` event until the client posts the
+answer, which arrives as that call's durable tool result. On provider-native
 paths, one generation may return optional narration and one or more ordered
 calls. The Host persists the assistant batch and matching durable tool results;
 it does not flatten native calls into prose. Compatibility text selection emits
@@ -304,11 +307,11 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The typed model-step settings advertise twelve tools, one purpose each:
+The typed model-step settings advertise thirteen tools, one purpose each:
 `read`, `list`,
 `grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
-`web_search` and `web_fetch`. The canonical matrix is: `plan` allows workspace
+`web_search`, `web_fetch`, and Host-intercepted `ask_user`. The canonical matrix is: `plan` allows workspace
 read and Web but denies terminal and mutation outright (read-only, no
 per-change asks) and asks for external structured access; `standard`
 auto-allows bounded-local in-workspace mutation and asks for
@@ -375,10 +378,10 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
-The twelve tools above are the model surface. `read`, `list`, `grep`,
+The thirteen tools above are the model surface. `read`, `list`, `grep`,
 `glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
-their own schemas, alongside `todo_write`, `skill`, `web_search`, and
-`web_fetch`. Managed startup constructs an enabled WebOptions instance with
+their own schemas, alongside `todo_write`, `skill`, `web_search`,
+`web_fetch`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with
 Google HTML as the primary search engine `https://www.google.com/search`, raced
 against the fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); the bounded
 responses carry an explicit `untrusted` marker and

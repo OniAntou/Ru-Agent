@@ -26,6 +26,7 @@ public sealed class AgentV1EndpointTests
         ("GET", "/agent/v1/runs/{runId}/activities"),
         ("GET", "/agent/v1/runs/{runId}/payloads/{payloadId}"),
         ("POST", "/agent/v1/runs/{runId}/approvals/{approvalId}"),
+        ("POST", "/agent/v1/runs/{runId}/inputs/{inputId}"),
         ("POST", "/agent/v1/runs/{runId}/trust"),
         ("POST", "/agent/v1/runs/{runId}/cancel"),
         ("POST", "/agent/v1/runs/{runId}/continue"),
@@ -56,7 +57,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(41, doc.RootElement.GetArrayLength()); // 41 HTTP routes (20 non-Agent + 21 /agent/v1/*), no websocket
+        Assert.Equal(42, doc.RootElement.GetArrayLength()); // 42 HTTP routes (20 non-Agent + 22 /agent/v1/*), no websocket
     }
 
     [Theory]
@@ -66,6 +67,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activities")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/payloads/payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/approvals/apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inputs/inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
@@ -102,6 +104,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activities")]
     [InlineData("GET", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/payloads/payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/approvals/apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/inputs/inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]

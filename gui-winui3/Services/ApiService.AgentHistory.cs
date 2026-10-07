@@ -292,6 +292,79 @@ namespace RuApp.Services
             return AgentModelUsage.Parse(content);
         }
 
+        /// <summary>
+        /// The question a waiting_input run is parked on, reconstructed from its
+        /// replayed durable events and the request payload they point at. Best
+        /// effort: any failure returns null and the session still opens, just
+        /// without the card.
+        /// </summary>
+        internal async Task<AgentInputRequest.PendingInput?> GetPendingRunInputAsync(
+            string runId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/events?live=0&after_sequence=0",
+                    cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
+                var payloadRef = AgentInputReplayPolicy.FindPendingInputPayloadRef(body.Split('\n'));
+                if (string.IsNullOrWhiteSpace(payloadRef))
+                {
+                    return null;
+                }
+
+                using var payloadResponse = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/payloads/{Uri.EscapeDataString(payloadRef)}",
+                    cancellationToken);
+                if (!payloadResponse.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                var payloadBody = await BoundedHttpResponseReader.ReadAsync(payloadResponse.Content, cancellationToken);
+                return AgentInputRequest.Parse(ReadPayloadContent(payloadBody));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetPendingRunInputAsync", ex);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The payload text from a payload envelope, falling back to the raw body
+        /// for hosts that return the content unwrapped.
+        /// </summary>
+        private static string ReadPayloadContent(string body)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.TryGetProperty("content", out var content)
+                    && content.ValueKind == JsonValueKind.String)
+                {
+                    return content.GetString() ?? string.Empty;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+
+            return body;
+        }
+
         private static bool IsRunTerminal(string status) =>
             string.Equals(status, "completed", StringComparison.Ordinal)
             || string.Equals(status, "failed", StringComparison.Ordinal)

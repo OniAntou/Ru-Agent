@@ -166,6 +166,9 @@ public sealed partial class AgentV1Service
 
     public static string MapRunState(HarnessRunStatus status) => AgentV1Shared.MapRunState(status);
 
+    internal static string MapRunState(HarnessRunStatus status, bool isWaitingInput) =>
+        AgentV1Shared.MapRunState(status, isWaitingInput);
+
     private static string ComputeSha256(string value) => AgentV1Shared.ComputeSha256(value);
 
     private static bool IsSessionId(string value) => AgentV1Shared.IsSessionId(value);
@@ -179,6 +182,8 @@ public sealed partial class AgentV1Service
     private static bool IsTrustRequestId(string value) => AgentV1Shared.IsTrustRequestId(value);
 
     private static bool IsPolicyRuleId(string value) => AgentV1Shared.IsPolicyRuleId(value);
+
+    private static bool IsInputId(string value) => AgentV1Shared.IsInputId(value);
 
     private static bool IsLowerHex(string value) => AgentV1Shared.IsLowerHex(value);
 

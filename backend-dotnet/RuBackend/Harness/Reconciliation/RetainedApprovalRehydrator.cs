@@ -186,6 +186,15 @@ public sealed class RetainedApprovalRehydrator
 
         if (approvals.Count == 0)
         {
+            // A step parked on ask_user carries a durable input.requested event
+            // instead of a Broker approval; the input rehydrator owns that park.
+            if (allEvents.Any(item =>
+                string.Equals(item.Kind, "input.requested", StringComparison.Ordinal)
+                && item.ModelStepId == modelStepId))
+            {
+                return null;
+            }
+
             throw Invalid("retained_approval_missing");
         }
 
@@ -420,7 +429,7 @@ public sealed class RetainedApprovalRehydrator
             }
 
             if (approvals.Count > 0
-                && !string.Equals(item.SafeCode, "policy_denied", StringComparison.Ordinal))
+                && !IsApprovalIndependentExecution(item))
             {
                 EnsureResolvedApprovalBeforeExecution(item, approvals);
             }
@@ -470,7 +479,7 @@ public sealed class RetainedApprovalRehydrator
             }
 
             if (approvals.Count > 0
-                && !string.Equals(request.SafeCode, "policy_denied", StringComparison.Ordinal))
+                && !IsApprovalIndependentExecution(request))
             {
                 EnsureResolvedApprovalBeforeExecution(item, approvals);
             }
@@ -495,6 +504,14 @@ public sealed class RetainedApprovalRehydrator
 
         return new ExecutionState(completed, completed.Count == proposals.Count);
     }
+
+    /// <summary>
+    /// Executions that are not gated by a Broker approval: a policy denial never
+    /// dispatched, and an ask_user completion is written by the answer route.
+    /// </summary>
+    private static bool IsApprovalIndependentExecution(HarnessEvent item) =>
+        string.Equals(item.SafeCode, "policy_denied", StringComparison.Ordinal)
+        || string.Equals(item.SafeCode, "input_answered", StringComparison.Ordinal);
 
     private static void EnsureResolvedApprovalBeforeExecution(
         HarnessEvent item,

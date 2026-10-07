@@ -91,6 +91,19 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
     {
         _ = await _apiClient.DenyAsync(runId, approvalId, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Resolves a pending Host-intercepted question with the user's answer,
+    /// through the same shared client method the CLI answers with.
+    /// </summary>
+    public async Task SubmitInputAsync(
+        string runId,
+        string inputId,
+        string answer,
+        CancellationToken cancellationToken = default)
+    {
+        _ = await _apiClient.AnswerAsync(runId, inputId, answer, cancellationToken).ConfigureAwait(false);
+    }
     public Task CancelAsync(string runId, CancellationToken cancellationToken = default)
         => _apiClient.CancelAsync(runId, cancellationToken);
 

@@ -25,6 +25,7 @@ public static class AgentV1Endpoints
         app.MapGet("/agent/v1/runs/{runId}/activities", GetRunActivitiesAsync);
         app.MapGet("/agent/v1/runs/{runId}/payloads/{payloadId}", GetPayloadAsync);
         app.MapPost("/agent/v1/runs/{runId}/approvals/{approvalId}", PostApprovalAsync);
+        app.MapPost("/agent/v1/runs/{runId}/inputs/{inputId}", PostInputAsync);
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
         app.MapPost("/agent/v1/runs/{runId}/continue", PostContinueAsync);
@@ -571,6 +572,37 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
+    private static async Task<IResult> PostInputAsync(string runId, string inputId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    {
+        System.Text.Json.JsonElement body = default;
+        bool hasBody = false;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(text);
+                body = document.RootElement.Clone();
+                hasBody = true;
+            }
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.HandleInputAsync(runId, inputId, hasBody ? body : null, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
     private static async Task<IResult> PostTrustAsync(string runId, HttpContext context, AgentV1Service service, CancellationToken ct)
     {
         TrustAgentRunRequest? dto;
@@ -893,7 +925,9 @@ internal static class HarnessEventMapper
             Sequence: evt.Sequence,
             EventType: evt.Kind,
             OccurredAt: evt.OccurredAt.ToUniversalTime().ToString("O"),
-            Status: MapStatus(run),
+            Status: string.Equals(evt.Kind, "input.requested", StringComparison.Ordinal)
+                ? "waiting_input"
+                : MapStatus(run),
             SafeSummary: ToSafeSummary(evt),
             PayloadRef: payloadRef,
             ApprovalId: evt.ApprovalId?.Value);

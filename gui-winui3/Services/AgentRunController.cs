@@ -61,6 +61,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private string? _pendingApprovalId;
     private string? _pendingApprovalSummary;
     private string? _pendingApprovalCommand;
+    private string? _pendingInputId;
+    private string? _pendingInputQuestion;
+    private IReadOnlyList<string> _pendingInputOptions = Array.Empty<string>();
     private string? _streamTerminalStatus;
     private bool _isCancelRequested;
     private CancellationTokenSource? _subscriptionCts;
@@ -178,6 +181,51 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public bool HasPendingApproval => PendingApprovalId is not null;
 
+    public string? PendingInputId
+    {
+        get { lock (_gate) return _pendingInputId; }
+        private set
+        {
+            lock (_gate)
+            {
+                _pendingInputId = value;
+            }
+
+            OnPropertyChanged(nameof(PendingInputId));
+            OnPropertyChanged(nameof(HasPendingInput));
+        }
+    }
+
+    public string? PendingInputQuestion
+    {
+        get { lock (_gate) return _pendingInputQuestion; }
+        private set
+        {
+            lock (_gate)
+            {
+                _pendingInputQuestion = value;
+            }
+
+            OnPropertyChanged(nameof(PendingInputQuestion));
+        }
+    }
+
+    public IReadOnlyList<string> PendingInputOptions
+    {
+        get { lock (_gate) return _pendingInputOptions; }
+        private set
+        {
+            lock (_gate)
+            {
+                _pendingInputOptions = value;
+            }
+
+            OnPropertyChanged(nameof(PendingInputOptions));
+        }
+    }
+
+    public bool HasPendingInput => PendingInputId is not null;
+
     public bool NeedsWorkspaceTrust =>
         CurrentRun?.Status == "waiting_workspace_trust"
         && !string.IsNullOrWhiteSpace(CurrentRun.TrustRequestId)
@@ -238,6 +286,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingApprovalId = null;
             PendingApprovalSummary = null;
             PendingApprovalCommand = null;
+            PendingInputId = null;
+            PendingInputQuestion = null;
+            PendingInputOptions = Array.Empty<string>();
             Events.Clear();
             lock (_gate)
             {
@@ -451,6 +502,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingApprovalId = null;
             PendingApprovalSummary = null;
             PendingApprovalCommand = null;
+            PendingInputId = null;
+            PendingInputQuestion = null;
+            PendingInputOptions = Array.Empty<string>();
             Events.Clear();
             lock (_gate)
             {
@@ -589,6 +643,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;
                 PendingApprovalCommand = null;
+                PendingInputId = null;
+                PendingInputQuestion = null;
+                PendingInputOptions = Array.Empty<string>();
                 CurrentRun = null;
             }
 
@@ -732,6 +789,52 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Answers the Host-intercepted question the run is waiting on. The answer
+    /// is posted to the same resolve surface the approval decision uses; on
+    /// success the card is cleared at once, so submitting hides it even before
+    /// the resolved frame arrives.
+    /// </summary>
+    public async Task SubmitInputAsync(string answer, CancellationToken cancellationToken = default)
+    {
+        var runId = CurrentRun?.RunId;
+        var inputId = PendingInputId;
+        if (runId is null || inputId is null)
+        {
+            throw new InvalidOperationException("No Agent question is pending.");
+        }
+
+        RunOnUi(() => _statusText = "Submitting answer...");
+        await _client.SubmitInputAsync(runId, inputId, answer, cancellationToken).ConfigureAwait(false);
+        RunOnUi(() =>
+        {
+            PendingInputId = null;
+            PendingInputQuestion = null;
+            PendingInputOptions = Array.Empty<string>();
+        });
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-arms the question card when a session open adopted a waiting_input run:
+    /// the input.requested event sits behind the adoption cursor, so the view
+    /// replays the run's durable events and hands the pending question back here.
+    /// </summary>
+    public void RestorePendingInput(string inputId, string? question, IReadOnlyList<string>? options)
+    {
+        if (string.IsNullOrWhiteSpace(inputId))
+        {
+            return;
+        }
+
+        RunOnUi(() =>
+        {
+            PendingInputId = inputId;
+            PendingInputQuestion = question;
+            PendingInputOptions = options ?? Array.Empty<string>();
+        });
+    }
+
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         var runId = CurrentRun?.RunId;
@@ -757,6 +860,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 PendingApprovalCommand = null;
             }
 
+            if (!string.Equals(run.Status, "waiting_input", StringComparison.Ordinal))
+            {
+                PendingInputId = null;
+                PendingInputQuestion = null;
+                PendingInputOptions = Array.Empty<string>();
+            }
+
             RefreshCommands();
         });
     }
@@ -775,6 +885,43 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
 
 
+    /// <summary>
+    /// Reads the payload a durable event points at. A fetch failure is bounded
+    /// and observational: the caller keeps its fallback for this event instead
+    /// of the stream stopping, and only the failure type is traced.
+    /// </summary>
+    private async Task<string?> FetchPayloadContentAsync(AgentEventModel model)
+    {
+        CancellationToken fetchToken;
+        try
+        {
+            fetchToken = _subscriptionCts?.Token ?? CancellationToken.None;
+        }
+        catch (ObjectDisposedException)
+        {
+            fetchToken = CancellationToken.None;
+        }
+
+        try
+        {
+            var payload = await _client
+                .GetPayloadAsync(model.RunId, model.PayloadRef!, fetchToken)
+                .ConfigureAwait(false);
+            return payload.Content;
+        }
+        catch (OperationCanceledException)
+        {
+            // Subscription torn down; the caller keeps its fallback for this event.
+            return null;
+        }
+        catch (Exception exception)
+        {
+            GuiDiagnosticWriter.AppendTraceLine(
+                $"Agent payload fetch failed: {exception.GetType().Name}");
+            return null;
+        }
+    }
+
     private async Task OnEventAsync(AgentEventModel model, string runId, long ownershipGeneration)
     {
         if (model.IsTransient)
@@ -788,35 +935,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         if (string.Equals(model.EventType, "model.usage_recorded", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(model.PayloadRef))
         {
-            CancellationToken fetchToken;
-            try
-            {
-                fetchToken = _subscriptionCts?.Token ?? CancellationToken.None;
-            }
-            catch (ObjectDisposedException)
-            {
-                fetchToken = CancellationToken.None;
-            }
+            usage = AgentModelUsage.Parse(await FetchPayloadContentAsync(model).ConfigureAwait(false));
+        }
 
-            try
-            {
-                var payload = await _client
-                    .GetPayloadAsync(model.RunId, model.PayloadRef, fetchToken)
-                    .ConfigureAwait(false);
-                usage = AgentModelUsage.Parse(payload.Content);
-            }
-            catch (OperationCanceledException)
-            {
-                // Subscription torn down; usage stays null for this event.
-            }
-            catch (Exception exception)
-            {
-                // Usage is observational. A payload fetch failure must not stop the
-                // durable run stream or alter the assistant reply. Log the failure
-                // type only (no identifiers or payload content) for diagnostics.
-                GuiDiagnosticWriter.AppendTraceLine(
-                    $"Agent usage payload fetch failed: {exception.GetType().Name}");
-            }
+        AgentInputRequest.PendingInput? inputRequest = null;
+        if (string.Equals(model.EventType, "input.requested", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(model.PayloadRef))
+        {
+            inputRequest = AgentInputRequest.Parse(await FetchPayloadContentAsync(model).ConfigureAwait(false));
         }
 
         if (string.Equals(model.EventType, "final_snapshot", StringComparison.Ordinal)
@@ -851,7 +977,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     new AgentRunContextCompactedEventArgs(model.RunId, model.SessionId, model.Sequence, ownershipGeneration));
             }
             if (!string.IsNullOrEmpty(model.SafeSummary)
-                && !IsApprovalRequestWithPanel(model))
+                && !IsApprovalRequestWithPanel(model)
+                && !IsInputRequestEvent(model))
             {
                 _statusText = model.SafeSummary;
             }
@@ -899,6 +1026,31 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;
                 PendingApprovalCommand = null;
+            }
+
+            if (!model.IsTransient
+                && model.EventType == "input.requested")
+            {
+                if (inputRequest is not null)
+                {
+                    PendingInputId = inputRequest.InputId;
+                    PendingInputQuestion = inputRequest.Question;
+                    PendingInputOptions = inputRequest.Options;
+                }
+                else
+                {
+                    // The payload could not be read; the run still waits, so say
+                    // what it waits on instead of leaving the panel blank.
+                    _statusText = "Waiting for input.";
+                }
+            }
+            else if (!model.IsTransient
+                && model.EventType == "run.state_changed"
+                && string.Equals(model.SafeSummary, "input_resolved", StringComparison.Ordinal))
+            {
+                PendingInputId = null;
+                PendingInputQuestion = null;
+                PendingInputOptions = Array.Empty<string>();
             }
 
             if (!model.IsTransient)
@@ -1147,6 +1299,15 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         string.Equals(model.EventType, "approval.requested", StringComparison.Ordinal)
         && !string.IsNullOrWhiteSpace(model.ApprovalId);
 
+    /// <summary>
+    /// Whether the event opens the question panel. Its machine code must not
+    /// reach the status line for the same reason the approval code must not:
+    /// the panel already speaks for the request, and the raw code is only a
+    /// fallback when the request payload itself could not be read.
+    /// </summary>
+    private static bool IsInputRequestEvent(AgentEventModel model) =>
+        string.Equals(model.EventType, "input.requested", StringComparison.Ordinal);
+
     private void RunOnUi(Action action)
     {
         if (_synchronize is not null)
@@ -1230,6 +1391,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             return $"Waiting for approval: {run.RunId} — review the approval in the session (or cancel the run)";
         }
 
+        if (string.Equals(run.Status, "waiting_input", StringComparison.Ordinal))
+        {
+            // Same shape as the approval wait: the question card is re-armed from
+            // the replayed run log, and this line says what the run is waiting on
+            // until it is.
+            return $"Waiting for input: {run.RunId} — answer the question in the session (or cancel the run)";
+        }
+
         return $"Running: {run.RunId}";
     }
 
@@ -1305,6 +1474,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;
                 PendingApprovalCommand = null;
+                PendingInputId = null;
+                PendingInputQuestion = null;
+                PendingInputOptions = Array.Empty<string>();
                 if (!_isCancelRequested
                     && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
                 {
@@ -1415,6 +1587,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingApprovalId = null;
             PendingApprovalSummary = null;
             PendingApprovalCommand = null;
+            PendingInputId = null;
+            PendingInputQuestion = null;
+            PendingInputOptions = Array.Empty<string>();
             RefreshCommands();
         });
         return true;

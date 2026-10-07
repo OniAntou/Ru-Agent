@@ -449,6 +449,7 @@ public sealed class ReconciliationStateTests
         public ToolCallId NewToolCallId() => new(Value("call_"));
         public ExecutionId NewExecutionId() => new(Value("exec_"));
         public ApprovalId NewApprovalId() => new(Value("apr_"));
+        public InputId NewInputId() => new(Value("inp_"));
         public TrustRequestId NewTrustRequestId() => new(Value("trust_"));
         public PolicyRuleId NewPolicyRuleId() => new(Value("rule_"));
         public EventId NewEventId() => new(Value("evt_"));

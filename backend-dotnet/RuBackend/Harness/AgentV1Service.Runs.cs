@@ -490,10 +490,11 @@ public sealed partial class AgentV1Service
         }
 
         var (trustRequestId, displayHash) = await ResolveTrustChallengeAsync(run, cancellationToken).ConfigureAwait(false);
+        var isWaitingInput = await IsParkedOnInputAsync(run, cancellationToken).ConfigureAwait(false);
         var providerSelection = _providerSelectionStore is null
             ? null
             : await _providerSelectionStore.GetAsync(run.RunId, cancellationToken).ConfigureAwait(false);
-        var response = MapRun(run, trustRequestId, displayHash) with
+        var response = MapRun(run, trustRequestId, displayHash, isWaitingInput) with
         {
             ProviderBackend = providerSelection?.Selection?.Backend,
             ProviderModel = providerSelection?.Selection?.Model,
@@ -968,6 +969,24 @@ public sealed partial class AgentV1Service
             current.PermissionProfileVersion);
     }
 
+    private async Task<bool> IsParkedOnInputAsync(AgentRun run, CancellationToken cancellationToken)
+    {
+        if (run.State != HarnessRunState.WaitingUser)
+        {
+            return false;
+        }
+
+        // While a run is parked nothing drives it, so the newest durable event is
+        // the park cause. One indexed row distinguishes an ask_user wait from the
+        // budget and transient-provider waits that share the WaitingUser state.
+        await using var connection = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT kind FROM agent_events WHERE run_id = $run_id ORDER BY sequence DESC LIMIT 1";
+        command.Parameters.AddWithValue("$run_id", run.RunId.Value);
+        var kind = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        return string.Equals(kind, "input.requested", StringComparison.Ordinal);
+    }
+
     // Helpers (slice 1: pure logic lives in AgentV1Shared; wrappers keep API stable)
 
     /// <summary>
@@ -981,11 +1000,12 @@ public sealed partial class AgentV1Service
     private static GetAgentRunResponse MapRun(
         AgentRun run,
         string? trustRequestId = null,
-        string? displayIdentityHash = null) => new(
+        string? displayIdentityHash = null,
+        bool isWaitingInput = false) => new(
         RunId: run.RunId.Value,
         SessionId: run.SessionId.Value,
         WorkspaceId: run.WorkspaceId.Value,
-        Status: MapRunState(run.Status),
+        Status: MapRunState(run.Status, isWaitingInput),
         HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
         Preset: AgentPermissionPresetMapper.ToWireValue(run.Preset),
         PolicySnapshotVersion: run.PolicySnapshotVersion,

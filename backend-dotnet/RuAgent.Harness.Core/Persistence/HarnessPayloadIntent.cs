@@ -18,6 +18,7 @@ public enum HarnessPayloadKind
     ModelContextNote = 13,
     ModelReasoning = 14,
     ProviderContinuation = 15,
+    UserInputRequest = 16,
 }
 
 [Flags]

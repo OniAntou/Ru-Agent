@@ -28,6 +28,9 @@ public enum EscapeOutcome
 /// answer, and stopping the run instead of answering it punishes the user for a
 /// decision they were asked to make. Denying is also the answer that costs least when it
 /// is wrong: the agent asked again, nothing ran.</item>
+/// <item>An open question outranks a run in hand too, but Escape does not answer it:
+/// there is no deny, and stopping a run that is parked waiting for the answer would
+/// discard the question. Escape is swallowed by the panel and the run keeps waiting.</item>
 /// <item>Otherwise a run in hand means stop it.</item>
 /// <item>Otherwise Escape means nothing at all, and is left to the focused control.</item>
 /// </list>
@@ -52,11 +55,17 @@ public static class AgentRunKeyboardPolicy
     /// Whether this session has a run in hand, guarded exactly as the stop button is.
     /// </param>
     /// <param name="approvalShowing">Whether the approval prompt is on screen.</param>
-    public static EscapeOutcome Resolve(bool runInHand, bool approvalShowing)
+    /// <param name="questionShowing">Whether the question prompt is on screen.</param>
+    public static EscapeOutcome Resolve(bool runInHand, bool approvalShowing, bool questionShowing = false)
     {
         if (approvalShowing)
         {
             return EscapeOutcome.DenyApproval;
+        }
+
+        if (questionShowing)
+        {
+            return EscapeOutcome.None;
         }
 
         return runInHand ? EscapeOutcome.StopRun : EscapeOutcome.None;

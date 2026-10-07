@@ -35,6 +35,7 @@ public static class HarnessEventContractValidator
         "tool.execution_requested",
         "tool.execution_completed",
         "approval.requested",
+        "input.requested",
         "continue.requested",
         "reconciliation.required",
         "reconciliation.resolved",

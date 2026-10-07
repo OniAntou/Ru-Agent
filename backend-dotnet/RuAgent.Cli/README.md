@@ -55,6 +55,7 @@ agent attach <run-id> [--json]
 agent trust <run-id> --approve|--deny
 agent approve <run-id> <approval-id>
 agent deny <run-id> <approval-id>
+agent answer <run-id> <input-id> [answer] [--json]
 agent cancel <run-id>
 agent continue <run-id>
 agent command <run-id> "<slash-command>" [--json]
@@ -107,6 +108,7 @@ agent rpc
 - `attach` streams an existing run's durable events from `after_sequence=0` via `AgentSseClient`.
 - `trust` wraps `POST /agent/v1/runs/{runId}/trust`.
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `allow_once`, `allow_session_directory` (external folders only), `allow_always` (authorizes once and remembers the exact intent as a project rule), or `deny`. The Host picks the right one-time token from the pending binding (session-scoped directory grant for `external_directory_required`, ephemeral token for `terminal_delete_requires_approval`, `terminal_external_mutation_requires_approval`, or `terminal_unknown_executable`). `terminal_timeout_requires_approval` remains the standard-window gate below `full_access` and `web_approval_required` remains a compatibility reason for explicit ask rules; timeout above the protocol hard maximum is denied. `agent approve --always` sends `allow_always`; no reusable approval token is ever created. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). `--json` cannot confirm approval.
+- `answer` wraps `POST /agent/v1/runs/{runId}/inputs/{inputId}` with the user's answer to an `ask_user` question (1..8192 characters). Without the answer argument it prompts; `--json` requires the argument because it must never prompt, and prints a versioned envelope carrying `run_state`. A replayed, foreign, or already-answered input id returns `input_stale` (409), an unknown run `run_not_found` (404), and an invalid body `invalid_answer` (400).
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
 - `command` forwards `/compact normal|aggressive`, `/help`, `/skills`,
@@ -120,16 +122,17 @@ agent rpc
 - `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. The command prints the payload's `content` field just as the host returned it: UTF-8 text for `utf8text`/`json` payloads, and the base64 wire form for `opaque` payloads (it does not decode them); `--json` is accepted for symmetry with the other commands but adds no envelope, because the payload is already the answer.
 ## Current model tool surface
 
-The Agent model-step advertisement contains the twelve Protocol definitions:
+The Agent model-step advertisement contains the thirteen Protocol definitions:
 `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell|read_output|kill`
 plus a `background` flag on run/shell, standalone
-`web_search`/`web_fetch`, and `skill`. A provider-native model step may return
+`web_search`/`web_fetch`, `skill`, and Host-intercepted `ask_user`. A provider-native model step may return
 optional narration and one or more ordered calls; the compatibility text path
 still emits exactly one JSON selection. The shared budget is 256 tool calls per
 window, read-only concurrency is capped at eight, and mutation/terminal calls
 remain sequential. Durable approval resume re-evaluates retained proposals
-without a new model proposal.
+without a new model proposal, and an `ask_user` park resumes the same way once
+`ru agent answer` completes the asked call.
 
 Canonical `plan` is read-only: workspace read/Web auto, terminal/mutation denied
 outright, external structured access asks.
@@ -151,7 +154,7 @@ is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 ## Rendering
 
 - **Interactive** (`SafeEventRenderer`): displays only safe envelope fields (`protocol_version`, `event_id`, `run_id`, `session_id`, `sequence`, `event_type`, `occurred_at`, `status`, `safe_summary`, `payload_ref`). Never fetches private payloads; `payload_ref` is shown opaque.
-- **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Full Access is accepted only with explicit `--confirm-full-access`; `--trust-workspace` is the explicit non-interactive trust confirmation and is allowed with `--json`, while approval and global-policy confirmations remain rejected with `--json`. Under `--json`, slash-command surfaces write their human text to stderr, bare picker commands refuse with a bounded `interactive_required`, and a chat run that reaches an approval request ends the chat (exit 0) with a bounded `approval_required` notice on stderr naming `ru agent approve <run-id> <approval-id>` or `ru agent deny <run-id> <approval-id>` — the run stays waiting server-side and is never auto-denied. A `--json` chat stream may include blank separator lines between turns, so consumers should skip empty lines. A transient frame's raw `data` is therefore withheld and reported as `data_bytes` — its bounded size, not its text — so the machine-readable trace never carries streamed assistant text or tool output.
+- **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Full Access is accepted only with explicit `--confirm-full-access`; `--trust-workspace` is the explicit non-interactive trust confirmation and is allowed with `--json`, while approval and global-policy confirmations remain rejected with `--json`. Under `--json`, slash-command surfaces write their human text to stderr, bare picker commands refuse with a bounded `interactive_required`, and a chat run that reaches an approval request ends the chat (exit 0) with a bounded `approval_required` notice on stderr naming `ru agent approve <run-id> <approval-id>` or `ru agent deny <run-id> <approval-id>` — the run stays waiting server-side and is never auto-denied; an `ask_user` park ends it the same way with an `input_required` notice naming `ru agent answer <run-id> <input-id> "<answer>"`. A `--json` chat stream may include blank separator lines between turns, so consumers should skip empty lines. A transient frame's raw `data` is therefore withheld and reported as `data_bytes` — its bounded size, not its text — so the machine-readable trace never carries streamed assistant text or tool output.
 - **Live terminal frames**: transient `tool.output.delta` frames render as `[transient:<seq>] <type> <preview>` with the preview bounded to 200 chars; any forbidden field (`command`/`output`/`secret`/...) is replaced with `[redacted]`. A `transient.frames_dropped` event renders an explicit `WARNING dropped-frames` notice. Final tool output is referenced only by opaque `payload_ref`; the actual head/tail bytes are fetched solely by the explicit `agent output` command.
 
 ## Cancellation

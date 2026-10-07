@@ -10,6 +10,7 @@ public enum HarnessEventKind
     ToolExecutionRequested,
     ToolExecutionCompleted,
     ApprovalRequested,
+    InputRequested,
     ContinueRequested,
     ReconciliationRequired,
     ReconciliationResolved,

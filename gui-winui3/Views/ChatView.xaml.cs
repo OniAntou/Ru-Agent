@@ -125,6 +125,7 @@ namespace RuApp.Views
         private bool _sidePanelUserCollapsed;
         private double _sidePanelReserveWidth;
         private string? _focusedApprovalId;
+        private string? _focusedInputId;
         private readonly AgentTurnQueue _queuedTurns = new();
         /// <summary>
         /// The transcript, bound to the chat list. A batch collection so the two
@@ -473,6 +474,7 @@ namespace RuApp.Views
             _agentController?.ContextCompacted += OnAgentContextCompacted;
             _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
+            QuestionPanel.AnswerRequested += OnQuestionAnswerRequested;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
 

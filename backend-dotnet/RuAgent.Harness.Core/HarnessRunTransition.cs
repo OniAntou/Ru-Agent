@@ -9,6 +9,8 @@ public enum HarnessRunTransition
     AcknowledgeUserHistory,
     RequestApproval,
     ResolveApproval,
+    RequestInput,
+    ResolveInput,
     ExhaustBudget,
     Continue,
     RequireReconciliation,

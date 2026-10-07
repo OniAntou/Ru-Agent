@@ -7,6 +7,7 @@ public interface IIdGenerator
     ToolCallId NewToolCallId();
     ExecutionId NewExecutionId();
     ApprovalId NewApprovalId();
+    InputId NewInputId();
     TrustRequestId NewTrustRequestId();
     PolicyRuleId NewPolicyRuleId();
     EventId NewEventId();

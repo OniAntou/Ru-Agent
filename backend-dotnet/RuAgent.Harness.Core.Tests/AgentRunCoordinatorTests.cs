@@ -1300,6 +1300,127 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Ask_user_parks_in_waiting_user_before_any_broker_dispatch()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(AskUserStep("Which environment?", "staging", "production"));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal("input_required", result.ErrorCode);
+        Assert.Empty(gateway.Proposals);
+        Assert.Empty(gateway.ApprovedExecutions);
+        Assert.Empty(gateway.ExecuteAttempts);
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        var requested = Assert.Single(events, @event => @event.Kind == HarnessEventKind.InputRequested);
+        Assert.Equal("input_required", requested.SafeCode);
+        Assert.Equal("provider-ask", requested.ProviderCallId);
+        Assert.NotNull(requested.ExecutionId);
+        Assert.NotNull(requested.PayloadId);
+        Assert.Contains(
+            events,
+            @event => @event.Kind == HarnessEventKind.ToolProposed
+                && @event.ToolCallId == requested.ToolCallId);
+        var payload = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Payloads),
+            item => item.PayloadId == requested.PayloadId);
+        Assert.Equal(HarnessPayloadKind.UserInputRequest, payload.Kind);
+        Assert.Equal(HarnessPayloadAudience.AuthenticatedClient, payload.Audience);
+        using var document = JsonDocument.Parse(payload.Plaintext);
+        Assert.Equal("Which environment?", document.RootElement.GetProperty("question").GetString());
+        Assert.Equal(2, document.RootElement.GetProperty("options").GetArrayLength());
+        Assert.StartsWith("inp_", document.RootElement.GetProperty("input_id").GetString());
+    }
+
+    [Fact]
+    public async Task Ask_user_with_invalid_arguments_is_denied_without_dispatch()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(AskUserStep(string.Empty));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Null(result.ErrorCode);
+        Assert.Empty(gateway.Proposals);
+        Assert.Empty(gateway.ExecuteAttempts);
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal("invalid_arguments", receipt.Code);
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Events),
+            @event => @event.Kind == HarnessEventKind.InputRequested);
+    }
+
+    [Fact]
+    public async Task Ask_user_in_a_mixed_batch_parks_on_input_and_revokes_pending_approvals()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(AskUserWithApprovalStep());
+        var approval = new ApprovalId("apr_" + new string('d', 32));
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal => proposal.ModelOrder == 2
+                ? ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval)
+                : ToolProposalDecision.Allow(ToolAccessKind.ReadOnly, $"canonical-{proposal.ModelOrder}"),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal("input_required", result.ErrorCode);
+        Assert.Single(gateway.RevokedApprovals);
+        Assert.Equal(approval, gateway.RevokedApprovals[0]);
+        Assert.Empty(gateway.ExecuteAttempts);
+    }
+
+    [Fact]
+    public async Task Retained_input_resume_executes_remaining_proposals_after_the_answer()
+    {
+        var model = new FakeModelStepRunner();
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+        var stepId = new ModelStepId("step_11111111111111111111111111111111");
+        var proposal = new ToolProposal(
+            RunId(),
+            stepId,
+            new ToolCallId("call_11111111111111111111111111111111"),
+            "provider-call",
+            1,
+            "read",
+            "1.0.0",
+            JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone());
+        var retained = new RetainedInputStep(
+            new[] { proposal },
+            new InputId("inp_11111111111111111111111111111111"),
+            stepId);
+
+        var resumed = await coordinator.TryResumeRetainedInputAsync(
+            RunId(),
+            retained,
+            CancellationToken.None);
+
+        Assert.NotNull(resumed);
+        Assert.Equal(HarnessRunState.Running, resumed!.Run.State);
+        Assert.Null(resumed.ErrorCode);
+        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Single(resumed.Receipts);
+    }
+
+    [Fact]
     public async Task Approval_batch_persists_every_proposal_and_re_evaluates_after_resolution()
     {
         var model = new FakeModelStepRunner();
@@ -1860,6 +1981,43 @@ public sealed class AgentRunCoordinatorTests
             AssistantFinishReason.ToolCalls,
             16);
 
+    private static AssistantStep AskUserStep(string question, params string[] options) =>
+        new(
+            null,
+            new[]
+            {
+                new ModelToolCall(
+                    "provider-ask",
+                    "ask_user",
+                    "1.0.0",
+                    JsonDocument.Parse(JsonSerializer.Serialize(new
+                    {
+                        question,
+                        options,
+                    })).RootElement.Clone()),
+            },
+            AssistantFinishReason.ToolCalls,
+            16);
+
+    private static AssistantStep AskUserWithApprovalStep() =>
+        new(
+            null,
+            new[]
+            {
+                new ModelToolCall(
+                    "provider-ask",
+                    "ask_user",
+                    "1.0.0",
+                    JsonDocument.Parse("{\"question\":\"Proceed?\"}").RootElement.Clone()),
+                new ModelToolCall(
+                    "provider-bash",
+                    "bash",
+                    "1.0.0",
+                    JsonDocument.Parse("{\"mode\":\"run\",\"executable\":\"git\"}").RootElement.Clone()),
+            },
+            AssistantFinishReason.ToolCalls,
+            16);
+
     private static List<ModelContextEntry> FailedCycleEntries()
     {
         var entries = new List<ModelContextEntry>();
@@ -2107,6 +2265,7 @@ public sealed class AgentRunCoordinatorTests
         public ToolCallId NewToolCallId() => new(Value("call_"));
         public ExecutionId NewExecutionId() => new(Value("exec_"));
         public ApprovalId NewApprovalId() => new(Value("apr_"));
+        public InputId NewInputId() => new(Value("inp_"));
         public TrustRequestId NewTrustRequestId() => new(Value("trust_"));
         public PolicyRuleId NewPolicyRuleId() => new(Value("rule_"));
         public EventId NewEventId() => new(Value("evt_"));

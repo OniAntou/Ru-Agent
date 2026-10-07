@@ -261,6 +261,7 @@ namespace RuApp.Views
                 IsBusy: controller?.IsBusy == true,
                 CanCancel: controller?.CanCancel == true,
                 HasPendingApproval: controller?.HasPendingApproval == true,
+                HasPendingInput: controller?.HasPendingInput == true,
                 NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
                 CanContinue: controller?.CanContinue == true,
                 KeepTerminalFailureVisible: keepTerminalFailureVisible,
@@ -327,7 +328,32 @@ namespace RuApp.Views
                 ApprovalPanel.Hide();
             }
 
+            if (state.ShowQuestion && controller is not null)
+            {
+                QuestionPanel.Show(
+                    controller.PendingInputId ?? string.Empty,
+                    AgentQuestionPresentation.RenderQuestion(controller.PendingInputQuestion),
+                    AgentQuestionPresentation.RenderOptions(controller.PendingInputOptions));
+
+                // The question arrives via SSE while the user may be scrolled up;
+                // bring the card into view and put the keyboard in the answer box.
+                // The focus move happens once per new question only, for the same
+                // reason the approval prompt tracks its id.
+                ScrollChatToBottom();
+                if (!string.Equals(_focusedInputId, controller.PendingInputId, StringComparison.Ordinal))
+                {
+                    _focusedInputId = controller.PendingInputId;
+                    QuestionPanel.FocusAnswer();
+                }
+            }
+            else
+            {
+                _focusedInputId = null;
+                QuestionPanel.Hide();
+            }
+
             ApprovalPanel.SetDecisionEnabled(!state.SuppressInteraction);
+            QuestionPanel.SetSubmitEnabled(!state.SuppressInteraction);
             if (AgentStopButton is not null)
             {
                 AgentStopButton.IsEnabled = !state.SuppressInteraction;
@@ -478,6 +504,7 @@ namespace RuApp.Views
                 ActiveSessionId: _activeSessionId,
                 CanCancel: _agentController?.CanCancel == true,
                 HasPendingApproval: _agentController?.HasPendingApproval == true,
+                HasPendingInput: _agentController?.HasPendingInput == true,
                 NeedsWorkspaceTrust: _agentController?.NeedsWorkspaceTrust == true,
                 IsBusy: _agentController?.IsBusy == true);
         }
@@ -543,6 +570,7 @@ namespace RuApp.Views
             UpdateAgentComposerVisuals();
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
+            QuestionPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
             _localComposerStatus = string.Empty;
             ApplyAgentStatusText();
@@ -642,7 +670,8 @@ namespace RuApp.Views
                     // that precedence lives in one policy so it can be tested.
                     var escape = AgentRunKeyboardPolicy.Resolve(
                         runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
-                        approvalShowing: ApprovalPanel?.IsShown == true);
+                        approvalShowing: ApprovalPanel?.IsShown == true,
+                        questionShowing: QuestionPanel?.IsShown == true);
 
                     switch (escape)
                     {
@@ -712,7 +741,8 @@ namespace RuApp.Views
 
             var escape = AgentRunKeyboardPolicy.Resolve(
                 runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
-                approvalShowing: ApprovalPanel?.IsShown == true);
+                approvalShowing: ApprovalPanel?.IsShown == true,
+                questionShowing: QuestionPanel?.IsShown == true);
 
             if (escape == EscapeOutcome.DenyApproval)
             {
@@ -1541,12 +1571,14 @@ namespace RuApp.Views
                 ShowProviderSetupCard(status);
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 ApprovalPanel.Hide();
+                QuestionPanel.Hide();
                 return;
             }
 
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
+            QuestionPanel.Hide();
         }
 
         /// <summary>

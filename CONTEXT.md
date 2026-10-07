@@ -29,8 +29,8 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 41 HTTP method/path pairs with no WebSocket
-route (20 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 42 HTTP method/path pairs with no WebSocket
+route (20 non-Agent plus 22 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
@@ -170,11 +170,13 @@ user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain
 denied. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
-twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
+thirteen Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
 `list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
-and standalone `web_search`/`web_fetch`. There is no provider, model, protocol,
-tool, or workspace-cleanliness *substitution*: a failure is a bounded, named
+standalone `web_search`/`web_fetch`, and Host-intercepted `ask_user` (it parks
+the run on a user question and never reaches the Broker). There is no provider,
+model, protocol, tool, or workspace-cleanliness *substitution*: a failure is a
+bounded, named
 code, never a retry on a different backend. Bounded self-correction is not
 substitution: a `[HARNESS RECOVERY]` note is durable feedback returned to the
 same model, provider, and tool, and spent bounds fall back to the original

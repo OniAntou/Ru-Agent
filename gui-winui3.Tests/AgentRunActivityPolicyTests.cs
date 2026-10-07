@@ -100,6 +100,7 @@ public sealed class AgentRunActivityPolicyTests
     [Theory]
     [InlineData(nameof(AgentRunActivityInput.CanCancel), AgentRunActivityReason.Cancellable)]
     [InlineData(nameof(AgentRunActivityInput.HasPendingApproval), AgentRunActivityReason.AwaitingApproval)]
+    [InlineData(nameof(AgentRunActivityInput.HasPendingInput), AgentRunActivityReason.AwaitingInput)]
     [InlineData(nameof(AgentRunActivityInput.NeedsWorkspaceTrust), AgentRunActivityReason.NeedsTrust)]
     public void Each_controller_signal_alone_guards_the_session(string flag, AgentRunActivityReason expected)
     {
@@ -107,6 +108,7 @@ public sealed class AgentRunActivityPolicyTests
         {
             nameof(AgentRunActivityInput.CanCancel) => Input(canCancel: true),
             nameof(AgentRunActivityInput.HasPendingApproval) => Input(hasPendingApproval: true),
+            nameof(AgentRunActivityInput.HasPendingInput) => Input(hasPendingInput: true),
             nameof(AgentRunActivityInput.NeedsWorkspaceTrust) => Input(needsWorkspaceTrust: true),
             _ => throw new ArgumentOutOfRangeException(nameof(flag)),
         };
@@ -183,18 +185,21 @@ public sealed class AgentRunActivityPolicyTests
     }
 
     [Theory]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(false, false, true)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, false, false, true)]
     public void The_controller_question_accepts_each_signal(
         bool canCancel,
         bool hasPendingApproval,
-        bool needsWorkspaceTrust)
+        bool needsWorkspaceTrust,
+        bool hasPendingInput)
     {
         Assert.True(AgentRunActivityPolicy.IsControllerRunPending(Input(
             canCancel: canCancel,
             hasPendingApproval: hasPendingApproval,
-            needsWorkspaceTrust: needsWorkspaceTrust)));
+            needsWorkspaceTrust: needsWorkspaceTrust,
+            hasPendingInput: hasPendingInput)));
     }
 
     [Fact]
@@ -211,7 +216,8 @@ public sealed class AgentRunActivityPolicyTests
         bool canCancel = false,
         bool hasPendingApproval = false,
         bool needsWorkspaceTrust = false,
-        bool isBusy = false) =>
+        bool isBusy = false,
+        bool hasPendingInput = false) =>
         new(
             isSendingTurn,
             hasRun,
@@ -219,6 +225,7 @@ public sealed class AgentRunActivityPolicyTests
             activeSessionId,
             canCancel,
             hasPendingApproval,
+            hasPendingInput,
             needsWorkspaceTrust,
             isBusy);
 }

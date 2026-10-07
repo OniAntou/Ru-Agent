@@ -243,6 +243,68 @@ public static partial class AgentCliParser
         return Success(new DenyCommand(runId, approvalId, json));
     }
 
+    private static AgentCliParseResult ParseAnswer(string[] args)
+    {
+        // agent answer <run-id> <input-id> [answer] [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        string? runId = null;
+        string? inputId = null;
+        string? answer = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent answer'.");
+            if (runId is null)
+            {
+                var validation = ValidateRunId(token);
+                if (validation is not null) return validation;
+                runId = token;
+                continue;
+            }
+            if (inputId is null)
+            {
+                var validation = ValidateInputId(token);
+                if (validation is not null) return validation;
+                inputId = token;
+                continue;
+            }
+            if (answer is not null)
+                return Fail("too_many_arguments", "Too many positional arguments for 'agent answer'.");
+            if (token.Length == 0 || token.Contains('\0'))
+                return Fail("invalid_answer", "Answer must be a non-empty bounded string.");
+            answer = token;
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent answer'.");
+        if (inputId is null)
+            return Fail("missing_input_id", "Missing required <input-id> for 'agent answer'.");
+        if (json && answer is null)
+            return Fail("interactive_required", "--json requires the answer argument; it cannot prompt.");
+
+        return Success(new AnswerCommand(runId, inputId, answer, json));
+    }
+
+    private static AgentCliParseResult? ValidateInputId(string inputId)
+    {
+        if (inputId.Length != MaxInputIdLength)
+            return Fail("invalid_input_id", $"Input id must be length {MaxInputIdLength} (inp_ + 32 hex). Got {inputId.Length}.");
+        if (!InputIdRegex.IsMatch(inputId))
+            return Fail("invalid_input_id", $"Input id must match inp_[0-9a-f]{{32}}. Got '{inputId}'.");
+        return null;
+    }
+
     private static AgentCliParseResult ParseCancel(string[] args)
     {
         string? runId = null;

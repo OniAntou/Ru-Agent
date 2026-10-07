@@ -65,6 +65,18 @@ public static class AgentBudgetPolicy
         return AdvanceTransition(run, HarnessRunTransition.ResolveApproval, updatedAt);
     }
 
+    public static AgentRun EnterInputWait(AgentRun run, DateTimeOffset updatedAt)
+    {
+        RequireState(run, HarnessRunState.Running);
+        return AdvanceTransition(run, HarnessRunTransition.RequestInput, updatedAt);
+    }
+
+    public static AgentRun ResumeAfterInput(AgentRun run, DateTimeOffset updatedAt)
+    {
+        RequireState(run, HarnessRunState.WaitingUser);
+        return AdvanceTransition(run, HarnessRunTransition.ResolveInput, updatedAt);
+    }
+
     public static AgentRun Continue(AgentRun run, DateTimeOffset updatedAt)
     {
         RequireState(run, HarnessRunState.WaitingUser);

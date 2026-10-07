@@ -47,7 +47,7 @@ because a retry would hide a genuinely flaky test instead of getting it fixed.
 
 The Python guards protect the documentation and contracts: README counts
 (routes, tools, test projects), the live endpoint list versus
-`public-route-contract.json` (41 routes), the tool manifest digests, and the
+`public-route-contract.json` (42 routes), the tool manifest digests, and the
 permission vocabulary. CI runs both matrices on `windows-latest`.
 
 ## How we work

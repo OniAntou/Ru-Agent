@@ -150,6 +150,7 @@ internal static class PublicHostServiceRegistration
             new SessionWorkStateCryptography(services.GetRequiredService<IHarnessKeyStore>()));
         services.AddSingleton<SessionWorkStateStore>();
         services.AddSingleton<RetainedApprovalRehydrator>();
+        services.AddSingleton<RetainedInputRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
         services.AddSingleton<IHarnessEventStore>(services =>
             new SqliteHarnessEventStore(

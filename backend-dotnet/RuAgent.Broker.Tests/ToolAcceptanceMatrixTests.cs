@@ -32,6 +32,9 @@ public sealed class ToolAcceptanceMatrixTests
         }
 
         var expectedIds = AgentToolDefinitionCatalog.Get()
+            // ask_user is Host-intercepted and deliberately has no Broker binding;
+            // the Broker's execution surface is the other twelve definitions.
+            .Where(definition => definition.ToolId is not "ask_user")
             .Select(definition => definition.ToolId)
             .OrderBy(id => id, StringComparer.Ordinal);
         Assert.Equal(expectedIds, bindings.Select(binding => binding.Manifest.Id));
@@ -44,7 +47,7 @@ public sealed class ToolAcceptanceMatrixTests
             .Select(definition => definition.ToolId)
             .ToArray();
 
-        Assert.Equal(12, expected.Length);
+        Assert.Equal(13, expected.Length);
         Assert.Equal(expected, AgentModelToolContractCatalog.ToolIds);
     }
 

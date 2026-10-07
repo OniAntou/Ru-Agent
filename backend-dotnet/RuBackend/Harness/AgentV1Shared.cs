@@ -35,7 +35,10 @@ internal static class AgentV1Shared
         _ => "unknown",
     };
 
-    internal static string MapRunState(HarnessRunStatus status)
+    internal static string MapRunState(HarnessRunStatus status) =>
+        MapRunState(status, isWaitingInput: false);
+
+    internal static string MapRunState(HarnessRunStatus status, bool isWaitingInput)
     {
         if (status.HistoryWaitKind is not null)
         {
@@ -51,7 +54,7 @@ internal static class AgentV1Shared
             HarnessRunState.WaitingHistory => "waiting_history",
             HarnessRunState.Running => "running",
             HarnessRunState.WaitingApproval => "waiting_approval",
-            HarnessRunState.WaitingUser => "waiting_user",
+            HarnessRunState.WaitingUser => isWaitingInput ? "waiting_input" : "waiting_user",
             HarnessRunState.ReconciliationRequired => "reconciliation_required",
             HarnessRunState.Completed => "completed",
             HarnessRunState.Failed => "failed",
@@ -84,6 +87,9 @@ internal static class AgentV1Shared
 
     internal static bool IsPolicyRuleId(string value) =>
         value.StartsWith("rule_", StringComparison.Ordinal) && value.Length == 37 && IsLowerHex(value.AsSpan(5));
+
+    internal static bool IsInputId(string value) =>
+        value.StartsWith("inp_", StringComparison.Ordinal) && value.Length == 36 && IsLowerHex(value.AsSpan(4));
 
     internal static bool IsLowerHex(string value) => IsLowerHex(value.AsSpan());
 

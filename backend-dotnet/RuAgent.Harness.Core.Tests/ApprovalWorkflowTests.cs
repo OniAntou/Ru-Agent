@@ -284,6 +284,7 @@ public sealed class ApprovalWorkflowTests
         public ToolCallId NewToolCallId() => new($"call_{++_counter:x32}");
         public ExecutionId NewExecutionId() => new($"exec_{++_counter:x32}");
         public ApprovalId NewApprovalId() => new($"apr_{++_counter:x32}");
+        public InputId NewInputId() => new($"inp_{++_counter:x32}");
         public TrustRequestId NewTrustRequestId() => new($"trust_{++_counter:x32}");
         public PolicyRuleId NewPolicyRuleId() => new($"rule_{++_counter:x32}");
         public EventId NewEventId() => new($"evt_{++_counter:x32}");

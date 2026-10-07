@@ -62,6 +62,7 @@ public sealed record SessionUsageRow(
         "created" => "created",
         "waiting_workspace_trust" => "waiting for trust",
         "waiting_approval" => "waiting for approval",
+        "waiting_input" => "waiting for input",
         "waiting_user" => "waiting for you",
         "waiting_history" => "reading history",
         "waiting_history_user" => "waiting on you",

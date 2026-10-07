@@ -50,6 +50,7 @@ public static class AgentToolDefinitionCatalog
         new("web_search", "Search the public web. The configured engine races a fixed set of free fallback engines and the first engine with usable results answers, so a slow or blocked primary no longer delays the result. If every engine fails or none of their layouts can be read, the call fails with a bounded error rather than returning an empty answer. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest dotnet release" }),
         new("web_fetch", "Fetch one public web page as sanitized text. Results are bounded, sanitized, and explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
         new("skill", "Load one workspace skill's full SKILL.md workflow. Skills are prompt guidance discovered from the workspace skill roots; the prompt lists only name and description, and the model calls this tool to load the body on demand. allowed-tools metadata is descriptive only and never grants a tool, scope, path, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
+        new("ask_user", "Ask the user a question and wait for the answer. Use it only when a decision is genuinely the user's and no tool or file can resolve it. The run parks until the user answers, and the answer arrives as this tool's result. options are optional suggested answers.", AgentToolScopes.UserInput, AskUserSchema, () => new JsonObject { ["question"] = "Which environment should I use?", ["options"] = new JsonArray("staging", "production") }),
     ];
 
     private static readonly IReadOnlyList<AgentToolDefinition> Definitions = BuildDefinitions();
@@ -227,6 +228,10 @@ public static class AgentToolDefinitionCatalog
     private static JsonObject WebSearchSchema() => ObjectSchema(["query"], [("query", StringSchema(512)), ("max_results", IntegerSchema(1, 10))]);
     private static JsonObject WebFetchSchema() => ObjectSchema(["url"], [("url", StringSchema(2048))]);
     private static JsonObject SkillSchema() => ObjectSchema(["name"], [("name", StringSchema(minLength: 1, maxLength: 96))]);
+    private static JsonObject AskUserSchema() => ObjectSchema(
+        ["question"],
+        ("question", StringSchema(maxLength: 2048, minLength: 1)),
+        ("options", ArraySchema(maxItems: 8, itemMaxLength: 512)));
 
     private static JsonObject ObjectSchema(string[]? required = null, params (string Name, JsonObject Schema)[] properties)
     {

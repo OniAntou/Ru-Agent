@@ -182,6 +182,7 @@ public sealed class SessionUsageSummaryTests
         Assert.Equal("created", Outcome(false, "created"));
         Assert.Equal("running", Outcome(false, "running"));
         Assert.Equal("waiting for approval", Outcome(false, "waiting_approval"));
+        Assert.Equal("waiting for input", Outcome(false, "waiting_input"));
         Assert.Equal("waiting for trust", Outcome(false, "waiting_workspace_trust"));
         Assert.Equal("waiting for you", Outcome(false, "waiting_user"));
         Assert.Equal("reading history", Outcome(false, "waiting_history"));
@@ -202,6 +203,7 @@ public sealed class SessionUsageSummaryTests
     public void A_run_waiting_on_someone_is_marked_as_waiting_not_as_working()
     {
         Assert.True(new SessionUsageRow("r", false, "waiting_approval", null, null, null).IsWaiting);
+        Assert.True(new SessionUsageRow("r", false, "waiting_input", null, null, null).IsWaiting);
         Assert.True(new SessionUsageRow("r", false, "waiting_user", null, null, null).IsWaiting);
         Assert.False(new SessionUsageRow("r", false, "running", null, null, null).IsWaiting);
         Assert.False(new SessionUsageRow("r", true, "completed", null, null, null).IsWaiting);

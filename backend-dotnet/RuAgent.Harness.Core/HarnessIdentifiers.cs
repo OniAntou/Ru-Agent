@@ -116,6 +116,16 @@ public readonly record struct ApprovalId
     public override string ToString() => Value;
 }
 
+public readonly record struct InputId
+{
+    public InputId(string value) =>
+        _value = HarnessIdentifier.ValidateGenerated(value, "inp_", nameof(value));
+
+    private readonly string? _value;
+    public string Value => HarnessIdentifier.RequireInitialized(_value, nameof(InputId));
+    public override string ToString() => Value;
+}
+
 public readonly record struct TrustRequestId
 {
     public TrustRequestId(string value) =>

@@ -9,6 +9,7 @@ namespace RuApp.Services;
 /// </summary>
 /// <param name="ShowInlinePanel">The panel row itself is visible.</param>
 /// <param name="ShowApproval">The approve/deny block is visible.</param>
+/// <param name="ShowQuestion">The question block is visible.</param>
 /// <param name="ShowStop">The stop control is visible.</param>
 /// <param name="StatusText">Status line text, empty when it must be hidden.</param>
 /// <param name="IsRunning">The send control reads as "running".</param>
@@ -16,6 +17,7 @@ namespace RuApp.Services;
 public sealed record AgentInlinePanelState(
     bool ShowInlinePanel,
     bool ShowApproval,
+    bool ShowQuestion,
     bool ShowStop,
     string StatusText,
     bool IsRunning,
@@ -29,6 +31,7 @@ public sealed record AgentInlinePanelInput(
     bool IsBusy,
     bool CanCancel,
     bool HasPendingApproval,
+    bool HasPendingInput,
     bool NeedsWorkspaceTrust,
     bool CanContinue,
     bool KeepTerminalFailureVisible,
@@ -47,6 +50,7 @@ public static class AgentInlinePanelPolicy
         new(
             ShowInlinePanel: false,
             ShowApproval: false,
+            ShowQuestion: false,
             ShowStop: false,
             StatusText: string.Empty,
             IsRunning: false,
@@ -73,6 +77,7 @@ public static class AgentInlinePanelPolicy
         if (!input.IsBusy
             && !input.CanCancel
             && !input.HasPendingApproval
+            && !input.HasPendingInput
             && !input.NeedsWorkspaceTrust
             && !input.CanContinue
             && !input.KeepTerminalFailureVisible)
@@ -87,6 +92,7 @@ public static class AgentInlinePanelPolicy
             return new AgentInlinePanelState(
                 ShowInlinePanel: true,
                 ShowApproval: false,
+                ShowQuestion: false,
                 ShowStop: false,
                 StatusText: input.StatusText,
                 IsRunning: isRunning,
@@ -94,15 +100,17 @@ public static class AgentInlinePanelPolicy
                 SuppressInteraction: input.InteractionPending);
         }
 
-        // The panel is the actionable surface: an approval to answer, a resume to
-        // send, or a terminal failure whose only signal lives here.
+        // The panel is the actionable surface: an approval or question to answer,
+        // a resume to send, or a terminal failure whose only signal lives here.
         bool hasInlineAction = input.HasPendingApproval
+            || input.HasPendingInput
             || input.CanContinue
             || input.KeepTerminalFailureVisible;
 
         return new AgentInlinePanelState(
             ShowInlinePanel: hasInlineAction || !string.IsNullOrWhiteSpace(input.StatusText),
             ShowApproval: input.HasPendingApproval,
+            ShowQuestion: input.HasPendingInput,
             ShowStop: false,
             StatusText: input.StatusText,
             IsRunning: isRunning,

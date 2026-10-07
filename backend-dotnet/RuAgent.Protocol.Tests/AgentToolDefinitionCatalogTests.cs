@@ -20,6 +20,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "web_search",
         "web_fetch",
         "skill",
+        "ask_user",
     ];
 
     private static readonly string[] RetiredIds =
@@ -49,7 +50,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(12, definitions.Count);
+        Assert.Equal(13, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
@@ -238,6 +239,22 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.Contains(skill.InputSchema["required"]!.AsArray(), item => item!.GetValue<string>() == "name");
         Assert.Contains("allowed-tools", skill.Description, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Ask_user_definition_is_host_intercepted_input_with_bounded_options()
+    {
+        var ask = AgentToolDefinitionCatalog.Find("ask_user", "1.0.0")!;
+
+        Assert.Equal(AgentToolScopes.UserInput, ask.Scope);
+        Assert.Contains(ask.InputSchema["required"]!.AsArray(), item => item!.GetValue<string>() == "question");
+        var properties = Properties("ask_user");
+        Assert.Equal(1, properties["question"]!["minLength"]!.GetValue<int>());
+        Assert.Equal(2048, properties["question"]!["maxLength"]!.GetValue<int>());
+        Assert.Equal(8, properties["options"]!["maxItems"]!.GetValue<int>());
+        Assert.Equal(512, properties["options"]!["items"]!["maxLength"]!.GetValue<int>());
+        Assert.Contains("parks", ask.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("answer", ask.Description, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

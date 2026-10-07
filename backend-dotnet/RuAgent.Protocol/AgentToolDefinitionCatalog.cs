@@ -149,13 +149,13 @@ public static class AgentToolDefinitionCatalog
     // A tighter schema here false-rejects queries the adapter accepts.
     private static (string Name, JsonObject Schema)[] GrepSchemaProperties() =>
     [
-        ("query", StringSchema(1024)),
+        ("query", StringSchema(2048)),
         ("path", StringSchema()), ("file_glob", StringSchema()),
         ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
         ("max_results", IntegerSchema(1, 128)),
         // Paging bound mirrors FileToolLimits.MaxOffset in RuAgent.Broker (the
         // adapter is the authority; Protocol cannot reference the Broker layer).
-        ("offset", IntegerSchema(0, 10000)),
+        ("offset", IntegerSchema(0, 50000)),
     ];
     private static JsonObject GlobSchema() => ObjectSchema(["pattern"], GlobSchemaProperties());
     private static (string Name, JsonObject Schema)[] GlobSchemaProperties() =>
@@ -188,7 +188,7 @@ public static class AgentToolDefinitionCatalog
         ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)),
     ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
-    private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 256 * 1024))]);
+    private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 512 * 1024))]);
     private static JsonObject FileEditSchema() => ObjectSchema(["path", "old_string"], [("path", StringSchema()), ("old_string", StringSchema(minLength: 1)), ("new_string", StringSchema()), ("expected_occurrences", IntegerSchema(1, 1024))]);
     private static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 

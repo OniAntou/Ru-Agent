@@ -13,7 +13,7 @@ public sealed class TerminalOutputSpool
     /// Retained outputs per session. Past this the oldest spool is evicted, so
     /// a chatty session degrades to re-running instead of growing memory.
     /// </summary>
-    public const int MaxSpoolsPerSession = 16;
+    public const int MaxSpoolsPerSession = 32;
 
     private readonly object _gate = new();
     private readonly Dictionary<string, LinkedList<SpoolEntry>> _sessions = new(StringComparer.Ordinal);

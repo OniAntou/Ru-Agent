@@ -1,3 +1,4 @@
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
 using RuBackend.Business.Sessions;
 using RuBackend.Harness.Policy;
@@ -24,17 +25,20 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
     private readonly ISessionStore _sessions;
     private readonly TimeProvider _clock;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly IAgentRuntimeRunCleanup? _runCleanup;
 
     public HarnessSessionDeletionCoordinator(
         IHarnessSessionArtifactStore artifacts,
         ISessionStore sessions,
         TimeProvider clock,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null)
+        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        IAgentRuntimeRunCleanup? runCleanup = null)
     {
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _brokerGateways = brokerGateways;
+        _runCleanup = runCleanup;
     }
 
     public async Task<HarnessSessionDeletionOutcome> DeleteAsync(
@@ -47,9 +51,25 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             throw new HarnessStoreException("broker_revoke_rejected");
         }
 
+        // Stop in-flight runs before the artifact store marks them cancelled:
+        // changing SQLite alone leaves the tool process running, and the drive
+        // loop cannot notice a deleted run while it is blocked inside a step.
         bool artifactsDeleted;
         try
         {
+            if (_runCleanup is not null)
+            {
+                var runIds = await _artifacts
+                    .ListNonTerminalRunIdsAsync(sessionId, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var runIdValue in runIds)
+                {
+                    await _runCleanup
+                        .CancelAndRemoveRunAsync(new RunId(runIdValue), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
             await _artifacts.CloseAndDeleteAsync(
                     sessionId,
                     _clock.GetUtcNow().ToUniversalTime(),

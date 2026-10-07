@@ -343,6 +343,19 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
+    public void Plain_text_attachments_drop_a_utf8_bom_like_the_cli()
+    {
+        // A BOM is an encoding marker, not prompt text: the CLI read detects and
+        // strips it, and the GUI path must not hand U+FEFF to the model.
+        var view = GuiSource.ViewText("ChatView");
+        var decode = GuiSource.MethodBody(view, "DecodeTextAttachment");
+
+        Assert.Contains("detectEncodingFromByteOrderMarks: true", decode, StringComparison.Ordinal);
+        var attach = GuiSource.MethodBody(view, "AddFileAttachmentAsync");
+        Assert.Contains("DecodeTextAttachment(bytes)", attach, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Clipboard_images_use_the_picker_normalization_and_intake_limits()
     {
         var view = GuiSource.ViewText("ChatView");

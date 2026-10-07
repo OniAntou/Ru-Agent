@@ -59,6 +59,25 @@ public sealed class RuntimeDescriptorWriter
         }
     }
 
+    /// <summary>
+    /// Writes the descriptor only when no live instance already claims the path.
+    /// Returns false without touching the file when a valid descriptor bound to a
+    /// running process exists, so a startup race can never clobber a live host.
+    /// </summary>
+    public async Task<bool> TryWriteIfUnclaimedAsync(
+        RuntimeDescriptor descriptor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        if (!IsStale())
+        {
+            return false;
+        }
+
+        await WriteAsync(descriptor, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public bool TryReadValid(out RuntimeDescriptor? descriptor, out string? error)
     {
         descriptor = null;

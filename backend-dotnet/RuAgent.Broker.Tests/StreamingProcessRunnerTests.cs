@@ -305,6 +305,158 @@ public sealed class StreamingProcessRunnerTests
         Assert.Equal(0, stragglers);
     }
 
+    [Fact]
+    public async Task Runner_reports_a_stable_start_failure_for_a_missing_executable()
+    {
+        var runner = new StreamingProcessRunner();
+        var spec = new ProcessRunSpec(
+            Path.Combine(Path.GetTempPath(), "ru-missing-" + Guid.NewGuid().ToString("N") + ".exe"),
+            ["/c", "echo x"],
+            Path.GetTempPath(),
+            new AgentCommandEnvironment().ChildEnvironment,
+            5_000,
+            256 * 1024);
+
+        var result = await runner.RunAsync(spec, null, CancellationToken.None);
+
+        Assert.Equal("failed", result.Status);
+        Assert.Null(result.ExitCode);
+        Assert.Equal("process_start_failed", result.StderrHead);
+    }
+
+    [Fact]
+    public async Task Cancellation_kills_a_grandchild_spawned_immediately_after_start()
+    {
+        var runner = new StreamingProcessRunner();
+        var pidFile = NewGrandchildPidFile();
+        var script = GrandchildScript("ping -n 300 127.0.0.1 > $null");
+        using var cts = new CancellationTokenSource();
+        var run = runner.RunAsync(GrandchildSpec(pidFile, script), null, cts.Token);
+
+        var pid = await WaitForGrandchildPidAsync(pidFile, TimeSpan.FromSeconds(30));
+        cts.Cancel();
+        var result = await run;
+
+        Assert.Equal("cancelled", result.Status);
+        var exited = await WaitForProcessExitAsync(pid, TimeSpan.FromSeconds(15));
+        KillIfAlive(pid);
+        Assert.True(exited, "a grandchild spawned at start escaped the job and survived cancellation");
+    }
+
+    [Fact]
+    public async Task A_detached_grandchild_does_not_outlive_the_job()
+    {
+        // The child writes its grandchild's PID and exits immediately, so the
+        // grandchild is orphaned from its parent; only job membership can take it
+        // down. The grandchild inherits the run's output pipes, so the run stays
+        // draining until it is cancelled; the job must still take the orphan down.
+        var runner = new StreamingProcessRunner();
+        var pidFile = NewGrandchildPidFile();
+        var script = GrandchildScript(string.Empty);
+        using var cts = new CancellationTokenSource();
+        var run = runner.RunAsync(GrandchildSpec(pidFile, script), null, cts.Token);
+
+        var pid = await WaitForGrandchildPidAsync(pidFile, TimeSpan.FromSeconds(30));
+        cts.Cancel();
+        var result = await run;
+
+        Assert.True(result.Status is "succeeded" or "cancelled", $"unexpected status {result.Status}");
+        var exited = await WaitForProcessExitAsync(pid, TimeSpan.FromSeconds(15));
+        KillIfAlive(pid);
+        Assert.True(exited, "a detached grandchild escaped the job and outlived the run");
+    }
+
+    private static string NewGrandchildPidFile() =>
+        Path.Combine(Path.GetTempPath(), "ru-grandchild-" + Guid.NewGuid().ToString("N") + ".pid");
+
+    private static string GrandchildScript(string finalCommand) =>
+        "$psi=[Diagnostics.ProcessStartInfo]::new();" +
+        "$psi.FileName=$env:COMSPEC;" +
+        "$psi.Arguments='/d /s /c ping -n 300 127.0.0.1 > NUL';" +
+        "$psi.UseShellExecute=$false;$psi.CreateNoWindow=$true;" +
+        "$psi.RedirectStandardInput=$true;$psi.RedirectStandardOutput=$true;$psi.RedirectStandardError=$true;" +
+        "$grandchild=[Diagnostics.Process]::Start($psi);" +
+        "[IO.File]::WriteAllText($env:RU_GRANDCHILD_PID_FILE,[string]$grandchild.Id);" +
+        finalCommand;
+
+    private static ProcessRunSpec GrandchildSpec(string pidFile, string script)
+    {
+        var environment = new AgentCommandEnvironment().ChildEnvironment
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        environment["COMSPEC"] = Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe";
+        environment["RU_GRANDCHILD_PID_FILE"] = pidFile;
+        return new ProcessRunSpec(
+            environment["COMSPEC"],
+            ["/d", "/s", "/c", $"powershell -NoProfile -EncodedCommand {EncodePowerShell(script)}"],
+            Path.GetTempPath(),
+            environment,
+            120_000,
+            256 * 1024);
+    }
+
+    private static async Task<int> WaitForGrandchildPidAsync(string path, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (File.Exists(path)
+                    && int.TryParse(File.ReadAllText(path).Trim(), out var pid)
+                    && pid > 0)
+                {
+                    return pid;
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException("the grandchild PID file was never written");
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(int pid, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                if (process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+
+            await Task.Delay(200);
+        }
+
+        return false;
+    }
+
+    private static void KillIfAlive(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            if (!process.HasExited)
+            {
+                process.Kill();
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     private static string? SafeCommandLine(Process process)
     {
         try

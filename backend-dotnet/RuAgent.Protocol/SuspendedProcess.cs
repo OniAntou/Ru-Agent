@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace RuAgent.Hosting;
+namespace RuAgent.Protocol;
 
 /// <summary>
 /// Starts a child process suspended, so it can be placed in a Job Object before it
@@ -26,11 +26,13 @@ namespace RuAgent.Hosting;
 /// pipes are wrapped in <see cref="StreamReader"/> exactly as
 /// <c>Process.StandardOutput</c>/<c>StandardError</c> would be, and the caller's
 /// <see cref="ProcessStartInfo.Environment"/> is written to a Unicode environment
-/// block. .NET's own automatic job object is irrelevant here: the child is out of any
-/// job once it is assigned to this one, and because it was suspended there is nothing
-/// left behind when that happens.
+/// block. <see cref="ProcessStartInfo.ArgumentList"/> is honored when present and
+/// <see cref="ProcessStartInfo.Arguments"/> otherwise. .NET's own automatic job
+/// object is irrelevant here: the child is out of any job once it is assigned to
+/// this one, and because it was suspended there is nothing left behind when that
+/// happens.
 /// </remarks>
-internal static class SuspendedProcess
+public static class SuspendedProcess
 {
     private const uint CreateSuspended = 0x00000004;
     private const uint CreateNoWindow = 0x08000000;
@@ -38,7 +40,7 @@ internal static class SuspendedProcess
     private const int StartfUseStdHandles = 0x00000100;
     private const uint HandleFlagInherit = 0x00000001;
 
-    internal sealed record StartedProcess(
+    public sealed record StartedProcess(
         Process Process,
         SafeFileHandle ThreadHandle,
         StreamReader StandardOutput,
@@ -48,7 +50,7 @@ internal static class SuspendedProcess
     /// Creates the process described by <paramref name="startInfo"/> without letting it
     /// run. The caller must assign it to a job and then call <see cref="Resume"/>.
     /// </summary>
-    internal static StartedProcess StartSuspended(ProcessStartInfo startInfo)
+    public static StartedProcess StartSuspended(ProcessStartInfo startInfo)
     {
         ArgumentNullException.ThrowIfNull(startInfo);
         if (!OperatingSystem.IsWindows())
@@ -67,18 +69,21 @@ internal static class SuspendedProcess
         try
         {
             // stdin is an empty pipe whose write end closes immediately: the child reads
-            // EOF instead of inheriting a console.
+            // EOF instead of inheriting a console. The read end stays inheritable so it
+            // crosses into the child as its standard input.
             (stdinRead, stdinWrite) = CreateInheritablePipe();
             stdinWrite.Dispose();
             stdinWrite = null;
 
             (stdoutRead, stdoutWrite) = CreateInheritablePipe();
+            ClearInheritance(stdoutRead);
             (stderrRead, stderrWrite) = CreateInheritablePipe();
+            ClearInheritance(stderrRead);
 
             inheritHandles.Add(stdoutWrite);
             inheritHandles.Add(stderrWrite);
 
-            var commandLine = BuildCommandLine(startInfo.FileName, startInfo.Arguments);
+            var commandLine = BuildCommandLine(startInfo);
             environmentBlock = BuildEnvironmentBlock(startInfo.Environment);
 
             var startupInfo = new StartupInfo
@@ -116,28 +121,58 @@ internal static class SuspendedProcess
             // is what ResumeThread needs.
             CloseHandle(processInformation.hProcess);
 
-            SafeFileHandle stdout = stdoutRead;
-            SafeFileHandle stderr = stderrRead;
+            // The child owns its inherited copy of the stdin read end.
+            SafeClose(stdinRead);
+            stdinRead = null;
+
+            SafeFileHandle? stdout = stdoutRead;
+            SafeFileHandle? stderr = stderrRead;
             stdoutRead = null;
             stderrRead = null;
 
-            // Process.StandardOutput/StandardError are only populated by Process.Start,
-            // so the readers are handed back directly rather than attached to it.
-            var process = Process.GetProcessById(processInformation.dwProcessId);
-            var standardOutput = new StreamReader(
-                new FileStream(stdout, FileAccess.Read),
-                Encoding.UTF8,
-                detectEncodingFromByteOrderMarks: true);
-            var standardError = new StreamReader(
-                new FileStream(stderr, FileAccess.Read),
-                Encoding.UTF8,
-                detectEncodingFromByteOrderMarks: true);
+            var threadHandle = new SafeFileHandle(processInformation.hThread, ownsHandle: true);
+            Process? process = null;
+            StreamReader? standardOutput = null;
+            StreamReader? standardError = null;
+            try
+            {
+                // Process.StandardOutput/StandardError are only populated by Process.Start,
+                // so the readers are handed back directly rather than attached to it.
+                process = Process.GetProcessById(processInformation.dwProcessId);
+                standardOutput = new StreamReader(
+                    new FileStream(stdout, FileAccess.Read),
+                    Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true);
+                stdout = null;
+                standardError = new StreamReader(
+                    new FileStream(stderr, FileAccess.Read),
+                    Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true);
+                stderr = null;
 
-            return new StartedProcess(
-                process,
-                new SafeFileHandle(processInformation.hThread, ownsHandle: true),
-                standardOutput,
-                standardError);
+                return new StartedProcess(process, threadHandle, standardOutput, standardError);
+            }
+            catch
+            {
+                SafeClose(stdout);
+                SafeClose(stderr);
+                standardOutput?.Dispose();
+                standardError?.Dispose();
+                try
+                {
+                    if (process is not null && !process.HasExited)
+                    {
+                        process.Kill();
+                    }
+                }
+                catch (Exception)
+                {
+                }
+
+                process?.Dispose();
+                threadHandle.Dispose();
+                throw;
+            }
         }
         catch
         {
@@ -162,7 +197,7 @@ internal static class SuspendedProcess
     /// Lets the suspended main thread run. Returns false when the thread is already
     /// gone, which means the process exited while it was suspended.
     /// </summary>
-    internal static bool Resume(SafeFileHandle threadHandle)
+    public static bool Resume(SafeFileHandle threadHandle)
     {
         ArgumentNullException.ThrowIfNull(threadHandle);
         if (threadHandle.IsInvalid || threadHandle.IsClosed)
@@ -185,29 +220,58 @@ internal static class SuspendedProcess
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not create a child process pipe.");
         }
 
-        // Only the end the child writes to travels across the process boundary.
-        if (!SetHandleInformation(read, HandleFlagInherit, 0))
-        {
-            var error = Marshal.GetLastWin32Error();
-            read.Dispose();
-            write.Dispose();
-            throw new Win32Exception(error, "Could not restrict pipe handle inheritance.");
-        }
-
         return (read, write);
     }
 
-    private static string BuildCommandLine(string executable, string arguments)
+    private static void ClearInheritance(SafeFileHandle handle)
+    {
+        if (!SetHandleInformation(handle, HandleFlagInherit, 0))
+        {
+            var error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "Could not restrict pipe handle inheritance.");
+        }
+    }
+
+    private static string BuildCommandLine(ProcessStartInfo startInfo)
     {
         var builder = new StringBuilder();
-        AppendQuoted(builder, executable);
-        if (!string.IsNullOrWhiteSpace(arguments))
+        AppendQuoted(builder, startInfo.FileName);
+        if (startInfo.ArgumentList.Count > 0)
+        {
+            foreach (var argument in startInfo.ArgumentList)
+            {
+                builder.Append(' ');
+                AppendArgument(builder, argument);
+            }
+
+            return builder.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(startInfo.Arguments))
         {
             builder.Append(' ');
-            builder.Append(arguments);
+            builder.Append(startInfo.Arguments);
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Quotes one argument only when it needs quoting, matching the command line
+    /// <c>Process.Start</c> builds from <see cref="ProcessStartInfo.ArgumentList"/>.
+    /// Always quoting breaks programs that parse their own command line, such as
+    /// <c>cmd.exe /c</c>, which would read <c>"/c"</c> as the command text.
+    /// </summary>
+    private static void AppendArgument(StringBuilder builder, string argument)
+    {
+        if (argument.Length > 0 && argument.IndexOfAny([' ', '\t', '"']) < 0)
+        {
+            builder.Append(argument);
+            return;
+        }
+
+        AppendQuoted(builder, argument);
     }
 
     /// <summary>

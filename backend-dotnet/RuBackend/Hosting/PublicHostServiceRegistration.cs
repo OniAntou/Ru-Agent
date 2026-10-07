@@ -197,6 +197,10 @@ internal static class PublicHostServiceRegistration
         // registration must forward to it (two registrations would create two loops).
         services.AddSingleton<AgentRuntimeLoopService>();
         services.AddHostedService(services => services.GetRequiredService<AgentRuntimeLoopService>());
+        // Session deletion resolves the same singleton loop: the runtime half of
+        // deleting a session cancels its in-flight runs before the rows vanish.
+        services.AddSingleton<IAgentRuntimeRunCleanup>(services =>
+            services.GetRequiredService<AgentRuntimeLoopService>());
         services.AddSingleton<AgentV1Service>();
         // Image-input support follows what the provider's catalog declares for the
         // selected model. A name check alone read a gateway model carrying no vendor

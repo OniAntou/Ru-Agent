@@ -31,6 +31,7 @@ public sealed class SpoolFileWriterTests : IDisposable
 
         Assert.Equal("hello world", writer.Window);
         Assert.Equal(11, writer.TotalChars);
+        Assert.Equal(11, writer.TotalBytes);
         Assert.Null(writer.FilePath);
         Assert.False(writer.Truncated);
         Assert.False(File.Exists(Path.Combine(_root, "small.log")));
@@ -46,6 +47,7 @@ public sealed class SpoolFileWriterTests : IDisposable
 
         Assert.Equal(TerminalLimits.MaxSpoolChars, writer.Window.Length);
         Assert.Equal(TerminalLimits.MaxSpoolChars + 5000, writer.TotalChars);
+        Assert.Equal(TerminalLimits.MaxSpoolChars + 5000, writer.TotalBytes);
         Assert.NotNull(writer.FilePath);
         Assert.False(writer.Truncated);
         Assert.Equal(new string('b', 5000), File.ReadAllText(writer.FilePath!));
@@ -70,13 +72,47 @@ public sealed class SpoolFileWriterTests : IDisposable
     {
         var writer = new SpoolFileWriter(
             Path.Combine(_root, "filecap.log"),
-            maxChars: TerminalLimits.MaxSpoolChars + 100);
+            maxBytes: TerminalLimits.MaxSpoolChars + 100);
         writer.Append(new string('a', TerminalLimits.MaxSpoolChars));
         writer.Append(new string('b', 500));
         writer.Complete();
 
         Assert.Equal(TerminalLimits.MaxSpoolChars + 100, writer.TotalChars);
+        Assert.Equal(TerminalLimits.MaxSpoolChars + 100, writer.TotalBytes);
         Assert.True(writer.Truncated);
         Assert.Equal(new string('b', 100), File.ReadAllText(writer.FilePath!));
+    }
+
+    [Fact]
+    public void Byte_ceiling_cuts_multi_byte_text_without_splitting_it()
+    {
+        var writer = new SpoolFileWriter(
+            Path.Combine(_root, "utf8cap.log"),
+            maxBytes: TerminalLimits.MaxSpoolChars + 4);
+        writer.Append(new string('a', TerminalLimits.MaxSpoolChars));
+        writer.Append("ééé");
+        writer.Complete();
+
+        Assert.Equal(TerminalLimits.MaxSpoolChars + 2, writer.TotalChars);
+        Assert.Equal(TerminalLimits.MaxSpoolChars + 4, writer.TotalBytes);
+        Assert.True(writer.Truncated);
+        Assert.Equal("éé", File.ReadAllText(writer.FilePath!));
+        Assert.Equal(4, new FileInfo(writer.FilePath!).Length);
+    }
+
+    [Fact]
+    public void Byte_ceiling_never_splits_a_surrogate_pair()
+    {
+        var writer = new SpoolFileWriter(
+            Path.Combine(_root, "paircap.log"),
+            maxBytes: TerminalLimits.MaxSpoolChars + 2);
+        writer.Append(new string('a', TerminalLimits.MaxSpoolChars));
+        writer.Append("😀");
+        writer.Complete();
+
+        Assert.Equal(TerminalLimits.MaxSpoolChars, writer.TotalChars);
+        Assert.Equal(TerminalLimits.MaxSpoolChars, writer.TotalBytes);
+        Assert.True(writer.Truncated);
+        Assert.Null(writer.FilePath);
     }
 }

@@ -91,7 +91,7 @@ public sealed class TerminalOutputSpoolTests
             var filePath = spool.CreateFilePath("session-a", "req-1");
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             File.WriteAllText(filePath, "tail");
-            spool.Store("session-a", "req-1", prefix, new SpoolSpill(filePath, prefix.Length + 4, Truncated: false));
+            spool.Store("session-a", "req-1", prefix, new SpoolSpill(filePath, prefix.Length + 4, 4, Truncated: false));
 
             Assert.True(spool.TryReadPage(
                 "session-a",
@@ -130,7 +130,7 @@ public sealed class TerminalOutputSpoolTests
             var first = spool.CreateFilePath("session-a", "req-0");
             Directory.CreateDirectory(Path.GetDirectoryName(first)!);
             File.WriteAllText(first, "x");
-            spool.Store("session-a", "req-0", "window", new SpoolSpill(first, 6, Truncated: false));
+            spool.Store("session-a", "req-0", "window", new SpoolSpill(first, 6, 1, Truncated: false));
             for (var index = 1; index <= TerminalOutputSpool.MaxSpoolsPerSession; index++)
             {
                 spool.Store("session-a", $"req-{index}", $"output-{index}");
@@ -138,6 +138,40 @@ public sealed class TerminalOutputSpoolTests
 
             Assert.False(File.Exists(first));
             Assert.False(spool.TryRead("session-a", "req-0", out _));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Session_byte_quota_evicts_the_oldest_spill()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root);
+            var first = spool.CreateFilePath("session-a", "req-0");
+            Directory.CreateDirectory(Path.GetDirectoryName(first)!);
+            File.WriteAllText(first, "x");
+            spool.Store(
+                "session-a",
+                "req-0",
+                "old",
+                new SpoolSpill(first, 3, Protocol.TerminalLimits.MaxSpoolSessionBytes, Truncated: false));
+            var second = spool.CreateFilePath("session-a", "req-1");
+            File.WriteAllText(second, "y");
+            spool.Store("session-a", "req-1", "new", new SpoolSpill(second, 3, 1, Truncated: false));
+
+            Assert.False(File.Exists(first));
+            Assert.False(spool.TryRead("session-a", "req-0", out _));
+            Assert.True(spool.TryRead("session-a", "req-1", out var text));
+            Assert.Equal("new", text);
+            Assert.True(File.Exists(second));
         }
         finally
         {

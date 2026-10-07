@@ -130,7 +130,7 @@ namespace RuApp.Views
                 }
                 else
                 {
-                    item.TextContent = System.Text.Encoding.UTF8.GetString(bytes);
+                    item.TextContent = DecodeTextAttachment(bytes);
                 }
 
                 TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
@@ -139,6 +139,14 @@ namespace RuApp.Views
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error adding attachment: {ex.Message}");
             }
+        }
+
+        /// <summary>UTF-8 with BOM detection; a byte-order mark is encoding, not prompt text.</summary>
+        private static string DecodeTextAttachment(byte[] bytes)
+        {
+            using var stream = new MemoryStream(bytes, writable: false);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return reader.ReadToEnd();
         }
 
         /// <summary>

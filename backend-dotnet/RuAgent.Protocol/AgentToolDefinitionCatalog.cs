@@ -185,10 +185,10 @@ public static class AgentToolDefinitionCatalog
         ("background", BooleanSchema()),
         ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
         ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),
-        // Paging bound mirrors the spool retention ceiling in RuAgent.Broker:
-        // the in-memory window plus the spilled file. Protocol cannot
-        // reference the Broker layer.
-        ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolFileBytes)),
+        // Paging bound mirrors the spool retention ceiling in RuAgent.Broker,
+        // counted in UTF-16 characters: the in-memory window plus the spilled
+        // file. Protocol cannot reference the Broker layer.
+        ("offset", IntegerSchema(0, TerminalLimits.MaxSpoolFileChars)),
         ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)),
     ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);

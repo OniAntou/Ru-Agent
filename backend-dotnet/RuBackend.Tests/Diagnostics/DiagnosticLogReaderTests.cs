@@ -1,3 +1,4 @@
+using System.Globalization;
 using RuBackend.Diagnostics;
 using Xunit;
 
@@ -151,4 +152,78 @@ public sealed class DiagnosticLogReaderTests : IDisposable
         var actual = Assert.Single(result.Events);
         Assert.Equal("small", actual.EventId);
     }
+
+    [Fact]
+    public async Task Reader_pages_through_more_events_than_the_buffer_in_oldest_first_order()
+    {
+        var logFile = Path.Combine(_tempLogDir, "aspnetcore-2026-08-20.jsonl");
+        await File.WriteAllLinesAsync(logFile, Enumerable.Range(1, 300).Select(i => EventLine($"evt_{i:D3}", i)));
+
+        var reader = new DiagnosticLogReader(_tempLogDir);
+        var pageIds = new List<string>();
+        string? cursor = null;
+        for (var page = 0; page < 3; page++)
+        {
+            var result = await reader.ReadLogsAsync(new DiagnosticLogQuery(Limit: 100, Cursor: cursor));
+
+            Assert.Equal(100, result.Events.Count);
+            Assert.NotNull(result.Cursor);
+            pageIds.AddRange(result.Events.Select(e => e.EventId));
+            cursor = result.Cursor;
+        }
+
+        Assert.Equal(Enumerable.Range(1, 300).Select(i => $"evt_{i:D3}"), pageIds);
+    }
+
+    [Fact]
+    public async Task Reader_formats_and_parses_the_cursor_with_invariant_culture()
+    {
+        var logFile = Path.Combine(_tempLogDir, "aspnetcore-2026-08-20.jsonl");
+        await File.WriteAllLinesAsync(logFile, Enumerable.Range(1, 3).Select(i => EventLine($"evt_{i:D3}", i)));
+
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            var reader = new DiagnosticLogReader(_tempLogDir);
+            var first = await reader.ReadLogsAsync(new DiagnosticLogQuery(Limit: 2));
+
+            Assert.Equal(new[] { "evt_001", "evt_002" }, first.Events.Select(e => e.EventId));
+            Assert.True(DiagnosticLogQueryPolicy.TryParseCursor(first.Cursor!, out var cursorTs, out var cursorEventId));
+            Assert.Equal(2.0, cursorTs);
+            Assert.Equal("evt_002", cursorEventId);
+
+            var second = await reader.ReadLogsAsync(new DiagnosticLogQuery(Limit: 2, Cursor: first.Cursor));
+            Assert.Equal("evt_003", Assert.Single(second.Events).EventId);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public async Task Reader_selects_the_newest_files_by_date_not_by_name_prefix()
+    {
+        await File.WriteAllLinesAsync(
+            Path.Combine(_tempLogDir, "worker-2026-08-01.jsonl"),
+            new[] { EventLine("evt_worker", 1) });
+        for (var day = 2; day <= 21; day++)
+        {
+            await File.WriteAllLinesAsync(
+                Path.Combine(_tempLogDir, $"aspnetcore-2026-08-{day:D2}.jsonl"),
+                new[] { EventLine($"evt_{day:D2}", day) });
+        }
+
+        var result = await new DiagnosticLogReader(_tempLogDir)
+            .ReadLogsAsync(new DiagnosticLogQuery(Limit: 100));
+
+        Assert.Equal(20, result.Events.Count);
+        Assert.DoesNotContain(result.Events, e => e.EventId == "evt_worker");
+        Assert.Contains(result.Events, e => e.EventId == "evt_02");
+    }
+
+    private static string EventLine(string eventId, int ts) =>
+        $"{{\"event_id\":\"{eventId}\",\"ts\":{ts},\"iso\":\"2026-08-20T00:00:00Z\",\"level\":\"info\",\"component\":\"host\",\"event_code\":\"c\"}}";
 }

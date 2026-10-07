@@ -73,7 +73,7 @@ public sealed partial class ToolExecutionService
         // Ranges are already enforced by schema validation; these are backstops.
         var offset = ReadOptionalInt(arguments, "offset") ?? 0;
         var limit = ReadOptionalInt(arguments, "limit") ?? DefaultSpoolPageChars;
-        if (offset < 0 || offset > TerminalLimits.MaxSpoolFileBytes
+        if (offset < 0 || offset > TerminalLimits.MaxSpoolFileChars
             || limit < 1 || limit > TerminalLimits.MaxSpoolPageChars)
         {
             throw new ArgumentException("invalid_arguments");
@@ -419,7 +419,7 @@ public sealed partial class ToolExecutionService
             writer.Window,
             writer.FilePath is null
                 ? null
-                : new SpoolSpill(writer.FilePath, writer.TotalChars, writer.Truncated));
+                : new SpoolSpill(writer.FilePath, writer.TotalChars, writer.TotalBytes, writer.Truncated));
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(

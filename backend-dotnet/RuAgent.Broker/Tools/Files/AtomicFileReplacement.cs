@@ -30,7 +30,17 @@ public static class AtomicFileReplacement
                 stream.Flush(true);
             }
 
-            File.Move(tempPath, targetPath, overwrite);
+            if (overwrite && File.Exists(targetPath))
+            {
+                // ReplaceFile (unlike MoveFileEx) succeeds while a caller holds
+                // the target open with FILE_SHARE_DELETE, which is what lets the
+                // mutation guard keep its writer-denying handle across the swap.
+                File.Replace(tempPath, targetPath, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(tempPath, targetPath, overwrite);
+            }
         }
         finally
         {

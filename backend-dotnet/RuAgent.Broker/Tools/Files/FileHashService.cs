@@ -71,6 +71,12 @@ public static class FileHashService
             FileShare.ReadWrite | FileShare.Delete,
             4096,
             FileOptions.SequentialScan);
+        return ComputeStreamHash(stream);
+    }
+
+    internal static string ComputeStreamHash(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
         using var sha = SHA256.Create();
         var buffer = new byte[StreamBufferSize];
         int read;

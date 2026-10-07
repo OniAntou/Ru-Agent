@@ -54,6 +54,55 @@ public sealed class HarnessSessionArtifactStoreTests
         Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_session_settings"));
     }
 
+    [Fact]
+    public async Task Non_terminal_run_listing_is_session_scoped_and_skips_terminal_runs()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        await fixture.RegisterWorkspaceAsync(2);
+        var store = fixture.CreateEventStore();
+
+        var live = fixture.NewRun(1, 1, 1, status: new HarnessRunStatus(HarnessRunState.WaitingUser));
+        await store.TryCreateRunAsync(live, CancellationToken.None);
+        var finished = fixture.NewRun(2, 2, 2);
+        await store.TryCreateRunAsync(finished, CancellationToken.None);
+
+        var current = await store.GetRunAsync(finished.Run.RunId, CancellationToken.None);
+        var terminal = new AgentRun(
+            current!.RunId,
+            current.SessionId,
+            current.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Completed),
+            current.Version + 1,
+            current.LastSequence + 1,
+            current.BudgetWindow,
+            current.ModelStepsInWindow,
+            current.ToolCallsInWindow,
+            current.Preset,
+            current.PolicySnapshotVersion,
+            current.PolicySnapshotSha256,
+            current.CreatedAt,
+            HarnessStoreTestFixture.Timestamp.AddMinutes(5),
+            terminalAt: HarnessStoreTestFixture.Timestamp.AddMinutes(5));
+        var commit = new HarnessCommit(
+            finished.Run.RunId,
+            current.Version,
+            terminal,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(200), HarnessEventKind.RunStateChanged)],
+            [],
+            []);
+        Assert.Equal(
+            HarnessCommitOutcome.Committed,
+            (await store.CommitAsync(commit, CancellationToken.None)).Outcome);
+
+        var artifacts = new HarnessSessionArtifactStore(fixture.Options);
+        Assert.Equal(
+            new[] { live.Run.RunId.Value },
+            await artifacts.ListNonTerminalRunIdsAsync(live.Run.SessionId.Value, CancellationToken.None));
+        Assert.Empty(
+            await artifacts.ListNonTerminalRunIdsAsync(finished.Run.SessionId.Value, CancellationToken.None));
+    }
+
     private static async Task<long> ScalarAsync(
         HarnessStoreTestFixture fixture,
         string commandText)

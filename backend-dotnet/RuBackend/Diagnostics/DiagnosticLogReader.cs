@@ -1,5 +1,6 @@
 namespace RuBackend.Diagnostics;
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -49,34 +50,23 @@ public sealed class DiagnosticLogReader
         }
 
         var candidateFiles = Directory.GetFiles(_logDirectory, "*.jsonl")
-            .Where(f =>
+            .Select(path => (File: path, Name: Path.GetFileName(path), Date: ParseFileDate(Path.GetFileName(path))))
+            .Where(candidate =>
             {
-                var name = Path.GetFileName(f);
-                var validPrefix = name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
-                    || name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
-                    || name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase);
+                var validPrefix = candidate.Name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
+                    || candidate.Name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
+                    || candidate.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase);
                 if (!validPrefix)
                 {
                     return false;
                 }
 
-                if (sinceDate.HasValue)
-                {
-                    var dashIdx = name.IndexOf('-');
-                    if (dashIdx >= 0 && name.Length >= dashIdx + 11)
-                    {
-                        var dateStr = name.Substring(dashIdx + 1, 10);
-                        if (DateOnly.TryParse(dateStr, out var fileDate) && fileDate < sinceDate.Value)
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                return true;
+                return !sinceDate.HasValue || !candidate.Date.HasValue || candidate.Date.Value >= sinceDate.Value;
             })
-            .OrderByDescending(f => f) // Newest first
+            .OrderByDescending(candidate => candidate.Date ?? DateOnly.MinValue) // Newest first
+            .ThenByDescending(candidate => candidate.Name, StringComparer.Ordinal)
             .Take(MaxFilesToScan)
+            .Select(candidate => candidate.File)
             .ToList();
 
         var collectedEvents = new List<DiagnosticEvent>();
@@ -173,11 +163,12 @@ public sealed class DiagnosticLogReader
                     collectedEvents.Add(evt);
                     if (collectedEvents.Count >= maxBufferSize)
                     {
-                        // Keep only the newest items within buffer size
+                        // A page starts at the oldest matching event, so the newest
+                        // overflow can be dropped without changing the result.
                         collectedEvents = collectedEvents
                             .OrderBy(e => e.Ts)
                             .ThenBy(e => e.EventId, StringComparer.Ordinal)
-                            .TakeLast(limit)
+                            .Take(limit)
                             .ToList();
                     }
                 }
@@ -202,9 +193,27 @@ public sealed class DiagnosticLogReader
         if (sorted.Count > 0)
         {
             var last = sorted[^1];
-            nextCursor = $"cur_{last.Ts:F6}_{last.EventId}";
+            nextCursor = $"cur_{last.Ts.ToString("F6", CultureInfo.InvariantCulture)}_{last.EventId}";
         }
 
         return new DiagnosticLogResult(sorted, nextCursor);
+    }
+
+    private static DateOnly? ParseFileDate(string fileName)
+    {
+        var dashIndex = fileName.IndexOf('-');
+        if (dashIndex < 0 || fileName.Length < dashIndex + 11)
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(
+            fileName.Substring(dashIndex + 1, 10),
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var date)
+            ? date
+            : null;
     }
 }

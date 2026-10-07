@@ -67,11 +67,27 @@ public static class TerminalLimits
     public const int MaxSpoolChars = 256 * 1024;
 
     /// <summary>
-    /// Retention ceiling for one spilled spool file. Past this the spool stops
-    /// recording and the receipt names the truncation; the command itself
-    /// keeps running to its own timeout or lifetime.
+    /// Retention ceiling for one spilled spool file, counted in UTF-8 bytes.
+    /// Past this the spool stops recording and the receipt names the
+    /// truncation; the command itself keeps running to its own timeout or
+    /// lifetime.
     /// </summary>
     public const int MaxSpoolFileBytes = 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// The same retention ceiling counted in UTF-16 characters: spool reads
+    /// page by character offset, so the read cursor bound uses this name while
+    /// <see cref="MaxSpoolFileBytes"/> names the byte budget the writer
+    /// enforces.
+    /// </summary>
+    public const int MaxSpoolFileChars = 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Aggregate UTF-8 byte budget for one session's spilled spool files. Past
+    /// this the oldest spill is evicted and its file deleted, so a chatty
+    /// session cannot grow the spool root without bound.
+    /// </summary>
+    public const long MaxSpoolSessionBytes = 2L * 1024 * 1024 * 1024;
 
     /// <summary>
     /// Largest single page a spool read may return.

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using RuAgent.Protocol;
 
 namespace RuAgent.Hosting;
 

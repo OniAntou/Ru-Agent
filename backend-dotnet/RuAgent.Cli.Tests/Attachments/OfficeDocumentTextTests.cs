@@ -58,6 +58,16 @@ public sealed class OfficeDocumentTextTests
     }
 
     [Fact]
+    public void Extract_OneOversizedPartIsRefused()
+    {
+        var big = new string('x', OfficeDocumentText.MaxTextChars + 1_000);
+        var docx = Docx(("word/document.xml",
+            $"<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:t>{big}</w:t></w:body></w:document>"));
+
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, OfficeDocumentText.Extract(docx).Result);
+    }
+
+    [Fact]
     public void IsSupported_MatchesOnlyOfficeExtensions()
     {
         Assert.True(OfficeDocumentText.IsSupported("report.docx"));

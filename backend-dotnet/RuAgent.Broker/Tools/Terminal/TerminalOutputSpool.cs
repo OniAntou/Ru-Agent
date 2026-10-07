@@ -47,6 +47,7 @@ public sealed class TerminalOutputSpool
             retained,
             spill?.FilePath,
             spill?.TotalChars ?? retained.Length,
+            spill?.TotalBytes ?? 0,
             spill?.Truncated ?? false);
         List<SpoolEntry>? discarded = null;
         lock (_gate)
@@ -73,6 +74,8 @@ public sealed class TerminalOutputSpool
                 (discarded ??= []).Add(spools.First!.Value);
                 spools.RemoveFirst();
             }
+
+            discarded = EvictPastByteQuota(spools, discarded);
         }
 
         if (discarded is not null)
@@ -244,6 +247,27 @@ public sealed class TerminalOutputSpool
         return null;
     }
 
+    private static List<SpoolEntry>? EvictPastByteQuota(
+        LinkedList<SpoolEntry> spools,
+        List<SpoolEntry>? discarded)
+    {
+        var retainedBytes = 0L;
+        foreach (var entry in spools)
+        {
+            retainedBytes += entry.TotalBytes;
+        }
+
+        while (retainedBytes > Protocol.TerminalLimits.MaxSpoolSessionBytes)
+        {
+            var oldest = spools.First!.Value;
+            (discarded ??= []).Add(oldest);
+            spools.RemoveFirst();
+            retainedBytes -= oldest.TotalBytes;
+        }
+
+        return discarded;
+    }
+
     private static string ReadSpilledPage(SpoolEntry entry, int start, int length)
     {
         var builder = new StringBuilder(length);
@@ -346,14 +370,21 @@ public sealed class TerminalOutputSpool
         return builder.Length == 0 ? Guid.NewGuid().ToString("N") : builder.ToString();
     }
 
-    private sealed record SpoolEntry(string SpoolId, string Text, string? FilePath, int TotalChars, bool Truncated);
+    private sealed record SpoolEntry(
+        string SpoolId,
+        string Text,
+        string? FilePath,
+        int TotalChars,
+        long TotalBytes,
+        bool Truncated);
 }
 
 /// <summary>
 /// One spilled spool file: the path the writer streamed to, how many characters
-/// were recorded in total, and whether the retention ceiling cut the tail.
+/// and UTF-8 bytes were recorded in total, and whether the retention ceiling
+/// cut the tail.
 /// </summary>
-public sealed record SpoolSpill(string FilePath, int TotalChars, bool Truncated);
+public sealed record SpoolSpill(string FilePath, int TotalChars, long TotalBytes, bool Truncated);
 
 /// <summary>
 /// One page of retained output plus the metadata a receipt reports: the total

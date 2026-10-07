@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Terminal;
 
@@ -83,52 +84,32 @@ public sealed class StreamingProcessRunner
         using var job = WindowsJobProcessTree.Create();
         var startInfo = BuildStartInfo(spec);
         var stopwatch = Stopwatch.StartNew();
-        Process? process = null;
+        SuspendedProcess.StartedProcess? started = null;
         try
         {
-            process = Process.Start(startInfo);
-            if (process is null)
+            // CREATE_SUSPENDED: the child runs no user code until it is assigned
+            // to the job, so a descendant spawned immediately after start cannot
+            // escape the job and outlive cancel or timeout.
+            started = SuspendedProcess.StartSuspended(startInfo);
+            job.Assign(started.Process.Id);
+            if (!SuspendedProcess.Resume(started.ThreadHandle))
             {
                 throw new InvalidOperationException("process_start_failed");
             }
 
-            try
-            {
-                job.Assign(process.Id);
-            }
-            catch (Win32Exception) when (process.WaitForExit(milliseconds: 250))
-            {
-                // The child finished before the job assignment landed. There is no
-                // live tree left to contain, so the normal drain path below reports
-                // the real exit code and output instead of a synthetic start failure.
-            }
-
-            // Tool calls are non-interactive by contract. Redirect and close
-            // stdin immediately so a child that reads from Console/stdin gets
-            // EOF instead of hanging until the timeout.
-            process.StandardInput.Close();
+            started.ThreadHandle.Dispose();
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException)
         {
-            // Process.Start may succeed before assigning the child to the Job
-            // Object fails. Do not leak that child when returning a stable start
-            // failure to the caller.
-            try
-            {
-                if (process is not null && !process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            process?.Dispose();
+            // The child never ran, or could not be contained: leave nothing
+            // behind and return a stable start failure to the caller.
+            DisposeStarted(started);
             return StartFailure(spec, stopwatch.ElapsedMilliseconds);
         }
 
-        using var registered = process;
+        using var registered = started.Process;
+        using var stdoutReader = started.StandardOutput;
+        using var stderrReader = started.StandardError;
         var stdoutBuffer = new HeadTailOutputBuffer(_headCapacityChars, _tailCapacityChars);
         var stderrBuffer = new HeadTailOutputBuffer(_headCapacityChars, _tailCapacityChars);
         long framesEmitted = 0;
@@ -141,14 +122,14 @@ public sealed class StreamingProcessRunner
         var drainToken = timeoutCts.Token;
 
         var stdoutTask = DrainAsync(
-            process.StandardOutput,
+            stdoutReader,
             "stdout",
             stdoutBuffer,
             outputLimitBytes,
             EmitAsync,
             drainToken);
         var stderrTask = DrainAsync(
-            process.StandardError,
+            stderrReader,
             "stderr",
             stderrBuffer,
             outputLimitBytes,
@@ -170,9 +151,9 @@ public sealed class StreamingProcessRunner
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             status = cancellationToken.IsCancellationRequested ? "cancelled" : "timed_out";
-            // Kill by parentage first: a descendant created before the job
-            // assignment landed is not in the job, and after the parent dies the
-            // tree walk can no longer find it. The job kill stays as the backup.
+            // The child was assigned to the job before it could run, so every
+            // descendant is in the job and the job kill is the authority. The
+            // parentage kill stays as a bounded fallback for the direct child.
             try
             {
                 if (!registered.HasExited)
@@ -263,6 +244,30 @@ public sealed class StreamingProcessRunner
         FramesEmitted: 0,
         FramesDropped: 0,
         WorkingDirectory: spec.WorkingDirectory);
+
+    private static void DisposeStarted(SuspendedProcess.StartedProcess? started)
+    {
+        if (started is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!started.Process.HasExited)
+            {
+                started.Process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        started.ThreadHandle.Dispose();
+        started.StandardOutput.Dispose();
+        started.StandardError.Dispose();
+        started.Process.Dispose();
+    }
 
     private static ProcessStartInfo BuildStartInfo(ProcessRunSpec spec)
     {

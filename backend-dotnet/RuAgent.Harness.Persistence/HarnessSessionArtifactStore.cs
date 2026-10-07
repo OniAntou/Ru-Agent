@@ -13,14 +13,77 @@ public interface IHarnessSessionArtifactStore
         string sessionId,
         DateTimeOffset deletedAt,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<string>> ListNonTerminalRunIdsAsync(
+        string sessionId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
 {
+    /// <summary>
+    /// Non-terminal runs one delete pass cancels and unregisters. Past this the
+    /// listing stops; the run rows are still deleted, and the runtime drive
+    /// loop drops any leftover registration once its row is gone.
+    /// </summary>
+    public const int MaxNonTerminalRunsPerSession = 64;
+
     private readonly HarnessSqliteOptions _options;
 
     public HarnessSessionArtifactStore(HarnessSqliteOptions options) =>
         _options = options ?? throw new ArgumentNullException(nameof(options));
+
+    public async Task<IReadOnlyList<string>> ListNonTerminalRunIdsAsync(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        ValidateSessionId(sessionId);
+        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+            .ConfigureAwait(false);
+        if (!health.IsAvailable)
+        {
+            throw new HarnessStoreException(
+                health.ErrorCode ?? "harness_store_unavailable");
+        }
+
+        try
+        {
+            await using var connection = await _options.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT run_id
+                FROM agent_runs
+                WHERE session_id = $session_id
+                  AND terminal_at_utc IS NULL
+                ORDER BY created_at_utc DESC, run_id DESC
+                LIMIT $limit
+                """;
+            command.Parameters.AddWithValue("$session_id", sessionId);
+            command.Parameters.AddWithValue("$limit", MaxNonTerminalRunsPerSession);
+            var runIds = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                runIds.Add(reader.GetString(0));
+            }
+
+            return runIds;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            throw new HarnessStoreException("harness_session_delete_failed", exception);
+        }
+    }
 
     public async Task<HarnessSessionArtifactDeleteResult> CloseAndDeleteAsync(
         string sessionId,

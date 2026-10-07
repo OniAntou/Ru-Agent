@@ -359,11 +359,21 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 }
 
 /// <summary>
+/// The runtime-owned cleanup one deleted session's non-terminal runs need:
+/// stop each run's in-flight tools through its per-run coordinator, then drop
+/// the registration along with its Broker gateway and retained approvals.
+/// </summary>
+public interface IAgentRuntimeRunCleanup
+{
+    Task CancelAndRemoveRunAsync(RunId runId, CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// Drives the headless coding loop: delivers conversation-outbox transitions through the
 /// dispatcher, then runs model/tool steps for every running run it holds a workspace
 /// root for. Runs stop being driven when they block on approval/history or complete.
 /// </summary>
-public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting.IHostIdleProbe
+public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting.IHostIdleProbe, IAgentRuntimeRunCleanup
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
@@ -461,7 +471,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     /// Runs one iteration. Returns true when at least one run is registered, which is
     /// the signal the loop uses to choose its next poll interval.
     /// </summary>
-    private async Task<bool> StepOnceAsync(CancellationToken cancellationToken)
+    internal async Task<bool> StepOnceAsync(CancellationToken cancellationToken)
     {
         // Outbox delivery first so history transitions land before any new model step.
         var dispatch = await _dispatcher.DispatchOnceAsync(cancellationToken).ConfigureAwait(false);
@@ -523,6 +533,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             var run = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
             if (run is null)
             {
+                // The run row is gone (session deletion or retention). Drop the
+                // registration here or it would keep the host alive forever and
+                // hold a Broker gateway for a run nothing can ever drive again.
+                RemoveRunRegistration(new RunId(runIdValue));
                 return;
             }
 
@@ -569,6 +583,17 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         {
             _inFlight.TryRemove(runIdValue, out _);
         }
+    }
+
+    /// <summary>
+    /// Session deletion's runtime half: stop the run's in-flight tools through
+    /// its per-run coordinator, then release the registration, Broker gateway,
+    /// and retained approvals. Safe when the run holds no registration.
+    /// </summary>
+    public async Task CancelAndRemoveRunAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        await _roots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
+        RemoveRunRegistration(runId);
     }
 
     private void RemoveRunRegistration(RunId runId)

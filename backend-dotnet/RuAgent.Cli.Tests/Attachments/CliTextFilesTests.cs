@@ -38,6 +38,19 @@ public sealed class CliTextFilesTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_StripsTheUtf8Bom()
+    {
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes("# Hello")).ToArray();
+        await File.WriteAllBytesAsync(Path.Combine(_workspace, "bom.md"), bytes);
+
+        var (attachment, error) = await CliTextFiles.LoadAsync("bom.md", _workspace, CancellationToken.None);
+
+        Assert.Null(error);
+        Assert.NotNull(attachment);
+        Assert.Equal("# Hello", attachment!.TextContent);
+    }
+
+    [Fact]
     public async Task LoadAsync_ExtractsOfficeDocumentText()
     {
         var docx = Docx("<w:document xmlns:w=\"x\"><w:body><w:p><w:t>Quarterly report</w:t></w:p></w:body></w:document>");

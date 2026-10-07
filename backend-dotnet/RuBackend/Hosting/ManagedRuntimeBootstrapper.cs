@@ -56,17 +56,15 @@ internal static class ManagedRuntimeBootstrapper
             throw new HostStartupException("{\"error_code\":\"public_host_port_conflict\"}", 2);
         }
 
-        // Single instance mutex (global per port)
-        var managedSingleInstance = new RuAgent.Hosting.PublicHostSingleInstance($"Global\\RuPublicHost-{publicPort}");
+        // Single instance mutex (global per port). A held global lock fails
+        // closed; only a namespace this account cannot create falls back to Local.
+        var managedSingleInstance = RuAgent.Hosting.PublicHostSingleInstance.AcquireWithLocalFallback(
+            $"Global\\RuPublicHost-{publicPort}",
+            $"Local\\RuPublicHost-{publicPort}");
         if (!managedSingleInstance.IsAcquired)
         {
-            // Try Local fallback
             managedSingleInstance.Dispose();
-            managedSingleInstance = new RuAgent.Hosting.PublicHostSingleInstance($"Local\\RuPublicHost-{publicPort}");
-            if (!managedSingleInstance.IsAcquired)
-            {
-                throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
-            }
+            throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
         }
 
         managedPublicBearer = configuration["RU_DESKTOP_TOKEN"] ?? Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
@@ -113,7 +111,9 @@ internal static class ManagedRuntimeBootstrapper
             configuration["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath;
         }
 
-        // Publish ACL-restricted descriptor after the Broker is running and before health is available
+        // Publish ACL-restricted descriptor after the Broker is running and before
+        // health is available. A valid descriptor at this point belongs to a live
+        // instance that holds the lock elsewhere; refuse to clobber it.
         var proc = Process.GetCurrentProcess();
         var descriptor = new RuntimeDescriptor(
             RuntimeDescriptor.CurrentProtocolVersion,
@@ -123,7 +123,10 @@ internal static class ManagedRuntimeBootstrapper
             proc.StartTime.ToUniversalTime().ToString("O"),
             RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
             DateTimeOffset.UtcNow.ToString("O"));
-        await managedDescriptorWriter.WriteAsync(descriptor).ConfigureAwait(false);
+        if (!await managedDescriptorWriter.TryWriteIfUnclaimedAsync(descriptor).ConfigureAwait(false))
+        {
+            throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
+        }
 
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,

@@ -137,6 +137,31 @@ public sealed class RuntimeDescriptorTests : IDisposable
     }
 
     [Fact]
+    public async Task TryWriteIfUnclaimed_refuses_to_clobber_a_live_descriptor()
+    {
+        var path = Path.Combine(_root, "unclaimed.json");
+        var writer = new RuntimeDescriptorWriter(path);
+        var live = CreateValidDescriptor();
+        await writer.WriteAsync(live);
+        var original = File.ReadAllText(path);
+
+        var replacement = live with { InstanceNonce = PublicHostRuntimeOptions.GenerateNonce() };
+        Assert.False(await writer.TryWriteIfUnclaimedAsync(replacement));
+        Assert.Equal(original, File.ReadAllText(path));
+
+        // A leftover descriptor from a dead process is stale and may be replaced.
+        var stale = replacement with { ProcessId = 999999 };
+        await writer.WriteAsync(stale);
+        Assert.True(await writer.TryWriteIfUnclaimedAsync(CreateValidDescriptor()));
+        Assert.False(writer.IsStale());
+
+        var freshPath = Path.Combine(_root, "fresh.json");
+        var freshWriter = new RuntimeDescriptorWriter(freshPath);
+        Assert.True(await freshWriter.TryWriteIfUnclaimedAsync(CreateValidDescriptor()));
+        Assert.True(File.Exists(freshPath));
+    }
+
+    [Fact]
     public void ProvenTokensNeverSerialize()
     {
         var desc = CreateValidDescriptor();

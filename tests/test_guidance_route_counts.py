@@ -52,3 +52,25 @@ def test_contributing_route_count_matches_the_contract() -> None:
     assert int(stated.group(1)) == count, (
         f"CONTRIBUTING.md says {stated.group(1)} routes but the contract holds {count}"
     )
+
+
+def test_build_banner_route_count_matches_the_contract() -> None:
+    count = _contract_route_count()
+    text = (ROOT / "build.bat").read_text(encoding="utf-8")
+
+    stated = re.search(r"Coding core: (\d+) HTTP", text)
+    assert stated is not None, "build.bat must state the Public Contract route count"
+    assert int(stated.group(1)) == count, (
+        f"build.bat says {stated.group(1)} HTTP but the contract holds {count}"
+    )
+
+
+def test_contributing_loopback_route_count_matches_the_contract() -> None:
+    count = _contract_route_count()
+    text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    stated = re.search(r"the (\d+) loopback HTTP", text)
+    assert stated is not None, "CONTRIBUTING.md must state the loopback route count"
+    assert int(stated.group(1)) == count, (
+        f"CONTRIBUTING.md says {stated.group(1)} loopback routes but the contract holds {count}"
+    )

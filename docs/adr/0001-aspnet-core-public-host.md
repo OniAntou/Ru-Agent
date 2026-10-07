@@ -33,3 +33,6 @@ child.
 
 Amendment (2026-09-30): the contract is 41 HTTP routes after the session-fork
 removal.
+
+Amendment (2026-10-07): the contract is 42 HTTP routes after the input-resolve
+route was added.

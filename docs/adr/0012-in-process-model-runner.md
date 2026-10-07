@@ -14,7 +14,7 @@ existing `IModelStepRunner` seam. The typed worker WebSocket protocol v2 and the
 remains as the class library that owns the step service and its bounds.
 
 The runner keeps the behavior the loopback transport carried: conversation
-build, bounded three-attempt retry with 2 s/5 s backoff and selection feedback,
+build, bounded five-attempt retry with 2 s/5 s/10 s/20 s backoff and selection feedback,
 reset-frame semantics, monotonic delta sequence, receipt validation, and the
 stable failure codes. `AgentProviderSnapshotFactory` returns
 `ProviderBootstrapData` directly instead of writing a single-use DPAPI handoff

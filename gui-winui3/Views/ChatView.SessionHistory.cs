@@ -1215,17 +1215,20 @@ namespace RuApp.Views
             _sessionOpenGeneration++;
         }
 
+        private static double HorizontalInsetFor(double width) =>
+            width < NarrowWidthThreshold
+                ? NarrowHorizontalInset
+                : width < MediumWidthThreshold
+                    ? MediumHorizontalInset
+                    : WideHorizontalInset;
+
         private void ApplyInputWidth()
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
 
             UpdateSidePanelLayout();
 
-            double horizontalInset = RootGrid.ActualWidth < NarrowWidthThreshold
-                ? NarrowHorizontalInset
-                : RootGrid.ActualWidth < MediumWidthThreshold
-                    ? MediumHorizontalInset
-                    : WideHorizontalInset;
+            double horizontalInset = HorizontalInsetFor(RootGrid.ActualWidth);
             double availableWidth = Math.Max(
                 MinAvailableInputWidth,
                 RootGrid.ActualWidth - horizontalInset - _sidePanelReserveWidth);

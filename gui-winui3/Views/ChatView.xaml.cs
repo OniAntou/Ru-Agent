@@ -315,12 +315,34 @@ namespace RuApp.Views
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-            _sidePanelReserveWidth = isVisible ? SidePanelCard.Width + SidePanelMargin : 0;
+            _sidePanelReserveWidth = isVisible ? EffectiveSidePanelReserve() : 0;
 
             if (ApprovalHostGrid is not null)
             {
                 ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
             }
+        }
+
+        /// <summary>
+        /// How much width the panel needs to reserve: only the shift the column
+        /// needs to clear the panel (plus a breathing gap), so a wide window keeps
+        /// the chat column centered instead of pushing it off to one side.
+        /// </summary>
+        private double EffectiveSidePanelReserve()
+        {
+            if (SidePanelCard is null || RootGrid is null)
+            {
+                return 0;
+            }
+
+            double panelReserve = SidePanelCard.Width + SidePanelMargin;
+            double fullColumn = Math.Min(
+                ReadingColumnMaxWidth,
+                RootGrid.ActualWidth - HorizontalInsetFor(RootGrid.ActualWidth));
+            double columnRight = (RootGrid.ActualWidth + fullColumn) / 2;
+            double panelLeft = RootGrid.ActualWidth - panelReserve;
+            double overlap = columnRight + 16 - panelLeft;
+            return overlap <= 0 ? 0 : Math.Min(panelReserve, overlap * 2);
         }
 
         /// <summary>

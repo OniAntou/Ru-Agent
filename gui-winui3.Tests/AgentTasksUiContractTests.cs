@@ -36,6 +36,7 @@ public sealed class AgentTasksUiContractTests
         Assert.Contains("Messages.Count > 0", layout, StringComparison.Ordinal);
         Assert.Contains("SidePanelMinRootWidth", layout, StringComparison.Ordinal);
         Assert.Contains("_sidePanelUserCollapsed", layout, StringComparison.Ordinal);
+        Assert.Contains("EffectiveSidePanelReserve", layout, StringComparison.Ordinal);
         Assert.Contains(
             "_sidePanelReserveWidth",
             GuiSource.MethodBody(code, "ApplyInputWidth"),

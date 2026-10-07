@@ -305,7 +305,12 @@ namespace RuApp.Views
             bool canShow = Messages.Count > 0 && RootGrid.ActualWidth >= SidePanelMinRootWidth;
             bool isVisible = canShow && !_sidePanelUserCollapsed;
 
+            bool wasVisible = SidePanelCard.Visibility == Visibility.Visible;
             SidePanelCard.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            if (isVisible && !wasVisible)
+            {
+                PlaySidePanelEntrance();
+            }
             SidePanelOpenButton.Visibility = canShow && _sidePanelUserCollapsed
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -316,6 +321,52 @@ namespace RuApp.Views
             {
                 ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
             }
+        }
+
+        /// <summary>
+        /// The panel fades and slides in when it appears; hiding stays instant so
+        /// narrowing the window never waits on an exit animation. Reduced-motion
+        /// users get the final state immediately.
+        /// </summary>
+        private void PlaySidePanelEntrance()
+        {
+            if (SidePanelCard is null || SidePanelSlide is null)
+            {
+                return;
+            }
+
+            if (!Services.UiTiming.AnimationsEnabled)
+            {
+                SidePanelCard.Opacity = 1;
+                SidePanelSlide.X = 0;
+                return;
+            }
+
+            SidePanelCard.Opacity = 0;
+            SidePanelSlide.X = 12;
+
+            var fade = new DoubleAnimation
+            {
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
+            };
+            Storyboard.SetTarget(fade, SidePanelCard);
+            Storyboard.SetTargetProperty(fade, "Opacity");
+
+            var slide = new DoubleAnimation
+            {
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(180),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
+            };
+            Storyboard.SetTarget(slide, SidePanelSlide);
+            Storyboard.SetTargetProperty(slide, "X");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fade);
+            storyboard.Children.Add(slide);
+            storyboard.Begin();
         }
 
         /// <summary>

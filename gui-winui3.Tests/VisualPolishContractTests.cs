@@ -320,6 +320,32 @@ public sealed class VisualPolishContractTests
         Assert.Contains("ActivityFlushBatch", codeBehind, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Shared_button_styles_fade_their_hover_layer()
+    {
+        // Polish pass: the shared styles animate an overlay layer instead of
+        // flipping a DiscreteObjectKeyFrame, so hover and press read as motion
+        // rather than a repaint; the code-driven entrances ask the shared
+        // reduced-motion gate instead of reading the OS setting themselves.
+        var app = GuiSource.Xml("App.xaml");
+        foreach (var styleName in new[]
+                 {
+                     "RuToolbarButtonStyle", "RuSecondaryButtonStyle",
+                     "RuDropdownButtonStyle", "RuDropdownItemButtonStyle",
+                 })
+        {
+            var style = app.Descendants().Single(element =>
+                element.Name.LocalName == "Style"
+                && element.Attribute(GuiSource.Xaml + "Key")?.Value == styleName);
+            bool fadesHover = style.Descendants().Any(element =>
+                element.Name.LocalName == "DoubleAnimation"
+                && string.Equals(GuiSource.AttributeValue(element, "TargetName"), "HoverLayer", StringComparison.Ordinal));
+            Assert.True(fadesHover, $"{styleName} must fade its hover layer.");
+        }
+
+        Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.ViewText("ChatView"), StringComparison.Ordinal);
+    }
+
     private static string ThemeBlock(string theme)
     {
         var document = GuiSource.Xml("App.xaml");

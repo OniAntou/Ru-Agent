@@ -647,6 +647,11 @@
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.VerticalScrollMode="Auto"
                           ScrollViewer.IsVerticalRailEnabled="True">
+                    <ListView.ItemContainerTransitions>
+                        <TransitionCollection>
+                            <AddDeleteThemeTransition />
+                        </TransitionCollection>
+                    </ListView.ItemContainerTransitions>
                     <ListView.Resources>
                         <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
                         <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
@@ -694,6 +699,9 @@
                 BorderThickness="1"
                 CornerRadius="{StaticResource AppPillCornerRadius}"
                 Padding="12,6">
+            <Button.RenderTransform>
+                <TranslateTransform x:Name="NewMessagesPillSlide" />
+            </Button.RenderTransform>
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{StaticResource RuAccentBrush}" />
                 <TextBlock Text="New messages"
@@ -721,6 +729,9 @@
                 CornerRadius="{StaticResource AppCardCornerRadius}"
                 Padding="14,12"
                 AutomationProperties.Name="Session panel">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="SidePanelSlide" />
+            </Border.RenderTransform>
             <StackPanel Spacing="8">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock x:Name="SidePanelTitleText"
@@ -737,9 +748,8 @@
                                 VerticalAlignment="Center">
                         <Button x:Name="SidePanelCollapseButton"
                                 Click="OnSidePanelCollapseClick"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Padding="6,4"
+                                Style="{StaticResource RuToolbarButtonStyle}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
                                 ToolTipService.ToolTip="Hide panel"
                                 AutomationProperties.Name="Hide panel">
                             <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
@@ -834,9 +844,8 @@
                 Margin="0,16,16,0"
                 Visibility="Collapsed"
                 Click="OnSidePanelOpenClick"
-                Background="Transparent"
-                BorderThickness="0"
-                Padding="6,4"
+                Style="{StaticResource RuToolbarButtonStyle}"
+                CornerRadius="{StaticResource AppControlCornerRadius}"
                 ToolTipService.ToolTip="Show panel"
                 AutomationProperties.Name="Show panel">
             <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />

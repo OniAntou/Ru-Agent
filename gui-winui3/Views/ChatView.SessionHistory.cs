@@ -742,7 +742,55 @@ namespace RuApp.Views
                 return;
             }
 
+            if (NewMessagesPill.Visibility == Visibility.Visible)
+            {
+                return;
+            }
+
             NewMessagesPill.Visibility = Visibility.Visible;
+            PlayNewMessagesPillEntrance();
+        }
+
+        /// <summary>The pill rises into place once; hiding stays instant.</summary>
+        private void PlayNewMessagesPillEntrance()
+        {
+            if (NewMessagesPillSlide is null)
+            {
+                return;
+            }
+
+            if (!Services.UiTiming.AnimationsEnabled)
+            {
+                NewMessagesPill.Opacity = 1;
+                NewMessagesPillSlide.Y = 0;
+                return;
+            }
+
+            NewMessagesPill.Opacity = 0;
+            NewMessagesPillSlide.Y = 8;
+
+            var fade = new DoubleAnimation
+            {
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(150),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
+            };
+            Storyboard.SetTarget(fade, NewMessagesPill);
+            Storyboard.SetTargetProperty(fade, "Opacity");
+
+            var rise = new DoubleAnimation
+            {
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(150),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
+            };
+            Storyboard.SetTarget(rise, NewMessagesPillSlide);
+            Storyboard.SetTargetProperty(rise, "Y");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fade);
+            storyboard.Children.Add(rise);
+            storyboard.Begin();
         }
 
         private void OnNewMessagesPillClick(object sender, RoutedEventArgs e)

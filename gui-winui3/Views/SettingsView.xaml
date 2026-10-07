@@ -334,13 +334,6 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Style="{StaticResource SettingDescStyle}">
-                                        <Run Text="Plan: read + Web auto; edits and terminal deny." />
-                                        <LineBreak />
-                                        <Run Text="Standard: workspace edits auto; outside asks." />
-                                        <LineBreak />
-                                        <Run Text="Full Access: skip all approvals; harness key files stay denied" />
-                                    </TextBlock>
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"
@@ -373,13 +366,16 @@
                                                         Style="{StaticResource RuDropdownItemButtonStyle}"
                                                         AutomationProperties.Name="Plan preset">
                                                     <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="PresetPlanText"
-                                                                   Text="Plan"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock x:Name="PresetPlanText"
+                                                                       Text="Plan"
+                                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                                       FontSize="12.5"
+                                                                       Foreground="{StaticResource RuInkBrush}"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="Reads and web run automatically; edits and terminal are refused."
+                                                                       Style="{StaticResource SettingDescStyle}" />
+                                                        </StackPanel>
                                                         <FontIcon x:Name="PresetPlanCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"
@@ -396,13 +392,16 @@
                                                         Style="{StaticResource RuDropdownItemButtonStyle}"
                                                         AutomationProperties.Name="Standard preset">
                                                     <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="PresetStandardText"
-                                                                   Text="Standard"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock x:Name="PresetStandardText"
+                                                                       Text="Standard"
+                                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                                       FontSize="12.5"
+                                                                       Foreground="{StaticResource RuInkBrush}"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="Workspace work runs automatically; leaving the workspace, network, or unrecognized commands ask."
+                                                                       Style="{StaticResource SettingDescStyle}" />
+                                                        </StackPanel>
                                                         <FontIcon x:Name="PresetStandardCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"
@@ -419,13 +418,16 @@
                                                         Style="{StaticResource RuDropdownItemButtonStyle}"
                                                         AutomationProperties.Name="Full Access preset">
                                                     <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="PresetFullAccessText"
-                                                                   Text="Full Access"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock x:Name="PresetFullAccessText"
+                                                                       Text="Full Access"
+                                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                                       FontSize="12.5"
+                                                                       Foreground="{StaticResource RuInkBrush}"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="Asks nothing; still not a sandbox."
+                                                                       Style="{StaticResource SettingDescStyle}" />
+                                                        </StackPanel>
                                                         <FontIcon x:Name="PresetFullAccessCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
+using RuBackend.Harness.Policy;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -661,6 +662,242 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
+    [Fact]
+    public async Task Allow_once_remembers_intent_for_the_rest_of_the_run()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                TwoSameTerminalCalls(),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember in run");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "second identical call asked again instead of reusing the session allow");
+            var events = await ReadEventsAsync(client, runId);
+            Assert.Equal(1, events.Count(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested"));
+            Assert.Equal(2, events.Count(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "tool.execution_completed"));
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    [Fact]
+    public async Task Allow_once_remembers_intent_for_a_later_run_in_the_same_session()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("terminal.run", Command("session-memory")),
+                FinalStep("done"),
+                ToolCall("terminal.run", Command("session-memory")),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember across runs");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "first run did not finish after allow_once");
+
+            var created2 = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember across runs");
+            var runId2 = created2.GetProperty("run_id").GetString()!;
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId2,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "later run asked again instead of reusing the session allow");
+            var events2 = await ReadEventsAsync(client, runId2);
+            Assert.DoesNotContain(events2, e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested");
+            Assert.Equal(1, events2.Count(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "tool.execution_completed"));
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    [Fact]
+    public async Task Different_intent_in_the_same_session_asks_again()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("terminal.run", Command("first")),
+                FinalStep("done"),
+                ToolCall("terminal.run", Command("second")),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "different intent");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "first run did not finish after allow_once");
+
+            var created2 = await CreateRunAndTrustAsync(client, sessionId, wsPath, "different intent");
+            var runId2 = created2.GetProperty("run_id").GetString()!;
+            var approvalId2 = await WaitForApprovalIdAsync(client, runId2, StateDeadline);
+            Assert.NotNull(approvalId2);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    [Fact]
+    public async Task New_session_asks_again_for_the_same_intent()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("terminal.run", Command("fresh")),
+                FinalStep("done"),
+                ToolCall("terminal.run", Command("fresh")),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "first session");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "first session run did not finish after allow_once");
+
+            var otherSessionId = await CreateSessionAsync(client);
+            var otherCreated = await CreateRunAndTrustAsync(client, otherSessionId, wsPath, "second session");
+            var otherRunId = otherCreated.GetProperty("run_id").GetString()!;
+            var otherApprovalId = await WaitForApprovalIdAsync(client, otherRunId, StateDeadline);
+            Assert.NotNull(otherApprovalId);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    [Fact]
+    public async Task External_directory_allow_does_not_write_the_session_ledger()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        var dataRoot = Path.GetDirectoryName(wsPath)!;
+        var externalPath = Path.Combine(dataRoot, "external");
+        Directory.CreateDirectory(externalPath);
+        var externalFile = Path.Combine(externalPath, "note.txt");
+        File.WriteAllText(externalFile, "external content");
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external approval");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "external-directory run did not finish after allow_once");
+
+            Assert.Empty(SessionApprovalLedger.Entries(sessionId, DateTimeOffset.UtcNow));
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
     private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(string wsPath, RuBackend.Business.DataPaths dataPaths)
     {
         var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
@@ -871,6 +1108,24 @@ public sealed class AgentApprovalEndpointTests
             },
             AssistantFinishReason.ToolCalls,
             0);
+
+    private static AssistantStep TwoSameTerminalCalls()
+    {
+        var first = JsonDocument.Parse(Command("batched")).RootElement.Clone();
+        var second = JsonDocument.Parse(Command("batched")).RootElement.Clone();
+        return new(
+            null,
+            new[]
+            {
+                new ModelToolCall("provider-batch-1", "bash", "1.0.0", first),
+                new ModelToolCall("provider-batch-2", "bash", "1.0.0", second),
+            },
+            AssistantFinishReason.ToolCalls,
+            0);
+    }
+
+    private static string Command(string marker) =>
+        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker } });
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {

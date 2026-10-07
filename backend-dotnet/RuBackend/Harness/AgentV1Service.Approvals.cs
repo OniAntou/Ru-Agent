@@ -67,8 +67,9 @@ public sealed partial class AgentV1Service
         // allow_session_directory (external folders only), deny — plus
         // allow_always, which authorizes once and remembers the exact intent
         // as a project-scope allow rule (Claude-style "yes, and remember").
-        // run/project/global are rejected outright below; only allow_always
-        // creates a reusable rule.
+        // run/project/global are rejected outright below. Any allow also
+        // remembers the exact intent for the Agent session; only allow_always
+        // creates a durable project rule.
         string? decisionRaw = null;
         string? commandRaw = null;
         if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
@@ -296,9 +297,10 @@ public sealed partial class AgentV1Service
                 run, approvalBinding, cancellationToken).ConfigureAwait(false);
         }
 
-        // Pi-style: approvals never create reusable rules, except the explicit
-        // allow_always remember-me above. The Broker grant or one-time token
-        // is otherwise the whole authorization.
+        // Pi-style: an allow is a decision about this call. The durable
+        // resolution commits first; the exact approved intent is then
+        // remembered for the Agent session, and the Broker grant below
+        // authorizes the call in flight.
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
@@ -324,6 +326,22 @@ public sealed partial class AgentV1Service
         {
             HostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        // One allow is remembered for the session: the exact approved intent
+        // is materialized into later policy snapshots for this Agent session,
+        // so a later call with the same intent evaluates as allowed without
+        // another prompt. The decision is durable at this point, and the
+        // memory still only ever allows the exact intent through the Broker.
+        // External-directory approvals keep the Broker session grant only.
+        // The memory is in-process: a host restart or a session delete asks
+        // again.
+        if (!externalDirectoryRequested)
+        {
+            SessionApprovalLedger.Remember(
+                run.SessionId.Value,
+                BuildApprovalMatcher(approvalBinding),
+                _time.UtcNow);
         }
 
         // The grant is issued only after the durable approval resolution is
@@ -359,9 +377,9 @@ public sealed partial class AgentV1Service
                 "The approval was recorded but the execution authority did not authorize it.");
         }
 
-        // The Broker grant or one-time token is the whole authorization; the
-        // Host keeps no reusable rule and no shadow grant ledger, except the
-        // explicit allow_always project record above.
+        // The Broker grant or one-time token authorizes this call; the Host
+        // additionally remembers the exact intent for the session (and, for
+        // allow_always, as the durable project record above).
         var matcherPreview = new
         {
             tool_id = approvalBinding.ToolId,
@@ -410,15 +428,7 @@ public sealed partial class AgentV1Service
             var existing = await store.ListProjectAsync(wsId, cancellationToken).ConfigureAwait(false);
             var creationOrder = existing.Count == 0 ? 0 : existing.Max(r => r.CreationOrder) + 1;
 
-            var matcher = new PolicyMatcher(
-                approvalBinding.ToolId,
-                approvalBinding.ToolVersion,
-                approvalBinding.CanonicalPath,
-                approvalBinding.ResolvedExecutable,
-                approvalBinding.Argv,
-                approvalBinding.Cwd,
-                approvalBinding.OperationClass,
-                approvalBinding.NetworkIntent);
+            var matcher = BuildApprovalMatcher(approvalBinding);
             var rule = new PolicyRule(
                 _ids.NewPolicyRuleId(),
                 PolicyRuleScope.Project,
@@ -438,6 +448,16 @@ public sealed partial class AgentV1Service
             return (false, null);
         }
     }
+
+    private static PolicyMatcher BuildApprovalMatcher(ToolApprovalBinding approvalBinding) => new(
+        approvalBinding.ToolId,
+        approvalBinding.ToolVersion,
+        approvalBinding.CanonicalPath,
+        approvalBinding.ResolvedExecutable,
+        approvalBinding.Argv,
+        approvalBinding.Cwd,
+        approvalBinding.OperationClass,
+        approvalBinding.NetworkIntent);
 
     private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(
         AgentRun run,

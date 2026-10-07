@@ -1,5 +1,6 @@
 using RuAgent.Harness.Persistence;
 using RuBackend.Business.Sessions;
+using RuBackend.Harness.Policy;
 
 namespace RuBackend.Harness;
 
@@ -70,6 +71,10 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         {
             return HarnessSessionDeletionOutcome.SessionNotFound;
         }
+
+        // Session memory dies with the session: a deleted session starts from
+        // zero approvals even if its id were ever observed again.
+        SessionApprovalLedger.ClearSession(sessionId);
         return artifactsDeleted
             ? HarnessSessionDeletionOutcome.Deleted
             : HarnessSessionDeletionOutcome.ArtifactsPending;

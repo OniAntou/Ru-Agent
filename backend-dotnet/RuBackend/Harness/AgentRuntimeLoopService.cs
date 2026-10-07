@@ -10,6 +10,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
+using RuBackend.Harness.Policy;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Reconciliation;
 using RuBackend.Harness.Workspace;
@@ -740,7 +741,17 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
             }
-            coordinator = await _coordinatorFactory.CreateAsync(workspaceRoot, policySnapshot, runId, workspaceRun.SessionId.Value, cancellationToken).ConfigureAwait(false);
+            // One allow is remembered for the session: materialize the exact
+            // approved intents into this run's snapshot for every drive pass,
+            // so a later identical call evaluates as allowed instead of asking
+            // again. The ledger is in-process and dies with the session or a
+            // host restart; the durable run identity keeps the snapshot it was
+            // created with.
+            var effectivePolicySnapshot = SessionApprovalLedger.Apply(
+                policySnapshot,
+                workspaceRun.SessionId.Value,
+                DateTimeOffset.UtcNow);
+            coordinator = await _coordinatorFactory.CreateAsync(workspaceRoot, effectivePolicySnapshot, runId, workspaceRun.SessionId.Value, cancellationToken).ConfigureAwait(false);
             _roots.RegisterCoordinator(runId, coordinator);
 
             if (policySnapshot is null)

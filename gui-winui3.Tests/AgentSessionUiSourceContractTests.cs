@@ -41,8 +41,8 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(named.ContainsKey("AgentModeLabel"), "AgentModeLabel must exist.");
         Assert.Equal("Agent", GuiSource.AttributeValue(named["AgentModeLabel"], "Text"));
 
-        // The preset selector is the only permission control on the composer.
-        Assert.True(named.ContainsKey("AgentPresetBox"), "AgentPresetBox must exist.");
+        // The composer carries no permission control: the preset lives in Settings.
+        Assert.False(named.ContainsKey("AgentPresetBox"), "AgentPresetBox was retired from the composer.");
 
         foreach (var retired in RetiredXamlNames)
         {
@@ -75,17 +75,17 @@ public sealed class AgentSessionUiSourceContractTests
             GuiSource.DocumentOrder(document, attach) < GuiSource.DocumentOrder(document, indicator),
             "The attachment button must precede the agent indicator.");
 
-        // The preset selector follows them, then the send control.
-        var preset = GuiSource.Require(document, "AgentPresetBox");
+        // The model picker follows them, then the send control.
+        var model = GuiSource.Require(document, "ChatModelButton");
         var send = GuiSource.Require(document, "SendButton");
         Assert.True(
-            GuiSource.DocumentOrder(document, indicator) < GuiSource.DocumentOrder(document, preset),
-            "The agent indicator must precede the preset selector.");
+            GuiSource.DocumentOrder(document, indicator) < GuiSource.DocumentOrder(document, model),
+            "The agent indicator must precede the model picker.");
         Assert.True(
-            GuiSource.DocumentOrder(document, preset) < GuiSource.DocumentOrder(document, send),
-            "The preset selector must precede send.");
+            GuiSource.DocumentOrder(document, model) < GuiSource.DocumentOrder(document, send),
+            "The model picker must precede send.");
 
-        // The three interactive composer controls stay announceable. The send face
+        // The interactive composer controls stay announceable. The send face
         // resolves through AgentComposerPresentation so the markup and the runtime
         // assignment cannot hold two copies of the same word.
         Assert.Equal("SendButton", GuiSource.AttributeValue(send, "AutomationId"));
@@ -93,12 +93,9 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("{x:Bind SendFaceGlyph}", GuiSource.AttributeValue(GuiSource.Require(document, "SendButtonIcon"), "Glyph"));
 
         Assert.Equal("AttachImageButton", GuiSource.AttributeValue(attach, "AutomationId"));
-        Assert.Equal("AgentPresetBox", GuiSource.AttributeValue(preset, "AutomationId"));
-        Assert.Equal("Agent permission preset", GuiSource.AttributeValue(preset, "Name"));
 
         // Model + reasoning share one toolbar style (the pill-well experiment
         // looked muddy on dark surfaces and was reverted).
-        var model = GuiSource.Require(document, "ChatModelButton");
         var reasoning = GuiSource.Require(document, "ChatReasoningButton");
         Assert.Equal("{StaticResource RuToolbarButtonStyle}", GuiSource.AttributeValue(model, "Style"));
         Assert.Equal("{StaticResource RuToolbarButtonStyle}", GuiSource.AttributeValue(reasoning, "Style"));
@@ -436,17 +433,17 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void The_composer_offers_the_full_ladder_and_never_the_retired_value()
+    public void The_single_settings_control_offers_the_full_ladder_and_never_the_retired_value()
     {
-        // The composer offers the whole ladder: plan, standard, full_access.
+        // The one preset control offers the whole ladder: plan, standard, full_access.
         Assert.Contains(AgentPermissionPreset.Plan, Enum.GetValues<AgentPermissionPreset>());
         Assert.Contains(AgentPermissionPreset.Standard, Enum.GetValues<AgentPermissionPreset>());
         Assert.Contains(AgentPermissionPreset.FullAccess, Enum.GetValues<AgentPermissionPreset>());
 
-        var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var presetBox = GuiSource.Require(document, "AgentPresetBox");
+        var document = GuiSource.Xml("Views", "SettingsView.xaml");
+        var presetButton = GuiSource.Require(document, "PresetButton");
 
-        var tags = presetBox.Descendants()
+        var tags = presetButton.Descendants()
             .Select(element => GuiSource.AttributeValue(element, "Tag"))
             .Where(tag => tag is not null)
             .ToList();

@@ -73,7 +73,7 @@
                 <Button x:Name="ApproveButton"
                         Click="OnApproveClick"
                         AutomationProperties.AutomationId="AgentApproveButton"
-                        AutomationProperties.Name="Approve agent action"
+                        AutomationProperties.Name="Allow and remember for this chat session"
                         Background="{StaticResource RuAccentBrush}"
                         Foreground="{StaticResource RuSurfaceBrush}"
                         BorderThickness="0"
@@ -82,7 +82,8 @@
                         Height="32">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource RuSurfaceBrush}" />
-                        <TextBlock Text="Approve"
+                        <TextBlock x:Name="ApproveButtonLabel"
+                                   Text="Allow (remember for session)"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="12"
                                    FontWeight="SemiBold"
@@ -94,7 +95,7 @@
                         Click="OnAlwaysClick"
                         Visibility="Collapsed"
                         AutomationProperties.AutomationId="AgentAlwaysButton"
-                        AutomationProperties.Name="Approve for this chat session"
+                        AutomationProperties.Name="Allow this folder for the chat session"
                         Background="Transparent"
                         Foreground="{StaticResource RuInkBrush}"
                         BorderBrush="{StaticResource RuLineBrush}"
@@ -104,7 +105,7 @@
                         Height="32">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
-                        <TextBlock Text="Always"
+                        <TextBlock Text="Allow this folder for session"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="12"
                                    FontWeight="Medium"
@@ -116,7 +117,7 @@
                          Click="OnRememberClick"
                          Visibility="Collapsed"
                          AutomationProperties.AutomationId="AgentRememberButton"
-                         AutomationProperties.Name="Approve and remember this action"
+                         AutomationProperties.Name="Always allow and remember this action"
                          Background="Transparent"
                          Foreground="{StaticResource RuInkBrush}"
                          BorderBrush="{StaticResource RuLineBrush}"
@@ -126,7 +127,7 @@
                          Height="32">
                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                          <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
-                         <TextBlock Text="Remember"
+                         <TextBlock Text="Always allow"
                                     FontFamily="{StaticResource RuUiFontFamily}"
                                     FontSize="12"
                                     FontWeight="Medium"
@@ -159,7 +160,7 @@
             <TextBlock x:Name="SessionScopeHint"
                        Grid.Row="4"
                        Visibility="Collapsed"
-                       Text="Always opens this folder for the chat only. The grant is lost when the app closes."
+                       Text="This folder stays open for this chat session only."
                        TextWrapping="Wrap"
                        FontFamily="{StaticResource RuUiFontFamily}"
                        FontSize="11"

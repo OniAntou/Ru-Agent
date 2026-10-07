@@ -32,8 +32,6 @@ namespace RuApp
         private LogView? _logView;
         private DiagnosticsView? _diagnosticsView;
         private AgentRunController? _agentController;
-        private PolicyPanel? _policyControlPanel;
-        private AgentPolicyController? _policyController;
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
         private bool _sessionsPollInFlight;
@@ -302,9 +300,6 @@ namespace RuApp
                 _diagnosticsView = new DiagnosticsView();
                 _diagnosticsView.Initialize(_apiService);
                 _diagnosticsView.SetActive(false);
-
-                _policyController = _composition.CreateAgentPolicyController(this.DispatcherQueue);
-                _policyControlPanel = new PolicyPanel { Controller = _policyController };
 
                 _auditPanel = new AuditLogPanel { Log = _composition.AuditLog };
 
@@ -602,7 +597,6 @@ namespace RuApp
         {
             Services.ShellDestination.Log => _logView,
             Services.ShellDestination.Diagnostics => _diagnosticsView,
-            Services.ShellDestination.Policy => _policyControlPanel,
             Services.ShellDestination.Audit => _auditPanel,
             _ => _chatView,
         };
@@ -844,13 +838,6 @@ namespace RuApp
             _backendProvider.BackendExited -= OnBackendExited;
             DisposeSafely("agent controller", () => _agentController?.Dispose());
             _agentController = null;
-            DisposeSafely("policy controller", () => _policyController?.Dispose());
-            _policyController = null;
-            if (_policyControlPanel != null)
-            {
-                _policyControlPanel.Controller = null;
-                _policyControlPanel = null;
-            }
 
             if (_auditPanel != null)
             {

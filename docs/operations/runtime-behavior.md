@@ -359,7 +359,13 @@ closed with the original code. An exhausted provider-transient failure
 and an explicit Continue retries the same provider in a fresh budget window.
 Approval-decision deny and reconciliation decisions stay outside this loop: a
 user deny keeps its fail-closed rule, the approval rules above are unchanged,
-and an ambiguous mutation still pauses until explicit reconciliation. A
+and an ambiguous mutation still pauses until explicit reconciliation. An allow
+decision is remembered for the session: the exact approved intent is
+materialized as a run-scope allow rule into the session's later policy
+snapshots, so an identical call — including later in the same run — evaluates
+as allowed without another prompt. The memory is in-process, expires and is
+capped per session, and dies with the session or a host restart; protected-path
+denials and Broker evaluation still decide every call. A
 repeated `policy_denied` tool receipt followed by prose is not an approval
 decision: it may still take the bounded `unverified_after_tool_failure` notes,
 with the denial code as the terminal code.

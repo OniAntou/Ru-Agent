@@ -31,13 +31,13 @@ public sealed class SessionPresetSourceContractTests
     public void Neither_the_session_open_nor_the_reset_narrows_the_preset()
     {
         // Both lines were the same defect in two places. OpenSessionAsync forced
-        // the box to plan, and ResetAgentState forced the field back to
+        // the preset to plan, and ResetAgentState forced the field back to
         // standard: a Full Access session reopened in the GUI came back
         // Standard, a Standard one came back Plan, and neither said so on
         // screen. The plan downgrade also reached the user as an unrelated
         // `protocol failure` instead of the plan preset's own read-only refusal.
         Assert.DoesNotContain(
-            "AgentPresetBox.SelectedIndex = 0",
+            "_agentPreset = AgentPermissionPreset.Plan",
             Body("ChatView.SessionHistory.cs", "public async Task OpenSessionAsync"),
             StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -50,17 +50,17 @@ public sealed class SessionPresetSourceContractTests
     public void Standard_still_starts_as_the_default()
     {
         // The removed reset had a job -- it set a default. That default now lives
-        // where a default belongs: the field initialiser and the XAML
-        // SelectedIndex, so nothing has to rewrite it on the way in.
+        // where a default belongs: the ChatView field initialiser and the
+        // settings control's stored choice, so nothing has to rewrite it on the
+        // way in.
         Assert.Contains(
             "private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;",
             GuiSource.ViewText("ChatView"),
             StringComparison.Ordinal);
-        Assert.Equal(
-            "1",
-            GuiSource.AttributeValue(
-                GuiSource.Require(GuiSource.Xml("Views", "ChatView.xaml"), "AgentPresetBox"),
-                "SelectedIndex"));
+        Assert.Contains(
+            "private string _presetChoice = \"standard\";",
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            StringComparison.Ordinal);
     }
 
     [Fact]

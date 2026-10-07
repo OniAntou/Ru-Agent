@@ -98,3 +98,14 @@ approve.
 
 Amendment (2026-10-01): the v1 `AgentBrokerClient` wire contract was removed;
 the execution authority description above is unchanged.
+
+Amendment (2026-10-07): approvals also remember the exact approved intent for
+the session. Any allow (`allow_once` or `allow_always`) records the intent in
+the Host's in-process session approval ledger (exact `PolicyMatcher` fields,
+30-minute TTL, 64 entries per session, cleared when the session is deleted);
+the next drive pass re-materializes the snapshot with run-scope allow rules
+and the gateway factory rebinds the Broker lease, so the same intent no
+longer asks again in that session — including later calls in the same run.
+External-directory approvals are excluded (the session directory grant is the
+whole authorization), and a host restart asks again. `allow_always`
+additionally still persists the durable project-scope rule.

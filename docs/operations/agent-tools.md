@@ -468,24 +468,25 @@ reason code:
   session-scoped directory grant in the Broker; the same session
   re-uses the grant on subsequent calls, and new sessions ask again.
 - `terminal_delete_requires_approval` — Lệnh terminal này sẽ xóa file.
-  The approval returns an ephemeral one-time terminal token, never a
-  reusable rule.
+  The approval returns an ephemeral one-time terminal token and remembers
+  the exact intent for the session; no durable rule is created.
 - `terminal_unknown_executable` — Ru chưa nhận diện được executable của
   lệnh terminal này. The approval returns an ephemeral one-time
-  terminal token.
+  terminal token and remembers the exact intent for the session.
 - `terminal_external_mutation_requires_approval` — Lệnh terminal này gây
   mutation ngoài workspace (push/fetch mạng, cài package, restore).
-  The approval returns an ephemeral one-time terminal token, never a
-  reusable rule.
+  The approval returns an ephemeral one-time terminal token and remembers
+  the exact intent for the session; no durable rule is created.
 - `terminal_protected_path_requires_approval` — Lệnh terminal này trỏ vào một
   **file tự bảo vệ của harness** (`agent_harness*`, `harness_key*`, runtime
   descriptor) hoặc một path user tự thêm qua `RU_PROTECTED_PATHS`. Terminal vốn
   **không** bị protected-path confinement — `full_access` vẫn chạy như user
   hiện tại, đúng như `README.md` đã ghi — nên reason này **không** nâng quyền
   lên deny; nó chỉ để người duyệt thấy đúng câu hỏi thay vì một thư mục "ngoài"
-  trung tính. Approval này **không thể nhớ lâu dài**: GUI và CLI đều không hiện
+  trung tính. Approval này **không thể nhớ vĩnh viễn**: GUI và CLI đều không hiện
   lựa chọn `allow_always` cho reason này, nên một lần duyệt không biến thành
-  quyền truy cập thường trực vào vị trí được bảo vệ.
+  rule dự án; đúng như mọi allow khác, intent chính xác chỉ được nhớ cho session
+  (mất khi đóng session hoặc restart Host).
 - `terminal_timeout_requires_approval` — the standard-window gate: a terminal
   call above 15 minutes asks under `standard`, is automatic under `full_access`
   (the skip-all mode), and is denied under `plan` with the rest of terminal; a
@@ -594,8 +595,16 @@ run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
 fields and expired or moved-workspace replays return `approval_stale`. The
 Broker reply carries the exact matcher preview plus one `authorization_token`
-(60s); a reusable project rule is produced only for the explicit
-`allow_always` decision. Ordering is
+(60s); a durable project rule is produced only for the explicit
+`allow_always` decision. Any allow additionally remembers the exact intent in
+the Host's in-process session ledger, and the runtime loop materializes those
+entries as run-scope allow rules when it builds the next policy snapshot for
+the session, so a later identical call — including later in the same run —
+evaluates as allowed without another prompt. The ledger never widens the
+approval: protected-path denials still apply, the Broker still decides every
+call, external-directory approvals keep the session directory grant only, each
+entry expires after 30 minutes under a per-session cap, and the memory dies
+with the session or a host restart. Ordering is
 `consume one-time approval under snapshot N
 → execute already-authorized call under N → persist final receipt → build/bind
 N+1 → invalidate other pending N decisions`; Broker restart before dispatch

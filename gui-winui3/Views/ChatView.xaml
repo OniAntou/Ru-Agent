@@ -1226,27 +1226,6 @@
                         </Button>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-                            <ComboBox x:Name="AgentPresetBox"
-                                      Grid.Column="2"
-                                      Visibility="Collapsed"
-                                       SelectedIndex="1"
-                                      SelectionChanged="OnAgentPresetChanged"
-                                      AutomationProperties.AutomationId="AgentPresetBox"
-                                      AutomationProperties.Name="Agent permission preset"
-                                      Background="Transparent"
-                                      BorderThickness="0"
-                                      Padding="6,4"
-                                      Margin="2,0,0,0"
-                                      CornerRadius="{StaticResource AppControlCornerRadius}"
-                                      FontFamily="{StaticResource RuUiFontFamily}"
-                                      FontSize="12"
-                                      Foreground="{StaticResource RuMutedBrush}"
-                                      VerticalAlignment="Center">
-                                <ComboBoxItem Content="Plan" Tag="plan" />
-                                <ComboBoxItem Content="Standard" Tag="standard" />
-                                <ComboBoxItem Content="Full Access" Tag="full_access" />
-                            </ComboBox>
-
                             <Button x:Name="ChatModelButton"
                                     AutomationProperties.AutomationId="ChatModelButton"
                                     AutomationProperties.Name="Select AI Model"

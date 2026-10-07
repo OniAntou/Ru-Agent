@@ -139,6 +139,51 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
+    public void The_approval_decisions_name_their_exact_scope()
+    {
+        // Each decision button says what its command actually does: a session-remembered
+        // approval, a one-time folder call, or a remembered project rule. The badge
+        // wording flips on the external-directory case, which is the same predicate
+        // that decides whether the session button is offered.
+        var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
+
+        Assert.Equal("Allow (remember for session)", GuiSource.AttributeValue(named["ApproveButtonLabel"], "Text"));
+        Assert.Equal("Allow this folder for session", ButtonText(named["AlwaysButton"]));
+        Assert.Equal("Always allow", ButtonText(named["RememberButton"]));
+        Assert.Equal("Deny", ButtonText(named["DenyButton"]));
+
+        string code = GuiSource.Text("Controls", "AgentApprovalPanelControl.xaml.cs");
+        Assert.Contains("scope: \"once\"", GuiSource.MethodBody(code, "OnApproveClick"), StringComparison.Ordinal);
+        Assert.Contains("scope: \"session\"", GuiSource.MethodBody(code, "OnAlwaysClick"), StringComparison.Ordinal);
+        Assert.Contains("scope: \"always\"", GuiSource.MethodBody(code, "OnRememberClick"), StringComparison.Ordinal);
+
+        // The external-directory case keeps the one-time label; every other ask is
+        // remembered by the session ledger. The branch reads the same
+        // allowSessionDirectory value the visibility rules use, which the chat view
+        // fills from the pinned CanAllowSessionDirectory predicate.
+        string show = GuiSource.MethodBody(code, "Show");
+        int predicate = show.IndexOf("allowSessionDirectory", StringComparison.Ordinal);
+        int folderOnce = show.IndexOf("\"Allow once\"", StringComparison.Ordinal);
+        int sessionRemembered = show.IndexOf("\"Allow (remember for session)\"", StringComparison.Ordinal);
+        Assert.True(predicate >= 0, "The label must key off the external-directory predicate.");
+        Assert.True(folderOnce > predicate, "The external-directory label must be the single-use one.");
+        Assert.True(sessionRemembered > folderOnce, "Every other ask must read as session-remembered.");
+
+        string chat = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
+        Assert.Contains("ApprovalPanel.Show(", chat, StringComparison.Ordinal);
+        Assert.Contains("CanAllowSessionDirectory(", chat, StringComparison.Ordinal);
+
+        // The removed policy-management surface must not be referenced from the card.
+        Assert.DoesNotContain("Policies", code, StringComparison.Ordinal);
+    }
+
+    private static string ButtonText(XElement button) =>
+        button.Descendants()
+            .Where(element => element.Name.LocalName == "TextBlock")
+            .Select(element => GuiSource.AttributeValue(element, "Text"))
+            .First(text => !string.IsNullOrWhiteSpace(text))!;
+
+    [Fact]
     public void The_approval_summary_announces_updates_politely()
     {
         // The summary is what changes when a decision is requested; a polite live
@@ -234,14 +279,18 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void The_composer_preset_offers_the_ladder_only()
+    public void The_single_preset_control_offers_the_ladder_only()
     {
-        var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var named = GuiSource.NamedElements(document);
+        // The permission preset lives in exactly one control: the Settings dropdown.
+        // The composer's duplicate ComboBox was retired, so the session preset is
+        // chosen where it is persisted, not on the message input row.
+        var chatView = GuiSource.NamedElements(GuiSource.Xml("Views", "ChatView.xaml"));
+        Assert.False(chatView.ContainsKey("AgentPresetBox"), "AgentPresetBox was retired from the composer.");
 
-        Assert.True(named.ContainsKey("AgentPresetBox"), "AgentPresetBox must exist.");
+        var document = GuiSource.Xml("Views", "SettingsView.xaml");
+        var presetButton = GuiSource.Require(document, "PresetButton");
 
-        var tags = document.Descendants()
+        var tags = presetButton.Descendants()
             .Select(element => GuiSource.AttributeValue(element, "Tag"))
             .Where(tag => tag is not null)
             .ToList();
@@ -313,30 +362,38 @@ public sealed class AgentApprovalUiContractTests
     [Fact]
     public void Settings_permission_copy_matches_the_canonical_matrix()
     {
+        // The single preset control keeps the three canonical names and adds one
+        // truthful subtitle per option describing what that preset actually does.
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
-        var permissionLabel = document.Descendants()
-            .Single(element => element.Name.LocalName == "TextBlock"
+        var named = GuiSource.NamedElements(document);
+
+        Assert.Contains(
+            document.Descendants(),
+            element => element.Name.LocalName == "TextBlock"
                 && string.Equals(
                     GuiSource.AttributeValue(element, "Text"),
                     "Permission Preset",
                     StringComparison.Ordinal));
-        var permissionPanel = permissionLabel.Parent;
-        Assert.NotNull(permissionPanel);
 
-        var description = permissionPanel!.Elements()
-            .Single(element => element.Name.LocalName == "TextBlock"
-                && !ReferenceEquals(element, permissionLabel));
-        // One line per preset: the copy lives in Runs, not in a Text attribute.
-        var copy = GuiSource.AttributeValue(description, "Text")
-            ?? string.Concat(description.Descendants()
-                .Where(element => element.Name.LocalName == "Run")
-                .Select(element => element.Attributes()
-                    .FirstOrDefault(attribute => attribute.Name.LocalName == "Text")?.Value
-                    ?? string.Empty));
-        Assert.NotNull(copy);
+        Assert.Equal("Plan", GuiSource.AttributeValue(named["PresetPlanText"], "Text"));
+        Assert.Equal("Standard", GuiSource.AttributeValue(named["PresetStandardText"], "Text"));
+        Assert.Equal("Full Access", GuiSource.AttributeValue(named["PresetFullAccessText"], "Text"));
 
-        Assert.Contains("Plan: read + Web auto; edits and terminal deny.", copy, StringComparison.Ordinal);
-        Assert.Contains("Standard: workspace edits auto; outside asks.", copy, StringComparison.Ordinal);
-        Assert.Contains("Full Access: skip all approvals; harness key files stay denied", copy, StringComparison.Ordinal);
+        Assert.Equal(
+            "Reads and web run automatically; edits and terminal are refused.",
+            OptionSubtitle(named["PresetPlanText"]));
+        Assert.Equal(
+            "Workspace work runs automatically; leaving the workspace, network, or unrecognized commands ask.",
+            OptionSubtitle(named["PresetStandardText"]));
+        Assert.Equal(
+            "Asks nothing; still not a sandbox.",
+            OptionSubtitle(named["PresetFullAccessText"]));
     }
+
+    private static string OptionSubtitle(XElement nameText) =>
+        nameText.Parent!.Elements()
+            .Where(element => element.Name.LocalName == "TextBlock")
+            .Skip(1)
+            .Select(element => GuiSource.AttributeValue(element, "Text"))
+            .First(text => !string.IsNullOrWhiteSpace(text))!;
 }

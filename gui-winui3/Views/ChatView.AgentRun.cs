@@ -87,10 +87,6 @@ namespace RuApp.Views
             AutomationProperties.SetName(
                 AgentModeButton,
                 AgentComposerPresentation.AgentModeName);
-            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex < 0 && AgentPresetBox.Items.Count > 0)
-            {
-                AgentPresetBox.SelectedIndex = 1;
-            }
         }
 
         public AgentPermissionPreset CurrentAgentPreset => _agentPreset;
@@ -98,46 +94,7 @@ namespace RuApp.Views
         public void SetAgentPreset(AgentPermissionPreset preset)
         {
             _agentPreset = preset;
-            if (AgentPresetBox is not null)
-            {
-                AgentPresetBox.SelectedIndex = preset switch
-                {
-                    AgentPermissionPreset.Plan => 0,
-                    AgentPermissionPreset.FullAccess => 2,
-                    _ => 1,
-                };
-            }
             UpdateAgentInlineState();
-        }
-
-        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs _)
-        {
-            if (_isSendingUserTurn)
-            {
-                return;
-            }
-
-            _agentPreset = SelectedAgentPreset();
-            UpdateAgentInlineState();
-        }
-
-        private AgentPermissionPreset SelectedAgentPreset()
-        {
-            if (AgentPresetBox?.SelectedItem is ComboBoxItem item
-                && item.Tag is string tag)
-            {
-                if (string.Equals(tag, "plan", StringComparison.Ordinal))
-                {
-                    return AgentPermissionPreset.Plan;
-                }
-
-                if (string.Equals(tag, "full_access", StringComparison.Ordinal))
-                {
-                    return AgentPermissionPreset.FullAccess;
-                }
-            }
-
-            return AgentPermissionPreset.Standard;
         }
 
         private bool _isSendButtonInStopMode;
@@ -1093,13 +1050,9 @@ namespace RuApp.Views
             string? submittedSessionId = null;
             try
             {
-                AgentPermissionPreset preset = SelectedAgentPreset();
+                AgentPermissionPreset preset = _agentPreset;
                 if (preset == AgentPermissionPreset.FullAccess && !await ConfirmFullAccessAsync())
                 {
-                    if (AgentPresetBox is not null)
-                    {
-                        AgentPresetBox.SelectedIndex = 1;
-                    }
                     _agentPreset = AgentPermissionPreset.Standard;
                     UpdateAgentInlineState();
                     return false;

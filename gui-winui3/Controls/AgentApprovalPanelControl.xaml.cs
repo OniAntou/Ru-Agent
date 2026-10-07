@@ -1,5 +1,6 @@
 using System;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 
@@ -52,11 +53,13 @@ namespace RuApp.Controls
 
         /// <summary>
         /// Presents one pending approval. A blank command hides the command block, so
-        /// a non-terminal approval does not show an empty code box. The Always
-        /// affordance appears only for external-directory asks; the Remember
-        /// affordance appears for every other known ask reason and saves a
-        /// project rule. Every other reason stays one-time because the server
-        /// fails session scope closed for them.
+        /// a non-terminal approval does not show an empty code box. The plain approve
+        /// label follows the Host's session approval ledger: remembered for the
+        /// session on every non-external ask, single-use on an external-directory ask
+        /// (whose session grant is the separate session button). The session
+        /// affordance appears only for external-directory asks because the server
+        /// fails that command for every other reason; the Always allow affordance
+        /// appears for every other known ask reason and saves a project rule.
         /// </summary>
         public void Show(string summary, string? command, bool allowSessionDirectory = false, bool allowRememberAlways = false)
         {
@@ -73,16 +76,25 @@ namespace RuApp.Controls
                 CommandContainer.Visibility = Visibility.Collapsed;
             }
 
+            ApproveButtonLabel.Text = allowSessionDirectory
+                ? "Allow once"
+                : "Allow (remember for session)";
+            AutomationProperties.SetName(
+                ApproveButton,
+                allowSessionDirectory
+                    ? "Allow this folder call once"
+                    : "Allow and remember for this chat session");
+
             AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
             RememberButton.Visibility = !allowSessionDirectory && allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;
             if (allowSessionDirectory)
             {
-                SessionScopeHint.Text = "Always opens this folder for the chat only. The grant is lost when the app closes.";
+                SessionScopeHint.Text = "This folder stays open for this chat session only.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else if (allowRememberAlways)
             {
-                SessionScopeHint.Text = "Remember saves an allow rule for this exact action in this project. Manage it under Policies.";
+                SessionScopeHint.Text = "Always allow remembers this exact action for this project.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else

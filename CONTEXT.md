@@ -235,10 +235,27 @@ auto-recovery never applies to approval decisions or reconciliation: those
 paths keep their exact fail-closed rules and no recovery note can soften them.
 A repeated `policy_denied` tool receipt is not an approval decision: it follows
 the Recovery Note bound above, and when that bound is spent the run terminates
-with the denial code. The explicit `allow_always` decision additionally
-remembers the exact intent as a project-scope allow rule; `allow_once` and
-session grants stay single-use.
+with the denial code. Any allow decision remembers the exact approved intent for
+the Agent session — the intent is materialized into the session's later policy
+snapshots, so a later call with the same canonical intent authorizes without a
+new prompt; the memory is in-process and dies with the session or a host
+restart, and a session allow still passes every protected-path denial and
+Broker evaluation. The explicit `allow_always` decision additionally remembers
+the exact intent as a durable project-scope allow rule; `allow_once` and session
+directory grants create no durable rule.
 _Avoid_: reusable confirmation flag or approval-time reissue
+
+**Session Approval Memory**:
+The Host-side, in-process ledger that remembers the exact canonical intent of
+every allow decision for the lifetime of one Agent Session. The runtime loop
+materializes its entries as run-scope allow rules on top of each run's durable
+`PolicySnapshot`, so a later call with the same intent evaluates as allowed
+without a new prompt; protected-path denials and Broker evaluation still decide
+every call. It creates no durable rule, never outlives its session or a host
+restart, is bounded by a 30-minute entry lifetime and a per-session cap, and is
+cleared when the session is deleted. External-directory approvals keep the
+Broker session directory grant only and write no entry.
+_Avoid_: global approval cache, persisted permission
 
 **Run Provider Selection**:
 The secret-free durable choice pinned after successful bootstrap validation and

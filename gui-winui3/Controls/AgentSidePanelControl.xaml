@@ -651,6 +651,7 @@
                                     <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6"
                                           Margin="{x:Bind IndentMargin}"
                                           MinHeight="26"
+                                          AutomationProperties.Name="{x:Bind Name}"
                                           ToolTipService.ToolTip="{x:Bind FullPath}">
                                         <FontIcon Glyph="{x:Bind IconGlyph}"
                                                   FontSize="13"

@@ -6,7 +6,6 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -39,8 +38,6 @@ namespace RuApp.Controls
 
         public event EventHandler<SidePanelTabKind>? TabClosed;
 
-        public event EventHandler<SidePanelTabKind>? TabAddRequested;
-
         public event EventHandler<SidePanelTabMove>? TabMoved;
 
         public event EventHandler<string>? TaskStopRequested;
@@ -55,6 +52,7 @@ namespace RuApp.Controls
         private bool _changesChipHovered;
         private bool _tasksChipHovered;
         private bool _filesChipHovered;
+        private bool _terminalChipHovered;
         private SidePanelTabKind? _draggingTab;
         private Border? _draggingChip;
         private double _dragStartX;
@@ -124,12 +122,16 @@ namespace RuApp.Controls
             RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
-            AddTabButton.Visibility = openTabs.Count < 3 ? Visibility.Visible : Visibility.Collapsed;
+            RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
+            AddTabButton.Visibility = openTabs.Contains(SidePanelTabKind.Terminal)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             SyncChipOrder(openTabs);
 
             ChangesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Changes ? Visibility.Visible : Visibility.Collapsed;
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
             FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
+            TerminalBody.Visibility = showPanel && activeTab == SidePanelTabKind.Terminal ? Visibility.Visible : Visibility.Collapsed;
 
             if (showPanel && activeTab != previousActive)
             {
@@ -137,8 +139,14 @@ namespace RuApp.Controls
                 {
                     SidePanelTabKind.Changes => (FrameworkElement)ChangesBody,
                     SidePanelTabKind.Tasks => TasksBody,
-                    _ => FilesBody,
+                    SidePanelTabKind.Files => FilesBody,
+                    _ => TerminalBody,
                 });
+
+                if (activeTab == SidePanelTabKind.Terminal)
+                {
+                    RevealTerminal();
+                }
             }
 
             bool push = showPanel && !fullscreen;
@@ -189,7 +197,8 @@ namespace RuApp.Controls
             {
                 SidePanelTabKind.Changes => _changesChipHovered,
                 SidePanelTabKind.Tasks => _tasksChipHovered,
-                _ => _filesChipHovered,
+                SidePanelTabKind.Files => _filesChipHovered,
+                _ => _terminalChipHovered,
             };
 
         private void OnChipPointerEntered(object sender, PointerRoutedEventArgs e) =>
@@ -213,14 +222,18 @@ namespace RuApp.Controls
                 case "Tasks":
                     _tasksChipHovered = hovered;
                     break;
-                default:
+                case "Files":
                     _filesChipHovered = hovered;
+                    break;
+                default:
+                    _terminalChipHovered = hovered;
                     break;
             }
 
             RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
+            RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
         }
 
         private void SyncChipOrder(IReadOnlyList<SidePanelTabKind> openTabs)
@@ -249,7 +262,8 @@ namespace RuApp.Controls
             {
                 SidePanelTabKind.Changes => ChangesChip,
                 SidePanelTabKind.Tasks => TasksChip,
-                _ => FilesChip,
+                SidePanelTabKind.Files => FilesChip,
+                _ => TerminalChip,
             };
 
         private static SidePanelTabKind KindFromTag(string tag) =>
@@ -257,6 +271,7 @@ namespace RuApp.Controls
             {
                 "Tasks" => SidePanelTabKind.Tasks,
                 "Files" => SidePanelTabKind.Files,
+                "Terminal" => SidePanelTabKind.Terminal,
                 _ => SidePanelTabKind.Changes,
             };
 
@@ -455,72 +470,14 @@ namespace RuApp.Controls
         private void OnFilesTabCloseClick(object sender, RoutedEventArgs e) =>
             TabClosed?.Invoke(this, SidePanelTabKind.Files);
 
-        private void OnAddTabClick(object sender, RoutedEventArgs e)
-        {
-            var closed = new List<SidePanelTabKind>();
-            foreach (var kind in new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files })
-            {
-                if (!_openTabs.Contains(kind))
-                {
-                    closed.Add(kind);
-                }
-            }
+        private void OnTerminalTabClick(object sender, RoutedEventArgs e) =>
+            TabActivated?.Invoke(this, SidePanelTabKind.Terminal);
 
-            if (closed.Count == 0)
-            {
-                return;
-            }
+        private void OnTerminalTabCloseClick(object sender, RoutedEventArgs e) =>
+            TabClosed?.Invoke(this, SidePanelTabKind.Terminal);
 
-            var items = new StackPanel { Spacing = 2 };
-            var flyout = new Flyout
-            {
-                Placement = FlyoutPlacementMode.Bottom,
-                FlyoutPresenterStyle = (Style)Resources["SidePanelFlyoutPresenterStyle"],
-            };
-            foreach (var kind in closed)
-            {
-                var item = BuildAddTabItem(kind);
-                item.Click += (_, _) =>
-                {
-                    flyout.Hide();
-                    TabAddRequested?.Invoke(this, kind);
-                };
-                items.Children.Add(item);
-            }
-
-            flyout.Content = items;
-            flyout.ShowAt(AddTabButton);
-        }
-
-        private Button BuildAddTabItem(SidePanelTabKind kind)
-        {
-            var content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            content.Children.Add(new FontIcon
-            {
-                Glyph = kind == SidePanelTabKind.Changes ? "\uE70F" : "\uE756",
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
-            });
-            content.Children.Add(new TextBlock
-            {
-                Text = kind == SidePanelTabKind.Changes ? "Changes" : "Tasks",
-                FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.Resources["RuInkBrush"],
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-
-            return new Button
-            {
-                Content = content,
-                Style = (Style)Resources["SidePanelFlyoutItemStyle"],
-            };
-        }
+        private void OnAddTabClick(object sender, RoutedEventArgs e) =>
+            TabOpenRequested?.Invoke(this, SidePanelTabKind.Terminal);
 
         private void OnChangeRowToggleClick(object sender, RoutedEventArgs e)
         {

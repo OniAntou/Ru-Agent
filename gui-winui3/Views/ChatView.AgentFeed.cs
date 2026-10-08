@@ -164,6 +164,7 @@ namespace RuApp.Views
             // A block that never recorded its completion cannot keep claiming
             // "running" once the run has ended.
             TerminalPanelControl.SettleRunningBlocks();
+            SidePanel.SettleTerminalBlocks();
         }
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
@@ -383,6 +384,7 @@ namespace RuApp.Views
             if (item.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
             {
                 TerminalPanelControl.NoteToolLabel(item.DisplayText);
+                SidePanel.NoteTerminalToolLabel(item.DisplayText);
                 _runningTerminalExecutionId = null;
                 return;
             }
@@ -723,6 +725,7 @@ namespace RuApp.Views
             }
 
             TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
+            SidePanel.AppendTerminalOutput(output.ExecutionId, output.Text);
             _runningTerminalExecutionId ??= output.ExecutionId;
 
             // The feed row for the command being run reads the same stream, so the reader
@@ -734,12 +737,14 @@ namespace RuApp.Views
         private void CompleteTerminalBlock(string? executionId, bool failed)
         {
             TerminalPanelControl.CompleteBlock(executionId, failed);
+            SidePanel.CompleteTerminalBlock(executionId, failed);
             _runningTerminalExecutionId = null;
         }
 
         private void ClearTerminalBlocks()
         {
             TerminalPanelControl.Clear();
+            SidePanel.ClearTerminalBlocks();
             _runningTerminalItem = null;
             _runningTerminalExecutionId = null;
         }

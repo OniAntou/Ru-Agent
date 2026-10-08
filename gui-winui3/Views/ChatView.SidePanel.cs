@@ -37,7 +37,6 @@ public sealed partial class ChatView
         SidePanel.FullscreenToggleRequested += OnSidePanelFullscreenToggleRequested;
         SidePanel.TabActivated += OnSidePanelTabActivated;
         SidePanel.TabClosed += OnSidePanelTabClosed;
-        SidePanel.TabAddRequested += OnSidePanelTabAddRequested;
         SidePanel.TabMoved += OnSidePanelTabMoved;
         SidePanel.TaskStopRequested += OnSidePanelTaskStopRequested;
         SidePanel.WidthChanged += OnSidePanelWidthChanged;
@@ -177,22 +176,16 @@ public sealed partial class ChatView
         {
             _ = RefreshAgentTasksAsync();
         }
+        else if (kind == SidePanelTabKind.Terminal)
+        {
+            SidePanel.RevealTerminal();
+        }
     }
 
     private void OnSidePanelTabClosed(object? sender, SidePanelTabKind kind)
     {
         _sidePanelPolicy.CloseTab(_activeSessionId, kind);
         ApplySidePanelState();
-    }
-
-    private void OnSidePanelTabAddRequested(object? sender, SidePanelTabKind kind)
-    {
-        _sidePanelPolicy.OpenTab(_activeSessionId, kind);
-        ApplySidePanelState();
-        if (kind == SidePanelTabKind.Tasks)
-        {
-            _ = RefreshAgentTasksAsync();
-        }
     }
 
     private void OnSidePanelTabMoved(object? sender, SidePanelTabMove move)

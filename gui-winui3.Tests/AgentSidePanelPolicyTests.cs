@@ -197,6 +197,19 @@ public sealed class AgentSidePanelPolicyTests
     }
 
     [Fact]
+    public void The_terminal_tab_opens_and_closes_like_any_other()
+    {
+        var policy = new AgentSidePanelPolicy();
+
+        policy.OpenTab("s1", SidePanelTabKind.Terminal);
+        Assert.Equal(SidePanelTabKind.Terminal, policy.GetActiveTab("s1"));
+        Assert.Contains(SidePanelTabKind.Terminal, policy.GetOpenTabs("s1"));
+
+        policy.CloseTab("s1", SidePanelTabKind.Terminal);
+        Assert.DoesNotContain(SidePanelTabKind.Terminal, policy.GetOpenTabs("s1"));
+    }
+
+    [Fact]
     public void Removing_a_session_drops_its_state()
     {
         var policy = new AgentSidePanelPolicy();

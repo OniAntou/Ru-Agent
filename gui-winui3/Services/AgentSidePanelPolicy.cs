@@ -8,6 +8,7 @@ public enum SidePanelTabKind
     Changes,
     Tasks,
     Files,
+    Terminal,
 }
 
 /// <summary>

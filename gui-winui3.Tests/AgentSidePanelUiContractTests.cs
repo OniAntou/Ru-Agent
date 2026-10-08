@@ -172,14 +172,22 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void The_add_tab_flyout_opens_below_the_strip_control()
+    public void The_add_control_opens_a_terminal_tab()
     {
-        // The FlyoutBase default placement is Top, which opened the add-tab menu
-        // above the strip as a detached pill; the placement is pinned here.
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        GuiSource.Require(document, "TerminalChip");
+        GuiSource.Require(document, "TerminalBody");
+        GuiSource.Require(document, "TerminalTabPanel");
+
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
         string click = GuiSource.MethodBody(code, "OnAddTabClick");
-        Assert.Contains("FlyoutPlacementMode.Bottom", click, StringComparison.Ordinal);
-        Assert.Contains("ShowAt", click, StringComparison.Ordinal);
+        Assert.Contains("TabOpenRequested", click, StringComparison.Ordinal);
+        Assert.Contains("Terminal", click, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "SidePanel.AppendTerminalOutput",
+            GuiSource.Text("Views", "ChatView.AgentFeed.cs"),
+            StringComparison.Ordinal);
     }
 
     [Fact]

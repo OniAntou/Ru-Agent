@@ -425,10 +425,10 @@ namespace RuApp.Controls
         private void OnExpandClick(object sender, RoutedEventArgs e) =>
             ExpandRequested?.Invoke(this, EventArgs.Empty);
 
-        private void OnCardChangesClick(object sender, RoutedEventArgs e) =>
+        private void OnCardChangesRowClick(object sender, RoutedEventArgs e) =>
             TabOpenRequested?.Invoke(this, SidePanelTabKind.Changes);
 
-        private void OnCardTasksClick(object sender, RoutedEventArgs e) =>
+        private void OnCardTasksRowClick(object sender, RoutedEventArgs e) =>
             TabOpenRequested?.Invoke(this, SidePanelTabKind.Tasks);
 
         private void OnCollapseClick(object sender, RoutedEventArgs e) =>

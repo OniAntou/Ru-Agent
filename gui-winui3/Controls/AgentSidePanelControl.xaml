@@ -109,6 +109,53 @@
             <Setter Property="Background" Value="Transparent" />
         </Style>
 
+        <Style x:Key="SidePanelCardRowStyle" TargetType="Button">
+            <!-- A summary-card row is one click target: the whole row hovers and
+                 opens its details tab, Codex-style. -->
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuCanvasBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuLineBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SidePanelFlyoutPresenterStyle" TargetType="FlyoutPresenter">
             <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
@@ -194,73 +241,83 @@
                                Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal"
-                                Spacing="2"
-                                VerticalAlignment="Center">
-                        <!-- The Changes and Tasks tabs are closed by default; these two
-                             buttons are the way in from the summary card. -->
-                        <Button x:Name="CardChangesButton"
-                                Click="OnCardChangesClick"
-                                Style="{StaticResource RuToolbarButtonStyle}"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                ToolTipService.ToolTip="Open changes"
-                                AutomationProperties.Name="Open changes panel">
-                            <FontIcon Glyph="&#xE70F;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                        </Button>
-                        <Button x:Name="CardTasksButton"
-                                Click="OnCardTasksClick"
-                                Style="{StaticResource RuToolbarButtonStyle}"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                ToolTipService.ToolTip="Open background tasks"
-                                AutomationProperties.Name="Open tasks panel">
-                            <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                        </Button>
-                        <Button x:Name="ExpandButton"
-                                Click="OnExpandClick"
-                                Style="{StaticResource RuToolbarButtonStyle}"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                ToolTipService.ToolTip="Open details panel"
-                                AutomationProperties.Name="Open details panel">
-                            <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                        </Button>
-                    </StackPanel>
+                    <Button x:Name="ExpandButton"
+                            Grid.Column="1"
+                            Click="OnExpandClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            ToolTipService.ToolTip="Open details panel"
+                            AutomationProperties.Name="Open details panel">
+                        <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
                 </Grid>
 
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                    <FontIcon Glyph="&#xE70F;"
-                              FontSize="12"
-                              Foreground="{StaticResource RuMutedBrush}"
-                              VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1"
-                               Text="Edits"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="12"
-                               Foreground="{StaticResource RuMutedBrush}"
-                               VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                        <TextBlock x:Name="CardAddedText"
-                                   Text="+0"
-                                   FontFamily="{StaticResource RuMonoFontFamily}"
+                <!-- The card's rows are the way into the details tabs, Codex-style:
+                     the whole row is one click target with a row hover. -->
+                <Button x:Name="CardChangesRow"
+                        Click="OnCardChangesRowClick"
+                        Style="{StaticResource SidePanelCardRowStyle}"
+                        ToolTipService.ToolTip="Open changes"
+                        AutomationProperties.Name="Open changes panel">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                        <FontIcon Glyph="&#xE70F;"
+                                  FontSize="12"
+                                  Foreground="{StaticResource RuMutedBrush}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Changes"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="12"
-                                   Foreground="{StaticResource RuSuccessBrush}"
+                                   Foreground="{StaticResource RuInkBrush}"
                                    VerticalAlignment="Center" />
-                        <TextBlock x:Name="CardRemovedText"
-                                   Text="−0"
-                                   FontFamily="{StaticResource RuMonoFontFamily}"
-                                   FontSize="12"
-                                   Foreground="{StaticResource RuDangerBrush}"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Grid>
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center">
+                            <TextBlock x:Name="CardAddedText"
+                                       Text="+0"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuSuccessBrush}" />
+                            <TextBlock x:Name="CardRemovedText"
+                                       Text="−0"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuDangerBrush}" />
+                        </StackPanel>
+                        <FontIcon Grid.Column="3"
+                                  Glyph="&#xE76C;"
+                                  FontSize="10"
+                                  Foreground="{StaticResource RuMutedBrush}"
+                                  VerticalAlignment="Center" />
+                    </Grid>
+                </Button>
 
                 <Border Height="1" Background="{StaticResource RuLineBrush}" />
 
-                <TextBlock Text="TASKS"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="11"
-                           FontWeight="Bold"
-                           Foreground="{StaticResource RuMutedBrush}" />
+                <Button x:Name="CardTasksRow"
+                        Click="OnCardTasksRowClick"
+                        Style="{StaticResource SidePanelCardRowStyle}"
+                        ToolTipService.ToolTip="Open background tasks"
+                        AutomationProperties.Name="Open tasks panel">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                        <FontIcon Glyph="&#xE756;"
+                                  FontSize="12"
+                                  Foreground="{StaticResource RuMutedBrush}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1"
+                                   Text="Tasks"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource RuInkBrush}"
+                                   VerticalAlignment="Center" />
+                        <FontIcon Grid.Column="2"
+                                  Glyph="&#xE76C;"
+                                  FontSize="10"
+                                  Foreground="{StaticResource RuMutedBrush}"
+                                  VerticalAlignment="Center" />
+                    </Grid>
+                </Button>
 
                 <TextBlock x:Name="CardTasksStatusText"
                            FontFamily="{StaticResource RuUiFontFamily}"

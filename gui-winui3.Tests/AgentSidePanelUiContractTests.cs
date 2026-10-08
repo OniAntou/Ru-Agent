@@ -120,20 +120,22 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void The_card_opens_the_details_tabs_on_request()
+    public void The_card_rows_open_the_details_tabs_on_request()
     {
         var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
         Assert.Equal(
-            "OnCardChangesClick",
-            GuiSource.AttributeValue(GuiSource.Require(document, "CardChangesButton"), "Click"));
+            "OnCardChangesRowClick",
+            GuiSource.AttributeValue(GuiSource.Require(document, "CardChangesRow"), "Click"));
         Assert.Equal(
-            "OnCardTasksClick",
-            GuiSource.AttributeValue(GuiSource.Require(document, "CardTasksButton"), "Click"));
+            "OnCardTasksRowClick",
+            GuiSource.AttributeValue(GuiSource.Require(document, "CardTasksRow"), "Click"));
+        Assert.DoesNotContain("CardChangesButton", GuiSource.XamlNames(document));
+        Assert.DoesNotContain("CardTasksButton", GuiSource.XamlNames(document));
 
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
         Assert.Contains(
             "TabOpenRequested",
-            GuiSource.MethodBody(code, "OnCardChangesClick"),
+            GuiSource.MethodBody(code, "OnCardChangesRowClick"),
             StringComparison.Ordinal);
         Assert.Contains(
             "OpenTab",

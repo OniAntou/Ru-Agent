@@ -6,12 +6,18 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,766 passed / 0 failed / 0 skipped** (2026-10-08, submission ownership and shared tool-argument codec; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,799 passed / 0 failed / 0 skipped** (2026-10-08, right side surface and title-bar toggle; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **204 passed**, 1 skipped (2026-10-08, custom coding benchmark delivery). `ruff check tests scripts tools` and `pip check` passed. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Right side panel delivery (2026-10-08)
+
+The complete sequential Debug matrix passed all **12 projects**: **5,799 passed / 0 failed / 0 skipped**, including **1,304 GUI tests**. The backend Debug build passed with zero warnings and errors; the two existing GUI test-source warnings remain. The final Python suite passed **204 tests with one skip**.
+
+The right side surface now has two tiers on a per-session policy: the floating summary card keeps the session title, the +/− edit totals and compact background-task rows without Stop, while its chevron opens a full-height details panel with closable Changes and Tasks tabs, a `+` reopen menu, a shared `+added −removed` header, expandable edit diffs, per-row task Stop through `/tasks kill`, drag resize (280–560 px, persisted to `side-panel.json`) and a fullscreen toggle; closing the last tab or the strip's collapse returns to the card. A title-bar toggle parked immediately left of the caption buttons hides and restores the whole surface through an `InputNonClientPointerSource` passthrough region and the caption `RightInset`. The Broker remains the only execution authority; no route, preset, approval, or provider behavior changed. New policy, projection, preference-store, layout and source-contract tests cover the state machine, ordering, caps, clamps and wiring. Native desktop acceptance (real hover/press on the title-bar button, drag resize, fullscreen rendering) was not run; the contract tests pin markup and wiring only.
 
 ## Submission simplification and coding benchmark (2026-10-08)
 

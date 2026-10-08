@@ -326,9 +326,9 @@ the process tree by parentage first and then the Job Object, so a descendant
 created before the job assignment landed cannot survive. The model context
 carries one bounded `background_tasks` reference per step naming the tasks that
 appeared or changed state since the previous step, so a task that finished
-while the model was working is noticed without polling; the GUI composer's
-Tasks flyout lists the same session tasks and stops one through the `/tasks`
-command.
+while the model was working is noticed without polling; the GUI's compact
+right-hand card lists the same session tasks, and its details panel stops one
+through the `/tasks` command.
 
 The managed Git commit workflow retains temporary-index isolation, path rollback
 attribution, and refusal when the real index already contains staged user

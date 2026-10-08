@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -33,12 +32,14 @@ public sealed class AgentSidePanelUiContractTests
         var named = GuiSource.NamedElements(document);
 
         var cardList = named["CardTasksList"];
-        Assert.Empty(cardList.Descendants()
-            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick"));
+        Assert.DoesNotContain(
+            cardList.Descendants(),
+            element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick");
 
         var panelList = named["AgentTasksList"];
-        Assert.NotEmpty(panelList.Descendants()
-            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick"));
+        Assert.Contains(
+            panelList.Descendants(),
+            element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick");
     }
 
     [Fact]

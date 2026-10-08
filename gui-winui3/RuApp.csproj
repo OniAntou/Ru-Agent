@@ -33,6 +33,9 @@
     <Content Include="Assets\StarryNight.jpg" />
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!-- The interactive terminal's vendored browser assets (xterm.js, MIT):
+         loaded by WebView2 from the app directory, never from a CDN. -->
+    <Content Include="Assets\terminal\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

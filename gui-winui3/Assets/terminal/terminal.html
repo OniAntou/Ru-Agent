@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ru Terminal</title>
+<link rel="stylesheet" href="xterm.css" />
+<style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #101318; }
+    #terminal { position: absolute; inset: 0; padding: 6px 2px 2px 8px; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var term = new Terminal({
+        cursorBlink: true,
+        scrollback: 5000,
+        fontFamily: 'Cascadia Mono, Consolas, monospace',
+        fontSize: 12.5,
+        theme: {
+            background: '#101318',
+            foreground: '#e6e9ee',
+            cursor: '#7aa2f7',
+            selectionBackground: '#2a3550'
+        }
+    });
+    var fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('terminal'));
+    fit.fit();
+
+    function post(message) {
+        window.chrome.webview.postMessage(message);
+    }
+
+    function encodeUtf8Base64(value) {
+        var bytes = new TextEncoder().encode(value);
+        var binary = '';
+        for (var index = 0; index < bytes.length; index++) {
+            binary += String.fromCharCode(bytes[index]);
+        }
+        return btoa(binary);
+    }
+
+    function decodeBase64(value) {
+        var binary = atob(value);
+        var bytes = new Uint8Array(binary.length);
+        for (var index = 0; index < binary.length; index++) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        return bytes;
+    }
+
+    term.onData(function (data) {
+        post({ type: 'input', data: encodeUtf8Base64(data) });
+    });
+
+    window.chrome.webview.addEventListener('message', function (event) {
+        var message = event.data;
+        if (!message || typeof message.type !== 'string') {
+            return;
+        }
+
+        if (message.type === 'data') {
+            // xterm decodes UTF-8 across chunk boundaries when handed bytes.
+            term.write(decodeBase64(message.data));
+        } else if (message.type === 'fit') {
+            fit.fit();
+            post({ type: 'resize', cols: term.cols, rows: term.rows });
+        } else if (message.type === 'focus') {
+            term.focus();
+        }
+    });
+
+    window.addEventListener('resize', function () {
+        fit.fit();
+        post({ type: 'resize', cols: term.cols, rows: term.rows });
+    });
+
+    post({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

@@ -1,25 +1,25 @@
 namespace RuApp.Controls
 {
     /// <summary>
-    /// The Terminal tab's live stream: the same session terminal output the
-    /// composer panel shows, hosted here as a second bounded block list. The view
-    /// forwards every stream event to both instances.
+    /// The Terminal tab's host: a real interactive shell (ConPTY plus xterm.js
+    /// in WebView2) for the user, pointed at the session workspace. The Agent can
+    /// neither see nor call it, and the Broker stays the only execution authority
+    /// for model-visible tool calls.
     /// </summary>
     public sealed partial class AgentSidePanelControl
     {
-        public void AppendTerminalOutput(string executionId, string text) =>
-            TerminalTabPanel.AppendOutput(executionId, text);
+        private string? _terminalWorkingDirectory;
 
-        public void CompleteTerminalBlock(string? executionId, bool failed) =>
-            TerminalTabPanel.CompleteBlock(executionId, failed);
+        /// <summary>
+        /// Points the terminal at the session workspace; a different directory
+        /// restarts the shell the next time the tab is shown.
+        /// </summary>
+        public void SetTerminalWorkingDirectory(string? path) => _terminalWorkingDirectory = path;
 
-        public void SettleTerminalBlocks() => TerminalTabPanel.SettleRunningBlocks();
+        /// <summary>Starts or focuses the terminal when its tab opens.</summary>
+        public void RevealTerminal() => TerminalTabView.EnsureStarted(_terminalWorkingDirectory);
 
-        public void NoteTerminalToolLabel(string? toolLabel) => TerminalTabPanel.NoteToolLabel(toolLabel);
-
-        public void ClearTerminalBlocks() => TerminalTabPanel.Clear();
-
-        /// <summary>Shows the terminal tab's panel, pinned to its newest output.</summary>
-        public void RevealTerminal() => TerminalTabPanel.Show();
+        /// <summary>Ends the shell; called when the app closes.</summary>
+        public void ShutdownTerminal() => TerminalTabView.Shutdown();
     }
 }

@@ -747,9 +747,9 @@
                     </Grid>
 
                     <Grid x:Name="TerminalBody" Visibility="Collapsed">
-                        <controls:TerminalPanelControl x:Name="TerminalTabPanel"
-                                                       HorizontalAlignment="Stretch"
-                                                       VerticalAlignment="Stretch" />
+                        <controls:InteractiveTerminalControl x:Name="TerminalTabView"
+                                                             HorizontalAlignment="Stretch"
+                                                             VerticalAlignment="Stretch" />
                     </Grid>
                 </Grid>
             </Grid>

@@ -34,6 +34,7 @@ public sealed partial class ChatView
 
         SidePanel.SetSessionTitle(_activeSessionTitle);
         SidePanel.SetWorkspace(_agentWorkspace);
+        SidePanel.SetTerminalWorkingDirectory(_agentWorkspace);
         RefreshSidePanelEdits();
 
         if (_sidePanelRunRunning != isRunRunning)

@@ -30,4 +30,14 @@ public sealed class InteractiveTerminalContractTests
         Assert.Contains("xterm.js", html, StringComparison.Ordinal);
         Assert.Contains("scrollback: 5000", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void The_terminal_control_hosts_the_vendored_page_offline()
+    {
+        var code = GuiSource.Text("Controls", "InteractiveTerminalControl.xaml.cs");
+        Assert.Contains("EnsureCoreWebView2Async", code, StringComparison.Ordinal);
+        Assert.Contains("SetVirtualHostNameToFolderMapping", code, StringComparison.Ordinal);
+        Assert.Contains("terminal.html", code, StringComparison.Ordinal);
+        Assert.Contains("powershell.exe", code, StringComparison.Ordinal);
+    }
 }

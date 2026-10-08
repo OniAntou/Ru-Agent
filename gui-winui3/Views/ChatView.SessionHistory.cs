@@ -1401,6 +1401,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            SidePanel?.ShutdownTerminal();
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;

@@ -172,12 +172,12 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void The_add_control_opens_a_terminal_tab()
+    public void The_add_control_opens_the_interactive_terminal_tab()
     {
         var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
         GuiSource.Require(document, "TerminalChip");
         GuiSource.Require(document, "TerminalBody");
-        GuiSource.Require(document, "TerminalTabPanel");
+        GuiSource.Require(document, "TerminalTabView");
 
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
         string click = GuiSource.MethodBody(code, "OnAddTabClick");
@@ -185,8 +185,16 @@ public sealed class AgentSidePanelUiContractTests
         Assert.Contains("Terminal", click, StringComparison.Ordinal);
 
         Assert.Contains(
-            "SidePanel.AppendTerminalOutput",
-            GuiSource.Text("Views", "ChatView.AgentFeed.cs"),
+            "ConPtyTerminalSession.Start",
+            GuiSource.Text("Controls", "InteractiveTerminalControl.xaml.cs"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SetTerminalWorkingDirectory",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSidePanel"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ShutdownTerminal",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "Dispose"),
             StringComparison.Ordinal);
     }
 

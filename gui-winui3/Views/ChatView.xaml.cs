@@ -263,15 +263,7 @@ namespace RuApp.Views
 
         private void UpdateViewMode()
         {
-            bool hasMessages = Messages.Count > 0;
-            if (WelcomeHeroPanel != null)
-            {
-                WelcomeHeroPanel.Visibility = hasMessages ? Visibility.Collapsed : Visibility.Visible;
-            }
-            if (ChatContentGrid != null)
-            {
-                ChatContentGrid.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
-            }
+            UpdateWelcomeHero(Messages.Count > 0);
             ApplySidePanelState();
             RefreshBackdropEffect();
         }

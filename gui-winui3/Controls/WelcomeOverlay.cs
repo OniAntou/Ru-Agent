@@ -35,6 +35,8 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     private bool _isDismissed;
     private bool _isReady;
     private bool _exitStarted;
+    private int _statusVersion;
+    private Storyboard? _statusFade;
 
     public event EventHandler? Dismissed;
 
@@ -274,8 +276,68 @@ public sealed class WelcomeOverlay : Grid, IDisposable
         }
         else
         {
-            _statusLabel.Text = text;
+            SetStatusText(text);
         }
+    }
+
+    /// <summary>
+    /// Replaces the status line with a short cross-fade, so a boot message that
+    /// changes under the reader's eyes reads as progress instead of a flicker.
+    /// </summary>
+    private void SetStatusText(string text)
+    {
+        if (string.Equals(_statusLabel.Text, text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!RuApp.Services.UiTiming.AnimationsEnabled)
+        {
+            _statusFade?.Stop();
+            _statusFade = null;
+            _statusLabel.Opacity = 1;
+            _statusLabel.Text = text;
+            return;
+        }
+
+        int version = ++_statusVersion;
+        _statusFade?.Stop();
+
+        var fadeOut = new DoubleAnimation
+        {
+            To = 0.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(90)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(fadeOut, _statusLabel);
+        Storyboard.SetTargetProperty(fadeOut, "Opacity");
+
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(fadeOut);
+        storyboard.Completed += (_, _) =>
+        {
+            if (version != _statusVersion || _isDismissed)
+            {
+                return;
+            }
+
+            _statusLabel.Text = text;
+            var fadeIn = new DoubleAnimation
+            {
+                To = 1.0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(140)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            Storyboard.SetTarget(fadeIn, _statusLabel);
+            Storyboard.SetTargetProperty(fadeIn, "Opacity");
+
+            var second = new Storyboard();
+            second.Children.Add(fadeIn);
+            _statusFade = second;
+            second.Begin();
+        };
+        _statusFade = storyboard;
+        storyboard.Begin();
     }
 
     /// <summary>
@@ -287,9 +349,9 @@ public sealed class WelcomeOverlay : Grid, IDisposable
         if (_isDismissed || _isReady) return;
         _isReady = true;
 
-        _statusLabel.Text = string.IsNullOrWhiteSpace(message)
+        SetStatusText(string.IsNullOrWhiteSpace(message)
             ? (isError ? "Offline. Entering application..." : "Ready. Entering application...")
-            : message;
+            : message);
         _bootProgress.Visibility = Visibility.Collapsed;
 
         _ = PlayExitAsync();

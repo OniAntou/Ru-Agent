@@ -6,12 +6,18 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,817 passed / 0 failed / 0 skipped** (2026-10-09, side panel revisions and interactive terminal; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,821 passed / 0 failed / 0 skipped** (2026-10-09, welcome trim and light-meteor retirement; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **204 passed**, 1 skipped (2026-10-08, custom coding benchmark delivery). `ruff check tests scripts tools` and `pip check` passed. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Welcome trim, light meteor retirement and terminal mark (2026-10-09)
+
+The complete sequential Debug matrix passed all **12 projects**: **5,821 passed / 0 failed / 0 skipped**, including **1,326 GUI tests**. The Python suite passed **204 tests with one skip**.
+
+The empty-state hero now keeps only the workspace readout and the greeting: the subtitle and the three starter prompts (with their click handler and button style) were removed by owner direction. The Light Meteor Shower theme was removed from the theme enum, the preference store, the title-bar toggle cycle, the backdrop gate and the Settings dropdown; a stored `light-meteor` preference folds to Light instead of resurrecting the theme. The terminal tab's mark is the `>_` prompt set in the app's mono font, replacing the boxed CommandPrompt glyph that read as a badge at chip size. Contract tests pin all three decisions; no route, preset, approval, provider or backend behavior changed.
 
 ## Side panel revisions and interactive terminal (2026-10-09)
 

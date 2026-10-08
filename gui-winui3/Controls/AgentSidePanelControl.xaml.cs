@@ -47,6 +47,10 @@ namespace RuApp.Controls
 
         private AgentSidePanelMode _mode = AgentSidePanelMode.Hidden;
         private IReadOnlyList<SidePanelTabKind> _openTabs = Array.Empty<SidePanelTabKind>();
+        private SidePanelTabKind _activeTab = SidePanelTabKind.Changes;
+        private bool _changesChipHovered;
+        private bool _tasksChipHovered;
+        private bool _filesChipHovered;
         private bool _isResizing;
         private double _resizeStartWidth;
         private double _resizeStartX;
@@ -101,18 +105,21 @@ namespace RuApp.Controls
             var previous = _mode;
             _mode = mode;
             _openTabs = openTabs;
+            _activeTab = activeTab;
 
             bool showCard = mode == AgentSidePanelMode.Card;
             bool showPanel = mode == AgentSidePanelMode.Panel;
             CardHost.Visibility = showCard ? Visibility.Visible : Visibility.Collapsed;
             PanelHost.Visibility = showPanel ? Visibility.Visible : Visibility.Collapsed;
 
-            ApplyChip(ChangesChip, ChangesTabLabel, openTabs.Contains(SidePanelTabKind.Changes), activeTab == SidePanelTabKind.Changes);
-            ApplyChip(TasksChip, TasksTabLabel, openTabs.Contains(SidePanelTabKind.Tasks), activeTab == SidePanelTabKind.Tasks);
-            AddTabButton.Visibility = openTabs.Count < 2 ? Visibility.Visible : Visibility.Collapsed;
+            RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
+            RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
+            RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
+            AddTabButton.Visibility = openTabs.Count < 3 ? Visibility.Visible : Visibility.Collapsed;
 
             ChangesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Changes ? Visibility.Visible : Visibility.Collapsed;
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
+            FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
 
             bool push = showPanel && !fullscreen;
             PanelHost.HorizontalAlignment = push ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
@@ -139,17 +146,61 @@ namespace RuApp.Controls
             }
         }
 
-        private static void ApplyChip(Border chip, TextBlock labelText, bool isOpen, bool isActive)
+        private void RefreshChip(Border chip, TextBlock labelText, SidePanelTabKind kind)
         {
+            bool isOpen = _openTabs.Contains(kind);
+            bool isActive = _activeTab == kind;
+            bool isHovered = IsChipHovered(kind);
+
             chip.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-            chip.Background = isActive
+            bool raised = isActive || isHovered;
+            chip.Background = raised
                 ? (Brush)Application.Current.Resources["RuSurfaceBrush"]
                 : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             chip.BorderBrush = isActive
                 ? (Brush)Application.Current.Resources["RuLineBrush"]
                 : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            labelText.Foreground = (Brush)Application.Current.Resources[isActive ? "RuInkBrush" : "RuMutedBrush"];
+            labelText.Foreground = (Brush)Application.Current.Resources[raised ? "RuInkBrush" : "RuMutedBrush"];
             labelText.FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+
+        private bool IsChipHovered(SidePanelTabKind kind) =>
+            kind switch
+            {
+                SidePanelTabKind.Changes => _changesChipHovered,
+                SidePanelTabKind.Tasks => _tasksChipHovered,
+                _ => _filesChipHovered,
+            };
+
+        private void OnChipPointerEntered(object sender, PointerRoutedEventArgs e) =>
+            SetChipHovered(sender, true);
+
+        private void OnChipPointerExited(object sender, PointerRoutedEventArgs e) =>
+            SetChipHovered(sender, false);
+
+        private void SetChipHovered(object sender, bool hovered)
+        {
+            if (sender is not FrameworkElement { Tag: string kind })
+            {
+                return;
+            }
+
+            switch (kind)
+            {
+                case "Changes":
+                    _changesChipHovered = hovered;
+                    break;
+                case "Tasks":
+                    _tasksChipHovered = hovered;
+                    break;
+                default:
+                    _filesChipHovered = hovered;
+                    break;
+            }
+
+            RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
+            RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
+            RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
         }
 
         private static void PlayEntrance(FrameworkElement host, TranslateTransform slide)
@@ -209,10 +260,16 @@ namespace RuApp.Controls
         private void OnTasksTabCloseClick(object sender, RoutedEventArgs e) =>
             TabClosed?.Invoke(this, SidePanelTabKind.Tasks);
 
+        private void OnFilesTabClick(object sender, RoutedEventArgs e) =>
+            TabActivated?.Invoke(this, SidePanelTabKind.Files);
+
+        private void OnFilesTabCloseClick(object sender, RoutedEventArgs e) =>
+            TabClosed?.Invoke(this, SidePanelTabKind.Files);
+
         private void OnAddTabClick(object sender, RoutedEventArgs e)
         {
             var closed = new List<SidePanelTabKind>();
-            foreach (var kind in new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks })
+            foreach (var kind in new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files })
             {
                 if (!_openTabs.Contains(kind))
                 {

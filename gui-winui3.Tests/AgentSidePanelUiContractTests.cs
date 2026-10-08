@@ -62,6 +62,56 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
+    public void The_chip_hover_covers_the_whole_chip()
+    {
+        // The label and the close control are separate buttons; the chip's Border
+        // owns the hover surface so the chip reads as one block, not two fills.
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var chip in new[] { "ChangesChip", "TasksChip", "FilesChip" })
+        {
+            var element = GuiSource.Require(document, chip);
+            Assert.Equal("OnChipPointerEntered", GuiSource.AttributeValue(element, "PointerEntered"));
+            Assert.Equal("OnChipPointerExited", GuiSource.AttributeValue(element, "PointerExited"));
+        }
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        Assert.Contains(
+            "SetChipHovered",
+            GuiSource.MethodBody(code, "OnChipPointerEntered"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_changesChipHovered = hovered",
+            GuiSource.MethodBody(code, "SetChipHovered"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_files_tab_lists_the_workspace_through_the_bounded_lister()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var name in new[] { "FilesChip", "FilesBody", "FilesList", "FilesRefreshButton", "FilesRootText" })
+        {
+            GuiSource.Require(document, name);
+        }
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.Files.cs");
+        Assert.Contains(
+            "FileTreeLister.List",
+            GuiSource.MethodBody(code, "RefreshFilesAsync"),
+            StringComparison.Ordinal);
+        Assert.Contains("MaxFileTreeRows", code, StringComparison.Ordinal);
+        Assert.Contains(
+            "CollapseFileRow",
+            GuiSource.MethodBody(code, "OnFileRowClick"),
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "SetWorkspace",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSidePanel"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_add_tab_flyout_opens_below_the_strip_control()
     {
         // The FlyoutBase default placement is Top, which opened the add-tab menu

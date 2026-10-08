@@ -160,6 +160,20 @@ public sealed class AgentSidePanelPolicyTests
     }
 
     [Fact]
+    public void The_files_tab_opens_closes_and_activates_like_the_others()
+    {
+        var policy = new AgentSidePanelPolicy();
+
+        policy.OpenTab("s1", SidePanelTabKind.Files);
+        Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
+        Assert.Contains(SidePanelTabKind.Files, policy.GetOpenTabs("s1"));
+
+        policy.CloseTab("s1", SidePanelTabKind.Files);
+        Assert.DoesNotContain(SidePanelTabKind.Files, policy.GetOpenTabs("s1"));
+        Assert.Equal(SidePanelTabKind.Changes, policy.GetActiveTab("s1"));
+    }
+
+    [Fact]
     public void Removing_a_session_drops_its_state()
     {
         var policy = new AgentSidePanelPolicy();

@@ -7,6 +7,7 @@ public enum SidePanelTabKind
 {
     Changes,
     Tasks,
+    Files,
 }
 
 /// <summary>

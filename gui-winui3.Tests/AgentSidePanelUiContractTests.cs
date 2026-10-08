@@ -71,6 +71,7 @@ public sealed class AgentSidePanelUiContractTests
         string layout = GuiSource.MethodBody(code, "UpdateTitleBarToggleLayout");
         Assert.Contains("RightInset", layout, StringComparison.Ordinal);
         Assert.Contains("RasterizationScale", layout, StringComparison.Ordinal);
+        Assert.Contains("TitleBar.Height", layout, StringComparison.Ordinal);
 
         string region = GuiSource.MethodBody(code, "ApplySidePanelToggleRegion");
         Assert.Contains("SetRegionRects", region, StringComparison.Ordinal);

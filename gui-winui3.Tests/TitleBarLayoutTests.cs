@@ -20,6 +20,14 @@ public sealed class TitleBarLayoutTests
     }
 
     [Fact]
+    public void Any_title_bar_metric_converts_from_physical_pixels()
+    {
+        Assert.Equal(32, TitleBarLayout.PixelsToLayoutUnits(48, 1.5), precision: 3);
+        Assert.Equal(0, TitleBarLayout.PixelsToLayoutUnits(-5, 2), precision: 3);
+        Assert.Equal(138, TitleBarLayout.PixelsToLayoutUnits(138, 0), precision: 3);
+    }
+
+    [Fact]
     public void Bounds_convert_to_physical_pixels()
     {
         var rect = TitleBarLayout.ToPhysicalRect(new Rect(10, 20, 30, 40), 1.5);

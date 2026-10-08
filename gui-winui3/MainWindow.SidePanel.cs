@@ -39,6 +39,12 @@ namespace RuApp
             }
 
             double scale = xamlRoot.RasterizationScale;
+            double captionHeight = TitleBarLayout.PixelsToLayoutUnits(_appWindow.TitleBar.Height, scale);
+            if (captionHeight > 0)
+            {
+                SidePanelToggleButton.Height = captionHeight;
+            }
+
             SidePanelToggleButton.Margin = new Thickness(
                 0,
                 0,

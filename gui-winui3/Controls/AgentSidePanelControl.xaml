@@ -306,7 +306,7 @@
                                   HorizontalScrollMode="Enabled"
                                   VerticalScrollBarVisibility="Disabled"
                                   VerticalScrollMode="Disabled">
-                        <StackPanel Orientation="Horizontal" Spacing="2">
+                        <StackPanel x:Name="ChipStrip" Orientation="Horizontal" Spacing="2">
                     <!-- The chip wrapper is a Border, not the label button: the whole
                          chip is one hover/active surface, so the label and the close
                          control share a single block instead of two fills. -->
@@ -315,6 +315,10 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
+                            PointerPressed="OnChipPointerPressed"
+                            PointerMoved="OnChipPointerMoved"
+                            PointerReleased="OnChipPointerReleased"
+                            PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
                             BorderBrush="Transparent"
@@ -351,6 +355,10 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
+                            PointerPressed="OnChipPointerPressed"
+                            PointerMoved="OnChipPointerMoved"
+                            PointerReleased="OnChipPointerReleased"
+                            PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
                             BorderBrush="Transparent"
@@ -387,6 +395,10 @@
                             VerticalAlignment="Center"
                             PointerEntered="OnChipPointerEntered"
                             PointerExited="OnChipPointerExited"
+                            PointerPressed="OnChipPointerPressed"
+                            PointerMoved="OnChipPointerMoved"
+                            PointerReleased="OnChipPointerReleased"
+                            PointerCaptureLost="OnChipPointerCaptureLost"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
                             BorderBrush="Transparent"
@@ -451,7 +463,14 @@
                             Padding="0"
                             ToolTipService.ToolTip="Collapse to summary"
                             AutomationProperties.Name="Collapse side panel">
-                        <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                        <Viewbox Width="14" Height="14">
+                            <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
+                                  Stroke="{StaticResource RuMutedBrush}"
+                                  StrokeThickness="1.2"
+                                  StrokeLineJoin="Round"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" />
+                        </Viewbox>
                     </Button>
                 </Grid>
 
@@ -619,8 +638,14 @@
                                   SelectionMode="None"
                                   IsItemClickEnabled="True"
                                   ItemClick="OnFileRowClick"
+                                  ItemsSource="{x:Bind Files, Mode=OneWay}"
                                   ItemContainerStyle="{StaticResource FileRowContainerStyle}"
                                   AutomationProperties.Name="Workspace files">
+                            <ListView.ItemContainerTransitions>
+                                <TransitionCollection>
+                                    <AddDeleteThemeTransition />
+                                </TransitionCollection>
+                            </ListView.ItemContainerTransitions>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:FileTreeRow">
                                     <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6"

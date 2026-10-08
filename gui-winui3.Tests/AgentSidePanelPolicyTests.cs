@@ -178,6 +178,23 @@ public sealed class AgentSidePanelPolicyTests
     }
 
     [Fact]
+    public void Moving_a_tab_reorders_the_open_list()
+    {
+        var policy = new AgentSidePanelPolicy();
+
+        policy.MoveTab("s1", SidePanelTabKind.Files, 0);
+        Assert.Equal(
+            new[] { SidePanelTabKind.Files, SidePanelTabKind.Changes, SidePanelTabKind.Tasks },
+            policy.GetOpenTabs("s1"));
+        Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
+
+        policy.MoveTab("s1", SidePanelTabKind.Files, 99);
+        Assert.Equal(
+            new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files },
+            policy.GetOpenTabs("s1"));
+    }
+
+    [Fact]
     public void Removing_a_session_drops_its_state()
     {
         var policy = new AgentSidePanelPolicy();

@@ -94,6 +94,14 @@ public sealed class AgentSidePanelUiContractTests
             GuiSource.Require(document, name);
         }
 
+        // The list must be bound to the collection; an unbound ListView renders
+        // nothing while every other contract still passes.
+        var filesList = GuiSource.Require(document, "FilesList");
+        Assert.Contains(
+            "Files",
+            GuiSource.AttributeValue(filesList, "ItemsSource") ?? string.Empty,
+            StringComparison.Ordinal);
+
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.Files.cs");
         Assert.Contains(
             "FileTreeLister.List",
@@ -109,6 +117,34 @@ public sealed class AgentSidePanelUiContractTests
             "SetWorkspace",
             GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSidePanel"),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_strip_reorders_tabs_by_dragging()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var chip in new[] { "ChangesChip", "TasksChip", "FilesChip" })
+        {
+            var element = GuiSource.Require(document, chip);
+            Assert.Equal("OnChipPointerPressed", GuiSource.AttributeValue(element, "PointerPressed"));
+            Assert.Equal("OnChipPointerMoved", GuiSource.AttributeValue(element, "PointerMoved"));
+            Assert.Equal("OnChipPointerReleased", GuiSource.AttributeValue(element, "PointerReleased"));
+        }
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        Assert.Contains("TabMoved", GuiSource.MethodBody(code, "OnChipPointerMoved"), StringComparison.Ordinal);
+        Assert.Contains("Move", GuiSource.MethodBody(code, "SyncChipOrder"), StringComparison.Ordinal);
+        Assert.Contains(
+            "MoveTab",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnSidePanelTabMoved"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_collapse_control_draws_the_panel_glyph()
+    {
+        Assert.Contains("M4.5,3.5", GuiSource.Text("Controls", "AgentSidePanelControl.xaml"), StringComparison.Ordinal);
+        Assert.Contains("M4.5,3.5", GuiSource.Text("MainWindow.xaml"), StringComparison.Ordinal);
     }
 
     [Fact]

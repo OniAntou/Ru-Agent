@@ -39,6 +39,8 @@ namespace RuApp.Controls
 
         public event EventHandler<SidePanelTabKind>? TabAddRequested;
 
+        public event EventHandler<SidePanelTabMove>? TabMoved;
+
         public event EventHandler<string>? TaskStopRequested;
 
         public event EventHandler<double>? WidthChanged;
@@ -51,6 +53,10 @@ namespace RuApp.Controls
         private bool _changesChipHovered;
         private bool _tasksChipHovered;
         private bool _filesChipHovered;
+        private SidePanelTabKind? _draggingTab;
+        private Border? _draggingChip;
+        private double _dragStartX;
+        private bool _isDragActive;
         private bool _isResizing;
         private double _resizeStartWidth;
         private double _resizeStartX;
@@ -103,6 +109,7 @@ namespace RuApp.Controls
             double panelWidth)
         {
             var previous = _mode;
+            var previousActive = _activeTab;
             _mode = mode;
             _openTabs = openTabs;
             _activeTab = activeTab;
@@ -116,10 +123,21 @@ namespace RuApp.Controls
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             AddTabButton.Visibility = openTabs.Count < 3 ? Visibility.Visible : Visibility.Collapsed;
+            SyncChipOrder(openTabs);
 
             ChangesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Changes ? Visibility.Visible : Visibility.Collapsed;
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
             FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
+
+            if (showPanel && activeTab != previousActive)
+            {
+                PlayBodyTransition(activeTab switch
+                {
+                    SidePanelTabKind.Changes => (FrameworkElement)ChangesBody,
+                    SidePanelTabKind.Tasks => TasksBody,
+                    _ => FilesBody,
+                });
+            }
 
             bool push = showPanel && !fullscreen;
             PanelHost.HorizontalAlignment = push ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
@@ -201,6 +219,169 @@ namespace RuApp.Controls
             RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
+        }
+
+        private void SyncChipOrder(IReadOnlyList<SidePanelTabKind> openTabs)
+        {
+            int target = 0;
+            foreach (var kind in openTabs)
+            {
+                var chip = ChipFor(kind);
+                int current = ChipStrip.Children.IndexOf(chip);
+                if (current < 0)
+                {
+                    continue;
+                }
+
+                if (current != target)
+                {
+                    ChipStrip.Children.Move((uint)current, (uint)target);
+                }
+
+                target++;
+            }
+        }
+
+        private Border ChipFor(SidePanelTabKind kind) =>
+            kind switch
+            {
+                SidePanelTabKind.Changes => ChangesChip,
+                SidePanelTabKind.Tasks => TasksChip,
+                _ => FilesChip,
+            };
+
+        private static SidePanelTabKind KindFromTag(string tag) =>
+            tag switch
+            {
+                "Tasks" => SidePanelTabKind.Tasks,
+                "Files" => SidePanelTabKind.Files,
+                _ => SidePanelTabKind.Changes,
+            };
+
+        private int IndexOfOpen(SidePanelTabKind kind)
+        {
+            for (var index = 0; index < _openTabs.Count; index++)
+            {
+                if (_openTabs[index] == kind)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        private void OnChipPointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is not Border { Tag: string tag } chip)
+            {
+                return;
+            }
+
+            _draggingTab = KindFromTag(tag);
+            _draggingChip = chip;
+            _dragStartX = e.GetCurrentPoint(ChipStrip).Position.X;
+            _isDragActive = false;
+        }
+
+        private void OnChipPointerMoved(object sender, PointerRoutedEventArgs e)
+        {
+            if (_draggingTab is not { } kind || _draggingChip is null)
+            {
+                return;
+            }
+
+            double x = e.GetCurrentPoint(ChipStrip).Position.X;
+            if (!_isDragActive)
+            {
+                if (Math.Abs(x - _dragStartX) < 8)
+                {
+                    return;
+                }
+
+                _isDragActive = true;
+                _draggingChip.CapturePointer(e.Pointer);
+                _draggingChip.Opacity = 0.85;
+            }
+
+            int current = IndexOfOpen(kind);
+            if (current < 0)
+            {
+                return;
+            }
+
+            int insertion = 0;
+            foreach (var child in ChipStrip.Children)
+            {
+                if (child is not FrameworkElement chip || chip.Visibility != Visibility.Visible)
+                {
+                    continue;
+                }
+
+                var bounds = chip.TransformToVisual(ChipStrip).TransformBounds(
+                    new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight));
+                if (x > bounds.X + (bounds.Width / 2))
+                {
+                    insertion++;
+                }
+            }
+
+            int targetIndex = insertion > current ? insertion - 1 : insertion;
+            if (targetIndex != current)
+            {
+                TabMoved?.Invoke(this, new SidePanelTabMove(kind, targetIndex));
+            }
+        }
+
+        private void OnChipPointerReleased(object sender, PointerRoutedEventArgs e) =>
+            EndChipDrag(e);
+
+        private void OnChipPointerCaptureLost(object sender, PointerRoutedEventArgs e)
+        {
+            if (_draggingChip is { } chip)
+            {
+                chip.Opacity = 1;
+            }
+
+            _isDragActive = false;
+            _draggingTab = null;
+            _draggingChip = null;
+        }
+
+        private void EndChipDrag(PointerRoutedEventArgs e)
+        {
+            if (_isDragActive && _draggingChip is { } chip)
+            {
+                chip.ReleasePointerCapture(e.Pointer);
+                chip.Opacity = 1;
+            }
+
+            _isDragActive = false;
+            _draggingTab = null;
+            _draggingChip = null;
+        }
+
+        private static void PlayBodyTransition(FrameworkElement body)
+        {
+            if (!UiTiming.AnimationsEnabled)
+            {
+                body.Opacity = 1;
+                return;
+            }
+
+            body.Opacity = 0;
+            var fade = new DoubleAnimation
+            {
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
+            };
+            Storyboard.SetTarget(fade, body);
+            Storyboard.SetTargetProperty(fade, "Opacity");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fade);
+            storyboard.Begin();
         }
 
         private static void PlayEntrance(FrameworkElement host, TranslateTransform slide)

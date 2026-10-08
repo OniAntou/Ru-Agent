@@ -22,6 +22,11 @@ public enum AgentSidePanelMode
 }
 
 /// <summary>
+/// A dragged tab's requested position among the session's open tabs.
+/// </summary>
+public sealed record SidePanelTabMove(SidePanelTabKind Kind, int TargetIndex);
+
+/// <summary>
 /// The per-session state of the right side surface: which host is showing,
 /// which tabs are open, which one is active, the fullscreen flag, and the width
 /// clamp. One bounded entry per session, so a closed tab or a hidden surface
@@ -168,6 +173,31 @@ public sealed class AgentSidePanelPolicy
         }
 
         state.Fullscreen = !state.Fullscreen;
+    }
+
+    /// <summary>Moves an open tab to a new index; the active tab is unchanged.</summary>
+    public void MoveTab(string? sessionId, SidePanelTabKind kind, int newIndex)
+    {
+        var state = GetOrCreate(sessionId);
+        if (state is null)
+        {
+            return;
+        }
+
+        int current = state.OpenTabs.IndexOf(kind);
+        if (current < 0)
+        {
+            return;
+        }
+
+        newIndex = Math.Clamp(newIndex, 0, state.OpenTabs.Count - 1);
+        if (current == newIndex)
+        {
+            return;
+        }
+
+        state.OpenTabs.RemoveAt(current);
+        state.OpenTabs.Insert(newIndex, kind);
     }
 
     public void Remove(string? sessionId)

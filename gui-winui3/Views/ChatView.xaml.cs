@@ -269,8 +269,8 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Re-evaluates the welcome decoration after a theme switch. Meteor
-        /// Shower themes animate the meteor field, Starry Night shows the
+        /// Re-evaluates the welcome decoration after a theme switch. The Meteor
+        /// Shower theme animates the meteor field, Starry Night shows the
         /// painting; plain Light/Dark stay still.
         /// </summary>
         public void RefreshBackdropEffect()
@@ -279,8 +279,7 @@ namespace RuApp.Views
             var theme = MainWindow.CurrentTheme;
             if (MeteorShowerField != null)
             {
-                MeteorShowerField.IsActive = show
-                    && theme is UiTheme.LightMeteorShower or UiTheme.DarkMeteorShower;
+                MeteorShowerField.IsActive = show && theme == UiTheme.DarkMeteorShower;
             }
             bool starry = show && theme == UiTheme.StarryNight;
             if (StarryPainting != null)
@@ -298,7 +297,7 @@ namespace RuApp.Views
         }
 
         private static bool IsMeteorShowerTheme =>
-            MainWindow.CurrentTheme is UiTheme.LightMeteorShower or UiTheme.DarkMeteorShower;
+            MainWindow.CurrentTheme == UiTheme.DarkMeteorShower;
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 

@@ -57,6 +57,18 @@ public sealed class UiThemePreferenceStoreTests : IDisposable
         Assert.Equal(UiTheme.StarryNight, store.Load());
     }
 
+    [Fact]
+    public void Load_folds_the_removed_light_meteor_theme_to_light()
+    {
+        // The Light Meteor Shower theme was removed by owner direction; a
+        // preference saved while it existed must not resurrect it.
+        var path = Path.Combine(_root, "ui-preferences.json");
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(path, "{\"theme\":\"light-meteor\"}");
+
+        Assert.Equal(UiTheme.Light, new UiThemePreferenceStore(path).Load());
+    }
+
     [Theory]
     [InlineData("not-json")]
     [InlineData("{\"theme\":\"Sepia\"}")]

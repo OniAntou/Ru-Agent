@@ -73,7 +73,6 @@ namespace RuApp.Views
             _themeChoice = theme switch
             {
                 UiTheme.Dark => "dark",
-                UiTheme.LightMeteorShower => "light-meteor",
                 UiTheme.DarkMeteorShower => "dark-meteor",
                 UiTheme.StarryNight => "starry-night",
                 _ => "light",
@@ -173,7 +172,6 @@ namespace RuApp.Views
             {
                 new DropdownOption(ThemeDarkOption, ThemeDarkText, ThemeDarkCheck, "dark"),
                 new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
-                new DropdownOption(ThemeLightMeteorOption, ThemeLightMeteorText, ThemeLightMeteorCheck, "light-meteor"),
                 new DropdownOption(ThemeDarkMeteorOption, ThemeDarkMeteorText, ThemeDarkMeteorCheck, "dark-meteor"),
                 new DropdownOption(ThemeStarryNightOption, ThemeStarryNightText, ThemeStarryNightCheck, "starry-night"),
             };
@@ -1145,7 +1143,6 @@ namespace RuApp.Views
             _themeChoice = tag.ToLowerInvariant() switch
             {
                 "dark" => "dark",
-                "light-meteor" => "light-meteor",
                 "dark-meteor" => "dark-meteor",
                 "starry-night" => "starry-night",
                 _ => "light",
@@ -1155,7 +1152,6 @@ namespace RuApp.Views
             var theme = _themeChoice switch
             {
                 "dark" => UiTheme.Dark,
-                "light-meteor" => UiTheme.LightMeteorShower,
                 "dark-meteor" => UiTheme.DarkMeteorShower,
                 "starry-night" => UiTheme.StarryNight,
                 _ => UiTheme.Light,

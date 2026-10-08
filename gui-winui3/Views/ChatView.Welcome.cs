@@ -129,8 +129,6 @@ public sealed partial class ChatView
         {
             (WelcomeWorkspaceRow, 0),
             (WelcomeTitleText, 50),
-            (WelcomeSubtitleText, 100),
-            (SuggestionPanel, 150),
         };
         foreach (var (element, delayMs) in stagger)
         {
@@ -161,8 +159,6 @@ public sealed partial class ChatView
     {
         WelcomeWorkspaceRow.Opacity = 1;
         WelcomeTitleText.Opacity = 1;
-        WelcomeSubtitleText.Opacity = 1;
-        SuggestionPanel.Opacity = 1;
     }
 
     private void ShowChatContentAnimated()

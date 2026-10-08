@@ -537,23 +537,6 @@ namespace RuApp.Views
 
         private static string StripDisplayMarkers(string content) => ChatDisplayMarkers.Strip(content);
 
-        private async void OnSuggestionClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is not Button button)
-            {
-                return;
-            }
-
-            var promptText = button.Tag as string;
-            if (string.IsNullOrWhiteSpace(promptText))
-            {
-                return;
-            }
-
-            ChatInputTextBox.Text = promptText;
-            await SendCurrentMessageAsync();
-        }
-
         private async void OnSendClick(object sender, RoutedEventArgs e)
         {
             try

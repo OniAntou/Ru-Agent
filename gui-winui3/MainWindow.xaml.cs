@@ -102,12 +102,11 @@ namespace RuApp
 
         private void OnThemeToggleClick(object sender, RoutedEventArgs e)
         {
+            // The toggle flips the plain pair; a themed dark (Meteor Shower,
+            // Starry Night) folds back to plain Dark.
             var nextTheme = _currentTheme switch
             {
                 UiTheme.Dark => UiTheme.Light,
-                UiTheme.LightMeteorShower => UiTheme.DarkMeteorShower,
-                UiTheme.DarkMeteorShower => UiTheme.LightMeteorShower,
-                UiTheme.StarryNight => UiTheme.Dark,
                 _ => UiTheme.Dark,
             };
             ApplyTheme(nextTheme);

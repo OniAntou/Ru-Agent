@@ -231,29 +231,6 @@
                                                                   Margin="8,0,0,0" />
                                                     </Grid>
                                                 </Button>
-                                                <Button x:Name="ThemeLightMeteorOption"
-                                                        Tag="light-meteor"
-                                                        Click="OnThemeOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Light Meteor Shower theme">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ThemeLightMeteorText"
-                                                                   Text="Light Meteor Shower"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ThemeLightMeteorCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
                                                 <Button x:Name="ThemeDarkMeteorOption"
                                                         Tag="dark-meteor"
                                                         Click="OnThemeOptionClick"

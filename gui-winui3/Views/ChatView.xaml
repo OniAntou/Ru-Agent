@@ -54,78 +54,6 @@
             </Setter>
         </Style>
 
-        <!-- Welcome suggestion chip: a quiet surface that answers the pointer with
-             a soft accent fill and a small press, matching the shared buttons'
-             motion language without their pill chrome. -->
-        <Style x:Key="WelcomeSuggestionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
-            <Setter Property="Padding" Value="14,8" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="UseSystemFocusVisuals" Value="True" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="RootBorder"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="{TemplateBinding CornerRadius}">
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup x:Name="CommonStates">
-                                    <VisualState x:Name="Normal">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.1" />
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.1" />
-                                        </Storyboard>
-                                    </VisualState>
-                                    <VisualState x:Name="PointerOver">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="HoverLayer" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.12">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <ExponentialEase EasingMode="EaseOut" />
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.1" />
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.1" />
-                                        </Storyboard>
-                                    </VisualState>
-                                    <VisualState x:Name="Pressed">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="HoverLayer" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.08" />
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleX" To="0.97" Duration="0:0:0.08" />
-                                            <DoubleAnimation Storyboard.TargetName="PressScale" Storyboard.TargetProperty="ScaleY" To="0.97" Duration="0:0:0.08" />
-                                        </Storyboard>
-                                    </VisualState>
-                                    <VisualState x:Name="Disabled">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.5" Duration="0" />
-                                        </Storyboard>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-                            <Grid RenderTransformOrigin="0.5,0.5">
-                                <Grid.RenderTransform>
-                                    <ScaleTransform x:Name="PressScale" />
-                                </Grid.RenderTransform>
-                                <Border x:Name="HoverLayer"
-                                        Background="{StaticResource RuAccentSoftBrush}"
-                                        CornerRadius="{TemplateBinding CornerRadius}"
-                                        Opacity="0" />
-                                <ContentPresenter Content="{TemplateBinding Content}"
-                                                  Padding="{TemplateBinding Padding}"
-                                                  HorizontalAlignment="Left"
-                                                  VerticalContentAlignment="Center" />
-                            </Grid>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,16" HorizontalAlignment="Stretch">
                 <Grid x:Name="MessageColumn"
@@ -598,8 +526,6 @@
                         <AdaptiveTrigger MinWindowWidth="0" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="SuggestionPanel.Orientation" Value="Vertical" />
-                        <Setter Target="SuggestionPanel.HorizontalAlignment" Value="Stretch" />
                         <Setter Target="InputContainer.Padding" Value="0,4,0,12" />
                         <Setter Target="InputContainer.Margin" Value="12,0" />
                         <Setter Target="InputBorder.Padding" Value="4,2" />
@@ -696,54 +622,6 @@
                            Foreground="{StaticResource RuInkBrush}"
                            HorizontalAlignment="Left"
                            TextWrapping="Wrap" />
-
-                <TextBlock x:Name="WelcomeSubtitleText"
-                           Text="Ru works inside this project folder — it reads and edits files, runs commands, and asks before anything risky."
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="14"
-                           Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="Wrap"
-                           MaxWidth="560"
-                           HorizontalAlignment="Left" />
-
-                <StackPanel x:Name="SuggestionPanel"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Left"
-                            Spacing="12">
-                    <Button Tag="Explain the structure of this project: the main entry points, the key modules, and how they fit together."
-                            Click="OnSuggestionClick"
-                            Style="{StaticResource WelcomeSuggestionButtonStyle}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE8BD;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Explain this codebase"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                        </StackPanel>
-                    </Button>
-                    <Button Tag="Review my uncommitted changes and list anything risky or broken."
-                            Click="OnSuggestionClick"
-                            Style="{StaticResource WelcomeSuggestionButtonStyle}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE70F;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Review my changes"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                        </StackPanel>
-                    </Button>
-                    <Button Tag="Run the test suite and summarize any failures with the likely cause."
-                            Click="OnSuggestionClick"
-                            Style="{StaticResource WelcomeSuggestionButtonStyle}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE756;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Run the tests"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
             </StackPanel>
 
             <!-- Virtualized history: the ListView owns its scroll host so long

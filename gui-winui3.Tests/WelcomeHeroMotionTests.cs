@@ -1,38 +1,33 @@
 using System;
-using System.Linq;
 using Xunit;
 
 namespace RuApp.Tests;
 
 /// <summary>
-/// The empty-state hero's content and motion contract: a workspace readout,
-/// three real starter prompts, and bounded reduced-motion-aware transitions.
+/// The empty-state hero's content and motion contract: the workspace readout,
+/// the greeting, and bounded reduced-motion-aware transitions.
 /// </summary>
 public sealed class WelcomeHeroMotionTests
 {
     [Fact]
-    public void The_welcome_hero_carries_the_workspace_line_and_starter_prompts()
+    public void The_welcome_hero_keeps_only_the_workspace_line_and_title()
     {
+        // The subtitle and the three starter chips were removed by owner
+        // direction: the empty state keeps the workspace readout and the
+        // greeting, and nothing else.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         foreach (var name in new[]
         {
-            "WelcomeHeroPanel", "WelcomeWorkspaceRow", "WelcomeWorkspaceText",
-            "WelcomeTitleText", "WelcomeSubtitleText", "SuggestionPanel",
+            "WelcomeHeroPanel", "WelcomeWorkspaceRow", "WelcomeWorkspaceText", "WelcomeTitleText",
         })
         {
             GuiSource.Require(document, name);
         }
 
-        var suggestionPanel = GuiSource.Require(document, "SuggestionPanel");
-        var chips = suggestionPanel.Descendants()
-            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnSuggestionClick")
-            .ToList();
-
-        Assert.Equal(3, chips.Count);
-        foreach (var chip in chips)
-        {
-            Assert.False(string.IsNullOrWhiteSpace(GuiSource.AttributeValue(chip, "Tag")));
-        }
+        var named = GuiSource.NamedElements(document);
+        Assert.DoesNotContain("WelcomeSubtitleText", named.Keys);
+        Assert.DoesNotContain("SuggestionPanel", named.Keys);
+        Assert.DoesNotContain("OnSuggestionClick", GuiSource.ViewText("ChatView"), StringComparison.Ordinal);
     }
 
     [Fact]

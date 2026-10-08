@@ -6,7 +6,6 @@ public enum UiTheme
 {
     Light,
     Dark,
-    LightMeteorShower,
     DarkMeteorShower,
     StarryNight
 }
@@ -42,12 +41,8 @@ public sealed class UiThemePreferenceStore
             var preferences = JsonSerializer.Deserialize<UiThemePreferences>(bytes, JsonOptions);
             var name = preferences?.Theme?.Trim();
 
-            if (string.Equals(name, "light-meteor", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "lightmeteorshower", StringComparison.OrdinalIgnoreCase))
-            {
-                return UiTheme.LightMeteorShower;
-            }
-
+            // A stored "light-meteor" from the removed theme falls through to the
+            // Light default below instead of resurrecting the theme.
             if (string.Equals(name, "dark-meteor", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "darkmeteorshower", StringComparison.OrdinalIgnoreCase))
             {

@@ -19,13 +19,7 @@ namespace RuApp.Controls
 
         public void ClearTerminalBlocks() => TerminalTabPanel.Clear();
 
-        /// <summary>Pins the terminal tab's scroll to its newest output.</summary>
-        public void RevealTerminal()
-        {
-            if (TerminalTabPanel.TerminalBlocks.Count > 0)
-            {
-                TerminalTabPanel.Show();
-            }
-        }
+        /// <summary>Shows the terminal tab's panel, pinned to its newest output.</summary>
+        public void RevealTerminal() => TerminalTabPanel.Show();
     }
 }

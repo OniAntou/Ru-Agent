@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, updated 2026-09-30.
+Status: operating contract for the current main branch, updated 2026-10-08.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -42,8 +42,18 @@ identity. The composer keeps one active run; reconnecting to the Agent SSE
 stream replays only durable events and never duplicates a committed history
 entry. Stale or malformed events are ignored by the presenter, so a late reply
 cannot update a newer bubble. A disconnect marks the active run as a bounded
-retryable connection error; Ru does not automatically replay an ambiguous
-request and risk duplicate history.
+retryable connection error. Run creation makes at most two attempts on the
+same endpoint, each with a 15-second deadline, using the identical serialized
+request and idempotency key. Cancellation before dispatch prevents creation;
+after dispatch the bounded acknowledgement path still observes a late run so
+the client can cancel it. Exhaustion reports `agent_create_outcome_unknown`.
+WinUI retains the request identity, blocks overlapping creation and offers
+Stop to replay that same request before cancelling the acknowledged run.
+A failed Stop reconciliation retains the identity for another attempt.
+An unusable success response, a server error, or an HTTP error after a lost
+acknowledgement also retains that identity, while preserving its original
+error code. A definitive first-attempt client error does not trigger this
+unknown-outcome state.
 
 Opening a session adopts its newest non-terminal run, so a run that outlived
 the host is not invisible: WinUI re-arms Continue/Stop for it (`AdoptRunAsync`;

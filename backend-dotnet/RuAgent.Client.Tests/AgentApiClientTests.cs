@@ -215,6 +215,167 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task CreateRun_replays_same_serialized_request_and_idempotency_key_after_lost_acknowledgement()
+    {
+        var payloads = new List<string>();
+        var idempotencyKeys = new List<string?>();
+        var committedRuns = new Dictionary<string, CreateAgentRunResponse>(StringComparer.Ordinal);
+        var firstRequestReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loseFirstResponse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var run = new CreateAgentRunResponse(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ws_1",
+            "running",
+            "standard",
+            DateTimeOffset.UtcNow.ToString("O"),
+            DateTimeOffset.UtcNow.ToString("O"));
+        var handler = new FakeHandler(async request =>
+        {
+            payloads.Add(await request.Content!.ReadAsStringAsync());
+            using (var document = JsonDocument.Parse(payloads[^1]))
+            {
+                idempotencyKeys.Add(document.RootElement.GetProperty("idempotency_key").GetString());
+            }
+
+            if (payloads.Count == 1)
+            {
+                committedRuns.Add(idempotencyKeys[^1]!, run);
+                firstRequestReceived.TrySetResult();
+                await loseFirstResponse.Task;
+                throw new HttpRequestException("response lost after commit");
+            }
+
+            Assert.True(committedRuns.TryGetValue(idempotencyKeys[^1]!, out var committedRun));
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(committedRun), Encoding.UTF8, "application/json"),
+            };
+        });
+        var client = new AgentApiClient(Session(), new HttpClient(handler));
+        var mutableImages = new List<string> { "data:image/png;base64,first" };
+        var request = new CreateAgentRunRequest("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "D:\\LLM", "hello", "standard", 1, "idem-replay", mutableImages);
+
+        var createTask = client.CreateRunAsync(request);
+        await firstRequestReceived.Task;
+        mutableImages[0] = "data:image/png;base64,changed";
+        loseFirstResponse.SetResult();
+        var response = await createTask;
+
+        Assert.Equal("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", response.RunId);
+        Assert.Equal(2, payloads.Count);
+        Assert.Equal(payloads[0], payloads[1]);
+        Assert.Equal(new[] { "idem-replay", "idem-replay" }, idempotencyKeys);
+    }
+
+    [Fact]
+    public async Task CreateRun_reports_unknown_outcome_after_bounded_replay_is_exhausted()
+    {
+        var attempts = 0;
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler((HttpRequestMessage _) =>
+        {
+            attempts++;
+            return Task.FromException<HttpResponseMessage>(new HttpRequestException("acknowledgement unavailable"));
+        })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("agent_create_outcome_unknown", error.ErrorCode);
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
+    public async Task CreateRun_preserves_create_uncertainty_when_replay_returns_an_http_error()
+    {
+        var attempts = 0;
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler((HttpRequestMessage _) =>
+        {
+            attempts++;
+            return attempts == 1
+                ? Task.FromException<HttpResponseMessage>(new HttpRequestException("first acknowledgement lost"))
+                : Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("{\"error_code\":\"invalid_workspace\"}", Encoding.UTF8, "application/json"),
+                });
+        })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_workspace", error.ErrorCode);
+        Assert.True(error.IsCreateOutcomeUnknown);
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
+    public async Task CreateRun_marks_server_error_as_potentially_ambiguous()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{\"error_code\":\"host_unavailable\"}", Encoding.UTF8, "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("host_unavailable", error.ErrorCode);
+        Assert.True(error.IsCreateOutcomeUnknown);
+    }
+
+    [Fact]
+    public async Task CreateRun_marks_strict_success_parse_failure_as_potentially_ambiguous()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent("{\"run_id\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"unexpected\":true}", Encoding.UTF8, "application/json"),
+            })));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("unknown_field", error.ErrorCode);
+        Assert.True(error.IsCreateOutcomeUnknown);
+    }
+
+    [Fact]
+    public async Task CreateRun_continues_acknowledgement_replay_after_the_caller_cancels()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var attempts = 0;
+        var run = new CreateAgentRunResponse(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ws_1",
+            "running",
+            "standard",
+            DateTimeOffset.UtcNow.ToString("O"),
+            DateTimeOffset.UtcNow.ToString("O"));
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler((HttpRequestMessage _) =>
+        {
+            attempts++;
+            if (attempts == 1)
+            {
+                cancellation.Cancel();
+                return Task.FromException<HttpResponseMessage>(new HttpRequestException("response lost after caller cancellation"));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(run), Encoding.UTF8, "application/json"),
+            });
+        })));
+
+        var result = await client.CreateRunAsync(
+            Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard"), cancellation.Token);
+
+        Assert.Equal("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", result.RunId);
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
     public async Task CreateRunStrictParsingAcceptsOptionalProviderPins()
     {
         var response = new CreateAgentRunResponse(
@@ -402,6 +563,7 @@ public sealed class AgentApiClientTests
                 "idem-key-123")));
 
         Assert.Equal("invalid_workspace", ex.ErrorCode);
+        Assert.False(ex.IsCreateOutcomeUnknown);
     }
 
     [Fact]
@@ -424,6 +586,7 @@ public sealed class AgentApiClientTests
                 "idem-key-123")));
 
         Assert.Equal("response_too_large", error.ErrorCode);
+        Assert.True(error.IsCreateOutcomeUnknown);
     }
 
     [Fact]

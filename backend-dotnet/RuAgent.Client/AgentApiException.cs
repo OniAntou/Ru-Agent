@@ -18,6 +18,9 @@ public sealed class AgentApiException : Exception
 
     public long? CurrentPresetVersion { get; }
 
+    /// <summary>True when a failed create acknowledgement cannot prove whether the Host committed the run.</summary>
+    public bool IsCreateOutcomeUnknown { get; }
+
     public AgentApiException(
         string errorCode,
         string message,
@@ -26,7 +29,8 @@ public sealed class AgentApiException : Exception
         string? blockingRunId = null,
         string? blockingRunStatus = null,
         string? presetSessionId = null,
-        long? currentPresetVersion = null)
+        long? currentPresetVersion = null,
+        bool isCreateOutcomeUnknown = false)
         : base(message, inner)
     {
         ErrorCode = errorCode;
@@ -35,6 +39,7 @@ public sealed class AgentApiException : Exception
         BlockingRunStatus = blockingRunStatus;
         PresetSessionId = presetSessionId;
         CurrentPresetVersion = currentPresetVersion;
+        IsCreateOutcomeUnknown = isCreateOutcomeUnknown;
     }
 
     public AgentApiException(string errorCode, int? statusCode = null)
@@ -42,5 +47,6 @@ public sealed class AgentApiException : Exception
     {
         ErrorCode = errorCode;
         StatusCode = statusCode;
+        IsCreateOutcomeUnknown = false;
     }
 }

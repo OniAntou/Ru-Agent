@@ -16,6 +16,8 @@ gui-winui3.Harness/bin/
 gui-winui3.Harness/obj/
 backend-dotnet/*/bin/
 backend-dotnet/*/obj/
+tools/ooxml-benchmark/bin/
+tools/ooxml-benchmark/obj/
 
 # Python
 __pycache__/

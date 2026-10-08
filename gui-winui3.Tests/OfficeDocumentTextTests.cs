@@ -53,6 +53,7 @@ public sealed class OfficeDocumentTextTests
         Assert.Contains("B1", result.Text, StringComparison.Ordinal);
         Assert.Contains("A2", result.Text, StringComparison.Ordinal);
         Assert.Contains("B2", result.Text, StringComparison.Ordinal);
+        Assert.Contains("A1\tB1\nA2\tB2", result.Text, StringComparison.Ordinal);
         Assert.Contains("Tiếng Việt", result.Text, StringComparison.Ordinal);
         Assert.True(
             result.Text.IndexOf("Before table", StringComparison.Ordinal)
@@ -82,6 +83,66 @@ public sealed class OfficeDocumentTextTests
             result.Text.IndexOf("Sheet: First", StringComparison.Ordinal)
                 < result.Text.IndexOf("Sheet: Second", StringComparison.Ordinal),
             "sheets must keep workbook order");
+    }
+
+    [Fact]
+    public void An_xlsx_preserves_sparse_cell_columns()
+    {
+        var result = OfficeDocumentText.Extract("a.xlsx", OfficeDocumentFixtures.SparseXlsx());
+
+        Assert.Equal(OfficeDocumentText.Result.Ok, result.Result);
+        Assert.Contains("Name\t\tEmail", result.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_shared_string_referenced_many_times_stays_within_allocation_budget()
+    {
+        var bytes = OfficeDocumentFixtures.XlsxWithAmplifiedSharedString(references: 100, valueLength: 100_000);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = OfficeDocumentText.Extract("a.xlsx", bytes);
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, result.Result);
+        Assert.True(allocated < 32_000_000, $"Extraction allocated {allocated:N0} bytes before refusing the workbook.");
+    }
+
+    [Fact]
+    public void A_nested_docx_table_past_the_depth_bound_is_refused()
+    {
+        var result = OfficeDocumentText.Extract("a.docx", OfficeDocumentFixtures.DocxWithNestedTables(levels: 40));
+
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, result.Result);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void An_oversized_pptx_paragraph_or_table_stays_within_allocation_budget(bool useTable)
+    {
+        var bytes = OfficeDocumentFixtures.PptxWithLargeText(useTable, runCount: 8, runLength: 1_000_000);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = OfficeDocumentText.Extract("large.pptx", bytes);
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, result.Result);
+        Assert.True(allocated < 32_000_000, $"Extraction allocated {allocated:N0} bytes before refusing the slide.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void An_oversized_xlsx_inline_or_shared_rich_string_stays_within_allocation_budget(bool useSharedString)
+    {
+        var bytes = OfficeDocumentFixtures.XlsxWithLargeRichString(useSharedString, runCount: 100, runLength: 100_000);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        var result = OfficeDocumentText.Extract("large.xlsx", bytes);
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(OfficeDocumentText.Result.TooLarge, result.Result);
+        Assert.True(allocated < 32_000_000, $"Extraction allocated {allocated:N0} bytes before refusing the cell.");
     }
 
     [Fact]

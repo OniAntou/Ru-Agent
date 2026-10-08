@@ -9,6 +9,8 @@ namespace RuAgent.Client;
 
 public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 {
+    private const int MaxCreateRunAttempts = 2;
+    private static readonly TimeSpan CreateRunAttemptDeadline = TimeSpan.FromSeconds(15);
     private const int MaxProviderBackendChars = 64;
     private const int MaxModelsDevProviderIdChars = 64;
     private const int MaxProviderModelChars = 256;
@@ -69,18 +71,64 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         ct.ThrowIfCancellationRequested();
         var url = new Uri(_session.BaseUri, "agent/v1/runs");
         var json = JsonSerializer.Serialize(request);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
-        EnsureAuth(httpRequest);
-        // A create commits a durable run before it answers. Aborting the wait
-        // after the request was sent would orphan that run because the caller
-        // never learns its id; the caller observes the response and cancels the
-        // run through its normal stop path instead. Cancellation is still
-        // honored before the send, and the wait stays bounded by the HTTP
-        // client's request timeout.
-        using var resp = await _httpClient.SendAsync(httpRequest, CancellationToken.None).ConfigureAwait(false);
-        var body = await BoundedHttpResponseReader.ReadAsync(resp.Content, CancellationToken.None).ConfigureAwait(false);
+        Exception? lastTransportError = null;
+        var hasTransportUncertainty = false;
+        for (var attempt = 0; attempt < MaxCreateRunAttempts; attempt++)
+        {
+            try
+            {
+                using var attemptCts = new CancellationTokenSource();
+                attemptCts.CancelAfter(CreateRunAttemptDeadline);
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                };
+                EnsureAuth(httpRequest);
+                using var resp = await _httpClient.SendAsync(httpRequest, attemptCts.Token).ConfigureAwait(false);
+                string body;
+                try
+                {
+                    body = await BoundedHttpResponseReader.ReadAsync(resp.Content, attemptCts.Token).ConfigureAwait(false);
+                }
+                catch (AgentApiException ex) when (
+                    resp.IsSuccessStatusCode
+                    || hasTransportUncertainty
+                    || (int)resp.StatusCode >= 500)
+                {
+                    throw WithUnknownCreateOutcome(ex, (int)resp.StatusCode);
+                }
+
+                return ParseCreateRunResponse(resp, body, request, hasTransportUncertainty);
+            }
+            catch (HttpRequestException ex)
+            {
+                lastTransportError = ex;
+                hasTransportUncertainty = true;
+            }
+            catch (OperationCanceledException ex)
+            {
+                lastTransportError = ex;
+                hasTransportUncertainty = true;
+            }
+        }
+
+        throw new AgentApiException(
+            "agent_create_outcome_unknown",
+            "The Host may have created this run, but its acknowledgement could not be received.",
+            inner: lastTransportError,
+            isCreateOutcomeUnknown: true);
+    }
+
+    private static CreateAgentRunResponse ParseCreateRunResponse(
+        HttpResponseMessage resp,
+        string body,
+        CreateAgentRunRequest request,
+        bool hasTransportUncertainty)
+    {
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
-            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+            throw new AgentApiException(
+                "unauthorized", "Bearer rejected", (int)resp.StatusCode,
+                isCreateOutcomeUnknown: hasTransportUncertainty);
         if ((int)resp.StatusCode == 409)
         {
             var blocking = ExtractBlockingRun(body);
@@ -89,16 +137,37 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
                 ExtractErrorMessage(body) ?? body,
                 (int)resp.StatusCode,
                 blockingRunId: blocking.RunId,
-                blockingRunStatus: blocking.Status);
+                blockingRunStatus: blocking.Status,
+                isCreateOutcomeUnknown: hasTransportUncertainty);
         }
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(
                 ExtractErrorCode(body) ?? "agent_create_failed",
                 body,
-                (int)resp.StatusCode);
+                (int)resp.StatusCode,
+                isCreateOutcomeUnknown: hasTransportUncertainty || (int)resp.StatusCode >= 500);
 
-        return ParseCreateResponseStrict(body, request.SessionId, request.Preset);
+        try
+        {
+            return ParseCreateResponseStrict(body, request.SessionId, request.Preset);
+        }
+        catch (AgentApiException ex)
+        {
+            throw WithUnknownCreateOutcome(ex, (int)resp.StatusCode);
+        }
     }
+
+    private static AgentApiException WithUnknownCreateOutcome(AgentApiException error, int statusCode) =>
+        new(
+            error.ErrorCode,
+            error.Message,
+            error.StatusCode ?? statusCode,
+            error,
+            error.BlockingRunId,
+            error.BlockingRunStatus,
+            error.PresetSessionId,
+            error.CurrentPresetVersion,
+            isCreateOutcomeUnknown: true);
 
     public async Task<GetAgentRunResponse> GetRunAsync(string runId, CancellationToken ct = default)
     {

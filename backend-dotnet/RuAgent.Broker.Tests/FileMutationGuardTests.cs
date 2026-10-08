@@ -1,4 +1,5 @@
 using System.Text;
+using System.Reflection;
 using RuAgent.Broker.Tools.Files;
 using Xunit;
 
@@ -25,6 +26,55 @@ public sealed class FileMutationGuardTests : IDisposable
     }
 
     private string Full(string name) => Path.Combine(_root, name);
+
+    [Fact]
+    public void Oversized_preimage_is_refused_without_mutating_the_file()
+    {
+        const long oversizedPreimageBytes = 33L * 1024 * 1024;
+        var path = Full("large-preimage.txt");
+        using (var original = File.Create(path)) original.SetLength(oversizedPreimageBytes);
+        var expected = FileHashService.ComputeFileHash(path);
+
+        var error = Assert.Throws<IOException>(() => FileMutationGuard.ReplaceIfHashMatches(
+            path, Encoding.UTF8.GetBytes("new"), expected));
+
+        Assert.Equal("file_too_large", error.Message);
+        Assert.Equal(oversizedPreimageBytes, new FileInfo(path).Length);
+        Assert.Equal(expected, FileHashService.ComputeFileHash(path));
+    }
+
+    [Fact]
+    public void Replace_preserves_the_validated_file_for_an_existing_reader()
+    {
+        var path = Full("held-reader.txt");
+        File.WriteAllText(path, "before");
+        var expected = FileHashService.ComputeFileHash(path);
+        using var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+        FileMutationGuard.ReplaceIfHashMatches(path, Encoding.UTF8.GetBytes("after"), expected);
+
+        using var textReader = new StreamReader(reader);
+        Assert.Equal("after", textReader.ReadToEnd());
+        Assert.Equal("after", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Mutation_handle_denies_editor_rename_over_until_release()
+    {
+        var path = Full("pinned.txt");
+        var editor = Full("editor.tmp");
+        File.WriteAllText(path, "before");
+        File.WriteAllText(editor, EditorContent);
+        var factory = typeof(FileMutationGuard).GetMethod("OpenForMutation", BindingFlags.NonPublic | BindingFlags.Static)!;
+        using (var held = (FileStream)factory.Invoke(null, [path, false])!)
+        {
+            Assert.Throws<IOException>(() => File.Replace(editor, path, null));
+            using var textReader = new StreamReader(held, leaveOpen: true);
+            Assert.Equal("before", textReader.ReadToEnd());
+        }
+        File.Replace(editor, path, null);
+        Assert.Equal(EditorContent, File.ReadAllText(path));
+    }
 
     [Fact]
     public void Replace_fails_closed_while_another_writer_holds_the_file()
@@ -114,23 +164,23 @@ public sealed class FileMutationGuardTests : IDisposable
     }
 
     [Fact]
-    public void Replace_fails_closed_when_an_editor_atomically_saves_over_the_target()
+    public void Replace_serializes_an_editor_save_with_the_guarded_update()
     {
         var path = Full("atomic-replace.txt");
         var newBytes = Encoding.UTF8.GetBytes("guard-content");
-        AssertAtomicSaveFailsClosed(path, expected =>
-            FileMutationGuard.ReplaceIfHashMatches(path, newBytes, expected));
+        AssertAtomicSaveSerialized(path, expected =>
+            FileMutationGuard.ReplaceIfHashMatches(path, newBytes, expected), "guard-content");
     }
 
     [Fact]
-    public void Delete_fails_closed_when_an_editor_atomically_saves_over_the_target()
+    public void Delete_serializes_an_editor_save_with_the_guarded_update()
     {
         var path = Full("atomic-delete.txt");
-        AssertAtomicSaveFailsClosed(path, expected =>
-            FileMutationGuard.DeleteIfHashMatches(path, expected));
+        AssertAtomicSaveSerialized(path, expected =>
+            FileMutationGuard.DeleteIfHashMatches(path, expected), null);
     }
 
-    private void AssertAtomicSaveFailsClosed(string path, Action<string> mutate)
+    private void AssertAtomicSaveSerialized(string path, Action<string> mutate, string? guardedContent)
     {
         for (var attempt = 0; attempt < AtomicSaveAttempts; attempt++)
         {
@@ -162,13 +212,22 @@ public sealed class FileMutationGuardTests : IDisposable
                 continue;
             }
 
-            Assert.NotNull(error);
-            Assert.Equal("workspace_changed", error!.Message);
-            Assert.Equal(EditorContent, File.ReadAllText(path));
+            if (swapped.Task.Result)
+            {
+                Assert.NotNull(error);
+                Assert.Equal("workspace_changed", error!.Message);
+                Assert.Equal(EditorContent, File.ReadAllText(path));
+            }
+            else
+            {
+                Assert.Null(error);
+                if (guardedContent is null) Assert.False(File.Exists(path));
+                else Assert.Equal(guardedContent, File.ReadAllText(path));
+            }
             return;
         }
 
-        Assert.Fail("the editor's atomic save never landed inside the guard's window");
+        Assert.Fail("the editor never observed the held mutation handle");
     }
 
     private static void AtomicSaveWhenHeld(string path, TaskCompletionSource<bool> swapped, CancellationToken token)
@@ -183,10 +242,16 @@ public sealed class FileMutationGuardTests : IDisposable
             {
                 var temp = path + ".editor-" + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllText(temp, EditorContent);
-                // ReplaceFileW is the editor atomic save the held share mode still
-                // permits; MoveFileEx-based overwrites are already denied.
-                File.Replace(temp, path, destinationBackupFileName: null);
-                swapped.TrySetResult(true);
+                try
+                {
+                    File.Replace(temp, path, destinationBackupFileName: null);
+                    swapped.TrySetResult(true);
+                }
+                catch (IOException saveError) when (saveError.HResult == unchecked((int)0x80070020))
+                {
+                    File.Delete(temp);
+                    swapped.TrySetResult(false);
+                }
                 return;
             }
 

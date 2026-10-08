@@ -6,12 +6,20 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,720 passed / 0 failed / 0 skipped** (2026-10-08, third review round: SSE usage totals, log-root lock, starter exit codes, shared skill requirements; full matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,753 passed / 0 failed / 0 skipped** (2026-10-08, F01–F10 review remediation; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **181 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Review remediation (2026-10-08)
+
+The complete sequential Debug matrix passed all **12 projects**: **5,753 passed / 0 failed / 0 skipped**, including **1,271 GUI tests**. The backend Debug build passed with zero warnings and errors. The fixes cover handle-bound file mutation and conditional patch rollback, incremental Office extraction budgets and nesting/alignment, native handle-list lifetime, spool generation accounting, physical Host root claims and thread-owned mutexes, starter readiness and bounded create acknowledgement reconciliation. The benchmark's 44 generated outputs are removed from Git tracking and ignored; benchmark source remains tracked.
+
+The first matrix passed eleven projects but failed one GUI allocation regression because its process-wide allocation counter included parallel tests. A bounded counter check confirmed that unrelated thread allocations affect that metric; the synchronous extraction tests now measure the calling thread with the same 32,000,000-byte threshold. The full GUI project and then the complete matrix passed against that correction. The two existing GUI test-source warnings remain; no contract or authority assertion was weakened.
+
+Existing-file writes are serialized and flushed with a 32 MiB rollback preimage cap; they do not claim power-loss crash atomicity. Session removal invalidates spool generations immediately, while an already-open background spill can await writer completion, bounded by the task's two-hour maximum. Release publishing, native desktop acceptance and real-provider quality were not rerun for this remediation.
 
 ## Model working environment delivery (2026-10-06)
 

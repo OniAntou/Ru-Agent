@@ -167,7 +167,7 @@ public sealed class FilePatchAdapter
                     {
                         FileMutationGuard.DeleteIfHashMatches(reResolved.CanonicalPath, beforeHash);
                     }
-                    catch (UnauthorizedAccessException ex)
+                    catch (UnauthorizedAccessException ex) when (ex.Message != "workspace_changed")
                     {
                         throw new UnauthorizedAccessException("access_denied", ex);
                     }
@@ -179,12 +179,13 @@ public sealed class FilePatchAdapter
                     {
                         FileMutationGuard.ReplaceIfHashMatches(reResolved.CanonicalPath, newBytes, beforeHash);
                     }
-                    catch (UnauthorizedAccessException ex)
+                    catch (UnauthorizedAccessException ex) when (ex.Message != "workspace_changed")
                     {
                         throw new UnauthorizedAccessException("access_denied", ex);
                     }
                 }
 
+                journal.MarkApplied(afterHash);
                 var verifiedAfter = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
                 if (!string.Equals(verifiedAfter, afterHash, StringComparison.Ordinal))
                 {

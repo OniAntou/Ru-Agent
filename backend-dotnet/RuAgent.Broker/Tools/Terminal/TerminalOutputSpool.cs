@@ -21,7 +21,7 @@ public sealed class TerminalOutputSpool
 
     private readonly object _gate = new();
     private readonly Dictionary<string, LinkedList<SpoolEntry>> _sessions = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, long> _liveBytes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SpoolGeneration> _generations = new(StringComparer.Ordinal);
     private readonly string _rootDirectory;
     private readonly long _maxSessionBytes;
 
@@ -42,46 +42,70 @@ public sealed class TerminalOutputSpool
     /// against the session byte quota so concurrent spill writers cannot
     /// outgrow the quota between Store-time evictions.
     /// </summary>
-    public SpoolFileWriter CreateWriter(string sessionId, string spoolId) =>
-        new(
-            CreateFilePath(sessionId, spoolId),
-            Protocol.TerminalLimits.MaxSpoolFileBytes,
-            new SpoolByteBudget(this, sessionId));
+    public SpoolFileWriter CreateWriter(string sessionId, string spoolId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(spoolId);
+        lock (_gate)
+        {
+            var generation = GetGeneration(sessionId);
+            return new SpoolFileWriter(
+                CreateFilePath(sessionId, generation.Id, spoolId),
+                Protocol.TerminalLimits.MaxSpoolFileBytes,
+                new SpoolByteBudget(this, sessionId, generation));
+        }
+    }
 
-    internal long ReserveSessionBytes(string sessionId, long bytes)
+    internal bool RunIfCurrent(SpoolGeneration generation, Action action)
+    {
+        lock (generation.Gate)
+        {
+            if (!generation.IsActive)
+            {
+                return false;
+            }
+
+            action();
+            return true;
+        }
+    }
+
+    internal long ReserveSessionBytes(string sessionId, SpoolGeneration generation, long bytes)
     {
         lock (_gate)
         {
-            var live = _liveBytes.TryGetValue(sessionId, out var value) ? value : 0;
-            var available = _maxSessionBytes - StoredBytes(sessionId) - live;
+            if (!IsCurrent(sessionId, generation))
+            {
+                return 0;
+            }
+
+            var available = _maxSessionBytes - StoredBytes(sessionId) - generation.LiveBytes;
             if (available <= 0)
             {
                 return 0;
             }
 
             var granted = Math.Min(available, bytes);
-            _liveBytes[sessionId] = live + granted;
+            generation.LiveBytes += granted;
             return granted;
         }
     }
 
-    internal void ReleaseSessionBytes(string sessionId, long bytes)
+    internal void ReleaseSessionBytes(string sessionId, SpoolGeneration generation, long bytes)
     {
         lock (_gate)
         {
-            if (!_liveBytes.TryGetValue(sessionId, out var value))
-            {
-                return;
-            }
+            ReleaseSessionBytesLocked(sessionId, generation, bytes);
+        }
+    }
 
-            var next = value - bytes;
-            if (next > 0)
+    internal void CleanupGeneration(string sessionId, SpoolGeneration generation)
+    {
+        lock (generation.Gate)
+        {
+            if (!generation.IsActive)
             {
-                _liveBytes[sessionId] = next;
-            }
-            else
-            {
-                _liveBytes.Remove(sessionId);
+                TryDeleteDirectory(SessionDirectory(sessionId, generation.Id));
             }
         }
     }
@@ -103,10 +127,20 @@ public sealed class TerminalOutputSpool
             writer.FilePath is null
                 ? null
                 : new SpoolSpill(writer.FilePath, writer.TotalChars, writer.TotalBytes, writer.Truncated),
-            writer.Truncated);
+            writer.Truncated,
+            writer.Budget);
     }
 
-    public void Store(string sessionId, string spoolId, string text, SpoolSpill? spill, bool truncated = false)
+    public void Store(string sessionId, string spoolId, string text, SpoolSpill? spill, bool truncated = false) =>
+        Store(sessionId, spoolId, text, spill, truncated, budget: null);
+
+    private void Store(
+        string sessionId,
+        string spoolId,
+        string text,
+        SpoolSpill? spill,
+        bool truncated,
+        SpoolByteBudget? budget)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(spoolId);
@@ -122,32 +156,34 @@ public sealed class TerminalOutputSpool
             spill?.TotalBytes ?? 0,
             spill?.Truncated ?? truncated);
         List<SpoolEntry>? discarded = null;
-        lock (_gate)
+        if (budget is null)
         {
-            if (!_sessions.TryGetValue(sessionId, out var spools))
+            lock (_gate)
             {
-                spools = new LinkedList<SpoolEntry>();
-                _sessions[sessionId] = spools;
+                StoreEntryLocked(sessionId, spoolId, entry, ref discarded);
             }
-
-            for (var node = spools.First; node is not null; node = node.Next)
+        }
+        else
+        {
+            var generation = budget.Generation;
+            lock (generation.Gate)
             {
-                if (string.Equals(node.Value.SpoolId, spoolId, StringComparison.Ordinal))
+                if (!generation.IsActive)
                 {
-                    (discarded ??= []).Add(node.Value);
-                    spools.Remove(node);
-                    break;
+                    return;
+                }
+
+                lock (_gate)
+                {
+                    if (!IsCurrent(sessionId, generation))
+                    {
+                        return;
+                    }
+
+                    ReleaseSessionBytesLocked(sessionId, generation, budget.TakeClaim());
+                    StoreEntryLocked(sessionId, spoolId, entry, ref discarded);
                 }
             }
-
-            spools.AddLast(entry);
-            while (spools.Count > MaxSpoolsPerSession)
-            {
-                (discarded ??= []).Add(spools.First!.Value);
-                spools.RemoveFirst();
-            }
-
-            discarded = EvictPastByteQuota(spools, discarded);
         }
 
         if (discarded is not null)
@@ -211,7 +247,7 @@ public sealed class TerminalOutputSpool
         {
             text = entry.FilePath is null
                 ? entry.Text.Substring(start, length)
-                : ReadSpilledPage(entry, start, length);
+                : SpoolPageReader.Read(entry.Text, entry.FilePath, start, length);
         }
         catch (IOException)
         {
@@ -250,7 +286,10 @@ public sealed class TerminalOutputSpool
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(spoolId);
-        return Path.Combine(SessionDirectory(sessionId), SanitizeName(spoolId) + ".log");
+        lock (_gate)
+        {
+            return CreateFilePath(sessionId, GetGeneration(sessionId).Id, spoolId);
+        }
     }
 
     public void RemoveSession(string sessionId)
@@ -261,14 +300,37 @@ public sealed class TerminalOutputSpool
         }
 
         List<SpoolEntry>? discarded = null;
+        SpoolGeneration? generation;
         lock (_gate)
         {
-            if (_sessions.Remove(sessionId, out var spools))
+            _generations.TryGetValue(sessionId, out generation);
+            if (generation is null)
             {
-                discarded = [.. spools];
+                if (_sessions.Remove(sessionId, out var spools))
+                {
+                    discarded = [.. spools];
+                }
             }
+        }
 
-            _liveBytes.Remove(sessionId);
+        if (generation is not null)
+        {
+            lock (generation.Gate)
+            {
+                lock (_gate)
+                {
+                    if (IsCurrent(sessionId, generation))
+                    {
+                        _generations.Remove(sessionId);
+                        generation.IsActive = false;
+                        generation.LiveBytes = 0;
+                        if (_sessions.Remove(sessionId, out var spools))
+                        {
+                            discarded = [.. spools];
+                        }
+                    }
+                }
+            }
         }
 
         if (discarded is not null)
@@ -279,7 +341,10 @@ public sealed class TerminalOutputSpool
             }
         }
 
-        TryDeleteDirectory(SessionDirectory(sessionId));
+        if (generation is not null)
+        {
+            CleanupGeneration(sessionId, generation);
+        }
     }
 
     /// <summary>
@@ -321,6 +386,38 @@ public sealed class TerminalOutputSpool
         return null;
     }
 
+    private void StoreEntryLocked(
+        string sessionId,
+        string spoolId,
+        SpoolEntry entry,
+        ref List<SpoolEntry>? discarded)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var spools))
+        {
+            spools = new LinkedList<SpoolEntry>();
+            _sessions[sessionId] = spools;
+        }
+
+        for (var node = spools.First; node is not null; node = node.Next)
+        {
+            if (string.Equals(node.Value.SpoolId, spoolId, StringComparison.Ordinal))
+            {
+                (discarded ??= []).Add(node.Value);
+                spools.Remove(node);
+                break;
+            }
+        }
+
+        spools.AddLast(entry);
+        while (spools.Count > MaxSpoolsPerSession)
+        {
+            (discarded ??= []).Add(spools.First!.Value);
+            spools.RemoveFirst();
+        }
+
+        discarded = EvictPastByteQuota(spools, discarded);
+    }
+
     private long StoredBytes(string sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var spools))
@@ -356,51 +453,6 @@ public sealed class TerminalOutputSpool
         }
 
         return discarded;
-    }
-
-    private static string ReadSpilledPage(SpoolEntry entry, int start, int length)
-    {
-        var builder = new StringBuilder(length);
-        if (start < entry.Text.Length)
-        {
-            builder.Append(entry.Text, start, Math.Min(length, entry.Text.Length - start));
-        }
-
-        var remaining = length - builder.Length;
-        if (remaining > 0 && entry.FilePath is not null)
-        {
-            using var reader = new StreamReader(entry.FilePath, Encoding.UTF8);
-            Skip(reader, start + builder.Length - entry.Text.Length);
-            var buffer = new char[Math.Min(remaining, 4096)];
-            while (remaining > 0)
-            {
-                var read = reader.Read(buffer, 0, Math.Min(buffer.Length, remaining));
-                if (read <= 0)
-                {
-                    break;
-                }
-
-                builder.Append(buffer, 0, read);
-                remaining -= read;
-            }
-        }
-
-        return builder.ToString();
-    }
-
-    private static void Skip(StreamReader reader, int count)
-    {
-        var buffer = new char[4096];
-        while (count > 0)
-        {
-            var read = reader.Read(buffer, 0, Math.Min(buffer.Length, count));
-            if (read <= 0)
-            {
-                break;
-            }
-
-            count -= read;
-        }
     }
 
     private static void DeleteFile(SpoolEntry? entry)
@@ -439,7 +491,37 @@ public sealed class TerminalOutputSpool
         }
     }
 
-    private string SessionDirectory(string sessionId) => Path.Combine(_rootDirectory, SanitizeName(sessionId));
+    private string CreateFilePath(string sessionId, Guid generation, string spoolId) =>
+        Path.Combine(SessionDirectory(sessionId, generation), SanitizeName(spoolId) + ".log");
+
+    private string SessionDirectory(string sessionId, Guid generation) =>
+        Path.Combine(_rootDirectory, SanitizeName(sessionId), generation.ToString("N"));
+
+    private SpoolGeneration GetGeneration(string sessionId)
+    {
+        if (!_generations.TryGetValue(sessionId, out var generation))
+        {
+            generation = new SpoolGeneration(Guid.NewGuid());
+            _generations.Add(sessionId, generation);
+        }
+
+        return generation;
+    }
+
+    private bool IsCurrent(string sessionId, SpoolGeneration generation) =>
+        generation.IsActive
+        && _generations.TryGetValue(sessionId, out var current)
+        && ReferenceEquals(current, generation);
+
+    private void ReleaseSessionBytesLocked(string sessionId, SpoolGeneration generation, long bytes)
+    {
+        if (bytes <= 0 || !IsCurrent(sessionId, generation))
+        {
+            return;
+        }
+
+        generation.LiveBytes = Math.Max(0, generation.LiveBytes - bytes);
+    }
 
     private static string SanitizeName(string value)
     {
@@ -467,52 +549,7 @@ public sealed class TerminalOutputSpool
         int TotalChars,
         long TotalBytes,
         bool Truncated);
-}
 
-/// <summary>
-/// One in-flight writer's live claim against its session's spool byte quota.
-/// The writer asks before it writes a frame to the spill file and releases
-/// the claim once the spool has stored (and possibly evicted) the entry, so
-/// writers that run concurrently cannot grow the session's spill files past
-/// the quota before the Store-time eviction reclaims them.
-/// </summary>
-public sealed class SpoolByteBudget
-{
-    private readonly TerminalOutputSpool _spool;
-    private readonly string _sessionId;
-    private long _claimed;
-
-    internal SpoolByteBudget(TerminalOutputSpool spool, string sessionId)
-    {
-        _spool = spool;
-        _sessionId = sessionId;
-    }
-
-    internal long TryReserve(long bytes)
-    {
-        if (bytes <= 0)
-        {
-            return 0;
-        }
-
-        var granted = _spool.ReserveSessionBytes(_sessionId, bytes);
-        if (granted > 0)
-        {
-            Interlocked.Add(ref _claimed, granted);
-        }
-
-        return granted;
-    }
-
-    /// <summary>Drops every live claim this writer holds; safe to call twice.</summary>
-    public void Release()
-    {
-        var claimed = Interlocked.Exchange(ref _claimed, 0);
-        if (claimed > 0)
-        {
-            _spool.ReleaseSessionBytes(_sessionId, claimed);
-        }
-    }
 }
 
 /// <summary>

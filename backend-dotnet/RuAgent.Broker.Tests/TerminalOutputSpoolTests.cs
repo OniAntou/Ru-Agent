@@ -250,6 +250,188 @@ public sealed class TerminalOutputSpoolTests
     }
 
     [Fact]
+    public void Old_writer_release_cannot_reduce_reopened_session_claims()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root, maxSessionBytes: 1000);
+            var old = spool.CreateWriter("session-a", "old");
+            old.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            old.Append(new string('b', 1000));
+            old.Complete();
+            spool.RemoveSession("session-a");
+
+            var current = spool.CreateWriter("session-a", "current");
+            current.Append(new string('c', Protocol.TerminalLimits.MaxSpoolChars));
+            current.Append(new string('d', 800));
+            old.ReleaseBudget();
+
+            var competing = spool.CreateWriter("session-a", "competing");
+            competing.Append(new string('e', Protocol.TerminalLimits.MaxSpoolChars));
+            competing.Append(new string('f', 900));
+            current.Complete();
+            competing.Complete();
+
+            Assert.False(current.Truncated);
+            Assert.True(competing.Truncated);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Removed_generation_writer_cannot_append_or_store_into_reopened_session()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(root, maxSessionBytes: 1000);
+            var old = spool.CreateWriter("session-a", "same-id");
+            old.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            old.Append(new string('b', 100));
+            old.Complete();
+            var oldPath = old.FilePath!;
+            spool.RemoveSession("session-a");
+
+            var current = spool.CreateWriter("session-a", "same-id");
+            old.Append(new string('x', 100));
+            spool.Store("session-a", "same-id", old);
+
+            Assert.False(spool.TryRead("session-a", "same-id", out _));
+            Assert.NotEqual(oldPath, spool.CreateFilePath("session-a", "same-id"));
+            Assert.False(File.Exists(oldPath));
+            Assert.Equal(0, current.TotalChars);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Removing_active_writer_invalidates_it_and_cleans_only_its_generation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var spool = new TerminalOutputSpool(
+                root,
+                maxSessionBytes: Protocol.TerminalLimits.MaxSpoolChars + 1000L);
+            var old = spool.CreateWriter("session-a", "same-id");
+            old.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            old.Append(new string('b', 100));
+            var oldPath = old.FilePath!;
+            spool.RemoveSession("session-a");
+
+            var current = spool.CreateWriter("session-a", "same-id");
+            current.Append(new string('c', Protocol.TerminalLimits.MaxSpoolChars));
+            current.Append(new string('d', 100));
+            old.Append(new string('x', 100));
+            old.Complete();
+            current.Complete();
+            spool.Store("session-a", "same-id", old);
+            spool.Store("session-a", "same-id", current);
+
+            Assert.False(File.Exists(oldPath));
+            Assert.NotEqual(oldPath, current.FilePath);
+            Assert.True(File.Exists(current.FilePath));
+            Assert.True(spool.TryRead("session-a", "same-id", out var text));
+            Assert.Equal(new string('c', Protocol.TerminalLimits.MaxSpoolChars), text);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Blocked_generation_action_does_not_block_another_session_writer()
+    {
+        var spool = new TerminalOutputSpool();
+        var blockedWriter = spool.CreateWriter("session-a", "blocked");
+        var independentWriter = spool.CreateWriter("session-b", "independent");
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var blocker = Task.Run(() => blockedWriter.Budget!.RunIfCurrent(() =>
+        {
+            entered.Set();
+            release.Wait(TimeSpan.FromSeconds(5));
+        }));
+
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            var independent = Task.Run(() => independentWriter.Append("independent output"));
+
+            Assert.True(await Task.WhenAny(independent, Task.Delay(TimeSpan.FromSeconds(1))) == independent);
+            await independent;
+        }
+        finally
+        {
+            release.Set();
+            await blocker;
+        }
+    }
+
+    [Fact]
+    public async Task Budget_release_waits_for_generation_append_gate()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));
+        SpoolFileWriter? writer = null;
+        try
+        {
+            var spool = new TerminalOutputSpool(root, maxSessionBytes: 1000);
+            writer = spool.CreateWriter("session-a", "release-gate");
+            writer.Append(new string('a', Protocol.TerminalLimits.MaxSpoolChars));
+            writer.Append(new string('b', 100));
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var gateOwner = Task.Run(() => writer.Budget!.RunIfCurrent(() =>
+            {
+                entered.Set();
+                release.Wait(TimeSpan.FromSeconds(5));
+            }));
+
+            try
+            {
+                Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+                var budgetRelease = Task.Run(writer.ReleaseBudget);
+
+                Assert.NotEqual(budgetRelease, await Task.WhenAny(budgetRelease, Task.Delay(250)));
+                release.Set();
+                await budgetRelease;
+            }
+            finally
+            {
+                release.Set();
+                await gateOwner;
+            }
+
+            writer.Complete();
+        }
+        finally
+        {
+            writer?.Complete();
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Unopenable_spill_file_reports_truncation_through_the_stored_page()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-spool-" + Guid.NewGuid().ToString("N"));

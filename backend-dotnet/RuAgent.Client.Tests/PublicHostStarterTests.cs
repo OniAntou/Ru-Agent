@@ -10,6 +10,78 @@ public sealed class PublicHostStarterTests : IDisposable
     public PublicHostStarterTests() => Directory.CreateDirectory(_root);
 
     [Fact]
+    public async Task Concurrent_starters_only_launch_once_across_an_asynchronous_start()
+    {
+        var port = FindFreePort();
+        var locator = new PublicHostLocator(_root);
+        var releaseStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var starts = 0;
+        async Task<bool> Start(string projectRoot, string bearer, CancellationToken cancellationToken)
+        {
+            var isFirstStart = Interlocked.Increment(ref starts) == 1;
+            startEntered.TrySetResult();
+            await releaseStart.Task;
+            if (!isFirstStart) return true;
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, $"http://127.0.0.1:{port}/",
+                bearer, process.Id, process.StartTime.ToUniversalTime().ToString("O"),
+                new string('s', 32), DateTimeOffset.UtcNow.ToString("O"));
+            Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+            File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(
+                descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+            return true;
+        }
+        using var first = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start, publicPort: port);
+        using var second = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start, publicPort: port);
+        var firstTask = first.GetOrStartAsync(_root);
+        var secondTask = second.GetOrStartAsync(_root);
+        try
+        {
+            await startEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, Volatile.Read(ref starts));
+        }
+        finally
+        {
+            releaseStart.TrySetResult();
+            await Task.WhenAll(firstTask, secondTask).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task Owned_host_becoming_ready_after_the_first_probe_is_attached()
+    {
+        var port = FindFreePort();
+        using var listener = new TcpListener(IPAddress.Loopback, port);
+        var locator = new PublicHostLocator(_root);
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var bearer = new string('r', 64);
+        var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, $"http://127.0.0.1:{port}/",
+            bearer, process.Id, process.StartTime.ToUniversalTime().ToString("O"),
+            new string('s', 32), DateTimeOffset.UtcNow.ToString("O"));
+        Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+        File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(
+            descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+        var probes = 0;
+        var starts = 0;
+        using var starter = new PublicHostStarter(locator, healthProbe: (_, _) =>
+        {
+            if (++probes == 1)
+            {
+                listener.Start();
+                return Task.FromResult(false);
+            }
+            return Task.FromResult(true);
+        }, startHost: (_, _, _) => { starts++; return Task.FromResult(false); }, publicPort: port);
+
+        var session = await starter.GetOrStartAsync(_root);
+
+        Assert.Equal(bearer, session.BearerToken);
+        Assert.Equal(2, probes);
+        Assert.Equal(0, starts);
+    }
+
+    [Fact]
     public async Task ValidDescriptorPlusHealthReturnsSession()
     {
         var port = FindFreePort();

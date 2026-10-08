@@ -58,23 +58,25 @@ public sealed class PublicHostStarter : IDisposable
             // health failed => stale
         }
 
-        // 2. Fast-path conflict check: the port is occupied and no owned
-        // descriptor answers. It cannot close the race -- a foreign process may
-        // bind after this line -- so the started child's exit code, read in the
-        // poll below, is the authoritative bind outcome. Either way a foreign
-        // process is never attached to or killed; fail with a stable code.
-        if (IsPortOccupied(_publicPort))
-        {
-            throw new AgentApiException("public_host_port_conflict", $"Public host port {_publicPort} is occupied by non-owned process.", 409);
-        }
-
-        // 3. Start exactly one Public Host hidden and poll
+        // Start exactly one Public Host hidden and poll.
         // Acquire starter single-instance to ensure only one starter launches
-        using var single = new ClientSingleInstance("Local\\RuPublicHostStarter-" + _publicPort);
+        await using var single = await RuAgent.Protocol.ThreadOwnedMutex.AcquireAsync("Local\\RuPublicHostStarter-" + _publicPort)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         bool isStarterOwner = single.IsAcquired;
+
+        if (_locator.TryGetValidDescriptor(out var currentDescriptor, out _)
+            && await _healthProbe(currentDescriptor!.BaseUrl, cancellationToken).ConfigureAwait(false))
+        {
+            return PublicHostSession.FromDescriptor(currentDescriptor);
+        }
 
         if (isStarterOwner)
         {
+            if (IsPortOccupied(_publicPort))
+            {
+                throw new AgentApiException("public_host_port_conflict", $"Public host port {_publicPort} is occupied by non-owned process.", 409);
+            }
             var bearer = GenerateBearerToken();
             var descriptorPath = _locator.DescriptorPath;
             // Generate descriptor nonce and times for host-owned descriptor will be done by host itself; we just trigger start
@@ -320,58 +322,4 @@ public sealed class PublicHostStarter : IDisposable
         return RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
     }
 
-    private sealed class ClientSingleInstance : IDisposable
-    {
-        private System.Threading.Mutex? _mutex;
-        private bool _hasHandle;
-        private bool _disposed;
-        public bool IsAcquired => _hasHandle && !_disposed;
-        public ClientSingleInstance(string name)
-        {
-            // Zero-wait acquisition: the old initiallyOwned constructor
-            // blocked while another client's starter held the mutex, hanging
-            // the caller instead of letting it fall through to polling. An
-            // abandoned mutex (starter crashed) is adopted; a name we cannot
-            // open reads as not-acquired.
-            System.Threading.Mutex? mutex = null;
-            try
-            {
-                mutex = new System.Threading.Mutex(initiallyOwned: false, name: name, out _);
-                bool owned;
-                try
-                {
-                    owned = mutex.WaitOne(TimeSpan.Zero, exitContext: false);
-                }
-                catch (AbandonedMutexException)
-                {
-                    owned = true;
-                }
-
-                if (owned)
-                {
-                    _mutex = mutex;
-                    _hasHandle = true;
-                }
-                else
-                {
-                    mutex.Dispose();
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                if (mutex is not null)
-                {
-                    try { mutex.Dispose(); } catch (Exception) { }
-                }
-            }
-        }
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            if (_hasHandle) try { _mutex?.ReleaseMutex(); } catch { }
-            _mutex?.Dispose();
-            _mutex = null;
-        }
-    }
 }

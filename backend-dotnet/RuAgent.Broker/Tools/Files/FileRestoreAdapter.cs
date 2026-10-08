@@ -376,19 +376,21 @@ public sealed class FileRestoreAdapter
                     throw new UnauthorizedAccessException("workspace_changed");
                 }
             }
-            else
-            {
-                Directory.CreateDirectory(directory);
-            }
 
             try
             {
-                AtomicFileReplacement.Replace(resolved.CanonicalPath, content, overwrite: false);
+                FileMutationGuard.ReplaceIfHashMatches(resolved.CanonicalPath, content, FileHashService.Missing,
+                    overwrite: false);
             }
             catch (IOException ex) when (
                 ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase)
                 || File.Exists(resolved.CanonicalPath)
                 || Directory.Exists(resolved.CanonicalPath))
+            {
+                throw new InvalidOperationException("recovery_target_exists", ex);
+            }
+            catch (UnauthorizedAccessException ex) when (ex.Message == "workspace_changed"
+                && (File.Exists(resolved.CanonicalPath) || Directory.Exists(resolved.CanonicalPath)))
             {
                 throw new InvalidOperationException("recovery_target_exists", ex);
             }

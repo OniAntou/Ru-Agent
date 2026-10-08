@@ -153,7 +153,7 @@ public sealed class FileDeleteAdapter
                 throw new UnauthorizedAccessException("workspace_changed");
             }
 
-            File.Delete(reResolved.CanonicalPath);
+            FileMutationGuard.DeleteIfHashMatches(reResolved.CanonicalPath, currentHash);
             if (File.Exists(reResolved.CanonicalPath))
             {
                 throw new IOException("io_error");

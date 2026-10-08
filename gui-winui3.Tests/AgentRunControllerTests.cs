@@ -117,6 +117,8 @@ public sealed class AgentRunControllerTests
         public List<(string RunId, string InputId, string Answer)> SubmittedInputs { get; } = new();
         public bool ThrowOnGetRun;
         public bool ThrowOnCreate;
+        public int UnknownCreateOutcomes;
+        public AgentApiException? CreateException;
         public bool ThrowOnSubscribe;
         public string? SubscribeRunId;
         public long? SubscribeAfter;
@@ -128,6 +130,7 @@ public sealed class AgentRunControllerTests
         public TaskCompletionSource<bool>? CreateRunGate;
         public CancellationToken CreateCancellationToken;
         public int CreateCallCount;
+        public List<CreateAgentRunRequest> CreateRequests { get; } = new();
         public List<string> CancelledRunIds { get; } = new();
         public List<string> DispatchCommands { get; } = new();
         public Task<DispatchAgentCommandResponse> DispatchCommandAsync(string runId, string text, CancellationToken cancellationToken = default)
@@ -138,6 +141,7 @@ public sealed class AgentRunControllerTests
         public async Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
         {
             CreateCallCount++;
+            CreateRequests.Add(r);
             CreateCancellationToken = ct;
             if (ThrowOnCreate)
             {
@@ -147,6 +151,18 @@ public sealed class AgentRunControllerTests
             if (CreateRunGate is not null)
             {
                 await CreateRunGate.Task.ConfigureAwait(false);
+            }
+
+            if (UnknownCreateOutcomes > 0)
+            {
+                UnknownCreateOutcomes--;
+                throw new AgentApiException("agent_create_outcome_unknown", "Create acknowledgement is unknown.");
+            }
+
+            if (CreateException is { } createException)
+            {
+                CreateException = null;
+                throw createException;
             }
 
             return Run!;
@@ -1812,6 +1828,114 @@ public sealed class AgentRunControllerTests
         Assert.Null(fake.SubscribeRunId);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.IsBusy);
+    }
+
+    [Fact]
+    public async Task Unknown_create_outcome_keeps_identity_and_Stop_replays_then_cancels_acknowledged_run()
+    {
+        var images = new List<string> { "data:image/png;base64,original" };
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            UnknownCreateOutcomes = 1,
+        };
+        var controller = new AgentRunController(fake);
+        var request = new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "first turn", "standard", null, "idem-create-unknown", images);
+
+        await Assert.ThrowsAsync<AgentApiException>(() => controller.CreateAndRunAsync(request));
+        images[0] = "data:image/png;base64,mutated";
+
+        Assert.Contains("agent_create_outcome_unknown", controller.StatusText, StringComparison.Ordinal);
+        Assert.False(await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "second turn", "standard", null, "idem-overlap")));
+
+        await controller.CancelAsync();
+
+        Assert.Equal(2, fake.CreateCallCount);
+        Assert.Equal("idem-create-unknown", fake.CreateRequests[0].IdempotencyKey);
+        Assert.Equal(fake.CreateRequests[0].IdempotencyKey, fake.CreateRequests[1].IdempotencyKey);
+        Assert.Equal("data:image/png;base64,original", Assert.Single(fake.CreateRequests[1].ImageAttachments!));
+        Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
+        Assert.Null(controller.CurrentRun);
+        Assert.False(controller.CanCancel);
+    }
+
+    [Fact]
+    public async Task Session_switch_late_unknown_create_keeps_the_unresolved_identity()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            UnknownCreateOutcomes = 1,
+            CreateRunGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var controller = new AgentRunController(fake);
+        var createTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "first turn", "standard", null, "idem-switch-create-unknown"));
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (fake.CreateCallCount == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(1);
+        }
+        Assert.Equal(1, fake.CreateCallCount);
+        await controller.StopForSessionSwitchAsync();
+        fake.CreateRunGate.SetResult(true);
+
+        await Assert.ThrowsAsync<AgentApiException>(() => createTask);
+
+        Assert.False(controller.IsBusy);
+        Assert.Contains("agent_create_outcome_unknown", controller.StatusText, StringComparison.Ordinal);
+        Assert.True(controller.CanCancel);
+        Assert.False(await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_2", "C:\\work", "second turn", "standard", null, "idem-switch-next")));
+        Assert.Equal(1, fake.CreateCallCount);
+    }
+
+    [Fact]
+    public async Task Ambiguous_strict_create_response_retains_identity_for_Stop_replay()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateException = new AgentApiException(
+                "invalid_response", "The create response was malformed.", statusCode: 201, isCreateOutcomeUnknown: true),
+        };
+        var controller = new AgentRunController(fake);
+        var request = new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "first turn", "standard", null, "idem-invalid-create-ack");
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => controller.CreateAndRunAsync(request));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+        Assert.Contains("agent_create_outcome_unknown", controller.StatusText, StringComparison.Ordinal);
+        Assert.Contains("invalid_response", controller.StatusText, StringComparison.Ordinal);
+        Assert.True(controller.CanCancel);
+        await controller.CancelAsync();
+
+        Assert.Equal(2, fake.CreateCallCount);
+        Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
+    }
+
+    [Fact]
+    public async Task Definitive_create_client_error_does_not_retain_pending_identity()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateException = new AgentApiException("invalid_workspace", "Workspace was rejected.", statusCode: 400),
+        };
+        var controller = new AgentRunController(fake);
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => controller.CreateAndRunAsync(
+            new CreateAgentRunRequest("sess_1", "C:\\missing", "first turn", "standard", null, "idem-bad-workspace")));
+
+        Assert.Equal("invalid_workspace", error.ErrorCode);
+        Assert.False(controller.CanCancel);
+        Assert.True(await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "second turn", "standard", null, "idem-next")));
+        Assert.Equal(2, fake.CreateCallCount);
     }
 
     [Fact]

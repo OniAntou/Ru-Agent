@@ -74,6 +74,32 @@ public sealed class FilePatchAdapterTests : IDisposable
 
     private static string Hash(string content) => FileHashService.ComputeStringHash(content);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Failed_patch_does_not_rollback_an_editor_revision(bool editorChangesAppliedFile)
+    {
+        File.WriteAllText(Full("a.txt"), "origA");
+        File.WriteAllText(Full("b.txt"), "origB");
+        var adapter = new FilePatchAdapter(_root, simulateFailure: path =>
+        {
+            if (!path.EndsWith("b.txt", StringComparison.OrdinalIgnoreCase)) return false;
+            File.WriteAllText(path, "editorB");
+            if (editorChangesAppliedFile) File.WriteAllText(Full("a.txt"), "editorA");
+            return false;
+        });
+        var args = new JsonObject
+        {
+            ["patch"] = BuildPatchMulti(("a.txt", "origA", "newA"), ("b.txt", "origB", "newB")),
+            ["expected_hashes"] = new JsonObject { ["a.txt"] = Hash("origA"), ["b.txt"] = Hash("origB") }
+        };
+
+        Assert.Throws<UnauthorizedAccessException>(() => adapter.Execute(args));
+
+        Assert.Equal("editorB", File.ReadAllText(Full("b.txt")));
+        Assert.Equal(editorChangesAppliedFile ? "editorA" : "origA", File.ReadAllText(Full("a.txt")));
+    }
+
     [Fact]
     public void Schema_requires_patch_and_expected_hashes_for_every_target()
     {

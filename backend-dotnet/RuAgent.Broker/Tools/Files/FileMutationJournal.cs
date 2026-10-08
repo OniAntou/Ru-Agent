@@ -13,7 +13,8 @@ public sealed class FileMutationJournal : IDisposable
         string CanonicalPath,
         string BeforeHash,
         byte[]? BeforeBytes,
-        bool WasMissing);
+        bool WasMissing,
+        string? AppliedHash = null);
 
     public int Count => _entries.Count;
 
@@ -45,6 +46,12 @@ public sealed class FileMutationJournal : IDisposable
         _totalBytes = 0;
     }
 
+    public void MarkApplied(string afterHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(afterHash);
+        _entries[^1] = _entries[^1] with { AppliedHash = afterHash };
+    }
+
     public void Rollback()
     {
         // Rollback participates in the same process-wide mutation gate as normal
@@ -55,23 +62,17 @@ public sealed class FileMutationJournal : IDisposable
             for (int i = _entries.Count - 1; i >= 0; i--)
             {
                 var entry = _entries[i];
+                if (entry.AppliedHash is null) continue;
                 try
                 {
                     if (entry.WasMissing)
                     {
-                        if (File.Exists(entry.CanonicalPath))
-                        {
-                            File.Delete(entry.CanonicalPath);
-                        }
-                        else if (Directory.Exists(entry.CanonicalPath))
-                        {
-                            throw new IOException("is_directory");
-                        }
+                        FileMutationGuard.DeleteIfHashMatches(entry.CanonicalPath, entry.AppliedHash);
                     }
                     else
                     {
                         var bytes = entry.BeforeBytes ?? Array.Empty<byte>();
-                        AtomicFileReplacement.Replace(entry.CanonicalPath, bytes);
+                        FileMutationGuard.ReplaceIfHashMatches(entry.CanonicalPath, bytes, entry.AppliedHash);
                     }
                 }
                 catch

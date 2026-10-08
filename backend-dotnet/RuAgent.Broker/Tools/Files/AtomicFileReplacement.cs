@@ -32,9 +32,6 @@ public static class AtomicFileReplacement
 
             if (overwrite && File.Exists(targetPath))
             {
-                // ReplaceFile (unlike MoveFileEx) succeeds while a caller holds
-                // the target open with FILE_SHARE_DELETE, which is what lets the
-                // mutation guard keep its writer-denying handle across the swap.
                 File.Replace(tempPath, targetPath, destinationBackupFileName: null);
             }
             else

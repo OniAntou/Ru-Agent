@@ -6,6 +6,65 @@ namespace RuAgent.Hosting.Tests;
 public sealed class PublicHostSingleInstanceTests
 {
     [Fact]
+    public void Claim_survives_the_thread_that_created_the_host_guard()
+    {
+        var name = "Local\\RuTestLifetime-" + Guid.NewGuid().ToString("N");
+        PublicHostSingleInstance? owner = null;
+        var creatingThread = new Thread(() => owner = new PublicHostSingleInstance(name));
+        creatingThread.Start();
+        Assert.True(creatingThread.Join(TimeSpan.FromSeconds(5)));
+        Assert.True(owner!.IsAcquired);
+        try
+        {
+            using var contender = new PublicHostSingleInstance(name);
+            Assert.Equal(PublicHostLockState.HeldByAnother, contender.State);
+        }
+        finally
+        {
+            owner.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Directory_aliases_share_the_same_root_claim(bool isLogRoot)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(Path.GetTempPath(), "ru-root-alias-" + Guid.NewGuid().ToString("N"));
+        var real = Path.Combine(root, "real");
+        var alias = Path.Combine(root, "alias");
+        Directory.CreateDirectory(real);
+        using var setup = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+            Arguments = $"/c mklink /J \"{alias}\" \"{real}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        })!;
+        Assert.True(setup.WaitForExit(5000));
+        Assert.Equal(0, setup.ExitCode);
+        Func<string, PublicHostSingleInstance> acquire = isLogRoot
+            ? PublicHostSingleInstance.AcquireForLogRoot : PublicHostSingleInstance.AcquireForDataRoot;
+        var (thread, release) = HoldOnWorkerThread(() => acquire(real));
+        try
+        {
+            using var contender = acquire(alias);
+            Assert.Equal(PublicHostLockState.HeldByAnother, contender.State);
+            Assert.False(contender.IsAcquired);
+        }
+        finally
+        {
+            release.Set();
+            Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
+            Directory.Delete(alias);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void SecondAcquirerOnAnotherThreadIsNotOwnedAndNeverBlocks()
     {
         // The contention that matters is cross-process; cross-thread is the
@@ -51,8 +110,8 @@ public sealed class PublicHostSingleInstanceTests
         {
             // Owned here and deliberately never released: thread exit abandons
             // the mutex.
-            var held = new PublicHostSingleInstance(name);
-            Assert.True(held.IsAcquired);
+            var held = new Mutex(initiallyOwned: false, name);
+            Assert.True(held.WaitOne(TimeSpan.Zero));
         })
         { IsBackground = true };
         owner.Start();

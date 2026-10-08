@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -16,6 +17,41 @@ public sealed class SuspendedProcessTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-suspended-" + Guid.NewGuid().ToString("N"));
 
     public SuspendedProcessTests() => Directory.CreateDirectory(_root);
+
+    [Fact]
+    public void Handle_list_owns_its_values_until_the_attribute_list_is_disposed()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var (read, write) = CreateInheritablePipe();
+        using (read)
+        using (write)
+        {
+            var factory = typeof(SuspendedProcess).GetMethod(
+                "CreateHandleListAttribute", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var attribute = factory.Invoke(null, [new[] { write }])!;
+            try
+            {
+                var owner = Assert.IsAssignableFrom<IDisposable>(attribute);
+                var values = attribute.GetType().GetProperty("Values")!;
+                var pointer = attribute.GetType().GetProperty("Pointer")!;
+                GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                Assert.Equal(write.DangerousGetHandle(), Marshal.ReadIntPtr((IntPtr)values.GetValue(attribute)!));
+                Assert.NotEqual(IntPtr.Zero, (IntPtr)pointer.GetValue(attribute)!);
+                owner.Dispose();
+                Assert.Equal(IntPtr.Zero, (IntPtr)pointer.GetValue(attribute)!);
+            }
+            finally
+            {
+                if (attribute is IDisposable owner) owner.Dispose();
+                else if (attribute is IntPtr oldPointer)
+                {
+                    typeof(SuspendedProcess).GetMethod("DeleteProcThreadAttributeList", BindingFlags.Static | BindingFlags.NonPublic)!
+                        .Invoke(null, [oldPointer]);
+                    Marshal.FreeHGlobal(oldPointer);
+                }
+            }
+        }
+    }
 
     public void Dispose()
     {

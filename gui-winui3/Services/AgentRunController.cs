@@ -49,6 +49,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private AgentRunModel? _currentRun;
     private string? _currentRunId;
+    private CreateAgentRunRequest? _pendingCreateRequest;
     private string? _waitKind;
     private long _runOwnershipGeneration;
 
@@ -66,6 +67,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private IReadOnlyList<string> _pendingInputOptions = Array.Empty<string>();
     private string? _streamTerminalStatus;
     private bool _isCancelRequested;
+    private bool _isPendingCreateOutcomeUnknown;
     private CancellationTokenSource? _subscriptionCts;
 
     // Why a transient frame never reached the view. Every one of these gates is a
@@ -232,7 +234,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         && !string.IsNullOrWhiteSpace(CurrentRun.DisplayIdentityHash);
     public bool CanCancel
     {
-        get { lock (_gate) return _currentRunId is not null && !_isCancelRequested; }
+        get
+        {
+            lock (_gate)
+            {
+                return !_isCancelRequested
+                    && (_currentRunId is not null || (_isPendingCreateOutcomeUnknown && !_isBusy));
+            }
+        }
     }
 
     public bool CanContinue
@@ -256,16 +265,19 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         CancellationToken externalCancellation = default,
         Action? onAccepted = null)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        var requestSnapshot = SnapshotCreateRequest(request);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
         bool alreadyBusy;
         long ownershipGeneration = 0;
         lock (_gate)
         {
-            alreadyBusy = _isBusy;
+            alreadyBusy = _isBusy || _isPendingCreateOutcomeUnknown;
             if (!alreadyBusy)
             {
                 _isBusy = true;
                 _subscriptionCts = cts;
+                _pendingCreateRequest = requestSnapshot;
                 ownershipGeneration = ++_runOwnershipGeneration;
             }
         }
@@ -302,7 +314,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         bool accepted = false;
         try
         {
-            var run = await _client.CreateRunAsync(request, token).ConfigureAwait(false);
+            var run = await _client.CreateRunAsync(requestSnapshot, token).ConfigureAwait(false);
             bool wasCancelled;
             // Hand the run id over before subscribing: the delta/activity handlers
             // read it on the SSE thread, and a UI-queued assignment lets the first
@@ -310,6 +322,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             // and be dropped.
             lock (_gate)
             {
+                if (ReferenceEquals(_pendingCreateRequest, requestSnapshot))
+                {
+                    _pendingCreateRequest = null;
+                    _isPendingCreateOutcomeUnknown = false;
+                }
                 wasCancelled = token.IsCancellationRequested || !ReferenceEquals(_subscriptionCts, cts);
                 if (!wasCancelled)
                 {
@@ -336,16 +353,56 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 {
                     return accepted;
                 }
+
+                if (ReferenceEquals(_pendingCreateRequest, requestSnapshot))
+                {
+                    _pendingCreateRequest = null;
+                    _isPendingCreateOutcomeUnknown = false;
+                }
+                if (ReferenceEquals(_subscriptionCts, cts))
+                {
+                    _subscriptionCts = null;
+                }
             }
 
             RunOnUi(() =>
             {
-                _statusText = accepted ? "Event monitoring stopped." : "Ready";
+                if (_runOwnershipGeneration == ownershipGeneration)
+                {
+                    _statusText = accepted ? "Event monitoring stopped." : "Ready";
+                }
                 _isCancelRequested = false;
                 _isBusy = false;
                 RefreshCommands();
             });
             return accepted;
+        }
+        catch (AgentApiException ex) when (
+            ex.IsCreateOutcomeUnknown
+            || string.Equals(ex.ErrorCode, "agent_create_outcome_unknown", StringComparison.Ordinal))
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_pendingCreateRequest, requestSnapshot))
+                {
+                    _isPendingCreateOutcomeUnknown = true;
+                }
+
+                if (ReferenceEquals(_subscriptionCts, cts))
+                {
+                    _subscriptionCts = null;
+                }
+            }
+
+            RunOnUi(() =>
+            {
+                if (!ReferenceEquals(_pendingCreateRequest, requestSnapshot)) return;
+                _statusText = CreateOutcomeUnknownStatus(ex.ErrorCode);
+                _isBusy = false;
+                _isCancelRequested = false;
+                RefreshCommands();
+            });
+            throw;
         }
         catch (Exception ex)
         {
@@ -354,6 +411,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 if (token.IsCancellationRequested && !ReferenceEquals(_subscriptionCts, cts))
                 {
                     return accepted;
+                }
+
+                if (ReferenceEquals(_pendingCreateRequest, requestSnapshot))
+                {
+                    _pendingCreateRequest = null;
+                    _isPendingCreateOutcomeUnknown = false;
                 }
             }
 
@@ -384,6 +447,27 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             cts.Dispose();
         }
     }
+
+    private static CreateAgentRunRequest SnapshotCreateRequest(CreateAgentRunRequest request)
+    {
+        if (request.ImageAttachments is null)
+        {
+            return request;
+        }
+
+        var attachments = new string[request.ImageAttachments.Count];
+        for (var index = 0; index < attachments.Length; index++)
+        {
+            attachments[index] = request.ImageAttachments[index];
+        }
+
+        return request with { ImageAttachments = Array.AsReadOnly(attachments) };
+    }
+
+    private static string CreateOutcomeUnknownStatus(string errorCode) =>
+        string.Equals(errorCode, "agent_create_outcome_unknown", StringComparison.Ordinal)
+            ? "Create outcome unknown: agent_create_outcome_unknown. Use Stop to reconcile and cancel."
+            : $"Create outcome unknown: agent_create_outcome_unknown (last response: {errorCode}). Use Stop to reconcile and cancel.";
 
     private void PublishCreatedRun(
         AgentRunModel run,
@@ -525,6 +609,23 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public async Task CancelAsync(CancellationToken cancellationToken = default)
     {
+        CreateAgentRunRequest? pendingCreate;
+        lock (_gate)
+        {
+            pendingCreate = _currentRunId is null
+                && _subscriptionCts is null
+                && _isPendingCreateOutcomeUnknown
+                && !_isBusy
+                    ? _pendingCreateRequest
+                    : null;
+        }
+
+        if (pendingCreate is not null)
+        {
+            await ReconcileAndCancelPendingCreateAsync(pendingCreate, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         string? runId = BeginRunTeardown();
         if (runId is null)
         {
@@ -552,6 +653,115 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 RefreshCommands();
             });
         }
+    }
+
+    private async Task ReconcileAndCancelPendingCreateAsync(
+        CreateAgentRunRequest pendingCreate,
+        CancellationToken cancellationToken)
+    {
+        if (!TryBeginPendingCreateReconciliation(pendingCreate, out var ownershipGeneration)) return;
+        SetPendingCreateReconciliationStatus("Checking whether the run was created...");
+
+        try
+        {
+            var run = await _client.CreateRunAsync(pendingCreate, cancellationToken).ConfigureAwait(false);
+            if (!TryRememberReconciledRun(pendingCreate, run)) return;
+            PublishReconciledRun(run, ownershipGeneration);
+            await _client.CancelAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+            if (!OwnsReconciliation(ownershipGeneration)) return;
+            ReleaseCurrentRun(run.RunId, "Cancellation request sent.");
+        }
+        catch (Exception ex)
+        {
+            SetPendingCreateReconciliationFailure(pendingCreate, ownershipGeneration, ex);
+        }
+    }
+
+    private bool TryBeginPendingCreateReconciliation(
+        CreateAgentRunRequest pendingCreate,
+        out long ownershipGeneration)
+    {
+        lock (_gate)
+        {
+            if (_isBusy
+                || !_isPendingCreateOutcomeUnknown
+                || !ReferenceEquals(_pendingCreateRequest, pendingCreate))
+            {
+                ownershipGeneration = 0;
+                return false;
+            }
+
+            _isBusy = true;
+            _isCancelRequested = true;
+            ownershipGeneration = ++_runOwnershipGeneration;
+            return true;
+        }
+    }
+
+    private void SetPendingCreateReconciliationStatus(string status)
+    {
+        RunOnUi(() =>
+        {
+            _statusText = status;
+            RefreshCommands();
+        });
+    }
+
+    private bool TryRememberReconciledRun(CreateAgentRunRequest pendingCreate, AgentRunModel run)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_pendingCreateRequest, pendingCreate)) return false;
+            _pendingCreateRequest = null;
+            _isPendingCreateOutcomeUnknown = false;
+            _currentRunId = run.RunId;
+            return true;
+        }
+    }
+
+    private void PublishReconciledRun(AgentRunModel run, long ownershipGeneration)
+    {
+        RunOnUi(() =>
+        {
+            if (!OwnsReconciliation(ownershipGeneration)) return;
+            CurrentRun = run;
+            _waitKind = WaitKindFor(run);
+            _statusText = $"Run found. Cancelling: {run.RunId}";
+            RefreshCommands();
+        });
+    }
+
+    private bool OwnsReconciliation(long ownershipGeneration)
+    {
+        lock (_gate)
+        {
+            return _runOwnershipGeneration == ownershipGeneration;
+        }
+    }
+
+    private void SetPendingCreateReconciliationFailure(
+        CreateAgentRunRequest pendingCreate,
+        long ownershipGeneration,
+        Exception error)
+    {
+        bool outcomeUnknown;
+        lock (_gate)
+        {
+            if (_runOwnershipGeneration != ownershipGeneration) return;
+            outcomeUnknown = ReferenceEquals(_pendingCreateRequest, pendingCreate);
+            _isPendingCreateOutcomeUnknown = outcomeUnknown;
+        }
+
+        RunOnUi(() =>
+        {
+            if (!OwnsReconciliation(ownershipGeneration)) return;
+            _statusText = outcomeUnknown
+                ? "Create outcome unknown: agent_create_outcome_unknown. Use Stop to retry reconciliation."
+                : $"Cancel error: {error.Message}";
+            _isBusy = false;
+            _isCancelRequested = false;
+            RefreshCommands();
+        });
     }
 
     /// <summary>

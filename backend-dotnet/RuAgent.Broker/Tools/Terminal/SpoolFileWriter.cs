@@ -45,7 +45,20 @@ public sealed class SpoolFileWriter
 
     public bool Truncated => _truncated;
 
+    internal SpoolByteBudget? Budget => _budget;
+
     public void Append(string frame)
+    {
+        if (_budget is null)
+        {
+            AppendCore(frame);
+            return;
+        }
+
+        _budget.RunIfCurrent(() => AppendCore(frame));
+    }
+
+    private void AppendCore(string frame)
     {
         if (string.IsNullOrEmpty(frame) || _truncated)
         {
@@ -144,20 +157,20 @@ public sealed class SpoolFileWriter
 
     public void Complete()
     {
-        if (_file is null)
+        if (_file is not null)
         {
-            return;
+            try
+            {
+                _file.Dispose();
+            }
+            catch (IOException)
+            {
+            }
+
+            _file = null;
         }
 
-        try
-        {
-            _file.Dispose();
-        }
-        catch (IOException)
-        {
-        }
-
-        _file = null;
+        _budget?.CleanupIfStale();
     }
 
     private static string TakeUtf8Prefix(string text, int maxBytes)

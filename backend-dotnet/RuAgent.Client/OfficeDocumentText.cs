@@ -1,12 +1,9 @@
-using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
-using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
-using S = DocumentFormat.OpenXml.Spreadsheet;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace RuAgent.Client;
@@ -25,7 +22,7 @@ namespace RuAgent.Client;
 /// bound, so a compression bomb cannot exhaust memory. The SDK's readers prohibit DTDs, so
 /// an external entity is refused rather than resolved.
 /// </remarks>
-public static class OfficeDocumentText
+public static partial class OfficeDocumentText
 {
     public const int MaxTextChars = 400_000;
     private const long MaxEntryBytes = 16L * 1024 * 1024;
@@ -172,7 +169,7 @@ public static class OfficeDocumentText
         }
 
         var builder = new StringBuilder();
-        return TryAppendSection(builder, label: null, BodyText(body))
+        return AppendBlocks(builder, body, depth: 0, insideCell: false)
             ? Finish(builder)
             : Extraction.Failed(Result.TooLarge);
     }
@@ -196,37 +193,10 @@ public static class OfficeDocumentText
         for (var index = 0; index < slideIds.Count; index++)
         {
             var slide = SlidePart(presentationPart, slideIds[index]);
-            if (!TryAppendSection(builder, $"Slide {index + 1}", SlideText(slide?.Slide)))
-            {
-                return Extraction.Failed(Result.TooLarge);
-            }
-        }
-
-        return Finish(builder);
-    }
-
-    private static Extraction ExtractSpreadsheet(MemoryStream source, OpenSettings settings)
-    {
-        using var document = SpreadsheetDocument.Open(source, false, settings);
-        var workbookPart = document.WorkbookPart;
-        var sheets = workbookPart?.Workbook?.Sheets?.Elements<S.Sheet>().ToList();
-        if (workbookPart is null || sheets is null)
-        {
-            return Extraction.Failed(Result.NoContent);
-        }
-
-        if (sheets.Count > MaxSheets)
-        {
-            return Extraction.Failed(Result.TooLarge);
-        }
-
-        var sharedStrings = SharedStrings(workbookPart);
-        var builder = new StringBuilder();
-        foreach (var sheet in sheets)
-        {
-            var worksheetPart = WorksheetPart(workbookPart, sheet);
-            var label = $"Sheet: {sheet.Name?.Value ?? "Sheet"}";
-            if (!TryAppendSection(builder, label, SheetText(worksheetPart?.Worksheet, sharedStrings)))
+            var label = $"Slide {index + 1}";
+            var slideText = new StringBuilder();
+            if (!AppendSlideText(slideText, slide?.Slide, SectionTextLimit(builder.Length, label))
+                || !TryAppendSection(builder, label, slideText.ToString()))
             {
                 return Extraction.Failed(Result.TooLarge);
             }
@@ -268,217 +238,108 @@ public static class OfficeDocumentText
         return text.Length == 0 ? Extraction.Failed(Result.NoContent) : Extraction.Ok(text);
     }
 
-    private static string BodyText(W.Body body)
-    {
-        var text = new StringBuilder();
-        AppendBlocks(text, body, depth: 0);
-        return text.ToString();
-    }
-
     /// <summary>
     /// Walks a block container in document order: paragraphs and tables are appended where
     /// they occur, and other containers (content controls, custom XML blocks) are descended
     /// into so their text is not lost. The depth bound keeps a hostile nesting from
     /// exhausting the stack; a file the user picked must not take the composer down.
     /// </summary>
-    private static void AppendBlocks(StringBuilder text, OpenXmlElement container, int depth)
+    private static bool AppendBlocks(StringBuilder text, OpenXmlElement container, int depth, bool insideCell)
     {
         foreach (var child in container.Elements())
         {
             if (child is W.Paragraph paragraph)
             {
-                AppendLine(text, ParagraphText(paragraph));
+                if (!AppendWordParagraph(text, paragraph, insideCell) || !TryAppend(text, insideCell ? ' ' : '\n'))
+                {
+                    return false;
+                }
             }
             else if (child is W.Table table)
             {
-                AppendTable(text, table);
+                if (!AppendTable(text, table, depth + 1, insideCell))
+                {
+                    return false;
+                }
             }
-            else if (depth < MaxBlockDepth && child.HasChildren)
+            else if (child.HasChildren)
             {
-                AppendBlocks(text, child, depth + 1);
+                if (depth >= MaxBlockDepth || !AppendBlocks(text, child, depth + 1, insideCell))
+                {
+                    return false;
+                }
             }
         }
+
+        return true;
     }
 
-    private static string ParagraphText(W.Paragraph paragraph)
+    private static bool AppendWordParagraph(StringBuilder text, W.Paragraph paragraph, bool insideCell)
     {
-        var text = new StringBuilder();
         foreach (var element in paragraph.Descendants())
         {
             switch (element)
             {
                 case W.Text value:
-                    text.Append(value.Text);
+                    if (!TryAppend(text, value.Text)) return false;
                     break;
                 case W.Break:
-                    text.Append('\n');
+                    if (!TryAppend(text, insideCell ? ' ' : '\n')) return false;
                     break;
                 case W.TabChar:
-                    text.Append('\t');
+                    if (!TryAppend(text, '\t')) return false;
                     break;
             }
         }
 
-        return text.ToString();
+        return true;
     }
 
-    private static void AppendTable(StringBuilder text, W.Table table)
+    private static bool AppendTable(StringBuilder text, W.Table table, int depth, bool insideCell)
     {
+        if (depth > MaxBlockDepth) return false;
         foreach (var row in table.Elements<W.TableRow>())
         {
-            var cells = row.Elements<W.TableCell>().Select(CellText);
-            AppendLine(text, string.Join('\t', cells));
-        }
-    }
-
-    private static string CellText(W.TableCell cell)
-    {
-        var text = new StringBuilder();
-        AppendBlocks(text, cell, depth: 0);
-        return text.ToString().Replace('\n', ' ').Trim();
-    }
-
-    /// <summary>
-    /// Slides are read in presentation order from the presentation part's slide list, not in
-    /// part or zip order: the SDK's part enumeration follows the container, and a deck whose
-    /// entries are stored out of order would otherwise be reordered.
-    /// </summary>
-    private static SlidePart? SlidePart(PresentationPart presentationPart, P.SlideId slideId)
-    {
-        var relationshipId = slideId.RelationshipId?.Value;
-        return string.IsNullOrEmpty(relationshipId)
-            ? null
-            : presentationPart.Parts
-                .FirstOrDefault(pair => pair.RelationshipId == relationshipId)
-                .OpenXmlPart as SlidePart;
-    }
-
-    private static string SlideText(P.Slide? slide)
-    {
-        if (slide is null)
-        {
-            return string.Empty;
-        }
-
-        var text = new StringBuilder();
-        foreach (var element in slide.Descendants())
-        {
-            if (element is P.Shape shape)
+            var first = true;
+            foreach (var cell in row.Elements<W.TableCell>())
             {
-                AppendTextBody(text, shape.TextBody);
+                if (!first && !TryAppend(text, '\t')) return false;
+                var start = text.Length;
+                if (!AppendBlocks(text, cell, depth, insideCell: true)) return false;
+                TrimCell(text, start);
+                first = false;
             }
-            else if (element is A.Table table)
-            {
-                AppendTable(text, table);
-            }
+
+            if (!TryAppend(text, insideCell ? ' ' : '\n')) return false;
         }
 
-        return text.ToString();
+        return true;
     }
 
-    private static void AppendTextBody(StringBuilder text, P.TextBody? textBody)
+    private static void TrimCell(StringBuilder text, int start)
     {
-        if (textBody is null)
-        {
-            return;
-        }
-
-        foreach (var paragraph in textBody.Elements<A.Paragraph>())
-        {
-            AppendLine(text, DrawingText(paragraph));
-        }
+        while (text.Length > start && char.IsWhiteSpace(text[^1])) text.Length--;
+        var contentStart = start;
+        while (contentStart < text.Length && char.IsWhiteSpace(text[contentStart])) contentStart++;
+        if (contentStart > start) text.Remove(start, contentStart - start);
     }
 
-    private static string DrawingText(A.Paragraph paragraph)
-    {
-        var text = new StringBuilder();
-        foreach (var element in paragraph.Descendants())
-        {
-            switch (element)
-            {
-                case A.Text value:
-                    text.Append(value.Text);
-                    break;
-                case A.Break:
-                    text.Append('\n');
-                    break;
-            }
-        }
+    private static bool TryAppend(StringBuilder text, string value) =>
+        value.Length <= MaxTextChars - text.Length && Append(text, value);
 
-        return text.ToString();
+    private static bool Append(StringBuilder text, string value)
+    {
+        text.Append(value);
+        return true;
     }
 
-    private static void AppendTable(StringBuilder text, A.Table table)
+    private static bool TryAppend(StringBuilder text, char value) =>
+        text.Length < MaxTextChars && Append(text, value);
+
+    private static bool Append(StringBuilder text, char value)
     {
-        foreach (var row in table.Elements<A.TableRow>())
-        {
-            var cells = row.Elements<A.TableCell>().Select(CellText);
-            AppendLine(text, string.Join('\t', cells));
-        }
-    }
-
-    private static string CellText(A.TableCell cell) =>
-        string.Join(' ', cell.Elements<A.TextBody>()
-            .SelectMany(body => body.Elements<A.Paragraph>().Select(DrawingText))
-            .Where(line => line.Length > 0));
-
-    private static WorksheetPart? WorksheetPart(WorkbookPart workbookPart, S.Sheet sheet)
-    {
-        var relationshipId = sheet.Id?.Value;
-        return string.IsNullOrEmpty(relationshipId)
-            ? null
-            : workbookPart.Parts
-                .FirstOrDefault(pair => pair.RelationshipId == relationshipId)
-                .OpenXmlPart as WorksheetPart;
-    }
-
-    private static string SheetText(S.Worksheet? worksheet, IReadOnlyList<string>? sharedStrings)
-    {
-        var sheetData = worksheet?.GetFirstChild<S.SheetData>();
-        if (sheetData is null)
-        {
-            return string.Empty;
-        }
-
-        var text = new StringBuilder();
-        foreach (var row in sheetData.Elements<S.Row>())
-        {
-            var values = row.Elements<S.Cell>().Select(cell => CellText(cell, sharedStrings));
-            AppendLine(text, string.Join('\t', values));
-        }
-
-        return text.ToString();
-    }
-
-    private static string CellText(S.Cell cell, IReadOnlyList<string>? sharedStrings)
-    {
-        if (cell.DataType?.Value == S.CellValues.InlineString)
-        {
-            return cell.InlineString?.InnerText ?? string.Empty;
-        }
-
-        var value = cell.CellValue?.Text ?? string.Empty;
-        if (cell.DataType?.Value == S.CellValues.SharedString)
-        {
-            // A shared string that cannot be resolved has no readable content; the index
-            // itself must never leak into the prompt as if it were the cell's text.
-            return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-                && sharedStrings is not null
-                && index >= 0
-                && index < sharedStrings.Count
-                ? sharedStrings[index]
-                : string.Empty;
-        }
-
-        return value;
-    }
-
-    private static IReadOnlyList<string>? SharedStrings(WorkbookPart workbookPart)
-    {
-        var table = workbookPart.SharedStringTablePart?.SharedStringTable;
-        return table is null
-            ? null
-            : table.Elements<S.SharedStringItem>().Select(item => item.InnerText).ToArray();
+        text.Append(value);
+        return true;
     }
 
     private static void AppendLine(StringBuilder text, string line) => text.Append(line).Append('\n');

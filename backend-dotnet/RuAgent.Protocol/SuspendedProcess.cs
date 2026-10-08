@@ -43,8 +43,6 @@ public static class SuspendedProcess
     private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const int StartfUseStdHandles = 0x00000100;
     private const uint HandleFlagInherit = 0x00000001;
-    private const int ErrorInsufficientBuffer = 122;
-    private const int ProcThreadAttributeHandleList = 0x00020002;
 
     public sealed record StartedProcess(
         Process Process,
@@ -71,7 +69,7 @@ public static class SuspendedProcess
         SafeFileHandle? stderrRead = null;
         SafeFileHandle? stderrWrite = null;
         IntPtr environmentBlock = IntPtr.Zero;
-        IntPtr attributeList = IntPtr.Zero;
+        ProcessHandleList? attributeList = null;
         var inheritHandles = new List<SafeFileHandle>();
         try
         {
@@ -106,7 +104,7 @@ public static class SuspendedProcess
                     hStdOutput = stdoutWrite.DangerousGetHandle(),
                     hStdError = stderrWrite.DangerousGetHandle(),
                 },
-                lpAttributeList = attributeList,
+                lpAttributeList = attributeList.Pointer,
             };
 
             var workingDirectory = string.IsNullOrWhiteSpace(startInfo.WorkingDirectory)
@@ -200,11 +198,7 @@ public static class SuspendedProcess
             SafeClose(stdinWrite);
             SafeClose(stdoutWrite);
             SafeClose(stderrWrite);
-            if (attributeList != IntPtr.Zero)
-            {
-                DeleteProcThreadAttributeList(attributeList);
-                Marshal.FreeHGlobal(attributeList);
-            }
+            attributeList?.Dispose();
             if (environmentBlock != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(environmentBlock);
@@ -252,57 +246,8 @@ public static class SuspendedProcess
         }
     }
 
-    private static IntPtr CreateHandleListAttribute(IReadOnlyList<SafeFileHandle> handles)
-    {
-        var size = IntPtr.Zero;
-        if (!InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size))
-        {
-            var error = Marshal.GetLastWin32Error();
-            if (error != ErrorInsufficientBuffer)
-            {
-                throw new Win32Exception(error, "Could not size the child handle list.");
-            }
-        }
-
-        var list = Marshal.AllocHGlobal(size);
-        if (!InitializeProcThreadAttributeList(list, 1, 0, ref size))
-        {
-            var error = Marshal.GetLastWin32Error();
-            Marshal.FreeHGlobal(list);
-            throw new Win32Exception(error, "Could not create the child handle list.");
-        }
-
-        var values = new IntPtr[handles.Count];
-        for (var index = 0; index < handles.Count; index++)
-        {
-            values[index] = handles[index].DangerousGetHandle();
-        }
-
-        var pinned = GCHandle.Alloc(values, GCHandleType.Pinned);
-        try
-        {
-            if (!UpdateProcThreadAttribute(
-                    list,
-                    0,
-                    (IntPtr)ProcThreadAttributeHandleList,
-                    pinned.AddrOfPinnedObject(),
-                    (IntPtr)(values.Length * IntPtr.Size),
-                    IntPtr.Zero,
-                    IntPtr.Zero))
-            {
-                var error = Marshal.GetLastWin32Error();
-                DeleteProcThreadAttributeList(list);
-                Marshal.FreeHGlobal(list);
-                throw new Win32Exception(error, "Could not restrict child handle inheritance.");
-            }
-        }
-        finally
-        {
-            pinned.Free();
-        }
-
-        return list;
-    }
+    private static ProcessHandleList CreateHandleListAttribute(IReadOnlyList<SafeFileHandle> handles) =>
+        ProcessHandleList.Create(handles);
 
     private static string BuildCommandLine(ProcessStartInfo startInfo)
     {
@@ -462,28 +407,6 @@ public static class SuspendedProcess
         string? lpCurrentDirectory,
         ref StartupInfoEx lpStartupInfo,
         out ProcessInformation lpProcessInformation);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool InitializeProcThreadAttributeList(
-        IntPtr lpAttributeList,
-        int dwAttributeCount,
-        int dwFlags,
-        ref IntPtr lpSize);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool UpdateProcThreadAttribute(
-        IntPtr lpAttributeList,
-        uint dwFlags,
-        IntPtr attribute,
-        IntPtr lpValue,
-        IntPtr cbSize,
-        IntPtr lpPreviousValue,
-        IntPtr lpReturnSize);
-
-    [DllImport("kernel32.dll")]
-    private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

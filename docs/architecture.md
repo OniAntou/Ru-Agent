@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-04.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-08.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
@@ -36,6 +36,12 @@ public readiness; shutdown, startup failure, or an unexpected child exit
 terminates the owned Broker tree.
 
 Closing the GUI sends an authenticated `POST /host/shutdown` so the Host and its owned Broker Job exit gracefully; CLI detach still does not force-kill the shared Host.
+Host single-instance claims bind the physical identity of both data and log
+directories, including aliases. Directory handles retain those roots for the
+claim lifetime. Each mutex has a dedicated owner thread until disposal, so
+async continuations and an exiting caller thread do not abandon ownership.
+The shared starter probes an owned descriptor again inside its start gate
+before classifying an occupied port as a foreign Host.
 Startup is cancellation-scoped, with checks after asynchronous stages before
 creating subsequent UI services or timers. Host shutdown remains Host-owned.
 
@@ -255,6 +261,8 @@ reconciliation surfaces from Phase 3:
   reading. Full-file hashing observes caller cancellation and a five-second
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
+- Existing-file mutation: canonical ancestor handles are retained; one validated target handle excludes competing writes and rename-over through hash validation and update/delete. Updates retain at most 32 MiB of rollback bytes (`file_too_large` above the cap), write in place and flush; ordinary write failures attempt restoration, but power-loss crash atomicity is not claimed. Missing-file creation stays staged with no overwrite. Patch rollback restores only still-matching applied output, preserving intervening editor changes.
+- Office extraction: one 400,000-character budget covers section labels, separators, paragraphs, tables and cells during traversal. DOCX nesting over 32 levels fails as `TooLarge`; XLSX uses cell references to preserve bounded blank columns and appends shared strings within the remaining budget. XML package guards remain separate from the extracted-text budget.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; it renders only safe envelope fields and exposes `agent approve`/`deny`, policy commands, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
 
@@ -322,7 +330,14 @@ output projections preserve durable receipts and attach tool-specific paging
 cursors: `read` advances UTF-8 bytes, `grep` advances match results from the
 original query offset, and terminal `read_output` advances UTF-16 characters
 within the same spool; output past the spool's in-memory window lives in a
-session-scoped file that dies with the session or the next Broker start.
+session-scoped file. Spool claims and retained entries bind one session
+generation; closing it invalidates its writers before accounting is removed.
+An old writer cannot reserve or refund bytes against a reopened session, or
+publish removed output. Generation-specific directories isolate cleanup from
+new writers; a still-open old spill is cleaned after its writer closes, or at
+the next Broker start. A live background task can defer that cleanup until its
+bounded lifetime ends (at most two hours). Physical writes serialize within their own generation,
+while the global gate protects only accounting and retained metadata.
 Projection clipping never rewrites the receipt; bounded history may still omit
 older exchanges.
 

@@ -72,7 +72,7 @@ not advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **42 HTTP with no WebSocket route** (21 non-Agent + 21 `/agent/v1/*`).
+> - Public Contract is now **42 HTTP with no WebSocket route** (20 non-Agent + 22 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
@@ -337,6 +337,13 @@ changes. A zero exit is `succeeded`; non-zero exit and start failure are
 root or a session-scoped canonical folder grant; Full Access uses an ephemeral
 per-call external root. Every structured mutation binds a Broker-captured
 preimage and fails with `workspace_changed` on mismatch without writing.
+Existing targets are held against competing writes and rename-over; hash
+validation and update or delete use that same handle. Updates retain at most
+32 MiB of original bytes for ordinary failure recovery (`file_too_large` above
+that bound), write in place and flush. This does not provide crash-atomic
+replacement. Missing-target creation remains staged with no overwrite.
+Patch rollback restores only an applied target whose current hash still
+matches that patch's result; it preserves intervening editor changes.
 `write` with `op=delete` keeps its bounded recovery cap and opaque recovery ID.
 Bash children receive redirected stdin that is closed immediately; TTY/editor
 requests remain rejected by canonical command policy.

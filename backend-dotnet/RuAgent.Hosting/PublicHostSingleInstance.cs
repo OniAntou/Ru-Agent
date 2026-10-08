@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using RuAgent.Protocol;
 
 namespace RuAgent.Hosting;
 
@@ -37,7 +38,8 @@ public enum PublicHostLockState
 /// </remarks>
 public sealed class PublicHostSingleInstance : IDisposable
 {
-    private readonly List<Mutex> _mutexes = new();
+    private readonly List<ThreadOwnedMutex> _mutexes = new();
+    private readonly List<DirectoryHandleLease> _rootLeases = new();
     private bool _disposed;
 
     public string Name { get; }
@@ -56,30 +58,18 @@ public sealed class PublicHostSingleInstance : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(openMutex);
         Name = name;
-        Mutex? mutex = null;
+        ThreadOwnedMutex? mutex = null;
         try
         {
-            mutex = openMutex(name);
-            bool owned;
-            try
-            {
-                owned = mutex.WaitOne(TimeSpan.Zero, exitContext: false);
-            }
-            catch (AbandonedMutexException)
-            {
-                // The previous owner died without releasing. .NET hands us
-                // ownership on the abandoned wait, so adopt it.
-                owned = true;
-            }
-
-            if (owned)
+            mutex = ThreadOwnedMutex.Acquire(name, openMutex);
+            if (mutex.IsAcquired)
             {
                 _mutexes.Add(mutex);
                 State = PublicHostLockState.Acquired;
             }
             else
             {
-                State = PublicHostLockState.HeldByAnother;
+                State = mutex.IsAccessDenied ? PublicHostLockState.AccessDenied : PublicHostLockState.HeldByAnother;
                 mutex.Dispose();
             }
         }
@@ -118,10 +108,7 @@ public sealed class PublicHostSingleInstance : IDisposable
     public static PublicHostSingleInstance AcquireForDataRoot(string dataRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
-        var key = ComputeRootKey(dataRoot);
-        return AcquireWithLocalFallback(
-            $"Global\\RuPublicHostDataRoot-{key}",
-            $"Local\\RuPublicHostDataRoot-{key}");
+        return AcquireRoot(dataRoot, "DataRoot");
     }
 
     /// <summary>
@@ -132,10 +119,7 @@ public sealed class PublicHostSingleInstance : IDisposable
     public static PublicHostSingleInstance AcquireForLogRoot(string logRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(logRoot);
-        var key = ComputeRootKey(logRoot);
-        return AcquireWithLocalFallback(
-            $"Global\\RuPublicHostLogRoot-{key}",
-            $"Local\\RuPublicHostLogRoot-{key}");
+        return AcquireRoot(logRoot, "LogRoot");
     }
 
     /// <summary>
@@ -152,26 +136,36 @@ public sealed class PublicHostSingleInstance : IDisposable
             return dataRootGuard;
         }
 
-        var logRootGuard = AcquireForLogRoot(logRoot);
-        if (!logRootGuard.IsAcquired)
+        PublicHostSingleInstance? logRootGuard = null;
+        try
         {
-            dataRootGuard.Dispose();
-            return logRootGuard;
-        }
+            logRootGuard = AcquireForLogRoot(logRoot);
+            if (!logRootGuard.IsAcquired)
+            {
+                dataRootGuard.Dispose();
+                return logRootGuard;
+            }
 
-        var portGuard = AcquireWithLocalFallback(
-            $"Global\\RuPublicHost-{publicPort}",
-            $"Local\\RuPublicHost-{publicPort}");
-        if (!portGuard.IsAcquired)
-        {
-            dataRootGuard.Dispose();
-            logRootGuard.Dispose();
+            var portGuard = AcquireWithLocalFallback(
+                $"Global\\RuPublicHost-{publicPort}",
+                $"Local\\RuPublicHost-{publicPort}");
+            if (!portGuard.IsAcquired)
+            {
+                dataRootGuard.Dispose();
+                logRootGuard.Dispose();
+                return portGuard;
+            }
+
+            portGuard.TakeMutexesFrom(dataRootGuard);
+            portGuard.TakeMutexesFrom(logRootGuard);
             return portGuard;
         }
-
-        portGuard.TakeMutexesFrom(dataRootGuard);
-        portGuard.TakeMutexesFrom(logRootGuard);
-        return portGuard;
+        catch
+        {
+            dataRootGuard.Dispose();
+            logRootGuard?.Dispose();
+            throw;
+        }
     }
 
     internal static PublicHostSingleInstance AcquireWithLocalFallback(
@@ -212,25 +206,39 @@ public sealed class PublicHostSingleInstance : IDisposable
         _disposed = true;
         foreach (var mutex in _mutexes)
         {
-            try { mutex.ReleaseMutex(); } catch (Exception) { }
             mutex.Dispose();
         }
 
         _mutexes.Clear();
+        foreach (var root in _rootLeases) root.Dispose();
+        _rootLeases.Clear();
     }
 
     private void TakeMutexesFrom(PublicHostSingleInstance other)
     {
         _mutexes.AddRange(other._mutexes);
+        _rootLeases.AddRange(other._rootLeases);
         other._mutexes.Clear();
+        other._rootLeases.Clear();
         other._disposed = true;
     }
 
-    private static string ComputeRootKey(string root)
+    private static PublicHostSingleInstance AcquireRoot(string root, string kind)
     {
-        var canonical = Path.GetFullPath(root.Trim())
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToUpperInvariant()));
-        return Convert.ToHexString(digest).ToLowerInvariant();
+        var lease = DirectoryHandleLease.Open(root.Trim(), createMissing: true);
+        try
+        {
+            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(lease.Identity));
+            var key = Convert.ToHexString(digest).ToLowerInvariant();
+            var guard = AcquireWithLocalFallback($"Global\\RuPublicHost{kind}-{key}", $"Local\\RuPublicHost{kind}-{key}");
+            if (guard.IsAcquired) guard._rootLeases.Add(lease);
+            else lease.Dispose();
+            return guard;
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
     }
 }

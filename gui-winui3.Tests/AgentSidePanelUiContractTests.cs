@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -195,6 +196,28 @@ public sealed class AgentSidePanelUiContractTests
         Assert.Contains(
             "ShutdownTerminal",
             GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "Dispose"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_terminal_tab_mark_is_the_prompt_itself()
+    {
+        // The boxed CommandPrompt glyph read as a badge at chip size, out of step
+        // with the folder and pencil line weight. The tab draws its mark as the
+        // literal prompt in the app's mono font instead, on a fixed slot so the
+        // labels of every chip stay aligned.
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        var chip = GuiSource.Require(document, "TerminalChip");
+
+        Assert.DoesNotContain(
+            chip.Descendants().Select(element => GuiSource.AttributeValue(element, "Glyph")),
+            glyph => glyph is "\uE756");
+
+        var mark = chip.Descendants().Single(element => GuiSource.AttributeValue(element, "Text") == ">_");
+        Assert.Equal(18, GuiSource.IntAttribute(mark, "Width"));
+        Assert.Contains(
+            "RuMonoFontFamily",
+            GuiSource.AttributeValue(mark, "FontFamily"),
             StringComparison.Ordinal);
     }
 

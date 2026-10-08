@@ -466,7 +466,16 @@
                                     ToolTipService.ToolTip="Terminal"
                                     AutomationProperties.Name="Terminal tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <!-- The terminal's mark is the prompt itself, set in the app's
+                                         mono font: two strokes that match the folder and pencil
+                                         line weight instead of the boxed CommandPrompt glyph. -->
+                                    <TextBlock Text="&gt;_"
+                                               Width="18"
+                                               TextAlignment="Center"
+                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="13"
+                                               Foreground="{StaticResource RuMutedBrush}"
+                                               VerticalAlignment="Center" />
                                     <TextBlock x:Name="TerminalTabLabel"
                                                Text="Terminal"
                                                FontFamily="{StaticResource RuUiFontFamily}"

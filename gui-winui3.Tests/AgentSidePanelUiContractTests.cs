@@ -1,0 +1,89 @@
+using System;
+using System.Linq;
+using Xunit;
+
+namespace RuApp.Tests;
+
+/// <summary>
+/// The right side surface's layout contract: the card stays the summary, the
+/// details panel carries the tabs, and the title bar carries the one control
+/// that hides and restores the whole surface.
+/// </summary>
+public sealed class AgentSidePanelUiContractTests
+{
+    [Fact]
+    public void The_surface_has_a_summary_card_and_a_details_panel()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        foreach (var name in new[]
+        {
+            "CardHost", "PanelHost", "PanelDivider", "PanelResizeGrip",
+            "ChangesChip", "TasksChip", "AddTabButton", "FullscreenButton", "CollapseButton",
+            "ChangesBody", "TasksBody", "ChangesList", "AgentTasksList", "ChangesEmptyText",
+        })
+        {
+            GuiSource.Require(document, name);
+        }
+    }
+
+    [Fact]
+    public void The_summary_card_lists_tasks_without_the_stop_control()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        var named = GuiSource.NamedElements(document);
+
+        var cardList = named["CardTasksList"];
+        Assert.Empty(cardList.Descendants()
+            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick"));
+
+        var panelList = named["AgentTasksList"];
+        Assert.NotEmpty(panelList.Descendants()
+            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnTaskStopClick"));
+    }
+
+    [Fact]
+    public void The_details_panel_closes_tabs_and_collapses_back_to_the_card()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        Assert.Contains("CloseTab", GuiSource.MethodBody(code, "OnSidePanelTabClosed"), StringComparison.Ordinal);
+        Assert.Contains("CollapseToCard", GuiSource.MethodBody(code, "OnSidePanelCollapseRequested"), StringComparison.Ordinal);
+        Assert.Contains("ToggleVisibility", GuiSource.MethodBody(code, "ToggleSidePanel"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_view_answers_the_toggle_state()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        Assert.Contains(
+            "UpdateSidePanelToggleState",
+            GuiSource.MethodBody(code, "UpdateSidePanelLayout"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_title_bar_toggle_sits_beside_the_caption_buttons_and_forwards_input()
+    {
+        var document = GuiSource.Xml("MainWindow.xaml");
+        GuiSource.Require(document, "SidePanelToggleButton");
+
+        var code = GuiSource.ViewText("MainWindow");
+        string layout = GuiSource.MethodBody(code, "UpdateTitleBarToggleLayout");
+        Assert.Contains("RightInset", layout, StringComparison.Ordinal);
+        Assert.Contains("RasterizationScale", layout, StringComparison.Ordinal);
+
+        string region = GuiSource.MethodBody(code, "ApplySidePanelToggleRegion");
+        Assert.Contains("SetRegionRects", region, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "ToggleSidePanel",
+            GuiSource.MethodBody(code, "OnSidePanelToggleClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ForgetSidePanelState",
+            GuiSource.MethodBody(code, "OnDeleteSessionClick"),
+            StringComparison.Ordinal);
+
+        string forget = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ForgetSidePanelState");
+        Assert.Contains("Remove", forget, StringComparison.Ordinal);
+    }
+}

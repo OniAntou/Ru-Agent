@@ -1,44 +1,38 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using RuAgent.Protocol.Harness;
 using RuApp.Models;
+using RuApp.Services;
 
 namespace RuApp.Views;
 
 /// <summary>
-/// The right side panel's background-task section. Rows come from the Host's
-/// typed <c>/tasks</c> command and a stop is the same command with a kill
+/// The right side surface's background-task and edit data. Rows come from the
+/// Host's typed <c>/tasks</c> command and a stop is the same command with a kill
 /// argument, so the Broker stays the only execution authority and the view
-/// never talks to it directly. The panel also carries the session's running
-/// edit totals, summed from the transcript's edit rows.
+/// never talks to it directly. The summary card and the details panel render
+/// the same rows; only the panel offers Stop.
 /// </summary>
 public sealed partial class ChatView
 {
     private const int MaxRenderedAgentTasks = 16;
 
-    /// <summary>Rows the panel binds to; rebuilt on every refresh.</summary>
-    public ObservableCollection<AgentTaskRow> AgentTasks { get; } = new();
-
     private bool? _sidePanelRunRunning;
 
     /// <summary>
-    /// Keeps the panel fresh from run-state updates: the title and edit totals
-    /// are cheap, and the task list refreshes only when the run starts or
-    /// settles so the panel never polls while streaming.
+    /// Keeps the surface fresh from run-state updates: the title and edit
+    /// projections are cheap, and the task list refreshes only when the run
+    /// starts or settles so the panel never polls while streaming.
     /// </summary>
     private void UpdateSidePanel(bool isRunRunning)
     {
-        if (SidePanelCard is null)
+        if (SidePanel is null)
         {
             return;
         }
 
-        SidePanelTitleText.Text = _activeSessionTitle;
+        SidePanel.SetSessionTitle(_activeSessionTitle);
         RefreshSidePanelEdits();
 
         if (_sidePanelRunRunning != isRunRunning)
@@ -48,77 +42,21 @@ public sealed partial class ChatView
         }
     }
 
-    /// <summary>Sum of the transcript's edit rows, shown as +added −removed.</summary>
+    /// <summary>Rebuilds the Changes tab rows and the shared +added −removed totals.</summary>
     private void RefreshSidePanelEdits()
     {
-        if (SidePanelAddedText is null || SidePanelRemovedText is null)
+        if (SidePanel is null)
         {
             return;
         }
 
-        int added = 0;
-        int removed = 0;
-        foreach (var activity in AgentActivities)
-        {
-            if (activity.Kind != AgentActivityKind.Edit)
-            {
-                continue;
-            }
-
-            added += activity.Added ?? 0;
-            removed += activity.Removed ?? 0;
-        }
-
-        SidePanelAddedText.Text = "+" + added;
-        SidePanelRemovedText.Text = "−" + removed;
-    }
-
-    private void OnSidePanelCollapseClick(object sender, RoutedEventArgs e)
-    {
-        _sidePanelUserCollapsed = true;
-        ApplyInputWidth();
-    }
-
-    private void OnSidePanelOpenClick(object sender, RoutedEventArgs e)
-    {
-        _sidePanelUserCollapsed = false;
-        ApplyInputWidth();
-        _ = RefreshAgentTasksAsync();
-    }
-
-    private async void OnAgentTaskStopClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button button
-            || button.Tag is not string executionId
-            || _agentController is null)
-        {
-            return;
-        }
-
-        var runId = _agentController.CurrentRun?.RunId ?? _activeAgentRunId;
-        if (string.IsNullOrWhiteSpace(runId))
-        {
-            return;
-        }
-
-        try
-        {
-            await _agentController
-                .DispatchCommandAsync(runId, "/tasks kill " + executionId)
-                .ConfigureAwait(true);
-        }
-        catch (Exception)
-        {
-            AgentTasksStatusText.Text = "Stop failed; the host did not answer.";
-            return;
-        }
-
-        await RefreshAgentTasksAsync();
+        var projection = ChangesTabProjection.Project(AgentActivities);
+        SidePanel.RenderChanges(projection.Rows, projection.Added, projection.Removed);
     }
 
     private async Task RefreshAgentTasksAsync()
     {
-        if (AgentTasksList is null || AgentTasksStatusText is null)
+        if (SidePanel is null)
         {
             return;
         }
@@ -126,8 +64,7 @@ public sealed partial class ChatView
         var runId = _agentController?.CurrentRun?.RunId ?? _activeAgentRunId;
         if (string.IsNullOrWhiteSpace(runId) || _agentController is null)
         {
-            AgentTasks.Clear();
-            AgentTasksStatusText.Text = "No active run in this session.";
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active run in this session.");
             return;
         }
 
@@ -138,8 +75,7 @@ public sealed partial class ChatView
                 .ConfigureAwait(true);
             if (!string.Equals(response.Status, "succeeded", StringComparison.Ordinal))
             {
-                AgentTasks.Clear();
-                AgentTasksStatusText.Text = $"Tasks unavailable ({response.Code}).";
+                SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), $"Tasks unavailable ({response.Code}).");
                 return;
             }
 
@@ -147,27 +83,16 @@ public sealed partial class ChatView
         }
         catch (Exception)
         {
-            AgentTasks.Clear();
-            AgentTasksStatusText.Text = "Tasks unavailable; the host did not answer.";
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "Tasks unavailable; the host did not answer.");
         }
     }
 
     private void RenderAgentTasks(object? data)
     {
-        AgentTasks.Clear();
         var rows = ParseAgentTasks(data);
-        if (rows.Count == 0)
-        {
-            AgentTasksStatusText.Text = "No background tasks for this session.";
-            return;
-        }
-
-        foreach (var row in rows)
-        {
-            AgentTasks.Add(row);
-        }
-
-        AgentTasksStatusText.Text = $"{rows.Count} task(s).";
+        SidePanel.RenderTasks(
+            rows,
+            rows.Count == 0 ? "No background tasks for this session." : $"{rows.Count} task(s).");
     }
 
     private static List<AgentTaskRow> ParseAgentTasks(object? data)

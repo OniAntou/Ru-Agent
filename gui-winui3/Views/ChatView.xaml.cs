@@ -79,14 +79,6 @@ namespace RuApp.Views
         private const double MediumHorizontalInset = 48;
         private const double WideHorizontalInset = 96;
         private const double MinAvailableInputWidth = 160;
-        private const double SidePanelMargin = 16;
-
-        /// <summary>
-        /// The side panel only shows when the chat area is at least this wide, so
-        /// the transcript, composer and approval card keep a comfortable column
-        /// after the panel reserves its space.
-        /// </summary>
-        private const double SidePanelMinRootWidth = 1120;
         private const int MaxImageAttachmentBytes = Services.ChatAttachmentPolicy.MaxImageAttachmentBytes;
         private const int MaxTextAttachmentBytes = Services.ChatAttachmentPolicy.MaxTextAttachmentBytes;
 
@@ -122,8 +114,6 @@ namespace RuApp.Views
         private string? _requestedWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
-        private bool _sidePanelUserCollapsed;
-        private double _sidePanelReserveWidth;
         private string? _focusedApprovalId;
         private string? _focusedInputId;
         private readonly AgentTurnQueue _queuedTurns = new();
@@ -177,6 +167,7 @@ namespace RuApp.Views
             ChatListView.ContainerContentChanging += OnChatContainerContentChanging;
             this.Loaded += OnChatViewLoaded;
             InitializeChatHoverEffects();
+            InitializeSidePanel();
             UpdateViewMode();
         }
 
@@ -281,115 +272,8 @@ namespace RuApp.Views
             {
                 ChatContentGrid.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
-            double previousReserve = _sidePanelReserveWidth;
-            UpdateSidePanelLayout();
-            if (Math.Abs(previousReserve - _sidePanelReserveWidth) > 0.5)
-            {
-                ApplyInputWidth();
-            }
+            ApplySidePanelState();
             RefreshBackdropEffect();
-        }
-
-        /// <summary>
-        /// The side panel exists only while the chat has content and the window is
-        /// wide enough for it to reserve its own space; the transcript, composer
-        /// and approval card center inside the remaining width, so the panel never
-        /// covers the chat. A manual collapse hides it to the corner toggle.
-        /// </summary>
-        private void UpdateSidePanelLayout()
-        {
-            if (SidePanelCard is null || SidePanelOpenButton is null || RootGrid is null)
-            {
-                return;
-            }
-
-            bool canShow = Messages.Count > 0 && RootGrid.ActualWidth >= SidePanelMinRootWidth;
-            bool isVisible = canShow && !_sidePanelUserCollapsed;
-
-            bool wasVisible = SidePanelCard.Visibility == Visibility.Visible;
-            SidePanelCard.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
-            if (isVisible && !wasVisible)
-            {
-                PlaySidePanelEntrance();
-            }
-            SidePanelOpenButton.Visibility = canShow && _sidePanelUserCollapsed
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-
-            _sidePanelReserveWidth = isVisible ? EffectiveSidePanelReserve() : 0;
-
-            if (ApprovalHostGrid is not null)
-            {
-                ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
-            }
-        }
-
-        /// <summary>
-        /// How much width the panel needs to reserve: only the shift the column
-        /// needs to clear the panel (plus a breathing gap), so a wide window keeps
-        /// the chat column centered instead of pushing it off to one side.
-        /// </summary>
-        private double EffectiveSidePanelReserve()
-        {
-            if (SidePanelCard is null || RootGrid is null)
-            {
-                return 0;
-            }
-
-            double panelReserve = SidePanelCard.Width + SidePanelMargin;
-            double fullColumn = Math.Min(
-                ReadingColumnMaxWidth,
-                RootGrid.ActualWidth - HorizontalInsetFor(RootGrid.ActualWidth));
-            double columnRight = (RootGrid.ActualWidth + fullColumn) / 2;
-            double panelLeft = RootGrid.ActualWidth - panelReserve;
-            double overlap = columnRight + 16 - panelLeft;
-            return overlap <= 0 ? 0 : Math.Min(panelReserve, overlap * 2);
-        }
-
-        /// <summary>
-        /// The panel fades and slides in when it appears; hiding stays instant so
-        /// narrowing the window never waits on an exit animation. Reduced-motion
-        /// users get the final state immediately.
-        /// </summary>
-        private void PlaySidePanelEntrance()
-        {
-            if (SidePanelCard is null || SidePanelSlide is null)
-            {
-                return;
-            }
-
-            if (!Services.UiTiming.AnimationsEnabled)
-            {
-                SidePanelCard.Opacity = 1;
-                SidePanelSlide.X = 0;
-                return;
-            }
-
-            SidePanelCard.Opacity = 0;
-            SidePanelSlide.X = 12;
-
-            var fade = new DoubleAnimation
-            {
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(fade, SidePanelCard);
-            Storyboard.SetTargetProperty(fade, "Opacity");
-
-            var slide = new DoubleAnimation
-            {
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(slide, SidePanelSlide);
-            Storyboard.SetTargetProperty(slide, "X");
-
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fade);
-            storyboard.Children.Add(slide);
-            storyboard.Begin();
         }
 
         /// <summary>

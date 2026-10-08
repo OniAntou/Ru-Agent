@@ -296,11 +296,13 @@
                     Opacity="0.6" />
 
             <Grid RowDefinitions="40,*">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="2"
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2"
                       Margin="14,0,12,0"
                       VerticalAlignment="Center">
                     <ScrollViewer Grid.Column="0"
-                                  HorizontalScrollBarVisibility="Auto"
+                                  Height="28"
+                                  VerticalAlignment="Center"
+                                  HorizontalScrollBarVisibility="Hidden"
                                   HorizontalScrollMode="Enabled"
                                   VerticalScrollBarVisibility="Disabled"
                                   VerticalScrollMode="Disabled">
@@ -416,7 +418,11 @@
                         </StackPanel>
                     </Border>
 
+                        </StackPanel>
+                    </ScrollViewer>
+
                     <Button x:Name="AddTabButton"
+                            Grid.Column="1"
                             Click="OnAddTabClick"
                             Style="{StaticResource SidePanelStripButtonStyle}"
                             Width="28"
@@ -425,11 +431,9 @@
                             AutomationProperties.Name="Add tab">
                         <FontIcon Glyph="&#xE710;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
-                        </StackPanel>
-                    </ScrollViewer>
 
                     <Button x:Name="FullscreenButton"
-                            Grid.Column="1"
+                            Grid.Column="2"
                             Click="OnFullscreenClick"
                             Style="{StaticResource SidePanelStripButtonStyle}"
                             Width="28"
@@ -440,7 +444,7 @@
                     </Button>
 
                     <Button x:Name="CollapseButton"
-                            Grid.Column="2"
+                            Grid.Column="3"
                             Click="OnCollapseClick"
                             Style="{StaticResource SidePanelStripButtonStyle}"
                             Width="28"

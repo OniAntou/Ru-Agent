@@ -38,8 +38,8 @@ public sealed class AgentSidePanelPolicy
     {
         internal AgentSidePanelMode Mode = AgentSidePanelMode.Card;
         internal AgentSidePanelMode LastVisibleMode = AgentSidePanelMode.Card;
-        internal List<SidePanelTabKind> OpenTabs = new() { SidePanelTabKind.Changes, SidePanelTabKind.Tasks };
-        internal SidePanelTabKind ActiveTab = SidePanelTabKind.Changes;
+        internal List<SidePanelTabKind> OpenTabs = new() { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files };
+        internal SidePanelTabKind ActiveTab = SidePanelTabKind.Files;
         internal bool Fullscreen;
         internal long Touched;
     }
@@ -58,7 +58,7 @@ public sealed class AgentSidePanelPolicy
         Find(sessionId)?.OpenTabs.ToArray() ?? DefaultOpenTabs();
 
     public SidePanelTabKind GetActiveTab(string? sessionId) =>
-        Find(sessionId)?.ActiveTab ?? SidePanelTabKind.Changes;
+        Find(sessionId)?.ActiveTab ?? SidePanelTabKind.Files;
 
     public bool IsFullscreen(string? sessionId) => Find(sessionId)?.Fullscreen ?? false;
 
@@ -72,8 +72,8 @@ public sealed class AgentSidePanelPolicy
 
         if (state.OpenTabs.Count == 0)
         {
-            state.OpenTabs.Add(SidePanelTabKind.Changes);
-            state.ActiveTab = SidePanelTabKind.Changes;
+            state.OpenTabs.Add(SidePanelTabKind.Files);
+            state.ActiveTab = SidePanelTabKind.Files;
         }
 
         state.Mode = AgentSidePanelMode.Panel;
@@ -227,5 +227,5 @@ public sealed class AgentSidePanelPolicy
     private static bool IsUsableSessionId(string? sessionId) => !string.IsNullOrWhiteSpace(sessionId);
 
     private static IReadOnlyList<SidePanelTabKind> DefaultOpenTabs() =>
-        new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks };
+        new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files };
 }

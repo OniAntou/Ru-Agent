@@ -56,17 +56,20 @@ internal static class ManagedRuntimeBootstrapper
             throw new HostStartupException("{\"error_code\":\"public_host_port_conflict\"}", 2);
         }
 
-        // The single instance is the shared data root, not only the port: a host
-        // on another port would publish its runtime descriptor over the same
-        // path, so the root is claimed before the Broker starts and held for the
-        // host lifetime. A held lock fails closed; only a namespace this account
-        // cannot create falls back to Local.
+        // The single instance is the shared data root and log root, not only the
+        // port: a host on another port would publish its runtime descriptor over
+        // the same data root, and a host with another data root would write its
+        // Broker session under the same log root. Both roots are claimed before the
+        // Broker starts and held for the host lifetime. A held lock fails closed;
+        // only a namespace this account cannot create falls back to Local.
         var effectiveDataRoot = string.IsNullOrWhiteSpace(configDataRoot)
             ? PublicHostRuntimeOptions.GetDefaultBusinessRoot(projectRoot)
             : configDataRoot;
+        var managedLogRoot = PublicHostRuntimeOptions.ResolveLogRoot(projectRoot, configLogRoot);
         var managedSingleInstance = RuAgent.Hosting.PublicHostSingleInstance.AcquireForPortAndDataRoot(
             publicPort,
-            effectiveDataRoot);
+            effectiveDataRoot,
+            managedLogRoot);
         if (!managedSingleInstance.IsAcquired)
         {
             managedSingleInstance.Dispose();
@@ -81,9 +84,6 @@ internal static class ManagedRuntimeBootstrapper
             configuration["RU_DESKTOP_TOKEN"] = managedPublicBearer;
             configuration["RuBackend:DesktopToken"] = managedPublicBearer;
         }
-        var configuredLogRoot = configuration["RU_LOG_ROOT"]
-            ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
-        var managedLogRoot = PublicHostRuntimeOptions.ResolveLogRoot(projectRoot, configuredLogRoot);
         Environment.SetEnvironmentVariable("RU_LOG_ROOT", managedLogRoot);
         configuration["RU_LOG_ROOT"] = managedLogRoot;
 

@@ -72,6 +72,34 @@ public sealed class PublicHostStarterTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(2, "public_host_port_conflict")]
+    [InlineData(3, "public_host_already_running")]
+    [InlineData(7, "public_host_start_failed")]
+    public async Task Host_startup_exit_code_is_reported_without_waiting_for_timeout(int exitCode, string expectedCode)
+    {
+        var port = FindFreePort();
+        var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllBytes(executable, []);
+        var locator = new PublicHostLocator(Path.Combine(_root, "exit-" + exitCode + "-" + Guid.NewGuid().ToString("N")));
+        using var starter = new PublicHostStarter(
+            locator,
+            healthProbe: (_, _) => Task.FromResult(false),
+            publicPort: port,
+            startProcess: _ => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+                Arguments = $"/c exit {exitCode}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }));
+
+        var ex = await Assert.ThrowsAsync<AgentApiException>(() => starter.GetOrStartAsync(_root));
+
+        Assert.Equal(expectedCode, ex.ErrorCode);
+    }
+
     [Fact]
     public async Task Caller_cancellation_during_default_health_probe_is_not_reported_as_port_conflict()
     {

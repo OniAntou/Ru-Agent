@@ -95,28 +95,10 @@ public sealed partial class ToolExecutionService
 
     private ToolExecutionOutcome? EvaluateSkillRequirements(IReadOnlyList<string> requires)
     {
-        foreach (var requirement in requires)
-        {
-            if (string.Equals(requirement, "python", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!_pythonAvailable())
-                {
-                    return ToolExecutionOutcome.Failed(
-                        "python_unavailable",
-                        "This skill requires Python, which is not installed or not on PATH.",
-                        ToolVerificationStates.NotRequired);
-                }
-
-                continue;
-            }
-
-            return ToolExecutionOutcome.Failed(
-                "unsupported_skill_requirement",
-                $"This skill requires unsupported capability '{requirement}'. Supported requirements: python.",
-                ToolVerificationStates.NotRequired);
-        }
-
-        return null;
+        var failure = SkillRequirements.FindUnmet(requires, _pythonAvailable);
+        return failure is null
+            ? null
+            : ToolExecutionOutcome.Failed(failure.Code, failure.Message, ToolVerificationStates.NotRequired);
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(

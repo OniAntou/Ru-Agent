@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using RuAgent.Protocol;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness.Prompting;
@@ -13,7 +14,8 @@ public sealed record MarkdownSkill(
     string Description,
     string Body,
     string ContentSha256,
-    string SourcePath);
+    string SourcePath,
+    IReadOnlyList<string> Requires);
 
 public sealed record MarkdownSkillSkip(string SourcePath, string Reason);
 
@@ -376,15 +378,15 @@ public sealed class MarkdownSkillLoader
             id = "skill-" + digest[..16];
         }
 
-        return (new MarkdownSkill(id, name, description, body, digest, path), null);
+        return (new MarkdownSkill(id, name, description, body, digest, path, parsedFrontMatter.Requires), null);
     }
 
-    private static (string? Name, string? Description, string Body) ParseFrontMatter(string content)
+    private static (string? Name, string? Description, string Body, IReadOnlyList<string> Requires) ParseFrontMatter(string content)
     {
         var lines = content.Split('\n');
         if (lines.Length < 3 || !string.Equals(lines[0].Trim(), "---", StringComparison.Ordinal))
         {
-            return (null, null, content);
+            return (null, null, content, Array.Empty<string>());
         }
 
         var closing = -1;
@@ -399,11 +401,12 @@ public sealed class MarkdownSkillLoader
 
         if (closing < 0)
         {
-            return (null, null, content);
+            return (null, null, content, Array.Empty<string>());
         }
 
         string? name = null;
         string? description = null;
+        IReadOnlyList<string>? requires = null;
         for (var index = 1; index < closing; index++)
         {
             var line = lines[index];
@@ -428,6 +431,9 @@ public sealed class MarkdownSkillLoader
                 case "description":
                     description ??= value;
                     break;
+                case "requires":
+                    requires ??= SkillRequirements.Parse(value);
+                    break;
                 case "allowed-tools":
                     // Intentionally parsed as descriptive metadata only. It never
                     // becomes a capability, tool grant, or Broker policy input.
@@ -437,7 +443,7 @@ public sealed class MarkdownSkillLoader
         }
 
         var body = string.Join('\n', lines[(closing + 1)..]).TrimStart('\n').TrimEnd();
-        return (name, description, body);
+        return (name, description, body, requires ?? Array.Empty<string>());
     }
 
     private static string DeriveDescription(string body)

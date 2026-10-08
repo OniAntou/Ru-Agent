@@ -137,7 +137,8 @@ Describe the review workflow here.
 `allowed-tools` is descriptive metadata only; it never grants a tool, scope,
 path, network permission, approval, or Broker capability. An optional
 `requires:` field names a capability the workflow needs; only `python` is
-recognized today. The Broker fails the model's `skill` load closed with
+recognized today. Every surface that returns a body enforces it: the model's
+`skill` tool and the Host's `/skill` command fail closed with
 `python_unavailable` when a Python requirement is unmet, and an unrecognized
 token fails closed as `unsupported_skill_requirement` naming the token;
 skills without `requires` are unaffected. The Host discovers

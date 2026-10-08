@@ -20,6 +20,12 @@ public sealed class PublicHostStarter : IDisposable
     /// <summary>How long a killed host process gets to exit before its handle is released.</summary>
     private const int KillWaitTimeoutMilliseconds = 5000;
 
+    // Startup exit codes of the managed host (ManagedRuntimeBootstrapper in the
+    // RuBackend process). The child is a separate process, so its exit code is
+    // the only channel it has to report why it never became ready.
+    private const int HostExitPortConflict = 2;
+    private const int HostExitAlreadyRunning = 3;
+
     public PublicHostStarter(
         PublicHostLocator? locator = null,
         Func<string, CancellationToken, Task<bool>>? healthProbe = null,
@@ -52,11 +58,13 @@ public sealed class PublicHostStarter : IDisposable
             // health failed => stale
         }
 
-        // 2. Check port conflict before starting: if port is occupied but no valid owned descriptor
+        // 2. Fast-path conflict check: the port is occupied and no owned
+        // descriptor answers. It cannot close the race -- a foreign process may
+        // bind after this line -- so the started child's exit code, read in the
+        // poll below, is the authoritative bind outcome. Either way a foreign
+        // process is never attached to or killed; fail with a stable code.
         if (IsPortOccupied(_publicPort))
         {
-            // If we reach here, no valid descriptor/health, but port is listening – foreign process
-            // Ensure we never attach to or kill foreign process; fail with stable code
             throw new AgentApiException("public_host_port_conflict", $"Public host port {_publicPort} is occupied by non-owned process.", 409);
         }
 
@@ -80,14 +88,23 @@ public sealed class PublicHostStarter : IDisposable
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // The child's exit code is the authoritative bind outcome: a foreign
+            // process that bound after the pre-check makes the host exit before
+            // it ever writes a descriptor, and polling to the deadline would
+            // report a misleading start_timeout instead of the real conflict.
+            if (isStarterOwner && ReadOwnedHostExitCode() is { } exitCode)
+            {
+                StopOwnedHost();
+                throw MapHostStartupExit(exitCode);
+            }
+
             if (_locator.TryGetValidDescriptor(out var newDesc, out _))
             {
                 if (await _healthProbe(newDesc!.BaseUrl, cancellationToken).ConfigureAwait(false))
                     return PublicHostSession.FromDescriptor(newDesc);
             }
             await Task.Delay(200, cancellationToken).ConfigureAwait(false);
-            // If port became occupied by foreign during polling, re-check conflict?
-            // If foreign occupies after we started, we would have valid descriptor soon; keep polling.
         }
 
         // We started this host and it never became ready. Leaving it alive would
@@ -131,6 +148,42 @@ public sealed class PublicHostStarter : IDisposable
             _startedProcess = null;
         }
     }
+
+    private int? ReadOwnedHostExitCode()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_startedProcess is not { } process)
+            {
+                return null;
+            }
+
+            try
+            {
+                return process.HasExited ? process.ExitCode : null;
+            }
+            catch (InvalidOperationException)
+            {
+                // The handle was already released, so there is nothing left to observe.
+                return null;
+            }
+        }
+    }
+
+    private AgentApiException MapHostStartupExit(int exitCode) => exitCode switch
+    {
+        HostExitPortConflict => new AgentApiException(
+            "public_host_port_conflict",
+            $"Public host port {_publicPort} is occupied by a process that bound after the port check.",
+            409),
+        HostExitAlreadyRunning => new AgentApiException(
+            "public_host_already_running",
+            "Another public host claimed this runtime before the started one could bind.",
+            409),
+        _ => new AgentApiException(
+            "public_host_start_failed",
+            $"Public host exited with code {exitCode} before it became ready."),
+    };
 
     private static bool IsPortOccupied(int port)
         => RuAgent.Hosting.PortProbe.IsLoopbackPortOccupied(port);

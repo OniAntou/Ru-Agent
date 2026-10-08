@@ -399,6 +399,12 @@ public sealed partial class AgentV1Service
             return BoundedError(404, "skill_not_found", "The requested skill was not found.");
         }
 
+        var unmet = SkillRequirements.FindUnmet(skill.Requires, PythonAvailable);
+        if (unmet is not null)
+        {
+            return BoundedError(409, unmet.Code, unmet.Message);
+        }
+
         return CommandSucceeded(
             runIdRaw,
             "skill",

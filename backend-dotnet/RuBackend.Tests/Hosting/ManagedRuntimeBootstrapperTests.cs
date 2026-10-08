@@ -21,7 +21,7 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
     [Fact]
     public async Task SameDataRootOnAnotherPortFailsClosedBeforeTheBrokerOrDescriptor()
     {
-        var (thread, release) = HoldDataRootOnWorkerThread(_root);
+        var (thread, release) = HoldLockOnWorkerThread(() => PublicHostSingleInstance.AcquireForDataRoot(_root));
         try
         {
             var configuration = new ConfigurationBuilder()
@@ -48,21 +48,57 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
         }
     }
 
-    private static (Thread Thread, ManualResetEventSlim Release) HoldDataRootOnWorkerThread(string dataRoot)
+    [Fact]
+    public async Task SameLogRootOnAnotherDataRootFailsClosedBeforeTheBrokerOrDescriptor()
+    {
+        var logRoot = Path.Combine(_root, "logs");
+        var firstDataRoot = Path.Combine(_root, "data-a");
+        var secondDataRoot = Path.Combine(_root, "data-b");
+        var firstPort = FindFreePort();
+        var (thread, release) = HoldLockOnWorkerThread(
+            () => PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, firstDataRoot, logRoot));
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["RU_DATA_ROOT"] = secondDataRoot,
+                    ["RU_LOG_ROOT"] = logRoot,
+                    ["urls"] = $"http://127.0.0.1:{FindFreePort()}",
+                })
+                .Build();
+
+            var error = await Assert.ThrowsAsync<HostStartupException>(
+                () => ManagedRuntimeBootstrapper.StartAsync(configuration, _root));
+
+            Assert.Equal(3, error.ExitCode);
+            Assert.Contains("public_host_already_running", error.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(secondDataRoot, "runtime_descriptor.json")));
+            Assert.False(Directory.Exists(Path.Combine(logRoot, "agent", "session")));
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    private static (Thread Thread, ManualResetEventSlim Release) HoldLockOnWorkerThread(
+        Func<PublicHostSingleInstance> acquire)
     {
         var acquired = new ManualResetEventSlim();
         var release = new ManualResetEventSlim();
         PublicHostSingleInstance? guard = null;
         var thread = new Thread(() =>
         {
-            guard = PublicHostSingleInstance.AcquireForDataRoot(dataRoot);
+            guard = acquire();
             acquired.Set();
             release.Wait(TimeSpan.FromSeconds(30));
             guard.Dispose();
         })
         { IsBackground = true };
         thread.Start();
-        Assert.True(acquired.Wait(TimeSpan.FromSeconds(5)), "holder thread did not acquire the data root");
+        Assert.True(acquired.Wait(TimeSpan.FromSeconds(5)), "holder thread did not acquire the lock");
         Assert.True(guard!.IsAcquired);
         return (thread, release);
     }

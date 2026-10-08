@@ -216,6 +216,7 @@ public sealed class PublicHostSingleInstanceTests
         // different port acquired its own mutex and then clobbered the shared
         // runtime descriptor and Broker session files. The data root now decides.
         var dataRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var logRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
         var firstPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
         var secondPort = firstPort;
         while (secondPort == firstPort)
@@ -224,10 +225,10 @@ public sealed class PublicHostSingleInstanceTests
         }
 
         var (thread, release) = HoldOnWorkerThread(
-            () => PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, dataRoot));
+            () => PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, dataRoot, logRoot));
         try
         {
-            using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, dataRoot);
+            using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, dataRoot, logRoot);
             Assert.False(second.IsAcquired);
             Assert.Equal(PublicHostLockState.HeldByAnother, second.State);
         }
@@ -243,6 +244,8 @@ public sealed class PublicHostSingleInstanceTests
     {
         var firstRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
         var secondRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var firstLogRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
+        var secondLogRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
         var firstPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
         var secondPort = firstPort;
         while (secondPort == firstPort)
@@ -250,10 +253,70 @@ public sealed class PublicHostSingleInstanceTests
             secondPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
         }
 
-        using var first = PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, firstRoot);
-        using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, secondRoot);
+        using var first = PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, firstRoot, firstLogRoot);
+        using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, secondRoot, secondLogRoot);
         Assert.True(first.IsAcquired);
         Assert.True(second.IsAcquired);
+    }
+
+    [Fact]
+    public void SameLogRootOnAnotherDataRootFailsClosed()
+    {
+        // Every managed host writes its Broker session descriptor under the log
+        // root. Distinct data roots must not let a second host reuse that path.
+        var firstRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var secondRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var logRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
+        var firstPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        var secondPort = firstPort;
+        while (secondPort == firstPort)
+        {
+            secondPort = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        }
+
+        var (thread, release) = HoldOnWorkerThread(
+            () => PublicHostSingleInstance.AcquireForPortAndDataRoot(firstPort, firstRoot, logRoot));
+        try
+        {
+            using var second = PublicHostSingleInstance.AcquireForPortAndDataRoot(secondPort, secondRoot, logRoot);
+            Assert.False(second.IsAcquired);
+            Assert.Equal(PublicHostLockState.HeldByAnother, second.State);
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task FailedLogRootClaimReleasesTheDataRoot()
+    {
+        var dataRoot = Path.Combine(Path.GetTempPath(), "ru-root-" + Guid.NewGuid().ToString("N"));
+        var logRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
+        var otherLogRoot = Path.Combine(Path.GetTempPath(), "ru-logs-" + Guid.NewGuid().ToString("N"));
+        var port = PublicHostRuntimeOptions.FindFreeLoopbackPort();
+        var (thread, release) = HoldOnWorkerThread(() => PublicHostSingleInstance.AcquireForLogRoot(logRoot));
+        try
+        {
+            using var denied = PublicHostSingleInstance.AcquireForPortAndDataRoot(port, dataRoot, logRoot);
+            Assert.False(denied.IsAcquired);
+            Assert.Equal(PublicHostLockState.HeldByAnother, denied.State);
+        }
+        finally
+        {
+            release.Set();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+
+        // Mutex ownership is per-thread: the retry must run elsewhere, or a claim
+        // leaked on this thread would be re-entered silently.
+        var retryAcquired = await Task.Run(() =>
+        {
+            using var retry = PublicHostSingleInstance.AcquireForPortAndDataRoot(port, dataRoot, otherLogRoot);
+            return retry.IsAcquired;
+        });
+        Assert.True(retryAcquired);
     }
 
     private static (Thread Thread, ManualResetEventSlim Release) HoldOnWorkerThread(string name)

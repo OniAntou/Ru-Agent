@@ -69,6 +69,12 @@ public sealed partial class AgentV1Service
     public Func<string, CancellationToken, Task<bool?>>? DeclaredVision { get; set; }
 
     /// <summary>
+    /// The Python probe behind the requires: python gate on /skill. Tests replace it to
+    /// drive both outcomes without depending on the machine's PATH.
+    /// </summary>
+    public Func<bool> PythonAvailable { get; set; } = static () => PythonAvailability.IsAvailable;
+
+    /// <summary>
     /// Optional because the service is constructed directly by tests. When present it records
     /// the reason behind a bounded public error, which otherwise leaves nothing to diagnose
     /// with: the caller sees only the code.

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Skills;
 
@@ -8,8 +9,6 @@ public sealed record SkillBody(string Name, string Description, string Body, str
 
 public sealed class SkillBodyStore
 {
-    private const int MaxRequirements = 8;
-    private const int MaxRequirementLength = 64;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly string _workspaceRoot;
 
@@ -225,7 +224,7 @@ public sealed class SkillBodyStore
                     }
                     else if (string.Equals(key, "requires", StringComparison.Ordinal))
                     {
-                        requires ??= ParseRequirements(value);
+                        requires ??= SkillRequirements.Parse(value);
                     }
                 }
 
@@ -241,43 +240,6 @@ public sealed class SkillBodyStore
         name = string.IsNullOrWhiteSpace(name) ? "skill" : name.Trim();
         description = string.IsNullOrWhiteSpace(description) ? "Workspace workflow guidance." : description.Trim();
         return (name, description, body, requires ?? Array.Empty<string>());
-    }
-
-    private static IReadOnlyList<string> ParseRequirements(string value)
-    {
-        var requirements = new List<string>();
-        foreach (var candidate in value.Trim('[', ']').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (requirements.Count >= MaxRequirements)
-            {
-                break;
-            }
-
-            var token = Unquote(candidate);
-            if (token.Length == 0)
-            {
-                continue;
-            }
-
-            var requirement = SanitizeRequirement(token.Length <= MaxRequirementLength ? token : token[..MaxRequirementLength]);
-            if (!requirements.Contains(requirement, StringComparer.OrdinalIgnoreCase))
-            {
-                requirements.Add(requirement);
-            }
-        }
-
-        return requirements;
-    }
-
-    private static string SanitizeRequirement(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
-        {
-            builder.Append(char.IsAsciiLetterOrDigit(character) || character is '_' or '-' or '.' ? character : '?');
-        }
-
-        return builder.ToString();
     }
 
     private static string Unquote(string value)

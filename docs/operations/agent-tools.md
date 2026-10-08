@@ -356,11 +356,11 @@ only: it never grants a tool, scope, path, network permission, approval, or
 Broker capability.
 
 An optional `requires:` frontmatter entry names a capability the workflow
-needs; only `python` is recognized today. The Broker checks it when the model
-loads the body: absent Python fails the `skill` call closed with
-`python_unavailable`, an unrecognized token fails closed as
-`unsupported_skill_requirement` naming the token, and the body is not
-returned. Skills without `requires` are unaffected.
+needs; only `python` is recognized today. It is checked wherever a body is
+returned: the model's `skill` tool (Broker) and the `/skill <name>` command
+(Host) both fail closed with `python_unavailable` when Python is absent, an
+unrecognized token fails closed as `unsupported_skill_requirement` naming the
+token, and the body is not returned. Skills without `requires` are unaffected.
 
 `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
 user-workspace instruction candidates below the selected run root, not repo

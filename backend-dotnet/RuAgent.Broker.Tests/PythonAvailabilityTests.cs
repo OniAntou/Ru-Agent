@@ -1,4 +1,4 @@
-using RuAgent.Broker.Skills;
+using RuAgent.Protocol;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;

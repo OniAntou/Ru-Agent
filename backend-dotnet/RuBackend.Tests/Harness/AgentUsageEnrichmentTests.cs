@@ -111,6 +111,58 @@ public sealed class AgentUsageEnrichmentTests
         }
     }
 
+    [Fact]
+    public async Task Sse_Usage_Totals_Never_Decrease_Across_Live_Polls()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(client, session, tmp.Path, "usage live polls", "usage-polls-" + Guid.NewGuid().ToString("N"));
+        var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+        await CommitUsageAsync(store, runId, input: 1000, output: 200, total: 1200);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        using var stream = new StreamReader(await response.Content.ReadAsStreamAsync());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        var first = await ReadUntilEventAsync(stream, "model.usage_recorded", timeout.Token);
+        await CommitUsageAsync(store, runId, input: 500, output: null, total: null);
+        var second = await ReadUntilEventAsync(stream, "model.usage_recorded", timeout.Token);
+
+        Assert.Equal(1000, first.GetProperty("input_tokens").GetInt64());
+        Assert.Equal(1500, second.GetProperty("input_tokens").GetInt64());
+        Assert.Equal(200, second.GetProperty("output_tokens").GetInt64());
+        Assert.Equal(1200, second.GetProperty("total_tokens").GetInt64());
+    }
+
+    [Fact]
+    public async Task Sse_Usage_Totals_On_Reconnect_Match_Run_Durable_Usage()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(client, session, tmp.Path, "usage reconnect", "usage-reconnect-" + Guid.NewGuid().ToString("N"));
+        var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+        await CommitUsageAsync(store, runId, input: 1000, output: 200, total: 1200);
+        var firstRead = await ReadEventsAsync(client, runId);
+        var cursor = SeqOf(firstRead.Single(e => TypeOf(e) == "model.usage_recorded"));
+
+        await CommitUsageAsync(store, runId, input: 500, output: null, total: null);
+        var reconnect = await ReadEventsAsync(client, runId, cursor);
+        var usage = reconnect.Single(e => TypeOf(e) == "model.usage_recorded");
+
+        Assert.Equal(1500, usage.GetProperty("input_tokens").GetInt64());
+        Assert.Equal(200, usage.GetProperty("output_tokens").GetInt64());
+        Assert.Equal(1200, usage.GetProperty("total_tokens").GetInt64());
+    }
+
     private static string TypeOf(JsonElement e) =>
         e.TryGetProperty("event_type", out var t) ? t.GetString() ?? "?" : "?";
 
@@ -119,6 +171,66 @@ public sealed class AgentUsageEnrichmentTests
 
     private static string TotalOf(JsonElement e) =>
         e.TryGetProperty("total_tokens", out var t) ? t.ToString() : "-";
+
+    private static async Task CommitUsageAsync(IHarnessEventStore store, string runId, int? input, int? output, int? total)
+    {
+        var run = await store.GetRunAsync(new RunId(runId), CancellationToken.None)
+            ?? throw new InvalidOperationException("run not found");
+        var usagePayloadId = new PayloadId("payload_" + Guid.NewGuid().ToString("N"));
+        var usagePayload = new HarnessPayloadIntent(
+            usagePayloadId,
+            HarnessPayloadKind.ModelUsage,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            16 * 1024,
+            UsageBytes(input, output, total));
+        var usageEvent = new HarnessEventIntent(
+            new EventId("evt_" + Guid.NewGuid().ToString("N")),
+            HarnessEventKind.ModelUsageRecorded,
+            modelStepId: new ModelStepId("step_" + Guid.NewGuid().ToString("N")),
+            payloadId: usagePayloadId,
+            safeCode: "reported");
+        var nextRun = CopyRun(run, run.Version + 1, run.LastSequence + 1);
+        await store.CommitAsync(
+            new HarnessCommit(
+                run.RunId,
+                run.Version,
+                nextRun,
+                [usageEvent],
+                [usagePayload],
+                []),
+            CancellationToken.None);
+    }
+
+    private static byte[] UsageBytes(int? input, int? output, int? total)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            new ModelUsage(input, output, total, null, null).WriteTo(writer);
+        }
+
+        return stream.ToArray();
+    }
+
+    private static async Task<JsonElement> ReadUntilEventAsync(StreamReader stream, string eventType, CancellationToken ct)
+    {
+        while (await stream.ReadLineAsync(ct) is { } line)
+        {
+            if (!line.StartsWith("data: ", StringComparison.Ordinal) || !line.Contains("\"event_type\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var envelope = JsonDocument.Parse(line["data: ".Length..]).RootElement.Clone();
+            if (TypeOf(envelope) == eventType)
+            {
+                return envelope;
+            }
+        }
+
+        throw new InvalidOperationException($"stream closed before {eventType}");
+    }
 
     private static AgentRun CopyRun(AgentRun current, long version, long lastSequence) =>
         new(
@@ -160,9 +272,10 @@ public sealed class AgentUsageEnrichmentTests
         return json.GetProperty("run_id").GetString()!;
     }
 
-    private static async Task<List<JsonElement>> ReadEventsAsync(HttpClient client, string runId)
+    private static async Task<List<JsonElement>> ReadEventsAsync(HttpClient client, string runId, long? afterSequence = null)
     {
-        using var resp = await client.GetAsync($"/agent/v1/runs/{runId}/events?live=0");
+        var after = afterSequence is { } cursor ? $"&after_sequence={cursor}" : string.Empty;
+        using var resp = await client.GetAsync($"/agent/v1/runs/{runId}/events?live=0{after}");
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadAsStringAsync();
         var events = new List<JsonElement>();

@@ -307,11 +307,37 @@ public static class AgentV1Endpoints
             hubLease = hub.Subscribe(runIdObj);
         }
 
+        // Totals belong to the connection, not to a poll: each poll reads only the events after lastSent.
+        var usageTracker = new RunUsageTracker();
+
+        async Task TrackUsageAsync(RuAgent.Harness.Core.HarnessEvent evt)
+        {
+            if (string.Equals(evt.Kind, "model.usage_recorded", StringComparison.Ordinal)
+                && evt.PayloadId is { } usagePayloadId)
+            {
+                var usage = await service.TryReadModelUsageAsync(runId, usagePayloadId.Value, ct).ConfigureAwait(false);
+                usageTracker.Track(usage);
+            }
+        }
+
+        // A resumed connection replays the usage at or before its cursor so its totals match the run's durable usage.
+        async Task SeedUsageTotalsAsync(long cursor)
+        {
+            await foreach (var envelope in store.ReadEventsAsync(runIdObj, 0, ct))
+            {
+                if (envelope.Event.Sequence > cursor)
+                {
+                    break;
+                }
+
+                await TrackUsageAsync(envelope.Event);
+            }
+        }
+
         // Helper to stream available durables
         async Task<bool> StreamDurablesAsync()
         {
             var any = false;
-            var usageTracker = new RunUsageTracker();
             await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
             {
                 any = true;
@@ -326,15 +352,7 @@ public static class AgentV1Endpoints
 
                 // Cumulative usage enrich: resolve ModelUsage payloads once per
                 // request and attach running totals to following envelopes.
-                if (string.Equals(
-                        envelope.Event.Kind,
-                        "model.usage_recorded",
-                        StringComparison.Ordinal)
-                    && envelope.Event.PayloadId is { } usagePayloadId)
-                {
-                    var usage = await service.TryReadModelUsageAsync(runId, usagePayloadId.Value, ct).ConfigureAwait(false);
-                    usageTracker.Track(usage);
-                }
+                await TrackUsageAsync(envelope.Event);
 
                 var safe = HarnessEventMapper.ToSafeEnvelope(envelope.Event, run);
                 var (usedInput, usedOutput, usedTotal) = usageTracker.Snapshot();
@@ -396,6 +414,11 @@ public static class AgentV1Endpoints
         // finally and leave the subscription in the hub forever.
         try
         {
+            if (effectiveAfter > 0)
+            {
+                await SeedUsageTotalsAsync(effectiveAfter);
+            }
+
             await StreamDurablesAsync();
 
         // If terminal, send final snapshot and close cleanly

@@ -118,24 +118,45 @@ public sealed class PublicHostSingleInstance : IDisposable
     public static PublicHostSingleInstance AcquireForDataRoot(string dataRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
-        var key = ComputeDataRootKey(dataRoot);
+        var key = ComputeRootKey(dataRoot);
         return AcquireWithLocalFallback(
             $"Global\\RuPublicHostDataRoot-{key}",
             $"Local\\RuPublicHostDataRoot-{key}");
     }
 
     /// <summary>
-    /// Claims the shared data root and the public port together, so one guard
-    /// releases both for the host lifetime. The data root is claimed first: a
-    /// second host on another port must fail before it can start a Broker or
+    /// Claims the lock for one canonical log root. Every managed host writes its
+    /// Broker session descriptor under the log root, so hosts with different data
+    /// roots still conflict there.
+    /// </summary>
+    public static PublicHostSingleInstance AcquireForLogRoot(string logRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(logRoot);
+        var key = ComputeRootKey(logRoot);
+        return AcquireWithLocalFallback(
+            $"Global\\RuPublicHostLogRoot-{key}",
+            $"Local\\RuPublicHostLogRoot-{key}");
+    }
+
+    /// <summary>
+    /// Claims the shared data root, the shared log root, and the public port
+    /// together, so one guard releases all three for the host lifetime. The roots
+    /// are claimed first: a second host must fail before it can start a Broker or
     /// publish a descriptor over the live instance's files.
     /// </summary>
-    public static PublicHostSingleInstance AcquireForPortAndDataRoot(int publicPort, string dataRoot)
+    public static PublicHostSingleInstance AcquireForPortAndDataRoot(int publicPort, string dataRoot, string logRoot)
     {
         var dataRootGuard = AcquireForDataRoot(dataRoot);
         if (!dataRootGuard.IsAcquired)
         {
             return dataRootGuard;
+        }
+
+        var logRootGuard = AcquireForLogRoot(logRoot);
+        if (!logRootGuard.IsAcquired)
+        {
+            dataRootGuard.Dispose();
+            return logRootGuard;
         }
 
         var portGuard = AcquireWithLocalFallback(
@@ -144,10 +165,12 @@ public sealed class PublicHostSingleInstance : IDisposable
         if (!portGuard.IsAcquired)
         {
             dataRootGuard.Dispose();
+            logRootGuard.Dispose();
             return portGuard;
         }
 
         portGuard.TakeMutexesFrom(dataRootGuard);
+        portGuard.TakeMutexesFrom(logRootGuard);
         return portGuard;
     }
 
@@ -203,9 +226,9 @@ public sealed class PublicHostSingleInstance : IDisposable
         other._disposed = true;
     }
 
-    private static string ComputeDataRootKey(string dataRoot)
+    private static string ComputeRootKey(string root)
     {
-        var canonical = Path.GetFullPath(dataRoot.Trim())
+        var canonical = Path.GetFullPath(root.Trim())
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToUpperInvariant()));
         return Convert.ToHexString(digest).ToLowerInvariant();

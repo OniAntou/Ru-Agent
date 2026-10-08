@@ -43,7 +43,7 @@ public sealed class AgentSidePanelPolicy
     {
         internal AgentSidePanelMode Mode = AgentSidePanelMode.Card;
         internal AgentSidePanelMode LastVisibleMode = AgentSidePanelMode.Card;
-        internal List<SidePanelTabKind> OpenTabs = new() { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files };
+        internal List<SidePanelTabKind> OpenTabs = new() { SidePanelTabKind.Files };
         internal SidePanelTabKind ActiveTab = SidePanelTabKind.Files;
         internal bool Fullscreen;
         internal long Touched;
@@ -257,5 +257,5 @@ public sealed class AgentSidePanelPolicy
     private static bool IsUsableSessionId(string? sessionId) => !string.IsNullOrWhiteSpace(sessionId);
 
     private static IReadOnlyList<SidePanelTabKind> DefaultOpenTabs() =>
-        new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files };
+        new[] { SidePanelTabKind.Files };
 }

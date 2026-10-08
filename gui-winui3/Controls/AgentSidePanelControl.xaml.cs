@@ -29,6 +29,8 @@ namespace RuApp.Controls
 
         public event EventHandler? ExpandRequested;
 
+        public event EventHandler<SidePanelTabKind>? TabOpenRequested;
+
         public event EventHandler? CollapseRequested;
 
         public event EventHandler? FullscreenToggleRequested;
@@ -422,6 +424,12 @@ namespace RuApp.Controls
 
         private void OnExpandClick(object sender, RoutedEventArgs e) =>
             ExpandRequested?.Invoke(this, EventArgs.Empty);
+
+        private void OnCardChangesClick(object sender, RoutedEventArgs e) =>
+            TabOpenRequested?.Invoke(this, SidePanelTabKind.Changes);
+
+        private void OnCardTasksClick(object sender, RoutedEventArgs e) =>
+            TabOpenRequested?.Invoke(this, SidePanelTabKind.Tasks);
 
         private void OnCollapseClick(object sender, RoutedEventArgs e) =>
             CollapseRequested?.Invoke(this, EventArgs.Empty);

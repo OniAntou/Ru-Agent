@@ -194,15 +194,37 @@
                                Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" />
-                    <Button x:Name="ExpandButton"
-                            Grid.Column="1"
-                            Click="OnExpandClick"
-                            Style="{StaticResource RuToolbarButtonStyle}"
-                            CornerRadius="{StaticResource AppControlCornerRadius}"
-                            ToolTipService.ToolTip="Open details panel"
-                            AutomationProperties.Name="Open details panel">
-                        <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
-                    </Button>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="2"
+                                VerticalAlignment="Center">
+                        <!-- The Changes and Tasks tabs are closed by default; these two
+                             buttons are the way in from the summary card. -->
+                        <Button x:Name="CardChangesButton"
+                                Click="OnCardChangesClick"
+                                Style="{StaticResource RuToolbarButtonStyle}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
+                                ToolTipService.ToolTip="Open changes"
+                                AutomationProperties.Name="Open changes panel">
+                            <FontIcon Glyph="&#xE70F;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+                        <Button x:Name="CardTasksButton"
+                                Click="OnCardTasksClick"
+                                Style="{StaticResource RuToolbarButtonStyle}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
+                                ToolTipService.ToolTip="Open background tasks"
+                                AutomationProperties.Name="Open tasks panel">
+                            <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+                        <Button x:Name="ExpandButton"
+                                Click="OnExpandClick"
+                                Style="{StaticResource RuToolbarButtonStyle}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
+                                ToolTipService.ToolTip="Open details panel"
+                                AutomationProperties.Name="Open details panel">
+                            <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">

@@ -32,6 +32,7 @@ public sealed partial class ChatView
     {
         _sidePanelWidth = _sidePanelWidthStore.Load();
         SidePanel.ExpandRequested += OnSidePanelExpandRequested;
+        SidePanel.TabOpenRequested += OnSidePanelTabOpenRequested;
         SidePanel.CollapseRequested += OnSidePanelCollapseRequested;
         SidePanel.FullscreenToggleRequested += OnSidePanelFullscreenToggleRequested;
         SidePanel.TabActivated += OnSidePanelTabActivated;
@@ -143,6 +144,17 @@ public sealed partial class ChatView
         _sidePanelPolicy.ExpandToPanel(_activeSessionId);
         ApplySidePanelState();
         _ = RefreshAgentTasksAsync();
+    }
+
+    private void OnSidePanelTabOpenRequested(object? sender, SidePanelTabKind kind)
+    {
+        _sidePanelPolicy.OpenTab(_activeSessionId, kind);
+        _sidePanelPolicy.ExpandToPanel(_activeSessionId);
+        ApplySidePanelState();
+        if (kind == SidePanelTabKind.Tasks)
+        {
+            _ = RefreshAgentTasksAsync();
+        }
     }
 
     private void OnSidePanelCollapseRequested(object? sender, EventArgs e)

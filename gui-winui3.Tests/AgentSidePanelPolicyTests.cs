@@ -7,14 +7,12 @@ namespace RuApp.Tests;
 public sealed class AgentSidePanelPolicyTests
 {
     [Fact]
-    public void Defaults_are_the_card_with_every_tab_open_and_files_active()
+    public void Defaults_are_the_card_with_only_files_open()
     {
         var policy = new AgentSidePanelPolicy();
 
         Assert.Equal(AgentSidePanelMode.Card, policy.GetMode("s1"));
-        Assert.Equal(
-            new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files },
-            policy.GetOpenTabs("s1"));
+        Assert.Equal(new[] { SidePanelTabKind.Files }, policy.GetOpenTabs("s1"));
         Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
         Assert.False(policy.IsFullscreen("s1"));
     }
@@ -66,11 +64,12 @@ public sealed class AgentSidePanelPolicyTests
     public void Closing_the_active_tab_selects_the_first_open_tab()
     {
         var policy = new AgentSidePanelPolicy();
+        policy.OpenTab("s1", SidePanelTabKind.Changes);
 
-        policy.CloseTab("s1", SidePanelTabKind.Files);
+        policy.CloseTab("s1", SidePanelTabKind.Changes);
 
-        Assert.Equal(new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks }, policy.GetOpenTabs("s1"));
-        Assert.Equal(SidePanelTabKind.Changes, policy.GetActiveTab("s1"));
+        Assert.Equal(new[] { SidePanelTabKind.Files }, policy.GetOpenTabs("s1"));
+        Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
     }
 
     [Fact]
@@ -78,10 +77,12 @@ public sealed class AgentSidePanelPolicyTests
     {
         var policy = new AgentSidePanelPolicy();
         policy.ExpandToPanel("s1");
+        policy.OpenTab("s1", SidePanelTabKind.Changes);
+        policy.OpenTab("s1", SidePanelTabKind.Tasks);
 
+        policy.CloseTab("s1", SidePanelTabKind.Files);
         policy.CloseTab("s1", SidePanelTabKind.Changes);
         policy.CloseTab("s1", SidePanelTabKind.Tasks);
-        policy.CloseTab("s1", SidePanelTabKind.Files);
 
         Assert.Empty(policy.GetOpenTabs("s1"));
         Assert.Equal(AgentSidePanelMode.Card, policy.GetMode("s1"));
@@ -164,31 +165,32 @@ public sealed class AgentSidePanelPolicyTests
     }
 
     [Fact]
-    public void The_files_tab_opens_closes_and_activates_like_the_others()
+    public void Closing_the_sole_files_tab_collapses_the_panel()
     {
         var policy = new AgentSidePanelPolicy();
 
-        policy.OpenTab("s1", SidePanelTabKind.Files);
-        Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
-        Assert.Contains(SidePanelTabKind.Files, policy.GetOpenTabs("s1"));
-
         policy.CloseTab("s1", SidePanelTabKind.Files);
-        Assert.DoesNotContain(SidePanelTabKind.Files, policy.GetOpenTabs("s1"));
-        Assert.Equal(SidePanelTabKind.Changes, policy.GetActiveTab("s1"));
+
+        Assert.Empty(policy.GetOpenTabs("s1"));
+        Assert.Equal(AgentSidePanelMode.Card, policy.GetMode("s1"));
     }
 
     [Fact]
     public void Moving_a_tab_reorders_the_open_list()
     {
         var policy = new AgentSidePanelPolicy();
+        policy.OpenTab("s1", SidePanelTabKind.Changes);
+        policy.OpenTab("s1", SidePanelTabKind.Tasks);
 
-        policy.MoveTab("s1", SidePanelTabKind.Files, 0);
+        policy.MoveTab("s1", SidePanelTabKind.Files, 2);
+
         Assert.Equal(
-            new[] { SidePanelTabKind.Files, SidePanelTabKind.Changes, SidePanelTabKind.Tasks },
+            new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files },
             policy.GetOpenTabs("s1"));
-        Assert.Equal(SidePanelTabKind.Files, policy.GetActiveTab("s1"));
+        Assert.Equal(SidePanelTabKind.Tasks, policy.GetActiveTab("s1"));
 
         policy.MoveTab("s1", SidePanelTabKind.Files, 99);
+
         Assert.Equal(
             new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks, SidePanelTabKind.Files },
             policy.GetOpenTabs("s1"));

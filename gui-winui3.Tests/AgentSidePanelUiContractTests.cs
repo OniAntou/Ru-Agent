@@ -120,6 +120,28 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
+    public void The_card_opens_the_details_tabs_on_request()
+    {
+        var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        Assert.Equal(
+            "OnCardChangesClick",
+            GuiSource.AttributeValue(GuiSource.Require(document, "CardChangesButton"), "Click"));
+        Assert.Equal(
+            "OnCardTasksClick",
+            GuiSource.AttributeValue(GuiSource.Require(document, "CardTasksButton"), "Click"));
+
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        Assert.Contains(
+            "TabOpenRequested",
+            GuiSource.MethodBody(code, "OnCardChangesClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenTab",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnSidePanelTabOpenRequested"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_strip_reorders_tabs_by_dragging()
     {
         var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");

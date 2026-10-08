@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
@@ -355,25 +354,13 @@ public sealed class RetainedApprovalRehydrator
 
         try
         {
-            using var document = JsonDocument.Parse(content.Plaintext);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object
-                || !TryReadString(root, "provider_call_id", out var payloadProvider)
-                || !string.Equals(payloadProvider, providerCallId, StringComparison.Ordinal)
-                || !TryReadString(root, "tool_id", out var payloadToolId)
-                || !string.Equals(payloadToolId, assistantCall.ToolId, StringComparison.Ordinal)
-                || !TryReadString(root, "tool_version", out var payloadVersion)
-                || !string.Equals(payloadVersion, assistantCall.ToolVersion, StringComparison.Ordinal)
-                || !root.TryGetProperty("arguments", out var arguments)
-                || arguments.ValueKind != JsonValueKind.Object
-                || !JsonNode.DeepEquals(
-                    JsonNode.Parse(arguments.GetRawText()),
-                    JsonNode.Parse(assistantCall.Arguments.GetRawText())))
+            var envelope = ToolArgumentsCodec.Deserialize(content.Plaintext);
+            if (!envelope.Matches(providerCallId, assistantCall.ToolId, assistantCall.ToolVersion, assistantCall.Arguments))
             {
                 throw Invalid("retained_approval_arguments_mismatch");
             }
 
-            return arguments.Clone();
+            return envelope.Arguments;
         }
         catch (InvalidDataException exception) when (exception.Message.StartsWith(
             "retained_approval_",

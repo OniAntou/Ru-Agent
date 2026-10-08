@@ -1,0 +1,21 @@
+schema_version = "1.4"
+
+[metadata]
+id = "ts-generation-pager"
+language = "typescript"
+difficulty = "hard"
+category = "software-engineering"
+editable_globs = ["src/**/*.ts"]
+check_groups = ["append-cursor", "same-generation-dedup", "stale-generation", "failure-retry", "completion-refresh", "snapshot-isolation"]
+
+[agent]
+timeout_sec = 1800
+
+[verifier]
+timeout_sec = 120
+
+[environment]
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+network_mode = "no-network"

@@ -6,12 +6,51 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,753 passed / 0 failed / 0 skipped** (2026-10-08, F01–F10 review remediation; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
-| Python suite | **181 passed**, 1 skipped. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,766 passed / 0 failed / 0 skipped** (2026-10-08, submission ownership and shared tool-argument codec; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| Python suite | **204 passed**, 1 skipped (2026-10-08, custom coding benchmark delivery). `ruff check tests scripts tools` and `pip check` passed. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Submission simplification and coding benchmark (2026-10-08)
+
+The complete sequential Debug matrix passed **5,766 tests across all 12
+projects**, with zero failures and skips. Backend Debug compilation passed with
+zero warnings/errors; the existing two GUI test-source warnings remain.
+Focused submission-owner and codec tests passed 7 and 6 cases respectively.
+The final Python suite passed **204 tests with one skip**. Ruff over
+`tests scripts tools`, dependency checking and the 42-route/zero-WebSocket
+guard passed. The 12 embedded-help tests passed after documentation updates.
+
+`ChatSubmissionState` consolidates pending attachments, queue admission,
+held retry identity and accepted transfer cleanup. Cancellation during a trust
+gate now releases its accepted temporary images. Tool-argument serialization
+and interpretation share one codec while audience, exact identity/argument
+checks, bounded approval binding and existing failure codes remain in their
+owners. `AgentCommands.Chat.cs` decreased from 3,207 to 3,103 lines and still
+contains substantial orchestration; this does not claim the remaining large
+dispatcher has been fully decomposed.
+
+The [custom coding benchmark](../../tools/coding-benchmark/README.md) includes
+six Terminal-style tasks and three SWE-style issue repositories in C#, Python
+and TypeScript. All nine public starter smokes passed. Each task was graded
+from a fresh starter and reference three times: **27/27 validated pairs**,
+with starter failures and reference passes. One full reference sweep reports
+**60 groups and 354 checks**; SWE starters failed every regression group and
+passed every preservation group. Current fixture fingerprints match the final
+report. These are fixture checks, not a Ru solve rate. Verification covers
+fresh baseline SHA generation, source integrity, patch application against a
+fresh base, JSONL export, complete grader evidence and fake-process RPC trials.
+Windows verifier/RPC children enter a kill-on-close Job Object before they
+resume; real-process tests cover descendants after leader exit and assignment
+failure before child code. This bounds process lifetime, not filesystem or
+network access.
+
+Live Ru/provider coding quality, token/cost acceptance, Docker/Harbor execution
+and official benchmark datasets were not run. Native fixture/oracle results
+are separate from a model score. Release publishing and native UI acceptance
+were not rerun.
 
 ## Review remediation (2026-10-08)
 

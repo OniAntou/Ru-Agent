@@ -30,6 +30,13 @@ internal sealed record ChatSubmissionSnapshot(
             || command.Equals("/status", StringComparison.OrdinalIgnoreCase);
     }
 
+    public bool MatchesContext(string sessionId, string workspace, string preset, string backend, string model) =>
+        string.Equals(SessionId, sessionId, StringComparison.Ordinal)
+        && string.Equals(WorkspacePath, workspace, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Preset, preset, StringComparison.Ordinal)
+        && string.Equals(Backend, backend, StringComparison.Ordinal)
+        && string.Equals(Model, model, StringComparison.Ordinal);
+
     public bool MatchesSelection(JsonElement settings)
     {
         var currentBackend = ReadString(settings, "backend");

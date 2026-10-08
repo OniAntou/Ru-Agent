@@ -470,19 +470,14 @@ public sealed partial class AgentV1Service
             var payload = await _payloadStore
                 .ReadForClientAsync(run.RunId, payloadId, cancellationToken)
                 .ConfigureAwait(false);
-            using var document = JsonDocument.Parse(payload.Plaintext);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("tool_id", out var toolIdNode)
-                || toolIdNode.ValueKind != JsonValueKind.String
-                || !root.TryGetProperty("tool_version", out var versionNode)
-                || versionNode.ValueKind != JsonValueKind.String
-                || !root.TryGetProperty("arguments", out var arguments)
-                || arguments.ValueKind != JsonValueKind.Object)
+            var envelope = ToolArgumentsCodec.Deserialize(payload.Plaintext);
+            if (!envelope.IsObject || envelope.ToolId is null || envelope.ToolVersion is null || !envelope.HasObjectArguments)
             {
                 return null;
             }
 
+            var root = envelope.Root;
+            var arguments = envelope.Arguments;
             var toolId = ReadString(root, "tool_id", ApprovalToolIdMaxLength);
             var toolVersion = ReadString(root, "tool_version", ApprovalToolVersionMaxLength);
             if (toolId is null || toolVersion is null)

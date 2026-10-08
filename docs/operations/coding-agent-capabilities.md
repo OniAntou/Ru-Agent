@@ -1,6 +1,6 @@
 # Coding-agent capability baseline
 
-This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-07: background terminal tasks (auto-move on timeout, live paging, kill, session task control and the composer tasks flyout) are implemented; live-provider task quality remains unmeasured.
+This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-08: background terminal tasks are implemented, submission and durable argument ownership have been consolidated, and custom multilingual Terminal/SWE-style benchmarks are available. Live-provider task quality remains unmeasured.
 
 ## Reference workflows
 
@@ -35,6 +35,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 | Background terminal tasks | Session-scoped Broker registry with a per-session cap and lifetime; foreground commands auto-move to the background at their timeout; live `read_output` paging; `mode=kill`; `/tasks` command, composer tasks flyout and a bounded `background_tasks` prompt reference | Live-provider long-task behavior and native flyout acceptance |
 | External instructions | Workspace AGENTS and lazy Markdown skills | Instructions remain untrusted and never confer execution authority |
 | Workflow evaluation | Eleven hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; live-provider results are not available |
+| Coding benchmark | Six custom Terminal-style tasks and three SWE-style issue repositories across C#, Python and TypeScript; external graders, reference self-tests, fresh Git baselines and opt-in native RPC trials | Compact public corpus; real-provider Ru quality, official dataset scores and container parity remain unmeasured |
 
 ## Acceptance boundary
 
@@ -47,6 +48,13 @@ Deterministic tests prove wiring, ordering, limits and cancellation. Native Wind
 The baseline runner is [`scripts/evaluate_agent_workflows.ps1`](../../scripts/evaluate_agent_workflows.ps1), with the eleven bounded oracles in [`tests/fixtures/model-working-environment-scenarios.json`](../../tests/fixtures/model-working-environment-scenarios.json). Its default `-ValidateOnly` mode checks oracle completeness, path bounds and workspace hashes without starting the Host or reading provider settings. `-RunScripted` drives a registered case through the real CLI with a temporary data root and workspace. Scripted results prove integration wiring only; quality, token usage, and cost remain unknown unless measured with a pinned live provider/model/protocol.
 
 ## Operating bounds
+
+The [coding benchmark](../../tools/coding-benchmark/README.md) provides separate
+source-task and issue-to-patch suites. Its oracle self-test verifies starter
+failures and reference passes, including SWE regression/preservation groups.
+Native grading executes trusted code and is not an OS sandbox. The existing
+workflow evaluator above still measures scripted integration; neither result
+should be reported as a live-model coding score.
 
 Session listing inspects at most 2,000 metadata entries, parses at most 1,000 documents and returns at most 500 summaries. Uncached reads share a 32 MiB budget and a cooperative five-second deadline; cached summaries expire after one minute. Exhausted scan/read/result budgets set `sessions_truncated`. Ordering is newest first within the inspected set, not a guarantee of the globally newest sessions when the metadata cap is reached.
 

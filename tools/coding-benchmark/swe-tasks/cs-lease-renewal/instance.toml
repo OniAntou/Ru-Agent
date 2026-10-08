@@ -1,0 +1,16 @@
+id = "cs-lease-renewal"
+language = "csharp"
+editable_globs = ["src/**/*.cs"]
+fail_to_pass = [
+  "acquire_preserves_live_owner",
+  "expiry_allows_takeover_and_blocks_old_mutations",
+  "renew_is_versioned_and_extends_from_now",
+  "stale_release_cannot_revoke_renewal",
+  "concurrent_mutations_have_one_winner",
+]
+pass_to_pass = [
+  "invalid_requests_leave_state_unchanged",
+  "reads_do_not_mutate_the_current_lease",
+]
+agent_timeout_sec = 1800
+verifier_timeout_sec = 120

@@ -1,0 +1,16 @@
+id = "ts-session-replay"
+language = "typescript"
+editable_globs = ["src/**/*.ts"]
+fail_to_pass = [
+  "duplicate_delivery_is_idempotent",
+  "gaps_do_not_advance_the_cursor",
+  "generation_replacement_rejects_old_events",
+  "terminal_event_closes_the_generation",
+  "malformed_events_are_rejected_without_mutation",
+]
+pass_to_pass = [
+  "ordered_delta_and_snapshot_projection",
+  "wrong_session_events_do_not_mutate_state",
+]
+agent_timeout_sec = 1800
+verifier_timeout_sec = 120

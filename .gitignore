@@ -19,6 +19,9 @@ backend-dotnet/*/obj/
 tools/ooxml-benchmark/bin/
 tools/ooxml-benchmark/obj/
 
+tools/coding-benchmark/**/bin/
+tools/coding-benchmark/**/obj/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,0 +1,11 @@
+# Build an incremental framed JSON decoder
+
+Implement a production-quality decoder for a byte stream of frames. The wire format is a four-byte unsigned big-endian payload length followed by exactly that many UTF-8 bytes containing one JSON value. Frames may arrive split at any byte boundary or combined in one input chunk.
+
+Keep the public API in `src/framing.py`: `FrameResult(index: int, value: object | None, error: str | None)` and `JsonFrameDecoder(max_frame_bytes=65536)`. `feed(chunk: bytes) -> list[FrameResult]` emits one result per completed frame in wire order. Successful results have `error is None`; rejected frames have `value is None` and one stable error code. Use these codes: `frame_too_large`, `invalid_utf8`, `invalid_json`, and `truncated_frame`. JSON `null` is a successful value, so distinguish it from failure by `error`.
+
+Validate that the configured maximum is a positive integer and that each chunk is bytes-like. A length greater than the configured maximum rejects exactly that frame with `frame_too_large` immediately when its header is complete; discard its declared payload before reading the next frame. If EOF arrives while discarding that payload, do not emit another error for the already rejected frame. Decode UTF-8 strictly and parse exactly one JSON value (the standard JSON parser's normal trailing-whitespace behavior applies). A malformed frame must not poison following frames, including when both occur in one `feed` call. Empty chunks do nothing. Increment `index` once for each complete or rejected frame, starting at zero.
+
+`finish() -> list[FrameResult]` closes the decoder. If an unrejected partial header or payload remains, emit exactly one `truncated_frame` result for that frame and increment its index. A clean finish emits nothing. Calling `finish()` again returns an empty list. Any `feed()` after finish raises `RuntimeError`. Apart from oversized-header rejection, do not emit a value or partial result before a full payload arrives. No third-party dependencies.
+
+The visible smoke program demonstrates one happy path. The grader also checks every-byte chunking, generated partitions, malformed recovery, exact bounds, lifecycle, and generated JSON values. You may edit only `src/**/*.py`.

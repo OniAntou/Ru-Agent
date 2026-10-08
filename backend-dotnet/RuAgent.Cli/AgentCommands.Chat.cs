@@ -16,13 +16,6 @@ namespace RuAgent.Cli;
 
 public sealed partial class AgentCommands
 {
-    private static string? ReadSettingString(JsonElement settings, string propertyName) =>
-        settings.ValueKind == JsonValueKind.Object
-        && settings.TryGetProperty(propertyName, out var value)
-        && value.ValueKind == JsonValueKind.String
-            ? value.GetString()?.Trim()
-            : null;
-
     private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
     {
         if (settings.TryGetProperty("reasoning_effort", out var direct) && !string.IsNullOrWhiteSpace(direct.GetString()))
@@ -164,9 +157,9 @@ public sealed partial class AgentCommands
         var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
         var workspaceLabel = ws;
 
-        var pendingImages = new List<Images.CliImageAttachment>();
-        var pendingTexts = new List<Attachments.CliTextAttachment>();
-        ChatSubmissionSnapshot? retryableSubmission = null;
+        using var submissions = new ChatSubmissionState();
+        var pendingImages = submissions.Images;
+        var pendingTexts = submissions.Texts;
         void HoldSubmissionForRetry(ChatSubmissionSnapshot? submission)
         {
             if (submission is null)
@@ -174,12 +167,8 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            retryableSubmission ??= submission;
+            submissions.HoldForRetry(submission);
             tgLoop?.PauseQueuedSubmissions();
-            foreach (var image in submission.Images)
-            {
-                DeleteTempFile(image);
-            }
         }
         if (cmd.Images is { Count: > 0 })
         {
@@ -194,7 +183,7 @@ public sealed partial class AgentCommands
                     return 1;
                 }
 
-                pendingImages.Add(attachment);
+                submissions.Add(attachment);
             }
         }
 
@@ -504,11 +493,11 @@ public sealed partial class AgentCommands
             }
         }
 
-        static void DeleteTempFile(Images.CliImageAttachment attachment) => DeleteTempPath(attachment.TempPath);
+        static void DeleteTempFile(Images.CliImageAttachment attachment) => ChatSubmissionState.Release([attachment]);
 
         string CurrentAttachmentLabel()
         {
-            var count = pendingImages.Count + pendingTexts.Count;
+            var count = submissions.Count;
             return count == 0
                 ? workspaceLabel
                 : $"[{count} attachment{(count == 1 ? string.Empty : "s")}] {workspaceLabel}";
@@ -577,7 +566,7 @@ public sealed partial class AgentCommands
                 attachment = attachment with { TempPath = tempPath };
             }
 
-            pendingImages.Add(attachment);
+            submissions.Add(attachment);
             RefreshAttachmentLabels();
             if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
             {
@@ -586,7 +575,7 @@ public sealed partial class AgentCommands
                     $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
             }
 
-            await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
+            await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {attachment.Label}").ConfigureAwait(false);
         }
 
         async Task AttachFileAsync(string path)
@@ -606,9 +595,9 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            pendingTexts.Add(attachment);
+            submissions.Add(attachment);
             RefreshAttachmentLabels();
-            await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {attachment.Label}").ConfigureAwait(false);
+            await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {attachment.Label}").ConfigureAwait(false);
         }
 
         /// <summary>
@@ -1862,9 +1851,8 @@ public sealed partial class AgentCommands
 
                 var image = loaded.Image;
                 var text = loaded.Text;
-                var count = pendingImages.Count + pendingTexts.Count;
-                var bytes = checked(pendingImages.Sum(attachment => attachment.ByteSize)
-                    + pendingTexts.Sum(attachment => attachment.ByteSize)
+                var count = submissions.Count;
+                var bytes = checked(submissions.SourceBytes
                     + (image?.ByteSize ?? text?.ByteSize ?? 0));
                 if (count >= ChatProjectFileWorkflow.MaxPendingAttachments
                     || bytes > ChatProjectFileWorkflow.MaxPendingAttachmentBytes
@@ -1876,7 +1864,7 @@ public sealed partial class AgentCommands
 
                 if (image is not null)
                 {
-                    pendingImages.Add(image);
+                    submissions.Add(image);
                     if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
                     {
                         await WriteDiagnosticLineAsync(_err, $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
@@ -1884,12 +1872,12 @@ public sealed partial class AgentCommands
                 }
                 else if (text is not null)
                 {
-                    pendingTexts.Add(text);
+                    submissions.Add(text);
                 }
 
                 RefreshAttachmentLabels();
                 var label = image?.Label ?? text?.Label ?? "file";
-                await WriteDiagnosticLineAsync(humanOut, $"attached [{pendingImages.Count + pendingTexts.Count}] {label}").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {label}").ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -2099,13 +2087,7 @@ public sealed partial class AgentCommands
             usage = new Tui.TuiUsageTracker();
             await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
-            foreach (var attachment in pendingImages)
-            {
-                DeleteTempFile(attachment);
-            }
-
-            pendingImages.Clear();
-            pendingTexts.Clear();
+            submissions.ClearPending();
             RefreshAttachmentLabels();
 
             sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
@@ -2169,11 +2151,7 @@ public sealed partial class AgentCommands
                 ? pendingTexts
                 : submission.Texts;
             if (submission is not null
-                && (!string.Equals(submission.SessionId, sessionId, StringComparison.Ordinal)
-                    || !string.Equals(submission.WorkspacePath, canonicalWorkspace, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(submission.Preset, cmd.Preset, StringComparison.Ordinal)
-                    || !string.Equals(submission.Backend, backendName, StringComparison.Ordinal)
-                    || !string.Equals(submission.Model, activeModel, StringComparison.Ordinal)))
+                && !submission.MatchesContext(sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel))
             {
                 HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(_err, "submission_context_changed: queued prompt is held; restore its session/model selection and use /retry").ConfigureAwait(false);
@@ -2185,16 +2163,7 @@ public sealed partial class AgentCommands
                 try
                 {
                     var liveSettings = await _settingsClient.GetAsync(ct).ConfigureAwait(false);
-                    var liveBackend = ReadSettingString(liveSettings, "backend");
-                    var modelKey = liveBackend switch
-                    {
-                        "OpenAI" => "openai_model",
-                        "Anthropic" => "anthropic_model",
-                        _ => "model",
-                    };
-                    var liveModel = ReadSettingString(liveSettings, modelKey);
-                    if (!string.Equals(liveBackend, submission.Backend, StringComparison.Ordinal)
-                        || !string.Equals(liveModel, submission.Model, StringComparison.Ordinal))
+                    if (!submission.MatchesSelection(liveSettings))
                     {
                         HoldSubmissionForRetry(submission);
                         await WriteDiagnosticLineAsync(_err, "submission_context_changed: backend/model settings changed; restore the admitted selection and use /retry").ConfigureAwait(false);
@@ -2283,19 +2252,17 @@ public sealed partial class AgentCommands
                 presetUpdate.Version,
                 idempotencyKey,
                 imagePayloads);
-            const int MaxComposedPromptChars = 16_000;
-            if (promptText.Length > MaxComposedPromptChars)
+            if (promptText.Length > ChatSubmissionState.MaxComposedPromptChars)
             {
                 HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(
                     _err,
-                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {MaxComposedPromptChars}); detach or shorten attachments; prompt held for /retry").ConfigureAwait(false);
+                    $"prompt_too_large: the composed prompt is {promptText.Length} chars (limit {ChatSubmissionState.MaxComposedPromptChars}); detach or shorten attachments; prompt held for /retry").ConfigureAwait(false);
                 return;
             }
             var presetCommitted = false;
             var hostAccepted = false;
-            var sentImages = new List<Images.CliImageAttachment>();
-            var sentTexts = new List<Attachments.CliTextAttachment>();
+            ChatSubmissionState.Transfer? transfer = null;
 
             try
             {
@@ -2318,7 +2285,7 @@ public sealed partial class AgentCommands
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
                 hostAccepted = true;
-                retryableSubmission = null;
+                submissions.Accept();
                 tgLoop?.ResumeQueuedSubmissions();
                 activeRunId = resp.RunId;
                 followableRunId = resp.RunId;
@@ -2328,13 +2295,7 @@ public sealed partial class AgentCommands
                     // The run owns the attachments now. The lists clear immediately, but
                     // the temp files wait for the trust gate: a declined challenge restores
                     // the lists intact, so the files must still exist then.
-                    sentImages = submissionImages.ToList();
-                    sentTexts = submissionTexts.ToList();
-                    if (submission is null)
-                    {
-                        pendingImages.Clear();
-                        pendingTexts.Clear();
-                    }
+                    transfer = submissions.BeginTransfer(submissionImages, submissionTexts, submission is null);
                     RefreshAttachmentLabels();
                 }
 
@@ -2384,10 +2345,10 @@ public sealed partial class AgentCommands
                     // this turn: nothing is executing, and the live row must not keep spinning
                     // over a run that is not going to produce a reply. The attachments were
                     // never processed, so they come back for a retry.
-                    if (sentImages.Count > 0 || sentTexts.Count > 0)
+                    if (transfer is not null)
                     {
-                        pendingImages.AddRange(sentImages);
-                        pendingTexts.AddRange(sentTexts);
+                        transfer.ReturnToPending();
+                        transfer = null;
                         RefreshAttachmentLabels();
                     }
 
@@ -2414,13 +2375,8 @@ public sealed partial class AgentCommands
                 }
 
                 presetCommitted = true;
-                foreach (var image in sentImages)
-                {
-                    DeleteTempFile(image);
-                }
-
-                sentImages.Clear();
-                sentTexts.Clear();
+                transfer?.Dispose();
+                transfer = null;
 
                 await FollowRunAsync(resp.RunId, 0, turnCts.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
@@ -2520,6 +2476,10 @@ public sealed partial class AgentCommands
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
+            finally
+            {
+                transfer?.Dispose();
+            }
             await _out.FlushAsync().ConfigureAwait(false);
         }
         try
@@ -2606,13 +2566,13 @@ public sealed partial class AgentCommands
                 }
                 if (slashCmd == "/retry")
                 {
-                    if (retryableSubmission is null)
+                    if (submissions.Retryable is null)
                     {
                         await WriteDiagnosticLineAsync(humanOut, "no held submission to retry").ConfigureAwait(false);
                         return true;
                     }
 
-                    var retry = retryableSubmission;
+                    var retry = submissions.Retryable;
                     await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
                     return true;
                 }
@@ -2724,16 +2684,10 @@ public sealed partial class AgentCommands
                 }
                 if (slashCmd is "/detach")
                 {
-                    var total = pendingImages.Count + pendingTexts.Count;
+                    var total = submissions.Count;
                     if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
                     {
-                        foreach (var attachment in pendingImages)
-                        {
-                            DeleteTempFile(attachment);
-                        }
-
-                        pendingImages.Clear();
-                        pendingTexts.Clear();
+                        submissions.ClearPending();
                         RefreshAttachmentLabels();
                         await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
                         return true;
@@ -2745,20 +2699,8 @@ public sealed partial class AgentCommands
                         return true;
                     }
 
-                    if (index <= pendingImages.Count)
-                    {
-                        var removedImage = pendingImages[index - 1];
-                        pendingImages.RemoveAt(index - 1);
-                        DeleteTempFile(removedImage);
-                        await WriteDiagnosticLineAsync(humanOut, $"detached {removedImage.FileName}").ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var textIndex = index - pendingImages.Count - 1;
-                        var removedText = pendingTexts[textIndex];
-                        pendingTexts.RemoveAt(textIndex);
-                        await WriteDiagnosticLineAsync(humanOut, $"detached {removedText.FileName}").ConfigureAwait(false);
-                    }
+                    var detachedName = submissions.Detach(index);
+                    await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
 
                     RefreshAttachmentLabels();
                     return true;
@@ -2856,59 +2798,16 @@ public sealed partial class AgentCommands
                 var guiDispatcher = new ChatLineDispatcher(
                     HandleSlashLineWithDocumentAsync,
                     (prompt, ct) => HandlePromptLineAsync(prompt, ct));
-                loop.SetSubmissionSnapshotFactory(line =>
-                {
-                    var isSlashCommand = line.TrimStart().StartsWith('/');
-                    var isPausedControlCommand = ChatSubmissionSnapshot.IsPausedControlCommand(line);
-                    if (isSlashCommand
-                        && (pendingImages.Count > 0 || pendingTexts.Count > 0)
-                        && !isPausedControlCommand)
-                    {
-                        return null;
-                    }
-
-                    if (parkedRunId is not null
-                        && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase)
-                        && (pendingImages.Count > 0 || pendingTexts.Count > 0))
-                    {
-                        return null;
-                    }
-
-                    var snapshot = ChatSubmissionSnapshot.Create(
-                        line,
-                        sessionId,
-                        canonicalWorkspace,
-                        cmd.Preset,
-                        backendName ?? string.Empty,
-                activeModel,
-                        isSlashCommand ? Array.Empty<Images.CliImageAttachment>() : pendingImages,
-                        isSlashCommand ? Array.Empty<Attachments.CliTextAttachment>() : pendingTexts);
-                    return Attachments.AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > 16_000
-                        ? null
-                        : snapshot;
-                });
+                loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
+                    line, sessionId, canonicalWorkspace, cmd.Preset,
+                    backendName ?? string.Empty, activeModel, parkedRunId is not null));
                 loop.SetSubmissionOwnershipHandlers(
                     snapshot =>
                     {
-                        foreach (var image in snapshot.Images)
-                        {
-                            pendingImages.Remove(image);
-                        }
-
-                        foreach (var file in snapshot.Texts)
-                        {
-                            pendingTexts.Remove(file);
-                        }
-
+                        submissions.Admit(snapshot);
                         RefreshAttachmentLabels();
                     },
-                    snapshot =>
-                    {
-                        foreach (var image in snapshot.Images)
-                        {
-                            DeleteTempFile(image);
-                        }
-                    });
+                    snapshot => ChatSubmissionState.Release(snapshot.Images));
                 loop.SetStateChangingCommandClassifier(IsStateChangingSlashCommand);
                 loop.SetSubmissionHandler(async (submission, _, ct) =>
                 {
@@ -2933,7 +2832,7 @@ public sealed partial class AgentCommands
                 // these seams let the loop ask for the label/count and claim Ctrl+V
                 // clipboard pastes and dropped paths without parsing anything itself.
                 loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
-                loop.SetAttachmentCountProvider(() => pendingImages.Count + pendingTexts.Count);
+                loop.SetAttachmentCountProvider(() => submissions.Count);
                 loop.SetPasteHandler(ClipboardAttachAsync);
                 loop.SetDropHandler(line =>
                 {
@@ -3007,10 +2906,7 @@ public sealed partial class AgentCommands
         finally
         {
             // Pending clipboard screenshots do not outlive the chat that owns them.
-            foreach (var image in pendingImages)
-            {
-                DeleteTempFile(image);
-            }
+            submissions.ClearPending();
         }
 
         return 0;

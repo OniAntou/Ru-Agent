@@ -1508,22 +1508,8 @@ internal sealed class AgentToolExecutionPipeline
         }
     }
 
-    private static byte[] SerializeModelToolCall(ModelToolCall call)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("provider_call_id", call.ProviderCallId);
-            writer.WriteString("tool_id", call.ToolId);
-            writer.WriteString("tool_version", call.ToolVersion);
-            writer.WritePropertyName("arguments");
-            call.Arguments.WriteTo(writer);
-            writer.WriteEndObject();
-        }
-
-        return stream.ToArray();
-    }
+    private static byte[] SerializeModelToolCall(ModelToolCall call) =>
+        ToolArgumentsCodec.Serialize(call.ProviderCallId, call.ToolId, call.ToolVersion, call.Arguments);
 }
 
 internal sealed record AgentToolPipelineResult

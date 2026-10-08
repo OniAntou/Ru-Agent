@@ -1,0 +1,15 @@
+id = "py-migration-rollback"
+language = "python"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = [
+  "failed_migration_rolls_back_all_statements_and_version",
+  "retry_applies_failed_migration_after_data_repair",
+  "caller_transaction_survives_migration_failure",
+  "future_schema_version_fails_without_mutation",
+]
+pass_to_pass = [
+  "successful_migration_preserves_connection_configuration",
+  "current_schema_is_idempotent_and_complete",
+]
+agent_timeout_sec = 1800
+verifier_timeout_sec = 120

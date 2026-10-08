@@ -1,0 +1,21 @@
+schema_version = "1.4"
+
+[metadata]
+id = "py-stream-parser"
+language = "python"
+difficulty = "hard"
+category = "software-engineering"
+editable_globs = ["src/**/*.py"]
+check_groups = ["fragmentation", "framing-boundaries", "utf8-json-validation", "malformed-recovery", "size-bounds", "eof-lifecycle"]
+
+[agent]
+timeout_sec = 1800
+
+[verifier]
+timeout_sec = 120
+
+[environment]
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+network_mode = "no-network"

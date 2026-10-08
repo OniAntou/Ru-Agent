@@ -1,0 +1,21 @@
+schema_version = '1.4'
+
+[metadata]
+id = 'cs-single-flight-cache'
+language = 'csharp'
+difficulty = 'hard'
+category = 'software-engineering'
+editable_globs = ['src/**/*.cs']
+check_groups = ['constructor_validation', 'same_key_flight', 'waiter_cancellation', 'retry_after_failure', 'invalidation_generation', 'ttl_expiration', 'lru_capacity', 'distinct_keys_concurrent']
+
+[agent]
+timeout_sec = 1800
+
+[verifier]
+timeout_sec = 120
+
+[environment]
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+network_mode = 'no-network'

@@ -194,6 +194,12 @@ resumes by re-evaluation without a new model proposal. Read-only executions
 may overlap up to eight at a time while mutation/terminal barriers and receipt
 order remain intact.
 
+`ToolArgumentsCodec` owns the durable tool-call envelope serialization and
+interpretation. Retained input and approval recovery share exact identity and
+argument matching; HTTP approval binding keeps its existing client-audience
+and legacy compatibility checks. Codec sharing does not move policy decisions
+or tool execution out of their existing owners.
+
 Full-access terminal authority delegates execution to the current Windows user.
 It can read or change data outside the workspace and use the network; it is not
 a network/path sandbox. Hard timeout, output cap, cancellation, redaction, and
@@ -265,6 +271,7 @@ reconciliation surfaces from Phase 3:
 - Office extraction: one 400,000-character budget covers section labels, separators, paragraphs, tables and cells during traversal. DOCX nesting over 32 levels fails as `TooLarge`; XLSX uses cell references to preserve bounded blank columns and appends shared strings within the remaining budget. XML package guards remain separate from the extracted-text budget.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; it renders only safe envelope fields and exposes `agent approve`/`deny`, policy commands, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
+- CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
 
 The current Agent flow is:
 

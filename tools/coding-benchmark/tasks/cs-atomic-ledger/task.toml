@@ -1,0 +1,21 @@
+schema_version = '1.4'
+
+[metadata]
+id = 'cs-atomic-ledger'
+language = 'csharp'
+difficulty = 'hard'
+category = 'software-engineering'
+editable_globs = ['src/**/*.cs']
+check_groups = ['ordered_batch', 'atomic_rejection', 'idempotent_replay', 'version_conflicts', 'overflow_and_funds', 'snapshot_isolation', 'concurrent_linearizability']
+
+[agent]
+timeout_sec = 1800
+
+[verifier]
+timeout_sec = 120
+
+[environment]
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+network_mode = 'no-network'

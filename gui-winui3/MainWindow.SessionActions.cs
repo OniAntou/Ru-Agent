@@ -214,6 +214,8 @@ namespace RuApp
 
                 bool wasActive = string.Equals(_chatView?.CurrentSessionId, sessionId, StringComparison.OrdinalIgnoreCase);
 
+                _chatView?.ForgetSidePanelState(sessionId);
+
                 await LoadSessionsAsync();
 
                 // If the deleted session was currently active, switch to another session or create a new one

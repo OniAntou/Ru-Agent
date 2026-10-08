@@ -87,6 +87,7 @@ namespace RuApp
 
                 ApplyTheme(_themePreferenceStore.Load());
                 InitializeSidebarHoverEffects();
+                InitializeSidePanelToggle();
 
                 this.Closed += OnWindowClosed;
 

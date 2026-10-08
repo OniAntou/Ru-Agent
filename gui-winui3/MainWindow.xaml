@@ -18,7 +18,68 @@
         </Grid.RowDefinitions>
 
         <!-- Custom App TitleBar (Clean draggable titlebar) -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent"/>
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent">
+            <Grid.Resources>
+                <Style x:Key="TitleBarIconButtonStyle" TargetType="Button">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="Width" Value="36" />
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="UseSystemFocusVisuals" Value="True" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal" />
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Root.Background" Value="{StaticResource RuAccentSoftBrush}" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Root.Background" Value="{StaticResource RuLineBrush}" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Root.Opacity" Value="0.4" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Grid.Resources>
+
+            <!-- Hides and restores the whole right side surface. Its right margin
+                 is the caption buttons' inset, set in code, so it sits immediately
+                 left of Minimize. -->
+            <Button x:Name="SidePanelToggleButton"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    IsEnabled="False"
+                    Click="OnSidePanelToggleClick"
+                    Style="{StaticResource TitleBarIconButtonStyle}"
+                    ToolTipService.ToolTip="Show side panel"
+                    AutomationProperties.Name="Show side panel">
+                <Viewbox Width="16" Height="16">
+                    <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
+                          Stroke="{StaticResource RuInkBrush}"
+                          StrokeThickness="1.2"
+                          StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round" />
+                </Viewbox>
+            </Button>
+        </Grid>
 
         <!-- Main Content Area -->
         <Grid x:Name="RootLayoutGrid" Grid.Row="1" SizeChanged="RootLayoutGrid_SizeChanged">

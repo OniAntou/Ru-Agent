@@ -6,6 +6,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -210,26 +211,69 @@ namespace RuApp.Controls
 
         private void OnAddTabClick(object sender, RoutedEventArgs e)
         {
-            var menu = new MenuFlyout();
+            var closed = new List<SidePanelTabKind>();
             foreach (var kind in new[] { SidePanelTabKind.Changes, SidePanelTabKind.Tasks })
             {
-                if (_openTabs.Contains(kind))
+                if (!_openTabs.Contains(kind))
                 {
-                    continue;
+                    closed.Add(kind);
                 }
-
-                var item = new MenuFlyoutItem
-                {
-                    Text = kind == SidePanelTabKind.Changes ? "Changes" : "Tasks",
-                };
-                item.Click += (_, _) => TabAddRequested?.Invoke(this, kind);
-                menu.Items.Add(item);
             }
 
-            if (menu.Items.Count > 0)
+            if (closed.Count == 0)
             {
-                menu.ShowAt(AddTabButton);
+                return;
             }
+
+            var items = new StackPanel { Spacing = 2 };
+            var flyout = new Flyout
+            {
+                Placement = FlyoutPlacementMode.Bottom,
+                FlyoutPresenterStyle = (Style)Resources["SidePanelFlyoutPresenterStyle"],
+            };
+            foreach (var kind in closed)
+            {
+                var item = BuildAddTabItem(kind);
+                item.Click += (_, _) =>
+                {
+                    flyout.Hide();
+                    TabAddRequested?.Invoke(this, kind);
+                };
+                items.Children.Add(item);
+            }
+
+            flyout.Content = items;
+            flyout.ShowAt(AddTabButton);
+        }
+
+        private Button BuildAddTabItem(SidePanelTabKind kind)
+        {
+            var content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            content.Children.Add(new FontIcon
+            {
+                Glyph = kind == SidePanelTabKind.Changes ? "\uE70F" : "\uE756",
+                FontSize = 12,
+                Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = kind == SidePanelTabKind.Changes ? "Changes" : "Tasks",
+                FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                FontSize = 12,
+                Foreground = (Brush)Application.Current.Resources["RuInkBrush"],
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            return new Button
+            {
+                Content = content,
+                Style = (Style)Resources["SidePanelFlyoutItemStyle"],
+            };
         }
 
         private void OnChangeRowToggleClick(object sender, RoutedEventArgs e)

@@ -62,6 +62,17 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
+    public void The_add_tab_flyout_opens_below_the_strip_control()
+    {
+        // The FlyoutBase default placement is Top, which opened the add-tab menu
+        // above the strip as a detached pill; the placement is pinned here.
+        var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
+        string click = GuiSource.MethodBody(code, "OnAddTabClick");
+        Assert.Contains("FlyoutPlacementMode.Bottom", click, StringComparison.Ordinal);
+        Assert.Contains("ShowAt", click, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_title_bar_toggle_sits_beside_the_caption_buttons_and_forwards_input()
     {
         var document = GuiSource.Xml("MainWindow.xaml");

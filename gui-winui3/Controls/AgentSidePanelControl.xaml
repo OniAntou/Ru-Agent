@@ -10,6 +10,109 @@
     HorizontalAlignment="Stretch"
     VerticalAlignment="Stretch">
 
+    <UserControl.Resources>
+        <!-- The shared toolbar style paints its hover in the canvas colour, which is
+             invisible on the panel's own canvas surface; these local styles lift a
+             control with the surface colour instead. -->
+        <Style x:Key="SidePanelStripButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuSurfaceBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuLineBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SidePanelFlyoutPresenterStyle" TargetType="FlyoutPresenter">
+            <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppCardCornerRadius}" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="MinWidth" Value="170" />
+        </Style>
+
+        <Style x:Key="SidePanelFlyoutItemStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuCanvasBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{StaticResource RuLineBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <!-- The right side surface in one host: the floating summary card and the
          full-height details panel. The root grid carries no background so the
          empty area stays hit-test transparent to the chat behind it. -->
@@ -141,12 +244,14 @@
                     Background="{StaticResource RuLineBrush}"
                     Opacity="0.6" />
 
-            <Grid Margin="14,10,12,0" RowDefinitions="Auto,*">
-                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="2">
-                    <!-- The chip wrapper is a Border, not the label button: the shared
-                         toolbar style hardcodes its root background, so the active
-                         fill must live on a surface the code actually owns. -->
+            <Grid RowDefinitions="40,*">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="2"
+                      Margin="14,0,12,0"
+                      VerticalAlignment="Center">
+                    <!-- The chip wrapper is a Border, not the label button: the active
+                         fill must live on a surface the code owns. -->
                     <Border x:Name="ChangesChip" Grid.Column="0"
+                            VerticalAlignment="Center"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
                             BorderBrush="Transparent"
@@ -154,9 +259,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <Button x:Name="ChangesTabButton"
                                     Click="OnChangesTabClick"
-                                    Style="{StaticResource RuToolbarButtonStyle}"
-                                    CornerRadius="{StaticResource AppControlCornerRadius}"
-                                    Padding="8,4"
+                                    Style="{StaticResource SidePanelStripButtonStyle}"
                                     ToolTipService.ToolTip="Changes"
                                     AutomationProperties.Name="Changes tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -170,10 +273,9 @@
                             </Button>
                             <Button x:Name="ChangesTabCloseButton"
                                     Click="OnChangesTabCloseClick"
-                                    Style="{StaticResource RuToolbarButtonStyle}"
-                                    CornerRadius="{StaticResource AppControlCornerRadius}"
-                                    Width="22"
-                                    Height="22"
+                                    Style="{StaticResource SidePanelStripButtonStyle}"
+                                    Width="24"
+                                    Padding="0"
                                     ToolTipService.ToolTip="Close Changes"
                                     AutomationProperties.Name="Close Changes tab">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
@@ -182,6 +284,7 @@
                     </Border>
 
                     <Border x:Name="TasksChip" Grid.Column="1"
+                            VerticalAlignment="Center"
                             CornerRadius="{StaticResource AppControlCornerRadius}"
                             BorderThickness="1"
                             BorderBrush="Transparent"
@@ -189,9 +292,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <Button x:Name="TasksTabButton"
                                     Click="OnTasksTabClick"
-                                    Style="{StaticResource RuToolbarButtonStyle}"
-                                    CornerRadius="{StaticResource AppControlCornerRadius}"
-                                    Padding="8,4"
+                                    Style="{StaticResource SidePanelStripButtonStyle}"
                                     ToolTipService.ToolTip="Tasks"
                                     AutomationProperties.Name="Tasks tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -205,10 +306,9 @@
                             </Button>
                             <Button x:Name="TasksTabCloseButton"
                                     Click="OnTasksTabCloseClick"
-                                    Style="{StaticResource RuToolbarButtonStyle}"
-                                    CornerRadius="{StaticResource AppControlCornerRadius}"
-                                    Width="22"
-                                    Height="22"
+                                    Style="{StaticResource SidePanelStripButtonStyle}"
+                                    Width="24"
+                                    Padding="0"
                                     ToolTipService.ToolTip="Close Tasks"
                                     AutomationProperties.Name="Close Tasks tab">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
@@ -219,10 +319,9 @@
                     <Button x:Name="AddTabButton"
                             Grid.Column="2"
                             Click="OnAddTabClick"
-                            Style="{StaticResource RuToolbarButtonStyle}"
-                            CornerRadius="{StaticResource AppControlCornerRadius}"
-                            Width="26"
-                            Height="26"
+                            Style="{StaticResource SidePanelStripButtonStyle}"
+                            Width="28"
+                            Padding="0"
                             ToolTipService.ToolTip="Add tab"
                             AutomationProperties.Name="Add tab">
                         <FontIcon Glyph="&#xE710;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
@@ -231,10 +330,9 @@
                     <Button x:Name="FullscreenButton"
                             Grid.Column="4"
                             Click="OnFullscreenClick"
-                            Style="{StaticResource RuToolbarButtonStyle}"
-                            CornerRadius="{StaticResource AppControlCornerRadius}"
-                            Width="26"
-                            Height="26"
+                            Style="{StaticResource SidePanelStripButtonStyle}"
+                            Width="28"
+                            Padding="0"
                             ToolTipService.ToolTip="Fullscreen panel"
                             AutomationProperties.Name="Fullscreen panel">
                         <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
@@ -243,18 +341,23 @@
                     <Button x:Name="CollapseButton"
                             Grid.Column="5"
                             Click="OnCollapseClick"
-                            Style="{StaticResource RuToolbarButtonStyle}"
-                            CornerRadius="{StaticResource AppControlCornerRadius}"
-                            Width="26"
-                            Height="26"
+                            Style="{StaticResource SidePanelStripButtonStyle}"
+                            Width="28"
+                            Padding="0"
                             ToolTipService.ToolTip="Collapse to summary"
                             AutomationProperties.Name="Collapse side panel">
                         <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
                 </Grid>
 
-                <Grid Grid.Row="1">
-                    <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                <Border Grid.Row="0"
+                        VerticalAlignment="Bottom"
+                        Height="1"
+                        Background="{StaticResource RuLineBrush}"
+                        Opacity="0.7" />
+
+                <Grid Grid.Row="1" Margin="14,10,12,0">
+                    <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                             <TextBlock Text="Changes"
                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -340,7 +443,7 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                    <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,*">
                         <TextBlock x:Name="PanelTasksStatusText"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="11.5"

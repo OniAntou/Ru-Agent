@@ -6,12 +6,18 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,799 passed / 0 failed / 0 skipped** (2026-10-08, right side surface and title-bar toggle; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,817 passed / 0 failed / 0 skipped** (2026-10-09, side panel revisions and interactive terminal; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **204 passed**, 1 skipped (2026-10-08, custom coding benchmark delivery). `ruff check tests scripts tools` and `pip check` passed. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Side panel revisions and interactive terminal (2026-10-09)
+
+The complete sequential Debug matrix passed all **12 projects**: **5,817 passed / 0 failed / 0 skipped**, including **1,322 GUI tests**. The Python suite passed **204 tests with one skip**.
+
+The right side surface gained its final shape: only the Files tab opens by default; the summary card's Changes and Tasks rows (whole-row click targets, Codex-style) open those tabs; the add control opens a real interactive terminal built from ConPTY plus vendored xterm.js (MIT) in WebView2, running the user's PowerShell in the session workspace — a user-only surface the Agent can neither see nor call, killed with the app or a workspace change, with the WebView2 runtime that ships with Windows 11. Tabs drag-reorder, the strip hovers as one block and scrolls without a visible bar, tab switches and file-tree rows animate, and the collapse control draws the same panel glyph as the title-bar toggle. A Windows quirk was found and fixed on the way: a parent with redirected standard handles hands those stale values to its ConPTY child and breaks the console attach; declaring empty standard handles in the child's startup info restores it (verified in both redirected and no-console hosts). The Broker remains the only execution authority; no route, preset, approval, or provider behavior changed. Native terminal rendering, resize and Unicode acceptance remain manual.
 
 ## Right side panel delivery (2026-10-08)
 

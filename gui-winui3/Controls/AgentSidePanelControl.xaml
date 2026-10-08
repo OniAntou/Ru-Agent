@@ -1,0 +1,390 @@
+<UserControl
+    x:Class="RuApp.Controls.AgentSidePanelControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:RuApp.Controls"
+    xmlns:models="using:RuApp.Models"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+
+    <!-- The right side surface in one host: the floating summary card and the
+         full-height details panel. The root grid carries no background so the
+         empty area stays hit-test transparent to the chat behind it. -->
+    <Grid x:Name="SurfaceRoot">
+
+        <Border x:Name="CardHost"
+                Width="280"
+                Margin="0,16,16,0"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="{StaticResource RuSurfaceBrush}"
+                BorderBrush="{StaticResource RuLineBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource AppCardCornerRadius}"
+                Padding="14,12"
+                Visibility="Collapsed"
+                AutomationProperties.Name="Session panel">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="CardSlide" />
+            </Border.RenderTransform>
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock x:Name="CardTitleText"
+                               Text="Session"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource RuInkBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="ExpandButton"
+                            Grid.Column="1"
+                            Click="OnExpandClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            ToolTipService.ToolTip="Open details panel"
+                            AutomationProperties.Name="Open details panel">
+                        <FontIcon Glyph="&#xE76C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <FontIcon Glyph="&#xE70F;"
+                              FontSize="12"
+                              Foreground="{StaticResource RuMutedBrush}"
+                              VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Text="Edits"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                        <TextBlock x:Name="CardAddedText"
+                                   Text="+0"
+                                   FontFamily="{StaticResource RuMonoFontFamily}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource RuSuccessBrush}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock x:Name="CardRemovedText"
+                                   Text="−0"
+                                   FontFamily="{StaticResource RuMonoFontFamily}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource RuDangerBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+
+                <Border Height="1" Background="{StaticResource RuLineBrush}" />
+
+                <TextBlock Text="TASKS"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource RuMutedBrush}" />
+
+                <TextBlock x:Name="CardTasksStatusText"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="11.5"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           TextWrapping="Wrap" />
+
+                <ScrollViewer MaxHeight="180"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="CardTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:AgentTaskRow">
+                                <StackPanel Margin="0,0,0,6" Spacing="1">
+                                    <TextBlock Text="{x:Bind Label}"
+                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="11.5"
+                                               Foreground="{StaticResource RuInkBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind DetailText}"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource RuMutedBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <Grid x:Name="PanelHost"
+              Visibility="Collapsed"
+              Background="{StaticResource RuCanvasBrush}"
+              AutomationProperties.Name="Details panel">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="PanelSlide" />
+            </Grid.RenderTransform>
+
+            <controls:SidebarResizerControl x:Name="PanelResizeGrip"
+                                            Width="6"
+                                            Margin="-3,0,0,0"
+                                            HorizontalAlignment="Left"
+                                            Background="Transparent"
+                                            PointerEntered="OnGripPointerEntered"
+                                            PointerExited="OnGripPointerExited"
+                                            PointerPressed="OnGripPointerPressed"
+                                            PointerMoved="OnGripPointerMoved"
+                                            PointerReleased="OnGripPointerReleased" />
+
+            <Border x:Name="PanelDivider"
+                    Width="1"
+                    HorizontalAlignment="Left"
+                    Background="{StaticResource RuLineBrush}"
+                    Opacity="0.6" />
+
+            <Grid Margin="14,10,12,0" RowDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="2">
+                    <!-- The chip wrapper is a Border, not the label button: the shared
+                         toolbar style hardcodes its root background, so the active
+                         fill must live on a surface the code actually owns. -->
+                    <Border x:Name="ChangesChip" Grid.Column="0"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            BorderThickness="1"
+                            BorderBrush="Transparent"
+                            Background="Transparent">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button x:Name="ChangesTabButton"
+                                    Click="OnChangesTabClick"
+                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    Padding="8,4"
+                                    ToolTipService.ToolTip="Changes"
+                                    AutomationProperties.Name="Changes tab">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE70F;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <TextBlock x:Name="ChangesTabLabel"
+                                               Text="Changes"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ChangesTabCloseButton"
+                                    Click="OnChangesTabCloseClick"
+                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    Width="22"
+                                    Height="22"
+                                    ToolTipService.ToolTip="Close Changes"
+                                    AutomationProperties.Name="Close Changes tab">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="TasksChip" Grid.Column="1"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            BorderThickness="1"
+                            BorderBrush="Transparent"
+                            Background="Transparent">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button x:Name="TasksTabButton"
+                                    Click="OnTasksTabClick"
+                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    Padding="8,4"
+                                    ToolTipService.ToolTip="Tasks"
+                                    AutomationProperties.Name="Tasks tab">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <TextBlock x:Name="TasksTabLabel"
+                                               Text="Tasks"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="TasksTabCloseButton"
+                                    Click="OnTasksTabCloseClick"
+                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                    Width="22"
+                                    Height="22"
+                                    ToolTipService.ToolTip="Close Tasks"
+                                    AutomationProperties.Name="Close Tasks tab">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Button x:Name="AddTabButton"
+                            Grid.Column="2"
+                            Click="OnAddTabClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            Width="26"
+                            Height="26"
+                            ToolTipService.ToolTip="Add tab"
+                            AutomationProperties.Name="Add tab">
+                        <FontIcon Glyph="&#xE710;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+
+                    <Button x:Name="FullscreenButton"
+                            Grid.Column="4"
+                            Click="OnFullscreenClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            Width="26"
+                            Height="26"
+                            ToolTipService.ToolTip="Fullscreen panel"
+                            AutomationProperties.Name="Fullscreen panel">
+                        <FontIcon x:Name="FullscreenIcon" Glyph="&#xE740;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+
+                    <Button x:Name="CollapseButton"
+                            Grid.Column="5"
+                            Click="OnCollapseClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            Width="26"
+                            Height="26"
+                            ToolTipService.ToolTip="Collapse to summary"
+                            AutomationProperties.Name="Collapse side panel">
+                        <FontIcon Glyph="&#xE76B;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                            <TextBlock Text="Changes"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="PanelAddedText"
+                                       Grid.Column="1"
+                                       Text="+0"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuSuccessBrush}" />
+                            <TextBlock x:Name="PanelRemovedText"
+                                       Grid.Column="2"
+                                       Text="−0"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuDangerBrush}" />
+                        </Grid>
+
+                        <TextBlock x:Name="ChangesEmptyText"
+                                   Grid.Row="1"
+                                   Text="No changes yet."
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0" />
+
+                        <ScrollViewer Grid.Row="1"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="ChangesList" ItemsSource="{x:Bind Changes, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:ChangesTabRow">
+                                        <StackPanel Margin="0,0,0,6">
+                                            <Button Click="OnChangeRowToggleClick"
+                                                    Tag="{x:Bind}"
+                                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    CornerRadius="{StaticResource AppControlCornerRadius}"
+                                                    Padding="6,3"
+                                                    ToolTipService.ToolTip="Show the diff"
+                                                    AutomationProperties.Name="Toggle change diff">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
+                                                    <FontIcon Glyph="{x:Bind ExpansionGlyph, Mode=OneWay}"
+                                                              FontSize="10"
+                                                              Foreground="{StaticResource RuMutedBrush}"
+                                                              VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{x:Bind FileName}"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuInkBrush}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{x:Bind AddedDeltaText}"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuSuccessBrush}"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="3"
+                                                               Text="{x:Bind RemovedDeltaText}"
+                                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                                               FontSize="11.5"
+                                                               Foreground="{StaticResource RuDangerBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Button>
+                                            <controls:FileEditPreviewControl
+                                                Margin="0,4,0,2"
+                                                Visibility="{x:Bind IsExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                BeforeText="{x:Bind BeforeText}"
+                                                AfterText="{x:Bind AfterText}"
+                                                StartLine="{x:Bind StartLine}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,*" Margin="0,10,0,0">
+                        <TextBlock x:Name="PanelTasksStatusText"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap" />
+
+                        <ScrollViewer Grid.Row="1"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="AgentTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:AgentTaskRow">
+                                        <Grid ColumnSpacing="8" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Spacing="1">
+                                                <TextBlock Text="{x:Bind Label}"
+                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource RuInkBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind DetailText}"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource RuMutedBrush}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Content="Stop"
+                                                    Tag="{x:Bind ExecutionId}"
+                                                    Click="OnTaskStopClick"
+                                                    Padding="8,3"
+                                                    Visibility="{x:Bind StopVisibility}"
+                                                    VerticalAlignment="Center"
+                                                    AutomationProperties.Name="Stop background task" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

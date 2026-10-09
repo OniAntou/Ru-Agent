@@ -1,20 +1,14 @@
 namespace RuApp.Services;
 
 /// <summary>
-/// Pure attachment policy extracted from ChatView (slice 1).
-/// No UI, no I/O. Business logic unchanged.
+/// Pure image/text/code attachment classification and bounded reads shared by
+/// picker, clipboard and drag-and-drop intake.
 /// </summary>
 internal static class ChatAttachmentPolicy
 {
     internal const int MaxImageAttachmentBytes = ImageAttachmentResizer.DefaultMaxInputBytes;
     internal const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
     internal const int MaxImageCount = 4;
-
-    /// <summary>
-    /// An office document is read by <see cref="OfficeDocumentText"/> rather than as
-    /// text, but the extracted text still travels in a prompt, so it is capped like one.
-    /// </summary>
-    internal const int MaxOfficeDocumentBytes = 20 * 1024 * 1024;
 
     /// <summary>
     /// The line shown when a turn carries too many images. Composed from
@@ -61,13 +55,6 @@ internal static class ChatAttachmentPolicy
             _ => false
         };
     }
-
-    /// <summary>
-    /// True for a zip-of-XML office document. These are not text files: reading the raw
-    /// bytes as UTF-8 would put binary noise in the prompt, so the text has to be
-    /// extracted from the OOXML parts first.
-    /// </summary>
-    internal static bool IsOfficeDocumentFile(string name) => RuAgent.Client.OfficeDocumentText.IsSupported(name);
 
     internal static string MimeForExtension(string name)
     {

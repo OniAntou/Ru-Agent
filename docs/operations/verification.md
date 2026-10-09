@@ -13,6 +13,26 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Office attachment retirement (2026-10-09)
+
+Built-in DOCX/XLSX/PPTX extraction, its Open XML dependency, extraction-only
+fixtures/tests and the OOXML benchmark source are removed. GUI picker/paste/drop
+and CLI attachment/project-file intake now accept images and text/code only;
+unsupported formats are refused before text decoding. Workspace documents can
+be processed through installed terminal tools or optional skills; no Office
+converter or authoring suite is bundled. Earlier Office verification entries
+below describe the retired implementation.
+
+The new CLI rejection checks first failed on the old implementation (seven
+failures). Sequential focused Debug runs via `scripts/test_dotnet.ps1` passed:
+CLI **1,278**, GUI **1,297**, client **206**, with zero failures/skips. The GUI
+test build emitted warnings in the unchanged `CodeHighlighterTests.cs` (CS8625)
+and `AgentActivityUiSourceContractTests.cs` (xUnit2031). Restored client, CLI and
+GUI dependency graphs contain neither `DocumentFormat.OpenXml` nor its framework
+package. Documentation/count/link guards passed **19 tests**; `git diff --check`
+passed for the affected files. The full 12-project matrix, publishing and native
+picker/clipboard interaction were not run for this scoped removal.
+
 ## Welcome trim, light meteor retirement and terminal mark (2026-10-09)
 
 The complete sequential Debug matrix passed all **12 projects**: **5,821 passed / 0 failed / 0 skipped**, including **1,326 GUI tests**. The Python suite passed **204 tests with one skip**.

@@ -1258,10 +1258,6 @@ namespace RuApp.Views
 
         private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
 
-        private static bool IsOfficeDocumentFile(string name) => Services.ChatAttachmentPolicy.IsOfficeDocumentFile(name);
-
-        private static int MaxOfficeDocumentBytes => Services.ChatAttachmentPolicy.MaxOfficeDocumentBytes;
-
         private void FailActiveAgentReply(Exception exception)
         {
             AgentReplySnapshot? pending = _replyRenderScheduler.Flush();

@@ -44,21 +44,20 @@ namespace RuApp.Views
             {
                 var props = await file.GetBasicPropertiesAsync();
                 bool isImage = IsImageFile(file.Name);
-                bool isOffice = IsOfficeDocumentFile(file.Name);
                 if (isImage && !CanAcceptImageAttachment())
                 {
                     return;
                 }
 
-                if (!isImage && !isOffice && !IsTextOrCodeFile(file.Name))
+                if (!isImage && !IsTextOrCodeFile(file.Name))
                 {
-                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images, text/code files, and .docx/.pptx/.xlsx documents are accepted.");
+                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images and text/code files are accepted.");
                     return;
                 }
 
                 int maximumBytes = isImage
                     ? MaxImageAttachmentBytes
-                    : isOffice ? MaxOfficeDocumentBytes : MaxTextAttachmentBytes;
+                    : MaxTextAttachmentBytes;
                 if (props.Size > (ulong)maximumBytes)
                 {
                     ShowAgentInlineStatus(isImage
@@ -75,15 +74,7 @@ namespace RuApp.Views
                     return;
                 }
 
-                string mimeType = isOffice
-                        ? "application/vnd.openxmlformats-officedocument"
-                            + (Path.GetExtension(file.Name).ToLowerInvariant() switch
-                            {
-                                ".docx" => "wordprocessingml.document",
-                                ".pptx" => "presentationml.presentation",
-                                _ => "spreadsheetml.sheet",
-                            })
-                        : "text/plain";
+                string mimeType = "text/plain";
                 Microsoft.UI.Xaml.Media.Imaging.BitmapImage? previewImage = null;
 
                 if (isImage)
@@ -92,26 +83,6 @@ namespace RuApp.Views
                     bytes = prepared.Bytes;
                     mimeType = prepared.MimeType;
                     previewImage = prepared.PreviewImage;
-                }
-                else if (isOffice)
-                {
-                    // A zip of XML, not text: the bytes only become a prompt-safe
-                    // attachment after the document parts are read out of them.
-                    var extraction = OfficeDocumentText.Extract(file.Name, bytes);
-                    if (extraction.Result != OfficeDocumentText.Result.Ok)
-                    {
-                        ShowAgentInlineStatus(extraction.Result switch
-                        {
-                            OfficeDocumentText.Result.NoContent =>
-                                $"'{file.Name}' has no readable text. It may be empty or a scan without embedded text.",
-                            OfficeDocumentText.Result.TooLarge =>
-                                $"'{file.Name}' expands past the supported size once its text is extracted.",
-                            _ => $"'{file.Name}' could not be opened. It may be corrupt, encrypted, or not a real {Path.GetExtension(file.Name)} file.",
-                        });
-                        return;
-                    }
-
-                    bytes = System.Text.Encoding.UTF8.GetBytes(extraction.Text);
                 }
 
                 var item = new ImageAttachmentItem

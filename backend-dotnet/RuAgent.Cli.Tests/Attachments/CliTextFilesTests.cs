@@ -49,18 +49,18 @@ public sealed class CliTextFilesTests : IDisposable
         Assert.Equal("# Hello", attachment!.TextContent);
     }
 
-    [Fact]
-    public async Task LoadAsync_ExtractsOfficeDocumentText()
+    [Theory]
+    [InlineData("report.docx")]
+    [InlineData("deck.PPTX")]
+    [InlineData("book.xlsx")]
+    public async Task LoadAsync_RejectsOfficeAttachments(string name)
     {
-        var docx = OfficeDocumentFixtures.Docx(
-            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Quarterly report</w:t></w:r></w:p></w:body></w:document>");
-        await File.WriteAllBytesAsync(Path.Combine(_workspace, "report.docx"), docx);
+        await File.WriteAllBytesAsync(Path.Combine(_workspace, name), [0x50, 0x4B, 0x03, 0x04]);
 
-        var (attachment, error) = await CliTextFiles.LoadAsync("report.docx", _workspace, CancellationToken.None);
+        var (attachment, error) = await CliTextFiles.LoadAsync(name, _workspace, CancellationToken.None);
 
-        Assert.Null(error);
-        Assert.NotNull(attachment);
-        Assert.Contains("Quarterly report", attachment!.TextContent);
+        Assert.Null(attachment);
+        Assert.StartsWith("unsupported_attachment:", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -96,14 +96,16 @@ public sealed class CliTextFilesTests : IDisposable
         Assert.StartsWith("attachment_too_large:", error, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task LoadAsync_MalformedOfficeFailsWithBoundedReason()
+    [Theory]
+    [InlineData("report.docx")]
+    [InlineData("deck.PPTX")]
+    [InlineData("book.xlsx")]
+    [InlineData("archive.zip")]
+    public void LoadBytes_RejectsUnsupportedAttachments(string name)
     {
-        await File.WriteAllBytesAsync(Path.Combine(_workspace, "broken.docx"), new byte[256]);
-
-        var (attachment, error) = await CliTextFiles.LoadAsync("broken.docx", _workspace, CancellationToken.None);
+        var (attachment, error) = CliTextFiles.LoadBytes(name, [0x50, 0x4B, 0x03, 0x04], 4);
 
         Assert.Null(attachment);
-        Assert.StartsWith("invalid_document:", error, StringComparison.Ordinal);
+        Assert.StartsWith("unsupported_attachment:", error, StringComparison.Ordinal);
     }
 }

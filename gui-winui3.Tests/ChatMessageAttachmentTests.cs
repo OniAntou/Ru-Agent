@@ -418,6 +418,21 @@ public sealed class ChatMessageAttachmentTests
         Assert.True(captureSession > ensureSession, "capture the session after a fresh session is activated");
     }
 
+    [Theory]
+    [InlineData("notes.md", false, true)]
+    [InlineData("main.cs", false, true)]
+    [InlineData("data.csv", false, true)]
+    [InlineData("photo.PNG", true, false)]
+    [InlineData("report.docx", false, false)]
+    [InlineData("book.xlsx", false, false)]
+    [InlineData("deck.PPTX", false, false)]
+    [InlineData("archive.zip", false, false)]
+    public void Attachment_policy_accepts_images_and_text_code_only(string name, bool isImage, bool isText)
+    {
+        Assert.Equal(isImage, ChatAttachmentPolicy.IsImageFile(name));
+        Assert.Equal(isText, ChatAttachmentPolicy.IsTextOrCodeFile(name));
+    }
+
     [Fact]
     public void The_image_cap_is_the_policy_constant()
     {

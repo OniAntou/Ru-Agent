@@ -4,7 +4,7 @@ using RuAgent.Cli.Images;
 namespace RuAgent.Cli.Attachments;
 
 /// <summary>
-/// Builds the prompt a turn actually sends: pending text/office attachments are inlined
+/// Builds the prompt a turn actually sends: pending text/code attachments are inlined
 /// as fenced blocks ahead of the typed text, exactly like the WinUI surface composes
 /// them. The run wire has no text-attachment field, so the prompt is the delivery.
 /// </summary>

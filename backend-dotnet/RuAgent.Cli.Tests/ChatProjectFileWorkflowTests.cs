@@ -7,7 +7,7 @@ namespace RuAgent.Cli.Tests;
 public sealed class ChatProjectFileWorkflowTests
 {
     [Fact]
-    public void FindCandidates_FiltersPrivatePathsAndAppliesBoundedSearch()
+    public async Task FindCandidates_FiltersPrivatePathsAndAppliesBoundedSearch()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-files-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "src"));
@@ -15,6 +15,9 @@ public sealed class ChatProjectFileWorkflowTests
         File.WriteAllText(Path.Combine(root, "src", "compiler.md"), "safe");
         File.WriteAllText(Path.Combine(root, ".env.production"), "secret");
         File.WriteAllText(Path.Combine(root, "secrets", "token.txt"), "secret");
+        File.WriteAllBytes(Path.Combine(root, "src", "compiler.docx"), [0x50, 0x4B]);
+        File.WriteAllBytes(Path.Combine(root, "src", "compiler.xlsx"), [0x50, 0x4B]);
+        File.WriteAllBytes(Path.Combine(root, "src", "compiler.PPTX"), [0x50, 0x4B]);
 
         try
         {
@@ -22,6 +25,11 @@ public sealed class ChatProjectFileWorkflowTests
 
             var choice = Assert.Single(choices);
             Assert.Equal(Path.Combine("src", "compiler.md"), choice.RelativePath);
+            var denied = await ChatProjectFileWorkflow.LoadSelectedAsync(
+                Path.Combine(root, "src", "compiler.docx"), root, CancellationToken.None);
+            Assert.Null(denied.Image);
+            Assert.Null(denied.Text);
+            Assert.StartsWith("project_file_denied:", denied.Error, StringComparison.Ordinal);
         }
         finally
         {

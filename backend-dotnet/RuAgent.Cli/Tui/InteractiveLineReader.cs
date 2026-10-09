@@ -15,7 +15,7 @@ public sealed class InteractiveLineReader
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
-        new("/attach", "Attach an image, text or office file", "/attach <path>"),
+        new("/attach", "Attach an image or text/code file", "/attach <path>"),
         new("/attachments", "List pending attachments", "/attachments"),
         new("/detach", "Remove a pending attachment", "/detach <n> | --all"),
         new("/tree", "Show the session tree", "/tree"),

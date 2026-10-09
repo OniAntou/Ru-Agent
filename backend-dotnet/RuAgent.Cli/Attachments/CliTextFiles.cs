@@ -1,22 +1,16 @@
 using System.Text;
 using RuAgent.Cli.Images;
-using RuAgent.Client;
 
 namespace RuAgent.Cli.Attachments;
 
 /// <summary>
-/// Loads one pending text or office file: bounded read, UTF-8 decode for text/code and
-/// OOXML text extraction for .docx/.pptx/.xlsx. Failures come back as bounded one-line
-/// reasons; nothing throws for bad input.
+/// Loads one pending text/code file with a bounded read and UTF-8 BOM detection.
+/// Unsupported formats are refused before decoding.
 /// </summary>
 public static class CliTextFiles
 {
-    public const int MaxOfficeDocumentBytes = 20 * 1024 * 1024;
-
-    public static bool IsOfficeDocument(string name) => OfficeDocumentText.IsSupported(name);
-
     public static bool IsSupported(string name) =>
-        CliImagePolicy.IsTextOrCodeFile(name) || OfficeDocumentText.IsSupported(name);
+        CliImagePolicy.IsTextOrCodeFile(name);
 
     public static async Task<(CliTextAttachment? Attachment, string? Error)> LoadAsync(
         string path,
@@ -41,7 +35,7 @@ public static class CliTextFiles
 
         if (!IsSupported(resolved))
         {
-            return (null, $"unsupported_attachment: {name} is not an image, text or office file");
+            return (null, $"unsupported_attachment: {name} is not a supported text/code file");
         }
 
         if (!File.Exists(resolved))
@@ -59,8 +53,7 @@ public static class CliTextFiles
             return (null, $"attachment_unreadable: {name} - {CliErrorText.ShortMessage(ex.Message)}");
         }
 
-        var isOffice = OfficeDocumentText.IsSupported(resolved);
-        var cap = isOffice ? MaxOfficeDocumentBytes : CliImagePolicy.MaxTextAttachmentBytes;
+        var cap = CliImagePolicy.MaxTextAttachmentBytes;
         if (length > cap)
         {
             return (null,
@@ -93,23 +86,15 @@ public static class CliTextFiles
 
     internal static (CliTextAttachment? Attachment, string? Error) LoadBytes(string name, byte[] bytes, long sourceLength)
     {
-        var isOffice = OfficeDocumentText.IsSupported(name);
-        if (!isOffice)
+        if (!IsSupported(name))
         {
-            return (new CliTextAttachment(name, DecodeText(bytes), sourceLength), null);
+            return (null, $"unsupported_attachment: {name} is not a supported text/code file");
         }
 
-        var extraction = OfficeDocumentText.Extract(name, bytes);
-        return extraction.Result switch
-        {
-            OfficeDocumentText.Result.Ok => (new CliTextAttachment(name, extraction.Text, sourceLength), null),
-            OfficeDocumentText.Result.NoContent => (null, $"empty_document: {name} has no readable text"),
-            OfficeDocumentText.Result.TooLarge => (null, $"document_too_large: {name} exceeds the extraction limits"),
-            _ => (null, $"invalid_document: {name} is not a readable office file"),
-        };
+        return (new CliTextAttachment(name, DecodeText(bytes), sourceLength), null);
     }
 
-    /// <summary>UTF-8 with BOM detection; an office-style mojibake read never happens here.</summary>
+    /// <summary>UTF-8 with BOM detection; the BOM is encoding, not prompt text.</summary>
     private static string DecodeText(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);

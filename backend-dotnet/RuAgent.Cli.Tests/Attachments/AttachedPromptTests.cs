@@ -17,7 +17,7 @@ public sealed class AttachedPromptTests
         var attachments = new List<CliTextAttachment>
         {
             new("notes.md", "# Hi", 2048),
-            new("report.docx", "Quarterly report", 4096),
+            new("report.csv", "Quarterly report", 4096),
         };
 
         var prompt = AttachedPrompt.Compose("summarize", attachments);
@@ -25,8 +25,8 @@ public sealed class AttachedPromptTests
         Assert.Contains("[Attached file: notes.md (2KB)]", prompt, StringComparison.Ordinal);
         Assert.Contains("```md", prompt, StringComparison.Ordinal);
         Assert.Contains("# Hi", prompt, StringComparison.Ordinal);
-        Assert.Contains("[Attached file: report.docx (4KB)]", prompt, StringComparison.Ordinal);
-        Assert.Contains("```docx", prompt, StringComparison.Ordinal);
+        Assert.Contains("[Attached file: report.csv (4KB)]", prompt, StringComparison.Ordinal);
+        Assert.Contains("```csv", prompt, StringComparison.Ordinal);
         Assert.EndsWith("summarize", prompt, StringComparison.Ordinal);
         Assert.True(
             prompt.IndexOf("notes.md", StringComparison.Ordinal) < prompt.IndexOf("summarize", StringComparison.Ordinal),

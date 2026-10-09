@@ -144,7 +144,6 @@ internal static class ChatProjectFileWorkflow
 
         var isImage = CliImagePolicy.IsImageFile(path);
         var cap = isImage ? CliImagePolicy.MaxImageAttachmentBytes
-            : CliTextFiles.IsOfficeDocument(path) ? CliTextFiles.MaxOfficeDocumentBytes
             : CliImagePolicy.MaxTextAttachmentBytes;
 
         try

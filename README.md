@@ -165,6 +165,11 @@ model, open a project folder, and start chatting.
 
 ## Terminal UI
 
+GUI and CLI attachments accept images and text/code files. Office documents
+(`.docx`, `.xlsx`, `.pptx`) are not converted into prompt text. To process them,
+put the file in the workspace and ask Ru to use installed terminal tools or an
+optional skill; Ru does not bundle an Office converter or authoring suite.
+
 `ru agent chat` (or `repl`) drives a full-screen TUI rendered by **Terminal.Gui v2**.
 The full-screen views only engage on an interactive, colour-capable terminal of at
 least 80×24; redirected output, `--json`, `--classic`, `NO_COLOR`, `TERM=dumb` and a

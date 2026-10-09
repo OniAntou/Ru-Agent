@@ -162,7 +162,10 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                approvals);
+                approvals,
+                intentResolver: new CommandIntentResolver(
+                    root,
+                    trustedExecutableDirectories: TrustThisMachinesToolchain()));
 
             var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
@@ -791,7 +794,7 @@ public sealed class TerminalAdapterTests
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
                 approvals,
-                intentResolver: new CommandIntentResolver(root, [bin]));
+                intentResolver: new CommandIntentResolver(root, [bin], [bin]));
 
             var powershellIntent = adapter.CanonicalizeShell(new TerminalShellRequest("powershell", ".", "Get-Date", 1_000, string.Empty));
             var pwshIntent = adapter.CanonicalizeShell(new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, string.Empty));
@@ -880,8 +883,24 @@ public sealed class TerminalAdapterTests
         }
     }
 
+    /// <summary>
+    /// Directories the machine's own toolchain resolves from. Only for tests that
+    /// assert streaming, approval or window semantics and need a real executable:
+    /// they are not asserting the trust policy, so they opt the whole PATH in
+    /// explicitly. Production defaults are far narrower, and the tests that check
+    /// the trust boundary itself pass a trusted set of their own.
+    /// </summary>
+    private static IReadOnlyList<string> TrustThisMachinesToolchain() =>
+        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(Path.IsPathRooted)
+            .ToArray();
+
     private static TerminalAdapter CreateAdapter(string root) => new(
-        new WorkspacePathGuard(root));
+        new WorkspacePathGuard(root),
+        intentResolver: new CommandIntentResolver(
+            root,
+            trustedExecutableDirectories: TrustThisMachinesToolchain()));
 
     private static PolicyGrant MakeGrantWithScopes(params string[] scopes) => new(
         "session-terminal-" + Guid.NewGuid().ToString("N"),

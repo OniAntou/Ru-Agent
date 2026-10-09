@@ -41,7 +41,8 @@ public sealed class BrokerHost : IAsyncDisposable
             session,
             ResolveWorkspaceRoot(),
             options?.Web,
-            approvalTokens: _authTokens);
+            approvalTokens: _authTokens,
+            trustedExecutableDirectories: options?.TrustedExecutableDirectories);
         _tools.CleanStaleSpoolFiles();
         _cleanup = new BrokerCleanup(
             stopListener: cancellationToken => new ValueTask(_application.StopAsync(cancellationToken)),

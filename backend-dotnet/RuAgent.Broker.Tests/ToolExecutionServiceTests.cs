@@ -38,7 +38,7 @@ public sealed class ToolExecutionServiceTests
         try
         {
             using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
-            var result = await new ToolExecutionService(session, workspace).ExecuteAsync(
+            var result = await new ToolExecutionService(session, workspace, trustedExecutableDirectories: TrustThisMachinesToolchain()).ExecuteAsync(
                 new AgentEnvelope(
                     AgentEnvelopeCodec.ProtocolVersion,
                     "read-cancel-1",
@@ -85,7 +85,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(workspace);
         try
         {
-            var service = new ToolExecutionService(session, workspace);
+            var service = new ToolExecutionService(session, workspace, trustedExecutableDirectories: TrustThisMachinesToolchain());
             var result = await service.ExecuteAsync(
                 new AgentEnvelope(
                     AgentEnvelopeCodec.ProtocolVersion,
@@ -534,7 +534,7 @@ public sealed class ToolExecutionServiceTests
                 StringComparer.Ordinal));        session.DirectoryGrants.Add(
             "session-terminal-unrestricted",
             RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(outsideDirectory));
-        var service = new ToolExecutionService(session, workspaceRoot);
+        var service = new ToolExecutionService(session, workspaceRoot, trustedExecutableDirectories: TrustThisMachinesToolchain());
         try
         {
             var malformed = await service.ExecuteAsync(
@@ -1085,7 +1085,7 @@ public sealed class ToolExecutionServiceTests
             "session-terminal-recognized",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot, trustedExecutableDirectories: TrustThisMachinesToolchain());
         try
         {
             var pending = await service.ExecuteAsync(
@@ -1720,6 +1720,19 @@ public sealed class ToolExecutionServiceTests
             ["approved"] = true,
         });
 
+    /// <summary>
+    /// Directories this machine's toolchain resolves from. Only for tests that
+    /// execute a real terminal command to assert streaming, spool or receipt
+    /// semantics: they are not asserting the trust policy, so they opt the whole
+    /// PATH in explicitly rather than depending on where the tools happen to be
+    /// installed on a given developer box.
+    /// </summary>
+    private static IReadOnlyList<string> TrustThisMachinesToolchain() =>
+        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(Path.IsPathRooted)
+            .ToArray();
+
     private static (string Root, string SessionId, string RunId, BrokerSession Session, ToolExecutionService Service) CreateFullAccessService(string prefix) =>
         CreateLeaseService(prefix, EnvelopeTestSnapshots.FullAccessEmpty());
 
@@ -1756,7 +1769,7 @@ public sealed class ToolExecutionServiceTests
             DateTimeOffset.UtcNow.AddMinutes(5),
             snapshot);
         Assert.True(session.TryOpenRunLease(lease, out var leaseError), leaseError);
-        return (root, sessionId, runId, session, new ToolExecutionService(session, workspace));
+        return (root, sessionId, runId, session, new ToolExecutionService(session, workspace, trustedExecutableDirectories: TrustThisMachinesToolchain()));
     }
 
     [Fact]

@@ -5,4 +5,5 @@ public sealed record BrokerOptions(
     int MaxFrameBytes = 64 * 1024,
     int DefaultTimeoutMs = 120_000,
     int HardTimeoutMs = 300_000,
-    WebOptions? Web = null);
+    WebOptions? Web = null,
+    IReadOnlyList<string>? TrustedExecutableDirectories = null);

@@ -20,9 +20,14 @@ public enum AgentRecoveryKind
 /// lands in the model context as a system entry and the run takes one more step.
 /// Counts are read back from the assembled context, exactly like the repetition
 /// guard reads its own notes, so the context stays the single source of truth for
-/// "the model was already told". Compaction can fold a note into a summary and
-/// forget it; the global per-window cap still bounds each window.
+/// "the model was already told".
 /// </summary>
+/// <remarks>
+/// The cap is <see cref="MaximumNotesPerRun"/>, not per budget window. A note is
+/// persisted with <see cref="ModelContextRole.System"/> and the compaction planner
+/// protects every system entry, so a note is never folded into a summary and never
+/// leaves the count mid-run. The name says "run" because that is what it measures.
+/// </remarks>
 public static class AgentRecoveryNotes
 {
     // Model-visible marker shared by every recovery note, so the global cap can
@@ -30,13 +35,18 @@ public static class AgentRecoveryNotes
     public const string NotePrefix = "[HARNESS RECOVERY]";
 
     // Bounded self-repair budgets per case: a model that ignores the note still
-    // fails, but a weak model gets a real chance to answer or change course.
-    public const int MaximumUnverifiedNotes = 2;
-    public const int MaximumEmptyNotes = 1;
-    public const int MaximumModelRepairableNotes = 2;
+    // fails, but a weak model gets a real chance to answer or change course. The
+    // sizing assumption is a long task: a 40-tool-call run that hits the same
+    // edit or verification failure twice per case is ordinary work, not a bad
+    // model, and the previous 2/2/1 spent the global cap on exactly that.
+    public const int MaximumUnverifiedNotes = 4;
+    public const int MaximumEmptyNotes = 2;
+    public const int MaximumModelRepairableNotes = 4;
 
-    // Global per-window cap across every recovery case, counted from the context.
-    public const int MaximumNotesPerWindow = 6;
+    // Global cap across every recovery case, counted from the context for the
+    // whole run. Per-case budgets sum to 10, so this leaves headroom for a case
+    // added later without immediately bottlenecking every long task.
+    public const int MaximumNotesPerRun = 12;
 
     /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
@@ -105,14 +115,14 @@ public static class AgentRecoveryNotes
     };
 
     /// <summary>
-    /// True while both the per-case bound and the global per-window cap leave room
-    /// for one more note. The global cap is checked first so it bounds behavior even
-    /// after compaction loses track of a note's case.
+    /// True while both the per-case bound and the global per-run cap leave room
+    /// for one more note. The global cap is checked first so it bounds behavior
+    /// even if a case's marker ever changes shape.
     /// </summary>
     public static bool CanAdvise(ModelContextSnapshot context, AgentRecoveryKind kind)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return NoteCount(context) < MaximumNotesPerWindow
+        return NoteCount(context) < MaximumNotesPerRun
             && NoteCount(context, kind) < MaximumNotes(kind);
     }
 

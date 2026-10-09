@@ -233,16 +233,32 @@ reconciliation surfaces from Phase 3:
   classifies a `bash` command by the executable token the model supplied
   (`PolicyContextFactory` keeps it verbatim and the analyzers match on
   `Path.GetFileName`), while `CommandIntentResolver` later resolves that token
-  through the process `PATH`. A program placed in a directory already on `PATH`
-  can therefore be the one that runs. Closing this needs a policy decision, not
-  a patch: resolving the real path inside the policy would make
+  through the process `PATH`. The two decisions could therefore disagree about
+  which file runs. Narrowing this with a *policy-leg* check was rejected for two
+  reasons: resolving the real path inside the policy would make
   `HasPathQualifiedExecutable` reject every path-qualified command and turn all
   bounded-local terminal execution into an approval, and refusing a bare name
   that resolves into a user-writable directory would break toolchains installed
-  under the user profile (scoop, chocolatey, portable installs). Both options
-  change who may run what without approval, so neither is taken unilaterally.
-  The exposure already requires write access to a directory on `PATH`, which is
-  strictly more than the same actor needs to run the program directly.
+  under the user profile (scoop, chocolatey, portable installs). Both change who
+  may run what without approval, so neither is taken unilaterally.
+  The remaining gap is closed at the resolution point instead:
+  `CommandIntentResolver` now requires the resolved file to live in a trusted
+  directory — the Windows system and machine-wide `Program Files` directories,
+  including their subdirectories — and fails closed with
+  `executable_not_trusted` otherwise. Per-user directories are deliberately not
+  trusted, because they are exactly the vector: model-side arbitrary code
+  execution is already available through auto-executable build and test commands,
+  so a program written into `%USERPROFILE%\.dotnet\tools` or a scoop shim would
+  then run under a command identity that policy treats as permanently safe,
+  never surfacing an approval and escaping workspace attribution. An operator
+  with a legitimate per-user toolchain names it through
+  `RU_TRUSTED_EXECUTABLE_DIRS`. Path-qualified and rooted requests are not
+  affected: policy already requires an approval for them, so a human confirms
+  the identity. The failure is a bounded tool code rather than an approval
+  prompt; the model can retry with a path-qualified command to reach an
+  approval. `RU_MAX_CONCURRENT_MODEL_STEPS` bounds how many provider
+  generations may be in flight at once, defaulting to the runtime loop's own
+  run concurrency and lowering to 1 for single-slot local runtimes.
   Read-only model Git commands are prepared by `TerminalAdapter` with
   `core.fsmonitor=false`, an empty `diff.external`, and `--no-pager`;
   `diff`, `log` and `show` additionally disable external diff and textconv.
@@ -455,10 +471,24 @@ The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP
 
 ## Data ownership
 
-ASP.NET Core owns business persistence. Settings, sessions, activity,
-and credentials default to the canonical `%LOCALAPPDATA%\Ru` location,
-with `RU_DATA_ROOT` available for isolated runs. Secrets are stored through Windows Credential
-Manager rather than JSON files.
+ASP.NET Core owns business persistence in the existing
+`%LOCALAPPDATA%\Ru\agent_harness.db` SQLite WAL database; `RU_DATA_ROOT`
+selects an isolated root. Schema v18 adds settings, conversation sessions and
+Activity Timeline records alongside runs, events, workspaces and work state.
+Session documents retain their message/source-ledger representation, with
+separately indexed summary metadata; settings and activity keep bounded JSON
+payloads inside SQLite rows. No new ORM or second database is introduced.
+Windows Credential Manager remains the API-key store.
+
+Each store imports its legacy `settings.json`, `sessions/*.json` or
+`activity_log.jsonl` once, atomically with a durable migration marker. Activity
+also imports leftover file outboxes and `.processing` files. Original files
+remain unchanged as backups and are ignored after successful import. Invalid
+session documents and malformed/oversized activity lines are skipped as before;
+invalid settings remain unmarked and can be repaired before a settings save.
+I/O failures or cancellation roll back the import so a later attempt can retry.
+See [ADR 0013](adr/0013-consolidate-business-persistence-in-sqlite.md) for the
+migration and backup boundary.
 
 Session deletion is coordinated by the Public Host through
 `DELETE /sessions/{sessionId}`. The route keeps its stable HTTP 200 response
@@ -473,16 +503,12 @@ last one.
 (null when the session has no runs or the workspace identity changed), so WinUI
 can group the sidebar by workspace without a second round trip.
 
-Listing scans at most 2,000 file metadata candidates, parses at most 1,000
-session documents and returns at most 500 summaries. Each list call has a
-32 MiB actual uncached JSON-read budget and a five-second deadline; cached
-summaries consume no JSON-read budget. Results are ordered by update time
-within the inspected set. Reaching the metadata cap does not establish global
-recency. `sessions_truncated` reports omitted results or an exhausted budget,
-and WinUI displays the partial-list warning. Summaries are cached against file
-length, write time and creation time with a one-minute TTL; Host writes/deletes
-invalidate them immediately. Workspace metadata is queried only for the returned
-session IDs using the v13 `(session_id, created_at_utc DESC, run_id DESC)` index.
+Listing queries indexed metadata across all stored sessions, returning the
+newest 500 summaries ordered by UTC update time with session ID as the tie
+breaker. `sessions_truncated` reports additional stored sessions. It does not
+scan transcript files or maintain a filesystem-summary cache. Workspace metadata
+is queried only for the returned session IDs using the v13
+`(session_id, created_at_utc DESC, run_id DESC)` index.
 Import keeps the 200-message retention limit and reports the persisted count
 in `session.messages`, all omitted transcript entries in `dropped_entries`, and
 `partial_import` when any entry was omitted. An import with no persistable

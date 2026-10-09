@@ -54,7 +54,8 @@ identity and is evaluated independently of the Agent session.
 _Avoid_: permanent Agent mode permission or preset-implied trust
 
 **Conversation Session**:
-The persisted conversation and history record owned by the Public Host. The
+The conversation and history record owned by the Public Host in the shared
+`agent_harness.db` SQLite database (ADR-0013). The
 `DELETE /sessions/{sessionId}` route removes the session and its owned Harness
 artifacts only when the application envelope returns `status: "ok"`; an HTTP
 success status alone is not deletion proof.
@@ -205,10 +206,12 @@ _Avoid_: one-call-per-step rule, reissuing approved calls
 A durable `ModelContextNote` beginning with `[HARNESS RECOVERY]`, addressed to
 the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
-context. Bounds are per kind — 2 `unverified_after_tool_failure` notes, 2
-`model_repairable` notes, 1 `empty_model_reply` note — under a global cap of 6
-notes per window, measured over the recovery notes visible in the assembled
-context (compaction can fold earlier notes out of the count). Every note is
+context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
+`model_repairable` notes, 2 `empty_model_reply` note — under a global cap of
+12 notes per run, measured over the recovery notes visible in the assembled
+context. A note is persisted with the system role and is therefore never folded
+away by compaction, so the cap is cumulative for the whole run rather than
+per budget window. Every note is
 same-model bounded self-correction, never provider/model/tool substitution;
 when a bound is spent the run fails closed with the original code. An exhausted
 provider-transient step is not failed either: it parks in `WaitingUser` with a

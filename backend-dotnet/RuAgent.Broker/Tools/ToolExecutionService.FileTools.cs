@@ -187,13 +187,19 @@ public sealed partial class ToolExecutionService
         var root = Path.GetFullPath(canonicalRoot);
         if (!cache)
         {
-            return RootToolSet.Create(root, _approvalTokens);
+            return RootToolSet.Create(
+                root,
+                _approvalTokens,
+                _trustedExecutableDirectories);
         }
 
         return _toolSetsByRoot.GetOrAdd(
             root,
-            static (resolvedRoot, approvalTokens) => RootToolSet.Create(resolvedRoot, approvalTokens),
-            _approvalTokens);
+            static (resolvedRoot, state) => RootToolSet.Create(
+                resolvedRoot,
+                state.Approvals,
+                state.TrustedDirectories),
+            (Approvals: _approvalTokens, TrustedDirectories: _trustedExecutableDirectories));
     }
 
     private static bool IsFullAccessProfile(AgentPolicyProfile profile) =>
@@ -217,7 +223,10 @@ public sealed partial class ToolExecutionService
         public required string CanonicalRoot { get; init; }
         public required FileEditAdapter Edit { get; init; }
 
-        public static RootToolSet Create(string canonicalRoot, ApprovalTokenService approvalTokens)
+        public static RootToolSet Create(
+            string canonicalRoot,
+            ApprovalTokenService approvalTokens,
+            IReadOnlyList<string>? trustedExecutableDirectories = null)
         {
             return new RootToolSet
             {
@@ -232,7 +241,10 @@ public sealed partial class ToolExecutionService
                 MutationResolver = new CanonicalPathResolver(canonicalRoot),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
-                    approvalTokens),
+                    approvalTokens,
+                    intentResolver: new CommandIntentResolver(
+                        canonicalRoot,
+                        trustedExecutableDirectories: trustedExecutableDirectories)),
                 CanonicalRoot = canonicalRoot,
             };
         }

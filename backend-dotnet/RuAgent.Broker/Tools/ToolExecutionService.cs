@@ -45,6 +45,7 @@ public sealed partial class ToolExecutionService
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IReadOnlyList<string>? _trustedExecutableDirectories;
     private readonly TerminalAdapter _terminal;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillBodyStore _skillBodies;
@@ -59,9 +60,12 @@ public sealed partial class ToolExecutionService
         WebOptions? webOptions = null,
         HttpClient? webHttpClient = null,
         ApprovalTokenService? approvalTokens = null,
-        Func<bool>? pythonAvailable = null)
+        Func<bool>? pythonAvailable = null,
+        IReadOnlyList<string>? trustedExecutableDirectories = null)
     {
-        _session = session ?? throw new ArgumentNullException(nameof(session));
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        _session = session;
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _fileList = new FileListAdapter(_workspace.Root);
         _fileGlob = new FileGlobAdapter(_workspace.Root);
@@ -75,7 +79,11 @@ public sealed partial class ToolExecutionService
         _approvalTokens = approvalTokens ?? new ApprovalTokenService();
         _terminal = new TerminalAdapter(
             _workspace,
-            _approvalTokens);
+            _approvalTokens,
+            intentResolver: new CommandIntentResolver(
+                _workspace.Root,
+                trustedExecutableDirectories: trustedExecutableDirectories));
+        _trustedExecutableDirectories = trustedExecutableDirectories;
         _defaultTools = new RootToolSet
         {
             List = _fileList,

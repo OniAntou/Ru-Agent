@@ -224,8 +224,12 @@ internal static class PublicHostServiceRegistration
                 ["anthropic_messages"] = new AnthropicMessagesModelProvider(modelHttpClient),
             });
         });
+        // Local single-slot runtimes (llama.cpp, vLLM, Ollama) accept one request
+        // at a time; the operator lowers the bound for those with the env var.
         services.AddSingleton(services => new ModelStepService(
-            services.GetRequiredService<IModelProviderResolver>()));
+            services.GetRequiredService<IModelProviderResolver>(),
+            ModelStepService.ResolveMaxConcurrentProviderSteps(
+                Environment.GetEnvironmentVariable(ModelStepService.MaxConcurrentProviderStepsVariable))));
         services.AddSingleton(services => new SqliteAgentRunProviderSelectionStore(
             services.GetRequiredService<HarnessSqliteOptions>()));
         services.AddSingleton(services => new AgentProviderSnapshotFactory(
@@ -313,7 +317,6 @@ internal static class PublicHostServiceRegistration
     internal static IServiceCollection AddRuActivityAndDiagnostics(this IServiceCollection services)
     {
         services.AddSingleton<IActivityLogStore, ActivityLogStore>();
-        services.AddHostedService<ActivityOutboxIngestionService>();
         services.AddSingleton(services =>
             new StructuredDiagnosticLogWriter(services.GetRequiredService<DataPaths>().LogRoot, "aspnetcore-"));
         services.AddSingleton<StructuredDiagnosticLogWriterHostedService>();

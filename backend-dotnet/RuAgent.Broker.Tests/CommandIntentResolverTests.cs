@@ -17,8 +17,11 @@ public sealed class CommandIntentResolverTests
         return root;
     }
 
-    private static CommandIntentResolver CreateResolver(string workspaceRoot, IReadOnlyList<string>? searchDirectories = null) =>
-        new(workspaceRoot, searchDirectories);
+    private static CommandIntentResolver CreateResolver(
+        string workspaceRoot,
+        IReadOnlyList<string>? searchDirectories = null,
+        IReadOnlyList<string>? trustedExecutableDirectories = null) =>
+        new(workspaceRoot, searchDirectories, trustedExecutableDirectories);
 
     [Fact]
     public void Resolves_bare_executable_through_sanitized_search_directories()
@@ -29,7 +32,7 @@ public sealed class CommandIntentResolverTests
         File.WriteAllText(fakeTool, "@echo ok\r\n");
         try
         {
-            var resolver = CreateResolver(workspace, [toolsDirectory]);
+            var resolver = CreateResolver(workspace, [toolsDirectory], [toolsDirectory]);
             var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
 
             Assert.Equal(Path.GetFullPath(fakeTool), intent.ResolvedExecutable);
@@ -254,7 +257,7 @@ public sealed class CommandIntentResolverTests
             Directory.CreateDirectory(bin);
             File.WriteAllText(Path.Combine(bin, "powershell.exe"), "stub");
             File.WriteAllText(Path.Combine(bin, "pwsh.exe"), "stub");
-            var resolver = CreateResolver(workspace, [bin]);
+            var resolver = CreateResolver(workspace, [bin], [bin]);
 
             var powershellIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date"));
             var pwshIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date", ShellRuntime: "pwsh"));
@@ -311,6 +314,109 @@ public sealed class CommandIntentResolverTests
         {
             Directory.Delete(workspace, recursive: true);
             Directory.Delete(toolsDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_bare_name_resolved_from_an_untrusted_directory_fails_closed()
+    {
+        // The property this whole check exists for: policy sees the bare token, so
+        // the file that actually runs is chosen by PATH order. A directory a program
+        // could have written into must not be able to win that race silently.
+        var workspace = CreateTemporaryRoot("ru-intent-trust-");
+        var untrusted = CreateTemporaryRoot("ru-intent-untrusted-");
+        var fakeTool = Path.Combine(untrusted, "ru-fake-tool.cmd");
+        File.WriteAllText(fakeTool, "@echo ok\r\n");
+        try
+        {
+            var resolver = CreateResolver(workspace, [untrusted]);
+
+            var error = Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool")));
+
+            Assert.Equal("executable_not_trusted", error.Code);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(untrusted, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_trusted_root_also_trusts_its_subdirectories()
+    {
+        // Real installs live in a subdirectory of a machine-wide root,
+        // e.g. Program Files\Git\cmd or Program Files\dotnet.
+        var installRoot = CreateTemporaryRoot("ru-intent-install-");
+        var workspace = CreateTemporaryRoot("ru-intent-trust-sub-");
+        var binDirectory = Path.Combine(installRoot, "cmd");
+        Directory.CreateDirectory(binDirectory);
+        File.WriteAllText(Path.Combine(binDirectory, "ru-fake-tool.cmd"), "@echo ok\r\n");
+        try
+        {
+            var resolver = CreateResolver(workspace, [binDirectory], [installRoot]);
+            var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
+
+            Assert.Equal(Path.GetFullPath(Path.Combine(binDirectory, "ru-fake-tool.cmd")), intent.ResolvedExecutable);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(installRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_sibling_directory_sharing_a_prefix_is_not_trusted()
+    {
+        // Guard against the substring mistake: "C:\Program Files" must not match
+        // "C:\Program Files Evil" just because one starts with the other.
+        var parent = CreateTemporaryRoot("ru-intent-prefix-");
+        var trustedRoot = Path.Combine(parent, "trusted");
+        var siblingRoot = Path.Combine(parent, "trusted-evil");
+        var workspace = Path.Combine(parent, "workspace");
+        Directory.CreateDirectory(trustedRoot);
+        Directory.CreateDirectory(siblingRoot);
+        Directory.CreateDirectory(workspace);
+        File.WriteAllText(Path.Combine(siblingRoot, "ru-fake-tool.cmd"), "@echo ok\r\n");
+        try
+        {
+            var resolver = CreateResolver(workspace, [siblingRoot], [trustedRoot]);
+
+            var error = Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool")));
+
+            Assert.Equal("executable_not_trusted", error.Code);
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_path_qualified_executable_never_consults_the_trusted_set()
+    {
+        // Path-qualified commands already require an approval, so a human confirms
+        // the identity. Trusting is only about the PATH race for bare names.
+        var workspace = CreateTemporaryRoot("ru-intent-qualified-");
+        var untrusted = CreateTemporaryRoot("ru-intent-qualified-tools-");
+        var executable = Path.Combine(untrusted, "ru-fake-tool.cmd");
+        File.WriteAllText(executable, "@echo ok\r\n");
+        try
+        {
+            var resolver = CreateResolver(workspace, [untrusted], [untrusted]);
+            var request = new CanonicalCommandRequest(executable);
+
+            var intent = resolver.ResolveRun(request);
+
+            Assert.Equal(Path.GetFullPath(executable), intent.ResolvedExecutable);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+            Directory.Delete(untrusted, recursive: true);
         }
     }
 

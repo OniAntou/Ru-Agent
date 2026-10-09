@@ -2873,9 +2873,21 @@ public sealed class BrokerHostTests
             PreviousWorkspaceRoot = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
             Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", root);
 
+            // These fixtures execute a real `python` to observe exit codes, spool
+            // paging and receipt fields; they are not asserting the executable
+            // trust policy, so they opt this machine's PATH in explicitly.
+            var trusted = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(Path.IsPathRooted)
+                .ToArray();
             var host = web is not null
-                ? await BrokerHost.StartAsync(new Configuration.BrokerOptions(descriptorPath, Web: web))
-                : await BrokerHost.StartAsync(descriptorPath);
+                ? await BrokerHost.StartAsync(new Configuration.BrokerOptions(
+                    descriptorPath,
+                    Web: web,
+                    TrustedExecutableDirectories: trusted))
+                : await BrokerHost.StartAsync(new Configuration.BrokerOptions(
+                    descriptorPath,
+                    TrustedExecutableDirectories: trusted));
             return new HostFixture(root, token, host);
         }
 

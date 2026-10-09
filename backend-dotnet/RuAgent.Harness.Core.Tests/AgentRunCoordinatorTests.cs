@@ -704,7 +704,7 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Prose_after_a_failed_receipt_spends_both_notes_then_fails_with_the_receipt_code()
+    public async Task Prose_after_a_failed_receipt_spends_the_unverified_bound_then_fails_with_the_receipt_code()
     {
         var prior = ToolStep();
         const string toolErrorCode = "workspace_path_outside_root";
@@ -723,9 +723,13 @@ public sealed class AgentRunCoordinatorTests
                     providerCallId: "provider_call"),
                 "{}"));
         var model = new FakeModelStepRunner();
-        model.Enqueue(FinalStep("I succeeded in running the command!"));
-        model.Enqueue(FinalStep("I succeeded in running the command!"));
-        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        // One final step per note the bound allows, plus the step that finds the
+        // bound already spent and fails the run.
+        for (var attempt = 0; attempt <= AgentRecoveryNotes.MaximumUnverifiedNotes; attempt++)
+        {
+            model.Enqueue(FinalStep("I succeeded in running the command!"));
+        }
+
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var coordinator = Coordinator(
@@ -734,44 +738,37 @@ public sealed class AgentRunCoordinatorTests
             store,
             contextSource: source);
 
-        var first = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Equal(HarnessRunState.Running, first.Run.State);
-        var firstCommit = store.Commits.Last();
-        Assert.Contains(firstCommit.Events, item =>
-            item.Kind == HarnessEventKind.ModelStepCompleted
-            && item.SafeCode == "unverified_after_tool_failure_advised");
-        Assert.Contains(firstCommit.Events, item =>
-            item.Kind == HarnessEventKind.RunNoteAdded
-            && item.SafeCode == "unverified_after_tool_failure");
-        var firstNote = Assert.Single(
-            firstCommit.Payloads,
-            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
-        source.Add(ModelContextEntry.Text(
-            "note-0",
-            3,
-            ModelContextRole.System,
-            Encoding.UTF8.GetString(firstNote.Plaintext.Span)));
+        var nextSequence = 3;
+        for (var note = 0; note < AgentRecoveryNotes.MaximumUnverifiedNotes; note++)
+        {
+            var step = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+            Assert.Equal(HarnessRunState.Running, step.Run.State);
+            var commit = store.Commits.Last();
+            if (note == 0)
+            {
+                Assert.Contains(commit.Events, item =>
+                    item.Kind == HarnessEventKind.ModelStepCompleted
+                    && item.SafeCode == "unverified_after_tool_failure_advised");
+            }
 
-        var second = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
-        Assert.Equal(HarnessRunState.Running, second.Run.State);
-        var secondCommit = store.Commits.Last();
-        Assert.Contains(secondCommit.Events, item =>
-            item.Kind == HarnessEventKind.RunNoteAdded
-            && item.SafeCode == "unverified_after_tool_failure");
-        var secondNote = Assert.Single(
-            secondCommit.Payloads,
-            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
-        source.Add(ModelContextEntry.Text(
-            "note-1",
-            4,
-            ModelContextRole.System,
-            Encoding.UTF8.GetString(secondNote.Plaintext.Span)));
+            Assert.Contains(commit.Events, item =>
+                item.Kind == HarnessEventKind.RunNoteAdded
+                && item.SafeCode == "unverified_after_tool_failure");
+            var notePayload = Assert.Single(
+                commit.Payloads,
+                payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+            source.Add(ModelContextEntry.Text(
+                $"note-{note}",
+                nextSequence++,
+                ModelContextRole.System,
+                Encoding.UTF8.GetString(notePayload.Plaintext.Span)));
+        }
 
-        var third = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var spent = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.Failed, third.Run.State);
-        Assert.Equal(toolErrorCode, third.ErrorCode);
-        Assert.Equal(toolErrorCode, third.Run.TerminalErrorCode);
+        Assert.Equal(HarnessRunState.Failed, spent.Run.State);
+        Assert.Equal(toolErrorCode, spent.ErrorCode);
+        Assert.Equal(toolErrorCode, spent.Run.TerminalErrorCode);
         var failureCommit = store.Commits.Last();
         Assert.Contains(failureCommit.Events, item =>
             item.Kind == HarnessEventKind.ModelStepCompleted
@@ -855,20 +852,23 @@ public sealed class AgentRunCoordinatorTests
     {
         var prior = ToolStep();
         const string toolErrorCode = "workspace_path_outside_root";
-        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerWindow)
+        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumNotesPerRun)
             .Select(index => ModelContextEntry.Text(
                 $"note-{index}",
                 index + 1,
                 ModelContextRole.System,
                 $"{AgentRecoveryNotes.NotePrefix} tool_call_format: fixture note {index}"))
             .ToArray();
+        // The prior turn must sit past the seeded notes: the context rejects a
+        // duplicate sequence, and the note count now exceeds the old fixed 10/11.
+        var priorSequence = AgentRecoveryNotes.MaximumNotesPerRun + 1;
         var source = new FixedContextSource(
             [
                 .. notes,
-                ModelContextEntry.Assistant("assistant-prior", 10, prior),
+                ModelContextEntry.Assistant("assistant-prior", priorSequence, prior),
                 ModelContextEntry.ToolResult(
                     "tool-prior",
-                    11,
+                    priorSequence + 1,
                     new ToolExecutionReceipt(
                         new ExecutionId("exec_11111111111111111111111111111111"),
                         new ToolCallId("call_11111111111111111111111111111111"),
@@ -948,12 +948,16 @@ public sealed class AgentRunCoordinatorTests
     [Fact]
     public async Task Empty_final_step_fails_the_run_after_the_recovery_note_is_spent()
     {
-        var source = new FixedContextSource(
-            ModelContextEntry.Text(
-                "note-0",
-                1,
+        // Pre-seed the whole empty-note budget: the next empty reply finds the
+        // per-case bound spent and fails instead of adding one more note.
+        var notes = Enumerable.Range(0, AgentRecoveryNotes.MaximumEmptyNotes)
+            .Select(index => ModelContextEntry.Text(
+                $"note-{index}",
+                index + 1,
                 ModelContextRole.System,
-                AgentRecoveryNotes.BuildEmptyNote()));
+                AgentRecoveryNotes.BuildEmptyNote()))
+            .ToArray();
+        var source = new FixedContextSource(notes);
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep(string.Empty));
         var store = new InMemoryHarnessEventStore();

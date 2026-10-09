@@ -87,6 +87,20 @@ public sealed class ModelStepException : Exception, IStableStepError
 
 public sealed class ModelStepService
 {
+    /// <summary>
+    /// Environment variable that lowers the provider-step bound for a local
+    /// single-slot runtime. Absent, blank, non-numeric or below one falls back
+    /// to <see cref="DefaultMaxConcurrentProviderSteps"/>.
+    /// </summary>
+    public const string MaxConcurrentProviderStepsVariable = "RU_MAX_CONCURRENT_MODEL_STEPS";
+
+    /// <summary>
+    /// Matches the runtime loop's own run concurrency, so a burst of runs in
+    /// different workspaces can all reach the model instead of queueing behind
+    /// one serialized generation. Lower it to 1 for llama.cpp / vLLM / Ollama.
+    /// </summary>
+    public const int DefaultMaxConcurrentProviderSteps = 4;
+
     /// <summary>Tail-kept provider reasoning per step. The projector clamps
     /// further for the activity wire; this cap bounds in-process memory.</summary>
     private const int MaximumReasoningChars = 8_000;
@@ -99,25 +113,67 @@ public sealed class ModelStepService
     // surrounding module no longer says "worker".
     private const string DirectModelStepId = "worker";
     private readonly IModelProviderResolver _providers;
-    private readonly SemaphoreSlim _providerGate = new(1, 1);
+    private readonly SemaphoreSlim _providerGate;
 
-    public ModelStepService(IModelProviderResolver providers)
-        : this(null, providers) { }
+    /// <summary>
+    /// Bounds how many provider generations may be in flight at once.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This exists for the server, not for this class: a local single-slot runtime
+    /// (llama.cpp, vLLM, Ollama) accepts one request at a time and rejects the rest,
+    /// so the bound must be lowerable to 1. It does not protect shared state — every
+    /// field here is either immutable after construction or local to one call, and
+    /// the provider adapters hold only an injected thread-safe <c>HttpClient</c>.
+    /// </para>
+    /// <para>
+    /// The runtime loop already drives up to four runs concurrently. With a bound of
+    /// one, that concurrency was decorative for model steps: every other run blocked
+    /// on this gate, and a generation that hung held the gate for as long as the run
+    /// lived. The bound is therefore configurable and defaults to the runtime's own
+    /// run concurrency.
+    /// </para>
+    /// </remarks>
+    public ModelStepService(
+        IModelProviderResolver providers,
+        int maxConcurrentProviderSteps = DefaultMaxConcurrentProviderSteps)
+        : this(null, providers, maxConcurrentProviderSteps) { }
 
-    public ModelStepService(IModelProvider provider)
-        : this(provider, null) { }
+    public ModelStepService(
+        IModelProvider provider,
+        int maxConcurrentProviderSteps = DefaultMaxConcurrentProviderSteps)
+        : this(provider, null, maxConcurrentProviderSteps) { }
 
     private ModelStepService(
         IModelProvider? singleProvider,
-        IModelProviderResolver? providers)
+        IModelProviderResolver? providers,
+        int maxConcurrentProviderSteps)
     {
+        if (maxConcurrentProviderSteps < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxConcurrentProviderSteps),
+                "At least one provider step must be allowed to run.");
+        }
+
         _providers = providers ?? (singleProvider is not null ? new ModelProviderResolver(new Dictionary<string, IModelProvider>
         {
             ["chat_completions"] = singleProvider,
             ["openai_responses"] = singleProvider,
             ["anthropic_messages"] = singleProvider,
         }) : throw new ArgumentNullException(nameof(providers)));
+        _providerGate = new SemaphoreSlim(maxConcurrentProviderSteps, maxConcurrentProviderSteps);
     }
+
+    /// <summary>
+    /// Reads <c>RU_MAX_CONCURRENT_MODEL_STEPS</c>, falling back to
+    /// <see cref="DefaultMaxConcurrentProviderSteps"/> when it is absent, blank,
+    /// not an integer, or below one.
+    /// </summary>
+    public static int ResolveMaxConcurrentProviderSteps(string? configured) =>
+        int.TryParse(configured, out var parsed) && parsed >= 1
+            ? parsed
+            : DefaultMaxConcurrentProviderSteps;
 
     public async Task<ModelStepServiceResult> RunAsync(ModelGenerationRequest request, CancellationToken cancellationToken)
         => await RunAsync(request, null, cancellationToken).ConfigureAwait(false);

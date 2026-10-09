@@ -1059,6 +1059,64 @@ public sealed class ModelStepServiceTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new ModelGenerationSettings(maxOutputTokens: 1_000_001));
     }
 
+    [Fact]
+    public async Task The_provider_step_bound_actually_lets_that_many_steps_overlap()
+    {
+        // The bound is what makes the runtime loop's four-run concurrency real for
+        // model steps. Nothing measured that before, so a regression back to (1,1)
+        // would pass the whole suite silently.
+        const int concurrentSteps = 3;
+        var provider = new ConcurrencyProbeProvider();
+        var service = new ModelStepService(provider, concurrentSteps);
+        var request = Request(bootstrap: Bootstrap(ProviderProtocols.ChatCompletions));
+
+        var runs = Enumerable.Range(0, concurrentSteps)
+            .Select(_ => service.RunAsync(request, CancellationToken.None))
+            .ToArray();
+        await Task.WhenAll(runs);
+
+        Assert.Equal(concurrentSteps, provider.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task A_bound_of_one_serializes_provider_steps()
+    {
+        var provider = new ConcurrencyProbeProvider();
+        var service = new ModelStepService(provider, 1);
+        var request = Request(bootstrap: Bootstrap(ProviderProtocols.ChatCompletions));
+
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => service.RunAsync(request, CancellationToken.None)));
+
+        Assert.Equal(1, provider.PeakConcurrency);
+    }
+
+    [Fact]
+    public void The_bound_variable_falls_back_to_the_default_when_it_is_unusable()
+    {
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps(null));
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps(""));
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps("   "));
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps("not-a-number"));
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps("0"));
+        Assert.Equal(ModelStepService.DefaultMaxConcurrentProviderSteps,
+            ModelStepService.ResolveMaxConcurrentProviderSteps("-4"));
+
+        Assert.Equal(1, ModelStepService.ResolveMaxConcurrentProviderSteps("1"));
+        Assert.Equal(7, ModelStepService.ResolveMaxConcurrentProviderSteps("7"));
+    }
+
+    [Fact]
+    public void The_constructor_rejects_a_bound_below_one()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ModelStepService(new ConcurrencyProbeProvider(), 0));
+    }
+
     private static readonly ProviderBootstrapData DefaultBootstrap = new(
         "test-worker",
         ProviderProtocols.ChatCompletions,
@@ -1208,6 +1266,44 @@ public sealed class ModelStepServiceTests
 
         public IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, CancellationToken cancellationToken) =>
             throw _error;
+    }
+
+    /// <summary>Reports how many generations were in flight simultaneously.</summary>
+    private sealed class ConcurrencyProbeProvider : IModelProvider
+    {
+        private int _active;
+        private int _peak;
+
+        public int PeakConcurrency => Volatile.Read(ref _peak);
+
+        public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            var active = Interlocked.Increment(ref _active);
+            while (true)
+            {
+                var observed = Volatile.Read(ref _peak);
+                if (active <= observed
+                    || Interlocked.CompareExchange(ref _peak, active, observed) == observed)
+                {
+                    break;
+                }
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(120), cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _active);
+            }
+
+            yield return new ModelDelta(
+                "done",
+                Array.Empty<ModelToolFragment>(),
+                completed: true,
+                finishReason: "stop");
+        }
     }
 
     private sealed class BlockingProvider : IModelProvider

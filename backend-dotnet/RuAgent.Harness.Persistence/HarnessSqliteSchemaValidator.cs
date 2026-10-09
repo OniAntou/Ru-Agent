@@ -7,6 +7,10 @@ internal static class HarnessSqliteSchemaValidator
     private static readonly IReadOnlyDictionary<string, string[]> RequiredColumns =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["business_migrations"] = ["name"],
+            ["business_settings"] = ["id", "document"],
+            ["business_sessions"] = ["session_id", "document", "summary", "updated_at_utc"],
+            ["business_activity"] = ["sequence", "event_id", "timestamp", "document"],
             ["agent_workspaces"] =
             [
                 "workspace_id",
@@ -209,10 +213,12 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_agent_runs_session_created_run',
                   'ix_agent_events_provider_continuation',
                   'ix_agent_events_session_receipts',
-                  'ix_agent_session_work_states_workspace')
+                  'ix_agent_session_work_states_workspace',
+                  'business_sessions_updated',
+                  'business_activity_timestamp')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 13;
+            .ConfigureAwait(false) ?? 0L) == 15;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

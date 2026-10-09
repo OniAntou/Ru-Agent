@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Context;
@@ -12,7 +13,7 @@ public interface ISettingsStore
     Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken);
 }
 
-public sealed class SettingsStore : ISettingsStore
+public sealed partial class SettingsStore : ISettingsStore
 {
     private const long MaximumSettingsFileBytes = 1 * 1024 * 1024;
     private const string DefaultBackend = "OpenAI";
@@ -62,51 +63,21 @@ public sealed class SettingsStore : ISettingsStore
 
     private readonly string _settingsFile;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    // Last cleanly parsed snapshot, keyed by the file's size + mtime. Every
-    // /models took the exclusive gate and re-read + re-parsed this file, so a
-    // poll fan-out serialized two hundred parses behind one lock. Only clean
-    // reads are cached: a transient lock or a corrupt file must keep falling
-    // through to a fresh read instead of poisoning defaults until the next
-    // write. External writers (hand edits, the CLI) are picked up through the
-    // key, and every return is a clone, matching the fresh-parse semantics.
-    private readonly object _snapshotLock = new();
-    private string? _snapshotKey;
-    private SettingsSnapshot? _snapshotCache;
+    private readonly BusinessSqliteDatabase _database;
+    private volatile bool _isMigrated;
 
     public SettingsStore(DataPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         _settingsFile = paths.SettingsFile;
+        _database = new BusinessSqliteDatabase(paths);
     }
 
     public async Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken)
     {
-        if (TryGetCachedSnapshot(out var cached))
-        {
-            return cached;
-        }
-
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (TryGetCachedSnapshot(out cached))
-            {
-                return cached;
-            }
-
-            var key = SnapshotKeyFor(_settingsFile);
-            var (snapshot, clean) = await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false);
-            if (clean && key is not null && SnapshotKeyFor(_settingsFile) == key)
-            {
-                StoreCachedSnapshot(key, snapshot);
-            }
-
-            return snapshot;
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        try { return await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false); }
+        finally { _gate.Release(); }
     }
 
     public async Task SaveAsync(
@@ -117,7 +88,7 @@ public sealed class SettingsStore : ISettingsStore
         Validate(candidate);
 
         // Fail-closed: an invalid pair can never be persisted. Normalize here
-        // so the file always holds a usable pair even when the caller saved a
+        // so storage always holds a usable pair even when the caller saved a
         // snapshot it built (or edited) without going through Read.
         var (triggerRatio, targetRatio) = NormalizeCompactionRatios(
             candidate.CompactionTriggerRatio,
@@ -168,15 +139,6 @@ public sealed class SettingsStore : ISettingsStore
             persisted["cloudflare_account_id"] = candidate.CloudflareAccountId;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
-            // The write just replaced the file: refresh the cache from disk so
-            // it reflects exactly what a read would return, instead of waiting
-            // for the next read to notice the new mtime.
-            var key = SnapshotKeyFor(_settingsFile);
-            var (snapshot, clean) = await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false);
-            if (clean && key is not null && SnapshotKeyFor(_settingsFile) == key)
-            {
-                StoreCachedSnapshot(key, snapshot);
-            }
         }
         finally
         {
@@ -184,94 +146,13 @@ public sealed class SettingsStore : ISettingsStore
         }
     }
 
-    private bool TryGetCachedSnapshot(out SettingsSnapshot snapshot)
+    private async Task<SettingsSnapshot> ReadUnlockedAsync(CancellationToken cancellationToken)
     {
-        snapshot = null!;
-        var key = SnapshotKeyFor(_settingsFile);
-        if (key is null)
-        {
-            return false;
-        }
-
-        lock (_snapshotLock)
-        {
-            if (_snapshotCache is not null && string.Equals(_snapshotKey, key, StringComparison.Ordinal))
-            {
-                snapshot = _snapshotCache with { Raw = (JsonObject)_snapshotCache.Raw.DeepClone() };
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private void StoreCachedSnapshot(string key, SettingsSnapshot snapshot)
-    {
-        lock (_snapshotLock)
-        {
-            _snapshotKey = key;
-            _snapshotCache = snapshot with { Raw = (JsonObject)snapshot.Raw.DeepClone() };
-        }
-    }
-
-    private static string? SnapshotKeyFor(string path)
-    {
-        try
-        {
-            var info = new FileInfo(path);
-            if (!info.Exists)
-            {
-                return "missing";
-            }
-
-            return "f:" + info.Length + ":" + info.LastWriteTimeUtc.Ticks;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
-        {
-            return null;
-        }
-    }
-
-    private async Task<(SettingsSnapshot Snapshot, bool Clean)> ReadUnlockedAsync(CancellationToken cancellationToken)
-    {
-        JsonObject raw = [];
-        bool clean = File.Exists(_settingsFile);
-        if (clean)
-        {
-            try
-            {
-                if (new FileInfo(_settingsFile).Length <= MaximumSettingsFileBytes)
-                {
-                    var bytes = await ReadBoundedBytesAsync(_settingsFile, MaximumSettingsFileBytes, cancellationToken)
-                        .ConfigureAwait(false);
-                    raw = JsonNode.Parse(bytes) as JsonObject ?? [];
-                }
-                else
-                {
-                    clean = false;
-                }
-            }
-            catch (JsonException)
-            {
-                raw = [];
-                clean = false;
-            }
-            catch (IOException)
-            {
-                raw = [];
-                clean = false;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                raw = [];
-                clean = false;
-            }
-            catch (InvalidDataException)
-            {
-                raw = [];
-                clean = false;
-            }
-        }
+        await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT document FROM business_settings WHERE id = 1;";
+        var document = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        var raw = document is null ? new JsonObject() : JsonNode.Parse(document)!.AsObject();
 
         foreach (var field in CredentialFields)
         {
@@ -306,7 +187,7 @@ public sealed class SettingsStore : ISettingsStore
 
         var (compactionTriggerRatio, compactionTargetRatio) = ReadCompactionRatios(raw);
 
-        return (new SettingsSnapshot(
+        return new SettingsSnapshot(
             raw.DeepClone().AsObject(),
             backend,
             model,
@@ -317,46 +198,25 @@ public sealed class SettingsStore : ISettingsStore
             compactionTriggerRatio,
             compactionTargetRatio,
             ReadString(raw, "provider_id", string.Empty),
-            ReadString(raw, "cloudflare_account_id", string.Empty)), clean);
+            ReadString(raw, "cloudflare_account_id", string.Empty));
     }
 
-    private async Task WriteAtomicAsync(
-        JsonObject persisted,
-        CancellationToken cancellationToken)
+    private async Task WriteAtomicAsync(JsonObject persisted, CancellationToken cancellationToken)
     {
-        var parent = Path.GetDirectoryName(_settingsFile)
-            ?? throw new InvalidOperationException("Settings path has no parent directory.");
-        Directory.CreateDirectory(parent);
-        var temporary = Path.Combine(
-            parent,
-            $".{Path.GetFileName(_settingsFile)}.{Guid.NewGuid():N}.tmp");
-
-        try
-        {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(persisted, JsonOptions);
-            if (bytes.LongLength > MaximumSettingsFileBytes)
-            {
-                throw new InvalidDataException("settings_file_too_large");
-            }
-
-            await using (var stream = new FileStream(
-                temporary,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            File.Move(temporary, _settingsFile, overwrite: true);
-        }
-        finally
-        {
-            File.Delete(temporary);
-        }
+        var document = JsonSerializer.Serialize(persisted, JsonOptions);
+        if (System.Text.Encoding.UTF8.GetByteCount(document) > MaximumSettingsFileBytes)
+            throw new InvalidDataException("settings_file_too_large");
+        await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO business_settings(id, document) VALUES (1, $document) ON CONFLICT(id) DO UPDATE SET document = excluded.document;";
+        command.Parameters.AddWithValue("$document", document);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (!await BusinessSqliteDatabase.HasMigratedAsync(connection, transaction, "settings", cancellationToken).ConfigureAwait(false))
+            await BusinessSqliteDatabase.MarkMigratedAsync(connection, transaction, "settings", cancellationToken).ConfigureAwait(false);
+        transaction.Commit();
+        _isMigrated = true;
     }
 
     private static string NormalizeBackend(string value)

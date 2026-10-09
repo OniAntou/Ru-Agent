@@ -12,6 +12,11 @@ ingestion claims and persists them with event-ID de-duplication. The retired
 Python Worker is not a production activity publisher. Activity reads are
 sanitized again so legacy files cannot return raw chat content.
 
+Amendment (2026-10-09): Activity Timeline records now use the shared SQLite
+store, with persistent event-ID deduplication; the conversation-outbox projection
+remains. Legacy file outboxes are imported once and their poller is removed
+([ADR 0013](0013-consolidate-business-persistence-in-sqlite.md)).
+
 Current bounded JSONL diagnostics are owned by ASP.NET Core
 (`StructuredDiagnosticLogWriter`) and WinUI (`GuiDiagnosticWriter`). The
 retired Python Worker is not a current diagnostic producer; the managed

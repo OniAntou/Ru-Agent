@@ -1,5 +1,7 @@
 namespace RuBackend.Business;
 
+// The three legacy locations are retained for one-time import and root resolution;
+// ongoing business persistence uses AgentHarnessDatabase.
 public sealed record DataPaths(
     string SettingsFile,
     string SessionDirectory,

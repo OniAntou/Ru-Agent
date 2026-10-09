@@ -79,7 +79,7 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task List_refreshes_cached_summaries_after_append_and_delete()
+    public async Task List_updates_indexed_summaries_after_append_and_delete()
     {
         var (store, _) = CreateStore();
         var sessionId = (await store.CreateAsync(CancellationToken.None))!;
@@ -98,11 +98,11 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task List_selects_newest_file_metadata_before_loading_a_bounded_recent_subset()
+    public async Task List_imports_all_valid_sessions_and_selects_the_newest_500_by_update_time()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(paths.SessionDirectory);
-        for (var index = 0; index < 1201; index++)
+        for (var index = 0; index < 2005; index++)
         {
             var id = index.ToString("x32");
             await File.WriteAllTextAsync(
@@ -118,19 +118,19 @@ public sealed class SessionStoreTests
         }
 
         var enumerated = Directory.GetFiles(paths.SessionDirectory, "*.json");
-        var newestPath = enumerated[1000];
+        var newestPath = enumerated[2000];
         var newestId = Path.GetFileNameWithoutExtension(newestPath);
         await File.WriteAllTextAsync(
             newestPath,
             JsonSerializer.Serialize(new
             {
                 id = newestId,
-                title = "newest by filesystem metadata",
+                title = "newest by persisted update time",
                 created_at = DateTimeOffset.UnixEpoch,
                 updated_at = DateTimeOffset.UnixEpoch.AddYears(100),
                 messages = Array.Empty<object>(),
             }));
-        File.SetLastWriteTimeUtc(newestPath, DateTime.UtcNow.AddMinutes(1));
+        File.SetLastWriteTimeUtc(newestPath, DateTime.UnixEpoch);
 
         var listing = await store.ListWithMetadataAsync(CancellationToken.None);
 
@@ -140,7 +140,7 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
-    public async Task List_refreshes_same_size_replacement_after_cache_lifetime_when_timestamps_are_preserved()
+    public async Task List_ignores_legacy_file_replacement_after_one_time_import()
     {
         var clock = new MutableTimeProvider(new DateTimeOffset(2026, 10, 4, 0, 0, 0, TimeSpan.Zero));
         var (store, paths) = CreateStore(clock);
@@ -164,11 +164,11 @@ public sealed class SessionStoreTests
 
         var refreshed = await store.ListAsync(CancellationToken.None);
 
-        Assert.Equal("New title", Assert.Single(refreshed).Title);
+        Assert.Equal("Old title", Assert.Single(refreshed).Title);
     }
 
     [Fact]
-    public async Task List_bounds_uncached_json_bytes_and_resumes_with_completed_cache_entries()
+    public async Task List_queries_all_imported_metadata_without_a_json_scan_budget()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(paths.SessionDirectory);
@@ -190,8 +190,8 @@ public sealed class SessionStoreTests
         var first = await store.ListWithMetadataAsync(CancellationToken.None);
         var resumed = await store.ListWithMetadataAsync(CancellationToken.None);
 
-        Assert.Equal(2, first.Sessions.Count);
-        Assert.True(first.IsTruncated);
+        Assert.Equal(3, first.Sessions.Count);
+        Assert.False(first.IsTruncated);
         Assert.Equal(3, resumed.Sessions.Count);
         Assert.False(resumed.IsTruncated);
     }

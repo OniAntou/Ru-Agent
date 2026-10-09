@@ -6,12 +6,78 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 11 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **5,821 passed / 0 failed / 0 skipped** (2026-10-09, welcome trim and light-meteor retirement; complete sequential matrix green). Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
-| Python suite | **204 passed**, 1 skipped (2026-10-08, custom coding benchmark delivery). `ruff check tests scripts tools` and `pip check` passed. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
+| .NET tests | Full **12-project** coverage via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,806 passed / 0 failed / 0 skipped** after the investigated Backend fixture-cleanup rerun (2026-10-09, SQLite consolidation). The initial full invocation stopped at Backend; the targeted Backend rerun and remaining GUI project completed the sequential coverage. See the SQLite section below for per-project counts and failures. |
+| Python suite | **211 passed, 1 skipped** (2026-10-09, SQLite consolidation), via `.venv\Scripts\python.exe -m pytest tests -q`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
 | Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## SQLite business-persistence consolidation (2026-10-09)
+
+Schema v18 consolidates settings, conversation documents/source ledgers and
+Activity Timeline in the existing `agent_harness.db`. Legacy imports and markers
+commit together; original files stay untouched. Session listing uses indexed
+summaries rather than filesystem caches/budgets. Activity deduplication survives
+restart without a read warmup. The unused file-outbox poller is removed, and
+legacy activity backups are excluded from diagnostic retention. API keys remain
+in Credential Manager; encrypted Harness payloads and the conversation outbox
+retain their existing boundaries. See [ADR 0013](../adr/0013-consolidate-business-persistence-in-sqlite.md).
+
+The first three new tests failed against the old file stores. Eight migration
+regressions now cover database-only writes, restart, import markers, clearing and
+deletion, settings credential stripping, concurrent appends, rollback/retry after
+an unreadable legacy file, source-ledger retention through pruning/rewind, and
+existing Harness deletion tombstones. The final focused Business run passed
+**167 tests**, including strengthened checks of actual SQLite rows after rejected
+settings updates and globally ordered listing with more than 2,000 legacy files.
+
+Sequential Debug coverage:
+
+| Project | Passed |
+| --- | ---: |
+| Broker | 898 |
+| CLI | 1,278 |
+| Client | 206 |
+| Harness Core | 468 |
+| Harness Persistence | 176 |
+| Hosting | 58 |
+| Protocol | 81 |
+| Runtime Adapters | 195 |
+| Runtime Worker | 69 |
+| Session Interchange | 43 |
+| Backend | 1,037 |
+| GUI | 1,297 |
+| Total | 5,806 |
+
+The initial Persistence run failed **22/176** tests because historical-version
+fixtures retained tables introduced by the latest schema. Version-18 creation
+now handles existing tables/indexes, and the validator still requires their
+columns and indexes; the Persistence rerun and later full invocation passed.
+The first full invocation then stopped at Backend with **52 cleanup failures**
+(**985 passed**): four provider fixtures did not release their newly used SQLite
+pool before deleting the temporary root on Windows. Scoped per-database cleanup
+fixed this; the targeted Backend rerun passed all **1,037**, and the remaining
+GUI project passed **1,297**. Provider assertions were preserved. GUI compilation
+still reports existing CS8625 and xUnit2031 test warnings.
+
+Commands and retained local evidence:
+
+```powershell
+.\scripts\test_dotnet.ps1 -Configuration Debug
+.\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter RuBackend.Tests
+.\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter gui-winui3
+dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Debug --filter FullyQualifiedName~RuBackend.Tests.Business
+.venv\Scripts\python.exe -m pytest tests -q
+```
+
+`artifacts/sqlite-full-dotnet.log` preserves the stopped initial invocation;
+`artifacts/sqlite-backend-rerun.log`, `artifacts/sqlite-gui-tests.log` and
+`artifacts/sqlite-pytest.log` preserve the successful completion evidence.
+Python passed **211**, with **1 skipped**. Release publish, native UI interaction,
+real-provider behavior and migration of the user's live data were not run.
+Migration is exercised with isolated temporary roots; each live store imports
+its old files on first access by the new build.
 
 ## Office attachment retirement (2026-10-09)
 

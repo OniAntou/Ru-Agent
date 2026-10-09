@@ -65,15 +65,15 @@ public sealed class ActivityLogStoreTests
     public async Task Failed_append_does_not_poison_event_id_for_retry()
     {
         var (store, paths) = CreateStore();
-        Directory.CreateDirectory(Path.GetDirectoryName(paths.ActivityLogFile)!);
-        Directory.CreateDirectory(paths.ActivityLogFile);
+        await store.ReadAsync(1, default);
+        await BusinessSqliteTestData.ExecuteAsync(paths, "CREATE TRIGGER reject_activity BEFORE INSERT ON business_activity BEGIN SELECT RAISE(ABORT, 'injected_failure'); END;");
         var activity = new ActivityEvent("evt_retry", 1, "iso", "chat", null, new JsonObject
         {
             ["content"] = "retry me",
         });
 
         await Assert.ThrowsAnyAsync<Exception>(() => store.AppendAsync(activity, CancellationToken.None));
-        Directory.Delete(paths.ActivityLogFile);
+        await BusinessSqliteTestData.ExecuteAsync(paths, "DROP TRIGGER reject_activity;");
 
         await store.AppendAsync(activity, CancellationToken.None);
 
@@ -132,7 +132,7 @@ public sealed class ActivityLogStoreTests
     }
 
     [Fact]
-    public async Task Append_trims_to_the_newest_5000_physical_lines()
+    public async Task Append_retains_the_newest_5000_rows()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.ActivityLogFile)!);
@@ -145,7 +145,7 @@ public sealed class ActivityLogStoreTests
             new ActivityEvent("e_5000", 5000, "5000", "chat", null, new JsonObject { ["content"] = "msg" }),
             CancellationToken.None);
 
-        var lines = await File.ReadAllLinesAsync(paths.ActivityLogFile);
+        var lines = await BusinessSqliteTestData.ReadActivityAsync(paths);
         Assert.Equal(5000, lines.Length);
         Assert.DoesNotContain("\"ts\":0", lines[0], StringComparison.Ordinal);
         Assert.Contains("\"ts\":5000", lines[^1], StringComparison.Ordinal);
@@ -167,11 +167,11 @@ public sealed class ActivityLogStoreTests
         await Task.WhenAll(appends);
 
         Assert.Equal(80, (await store.ReadAsync(500, CancellationToken.None)).Count);
-        Assert.Equal(80, (await File.ReadAllLinesAsync(paths.ActivityLogFile)).Length);
+        Assert.Equal(80, (await BusinessSqliteTestData.ReadActivityAsync(paths)).Length);
     }
 
     [Fact]
-    public async Task Clear_removes_the_file_and_is_idempotent()
+    public async Task Clear_removes_all_rows_and_is_idempotent()
     {
         var (store, paths) = CreateStore();
         await store.AppendAsync(new ActivityEvent(1, "iso", "chat", null, new JsonObject { ["content"] = "hi" }), CancellationToken.None);
@@ -193,15 +193,11 @@ public sealed class ActivityLogStoreTests
         });
         await store.AppendAsync(activity, CancellationToken.None);
 
-        File.Delete(paths.ActivityLogFile);
-        Directory.CreateDirectory(paths.ActivityLogFile);
+        await BusinessSqliteTestData.ExecuteAsync(paths, "CREATE TRIGGER reject_clear BEFORE DELETE ON business_activity BEGIN SELECT RAISE(ABORT, 'injected_failure'); END;");
         await Assert.ThrowsAnyAsync<Exception>(() => store.ClearAsync(CancellationToken.None));
-        Directory.Delete(paths.ActivityLogFile);
-        await File.WriteAllTextAsync(paths.ActivityLogFile, "existing\n");
-
+        await BusinessSqliteTestData.ExecuteAsync(paths, "DROP TRIGGER reject_clear;");
         await store.AppendAsync(activity, CancellationToken.None);
-
-        Assert.Equal("existing\n", await File.ReadAllTextAsync(paths.ActivityLogFile));
+        Assert.Single(await store.ReadAsync(200, default));
     }
 
     private static (ActivityLogStore Store, DataPaths Paths) CreateStore(TimeProvider? clock = null)

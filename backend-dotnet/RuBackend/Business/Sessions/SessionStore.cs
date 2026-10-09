@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -23,18 +24,14 @@ public sealed partial class SessionStore : ISessionStore
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    // On Windows a session file cannot be replaced while any handle is open --
-    // sharing delete does not help, the move fails with access denied. So the
-    // atomic replace and the read that feeds it are serialized, per file
-    // operation and not for the length of a poll: the gate-free sidebar read
-    // still interleaves with a chat send instead of stalling behind it, but a
-    // send can no longer lose the race and drop the turn.
-    private readonly SemaphoreSlim _fileGate = new(1, 1);
+    private readonly BusinessSqliteDatabase _database;
+    private volatile bool _isMigrated;
 
     public SessionStore(DataPaths paths, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         _sessionDirectory = paths.SessionDirectory;
+        _database = new BusinessSqliteDatabase(paths);
         _clock = clock ?? TimeProvider.System;
     }
 
@@ -63,6 +60,8 @@ public sealed partial class SessionStore : ISessionStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction(deferred: false);
             var sessionId = Guid.NewGuid().ToString("N");
             var now = _clock.GetUtcNow().ToUniversalTime();
             var document = new SessionDocument(
@@ -71,8 +70,13 @@ public sealed partial class SessionStore : ISessionStore
                 now,
                 now,
                 []);
-            await WriteUnlockedAsync(document, cancellationToken).ConfigureAwait(false);
+            await WriteUnlockedAsync(document, connection, transaction, cancellationToken).ConfigureAwait(false);
+            transaction.Commit();
             return sessionId;
+        }
+        catch (SqliteException)
+        {
+            return null;
         }
         catch (IOException)
         {
@@ -100,15 +104,19 @@ public sealed partial class SessionStore : ISessionStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var path = SessionPath(sessionId);
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            File.Delete(path);
-            InvalidateSummaryCache(sessionId);
-            return true;
+            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction(deferred: false);
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM business_sessions WHERE session_id = $id;";
+            command.Parameters.AddWithValue("$id", sessionId);
+            var deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
+            transaction.Commit();
+            return deleted;
+        }
+        catch (SqliteException)
+        {
+            return false;
         }
         catch (IOException)
         {
@@ -145,7 +153,9 @@ public sealed partial class SessionStore : ISessionStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var current = await LoadUnlockedAsync(sessionId, cancellationToken)
+            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var current = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction)
                 .ConfigureAwait(false);
             if (current is null)
             {
@@ -153,9 +163,14 @@ public sealed partial class SessionStore : ISessionStore
             }
 
             var validNewMessages = messages.Where(IsValidMessage).ToArray();
-            await AppendUnlockedAsync(current, validNewMessages, cancellationToken)
+            await AppendUnlockedAsync(current, validNewMessages, connection, transaction, cancellationToken)
                 .ConfigureAwait(false);
+            transaction.Commit();
             return true;
+        }
+        catch (SqliteException)
+        {
+            return false;
         }
         catch (IOException)
         {
@@ -216,7 +231,9 @@ public sealed partial class SessionStore : ISessionStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var original = await LoadUnlockedAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var original = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction).ConfigureAwait(false);
             if (original is null)
             {
                 return null;
@@ -232,8 +249,13 @@ public sealed partial class SessionStore : ISessionStore
                 UpdatedAt = now,
             };
 
-            await WriteUnlockedAsync(rewoundDoc, cancellationToken).ConfigureAwait(false);
+            await WriteUnlockedAsync(rewoundDoc, connection, transaction, cancellationToken).ConfigureAwait(false);
+            transaction.Commit();
             return rewoundDoc;
+        }
+        catch (SqliteException)
+        {
+            return null;
         }
         catch (IOException)
         {
@@ -250,44 +272,27 @@ public sealed partial class SessionStore : ISessionStore
     }
 
     private async Task<SessionDocument?> LoadUnlockedAsync(
-        string sessionId,
-        CancellationToken cancellationToken,
-        long maximumBytes = MaximumSessionFileBytes,
-        Action<long>? bytesRead = null)
+        string sessionId, CancellationToken cancellationToken,
+        SqliteConnection? connection = null, SqliteTransaction? transaction = null)
     {
-        if (!IsValidSessionId(sessionId))
+        if (!IsValidSessionId(sessionId)) return null;
+        if (connection is null)
         {
-            return null;
+            await using var owned = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            return await LoadUnlockedAsync(sessionId, cancellationToken, owned).ConfigureAwait(false);
         }
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT document FROM business_sessions WHERE session_id = $id;";
+        command.Parameters.AddWithValue("$id", sessionId);
+        var bytes = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as byte[];
+        return bytes is null ? null : ParseDocument(bytes, sessionId);
+    }
 
-        var path = SessionPath(sessionId);
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
+    private static SessionDocument? ParseDocument(byte[] bytes, string sessionId)
+    {
         try
         {
-            var allowedBytes = Math.Min(maximumBytes, MaximumSessionFileBytes);
-            if (new FileInfo(path).Length > allowedBytes)
-            {
-                return null;
-            }
-
-            await _fileGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            byte[] bytes;
-            try
-            {
-                bytes = await ReadBoundedBytesAsync(
-                    path,
-                    allowedBytes,
-                    cancellationToken,
-                    bytesRead).ConfigureAwait(false);
-            }
-            finally
-            {
-                _fileGate.Release();
-            }
             var root = JsonNode.Parse(bytes) as JsonObject;
             if (root is null || root["messages"] is not JsonArray messagesNode)
             {
@@ -350,98 +355,29 @@ public sealed partial class SessionStore : ISessionStore
                 forkedFromMessageId,
                 TryReadTimestamp(root, "last_agent_activity_at"));
         }
-        catch (JsonException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
-        catch (InvalidDataException)
-        {
-            return null;
-        }
+        catch (JsonException) { return null; }
+        catch (InvalidDataException) { return null; }
     }
 
-    private async Task WriteUnlockedAsync(
-        SessionDocument document,
-        CancellationToken cancellationToken)
+    private static async Task WriteUnlockedAsync(
+        SessionDocument document, SqliteConnection connection,
+        SqliteTransaction transaction, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(_sessionDirectory);
-        var target = SessionPath(document.Id);
-        var temporary = Path.Combine(
-            _sessionDirectory,
-            $".{document.Id}.{Guid.NewGuid():N}.tmp");
-        await _fileGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
-            if (bytes.Length > MaximumSessionFileBytes)
-            {
-                throw new InvalidDataException("session_file_too_large");
-            }
-
-            await using (var stream = new FileStream(
-                temporary,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            File.Move(temporary, target, overwrite: true);
-            InvalidateSummaryCache(document.Id);
-        }
-        finally
-        {
-            _fileGate.Release();
-            File.Delete(temporary);
-        }
-    }
-
-    private string SessionPath(string sessionId) =>
-        Path.Combine(_sessionDirectory, $"{sessionId}.json");
-
-    private static async Task<byte[]> ReadBoundedBytesAsync(
-        string path,
-        long maximumBytes,
-        CancellationToken cancellationToken,
-        Action<long>? bytesRead = null)
-    {
-        await using var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            81920,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
-        var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
-        int read;
-        while (output.Length < maximumBytes
-            && (read = await stream.ReadAsync(
-                buffer.AsMemory(0, (int)Math.Min(buffer.Length, maximumBytes - output.Length)),
-                cancellationToken).ConfigureAwait(false)) > 0)
-        {
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-            bytesRead?.Invoke(read);
-        }
-
-        if (stream.Position < stream.Length)
-        {
-            throw new InvalidDataException("session_file_too_large");
-        }
-
-        return output.ToArray();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
+        if (bytes.Length > MaximumSessionFileBytes) throw new InvalidDataException("session_file_too_large");
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO business_sessions(session_id, document, summary, updated_at_utc)
+            VALUES ($id, $document, $summary, $updated)
+            ON CONFLICT(session_id) DO UPDATE SET document = excluded.document,
+                summary = excluded.summary, updated_at_utc = excluded.updated_at_utc;
+            """;
+        command.Parameters.AddWithValue("$id", document.Id);
+        command.Parameters.AddWithValue("$document", bytes);
+        command.Parameters.AddWithValue("$summary", JsonSerializer.Serialize(ToSummary(document)));
+        command.Parameters.AddWithValue("$updated", document.UpdatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsValidMessage(SessionMessage? message) =>

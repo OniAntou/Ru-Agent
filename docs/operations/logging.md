@@ -24,7 +24,7 @@ The Ru logging system is split into two cleanly separated subsystems:
 - **Legacy cleanup**: Existing matching bootstrap `.log` files are eligible
   for the same retention cleanup, but are never parsed or returned by the
   diagnostics API. New bootstrap output is structured JSONL only.
-- **Activity Log Retention**: Maximum 5,000 entries with duplicate `event_id` suppression.
+- **Activity Log Retention**: The newest 5,000 inserted rows in `agent_harness.db`, with persistent duplicate `event_id` suppression across restarts. Legacy activity/outbox backup files are excluded from technical-log retention.
 
 ## 3. Correlation ID Propagation
 
@@ -59,8 +59,9 @@ stream or cause unnecessary UI refreshes.
 GUI crash handling writes `gui_crash` only for unhandled fatal failures, with a
 safe exception category; recoverable WinUI exceptions are handled without a
 false critical crash record, and no raw crash file is created.
-Activity Timeline data remains a separate privacy-safe outbox owned and
-ingested by ASP.NET Core.
+Activity Timeline data is stored in SQLite by ASP.NET Core. Agent transitions
+project through the durable conversation outbox; legacy file outboxes are
+imported once rather than polled (see [ADR 0013](../adr/0013-consolidate-business-persistence-in-sqlite.md)).
 
 Automated tests cover schema/privacy, bounds, retries, and writer counters.
 Live provider behaviour

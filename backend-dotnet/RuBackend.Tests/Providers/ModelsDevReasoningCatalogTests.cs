@@ -291,6 +291,7 @@ public sealed class ModelsDevReasoningCatalogTests : IDisposable
 
     public void Dispose()
     {
+        SqliteTestPools.ClearHarnessDatabase(DataPaths.Resolve(_root, _root, _root, _root).AgentHarnessDatabase);
         if (Directory.Exists(_root))
         {
             Directory.Delete(_root, recursive: true);

@@ -472,7 +472,7 @@ width or composer alignment.
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions (including message history), activity,
-and reviewed-example policy. Business records live in the canonical
+and reviewed-example policy. Business records share `agent_harness.db` under the canonical
 `%LOCALAPPDATA%\Ru` location (see
 `docs/adr/0004-canonical-ru-data-location.md`). Windows Credential
 Manager remains the secret store.
@@ -486,8 +486,9 @@ Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
 `%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, test-fixture, and WinUI
 writers. The HTTP boundary records fixed route categories and durations; the
 diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
-Activity Timeline writes continue through the durable activity outbox and
-ASP.NET ingestion path, with read-time re-sanitization for older records.
+Activity Timeline records are sanitized before SQLite insertion and on read.
+Agent projections still follow the durable conversation outbox. The retired
+file activity-outbox poller is replaced by one-time legacy import (ADR-0013).
 
 ## Acceptance boundary
 

@@ -63,6 +63,11 @@ a bounded result, never a frozen app.
 The four executables ship side by side in one folder; the app starts the Host
 and the Broker itself, and the CLI can drive the same loopback surface.
 
+Business data uses one local SQLite database, `agent_harness.db`: settings,
+sessions and messages, activity, runs and workspaces. Existing JSON/JSONL data
+is imported once and retained as backup. API keys remain in Windows Credential
+Manager. See [the persistence decision](docs/adr/0013-consolidate-business-persistence-in-sqlite.md).
+
 ## Autonomy, trust, and approval
 
 Every run uses one of three canonical, session-scoped presets:

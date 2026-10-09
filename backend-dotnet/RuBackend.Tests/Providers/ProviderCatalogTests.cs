@@ -621,7 +621,11 @@ public sealed class ProviderCatalogTests : IDisposable
         Assert.Equal("catalog_malformed", error.Code);
     }
 
-    public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
+    public void Dispose()
+    {
+        SqliteTestPools.ClearHarnessDatabase(DataPaths.Resolve(_root, _root, _root, _root).AgentHarnessDatabase);
+        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+    }
     private sealed class Clock : TimeProvider
     {
         private DateTimeOffset _now = new(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);

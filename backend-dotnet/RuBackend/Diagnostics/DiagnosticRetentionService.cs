@@ -170,6 +170,5 @@ public sealed class DiagnosticRetentionService : BackgroundService
     private static bool IsStructuredDiagnosticFile(FileInfo file) =>
         file.Name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
         || file.Name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
-        || file.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(file.Name, "activity_outbox.jsonl", StringComparison.OrdinalIgnoreCase);
+        || file.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase);
 }

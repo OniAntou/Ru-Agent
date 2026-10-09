@@ -19,19 +19,16 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Read_picks_up_an_external_rewrite_without_a_save()
+    public async Task Read_observes_a_save_from_another_store_without_a_stale_cache()
     {
-        // Only clean reads are cached, keyed by size+mtime: a hand edit or a
-        // CLI write in another process must show up on the next read. The two
-        // payloads differ in length so the key change does not depend on
-        // timestamp granularity.
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
         await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"openai","model":"a"}""");
 
         Assert.Equal("a", (await store.ReadAsync(CancellationToken.None)).Model);
 
-        await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"openai","model":"bb"}""");
+        var other = new SettingsStore(paths);
+        await other.SaveAsync((await other.ReadAsync(default)) with { Model = "bb" }, default);
 
         Assert.Equal("bb", (await store.ReadAsync(CancellationToken.None)).Model);
     }
@@ -39,8 +36,7 @@ public sealed class SettingsStoreTests
     [Fact]
     public async Task Read_recovers_after_a_corrupt_file_is_rewritten()
     {
-        // A corrupt file falls back to defaults but must never poison the
-        // cache: once rewritten, the new content has to win.
+        // A corrupt legacy file stays unmarked so a repaired file can be imported.
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
         await File.WriteAllTextAsync(paths.SettingsFile, "{corrupt");
@@ -171,7 +167,7 @@ public sealed class SettingsStoreTests
 
         await store.SaveAsync(current, CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal("preserve-me", persisted["unknown_future_key"]!.GetValue<string>());
         Assert.Null(persisted["max_tokens"]);
         Assert.Null(persisted["max_new_tokens"]);
@@ -186,7 +182,7 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Concurrent_saves_leave_one_complete_document_and_no_temp_file()
+    public async Task Concurrent_saves_leave_one_complete_row_and_no_settings_file()
     {
         var (store, paths) = CreateStore();
         var current = await store.ReadAsync(CancellationToken.None);
@@ -195,7 +191,7 @@ public sealed class SettingsStoreTests
 
         await Task.WhenAll(saves);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Null(persisted["max_tokens"]);
         Assert.Null(persisted["max_new_tokens"]);
         Assert.Null(persisted["temperature"]);
@@ -229,7 +225,7 @@ public sealed class SettingsStoreTests
         Assert.Null(snapshot.Raw["lmstudio_url"]);
 
         await store.SaveAsync(snapshot, CancellationToken.None);
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Null(persisted["ollama_model"]);
         Assert.Null(persisted["ollama_url"]);
         Assert.Null(persisted["lmstudio_model"]);
@@ -260,7 +256,7 @@ public sealed class SettingsStoreTests
             },
             CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal("Custom OpenAI", persisted["backend"]!.GetValue<string>());
         Assert.Equal("my-model", persisted["custom_model"]!.GetValue<string>());
         Assert.Equal("http://localhost:9000/v1", persisted["custom_url"]!.GetValue<string>());
@@ -319,7 +315,7 @@ public sealed class SettingsStoreTests
             current with { Backend = "models.dev:opencode" },
             CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal("models.dev:opencode", persisted["backend"]!.GetValue<string>());
         Assert.Null(persisted["model"]);
 
@@ -330,18 +326,18 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Save_rejects_overlong_model_without_replacing_the_existing_file()
+    public async Task Save_rejects_overlong_model_without_changing_the_settings_row()
     {
         var (store, paths) = CreateStore();
         var current = await store.ReadAsync(CancellationToken.None);
         await store.SaveAsync(current, CancellationToken.None);
-        var before = await File.ReadAllBytesAsync(paths.SettingsFile);
+        var before = await BusinessSqliteTestData.ReadSettingsAsync(paths);
 
         await Assert.ThrowsAsync<ArgumentException>(() => store.SaveAsync(
             current with { Model = new string('m', 257) },
             CancellationToken.None));
 
-        Assert.Equal(before, await File.ReadAllBytesAsync(paths.SettingsFile));
+        Assert.Equal(before, await BusinessSqliteTestData.ReadSettingsAsync(paths));
     }
 
     [Fact]
@@ -391,7 +387,7 @@ public sealed class SettingsStoreTests
 
         await store.SaveAsync(current with { ProviderId = "openrouter" }, CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal("openrouter", persisted["provider_id"]!.GetValue<string>());
 
         var reloaded = await store.ReadAsync(CancellationToken.None);
@@ -412,7 +408,7 @@ public sealed class SettingsStoreTests
             },
             CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal(0.75, persisted["compaction_trigger_ratio"]!.GetValue<double>());
         Assert.Equal(0.50, persisted["compaction_target_ratio"]!.GetValue<double>());
 
@@ -535,7 +531,7 @@ public sealed class SettingsStoreTests
             },
             CancellationToken.None);
 
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(paths))!.AsObject();
         Assert.Equal(0.80, persisted["compaction_trigger_ratio"]!.GetValue<double>());
         Assert.Equal(0.62, persisted["compaction_target_ratio"]!.GetValue<double>());
 

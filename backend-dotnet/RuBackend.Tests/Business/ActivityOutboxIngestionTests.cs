@@ -26,11 +26,12 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tempDir, true); } catch { }
+        SqliteTestPools.ClearHarnessDatabase(_paths.AgentHarnessDatabase);
+        Directory.Delete(_tempDir, true);
     }
 
     [Fact]
-    public async Task Ingestion_drains_worker_outbox_and_deduplicates_into_canonical_store()
+    public async Task Migration_imports_legacy_outbox_and_deduplicates_into_canonical_store()
     {
         var outboxPath = Path.Combine(_paths.LogRoot, "activity_outbox.jsonl");
         var outboxLines = new[]
@@ -43,10 +44,6 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
 
         await File.WriteAllLinesAsync(outboxPath, outboxLines);
 
-        var ingestion = new ActivityOutboxIngestionService(_store, _paths);
-        var ingested = await ingestion.IngestPendingAsync();
-
-        Assert.Equal(3, ingested); // 2 valid unique + 1 dup passed to store, store deduplicates
 
         var events = await _store.ReadAsync(100, CancellationToken.None);
         Assert.Equal(2, events.Count);
@@ -57,7 +54,7 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
     }
 
     [Fact]
-    public async Task Ingestion_tolerates_malformed_scalar_with_safe_fallback()
+    public async Task Migration_skips_malformed_scalars_and_preserves_later_events()
     {
         var outboxPath = Path.Combine(_paths.LogRoot, "activity_outbox.jsonl");
         await File.WriteAllLinesAsync(outboxPath, new[]
@@ -67,13 +64,10 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
             "{\"event_id\":\"evt_after\",\"ts\":102.0,\"iso\":\"2026-08-20T00:00:02Z\",\"type\":\"chat\",\"data\":{\"preview\":\"after\"}}",
         });
 
-        var ingestion = new ActivityOutboxIngestionService(_store, _paths);
-        var ingested = await ingestion.IngestPendingAsync();
-
-        Assert.Equal(3, ingested);
-        Assert.False(File.Exists(outboxPath));
         var events = await _store.ReadAsync(100, CancellationToken.None);
-        Assert.Equal(new[] { "evt_before", "evt_bad", "evt_after" }, events.Select(item => item.EventId));
+        Assert.Equal(new[] { "evt_before", "evt_after" }, events.Select(item => item.EventId));
         Assert.Equal("chat", events[1].Type);
+        Assert.True(File.Exists(outboxPath));
+        Assert.Equal(2, (await new ActivityLogStore(_paths).ReadAsync(100, default)).Count);
     }
 }

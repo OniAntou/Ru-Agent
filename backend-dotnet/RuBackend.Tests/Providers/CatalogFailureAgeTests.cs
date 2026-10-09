@@ -77,7 +77,11 @@ public sealed class CatalogFailureAgeTests : IDisposable
         return cacheFile;
     }
 
-    public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
+    public void Dispose()
+    {
+        SqliteTestPools.ClearHarnessDatabase(DataPaths.Resolve(_root, _root, _root, _root).AgentHarnessDatabase);
+        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+    }
 
     private sealed class AlwaysKey : ICredentialStore
     {

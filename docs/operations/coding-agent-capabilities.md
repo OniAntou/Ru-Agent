@@ -57,7 +57,7 @@ Native grading executes trusted code and is not an OS sandbox. The existing
 workflow evaluator above still measures scripted integration; neither result
 should be reported as a live-model coding score.
 
-Session listing inspects at most 2,000 metadata entries, parses at most 1,000 documents and returns at most 500 summaries. Uncached reads share a 32 MiB budget and a cooperative five-second deadline; cached summaries expire after one minute. Exhausted scan/read/result budgets set `sessions_truncated`. Ordering is newest first within the inspected set, not a guarantee of the globally newest sessions when the metadata cap is reached.
+Session listing queries indexed SQLite summaries across all stored sessions and returns the newest 500, ordered by UTC update time and then session ID. More rows set `sessions_truncated`; there is no filesystem scan, byte-budget or summary-cache deadline. The one-time legacy import validates transcript files separately.
 
 Project-file discovery inspects at most 5,000 entries for two seconds and presents at most 50 matches. Selection is explicit; pending context is capped at eight attachments and 32 MiB of source bytes. Prompt submissions retain their own copies, with eight queued entries and a 32 MiB aggregate estimate of retained content. A refused submission preserves the draft and attachments. A failed submission holds the queue until `/retry`; configuration/help commands remain available while it is paused.
 

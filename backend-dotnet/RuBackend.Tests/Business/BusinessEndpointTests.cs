@@ -152,7 +152,7 @@ public sealed class BusinessEndpointTests
         Assert.Equal(
             "new-private-key",
             await credentials.GetAsync("Ru", "openai_api_key", CancellationToken.None));
-        var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        var persisted = await BusinessSqliteTestData.ReadSettingsAsync(data.Paths);
         Assert.Contains("gpt-4o", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("new-private-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("api_key", persisted, StringComparison.OrdinalIgnoreCase);
@@ -207,7 +207,7 @@ public sealed class BusinessEndpointTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("models.dev:opencode", persisted["backend"]!.GetValue<string>());
     }
 
@@ -233,7 +233,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload.GetProperty("status").GetString());
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("Custom OpenAI", persisted["backend"]!.GetValue<string>());
         Assert.Equal("my-model", persisted["custom_model"]!.GetValue<string>());
         Assert.Equal("http://127.0.0.1:9000/v1", persisted["custom_url"]!.GetValue<string>());
@@ -260,7 +260,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload.GetProperty("status").GetString());
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("abc123", persisted["cloudflare_account_id"]!.GetValue<string>());
 
         var settings = JsonNode.Parse(await client.GetStringAsync("/settings"))!;
@@ -291,7 +291,7 @@ public sealed class BusinessEndpointTests
         Assert.Equal(
             "private-custom-key",
             await credentials.GetAsync("Ru", "custom_api_key", CancellationToken.None));
-        var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        var persisted = await BusinessSqliteTestData.ReadSettingsAsync(data.Paths);
         Assert.DoesNotContain("private-custom-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_api_key", persisted, StringComparison.OrdinalIgnoreCase);
     }
@@ -338,7 +338,7 @@ public sealed class BusinessEndpointTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("http://10.0.0.5:9000/v1", persisted["custom_url"]!.GetValue<string>());
     }
 
@@ -361,7 +361,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("OpenAI", persisted["backend"]!.GetValue<string>());
         Assert.Equal("gpt-4o", persisted["openai_model"]!.GetValue<string>());
         Assert.Equal("old-anthropic", persisted["anthropic_model"]!.GetValue<string>());
@@ -392,7 +392,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal(expectedBackend, persisted["backend"]!.GetValue<string>());
         Assert.Equal("grouped-model", persisted[expectedModelField]!.GetValue<string>());
         if (expectedModelField != "openai_model")
@@ -420,7 +420,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
-        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        var persisted = JsonNode.Parse(await BusinessSqliteTestData.ReadSettingsAsync(data.Paths))!.AsObject();
         Assert.Equal("models.dev:openrouter", persisted["backend"]!.GetValue<string>());
         Assert.Equal("generic-model", persisted["model"]!.GetValue<string>());
         Assert.Equal("openai/old", persisted["openai_model"]!.GetValue<string>());
@@ -449,7 +449,8 @@ public sealed class BusinessEndpointTests
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
-        var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        await new SettingsStore(data.Paths).ReadAsync(default);
+        var originalSettings = await BusinessSqliteTestData.ReadSettingsAsync(data.Paths);
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -458,7 +459,7 @@ public sealed class BusinessEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
 
         Assert.Equal("error", payload!["status"]!.GetValue<string>());
-        Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
+        Assert.Equal(originalSettings, await BusinessSqliteTestData.ReadSettingsAsync(data.Paths));
     }
 
     [Fact]
@@ -468,7 +469,8 @@ public sealed class BusinessEndpointTests
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
             "{\"backend\":\"openai\",\"openai_model\":\"openai/old\"}");
-        var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        await new SettingsStore(data.Paths).ReadAsync(default);
+        var originalSettings = await BusinessSqliteTestData.ReadSettingsAsync(data.Paths);
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -478,7 +480,7 @@ public sealed class BusinessEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
 
         Assert.Equal("error", payload!["status"]!.GetValue<string>());
-        Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
+        Assert.Equal(originalSettings, await BusinessSqliteTestData.ReadSettingsAsync(data.Paths));
     }
 
     [Fact]
@@ -700,7 +702,8 @@ public sealed class BusinessEndpointTests
         Assert.Equal("synthetic", activity.GetProperty("events")[0].GetProperty("type").GetString());
         Assert.Equal("ok", (await cleared.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("status").GetString());
-        Assert.False(File.Exists(data.Paths.ActivityLogFile));
+        Assert.True(File.Exists(data.Paths.ActivityLogFile));
+        Assert.Empty(await BusinessSqliteTestData.ReadActivityAsync(data.Paths));
     }
 
     /// <summary>
@@ -853,7 +856,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Session_list_refreshes_cached_metadata_after_external_file_replacement()
+    public async Task Session_list_ignores_legacy_file_edits_after_import()
     {
         using var data = TemporaryBusinessData.Create();
         var sessionId = Guid.NewGuid().ToString("N");
@@ -870,7 +873,7 @@ public sealed class BusinessEndpointTests
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(2));
         var second = await store.ListAsync(CancellationToken.None);
 
-        Assert.Equal("after replacement", Assert.Single(second).Title);
+        Assert.Equal("before replacement", Assert.Single(second).Title);
     }
 
     private static string ClaudeMessage(string role, string text) =>

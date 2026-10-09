@@ -9,6 +9,10 @@ public sealed class HarnessSqliteSchemaTests
 {
     private static readonly string[] RequiredTables =
     [
+        "business_migrations",
+        "business_settings",
+        "business_sessions",
+        "business_activity",
         "agent_runs",
         "agent_run_provider_selections",
         "agent_events",
@@ -31,6 +35,8 @@ public sealed class HarnessSqliteSchemaTests
 
     private static readonly string[] RequiredIndexes =
     [
+        "business_sessions_updated",
+        "business_activity_timestamp",
         "ux_agent_runs_active_session",
         "ix_agent_runs_session_created_run",
         "ux_agent_payloads_context_source",
@@ -60,7 +66,7 @@ public sealed class HarnessSqliteSchemaTests
         await connection.OpenAsync();
         await using var tableCommand = connection.CreateCommand();
         tableCommand.CommandText =
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'agent_%' OR name LIKE 'workspace_%')";
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'agent_%' OR name LIKE 'workspace_%' OR name LIKE 'business_%')";
         var names = new HashSet<string>(StringComparer.Ordinal);
         await using (var reader = await tableCommand.ExecuteReaderAsync())
         {
@@ -78,7 +84,7 @@ public sealed class HarnessSqliteSchemaTests
         Assert.DoesNotContain("workspace_file_snapshots", names);
         await using var indexCommand = connection.CreateCommand();
         indexCommand.CommandText =
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND (name LIKE '%agent_%' OR name LIKE '%workspace_%')";
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND (name LIKE '%agent_%' OR name LIKE '%workspace_%' OR name LIKE 'business_%')";
         var indexes = new HashSet<string>(StringComparer.Ordinal);
         await using (var reader = await indexCommand.ExecuteReaderAsync())
         {
@@ -97,6 +103,31 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Equal(
             HarnessSqliteSchema.CurrentVersion,
             (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Initialize_upgrades_version_17_without_removing_harness_records()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO agent_session_tombstones(session_id, deleted_at_utc) VALUES ('retained', '2026-10-09T00:00:00Z');
+            DROP TABLE business_activity;
+            DROP TABLE business_sessions;
+            DROP TABLE business_settings;
+            DROP TABLE business_migrations;
+            PRAGMA user_version = 17;
+            """;
+        await command.ExecuteNonQueryAsync();
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(health.IsAvailable);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        command.CommandText = "SELECT count(*) FROM agent_session_tombstones WHERE session_id = 'retained';";
+        Assert.Equal(1L, await command.ExecuteScalarAsync());
+        command.CommandText = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'business_%';";
+        Assert.Equal(4L, await command.ExecuteScalarAsync());
     }
 
     [Fact]
@@ -221,7 +252,7 @@ public sealed class HarnessSqliteSchemaTests
         var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(17, health.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         await using var index = verify.CreateCommand();
@@ -247,7 +278,7 @@ public sealed class HarnessSqliteSchemaTests
         var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(migrated.IsAvailable, migrated.ErrorCode);
-        Assert.Equal(17, migrated.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, migrated.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         Assert.True(await ColumnExistsAsync(verify, "agent_session_tombstones", "session_id"));
@@ -270,7 +301,7 @@ public sealed class HarnessSqliteSchemaTests
         var migrated = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
 
         Assert.True(migrated.IsAvailable, migrated.ErrorCode);
-        Assert.Equal(17, migrated.SchemaVersion);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, migrated.SchemaVersion);
         await using var verify = fixture.CreateRawConnection();
         await verify.OpenAsync();
         Assert.True(await ColumnExistsAsync(verify, "agent_session_work_states", "ciphertext"));

@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -27,7 +28,9 @@ public sealed partial class SessionStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var current = await LoadUnlockedAsync(sessionId, cancellationToken)
+            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var current = await LoadUnlockedAsync(sessionId, cancellationToken, connection, transaction)
                 .ConfigureAwait(false);
             if (current is null)
             {
@@ -45,10 +48,12 @@ public sealed partial class SessionStore
                     : SessionAppendOutcome.InvalidMessage;
             }
 
-            await AppendUnlockedAsync(current, [message], cancellationToken)
+            await AppendUnlockedAsync(current, [message], connection, transaction, cancellationToken)
                 .ConfigureAwait(false);
+            transaction.Commit();
             return SessionAppendOutcome.Appended;
         }
+        catch (SqliteException) { return SessionAppendOutcome.TransientFailure; }
         catch (IOException)
         {
             return SessionAppendOutcome.TransientFailure;
@@ -70,6 +75,7 @@ public sealed partial class SessionStore
     private async Task AppendUnlockedAsync(
         SessionDocument current,
         IReadOnlyList<SessionMessage> messages,
+        SqliteConnection connection, SqliteTransaction transaction,
         CancellationToken cancellationToken)
     {
         var merged = current.Messages.Concat(messages).ToArray();
@@ -112,7 +118,7 @@ public sealed partial class SessionStore
             Messages = merged.TakeLast(MaximumMessages).ToArray(),
             SourceMessageLedger = ledger.Count == 0 ? null : ledger,
         };
-        await WriteUnlockedAsync(updated, cancellationToken).ConfigureAwait(false);
+        await WriteUnlockedAsync(updated, connection, transaction, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsValidSourceId(string? value) =>

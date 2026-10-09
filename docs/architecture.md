@@ -220,10 +220,7 @@ RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Publi
                                                                          `-- policy, approvals, and local action adapters
 ```
 
-The public Agent path uses the in-process typed model runner. The legacy
-`RuBackend:AgentHarness:Version` setting remains accepted by compatibility
-Harness construction, but it is not a product mode switch and cannot re-enable
-Chat. Durable policy/file-tool work is complete, with headless terminal and
+The public Agent path uses the in-process typed model runner. Durable policy/file-tool work is complete, with headless terminal and
 reconciliation surfaces from Phase 3:
 
 - In-process model runner: one typed `ModelGenerationRequest` → one provider generation → `AssistantStep(text, tool_calls, finish_reason)`. A native provider may return optional narration plus one or more ordered calls; a text-selection provider still emits exactly one JSON object with no surrounding selection prose. Provider errors map to bounded stable codes without provider/model fallback. The runner composes one system message with composer `2.0.0` from seven ordered blocks: persona, execution contract, environment, profile/effective policy, instruction blocks, capabilities, and runtime context. It returns a receipt whose version, block ids/order, and per-instruction digests Core validates before completion or tool dispatch. What that receipt attests is bounded: the `instruction.*` digests bind the exact instruction bytes in the context, while the other block digests are checked for shape and the caller does not receive the rendered prompt text. The typed step result carries text, tool calls, finish reason, and the prompt receipt, plus optional bounded `usage` and `reasoning_text`.

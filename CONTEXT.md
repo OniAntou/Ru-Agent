@@ -36,9 +36,7 @@ the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
 bridge (`ru agent rpc`), wrapped by the TypeScript SDK at
 [`sdk/ru-agent`](sdk/ru-agent/README.md); the bridge adds no HTTP route and
-opens no transport beyond stdin/stdout. The
-legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
-not a product mode switch.
+opens no transport beyond stdin/stdout.
 _Avoid_: Compatibility routes
 
 **Worker Contract**:
@@ -327,11 +325,6 @@ and clean/dirty repository state does not change a decision. An ambiguous
 mutation outcome pauses for inspection until explicit Continue.
 _Avoid_: treating repository cleanliness as authorization or Full Access
 terminal as sandboxed
-
-**Connector Adapter**:
-An isolated calendar, task, or mail integration that separates preview from
-side effect and requires one-time approval for writes or sends.
-_Avoid_: ambient account access
 
 **Multimodal Image Payload**:
 A client-attached image (`image/png`, `image/jpeg`, `image/webp`) resized to at

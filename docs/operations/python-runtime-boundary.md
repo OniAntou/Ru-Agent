@@ -32,7 +32,7 @@ Current boundary classes are:
 
 - `managed-startup`: the two configured C# entrypoint files,
   `backend-dotnet/RuBackend/Program.cs` and
-  `backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs`;
+  `backend-dotnet/RuAgent.Hosting/BrokerChildLaunchPlan.cs`;
 - `tooling`: every file under `scripts/`, `tools/`, and `tests/`;
 - `legacy`: every other scanned file — the rest of `backend-dotnet/**` plus
   `gui-winui3/**`, `gui-winui3.Tests/**`, and `gui-winui3.Harness/**` — that is

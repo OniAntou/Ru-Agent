@@ -1,24 +1,22 @@
 # Contributing to Ru Agent
 
-Thank you for helping build Ru. This guide covers what you need, how the
-repository is tested, and the rules that keep a security-sensitive local agent
-trustworthy. For how the system works, read [README.md](README.md),
-[CONTEXT.md](CONTEXT.md) (the domain language) and
-[docs/architecture.md](docs/architecture.md).
+This guide covers setup, verification and contribution practices. Agent
+workflow lives in [AGENTS.md](AGENTS.md); domain language and current wiring live
+in [CONTEXT.md](CONTEXT.md) and [docs/architecture.md](docs/architecture.md).
 
-Ru is a native Windows coding agent: a WinUI 3 desktop app, a terminal TUI, an
-ASP.NET Core Public Host, and a private Broker child — four executables, one
-directory, nothing to install. The default product is pure .NET 10: Python may
-back optional capabilities (skills, document tooling) but never the default
-path, and a capability that needs it fails closed with a named code when the
-interpreter is absent. Bundling an interpreter requires an ADR.
+Ru is a native Windows coding agent with a WinUI 3 app, terminal TUI, ASP.NET
+Core Public Host and private Broker. The default product is .NET 10 and its
+published runtime is self-contained. Python may back optional skills/document
+capabilities when the default path remains in-process .NET; a missing
+interpreter produces a named failure. Bundling one requires an ADR.
 
 ## Development environment
 
-- **Windows 10 or 11, 64-bit**
-- **.NET SDK 10.0 (x64)** — to build; published output is self-contained
-- **Python 3.11–3.13** — repository tooling and documentation guards only
-- **VS 2022 C++ Build Tools** — only if building native components from source
+- Windows 10 or 11, 64-bit
+- .NET SDK 10.0 (x64)
+- Python 3.11–3.13 for repository tooling/guards; optional Python-based
+  capabilities document their own requirements
+- VS 2022 C++ Build Tools when building native components from source
 
 ## Build and run
 
@@ -27,7 +25,7 @@ interpreter is absent. Bundling an interpreter requires an ADR.
 .\start_dev.bat      # development launch
 ```
 
-`build.bat` runs 12 stages and ends with a runnable folder:
+`build.bat` currently runs 12 stages and publishes the desktop executable to:
 
 ```powershell
 gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
@@ -35,89 +33,133 @@ gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 
 ## Testing
 
+Choose verification by impact. During iteration, run checks that exercise the
+changed behavior; expand for failures or cross-component dependencies. A small
+edit does not require every matrix on each iteration.
+
+| Change | Local verification |
+| --- | --- |
+| Documentation only | Relevant link, count and documentation guards |
+| Scoped .NET implementation, including local query/filter changes | Affected project build and test project(s), including regression/error cases |
+| Python tooling or SDK | Affected tests and language-specific checks |
+| Shared schema migration, transaction/recovery semantics, execution authority/approval behavior or protocol compatibility | Full .NET matrix and affected tooling/contract guards |
+| Release/distribution | Full applicable matrices, `build.bat` and acceptance for changed packaged behavior |
+
+Judge the affected behavior, not the folder name or number of changed files.
+A persistence query or internal refactor can use focused checks when it preserves
+schema, atomicity, recovery, authority and contracts. Expand to the full matrix
+when shared behavior can affect consumers across components. Run the final
+applicable matrix before integration, not after every intermediate edit.
+
+Useful focused commands:
+
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # the full .NET suite, 12 projects
-.venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
+dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug
+.\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter "Broker"
+.venv\Scripts\python.exe -m pytest tests/test_current_documentation.py tests/test_guidance_route_counts.py -q
 ```
 
-**Run one matrix at a time.** The .NET suite starts real processes and drives
-real loopback HTTP hosts; a concurrent run (another matrix, a publish, a
-running app) makes timing-sensitive tests fail for reasons unrelated to your
-change. The script takes a machine-wide lock and refuses to start while it is
-held (exit code 75). A failure is reported as a failure — there is no retry,
-because a retry would hide a genuinely flaky test instead of getting it fixed.
+Choose the build target and `-ProjectFilter` for the changed module. Full matrices:
 
-The Python guards protect the documentation and contracts: README counts
-(routes, tools, test projects), the live endpoint list versus
-`public-route-contract.json` (42 routes), the tool manifest digests, and the
-permission vocabulary. CI runs both matrices on `windows-latest`.
+```powershell
+.\scripts\test_dotnet.ps1 -Configuration Debug   # currently 12 projects
+.venv\Scripts\python.exe -m pytest tests -q
+```
 
-## How we work
+**Run one process/loopback matrix at a time.** The .NET suite launches real
+processes and HTTP hosts; concurrent matrices, publishing or a running app can
+cause environmental failures. Keep the machine-wide lock; the runner exits 75
+on contention. Do not bypass it.
 
-- **Branches.** The repository has a single long-lived branch, `dev` (the
-  default). Branch from it and name your branch `feat/<name>`, `fix/<name>`,
-  `refactor/<name>`.
-- **Commits.** [Conventional Commits](https://www.conventionalcommits.org/) with
-  a detailed scope: `feat(broker):`, `fix(gui):`, `refactor(worker):`,
-  `docs:`, `test(cli):`. First line ≤ 72 characters; use the body to explain
-  *why*, not what the diff shows. Breaking changes are marked with `!`
-  (`feat(providers)!: ...`) and documented in the CHANGELOG.
-- **Never** force-push, rewrite shared history, or commit secrets. API keys
-  belong in Windows Credential Manager through the app's Settings, never in
-  files, logs, or tests.
+The runner does not automatically retry failed tests. Preserve the first
+failure, investigate it, then rerun after a fix or justified environment
+correction. Report both outcomes and suspected flakiness; a later green run does
+not erase the original failure.
 
-## Pull requests
+Python guards check README counts, manifest digests, permission vocabulary and
+the endpoint list against `public-route-contract.json` (42 routes). CI keeps
+both full matrices on `windows-latest`; focused local checks do not remove CI
+gates. Report commands, outcomes and material gaps. Deterministic tests do not
+establish real-provider quality or native UI acceptance.
 
-1. One concern per PR. Prefer small, focused changes over large rewrites.
-2. Run the relevant test matrix **before** pushing and say what you ran.
-3. Tests cover happy paths *and* error/edge cases; a bug fix comes with a
-   regression test that fails on the old code.
-4. Docs are part of the change. If you add, remove, or rename a route, a tool,
-   a test project, or a user-visible behavior, the README, CONTEXT.md,
-   `public-route-contract.json` and CHANGELOG must move with the code — the
-   guards in `tests/` fail CI when they drift.
-5. Update `CHANGELOG.md` (Keep a Changelog format) for every user-visible
-   change.
+## Changes and contracts
 
-## Architecture invariants (non-negotiable)
+Keep changes focused on one outcome. Create/split files for clear ownership;
+refactor the affected area when needed. Prefer cohesive functions and readable
+names; line counts and naming prefixes are guidance. Comments explain intent
+or constraints. Handle async errors at the responsible boundary and propagate
+cancellation.
 
-These rules are what make a local agent that executes terminal commands
-trustworthy. A change that weakens one is rejected even if every test passes.
+Tests capture accepted behavior, which can evolve. Investigate failures before
+choosing whether code or expectations need correction. Intentional behavior
+changes update implementation, contract and tests together, with the reason
+visible in review. Refactors preserve behavior and permission/error coverage.
+Prefer behavioral tests; retain source-contract checks for explicit ownership
+and update their helpers/assumptions with deliberate structural changes.
 
-1. **Fail closed.** The policy evaluator asks or denies by default. Never
-   widen a permission, preset, or grant to make a failing test pass — fix the
-   test or the code that regressed.
-2. **One execution authority.** Every model-visible tool call executes inside
-   `RuAgentBroker`, reached through the `IToolGateway` seam. No in-process
-   Host copy of tool semantics may exist.
-3. **No fallbacks.** No provider, model, protocol, or tool *substitution*; a
-   failure surfaces as a bounded, named error code. The one documented
-   exception is `web_search` racing a fixed set of its own upstream engines —
-   one tool, one policy decision, and every request still passes `WebPolicy`,
-   so it cannot widen the network boundary or bypass a denial.
-4. **The protocol is versioned and digest-bound.** The 13 tool definitions
-   live only in `RuAgent.Protocol`. A Broker manifest that disagrees with its
-   Protocol digest refuses to start.
-5. **Loopback and bearer only.** The Public Contract is the 42 loopback HTTP
-   routes guarded by a bearer token. No new public transport; no WebSocket
-   routes.
-6. **Permissions are session-scoped.** Approval tokens are single-use and
-   bound to the exact canonical arguments; no grant survives a restart.
-   The harness self-protection paths (harness key/database files and runtime
-   descriptors) deny at every preset; `RU_PROTECTED_PATHS` adds more.
-7. **Skills are untrusted prompt guidance.** `allowed-tools` metadata never
-   grants a tool, scope, path, network permission, or approval.
+Reproducible behavioral bugs need a focused regression test that fails on the
+old implementation. Simple documentation, presentation or low-impact edits can
+use existing checks; avoid tests that merely restate the implementation.
 
-## Reporting security issues
+## Security and execution boundaries
 
-Do not open a public issue for a vulnerability. This project's threat model is
-a hostile prompt running with the user's own privileges: read
-`ProtectedPathCatalog`, `WebPolicy`, `PolicySnapshotEvaluator` and the approval
-tests before touching policy code, and report findings privately to the
-maintainers so a fix can land before disclosure.
+[AGENTS.md](AGENTS.md#security-and-execution-boundaries) owns the execution,
+permission and secret-handling rules for contributors and agents. Consult
+[the tool policy](docs/operations/agent-tools.md) for runtime behavior;
+keep these guides aligned rather than copying the policy into each one.
 
-## Getting help
+Provider keys use Windows Credential Manager through Settings. Tests may use
+synthetic credentials, placeholders and mocked credential stores; do not put
+real credentials or tokens in fixtures or read the user's credentials for tests.
 
-Start from [docs/README.md](docs/README.md) for the documentation index and
-the decision register (`docs/adr/`). If the behavior you see contradicts the
-documentation, that is a bug in one of them — file it either way.
+## Evolving the architecture
+
+The current Public Contract is the 42 loopback HTTP routes authenticated by
+bearer token, using HTTP/SSE and no WebSocket routes. The 13 tool definitions
+live in `RuAgent.Protocol`; a mismatched Broker manifest digest refuses to
+start. Counts and process/transport layout describe this version, not a limit
+on future features.
+
+Routes, tools and components may evolve in a scoped change. Update affected
+schemas/versions/digests, clients, tests and docs together. Write
+[an ADR](docs/adr/) when changing a lasting architectural decision, such as:
+
+- Authentication, execution authority or permission lifetime.
+- Public/private transport or process and data ownership.
+- Canonical persistence technology or a foundational runtime dependency,
+  including a bundled interpreter.
+
+Explain guarantees, compatibility and the alternatives considered. Routine
+package version updates, local schema/index refinements and internal refactors
+that preserve these decisions do not need a new ADR; describe ordinary tradeoffs
+in the commit or PR. Preserve authentication and execution-authority enforcement.
+Editing guidance does not itself change runtime behavior.
+
+## Git, review and documentation
+
+- The long-lived branch is `dev`. Use a focused feature/fix/refactor branch when
+  appropriate (`feat/<name>`, `fix/<name>`, `refactor/<name>`).
+- Use [Conventional Commits](https://www.conventionalcommits.org/) with a
+  meaningful scope and concise subject (target 72 characters). Explain
+  non-obvious motivation or tradeoffs in the body. Mark breaking changes with
+  `!` and describe them in CHANGELOG.
+- Commit when requested or already authorized; stage only task files. Preserve
+  unrelated dirty work. Never force-push, rewrite shared history or commit
+  secrets.
+- Before integration, record appropriate verification and resolve applicable
+  CI failures. Describe the problem, resulting behavior and evidence in the PR.
+- Review docs after each task and update affected claims: routes affect
+  `public-route-contract.json`; domain changes affect CONTEXT.md; wiring affects
+  architecture/ADRs; setup affects this guide. Update README counts when they
+  change and CHANGELOG for user-visible behavior. Correct/remove stale guidance
+  and repair incoming links when removing it. Routine edits need only the
+  documents they actually affect.
+
+## Reporting issues and getting help
+
+Report vulnerabilities privately to maintainers so fixes can land before public
+disclosure. Review relevant policy/path/network code and approval tests for
+execution-authority changes. Start general questions from
+[docs/README.md](docs/README.md) and the [decision register](docs/adr/).
+When code and docs disagree, identify which is outdated and correct it with the
+affected change.

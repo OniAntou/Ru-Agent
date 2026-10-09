@@ -26,6 +26,21 @@ CURRENT_RULE_DOCS = [
     ROOT / "AGENTS.md",
     ROOT / "CONTRIBUTING.md",
 ]
+# Docs whose subject *is* the permission contract must carry the canonical
+# matrix and trust vocabulary. A blanket requirement over every current doc
+# only forced each one to restate CONTEXT.md verbatim; the remaining docs are
+# held by the ban-list tests below, which is where drift in a passing
+# reference actually shows up.
+CURRENT_MATRIX_OWNING_DOCS = [
+    ROOT / "README.md",
+    ROOT / "CONTEXT.md",
+    ROOT / "docs/architecture.md",
+    ROOT / "docs/operations/agent-tools.md",
+    ROOT / "docs/operations/runtime-behavior.md",
+    ROOT / "backend-dotnet/README.md",
+    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
+    ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
+]
 CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
 CURRENT_REASON_DOCS = [
     ROOT / "README.md",
@@ -174,7 +189,7 @@ def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> 
     )
     missing: list[str] = []
     aggregate: list[str] = []
-    for path in CURRENT_CONTRACT_DOCS:
+    for path in CURRENT_MATRIX_OWNING_DOCS:
         text = " ".join(_current_text(path).lower().split())
         aggregate.append(text)
         for preset, patterns in matrix_vocabulary.items():
@@ -187,6 +202,30 @@ def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> 
     combined = "\n".join(aggregate)
     assert re.search(r"\b(?:gui|winui)\b[^.\n]{0,160}\b(?:confirm|trust)\b", combined) is not None
     assert missing == [], missing
+    _assert_contract_docs_restate_canonical_policy()
+
+
+# A doc that only mentions a preset in passing still cannot contradict the
+# canonical matrix. Requiring the full vocabulary there was the duplication
+# force; this keeps the drift guard where it belongs.
+def _assert_contract_docs_restate_canonical_policy() -> None:
+    required = (
+        # Full Access is skip-all but protected paths stay denied. This is the
+        # single claim a reader could act on wrongly, so it is the one that
+        # every doc naming the preset must carry. The read-only intent of plan
+        # and the external-ask intent of standard are pinned by the ban-lists
+        # below and by the owning-doc vocabulary above.
+        (r"\bfull_access\b[^.\n]{0,400}\bprotected paths?\b", "full_access keeps protected-path denial"),
+    )
+    stale: list[str] = []
+    for path in CURRENT_CONTRACT_DOCS:
+        text = " ".join(_current_text(path).lower().split())
+        if "full_access" not in text:
+            continue
+        for pattern, what in required:
+            if re.search(pattern, text) is None:
+                stale.append(f"{path.relative_to(ROOT)} names full_access without {what!r}")
+    assert stale == [], stale
 
 
 def test_current_worker_docs_describe_thirteen_separate_tools_and_typed_results() -> None:

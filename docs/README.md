@@ -53,15 +53,11 @@ in the checkout indefinitely.
 Git history is the recovery source for removed dated plans and specifications.
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
-`full_access` profiles from `RuAgent.Protocol`: `plan` is read-only — workspace
-read and Web are auto while terminal and mutation are denied outright and
-external structured access asks; `standard` auto-allows bounded-local
-in-workspace mutation and asks for external/escape intent; `full_access` is the
-skip-all mode — external structured files and arbitrary terminal are automatic,
-and only structured protected paths (harness key/database files and runtime
-descriptors, plus `RU_PROTECTED_PATHS` additions) stay denied. Workspace trust
-is explicit once per canonical identity:
-the GUI confirms it and CLI `run`/`chat` use `--trust-workspace`. Full Access
+`full_access` profiles defined in [`../CONTEXT.md`](../CONTEXT.md) — that file
+is the single source for the matrix, and this page does not restate it. Under
+`full_access` everything else runs automatically while the structured protected
+paths still deny. Workspace trust is explicit once per canonical identity: the
+GUI confirms it and CLI `run`/`chat` use `--trust-workspace`. Full Access
 requires the GUI gate or CLI `--confirm-full-access`.
 
 The canonical profiles do not synthesize `web_approval_required`; that legacy

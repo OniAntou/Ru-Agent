@@ -13,7 +13,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     [InlineData("ru-agent-broker")]
     public void Launch_plan_roles_are_accepted_by_child_policy(string role)
     {
-        var spec = new WorkerBrokerProcessSpec(
+        var spec = new BrokerChildProcessSpec(
             role,
             "powershell.exe",
             "-NoProfile -NonInteractive -Command exit 0",
@@ -34,7 +34,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     [InlineData("python-device-worker")]
     public void Retired_python_roles_are_rejected_by_child_policy(string role)
     {
-        var spec = new WorkerBrokerProcessSpec(
+        var spec = new BrokerChildProcessSpec(
             role,
             "powershell.exe",
             "-NoProfile -NonInteractive -Command exit 0",
@@ -62,7 +62,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
         try
         {
         // Use Hosting ChildProcessPolicy via factory helper that uses that policy internally
-        var spec = new WorkerBrokerProcessSpec(
+        var spec = new BrokerChildProcessSpec(
             "ru-agent-broker",
                 "powershell.exe",
                 PowerShellArguments(script),
@@ -89,7 +89,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     {
         const string secretStdout = "raw-stdout-secret-control";
         const string secretStderr = "raw-stderr-secret-control";
-        var spec = new WorkerBrokerProcessSpec(
+        var spec = new BrokerChildProcessSpec(
             "ru-agent-broker",
             "powershell.exe",
             PowerShellArguments($"[Console]::Out.WriteLine('{secretStdout}'); [Console]::Error.WriteLine('{secretStderr}')"),

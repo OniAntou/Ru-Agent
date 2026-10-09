@@ -278,7 +278,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             }
         }
 
-        // The Host/Worker selection contract becomes the provider's native
+        // The Host/model-step selection contract becomes the provider's native
         // function-calling surface: the model calls capabilities directly and
         // the Host still owns policy, approval, and execution.
         var tools = BuildToolDeclarations(request.Settings);

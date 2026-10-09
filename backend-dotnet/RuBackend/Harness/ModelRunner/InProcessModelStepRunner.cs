@@ -1,18 +1,18 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Worker;
+using RuAgent.Runtime.Model;
 using RuBackend.Harness.Prompting;
 
-namespace RuBackend.Harness.Worker;
+namespace RuBackend.Harness.ModelRunner;
 
 /// <summary>
 /// Runs one model step inside the Host process against the typed
-/// <see cref="WorkerV2StepService"/>. This is the loopback runner's logic with
+/// <see cref="ModelStepService"/>. This is the loopback runner's logic with
 /// the socket, hello/probe/cancel frames and the provider-bootstrap handoff file
 /// replaced by a typed provider snapshot: conversation build, delta sequencing,
 /// bounded retry/backoff and the durable failure mapping are unchanged.
@@ -27,11 +27,11 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     private const int MaxConversationBlockChars = 30_000;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
-        "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
 
-    private readonly WorkerV2StepService _stepService;
+    private readonly ModelStepService _stepService;
 
-    public InProcessModelStepRunner(WorkerV2StepService stepService)
+    public InProcessModelStepRunner(ModelStepService stepService)
     {
         ArgumentNullException.ThrowIfNull(stepService);
         _stepService = stepService;
@@ -81,17 +81,17 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         {
             try
             {
-                var prepared = attempt == 0 ? request.Preparation as InProcessPreparedStep : null;
-                if (attempt == 0 && request.Preparation is not null && prepared is null)
-                    throw new WorkerProtocolException("invalid_request", retryable: false);
-                var workerPrepared = prepared?.WorkerRequest
+                var preparedStep = attempt == 0 ? request.Preparation as InProcessPreparedStep : null;
+                if (attempt == 0 && request.Preparation is not null && preparedStep is null)
+                    throw new ModelRunnerProtocolException("invalid_request", retryable: false);
+                var prepared = preparedStep?.StepRequest
                     ?? _stepService.PrepareRequest(
                         await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken)
                             .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false);
-                if (workerPrepared.EstimatedInputTokens >= 0
-                    && workerPrepared.EstimatedInputTokens
-                        > workerPrepared.MaxPromptTokens - RequestSafetyMarginTokens)
-                    throw new WorkerV2StepException("context_limit_reached", retryable: false);
+                if (prepared.EstimatedInputTokens >= 0
+                    && prepared.EstimatedInputTokens
+                        > prepared.MaxPromptTokens - RequestSafetyMarginTokens)
+                    throw new ModelStepException("context_limit_reached", retryable: false);
                 // A retried attempt replaces the previous attempt's answer: tell the
                 // client to drop the partial text it already rendered before any of this
                 // attempt's text arrives. Attempt 1 has nothing to supersede.
@@ -109,7 +109,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 // The service numbers this attempt's deltas from 1; re-base them
                 // onto the client-facing sequence already published.
                 var result = await _stepService.RunPreparedAsync(
-                        workerPrepared,
+                        prepared,
                         async text =>
                         {
                             var sequence = checked(++publishedSequences);
@@ -133,13 +133,13 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                     result.Usage);
                 return new ModelStepResult(finalStep, result.PromptReceipt, finalStep.Usage, result.ReasoningText, result.ProviderContinuation);
             }
-            catch (WorkerV2StepException error) when (
+            catch (ModelStepException error) when (
                 error.Retryable
                 && attempt + 1 < MaxModelStepAttempts
                 && !cancellationToken.IsCancellationRequested)
             {
                 // One line per retryable rejection keeps a run whose retried
-                // attempt also fails diagnosable, like the worker transport
+                // attempt also fails diagnosable, like the retired worker transport
                 // reported every error frame before the retry.
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
@@ -152,7 +152,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 selectionFeedbackCode = error.Code;
                 attempt++;
             }
-            catch (WorkerV2StepException error)
+            catch (ModelStepException error)
             {
                 Console.Error.WriteLine(
                     $"ru.host step_rejected code={error.Code} retryable={error.Retryable}");
@@ -162,9 +162,9 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 // them into model_failed.
                 Console.Error.WriteLine(
                     $"ru.host step_failed code={error.Code} attempt={attempt} retryable={error.Retryable}");
-                throw new WorkerProtocolException(error.Code, error.Retryable, error);
+                throw new ModelRunnerProtocolException(error.Code, error.Retryable, error);
             }
-            catch (WorkerProtocolException error)
+            catch (ModelRunnerProtocolException error)
             {
                 // A protocol rejection carried a bounded code already; one log
                 // line is the difference between a diagnosable failure and a guess.
@@ -184,11 +184,11 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         ArgumentNullException.ThrowIfNull(request);
         var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken)
             .ConfigureAwait(false);
-        var workerRequest = _stepService.PrepareRequest(
+        var stepRequest = _stepService.PrepareRequest(
             generationRequest, request.ModelStepId.Value, requireExactProjection: true);
-        if (workerRequest.EstimatedInputTokens < 0 || workerRequest.MaxPromptTokens <= 0)
-            throw new WorkerV2StepException("provider_request_projection_unavailable", retryable: false);
-        return new InProcessPreparedStep(workerRequest);
+        if (stepRequest.EstimatedInputTokens < 0 || stepRequest.MaxPromptTokens <= 0)
+            throw new ModelStepException("provider_request_projection_unavailable", retryable: false);
+        return new InProcessPreparedStep(stepRequest);
     }
 
     private async Task<ModelGenerationRequest> BuildGenerationRequestAsync(
@@ -213,7 +213,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         }
         catch (ArgumentException error)
         {
-            throw new WorkerProtocolException("invalid_request", retryable: false, error);
+            throw new ModelRunnerProtocolException("invalid_request", retryable: false, error);
         }
     }
 
@@ -243,19 +243,19 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     {
         if (CreateProviderBootstrapAsync is null)
         {
-            throw new WorkerProtocolException("provider_bootstrap_failed");
+            throw new ModelRunnerProtocolException("provider_bootstrap_failed");
         }
 
         try
         {
             return await CreateProviderBootstrapAsync(runId, cancellationToken).ConfigureAwait(false)
-                ?? throw new WorkerProtocolException("provider_bootstrap_failed");
+                ?? throw new ModelRunnerProtocolException("provider_bootstrap_failed");
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (WorkerProtocolException)
+        catch (ModelRunnerProtocolException)
         {
             throw;
         }
@@ -263,7 +263,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         {
             // A config failure already names itself (missing key or model);
             // collapsing it would send the reader after the provider instead.
-            throw new WorkerProtocolException(
+            throw new ModelRunnerProtocolException(
                 StableBootstrapCode(error) ?? "provider_bootstrap_failed", retryable: false, error);
         }
     }
@@ -291,7 +291,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             // Attached images are part of the user's turn. Continuing without them
             // would let the model answer a question it never saw, and the user would
             // have no way to tell. Fail the step instead of silently dropping them.
-            throw new WorkerProtocolException("image_payload_unavailable", retryable: false, error);
+            throw new ModelRunnerProtocolException("image_payload_unavailable", retryable: false, error);
         }
     }
 
@@ -319,7 +319,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             }
             catch (ArgumentException error)
             {
-                throw new WorkerProtocolException("invalid_request", retryable: false, error);
+                throw new ModelRunnerProtocolException("invalid_request", retryable: false, error);
             }
         }
 
@@ -331,7 +331,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         "stop" => AssistantFinishReason.Stop,
         "tool_calls" => AssistantFinishReason.ToolCalls,
         "length" => AssistantFinishReason.Length,
-        _ => throw new WorkerProtocolException("invalid_step"),
+        _ => throw new ModelRunnerProtocolException("invalid_step"),
     };
 
     /// <summary>
@@ -373,13 +373,13 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             var (prompt, messages) = BuildTypedConversation(context, hasImages);
             return (prompt, null, messages);
         }
-        catch (WorkerProtocolException)
+        catch (ModelRunnerProtocolException)
         {
             throw;
         }
         catch (ArgumentException)
         {
-            throw new WorkerProtocolException("model_history_invalid");
+            throw new ModelRunnerProtocolException("model_history_invalid");
         }
     }
 
@@ -396,10 +396,10 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         foreach (var step in steps)
         {
             if (step.AssistantStep!.ToolCalls.Any(call => !projectedCallIds.Contains(call.ProviderCallId!)))
-                throw new WorkerProtocolException("provider_continuation_invalid");
+                throw new ModelRunnerProtocolException("provider_continuation_invalid");
             if (!step.SourceId.StartsWith("event:evt_", StringComparison.Ordinal)
                 || step.SourceId.Length != 42)
-                throw new WorkerProtocolException("provider_continuation_invalid");
+                throw new ModelRunnerProtocolException("provider_continuation_invalid");
             eventIds.Add(step.SourceId[6..]);
         }
 
@@ -473,7 +473,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 
         if (pendingCalls.Count > 0)
         {
-            throw new WorkerProtocolException("model_history_invalid");
+            throw new ModelRunnerProtocolException("model_history_invalid");
         }
 
         if (pendingUserBlocks.Count > 1)
@@ -486,7 +486,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         if (protectedWorkState is not null
             && !messages.Any(message => message.Role == "user"
                 && string.Equals(message.Content, protectedWorkState, StringComparison.Ordinal)))
-            throw new WorkerProtocolException("request_too_large");
+            throw new ModelRunnerProtocolException("request_too_large");
         return (currentPrompt, messages);
     }
 
@@ -498,7 +498,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
     {
         if (pendingCalls.Count > 0)
         {
-            throw new WorkerProtocolException("model_history_invalid");
+            throw new ModelRunnerProtocolException("model_history_invalid");
         }
     }
 
@@ -526,10 +526,10 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         foreach (var call in step.ToolCalls)
         {
             var providerCallId = call.ProviderCallId
-                ?? throw new WorkerProtocolException("model_history_invalid");
+                ?? throw new ModelRunnerProtocolException("model_history_invalid");
             if (!providerCallIds.Add(providerCallId))
             {
-                throw new WorkerProtocolException("model_history_invalid");
+                throw new ModelRunnerProtocolException("model_history_invalid");
             }
 
             var functionCall = new ModelFunctionCall(providerCallId, call.ToolId, call.Arguments);
@@ -562,19 +562,19 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         Dictionary<string, string> providerIdsByToolCall)
     {
         var receipt = entry.ToolReceipt
-            ?? throw new WorkerProtocolException("model_history_invalid");
+            ?? throw new ModelRunnerProtocolException("model_history_invalid");
         if (pendingCalls.Count == 0 || units.Count == 0)
         {
-            throw new WorkerProtocolException("model_history_invalid");
+            throw new ModelRunnerProtocolException("model_history_invalid");
         }
 
         var providerCallId = receipt.ProviderCallId
-            ?? throw new WorkerProtocolException("model_history_invalid");
+            ?? throw new ModelRunnerProtocolException("model_history_invalid");
         var call = pendingCalls.Peek();
         if (!string.Equals(call.Id, providerCallId, StringComparison.Ordinal)
             || !providerIdsByToolCall.TryAdd(receipt.ToolCallId.Value, providerCallId))
         {
-            throw new WorkerProtocolException("model_history_invalid");
+            throw new ModelRunnerProtocolException("model_history_invalid");
         }
 
         pendingCalls.Dequeue();
@@ -603,13 +603,13 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         {
             var currentPrompt = pendingUserBlocks[^1];
             if (currentPrompt.Length > ModelGenerationBounds.MaxPromptChars)
-                throw new WorkerProtocolException("request_too_large");
+                throw new ModelRunnerProtocolException("request_too_large");
             return currentPrompt;
         }
         if (messages.Count > 0 && messages[^1].Role == "tool") return DurableToolContinuationPrompt;
         var fallback = messages.LastOrDefault(message => message.Role == "user")?.Content;
         if (!string.IsNullOrWhiteSpace(fallback)) return fallback;
-        return hasImages ? string.Empty : throw new WorkerProtocolException("missing_user_prompt");
+        return hasImages ? string.Empty : throw new ModelRunnerProtocolException("missing_user_prompt");
     }
 
     private static IReadOnlyList<ModelTurn> FitModelMessagesToBudget(
@@ -630,7 +630,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             {
                 if (selected.Count == 0)
                 {
-                    throw new WorkerProtocolException("model_history_too_large");
+                    throw new ModelRunnerProtocolException("model_history_too_large");
                 }
 
                 break;
@@ -695,7 +695,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             var omission = $" (omitted {omitted} of {block.Length} characters)";
             var nextPrefixLength = maxChars - ConversationTruncationNote.Length - omission.Length;
             if (nextPrefixLength < 0)
-                throw new WorkerProtocolException("model_history_too_large");
+                throw new ModelRunnerProtocolException("model_history_too_large");
 
             nextPrefixLength = ClampPrefixToUnicodeBoundary(block, nextPrefixLength);
             if (nextPrefixLength == prefixLength)
@@ -762,11 +762,11 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         };
     }
 
-    private sealed record InProcessPreparedStep(WorkerV2PreparedRequest WorkerRequest)
+    private sealed record InProcessPreparedStep(PreparedModelStep StepRequest)
         : IPreparedModelStep
     {
-        public long EstimatedInputTokens => WorkerRequest.EstimatedInputTokens;
-        public long MaxPromptTokens => WorkerRequest.MaxPromptTokens;
+        public long EstimatedInputTokens => StepRequest.EstimatedInputTokens;
+        public long MaxPromptTokens => StepRequest.MaxPromptTokens;
     }
 
     private sealed record NativeHistory(
@@ -779,19 +779,19 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 /// Historical name kept: it is the code carrier the runtime drive map and the
 /// terminal-code rules were written against.
 /// </summary>
-public sealed class WorkerProtocolException : Exception, IStableStepError
+public sealed class ModelRunnerProtocolException : Exception, IStableStepError
 {
-    public WorkerProtocolException(string code)
+    public ModelRunnerProtocolException(string code)
         : this(code, retryable: false)
     {
     }
 
-    public WorkerProtocolException(string code, bool retryable)
+    public ModelRunnerProtocolException(string code, bool retryable)
         : this(code, retryable, innerException: null)
     {
     }
 
-    public WorkerProtocolException(string code, bool retryable, Exception? innerException)
+    public ModelRunnerProtocolException(string code, bool retryable, Exception? innerException)
         : base(code, innerException)
     {
         Code = code;
@@ -809,13 +809,15 @@ public sealed class WorkerProtocolException : Exception, IStableStepError
 
 /// <summary>
 /// Historical exception kept for the runtime drive map: nothing raises it now
-/// that the worker is in process, so the <c>worker_unavailable</c> code can no
-/// longer originate from a model step.
+/// that model generation runs in the Host process. The <c>worker_unavailable</c>
+/// terminal code survives only as a legacy wire value so a run that failed
+/// before ADR-0012 still renders its stored reason; it is not evidence that a
+/// worker process ever reaches this path today.
 /// </summary>
-public sealed class WorkerUnavailableException : Exception
+public sealed class ModelRunnerUnavailableException : Exception
 {
-    public WorkerUnavailableException(Exception? innerException = null)
-        : base("Runtime worker is unavailable.", innerException)
+    public ModelRunnerUnavailableException(Exception? innerException = null)
+        : base("Runtime model runner is unavailable.", innerException)
     {
     }
 }

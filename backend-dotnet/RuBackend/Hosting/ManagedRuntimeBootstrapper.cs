@@ -10,7 +10,7 @@ namespace RuBackend.Hosting;
 // descriptor. Moved verbatim from Program.cs so startup order is unchanged.
 internal sealed record ManagedRuntimeBootstrap(
     string? PublicBearer,
-    WorkerBrokerProcessManager WorkerBrokerManager,
+    BrokerChildProcessManager BrokerChildManager,
     RuntimeDescriptorWriter DescriptorWriter,
     PublicHostSingleInstance SingleInstance);
 
@@ -96,21 +96,21 @@ internal static class ManagedRuntimeBootstrapper
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
         // Start the Broker in its own Job
-        var managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
-        var startup = new WorkerBrokerStartupOptions(
+        var managedBrokerChildManager = new RuAgent.Hosting.BrokerChildProcessManager();
+        var startup = new BrokerChildStartupOptions(
             null,
             Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"),
             publicPort);
-        var brokerStarted = await managedWorkerBrokerManager
+        var brokerStarted = await managedBrokerChildManager
             .StartAsync(projectRoot, startup)
             .ConfigureAwait(false);
         if (!brokerStarted)
         {
-            throw new HostStartupException($"Broker start failed: {managedWorkerBrokerManager.LastError}", 4);
+            throw new HostStartupException($"Broker start failed: {managedBrokerChildManager.LastError}", 4);
         }
 
         // Propagate broker descriptor to Host's env for Broker client
-        var brokerDescriptorPath = managedWorkerBrokerManager.BrokerDescriptorPath;
+        var brokerDescriptorPath = managedBrokerChildManager.BrokerDescriptorPath;
         if (!string.IsNullOrWhiteSpace(brokerDescriptorPath))
         {
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR", brokerDescriptorPath);
@@ -136,7 +136,7 @@ internal static class ManagedRuntimeBootstrapper
 
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,
-            managedWorkerBrokerManager,
+            managedBrokerChildManager,
             managedDescriptorWriter,
             managedSingleInstance);
     }

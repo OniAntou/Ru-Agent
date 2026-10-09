@@ -9,7 +9,7 @@ using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using RuBackend.Providers;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using Xunit;
@@ -438,7 +438,7 @@ public sealed class RuPromptContextProviderTests
             source)],
             Array.Empty<byte>());
 
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             provider.BuildAsync(TestRun(), snapshot, CancellationToken.None));
 
         Assert.Equal("tool_output_projection_invalid", error.Code);

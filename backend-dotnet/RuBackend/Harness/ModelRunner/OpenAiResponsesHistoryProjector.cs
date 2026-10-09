@@ -1,7 +1,7 @@
-using RuAgent.Harness.Core.Prompting;
+﻿using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
 
-namespace RuBackend.Harness.Worker;
+namespace RuBackend.Harness.ModelRunner;
 
 internal static class OpenAiResponsesHistoryProjector
 {
@@ -23,7 +23,7 @@ internal static class OpenAiResponsesHistoryProjector
             {
                 var continuation = continuations.FirstOrDefault(candidate => !used.Contains(candidate)
                     && MatchesCallBatch(candidate, turn.ToolCalls));
-                if (continuation is null) throw new WorkerProtocolException("provider_continuation_missing");
+                if (continuation is null) throw new ModelRunnerProtocolException("provider_continuation_missing");
                 used.Add(continuation);
                 if (!string.IsNullOrWhiteSpace(turn.Content)) items.Add(new System.Text.Json.Nodes.JsonObject { ["role"] = "assistant", ["content"] = turn.Content });
                 foreach (var output in continuation.OutputItems) items.Add((System.Text.Json.Nodes.JsonObject)output.DeepClone());

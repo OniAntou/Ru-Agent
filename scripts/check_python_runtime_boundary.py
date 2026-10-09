@@ -15,7 +15,7 @@ _MAX_HASH_BYTES = 64 * 1024
 _MAX_FILES = 20_000
 _C_SHARP_STARTUP_FILES = (
     "backend-dotnet/RuBackend/Program.cs",
-    "backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs",
+    "backend-dotnet/RuAgent.Hosting/BrokerChildLaunchPlan.cs",
 )
 # The product is .NET only: no Python, Node, or other interpreter ships or runs inside
 # it. These roots are the product trees; `scripts`, `tools`, and `tests` are repository

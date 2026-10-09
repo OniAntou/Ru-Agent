@@ -6,7 +6,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;

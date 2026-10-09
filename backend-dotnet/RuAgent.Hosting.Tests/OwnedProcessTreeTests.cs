@@ -82,7 +82,7 @@ public sealed class OwnedProcessTreeTests
 
         var scratch = Path.Combine(Path.GetTempPath(), "ru-susp-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratch);
-        var spec = new WorkerBrokerProcessSpec(
+        var spec = new BrokerChildProcessSpec(
             "ru-agent-broker",
             "powershell.exe",
             BuildChildArguments(scratch),
@@ -94,11 +94,11 @@ public sealed class OwnedProcessTreeTests
         var gate = Path.Combine(scratch, "gate.txt");
         var grandchildMarker = Path.Combine(scratch, "grandchild.txt");
 
-        IWorkerBrokerProcessHandle? child = null;
+        IBrokerChildProcessHandle? child = null;
         OwnedProcessTree? job = null;
         try
         {
-            child = new WindowsWorkerBrokerProcessFactory().Start(spec);
+            child = new WindowsBrokerChildProcessFactory().Start(spec);
 
             // Suspended means it has executed nothing, so no descendant can exist yet.
             Assert.False(

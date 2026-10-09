@@ -218,7 +218,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
 
         // The coordinator validates this receipt against the prompt context it built, so an
         // empty or mismatched one fails the run as prompt_contract_invalid. The real runner
-        // composes it in the Worker, where the provider's protocol decides whether the
+        // composes it in the model step, where the provider's protocol decides whether the
         // capabilities block is rendered for native function calling. There is no provider
         // here, so both renderings are tried and the one that validates is used: the
         // difference is a single block, and the check is exactly what decides between them.

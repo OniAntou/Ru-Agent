@@ -1,15 +1,15 @@
-using RuBackend.Harness.Prompting;
+﻿using RuBackend.Harness.Prompting;
 using Xunit;
 
-namespace RuBackend.Tests.Worker;
+namespace RuBackend.Tests.ModelRunner;
 
 /// <summary>
 /// Trimmed with the typed model step: the envelope, codec and start/done
-/// validation cases died with the socket transport and the worker wire
+/// validation cases died with the socket transport and the retired worker wire
 /// contract. What remains is the runtime capability projection the model-tool
 /// settings are built from.
 /// </summary>
-public sealed class WorkerV2ContractTests
+public sealed class ModelStepContractTests
 {
     [Fact]
     public void Runtime_capabilities_advertise_both_web_tools()

@@ -4,8 +4,8 @@ using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Worker;
-using RuBackend.Harness.Worker;
+using RuAgent.Runtime.Model;
+using RuBackend.Harness.ModelRunner;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -78,7 +78,7 @@ public sealed class AgentProviderTransientParkTests
                 Throws(new ModelProviderException("auth_failed", retryable: false)));
             var coordinator = Coordinator(fixture, provider, new RecordingActivitySink());
 
-            var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
                 coordinator.RunOneStepAsync(runId, CancellationToken.None));
 
             Assert.Equal("provider_auth", error.Code);
@@ -104,7 +104,7 @@ public sealed class AgentProviderTransientParkTests
         ScriptedProvider provider,
         RecordingActivitySink activities)
     {
-        var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
             StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),

@@ -1,6 +1,6 @@
-namespace RuAgent.Hosting;
+﻿namespace RuAgent.Hosting;
 
-public sealed record WorkerBrokerStartupOptions(
+public sealed record BrokerChildStartupOptions(
     int? BrokerPort,
     string? BrokerExecutable,
     int? PublicPort = null)

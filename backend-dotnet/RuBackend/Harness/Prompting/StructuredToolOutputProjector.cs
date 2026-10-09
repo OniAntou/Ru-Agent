@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using RuBackend.Harness.Worker;
-using RuAgent.Runtime.Worker;
+using RuBackend.Harness.ModelRunner;
+using RuAgent.Runtime.Model;
 
 namespace RuBackend.Harness.Prompting;
 
@@ -184,7 +184,7 @@ internal static class StructuredToolOutputProjector
     private static bool HasMore(JsonObject root) =>
         root["truncated"] is JsonValue value && value.TryGetValue<bool>(out var truncated) && truncated;
 
-    private static WorkerProtocolException ProjectionFailure() => new(ProjectionErrorCode, retryable: false);
+    private static ModelRunnerProtocolException ProjectionFailure() => new(ProjectionErrorCode, retryable: false);
 
     private sealed class ProjectionDocument
     {

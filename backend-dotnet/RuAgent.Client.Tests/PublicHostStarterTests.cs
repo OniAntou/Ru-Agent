@@ -203,7 +203,7 @@ public sealed class PublicHostStarterTests : IDisposable
     }
 
     [Fact]
-    public async Task NeverStartsWorkerBrokerDirectly()
+    public async Task NeverStartsBrokerChildDirectly()
     {
         var port = FindFreePort();
         var locator = new PublicHostLocator(Path.Combine(_root, "nb-" + Guid.NewGuid().ToString("N")));

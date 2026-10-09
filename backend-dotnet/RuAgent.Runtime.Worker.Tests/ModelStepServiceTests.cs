@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text;
 using System.Net;
@@ -7,18 +7,18 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Worker;
+using RuAgent.Runtime.Model;
 using Xunit;
 
-namespace RuAgent.Runtime.Worker.Tests;
+namespace RuAgent.Runtime.Model.Tests;
 
-public sealed class WorkerV2StepServiceTests
+public sealed class ModelStepServiceTests
 {
     [Fact]
     public async Task Prepared_projection_is_the_exact_dispatched_body_and_counts_images_separately()
     {
         var provider = new ProjectingFakeProvider();
-        var service = new WorkerV2StepService(provider);
+        var service = new ModelStepService(provider);
         var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
             new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model",
             "credential-must-not-enter-body", maximumOutputTokens: 4096,
@@ -47,7 +47,7 @@ public sealed class WorkerV2StepServiceTests
         var state = new string('s', 15_500);
         var handler = new RecordingHttpHandler();
         var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
-        var service = new WorkerV2StepService(provider);
+        var service = new ModelStepService(provider);
         var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
             new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model", "synthetic",
             maximumOutputTokens: 4096, contextWindowTokens: 32_000, outputTokenReserve: 4096);
@@ -79,7 +79,7 @@ public sealed class WorkerV2StepServiceTests
             [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls",
             providerContinuation: continuation));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
 
         Assert.Equal(continuation.SerializedOutputItems.ToArray(), result.ProviderContinuation!.SerializedOutputItems.ToArray());
         Assert.Equal("call-1", Assert.Single(result.ToolCalls).ProviderCallId);
@@ -102,7 +102,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("I will inspect.", [], false, null),
             new ModelDelta(null, [new ModelToolFragment("toolu_read_1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: continuation));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None);
 
         Assert.Equal("I will inspect.", result.Text);
@@ -120,16 +120,16 @@ public sealed class WorkerV2StepServiceTests
         var bootstrap = ResponsesNativeBootstrap();
         var provider = new FakeModelProvider(new ModelDelta(null,
             [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls"));
-        var missing = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        var missing = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
         Assert.Equal("provider_continuation_missing", missing.Code);
 
         var mismatch = new ProviderContinuation("openai", "openai_responses", "gpt-5.6-luna", 1,
         [new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "other-call", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" }]);
         var mismatchedProvider = new FakeModelProvider(new ModelDelta(null,
             [new ModelToolFragment("call-1", "files.read", "{\"path\":\"a.txt\"}")], true, "tool_calls", providerContinuation: mismatch));
-        var invalid = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(mismatchedProvider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
+        var invalid = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(mismatchedProvider).RunAsync(Request(includeTool: true, bootstrap: bootstrap), CancellationToken.None));
         Assert.Equal("protocol_failure", invalid.Code);
     }
 
@@ -143,7 +143,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta("xin ", Array.Empty<ModelToolFragment>(), false, null),
             new ModelDelta("chao anh", Array.Empty<ModelToolFragment>(), true, "stop"));
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
 
         Assert.Single(provider.Requests);
         Assert.Equal("xin chao anh", result.Text);
@@ -159,7 +159,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("ok", Array.Empty<ModelToolFragment>(), true, "stop",
                 new ModelUsage(12, 5, 17, 3, null)));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
 
         Assert.NotNull(result.Usage);
         Assert.Equal(12, result.Usage!.InputTokens);
@@ -175,7 +175,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta("mo ta", Array.Empty<ModelToolFragment>(), true, "stop"));
         var request = Request(images: [new ModelImage("image/png", "aGVsbG8=")]);
-        var result = await new WorkerV2StepService(provider).RunAsync(request, CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(request, CancellationToken.None);
 
         Assert.Equal("mo ta", result.Text);
         Assert.Single(provider.Requests);
@@ -190,7 +190,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta("anh dep", Array.Empty<ModelToolFragment>(), true, "stop"));
         var request = Request(prompt: "", images: [new ModelImage("image/jpeg", "d29ybGQ=")]);
-        var result = await new WorkerV2StepService(provider).RunAsync(request, CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(request, CancellationToken.None);
 
         Assert.Single(provider.Requests);
         Assert.Equal("", provider.Requests[0].Prompt);
@@ -207,7 +207,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("chao anh", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(),
             text =>
             {
@@ -226,7 +226,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(null, new[] { new ModelToolFragment("call-1", "files.read", "{\"path\":\"README.md\"}") }, true, "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
 
         // The wire contract keeps tool selections text-free; narration streams
         // live through deltas and never becomes step text.
@@ -248,7 +248,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             CancellationToken.None);
 
@@ -272,7 +272,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             CancellationToken.None);
 
@@ -287,7 +287,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta(null, new[] { new ModelToolFragment("call-7", "files.read", "{\"path\":") }, false, null),
             new ModelDelta(null, new[] { new ModelToolFragment(null, string.Empty, "\"README.md\"}") }, true, "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             CancellationToken.None);
 
@@ -304,8 +304,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(null, new[] { new ModelToolFragment("call-8", "files.read", "{\"path\":") }, true, "tool_calls"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("model_tool_call_invalid", error.Code);
         Assert.True(error.Retryable);
@@ -326,7 +326,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
 
         Assert.Equal(2, result.ToolCalls.Count);
         Assert.Equal("call-1", result.ToolCalls[0].ProviderCallId);
@@ -355,7 +355,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             CancellationToken.None);
 
@@ -385,8 +385,8 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("protocol_failure", error.Code);
         Assert.False(error.Retryable);
@@ -403,8 +403,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "tool_calls"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("protocol_failure", error.Code);
         Assert.True(error.Retryable);
@@ -427,7 +427,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             onDelta: null,
             cancellationToken: CancellationToken.None,
@@ -446,8 +446,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(null, new[] { new ModelToolFragment("call-3", "files.teleport", "{}") }, true, "tool_calls"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("model_tool_call_unavailable", error.Code);
         Assert.True(error.Retryable);
@@ -464,7 +464,7 @@ public sealed class WorkerV2StepServiceTests
                 "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -493,7 +493,7 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "stop"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             CancellationToken.None);
 
@@ -509,7 +509,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -531,7 +531,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("call> {\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}} </tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -554,7 +554,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta(fenced, Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -577,7 +577,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("`json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -600,7 +600,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("call> {\"tool_id\":\"terminal.run\",\"tool_version\":\"1.0.0\",\"arguments\":{\"executable\":\"python\"}}", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true, toolId: "terminal.run"),
             text =>
             {
@@ -625,7 +625,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("<arg_key>path</arg_key><arg_value>/D/Test Agent</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -650,7 +650,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta("<tool_call>" + payload + "</tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -671,8 +671,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta("<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
         Assert.True(error.Retryable);
@@ -681,14 +681,14 @@ public sealed class WorkerV2StepServiceTests
     [Fact]
     public async Task Step_service_executes_mangled_embedded_call_and_keeps_prose()
     {
-        const string prose = "Xin chào! Tôi sẽ thử truy cập vào folder.";
+        const string prose = "Xin chÃ o! TÃ´i sáº½ thá»­ truy cáº­p vÃ o folder.";
         const string mangled =
             "<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"D:\\\\Test Agent\"}\n}\n}>";
         var provider = new FakeModelProvider(
             new ModelDelta(prose + mangled, Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -709,7 +709,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "first thought. "),
             new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop", null, "final thought."));
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
 
         Assert.Equal("done", result.Text);
         Assert.Equal("first thought. final thought.", result.ReasoningText);
@@ -720,7 +720,7 @@ public sealed class WorkerV2StepServiceTests
     {
         var provider = new FakeModelProvider(
             new ModelDelta("answer <think>inner reasoning</think> tail", Array.Empty<ModelToolFragment>(), true, "stop"));
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
 
         Assert.Equal("inner reasoning", result.ReasoningText);
     }
@@ -733,8 +733,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta(xmlAttempt, Array.Empty<ModelToolFragment>(), true, "stop"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
         Assert.True(error.Retryable);
@@ -748,7 +748,7 @@ public sealed class WorkerV2StepServiceTests
             new ModelDelta(text, Array.Empty<ModelToolFragment>(), true, "stop"));
         var deltas = new List<string>();
 
-        var result = await new WorkerV2StepService(provider).RunAsync(
+        var result = await new ModelStepService(provider).RunAsync(
             Request(includeTool: true),
             text =>
             {
@@ -766,11 +766,11 @@ public sealed class WorkerV2StepServiceTests
     public async Task Step_service_keeps_ordinary_prose_visible_when_tools_are_advertised()
     {
         var provider = new FakeModelProvider(
-            new ModelDelta("Đang kiểm tra cho anh.", Array.Empty<ModelToolFragment>(), true, "stop"));
+            new ModelDelta("Äang kiá»ƒm tra cho anh.", Array.Empty<ModelToolFragment>(), true, "stop"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None);
 
-        Assert.Equal("Đang kiểm tra cho anh.", result.Text);
+        Assert.Equal("Äang kiá»ƒm tra cho anh.", result.Text);
         Assert.Empty(result.ToolCalls);
         Assert.Equal("stop", result.FinishReason);
     }
@@ -781,8 +781,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(
             new ModelDelta("{\"tool_id\":\"files.read\"}", Array.Empty<ModelToolFragment>(), true, "stop"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
         Assert.True(error.Retryable);
@@ -802,8 +802,8 @@ public sealed class WorkerV2StepServiceTests
             bootstrap: Bootstrap("anthropic_messages", maximumOutputTokens: 8192),
             modelMessages: NativeMessagesWithUnknownTool());
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(request, CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(request, CancellationToken.None));
 
         Assert.Equal("protocol_failure", error.Code);
         Assert.False(error.Retryable);
@@ -816,7 +816,7 @@ public sealed class WorkerV2StepServiceTests
     {
         using var cancellation = new CancellationTokenSource();
         var provider = new BlockingProvider();
-        var task = new WorkerV2StepService(provider).RunAsync(Request(), cancellation.Token);
+        var task = new ModelStepService(provider).RunAsync(Request(), cancellation.Token);
         await provider.Started.Task;
         cancellation.Cancel();
 
@@ -832,7 +832,7 @@ public sealed class WorkerV2StepServiceTests
         var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(), cancellation.Token));
+            new ModelStepService(provider).RunAsync(Request(), cancellation.Token));
 
         Assert.Empty(provider.Requests);
     }
@@ -851,7 +851,7 @@ public sealed class WorkerV2StepServiceTests
             bootstrap: Bootstrap(protocol, maximumOutputTokens: protocol == "anthropic_messages" ? 8192 : null),
             modelMessages: NativeMessages());
 
-        var result = await new WorkerV2StepService(provider).RunAsync(request, CancellationToken.None);
+        var result = await new ModelStepService(provider).RunAsync(request, CancellationToken.None);
 
         Assert.Equal("ok", result.Text);
         var modelRequest = Assert.Single(provider.Requests);
@@ -894,7 +894,7 @@ public sealed class WorkerV2StepServiceTests
                 },
             });
 
-        await new WorkerV2StepService(provider).RunAsync(
+        await new ModelStepService(provider).RunAsync(
             Request(bootstrap: bootstrap),
             CancellationToken.None);
 
@@ -912,7 +912,7 @@ public sealed class WorkerV2StepServiceTests
     {
         var provider = new FakeModelProvider(new ModelDelta("ok", [], true, "stop"));
 
-        await new WorkerV2StepService(provider).RunAsync(
+        await new ModelStepService(provider).RunAsync(
             Request(settings: new ModelGenerationSettings(maxOutputTokens: 256)),
             CancellationToken.None);
 
@@ -932,8 +932,8 @@ public sealed class WorkerV2StepServiceTests
         var provider = new ThrowingProvider(
             new ModelProviderException("auth_failed", retryable: false));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(
                 Request(
                     prompt: privatePrompt,
                     bootstrap: new ProviderBootstrapData(
@@ -962,8 +962,8 @@ public sealed class WorkerV2StepServiceTests
         const string privatePrompt = "integration prompt must stay private";
         var provider = new ThrowingProvider(new ModelProviderException(code, retryable));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(
                 Request(prompt: privatePrompt),
                 CancellationToken.None));
 
@@ -993,8 +993,8 @@ public sealed class WorkerV2StepServiceTests
         // flag reach the Host's durable code, so they must not go unnoticed.
         var provider = new ThrowingProvider(new ModelProviderException(providerCode, providerRetryable));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(Request(), CancellationToken.None));
+        var error = await Assert.ThrowsAsync<ModelStepException>(() =>
+            new ModelStepService(provider).RunAsync(Request(), CancellationToken.None));
 
         Assert.Equal(expectedCode, error.Code);
         Assert.Equal(expectedRetryable, error.Retryable);
@@ -1077,7 +1077,7 @@ public sealed class WorkerV2StepServiceTests
     private static ModelGenerationRequest Request(
         bool includeTool = false,
         string toolId = "files.read",
-        string prompt = "xin chào",
+        string prompt = "xin chÃ o",
         ModelGenerationSettings? settings = null,
         ProviderBootstrapData? bootstrap = null,
         IReadOnlyList<ModelImage>? images = null,

@@ -4,10 +4,7 @@
 when started as `RuBackend.exe --managed-runtime` and owns all 42 HTTP routes
 (20 non-Agent routes plus 22 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
-contract; no Chat WebSocket is exposed. The legacy
-`RuBackend:AgentHarness:Version` setting remains accepted by compatibility
-Harness construction, but it is not a product mode switch and cannot re-enable
-Chat.
+contract; no Chat WebSocket is exposed.
 
 ```text
 RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
@@ -71,9 +68,7 @@ ACL-restricted loopback descriptor for
 probes Broker and public readiness, and terminates the owned Broker tree on
 shutdown or failure. `RuApp` and `RuAgent.Cli` never start the Broker
 directly; they validate the descriptor and `GET /status` bearer, and poll for a
-valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
-`v1`; the setting remains accepted by compatibility Harness construction but is
-not a product mode switch and cannot re-enable Chat. Agent v2 (in-process
+valid descriptor if stale/absent. Agent v2 (in-process
 one-step model generation, `/agent/v1/*` 22 routes, SSE reconnect with durable
 `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite

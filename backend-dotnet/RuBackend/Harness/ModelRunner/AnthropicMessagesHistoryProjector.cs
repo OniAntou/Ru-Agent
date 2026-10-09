@@ -1,8 +1,8 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
 
-namespace RuBackend.Harness.Worker;
+namespace RuBackend.Harness.ModelRunner;
 
 internal static class AnthropicMessagesHistoryProjector
 {
@@ -23,11 +23,11 @@ internal static class AnthropicMessagesHistoryProjector
                 index = AppendToolResults(turns, index, messages, pendingCalls);
                 continue;
             }
-            if (pendingCalls.Count > 0) throw new WorkerProtocolException("provider_continuation_invalid");
+            if (pendingCalls.Count > 0) throw new ModelRunnerProtocolException("provider_continuation_invalid");
             AppendAssistantOrUser(turn, continuations, used, messages, pendingCalls, model);
         }
         if (pendingCalls.Count > 0)
-            throw new WorkerProtocolException("provider_continuation_invalid");
+            throw new ModelRunnerProtocolException("provider_continuation_invalid");
         return messages.AsReadOnly();
     }
 
@@ -44,7 +44,7 @@ internal static class AnthropicMessagesHistoryProjector
             var continuation = continuations.FirstOrDefault(candidate => !used.Contains(candidate)
                 && candidate.Provider == "anthropic" && candidate.Protocol == "anthropic_messages"
                 && candidate.Model == model && MatchesCalls(candidate, turn.ToolCalls));
-            if (continuation is null) throw new WorkerProtocolException("provider_continuation_missing");
+            if (continuation is null) throw new ModelRunnerProtocolException("provider_continuation_missing");
             used.Add(continuation);
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = new JsonArray(continuation.OutputItems.Select(item => item.DeepClone()).ToArray()) });
             foreach (var call in turn.ToolCalls) pendingCalls.Enqueue(call);
@@ -65,7 +65,7 @@ internal static class AnthropicMessagesHistoryProjector
         {
             var result = turns[index];
             if (pendingCalls.Count == 0 || pendingCalls.Dequeue().Id != result.ToolCallId)
-                throw new WorkerProtocolException("provider_continuation_invalid");
+                throw new ModelRunnerProtocolException("provider_continuation_invalid");
             results.Add(new JsonObject
             {
                 ["type"] = "tool_result",

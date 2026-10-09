@@ -1,14 +1,14 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using RuAgent.Protocol;
 
 namespace RuAgent.Hosting;
 
-public interface IWorkerBrokerProcessFactory
+public interface IBrokerChildProcessFactory
 {
-    IWorkerBrokerProcessHandle Start(WorkerBrokerProcessSpec spec);
+    IBrokerChildProcessHandle Start(BrokerChildProcessSpec spec);
 }
 
-public interface IWorkerBrokerProcessHandle : IProcessHandle, IDisposable
+public interface IBrokerChildProcessHandle : IProcessHandle, IDisposable
 {
     new bool HasExited { get; }
     void Kill();
@@ -21,24 +21,24 @@ public interface IWorkerBrokerProcessHandle : IProcessHandle, IDisposable
     void Resume();
 }
 
-public interface IWorkerBrokerJobFactory
+public interface IBrokerChildJobFactory
 {
     OwnedProcessTree Create();
 }
 
-public interface IWorkerBrokerReadinessProbe
+public interface IBrokerChildReadinessProbe
 {
     Task<bool> WaitUntilReadyAsync(int brokerPort, CancellationToken cancellationToken);
 }
 
-public sealed class WorkerBrokerProcessManager : IDisposable
+public sealed class BrokerChildProcessManager : IDisposable
 {
     private readonly object _gate = new();
     private readonly SemaphoreSlim _startGate = new(1, 1);
-    private readonly IWorkerBrokerProcessFactory _processFactory;
-    private readonly IWorkerBrokerJobFactory _jobFactory;
-    private readonly IWorkerBrokerReadinessProbe _readinessProbe;
-    private List<IWorkerBrokerProcessHandle> _children = new();
+    private readonly IBrokerChildProcessFactory _processFactory;
+    private readonly IBrokerChildJobFactory _jobFactory;
+    private readonly IBrokerChildReadinessProbe _readinessProbe;
+    private List<IBrokerChildProcessHandle> _children = new();
     private OwnedProcessTree? _job;
     private string? _brokerDescriptorPath;
     private string? _brokerSessionRoot;
@@ -46,13 +46,13 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     public event EventHandler? Exited;
 
-    public WorkerBrokerProcessManager(
-        IWorkerBrokerProcessFactory? processFactory = null,
-        IWorkerBrokerJobFactory? jobFactory = null,
-        IWorkerBrokerReadinessProbe? readinessProbe = null)
+    public BrokerChildProcessManager(
+        IBrokerChildProcessFactory? processFactory = null,
+        IBrokerChildJobFactory? jobFactory = null,
+        IBrokerChildReadinessProbe? readinessProbe = null)
     {
-        _processFactory = processFactory ?? new WindowsWorkerBrokerProcessFactory();
-        _jobFactory = jobFactory ?? new WindowsWorkerBrokerJobFactory();
+        _processFactory = processFactory ?? new WindowsBrokerChildProcessFactory();
+        _jobFactory = jobFactory ?? new WindowsBrokerChildJobFactory();
         _readinessProbe = readinessProbe ?? new TcpReadinessProbe();
     }
 
@@ -74,7 +74,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     public async Task<bool> StartAsync(
         string projectRoot,
-        WorkerBrokerStartupOptions startup,
+        BrokerChildStartupOptions startup,
         CancellationToken cancellationToken = default)
     {
         await _startGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -90,11 +90,11 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     private async Task<bool> StartCoreAsync(
         string projectRoot,
-        WorkerBrokerStartupOptions startup,
+        BrokerChildStartupOptions startup,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(startup);
-        List<IWorkerBrokerProcessHandle>? staleChildren = null;
+        List<IBrokerChildProcessHandle>? staleChildren = null;
         OwnedProcessTree? staleJob = null;
         string? staleDescriptorPath = null;
         string? staleSessionRoot = null;
@@ -112,7 +112,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 // StartAsync call. Reclaim that stale generation while holding the
                 // start gate, otherwise the stale handles would block restarts.
                 staleChildren = _children;
-                _children = new List<IWorkerBrokerProcessHandle>();
+                _children = new List<IBrokerChildProcessHandle>();
                 staleJob = _job;
                 _job = null;
                 staleDescriptorPath = _brokerDescriptorPath;
@@ -130,9 +130,9 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             Cleanup(staleChildren, staleJob, staleDescriptorPath, staleSessionRoot);
         }
 
-        var startedChildren = new List<IWorkerBrokerProcessHandle>();
+        var startedChildren = new List<IBrokerChildProcessHandle>();
         OwnedProcessTree? job = null;
-        WorkerBrokerLaunchPlan? plan = null;
+        BrokerChildLaunchPlan? plan = null;
         try
         {
             // A freshly probed dynamic Broker port can be taken by another
@@ -144,7 +144,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             var maxAttempts = startup.BrokerPort is null ? 3 : 1;
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                plan = WorkerBrokerLaunchPlan.Create(projectRoot, startup);
+                plan = BrokerChildLaunchPlan.Create(projectRoot, startup);
                 job = _jobFactory.Create();
                 foreach (var spec in plan.Children)
                 {
@@ -220,7 +220,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         }
     }
 
-    private async Task WatchForExitAsync(IReadOnlyList<IWorkerBrokerProcessHandle> children)
+    private async Task WatchForExitAsync(IReadOnlyList<IBrokerChildProcessHandle> children)
     {
         try
         {
@@ -229,7 +229,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             await _startGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                List<IWorkerBrokerProcessHandle> exitedChildren;
+                List<IBrokerChildProcessHandle> exitedChildren;
                 OwnedProcessTree? job;
                 string? descriptorPath;
                 string? sessionRoot;
@@ -237,7 +237,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 {
                     if (_disposed || !ReferenceEquals(_children, children)) return;
                     exitedChildren = _children;
-                    _children = new List<IWorkerBrokerProcessHandle>();
+                    _children = new List<IBrokerChildProcessHandle>();
                     job = _job;
                     _job = null;
                     descriptorPath = _brokerDescriptorPath;
@@ -262,7 +262,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     public void Dispose()
     {
-        List<IWorkerBrokerProcessHandle> children;
+        List<IBrokerChildProcessHandle> children;
         OwnedProcessTree? job;
         string? descriptorPath;
         string? sessionRoot;
@@ -271,7 +271,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             if (_disposed) return;
             _disposed = true;
             children = _children;
-            _children = new List<IWorkerBrokerProcessHandle>();
+            _children = new List<IBrokerChildProcessHandle>();
             job = _job;
             _job = null;
             descriptorPath = _brokerDescriptorPath;
@@ -284,10 +284,10 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         BrokerSessionRoot = null;
     }
 
-    private static void Cleanup(IEnumerable<IWorkerBrokerProcessHandle> children, OwnedProcessTree? job, WorkerBrokerLaunchPlan? plan)
+    private static void Cleanup(IEnumerable<IBrokerChildProcessHandle> children, OwnedProcessTree? job, BrokerChildLaunchPlan? plan)
         => Cleanup(children, job, plan?.BrokerDescriptorPath, plan?.BrokerSessionRoot);
 
-    private static void Cleanup(IEnumerable<IWorkerBrokerProcessHandle> children, OwnedProcessTree? job, string? descriptorPath, string? sessionRoot)
+    private static void Cleanup(IEnumerable<IBrokerChildProcessHandle> children, OwnedProcessTree? job, string? descriptorPath, string? sessionRoot)
     {
         var list = children.Reverse().ToList();
         foreach (var child in list)
@@ -300,7 +300,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         DeleteOwnedArtifacts(descriptorPath, sessionRoot);
     }
 
-    private static bool IsAlive(IWorkerBrokerProcessHandle child)
+    private static bool IsAlive(IBrokerChildProcessHandle child)
     {
         try
         {
@@ -365,9 +365,9 @@ public sealed class WorkerBrokerProcessManager : IDisposable
     }
 }
 
-public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFactory
+public sealed class WindowsBrokerChildProcessFactory : IBrokerChildProcessFactory
 {
-    public IWorkerBrokerProcessHandle Start(WorkerBrokerProcessSpec spec)
+    public IBrokerChildProcessHandle Start(BrokerChildProcessSpec spec)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardOutputLogPath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardErrorLogPath)!);
@@ -376,7 +376,7 @@ public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFact
         try
         {
             _ = DrainChildOutputAsync(started, spec);
-            return new WindowsWorkerBrokerProcessHandle(started);
+            return new WindowsBrokerChildProcessHandle(started);
         }
         catch
         {
@@ -388,7 +388,7 @@ public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFact
         }
     }
 
-    private static async Task DrainChildOutputAsync(SuspendedProcess.StartedProcess started, WorkerBrokerProcessSpec spec)
+    private static async Task DrainChildOutputAsync(SuspendedProcess.StartedProcess started, BrokerChildProcessSpec spec)
     {
         try
         {
@@ -400,12 +400,12 @@ public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFact
     }
 }
 
-public sealed class WindowsWorkerBrokerProcessHandle : IWorkerBrokerProcessHandle
+public sealed class WindowsBrokerChildProcessHandle : IBrokerChildProcessHandle
 {
     private readonly SuspendedProcess.StartedProcess _started;
     private bool _resumed;
 
-    internal WindowsWorkerBrokerProcessHandle(SuspendedProcess.StartedProcess started) => _started = started;
+    internal WindowsBrokerChildProcessHandle(SuspendedProcess.StartedProcess started) => _started = started;
 
     public IntPtr Handle => _started.Process.Handle;
     public bool HasExited => _started.Process.HasExited;
@@ -437,7 +437,7 @@ public sealed class WindowsWorkerBrokerProcessHandle : IWorkerBrokerProcessHandl
     }
 }
 
-public sealed class WindowsWorkerBrokerJobFactory : IWorkerBrokerJobFactory
+public sealed class WindowsBrokerChildJobFactory : IBrokerChildJobFactory
 {
     public OwnedProcessTree Create() => new OwnedProcessTree();
 }
@@ -446,7 +446,7 @@ public sealed class WindowsWorkerBrokerJobFactory : IWorkerBrokerJobFactory
 /// Probes the Broker endpoint with a real TCP connect; the host must not publish a
 /// runtime descriptor while the Broker has died or never started listening.
 /// </summary>
-public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
+public sealed class TcpReadinessProbe : IBrokerChildReadinessProbe
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan TotalBudget = TimeSpan.FromSeconds(20);

@@ -34,7 +34,7 @@ public sealed class TuiTranscript
 
     /// <summary>
     /// Cap on the raw assistant text retained per turn for gap detection against the run's
-    /// durable assistant payload. Matches the worker's own per-step text cap.
+    /// durable assistant payload. Matches the in-process model step's own text cap.
     /// </summary>
     private const int MaxRetainedAssistantCharacters = 1_000_000;
 

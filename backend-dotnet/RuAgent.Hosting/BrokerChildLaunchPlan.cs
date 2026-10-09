@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -6,7 +6,7 @@ using RuAgent.Protocol;
 
 namespace RuAgent.Hosting;
 
-public sealed record WorkerBrokerProcessSpec(
+public sealed record BrokerChildProcessSpec(
     string Role,
     string FileName,
     string Arguments,
@@ -15,13 +15,13 @@ public sealed record WorkerBrokerProcessSpec(
     string StandardOutputLogPath,
     string StandardErrorLogPath);
 
-public sealed class WorkerBrokerLaunchPlan
+public sealed class BrokerChildLaunchPlan
 {
-    private WorkerBrokerLaunchPlan(
+    private BrokerChildLaunchPlan(
         int brokerPort,
         string brokerDescriptorPath,
         string brokerSessionRoot,
-        IReadOnlyList<WorkerBrokerProcessSpec> children)
+        IReadOnlyList<BrokerChildProcessSpec> children)
     {
         BrokerPort = brokerPort;
         BrokerDescriptorPath = brokerDescriptorPath;
@@ -32,11 +32,11 @@ public sealed class WorkerBrokerLaunchPlan
     public int BrokerPort { get; }
     public string BrokerDescriptorPath { get; }
     public string BrokerSessionRoot { get; }
-    public IReadOnlyList<WorkerBrokerProcessSpec> Children { get; }
+    public IReadOnlyList<BrokerChildProcessSpec> Children { get; }
 
-    public static WorkerBrokerLaunchPlan Create(
+    public static BrokerChildLaunchPlan Create(
         string projectRoot,
-        WorkerBrokerStartupOptions startup,
+        BrokerChildStartupOptions startup,
         string? configuredLogRoot = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
@@ -76,7 +76,7 @@ public sealed class WorkerBrokerLaunchPlan
         var descriptorPath = Path.Combine(brokerSessionRoot, "broker.json");
         var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
         Directory.CreateDirectory(bootstrapRoot);
-        var children = new List<WorkerBrokerProcessSpec>
+        var children = new List<BrokerChildProcessSpec>
         {
             new(
                 "ru-agent-broker",
@@ -102,7 +102,7 @@ public sealed class WorkerBrokerLaunchPlan
             descriptorPath,
             JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
-        return new WorkerBrokerLaunchPlan(selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
+        return new BrokerChildLaunchPlan(selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
     }
 
     private static void ValidatePortSet(int publicPort, int brokerPort)

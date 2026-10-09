@@ -3,7 +3,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 
-namespace RuAgent.Runtime.Worker;
+namespace RuAgent.Runtime.Model;
 
 /// <summary>
 /// Memory and shape bounds for the typed model generation request. Values are

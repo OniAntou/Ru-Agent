@@ -139,7 +139,7 @@ public sealed class RuAppLayoutTests
         using var flat = TempLayout.Create();
         using var project = TempLayout.CreateScratch();
 
-        var startup = new WorkerBrokerStartupOptions(
+        var startup = new BrokerChildStartupOptions(
             BrokerPort: 18102,
             BrokerExecutable: null);
 
@@ -148,7 +148,7 @@ public sealed class RuAppLayoutTests
         {
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_EXE", Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName));
 
-            var plan = WorkerBrokerLaunchPlan.Create(project.Path, startup, Path.Combine(project.Path, "logs"));
+            var plan = BrokerChildLaunchPlan.Create(project.Path, startup, Path.Combine(project.Path, "logs"));
 
             Assert.Equal(
                 Path.Combine(flat.Path, RuAppLayout.BrokerExecutableName),

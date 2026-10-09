@@ -1,8 +1,8 @@
-using Xunit;
+﻿using Xunit;
 
 namespace RuAgent.Hosting.Tests;
 
-public sealed class WorkerBrokerLaunchPlanTests
+public sealed class BrokerChildLaunchPlanTests
 {
     [Fact]
     public void Managed_launch_plan_owns_a_single_broker_process()
@@ -10,7 +10,7 @@ public sealed class WorkerBrokerLaunchPlanTests
         using var project = TemporaryProject.Create();
         var startup = project.Startup(18081);
 
-        var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
+        var plan = BrokerChildLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
         Assert.Equal(new[] { "ru-agent-broker" }, plan.Children.Select(child => child.Role));
         Assert.Equal(18081, plan.BrokerPort);
@@ -24,7 +24,7 @@ public sealed class WorkerBrokerLaunchPlanTests
     public void Broker_receives_the_descriptor_and_no_provider_credentials()
     {
         using var project = TemporaryProject.Create();
-        var plan = WorkerBrokerLaunchPlan.Create(project.Root, project.Startup(18084), project.LogRoot);
+        var plan = BrokerChildLaunchPlan.Create(project.Root, project.Startup(18084), project.LogRoot);
 
         var broker = plan.Children[0].Environment;
         Assert.Equal(plan.BrokerDescriptorPath, broker["RU_AGENT_BROKER_DESCRIPTOR"]);
@@ -38,8 +38,8 @@ public sealed class WorkerBrokerLaunchPlanTests
     public void Startup_rejects_colliding_ports()
     {
         using var project = TemporaryProject.Create();
-        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.Startup(8000), project.LogRoot));
-        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.Startup(8001), project.LogRoot));
+        Assert.Throws<ArgumentException>(() => BrokerChildLaunchPlan.Create(project.Root, project.Startup(8000), project.LogRoot));
+        Assert.Throws<ArgumentException>(() => BrokerChildLaunchPlan.Create(project.Root, project.Startup(8001), project.LogRoot));
     }
 
     [Fact]
@@ -49,23 +49,23 @@ public sealed class WorkerBrokerLaunchPlanTests
 
         // A broker port that only collides with the hardcoded 8000 default is legal
         // once the real public port is somewhere else.
-        var plan = WorkerBrokerLaunchPlan.Create(
+        var plan = BrokerChildLaunchPlan.Create(
             project.Root,
-            new WorkerBrokerStartupOptions(8000, project.BrokerExecutable, PublicPort: 18110),
+            new BrokerChildStartupOptions(8000, project.BrokerExecutable, PublicPort: 18110),
             project.LogRoot);
         Assert.Equal(8000, plan.BrokerPort);
 
         // A broker port colliding with the actual public port is rejected.
-        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(
+        Assert.Throws<ArgumentException>(() => BrokerChildLaunchPlan.Create(
             project.Root,
-            new WorkerBrokerStartupOptions(18111, project.BrokerExecutable, PublicPort: 18111),
+            new BrokerChildStartupOptions(18111, project.BrokerExecutable, PublicPort: 18111),
             project.LogRoot));
     }
 
     [Fact]
     public void Startup_options_reject_an_out_of_range_public_port()
     {
-        var startup = new WorkerBrokerStartupOptions(18112, "broker.exe", PublicPort: 80);
+        var startup = new BrokerChildStartupOptions(18112, "broker.exe", PublicPort: 80);
         Assert.Throws<ArgumentOutOfRangeException>(() => startup.Validate());
     }
 
@@ -77,7 +77,7 @@ public sealed class WorkerBrokerLaunchPlanTests
         project.DeleteBroker();
 
         Assert.Throws<FileNotFoundException>(() =>
-            WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot));
+            BrokerChildLaunchPlan.Create(project.Root, startup, project.LogRoot));
 
         Assert.False(File.Exists(Path.Combine(project.LogRoot, "agent", "session", "broker.json")));
     }
@@ -104,7 +104,7 @@ public sealed class WorkerBrokerLaunchPlanTests
             return new TemporaryProject(root, logRoot, broker);
         }
 
-        public WorkerBrokerStartupOptions Startup(int brokerPort) =>
+        public BrokerChildStartupOptions Startup(int brokerPort) =>
             new(brokerPort, BrokerExecutable);
 
         public void DeleteBroker() => File.Delete(BrokerExecutable);

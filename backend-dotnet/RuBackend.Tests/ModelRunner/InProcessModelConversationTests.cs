@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,10 +6,10 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using Xunit;
 
-namespace RuBackend.Tests.Worker;
+namespace RuBackend.Tests.ModelRunner;
 
 public sealed class InProcessModelConversationTests
 {
@@ -79,7 +79,7 @@ public sealed class InProcessModelConversationTests
         [
             new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"b.txt\"}" },
         ]);
-        Assert.Throws<WorkerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched]));
+        Assert.Throws<ModelRunnerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched]));
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class InProcessModelConversationTests
         var context = Snapshot(
             ModelContextEntry.Text("event:evt_" + new string('c', 32), 1, ModelContextRole.User, prompt));
 
-        var error = Assert.Throws<WorkerProtocolException>(() =>
+        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
             InProcessModelStepRunner.BuildConversationForTests(context));
 
         Assert.Equal("request_too_large", error.Code);
@@ -132,7 +132,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 17;
         const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 1_400)) + hiddenMarker;
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 1_400)) + hiddenMarker;
         var bytesRead = Encoding.UTF8.GetByteCount(content);
         var source = new JsonObject
         {
@@ -271,7 +271,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 120;
         const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var page = new string('s', 29_880) + "🙂" + new string('t', 300) + hiddenMarker;
+        var page = new string('s', 29_880) + "ðŸ™‚" + new string('t', 300) + hiddenMarker;
         var source = new JsonObject
         {
             ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
@@ -371,7 +371,7 @@ public sealed class InProcessModelConversationTests
             ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_b", "{\"path\":\"a.txt\"}"),
             ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_a", "{\"path\":\"b.txt\"}"));
 
-        var error = Assert.Throws<WorkerProtocolException>(() =>
+        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
             InProcessModelStepRunner.BuildConversationForTests(context));
 
         Assert.Equal("model_history_invalid", error.Code);
@@ -468,7 +468,7 @@ public sealed class InProcessModelConversationTests
     public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
     {
         const string prefix = "{\"unknown\":\"";
-        var source = prefix + string.Concat(Enumerable.Repeat("🙂", 20_000));
+        var source = prefix + string.Concat(Enumerable.Repeat("ðŸ™‚", 20_000));
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
             AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
@@ -477,7 +477,7 @@ public sealed class InProcessModelConversationTests
         var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
-        const string note = "\n…(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
+        const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
         Assert.InRange(visible.Length, 1, 30_000);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);
@@ -545,7 +545,7 @@ public sealed class InProcessModelConversationTests
                     AssistantFinishReason.ToolCalls,
                     1)),
             ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
-        var error = Assert.Throws<WorkerProtocolException>(() =>
+        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
             InProcessModelStepRunner.BuildConversationForTests(oversized, hasImages: true));
         Assert.Equal("model_history_too_large", error.Code);
     }
@@ -666,7 +666,7 @@ public sealed class InProcessModelConversationTests
     {
         var context = Snapshot(ToolResultEntry("src-1", 1, "internal_call_1", "provider_orphan", "orphan"));
 
-        var error = Assert.Throws<WorkerProtocolException>(() =>
+        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
             InProcessModelStepRunner.BuildConversationForTests(context));
 
         Assert.Equal("model_history_invalid", error.Code);

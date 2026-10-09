@@ -15,7 +15,7 @@ using RuBackend.Diagnostics;
 using RuBackend.Harness;
 using RuBackend.Harness.Broker;
 using RuBackend.Harness.Reconciliation;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
 using RuBackend.Runtime;
@@ -37,7 +37,7 @@ using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Worker;
+using RuAgent.Runtime.Model;
 
 namespace RuBackend.Hosting;
 
@@ -224,7 +224,7 @@ internal static class PublicHostServiceRegistration
                 ["anthropic_messages"] = new AnthropicMessagesModelProvider(modelHttpClient),
             });
         });
-        services.AddSingleton(services => new WorkerV2StepService(
+        services.AddSingleton(services => new ModelStepService(
             services.GetRequiredService<IModelProviderResolver>()));
         services.AddSingleton(services => new SqliteAgentRunProviderSelectionStore(
             services.GetRequiredService<HarnessSqliteOptions>()));
@@ -241,7 +241,7 @@ internal static class PublicHostServiceRegistration
             services.GetRequiredService<HarnessSqliteOptions>(),
             services.GetRequiredService<HarnessPayloadStore>()));
         services.AddSingleton(services =>
-            new InProcessModelStepRunner(services.GetRequiredService<WorkerV2StepService>())
+            new InProcessModelStepRunner(services.GetRequiredService<ModelStepService>())
             {
                 CreateProviderBootstrapAsync = (runId, ct) =>
                     services.GetRequiredService<AgentProviderSnapshotFactory>().GetAsync(runId, ct),

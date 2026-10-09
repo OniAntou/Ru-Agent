@@ -137,7 +137,7 @@ public sealed record AgentAssistantDeltaModel(
                     isReset = property.Value.GetBoolean();
                     break;
                 case "reset" when property.Value.ValueKind == JsonValueKind.Null:
-                    // The worker serializes unset optionals explicitly; a null
+                    // The model step serializes unset optionals explicitly; a null
                     // reset is an ordinary delta, not a reset frame.
                     isReset = false;
                     break;

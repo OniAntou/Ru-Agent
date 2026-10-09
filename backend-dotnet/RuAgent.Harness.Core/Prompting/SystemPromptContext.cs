@@ -215,7 +215,7 @@ public sealed record SystemPromptContext
 
     // Transitional empty context for callers that construct requests directly. The
     // production coordinator replaces this with a root-bound context provider before
-    // dispatching a Worker step.
+    // dispatching a model step.
     public static SystemPromptContext Empty => new(
         PromptContextSchemaVersion,
         RequiredAgentProfile,

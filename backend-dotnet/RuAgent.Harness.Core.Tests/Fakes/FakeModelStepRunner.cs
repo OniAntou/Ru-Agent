@@ -48,7 +48,7 @@ public sealed class FakeModelStepRunner : IModelStepRunner
     private static SystemPromptReceipt ReceiptFor(SystemPromptContext context)
     {
         // A real receipt bound to a rendered prompt: the coordinator now rejects
-        // the all-zero fixture shape, so the fake composes exactly like the Worker.
+        // the all-zero fixture shape, so the fake composes exactly like the model step.
         return SystemPromptComposer.Compose(context, nativeToolCalling: true).Receipt;
     }
 

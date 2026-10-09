@@ -22,7 +22,7 @@ public sealed class ProviderTransientPauseException : Exception
 
     /// <summary>
     /// The exact provider codes that are transient by origin: every one maps from
-    /// a provider-reported recoverable condition in <c>WorkerV2StepService</c> and
+    /// a provider-reported recoverable condition in <c>ModelStepService</c> and
     /// is retryable in the runner. <c>protocol_failure</c> is deliberately absent:
     /// it is shared by deterministic protocol branches, so a code-only
     /// classification would park non-transient failures.

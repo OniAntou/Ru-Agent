@@ -41,7 +41,7 @@ public static class ChildProcessPolicy
         ["stdout", "stderr"],
         StringComparer.Ordinal);
 
-    public static ProcessStartInfo CreateStartInfo(WorkerBrokerProcessSpec spec)
+    public static ProcessStartInfo CreateStartInfo(BrokerChildProcessSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
         if (!Roles.Contains(spec.Role))

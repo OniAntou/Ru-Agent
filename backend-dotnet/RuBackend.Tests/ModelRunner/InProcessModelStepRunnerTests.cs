@@ -1,15 +1,15 @@
-using RuAgent.Harness.Core;
+﻿using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Worker;
-using RuBackend.Harness.Worker;
+using RuAgent.Runtime.Model;
+using RuBackend.Harness.ModelRunner;
 using RuBackend.Providers;
 using Xunit;
 
-namespace RuBackend.Tests.Worker;
+namespace RuBackend.Tests.ModelRunner;
 
 public sealed class InProcessModelStepRunnerTests
 {
@@ -179,7 +179,7 @@ public sealed class InProcessModelStepRunnerTests
         var provider = new ScriptedProvider((_, _) =>
             Throws(new ModelProviderException("auth_failed", retryable: false)));
 
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         // A non-retryable provider failure keeps its stable code for the run.
@@ -196,7 +196,7 @@ public sealed class InProcessModelStepRunnerTests
         var provider = new ScriptedProvider((_, _) =>
             Throws(new ModelProviderException("rate_limited", retryable: true)));
 
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         Assert.Equal("provider_rate_limited", error.Code);
@@ -219,7 +219,7 @@ public sealed class InProcessModelStepRunnerTests
         var bootstraps = 0;
         var provider = new ScriptedProvider((_, _) =>
             Deltas(new ModelDelta("ok", [], completed: true, finishReason: "stop")));
-        var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
             CreateProviderBootstrapAsync = (_, _) =>
             {
@@ -242,13 +242,13 @@ public sealed class InProcessModelStepRunnerTests
     {
         var provider = new ScriptedProvider((_, _) =>
             Deltas(new ModelDelta("never", [], completed: true, finishReason: "stop")));
-        var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
             CreateProviderBootstrapAsync = (_, _) =>
                 Task.FromException<ProviderBootstrapData>(new ProviderCatalogException("catalog_unauthorized")),
         };
 
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         Assert.Equal("catalog_unauthorized", error.Code);
@@ -260,7 +260,7 @@ public sealed class InProcessModelStepRunnerTests
     {
         var provider = new ScriptedProvider((_, _) =>
             Deltas(new ModelDelta("mo ta", [], completed: true, finishReason: "stop")));
-        var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
             LoadRunImagesAsync = (_, _) =>
@@ -280,13 +280,13 @@ public sealed class InProcessModelStepRunnerTests
     {
         var provider = new ScriptedProvider((_, _) =>
             Deltas(new ModelDelta("never", [], completed: true, finishReason: "stop")));
-        var runner = new InProcessModelStepRunner(new WorkerV2StepService(provider))
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),
             LoadRunImagesAsync = (_, _) => throw new InvalidOperationException("payload store unavailable"),
         };
 
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+        var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         Assert.Equal("image_payload_unavailable", error.Code);
@@ -316,7 +316,7 @@ public sealed class InProcessModelStepRunnerTests
     }
 
     private static InProcessModelStepRunner Runner(ScriptedProvider provider) =>
-        new(new WorkerV2StepService(provider))
+        new(new ModelStepService(provider))
         {
             StepRetryBackoffsOverride = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero],
             CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap()),

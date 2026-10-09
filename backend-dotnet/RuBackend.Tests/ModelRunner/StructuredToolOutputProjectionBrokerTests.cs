@@ -1,4 +1,4 @@
-extern alias Broker;
+﻿extern alias Broker;
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,10 +6,10 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Models;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using Xunit;
 
-namespace RuBackend.Tests.Worker;
+namespace RuBackend.Tests.ModelRunner;
 
 public sealed class StructuredToolOutputProjectionBrokerTests
 {
@@ -68,7 +68,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
     {
         using var fixture = BrokerFixture.Create();
         const string hiddenMarker = "READ-UTF8-PROJECTION-MARKER";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 3_000)) + hiddenMarker + " tail";
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 3_000)) + hiddenMarker + " tail";
         await File.WriteAllTextAsync(Path.Combine(fixture.Workspace, "large.txt"), content, new System.Text.UTF8Encoding(false));
         var originalBytes = System.Text.Encoding.UTF8.GetByteCount(content);
         const string providerCallId = "provider_read_cursor";
@@ -85,7 +85,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         var visible = view.RootElement.GetProperty("content").GetString()!;
         var cursor = view.RootElement.GetProperty("projection_next_offset").GetInt32();
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
-        Assert.True(cursor < System.Text.Encoding.UTF8.GetByteCount("\uFEFF" + string.Concat(Enumerable.Repeat("Tiếng🙂", 3_000))));
+        Assert.True(cursor < System.Text.Encoding.UTF8.GetByteCount("\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 3_000))));
         Assert.Equal(originalBytes, first.Output["bytes_read"]!.GetValue<int>());
         Assert.Equal(source, first.Output.ToJsonString());
 

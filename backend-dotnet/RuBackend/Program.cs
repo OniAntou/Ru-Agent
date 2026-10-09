@@ -7,7 +7,7 @@ using RuBackend.Conversation;
 using RuBackend.Diagnostics;
 using RuBackend.Harness;
 using RuBackend.Harness.Broker;
-using RuBackend.Harness.Worker;
+using RuBackend.Harness.ModelRunner;
 using RuBackend.Harness.Workspace;
 using RuBackend.Hosting;
 using RuBackend.Providers;
@@ -137,20 +137,20 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 if (isManagedRuntime)
 {
     var lifetime = app.Lifetime;
-    bootstrap!.WorkerBrokerManager.Exited += (_, _) =>
+    bootstrap!.BrokerChildManager.Exited += (_, _) =>
     {
         // The broker is gone, and this host owns no fallback: it stops. Say why
         // before it does, because the alternative is an app that vanishes while the reader
         // only sees turns failing with no explanation anywhere.
         app.Logger.LogError(
             "managed runtime Broker exited unexpectedly ({Reason}); stopping the host",
-            bootstrap.WorkerBrokerManager.LastError ?? "unknown");
+            bootstrap.BrokerChildManager.LastError ?? "unknown");
         lifetime.StopApplication();
     };
     lifetime.ApplicationStopping.Register(() =>
     {
         try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
-        try { bootstrap.WorkerBrokerManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Broker dispose failed during shutdown."); }
+        try { bootstrap.BrokerChildManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Broker dispose failed during shutdown."); }
         try { bootstrap.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     });
 }

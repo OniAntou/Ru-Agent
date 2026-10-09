@@ -519,7 +519,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     /// Only an explicit effort list is taken. A toggle-only entry, an empty list
     /// (models.dev publishes that for deepseek-r1) and a missing field all leave the
     /// model at "unknown" with no options, so nothing is offered that was never
-    /// declared. Values are filtered to the same seven the Worker accepts, so the
+    /// declared. Values are filtered to the same seven the model step accepts, so the
     /// picker cannot offer an effort the runtime would reject.
     /// </remarks>
     private static IReadOnlyDictionary<string, CatalogReasoning> ReadModelReasoning(JsonElement entry)

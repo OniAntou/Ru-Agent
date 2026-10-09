@@ -135,7 +135,7 @@ public static class ModelToolSelectionParser
     }
 
     /// <summary>
-    /// Presentation shape check shared by the worker and renderers: does this
+    /// Presentation shape check shared by the model step and renderers: does this
     /// text carry a tool-selection envelope (any dialect) that must never be
     /// shown as chat? No advertised-capability knowledge required.
     /// </summary>
@@ -165,7 +165,7 @@ public static class ModelToolSelectionParser
     }
 
     /// <summary>
-    /// Worker extraction for opener-led attempts anywhere in the text (prose
+    /// Selection extraction for opener-led attempts anywhere in the text (prose
     /// glued to an envelope, possibly with mangled delimiters). Succeeds only
     /// when a tool-keyed JSON object follows the opener; <paramref name="prose"/>
     /// is the text before it with dangling opener/fence remnants removed.

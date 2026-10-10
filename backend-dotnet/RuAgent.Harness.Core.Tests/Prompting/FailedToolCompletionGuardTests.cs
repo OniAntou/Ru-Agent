@@ -9,6 +9,17 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class FailedToolCompletionGuardTests
 {
+    [Fact]
+    public void Repetition_advice_does_not_turn_failed_verification_into_success()
+    {
+        var entries = CreateContext(Receipt(ToolExecutionOutcome.Failed, "process_exit_nonzero")).Entries;
+        var note = ModelContextEntry.Text("repetition-advice", entries[^1].Sequence + 1,
+            ModelContextRole.System, ConsecutiveToolCallGuard.BuildRepairNote("process_exit_nonzero"));
+        var context = new ModelContextSnapshot([.. entries, note], "[]"u8.ToArray());
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(context, out var code));
+        Assert.Equal("process_exit_nonzero", code);
+    }
+
     [Theory]
     [InlineData("edit_no_match", "re-read the same file")]
     [InlineData("edit_not_unique", "expected_occurrences")]

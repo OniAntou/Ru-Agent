@@ -93,6 +93,12 @@ def load_task(path, suite):
     instruction = instruction_path.read_text(encoding="utf-8")
     if not instruction.strip() or len(instruction.encode()) > 16384:
         raise ValueError("missing or oversized task instruction")
+    instruction += (
+        "\n\nFinal workspace constraints:\n"
+        "Only source files matching " + ", ".join(globs) + " may be changed or added. "
+        "All other existing files must remain unchanged, including project files and public smoke tests. "
+        "Remove scratch files before finishing; use a temporary directory outside the workspace for scratch checks.\n"
+    )
     required = ["tests/test.sh", "environment/Dockerfile", "solution/solve.sh"] if is_terminal else []
     grader = "tests/Grader.csproj" if language == "csharp" else f"tests/grade.{extension}"
     for filename in required + [grader]:

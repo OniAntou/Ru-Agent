@@ -364,14 +364,17 @@ mood state, or public diagnostics.
 
 A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
-`[HARNESS RECOVERY]` note (2 notes); the failed receipt stays visible behind a
-trailing note, so the budget is spent before the run fails. An empty final step
-gets 1 note; and a runner-rejected malformed, unavailable, or invalid tool call
-or selection gets up to 2 notes, all under a global cap of 6 notes per window
-measured over the recovery notes visible in the assembled context (compaction
-can fold earlier notes out of the count). The note is `ModelContext` feedback to
-the same model and provider, the run stays `Running`, and a spent bound fails
-closed with the original code. An exhausted provider-transient failure
+`[HARNESS RECOVERY]` note (up to 4 notes); empty final text gets up to 2 notes,
+and a runner-rejected malformed, unavailable or invalid selection gets up to 4.
+Incomplete `Length` finishes get up to 2 truncation notes. These kinds share a
+cumulative cap of 12 notes per run. System recovery notes remain visible through
+compaction. Feedback keeps the same model/provider; spent bounds fail with the
+original code. Exact repeated calls and short failed cycles receive at most two
+`[REPETITION GUARD]` notes, then park for Continue. The suppressed assistant step
+is audit-only; its calls never enter native history without matching receipts.
+Trailing advice does not hide the earlier receipt from repetition detection or
+allow final prose to claim success after failed verification.
+An exhausted provider-transient failure
 (`provider_rate_limited`, `provider_timeout`, `provider_server_error`,
 `provider_transport_error`) is not failed either: it parks the run in
 `waiting_user` with a `ContinueRequested` that preserves the provider's code,

@@ -86,6 +86,15 @@ public static class ConsecutiveToolCallGuard
         }
 
         var index = context.Entries.Count - 1;
+        // Advice replaces a suppressed call in model context. Look through our
+        // trailing advice to the original result, without crossing a user turn.
+        while (index >= 0
+            && context.Entries[index].Kind == ModelContextEntryKind.Text
+            && context.Entries[index].Role == ModelContextRole.System
+            && context.Entries[index].Content?.StartsWith(RepairNotePrefix, StringComparison.Ordinal) == true)
+        {
+            index--;
+        }
         var receipts = new List<ToolExecutionReceipt>();
         while (index >= 0 && context.Entries[index].Kind == ModelContextEntryKind.ToolResult)
         {

@@ -56,6 +56,13 @@ A destination must not already exist. Only the task's `src/**/*.cs`,
 README files, extra non-source files, symlinks and junctions invalidate a
 candidate. Build/cache directories are excluded from grading. Grading copies
 admitted files into a fresh directory and runs the external verifier there.
+The effective instruction given to every agent includes these final-workspace
+constraints; scratch checks must use temporary locations or be removed before
+completion. `trial.json` records the effective instruction's SHA-256 separately
+from the fixture fingerprint so prompt revisions can be distinguished.
+Patch export applies the same build/cache exclusions as workspace grading,
+including already-staged caches; they cannot invalidate an otherwise admitted
+source patch when it is replayed into a fresh baseline.
 
 Each complete named group must report positive check counts and consistent
 failure evidence. Reward is **1 only if every group passes and the verifier

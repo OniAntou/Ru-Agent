@@ -24,6 +24,25 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
 
     protected override bool StreamsToolOutputDeltas => false;
 
+    [Fact]
+    public async Task Failed_terminal_command_delivers_diagnostics_to_the_model()
+    {
+        var gateway = await CreatePresetGatewayAsync(FullAccessPreset);
+        var receipt = await ExecuteOnAsync(gateway, "bash", new JsonObject
+        {
+            ["mode"] = "shell",
+            ["script"] = "[Console]::Error.WriteLine('compiler: missing semicolon'); exit 1",
+            ["working_directory"] = ".",
+        });
+
+        Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+        Assert.Equal("process_exit_nonzero", receipt.Code);
+        var content = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!;
+        Assert.Equal(1, content["exit_code"]!.GetValue<int>());
+        Assert.Contains("compiler: missing semicolon", content["stderr_head"]!.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(content["spool_id"]!.GetValue<string>()));
+    }
+
     [Theory]
     [InlineData("web_search", ToolAccessKind.ReadOnly)]
     [InlineData("web_fetch", ToolAccessKind.ReadOnly)]

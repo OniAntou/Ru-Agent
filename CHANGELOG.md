@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tooling,protocol)**: Disclose benchmark final-workspace restrictions in the effective task instruction, record its hash separately from fixture identity, and clarify the default Windows PowerShell syntax in terminal tool guidance.
+- **fix(tooling)**: Exclude build/interpreter caches from benchmark patch export, including staged files, using the same exclusions as workspace grading. A passing source candidate can now round-trip through SWE-style patch evaluation.
+
+- **fix(harness)**: Repeated-tool recovery no longer puts unexecuted calls into native model history, preventing `model_history_invalid` during self-repair and Continue. Trailing advice preserves repetition bounds and failed-verification checks, so it neither redispatches identical rejected calls nor permits prose-only success over a failed receipt.
+
+- **fix(harness)**: Failed terminal receipts carry the exit code and bounded, already-redacted compiler diagnostics to the model instead of discarding them. Failed status, output paging and public SSE privacy remain unchanged.
+
 - **fix(terminal)**: Redact known environment credentials across streamed output boundaries and complete overlapping matches; child processes do not inherit secret variables.
 - **refactor(terminal)!**: Retire OS filesystem/network confinement for terminal and managed-Git children. Both execution presets launch as the current Windows user; standard keeps its classifier and approval rules, and full_access keeps its existing arbitrary-terminal policy. The `bash` schema rejects obsolete sandbox arguments. Job Object lifetime, timeout, output, cancellation, and process-tree controls remain; stripped child environment secrets seed output redaction.
 - **fix(harness,tools)**: Incomplete provider output no longer completes a turn or dispatches partial tool calls. Output-limit finishes receive bounded same-model recovery before `model_output_truncated`; filtered/error finishes fail with named codes, and whitespace-only replies use empty-reply recovery. Tool guidance clarifies existing-file overwrite, exact edits, Windows paths and executable argument vectors without changing permissions.

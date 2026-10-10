@@ -22,11 +22,23 @@ def test_task_registry_has_separate_multilingual_terminal_and_swe_suites():
     assert all(task.fail_to_pass and task.pass_to_pass for task in swe)
 
 
+def test_agent_instruction_discloses_final_workspace_constraints():
+    for suite in ("terminal", "swe"):
+        for task in benchmark.tasks(suite):
+            original = (task.path / ("instruction.md" if suite == "terminal" else "issue.md")).read_text(encoding="utf-8")
+            assert task.instruction.startswith(original)
+            assert all(pattern in task.instruction for pattern in task.editable_globs)
+            assert "All other existing files must remain unchanged" in task.instruction
+            assert "Remove scratch files" in task.instruction
+
+
 def test_prepare_hides_verifier_and_reference_and_records_git_base(tmp_path):
+    import hashlib
     task = benchmark.tasks("terminal")[0]
     trial = benchmark.prepare(task, tmp_path / "trial")
     root = Path(trial["workspace"])
     assert len(trial["base_commit"]) == 40
+    assert trial["instruction_sha256"] == hashlib.sha256(task.instruction.encode("utf-8")).hexdigest()
     assert (root / ".git").is_dir()
     assert not (root / "solution").exists()
     assert not (root / "tests" / "grade.py").exists()
@@ -81,6 +93,22 @@ def test_swe_patch_is_applied_to_fresh_base_and_rejects_test_edits(tmp_path):
     patch.write_text(benchmark.git(workspace, "diff", "HEAD"), encoding="utf-8", newline="")
     with pytest.raises(ValueError, match="outside"):
         benchmark.grade_patch(task, patch, tmp_path / "rejected")
+
+
+def test_swe_patch_round_trip_ignores_staged_interpreter_cache(tmp_path):
+    task = benchmark.find_task("swe", "py-migration-rollback")
+    trial = benchmark.prepare(task, tmp_path / "author")
+    workspace = Path(trial["workspace"])
+    benchmark.apply_reference(task, workspace)
+    cache = workspace / "src" / "__pycache__" / "migrate.cpython-test.pyc"
+    cache.parent.mkdir()
+    cache.write_bytes(b"\x00generated interpreter cache")
+    benchmark.git(workspace, "add", "--", "src/__pycache__")
+    patch = tmp_path / "fix.patch"
+    benchmark.export_patch(task, workspace, patch)
+    result = benchmark.grade_patch(task, patch, tmp_path / "evaluate")
+    assert result["status"] == "passed"
+    assert "__pycache__" not in patch.read_text(encoding="utf-8")
 
 
 def test_swe_export_has_real_git_base_and_optional_reference_patch(tmp_path):

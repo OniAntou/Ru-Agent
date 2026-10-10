@@ -381,8 +381,8 @@ internal sealed partial class AgentRunStepHandlers
         var assistantPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.AuthenticatedClient
-                | HarnessPayloadAudience.ModelContext,
+            // No tool was dispatched: retain the rejected calls for audit only.
+            HarnessPayloadAudience.InternalOnly,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
@@ -484,8 +484,8 @@ internal sealed partial class AgentRunStepHandlers
         var assistantPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.AuthenticatedClient
-                | HarnessPayloadAudience.ModelContext,
+            // No tool was dispatched: retain the rejected calls for audit only.
+            HarnessPayloadAudience.InternalOnly,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);

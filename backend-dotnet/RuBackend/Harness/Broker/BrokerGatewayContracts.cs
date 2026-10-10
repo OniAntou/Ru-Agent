@@ -20,6 +20,7 @@ internal static class BrokerGatewayContracts
 {
     internal const string AuthorizationTokenPrefix = "auth:";
     internal const int MaximumRepairHintLength = 512;
+    private const int MaximumFailureDiagnosticLength = 2048;
 
 
 
@@ -114,6 +115,28 @@ internal static class BrokerGatewayContracts
             content["spool_id"] = spoolId;
         }
 
+        // Terminal output is redacted by the execution authority. Preserve just
+        // enough of it to repair a failed build without another tool round trip.
+        if (output is not null && code is "process_exit_nonzero" or "process_start_failed" or "process_timed_out")
+        {
+            if (output["exit_code"] is JsonValue exit && exit.TryGetValue<int>(out var exitCode))
+            {
+                content["exit_code"] = exitCode;
+            }
+            foreach (var field in new[] { "stdout_head", "stdout_tail", "stderr_head", "stderr_tail" })
+            {
+                if (output[field] is not JsonValue value || !value.TryGetValue<string>(out var text) || string.IsNullOrEmpty(text))
+                {
+                    continue;
+                }
+                content[field] = text.Length <= MaximumFailureDiagnosticLength
+                    ? text
+                    : field.EndsWith("_tail", StringComparison.Ordinal)
+                        ? text[^MaximumFailureDiagnosticLength..]
+                        : text[..MaximumFailureDiagnosticLength];
+            }
+        }
+
         return new ToolExecutionReceipt(
             execution.ExecutionId,
             execution.ToolCallId,
@@ -161,8 +184,8 @@ internal static class BrokerGatewayContracts
 
     /// <summary>
     /// Carries a terminal execution's retained-output identity into failure content
-    /// so a failed command can still be inspected with mode read_output. Only the
-    /// bounded identity crosses; the raw output never does.
+    /// so a failed command can still be inspected with mode read_output beyond
+    /// the bounded diagnostic excerpts included in terminal failure receipts.
     /// </summary>
     internal static string? BoundSpoolId(JsonObject? output)
     {

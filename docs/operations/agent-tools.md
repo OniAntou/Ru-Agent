@@ -157,6 +157,17 @@ a cursor. Paging does not authorize a new operation or bypass Broker approval.
 
 ### Session folder grants and bash approval
 
+Failed terminal starts, nonzero exits and timeouts retain `exit_code` when
+available and already-redacted stdout/stderr head/tail excerpts, each bounded
+to 2,048 characters, in the private model-visible receipt. Failure status and
+code remain unchanged. The bounded `spool_id` supports `mode=read_output` for
+more detail; public SSE summaries do not expose these diagnostic excerpts.
+
+On Windows, `bash` with `mode=shell` defaults to Windows PowerShell 5.1
+(`powershell.exe`); scripts use PowerShell syntax. `mode=run` takes a separate
+executable and argument vector. The tool description states this explicitly so
+the model does not assume Unix `head`/`tail` commands are available.
+
 Canonical `plan` denies terminal and mutation. Canonical `standard` allows only
 classifier-bounded local terminal intent inside the trusted workspace; deletion,
 unknown executables, arbitrary shell, external cwd/argv, and other risky intent
@@ -198,8 +209,12 @@ batch pauses for one explicit decision. Resolution re-evaluates the exact durabl
 proposals under the current lease; the model is not asked to reissue an approved
 call. An `ask_user` call parks the same way without a Broker decision: the asked
 call is completed by the answer route, and the durable rehydrator resumes the
-remaining retained proposals without a new model proposal. A denial may return a repair hint, while an exact repeated call is stopped
-by `repeated_tool_call` before duplicate dispatch. An empty or whitespace-only
+remaining retained proposals without a new model proposal. A denial may return
+a repair hint. An exact repeat or short failed-call cycle is suppressed before
+duplicate dispatch; up to two `[REPETITION GUARD]` notes request changed arguments,
+then `repeated_tool_call` parks the run for explicit Continue. Suppressed calls
+remain audit-only and do not create unmatched native-history tool calls. The
+failed receipt remains visible behind advice, so prose alone cannot clear it. An empty or whitespace-only
 final step is answered up to two times with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`. A runner-rejected tool call or selection
 (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is

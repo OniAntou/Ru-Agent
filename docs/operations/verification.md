@@ -6,13 +6,105 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,802 passed / 0 failed / 0 skipped** (2026-10-11, terminal OS sandbox retirement). Log: `artifacts/remove-sandbox-dotnet-final.log`. Earlier failures and focused reruns are recorded below. |
-| Python suite | **211 passed, 1 skipped** (2026-10-11, terminal OS sandbox retirement), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/remove-sandbox-pytest-final.log`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,809 passed / 0 failed / 0 skipped** (2026-10-11, coding recovery/feedback repairs). Log: `artifacts/quality-dotnet-complete.log`. Earlier interrupted matrix and focused diagnostic are recorded below. |
+| Python suite | **213 passed, 1 skipped** (2026-10-11, coding recovery/feedback repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/quality-pytest-complete.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, coding recovery/feedback repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-release-final.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
-| Live coding benchmark | Latest small C# diagnostic **unresolved** (2026-10-11), current Kilo `stepfun/step-5-preview-free`, `standard`: `model_history_invalid` after 15.058 seconds, no source change. Report: `artifacts/ru-small-csharp-no-sandbox-20261011/report.json`. The earlier custom nine-task result was **0/9 resolved** (2026-10-10); see the dated run below. Neither is an official dataset score or a model-independent measure of Ru. |
+| Live coding benchmark | Final custom SWE diagnostic: **0/3 resolved** within 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, rebuilt Release; Python candidate passed all groups but its run timed out. Report: `artifacts/quality-swe-20261011-run2/report.json`. Separate small C# diagnostic passed in 70.906 s. Conditions and incomplete outcomes are recorded below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Coding recovery and feedback repairs (2026-10-11)
+
+Suppressed repeated-tool proposals are retained for internal audit, without
+orphan native tool calls in model history. Repetition advice still counts toward
+its existing bound and cannot hide a failed receipt from completion checks.
+Terminal start/exit/timeout failures now preserve an exit code and bounded,
+already-redacted diagnostics for model repair. Windows shell guidance names
+PowerShell explicitly. No provider fallback or permission-policy change was made.
+
+Regression evidence:
+
+- Release distributable rebuilt successfully: **11/11 stages**
+  (`artifacts/quality-release-final.log`).
+- Final full Python tooling suite: **213 passed, 1 skipped**
+  (`artifacts/quality-pytest-complete.log`), including the cache-patch regression.
+  The intermediate run passed 212 (`artifacts/quality-pytest-final.log`);
+  the Windows skip remains the POSIX process-group case.
+- Final full .NET invocation: **5,809 passed / 0 failed / 0 skipped**, all
+  12 projects (`artifacts/quality-dotnet-complete.log`).
+- The first full matrix stalled in CLI and was interrupted; its log is
+  `artifacts/quality-dotnet-final.log`. The isolated CLI diagnostic with
+  `--blame-hang-timeout 90s --blame-hang-dump-type none` completed all **1,278**
+  tests (`artifacts/quality-cli-diagnostic.log`). The hang did not reproduce;
+  its cause remains unconfirmed and is not claimed fixed.
+- Durable SQLite/native-provider history: two causal RED failures in
+  `artifacts/quality-repetition-red3.log`, then two passing recovery cases in
+  `artifacts/quality-repetition-green2.log`. Earlier `red`/`red2` logs record
+  corrected test setup/compilation failures, not the reproduced production bug.
+- Advice-hidden repetition: two RED cases in `artifacts/quality-guard-red.log`.
+  Advice-hidden verification failure: one RED case in
+  `artifacts/quality-false-success-red.log`. Core subsequently passed 481 tests
+  (`artifacts/quality-core-green.log`).
+- Missing compiler diagnostics: receipt mapping and a real failed PowerShell
+  child both failed before the fix (`artifacts/quality-terminal-feedback-red.log`).
+  All seven related mapping/history/process checks passed afterward
+  (`artifacts/quality-terminal-feedback-green.log`). Existing terminal redaction
+  coverage is retained; these diagnostics are private receipt content, not public SSE.
+- Benchmark instructions previously omitted immutable-file and scratch-file
+  restrictions enforced by grading. A failing prompt regression reproduced
+  this omission; all nine benchmark tooling tests passed after disclosing the
+  constraints. Logs: `artifacts/quality-benchmark-prompt-red.log`,
+  `artifacts/quality-benchmark-tests.log`. Grading criteria remain unchanged;
+  prepared trials now record the effective instruction hash.
+- Live Python exposed cache files entering patch export despite tree grading
+  excluding them. The staged-cache round-trip regression failed before the fix
+  (`artifacts/quality-benchmark-patch-red.log`); all **10** benchmark tests
+  passed afterward (`artifacts/quality-benchmark-tests-final.log`). The actual
+  Python candidate source patch was replayed into a fresh baseline, passed
+  every group, and retained the same candidate hash
+  (`artifacts/quality-swe-20261011-run2/py-migration-rollback/patch-validation.json`).
+
+Live evidence uses the same configured Kilo `stepfun/step-5-preview-free`,
+`chat_completions`, one attempt per task, isolated ephemeral Host/data roots,
+and disposable workspaces. It does not send reference solutions to the model.
+
+- Small shipping-boundary C#: `standard` parked for the existing terminal
+  approval (`artifacts/quality-small-csharp-20261011-run1/report.json`). A
+  separate explicitly confirmed `full_access` trial completed in **70.906 s**, changed
+  only `src/Shipping.cs`, and passed the independent grader
+  (`artifacts/quality-small-csharp-20261011-full-access-run1/report.json`). This
+  used intermediate Debug binaries; it is not a controlled before/after score.
+- Initial hard custom SWE diagnostics, 300 s/task, `full_access`: C# and Python
+  timed out; TypeScript failed `model_output_truncated` after 284.860 s and
+  failed five of seven groups. C# changed a project file; Python left a scratch
+  file. The original prompts did not disclose these integrity restrictions, so
+  the resulting **0/3** is diagnostic evidence with a prompt defect, not a fair
+  quality score. Reports: `artifacts/quality-swe-20261011-run1/`.
+
+- Final hard diagnostic used rebuilt flat Release binaries, disclosed final-workspace
+  constraints and 300 s/task; binary and instruction hashes are retained in
+  `artifacts/quality-swe-20261011-run2/manifest.json` and each `trial.json`.
+
+| Task | Agent outcome | Seconds | Grader groups passed | Live reward |
+| --- | --- | ---: | ---: | ---: |
+| C# lease renewal | completed; expiry semantics still incorrect | 294.992 | 6/7 | 0 |
+| Python migration rollback | timed out; candidate passed every group | 300.017 | 6/6 | 0 |
+| TypeScript session replay | failed `model_output_truncated` | 257.804 | 2/7 | 0 |
+
+Live reward requires both a completed agent run and a fully passing candidate:
+**0/3 resolved**, while **1/3 candidate patches passed all grading groups**.
+The corrected Python source-only patch also passed fresh-baseline replay;
+its original `prediction.patch` retains the pre-fix cache-export failure as
+historical evidence. No model-generated source was repaired by the evaluator.
+Receipt metadata from three real failed commands confirms compiler feedback
+reached private payloads (`artifacts/quality-swe-20261011-run2/failure-feedback-evidence.json`).
+Reports and trajectories are under `artifacts/quality-swe-20261011-run2/`.
+This run does not establish a controlled improvement rate: several harness and
+prompt corrections were applied, there is one attempt, and the deadline is short.
+
+These custom tasks and short single attempts are not official Terminal-Bench
+or SWE-bench results, a model-independent measure, or native UI acceptance.
 
 ## Terminal OS sandbox retirement (2026-10-11)
 

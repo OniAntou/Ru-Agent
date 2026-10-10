@@ -8,6 +8,24 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class ConsecutiveToolCallGuardTests
 {
+    [Theory]
+    [InlineData(1, RepetitionGuardVerdict.Advise)]
+    [InlineData(2, RepetitionGuardVerdict.Stop)]
+    public void Tail_repair_notes_do_not_hide_the_failed_call(int notes, RepetitionGuardVerdict expected)
+    {
+        var call = Call("{\"path\":\"a.cs\"}");
+        var entries = InfraFailureContext(call, "malformed_call").Entries.ToList();
+        for (var index = 0; index < notes; index++)
+        {
+            entries.Add(ModelContextEntry.Text($"note-{index}", entries[^1].Sequence + 1,
+                ModelContextRole.System, ConsecutiveToolCallGuard.BuildRepairNote("malformed_call")));
+        }
+        var result = ConsecutiveToolCallGuard.Inspect(new ModelContextSnapshot(entries, "[]"u8.ToArray()),
+            [call], out var receiptCode);
+        Assert.Equal(expected, result);
+        Assert.Equal("malformed_call", receiptCode);
+    }
+
     [Fact]
     public void Identical_completed_call_is_repeated_regardless_of_object_property_order()
     {

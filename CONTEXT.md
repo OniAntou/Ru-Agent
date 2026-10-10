@@ -233,6 +233,15 @@ partial tool calls, before execution; bounded recovery requests smaller output.
 `model_reply_error` without recovery. Whitespace-only final text counts as empty.
 _Avoid_: fallback answer, substitute model, retry on another backend
 
+**Repeated Tool Recovery**:
+Identical calls and short failed-call cycles are suppressed before duplicate
+dispatch. Up to two `[REPETITION GUARD]` notes ask the same model to change its
+arguments; exhaustion parks for explicit Continue. Suppressed assistant steps
+remain audit-only, because they have no tool receipts to pair in native model
+history. Trailing guard notes preserve the failed receipt for both repetition
+checks and the final-answer verification guard. A note cannot turn a failed
+verification into successful completion.
+
 **Agent Persona Source**:
 The root-selected `AGENTS.md` instruction is the sole Agent persona/style source.
 The built-in prompt is a neutral execution contract. Root instructions may

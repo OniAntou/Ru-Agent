@@ -15,7 +15,7 @@ namespace RuBackend.Tests.Harness;
 /// exhausted provider-transient failures must park the run for Continue, and an
 /// explicit Continue must drive a fresh model step that can complete.
 /// </summary>
-public sealed class AgentProviderTransientParkTests
+public sealed partial class AgentProviderTransientParkTests
 {
     [Fact]
     public async Task Exhausted_provider_transient_parks_the_run_and_continue_retries_a_fresh_step()
@@ -102,7 +102,10 @@ public sealed class AgentProviderTransientParkTests
     private static AgentRunCoordinator Coordinator(
         BackendHarnessTestFixture fixture,
         ScriptedProvider provider,
-        RecordingActivitySink activities)
+        RecordingActivitySink activities,
+        IModelContextSource? contextSource = null,
+        IToolGateway? gateway = null,
+        ISystemPromptContextProvider? promptContextProvider = null)
     {
         var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
@@ -111,15 +114,15 @@ public sealed class AgentProviderTransientParkTests
         };
         return new AgentRunCoordinator(
             runner,
-            new UnusedToolGateway(),
+            gateway ?? new UnusedToolGateway(),
             fixture.EventStore,
-            new AgentContextAssembler(new StaticContextSource()),
+            new AgentContextAssembler(contextSource ?? new StaticContextSource()),
             new CryptographicIdGenerator(),
             new SystemTimeProvider(),
             new ToolCallScheduler(),
             new TransientFrameBuffer(32),
             activitySink: activities,
-            promptContextProvider: new EmptyPromptContextProvider());
+            promptContextProvider: promptContextProvider ?? new EmptyPromptContextProvider());
     }
 
     private static async Task<List<HarnessEvent>> ReadEventsAsync(

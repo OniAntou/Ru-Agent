@@ -241,6 +241,8 @@ public sealed class AgentToolDefinitionCatalogTests
         var example = bash.ExampleArguments!;
 
         Assert.Contains("separate from arguments", bash.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("mode=shell with script", bash.Description, StringComparison.Ordinal);
+        Assert.Contains("default shell is powershell.exe", bash.Description, StringComparison.Ordinal);
         Assert.Equal("node", example["executable"]!.GetValue<string>());
         Assert.Equal(new[] { "-e", "console.log('hi')" }, example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.DoesNotContain("node", example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));

@@ -1,5 +1,6 @@
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import shutil
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from execution import run_command
 from grading import apply_reference, grade
-from task_io import check_integrity, inventory, load_task, tree_hash, write_json
+from task_io import IGNORED_PARTS, check_integrity, inventory, load_task, tree_hash, write_json
 
 ROOT = Path(__file__).resolve().parent
 GIT_ENV = {
@@ -59,6 +60,7 @@ def prepare(task, destination):
         "workspace": str(workspace), "base_commit": git(workspace, "rev-parse", "HEAD").strip(),
         "base_workspace_sha256": tree_hash(workspace),
         "fixture_sha256": task.fixture_hash, "environment": "native-local",
+        "instruction_sha256": hashlib.sha256(task.instruction.encode("utf-8")).hexdigest(),
         "created_utc": datetime.now(UTC).isoformat(),
     }
     (destination / "instruction.md").write_text(task.instruction, encoding="utf-8")
@@ -90,8 +92,11 @@ def self_test(selected, attempts):
 
 
 def patch_for(workspace):
-    git(workspace, "add", "--intent-to-add", "--", "src")
-    return git(workspace, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--", "src")
+    # Patch admission must use the same build/cache exclusions as tree grading,
+    # including files the agent has already staged.
+    paths = ["src", *(f":(exclude,glob)src/**/{part}/**" for part in sorted(IGNORED_PARTS))]
+    git(workspace, "add", "--intent-to-add", "--", *paths)
+    return git(workspace, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--", *paths)
 
 
 def export_patch(task, workspace, output):

@@ -71,7 +71,8 @@ public static class FailedToolCompletionGuard
         entry.Kind == ModelContextEntryKind.Text
         && entry.Role == ModelContextRole.System
         && entry.Content is { } content
-        && content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal);
+        && (content.StartsWith(AgentRecoveryNotes.NotePrefix, StringComparison.Ordinal)
+            || content.StartsWith(ConsecutiveToolCallGuard.RepairNotePrefix, StringComparison.Ordinal));
 
     private static bool HasEarlierDeny(ModelContextSnapshot context, int beforeIndex)
     {

@@ -13,6 +13,30 @@ namespace RuBackend.Tests.Harness;
 public sealed class BrokerGatewayContractsTests
 {
     [Fact]
+    public void Failed_terminal_receipt_preserves_bounded_compiler_diagnostics()
+    {
+        var execution = new PreparedToolExecution(new ExecutionId("exec_" + new string('5', 32)),
+            new ToolCallId("call_" + new string('5', 32)), 1, ToolAccessKind.ReadOnly, "token", []);
+        var receipt = global::RuBackend.Harness.Broker.BrokerGatewayContracts.FailedReceipt(execution,
+            "process_exit_nonzero", "Terminal process failed.", new JsonObject
+            {
+                ["exit_code"] = 1,
+                ["stdout_head"] = "error CS1002: ; expected",
+                ["stderr_tail"] = new string('x', 8000) + "compiler tail",
+                ["spool_id"] = "retained-command",
+                ["unrelated_field"] = "must not cross",
+            });
+        var content = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
+        Assert.Equal(1, content["exit_code"]!.GetValue<int>());
+        Assert.Equal("error CS1002: ; expected", content["stdout_head"]!.GetValue<string>());
+        var tail = content["stderr_tail"]!.GetValue<string>();
+        Assert.EndsWith("compiler tail", tail);
+        Assert.InRange(tail.Length, 1, 2048);
+        Assert.Equal("retained-command", content["spool_id"]!.GetValue<string>());
+        Assert.False(content.ContainsKey("unrelated_field"));
+    }
+
+    [Fact]
     public void ApprovalArgsKey_canonicalizes_null_properties_without_throwing()
     {
         using var document = System.Text.Json.JsonDocument.Parse("{\"path\":null,\"nested\":{\"z\":null,\"a\":1}}");
@@ -47,7 +71,7 @@ public sealed class BrokerGatewayContractsTests
     }
 
     [Fact]
-    public void Failed_receipt_keeps_a_bounded_spool_id_and_drops_raw_output()
+    public void Nonterminal_failure_keeps_a_bounded_spool_id_and_drops_raw_output()
     {
         var execution = new PreparedToolExecution(
             new ExecutionId("exec_" + new string('5', 32)),
@@ -59,7 +83,7 @@ public sealed class BrokerGatewayContractsTests
 
         var receipt = global::RuBackend.Harness.Broker.BrokerGatewayContracts.FailedReceipt(
             execution,
-            "process_exit_nonzero",
+            "tool_failed",
             safeSummary: null,
             output: new JsonObject
             {
@@ -68,7 +92,7 @@ public sealed class BrokerGatewayContractsTests
             });
 
         var content = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span))!.AsObject();
-        Assert.Equal("process_exit_nonzero", content["error"]!.GetValue<string>());
+        Assert.Equal("tool_failed", content["error"]!.GetValue<string>());
         Assert.Equal("req-123", content["spool_id"]!.GetValue<string>());
         Assert.False(content.ContainsKey("stderr_head"));
     }

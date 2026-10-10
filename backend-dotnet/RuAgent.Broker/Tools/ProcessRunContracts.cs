@@ -1,3 +1,5 @@
+using RuAgent.Protocol;
+
 namespace RuAgent.Broker.Tools;
 
 /// <summary>

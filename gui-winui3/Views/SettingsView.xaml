@@ -402,7 +402,7 @@
                                                                        FontSize="12.5"
                                                                        Foreground="{StaticResource RuInkBrush}"
                                                                        TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="Asks nothing; still not a sandbox."
+                                                            <TextBlock Text="Skips approval prompts; terminal runs as your Windows user."
                                                                        Style="{StaticResource SettingDescStyle}" />
                                                         </StackPanel>
                                                         <FontIcon x:Name="PresetFullAccessCheck"

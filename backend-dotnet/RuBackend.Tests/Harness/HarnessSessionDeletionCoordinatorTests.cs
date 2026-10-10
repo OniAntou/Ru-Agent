@@ -32,7 +32,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     }
 
     [Fact]
-    public async Task Broker_grants_are_revoked_before_the_session_file()
+    public async Task Broker_grants_are_revoked_and_the_session_closed_before_the_session_file()
     {
         var trace = new List<string>();
         var artifacts = new RecordingArtifactStore(trace);
@@ -49,7 +49,19 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
-        Assert.Equal(["revoke:11111111111111111111111111111111", "tombstone", "harness", "session"], trace);
+        // The revoke fails the delete closed when the authority rejects it;
+        // the close is what releases the authority's session-scoped run state
+        // (the wire session died with its connection, while the in-process
+        // session lives for the host).
+        Assert.Equal(
+            [
+                "revoke:11111111111111111111111111111111",
+                "close:11111111111111111111111111111111",
+                "tombstone",
+                "harness",
+                "session",
+            ],
+            trace);
     }
 
     [Fact]
@@ -90,6 +102,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             "11111111111111111111111111111111",
             CancellationToken.None));
         Assert.DoesNotContain("session", trace);
+        Assert.DoesNotContain("close:11111111111111111111111111111111", trace);
     }
 
     [Fact]
@@ -312,13 +325,45 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     }
 
     private sealed class StubGatewayFactory(List<string> trace, bool revokeResult)
-        : RuBackend.Harness.Broker.BrokerToolGatewayFactory(null)
+        : RuBackend.Harness.Broker.IToolGatewayFactory
     {
-        public override Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken)
+        public bool IsConfigured => true;
+
+        public IToolGateway Create(
+            string workspaceRoot,
+            PolicySnapshot policySnapshot,
+            RunId runId,
+            string? agentSessionId = null) =>
+            throw new NotSupportedException();
+
+        public Task<System.Text.Json.Nodes.JsonObject> ListSessionTasksAsync(
+            string runId,
+            string? killExecutionId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+            string runId,
+            string hostApprovalId,
+            string command,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken)
         {
             trace.Add("revoke:" + sessionId);
             return Task.FromResult(revokeResult);
         }
+
+        public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            trace.Add("close:" + sessionId);
+            return Task.CompletedTask;
+        }
+
+        public void CloseRun(string runId) => throw new NotSupportedException();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class RecordingArtifactStore(List<string> trace)

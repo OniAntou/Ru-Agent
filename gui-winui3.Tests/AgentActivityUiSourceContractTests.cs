@@ -455,8 +455,9 @@ public sealed class AgentActivityUiSourceContractTests
 
         // The button copies the panel's text through its Tag rather than reaching
         // for the row, so one handler serves every terminal row in the feed.
-        var copyButton = Assert.Single(template.Descendants().Where(element =>
-            GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick"));
+        var copyButton = Assert.Single(
+            template.Descendants(),
+            element => GuiSource.AttributeValue(element, "Click") == "OnCopyTerminalOutputClick");
         Assert.Equal("Button", copyButton.Name.LocalName);
         Assert.True(
             copyButton.Attributes().Any(attribute =>

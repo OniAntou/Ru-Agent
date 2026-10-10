@@ -135,6 +135,14 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
+    public void Bash_tool_does_not_expose_a_sandbox_override()
+    {
+        var properties = Properties("bash");
+        Assert.DoesNotContain("sandbox", Required("bash"));
+        Assert.DoesNotContain("sandbox", properties.Select(property => property.Key));
+    }
+
+    [Fact]
     public void Every_definition_has_valid_identity_description_scope_schema_and_example()
     {
         foreach (var definition in AgentToolDefinitionCatalog.Get())
@@ -201,10 +209,41 @@ public sealed class AgentToolDefinitionCatalogTests
         foreach (var definition in AgentToolDefinitionCatalog.Get()
             .Where(definition => definition.ToolId is "read" or "list" or "write" or "edit" or "grep" or "glob"))
         {
+            Assert.Contains("workspace-relative", definition.Description, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("absolute", definition.Description, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("preserve", definition.Description, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("session", definition.Description, StringComparison.OrdinalIgnoreCase);
         }
+
+        Assert.Contains("src\\App.cs", AgentToolDefinitionCatalog.Find("read", "1.0.0")!.Description);
+        Assert.Equal("src\\App.cs", AgentToolDefinitionCatalog.Find("read", "1.0.0")!.ExampleArguments!["path"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void File_mutation_guidance_names_the_required_operation_and_exact_edit_source()
+    {
+        var write = AgentToolDefinitionCatalog.Find("write", "1.0.0")!;
+        Assert.Contains("op=write", write.Description);
+        Assert.Contains("overwrite=true", write.Description);
+        Assert.Equal("src\\notes.txt", write.ExampleArguments!["path"]!.GetValue<string>());
+
+        var edit = AgentToolDefinitionCatalog.Find("edit", "1.0.0")!;
+        Assert.Contains("exact", edit.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("copied from a fresh read", edit.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("whitespace must match", edit.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("src\\notes.txt", edit.ExampleArguments!["path"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Bash_example_keeps_executable_out_of_the_argument_vector()
+    {
+        var bash = AgentToolDefinitionCatalog.Find("bash", "1.0.0")!;
+        var example = bash.ExampleArguments!;
+
+        Assert.Contains("separate from arguments", bash.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("node", example["executable"]!.GetValue<string>());
+        Assert.Equal(new[] { "-e", "console.log('hi')" }, example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.DoesNotContain("node", example["arguments"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

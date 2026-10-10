@@ -81,14 +81,17 @@ Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
 for backward compatibility and remains an estimate, not a billing record.
 
 Agent generation runs inside the Public Host process through the typed
-`WorkerV2StepService` behind `IModelStepRunner`; the device v1
+`ModelStepService` behind `IModelStepRunner`; the device v1
 runtime/voice/STT/VTS/observation protocol was removed with the media surfaces,
 and the managed C# worker process, its loopback port, and its wire protocol
 were retired (ADR-0012). No model step crosses a process boundary, and no
 per-step credential handoff is written to disk. The credential store keeps
 its existing protected-at-rest ownership.
 
-Managed startup starts only the private `RuAgentBroker` child. Each Agent
+Managed startup starts no child process: tool execution runs in process
+through `BrokerExecutionRuntime` behind `IToolGatewayFactory` (ADR-0014), and
+the retired Broker child, its loopback lease and `RuAgentBroker.exe` are gone.
+Each Agent
 step resolves the run's cached in-memory provider snapshot from a secret-free
 durable Run Provider Selection. Restart rebuilds the snapshot from that same
 selection and credential account; legacy runs without it fail closed. The
@@ -163,7 +166,7 @@ references and tool/search results remain explicitly untrusted.
 
 The `/skills` command lists workspace skill name + description and `/skill <name>`
 loads one SKILL.md body as untrusted guidance; neither executes tools or grants
-anything. `RuAgentBroker` remains the sole authority for path
+anything. The in-process execution authority remains the sole owner of path
 canonicalization, capability policy, approvals, and tool execution.
 
 The model step returns a typed `AssistantStep(text, tool_calls, finish_reason)`
@@ -177,11 +180,12 @@ reduced-context retry. Managed runtime wiring enables the standalone
 `web_search`/`web_fetch` tools by default; no settings field controls their
 exposure.
 
-Prompt composition is not a security boundary: Broker policy, workspace trust,
-approvals, protected paths, external-directory grants, and cancellation remain
-authoritative. Subagent orchestration, LSP, extension/plugin/MCP discovery, arbitrary
-system overrides, Chat compatibility, UI redesign, and the OS-enforced
-filesystem/network sandbox are outside this implementation.
+Prompt composition is not a security boundary: execution-authority policy,
+workspace trust, approvals, protected paths, external-directory grants, and
+cancellation remain authoritative. Subagent orchestration, LSP,
+extension/plugin/MCP discovery, arbitrary system overrides, Chat compatibility,
+UI redesign, and OS filesystem/network confinement are outside this
+implementation (ADR-0015).
 
 When Ru needs product knowledge about its own features, tools, configuration,
 providers, or operating boundaries, it selects the `help` tool (`help@1.0.0`). It
@@ -334,10 +338,15 @@ Repository cleanliness never changes the decision.
 Standard structured-file access outside the trusted root may create a
 session-scoped canonical folder grant; it is not shared with a new
 session, lost on restart, and never authorizes terminal. Full Access uses an
-ephemeral structured root per external call. Full-access terminal runs as the
-current Windows user, can read or change data outside the workspace, and can
-use the network; it is not an OS-enforced filesystem/network sandbox. Hard
-timeout, output cap, cancellation, redaction, and process-tree cleanup remain.
+ephemeral structured root per external call. Terminal children in `standard`
+and `full_access` run as the current Windows user without OS filesystem or
+network confinement, including outside the workspace (ADR-0015). Standard
+keeps its existing classifier and
+approval rules; Full Access keeps its existing arbitrary-terminal policy. The
+`bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
+Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
+remain. Structured file tools retain their independent path protections. API
+keys remain in credential storage and diagnostics redact secrets.
 Web is automatic in all canonical presets; `web_approval_required` remains only
 as an explicit-rule compatibility reason.
 The model selection channel is active for every Agent run: one budget window
@@ -382,13 +391,13 @@ with the denial code as the terminal code.
 
 External-folder requests and terminal deletion or unknown-executable requests
 use bounded approval cards. The Public Host opens
-one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
-verifies adapters. Tool-class successes require an invoked adapter. Python does
-not own desktop side effects.
+one profile-scoped execution session per turn loop, and the in-process
+authority executes and verifies adapters. Tool-class successes require an
+invoked adapter. Python does not own desktop side effects.
 
-The Host serializes one active Broker grant: a matching valid session is reused;
-a replacement Agent session closes the old grant before open. Failure is
-fail-closed and never reaches the native adapter.
+The Host serializes one active execution grant: a matching valid session is
+reused; a replacement Agent session closes the old grant before open. Failure
+is fail-closed and never reaches the native adapter.
 
 Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
@@ -448,8 +457,8 @@ rejected, and response bytes, content types, UTF-8, sanitizer output, and
 citation count are capped. Web payloads are data only and cannot grant tools,
 permissions, paths, approvals, or preset changes; embedded URL credentials
 are rejected as well. Fetched text is wrapped with
-`[untrusted_web_reference]`. These gates are not an OS-enforced network
-sandbox.
+`[untrusted_web_reference]`. Web policy applies to each request separately
+from terminal execution; neither path uses OS network confinement.
 
 Workspace `SKILL.md` bodies are untrusted prompt guidance. Subagents,
 LSP, extensions, plugins, and MCP are not loaded or discoverable.

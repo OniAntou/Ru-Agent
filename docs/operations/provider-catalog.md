@@ -123,7 +123,7 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   unchanged and send `strict:false` because those schemas intentionally include
   optional properties; strict mode requires every declared property to be
   required ([OpenAI function-calling guide](https://developers.openai.com/api/docs/guides/function-calling#strict-mode)).
-  Host, Worker, and Broker validation remains authoritative for every call.
+  Host and Broker validation remains authoritative for every call.
 - Anthropic (`anthropic`, `anthropic_messages`, `https://api.anthropic.com/v1`):
   fixed endpoint `https://api.anthropic.com/v1/models` / `https://api.anthropic.com/v1/messages`,
   credential `anthropic_api_key`, `x-api-key` + `anthropic-version: 2023-06-01`,

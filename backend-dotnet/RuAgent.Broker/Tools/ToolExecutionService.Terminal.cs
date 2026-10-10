@@ -24,7 +24,7 @@ public sealed partial class ToolExecutionService
     /// </summary>
     private const int DefaultSpoolPageChars = 8000;
 
-    private readonly TerminalOutputSpool _spools = new();
+    private readonly TerminalOutputSpool _spools;
     private readonly BackgroundTaskRegistry _backgroundTasks = new();
 
     private async ValueTask<ToolExecutionOutcome> ExecuteBashAsync(
@@ -242,28 +242,39 @@ public sealed partial class ToolExecutionService
         int lifetimeMs,
         bool isBackground,
         string workingDirectory,
+        CancellationToken cancellationToken,
         Func<CancellationToken, Action<string>, Task<StreamingProcessResult>> run)
     {
-        var executionId = context.RequestId;
-        if (string.IsNullOrWhiteSpace(executionId))
+        lock (_terminalLifetimeGate)
         {
-            throw new ArgumentException("invalid_arguments");
-        }
+            cancellationToken.ThrowIfCancellationRequested();
+            ObjectDisposedException.ThrowIf(_stopping, this);
+            if (_stoppingSessions.Contains(context.SessionId))
+            {
+                throw new OperationCanceledException("Session terminal tasks are stopping.");
+            }
+            var executionId = context.RequestId;
+            if (string.IsNullOrWhiteSpace(executionId))
+            {
+                throw new ArgumentException("invalid_arguments");
+            }
 
-        if (!_backgroundTasks.TryStart(
-                context.SessionId,
-                executionId,
-                lifetimeMs,
-                enforceCap: isBackground,
-                isBackground,
-                out var lifetimeToken))
-        {
-            throw new ArgumentException("background_task_limit_reached");
-        }
+            if (!_backgroundTasks.TryStart(
+                    context.SessionId,
+                    executionId,
+                    lifetimeMs,
+                    enforceCap: isBackground,
+                    isBackground,
+                    out var lifetimeToken))
+            {
+                throw new ArgumentException("background_task_limit_reached");
+            }
 
-        var writer = _spools.CreateWriter(context.SessionId, executionId);
-        var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, writer, workingDirectory, run);
-        return (executionId, pump);
+            var writer = _spools.CreateWriter(context.SessionId, executionId);
+            var pump = PumpBackgroundTaskAsync(context, executionId, lifetimeToken, writer, workingDirectory, run);
+            TrackTerminalPump(context.SessionId, pump);
+            return (executionId, pump);
+        }
     }
 
     private static ToolExecutionOutcome StartedBackgroundOutcome(string executionId, int lifetimeMs) =>
@@ -433,7 +444,7 @@ public sealed partial class ToolExecutionService
         var grant = new PolicyGrant(
             context.SessionId,
             context.SessionScopes ?? _session.ScopesFor(context.SessionId),
-            _session.Descriptor.ExpiresAt);
+            _session.ExpiresAt);
         var optionalMs = ReadOptionalInt(arguments, "timeout_ms");
         // The request carries the approved window: it is what the intent hash and
         // any one-time approval bound. The kill timer is separate.
@@ -460,6 +471,7 @@ public sealed partial class ToolExecutionService
             lifetimeMs,
             isBackground,
             workingDirectory,
+            cancellationToken,
             (token, retain) => tools.Terminal.RunAsync(
                 grant,
                 request,
@@ -513,18 +525,25 @@ public sealed partial class ToolExecutionService
             context.SessionId,
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
-            Approved: context.Approved);
+            Approved: context.Approved,
+            Network: IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"));
+        var grant = new PolicyGrant(
+            context.SessionId,
+            context.SessionScopes ?? _session.ScopesFor(context.SessionId),
+            _session.ExpiresAt);
         var (executionId, pump) = StartTerminalTask(
             context,
             lifetimeMs,
             isBackground,
             workingDirectory,
+            cancellationToken,
             (token, retain) => tools.Terminal.RunApprovedShellAsync(
                 shellRequest,
                 context.ConfinementRequired,
                 token,
                 retain,
-                killTimeoutMs: lifetimeMs));
+                killTimeoutMs: lifetimeMs,
+                grant: grant));
         if (isBackground)
         {
             return StartedBackgroundOutcome(executionId, lifetimeMs);

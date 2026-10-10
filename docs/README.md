@@ -45,10 +45,13 @@ in the checkout indefinitely.
 - [Structured logging and activity](adr/0006-structured-logging-and-activity-boundaries.md)
 - [Capability profiles](adr/0007-mode-capability-profiles.md)
 - [Shared workspace coordination](adr/0008-shared-workspace-coordination.md)
-- [Broker execution authority](adr/0009-broker-execution-authority.md)
+- [Broker execution authority (superseded in part by 0014)](adr/0009-broker-execution-authority.md)
 - [Product logic outside WinUI code-behind](adr/0010-product-logic-outside-winui-code-behind.md)
 - [Model autonomy and workspace trust boundary](adr/0011-model-autonomy-and-workspace-trust-boundary.md)
 - [In-process model runner](adr/0012-in-process-model-runner.md)
+- [SQLite business persistence](adr/0013-consolidate-business-persistence-in-sqlite.md)
+- [In-process execution (terminal sandbox portion superseded)](adr/0014-in-process-execution-and-terminal-sandbox.md)
+- [Retire terminal OS sandbox](adr/0015-retire-terminal-os-sandbox.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 
@@ -68,6 +71,8 @@ include `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_protected_path_requires_approval` (shown with its own copy, and never
 offered as a reusable `allow_always` rule).
 Folder grants remain session-scoped, while workspace trust follows the canonical
-identity. Full-access terminal runs as the current Windows user, can access data
-outside the workspace, and is not a network/path sandbox. Hard timeout, output
-cap, cancellation, and process-tree cleanup remain enforced.
+identity. Terminal children in both `standard` and `full_access` run as the
+current Windows user without OS filesystem or network confinement. Existing
+approval policies and structured file path protections remain. Hard timeout,
+output cap, cancellation, process-tree cleanup, credential storage and
+diagnostic redaction remain enforced.

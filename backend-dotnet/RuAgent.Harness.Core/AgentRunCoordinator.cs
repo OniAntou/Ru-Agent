@@ -275,6 +275,17 @@ public sealed class AgentRunCoordinator
         var reasoningText = invocation.ReasoningText;
         var providerContinuation = invocation.ProviderContinuation;
 
+        // A provider may return partial calls alongside a length/error finish.
+        // Reject the entire step before proposing any side effect.
+        if (step.FinishReason is AssistantFinishReason.Length
+            or AssistantFinishReason.ContentFilter or AssistantFinishReason.Error)
+        {
+            return await _steps.HandleUnusableModelStepAsync(
+                    run, modelStepId, step, modelDroppedCount, context,
+                    promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
+                .ConfigureAwait(false);
+        }
+
         if (step.ToolCalls.Count > 0)
         {
             var repetition = ConsecutiveToolCallGuard.Inspect(

@@ -5,6 +5,7 @@ using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Git;
 using RuAgent.Broker.Tools.Terminal;
 using Xunit;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tests;
 
@@ -902,6 +903,30 @@ public sealed class TerminalAdapterTests
             root,
             trustedExecutableDirectories: TrustThisMachinesToolchain()));
 
+    private sealed class SequenceGitCli(params GitCliResult[] results) : IGitCli
+    {
+        private int _next;
+        public int Calls => _next;
+        public int? ThrowOnCall { get; init; }
+        public Exception? ExceptionToThrow { get; init; }
+
+        public Task<GitCliResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            string workingDirectory,
+            CancellationToken cancellationToken,
+            IReadOnlyDictionary<string, string>? additionalEnvironment = null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var index = Interlocked.Increment(ref _next) - 1;
+            if (ThrowOnCall == index + 1 && ExceptionToThrow is { } error)
+            {
+                throw error;
+            }
+
+            return Task.FromResult(results[index]);
+        }
+    }
+
     private static PolicyGrant MakeGrantWithScopes(params string[] scopes) => new(
         "session-terminal-" + Guid.NewGuid().ToString("N"),
         new HashSet<string>(scopes, StringComparer.Ordinal),
@@ -1063,6 +1088,88 @@ public sealed class TerminalAdapterTests
 
             Assert.Equal("failed", result.Status);
             Assert.Contains("commit message must be provided", result.StderrTail);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("process_start_failed", null, "process_start_failed")]
+    [InlineData("git_exit_128", 1, "git_command_failed")]
+    public async Task TerminalAdapter_ManagedCommit_PreservesGitFailureWhileLocatingRepository(
+        string failureCode, int? expectedExitCode, string expectedCode)
+    {
+        var root = CreateTemporaryRoot("ru-terminal-git-launch-");
+        try
+        {
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                gitCli: new SequenceGitCli(new GitCliResult(false, expectedExitCode ?? -1, string.Empty, failureCode, failureCode)));
+            var request = new TerminalRunRequest("powershell", ".", "git", ["commit", "-m", "test"], 10_000, false, "", "", "", false);
+
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute), request, confineWorkspace: true, CancellationToken.None);
+
+            Assert.Equal("failed", result.Status);
+            Assert.Equal(expectedExitCode, result.ExitCode);
+            Assert.Equal(expectedCode, result.StderrHead);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TerminalAdapter_ManagedCommit_DoesNotLabelStatusFailureAsRepositoryError()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-git-status-launch-");
+        try
+        {
+            var gitCli = new SequenceGitCli(
+                    new GitCliResult(true, 0, root, string.Empty, string.Empty),
+                    new GitCliResult(false, -1, string.Empty, "process_start_failed", "process_start_failed"));
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                gitCli: gitCli);
+            var request = new TerminalRunRequest("powershell", ".", "git", ["commit", "-m", "test"], 10_000, false, "", "", "", false);
+
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute), request, confineWorkspace: true, CancellationToken.None);
+
+            Assert.Equal("failed", result.Status);
+            Assert.Null(result.ExitCode);
+            Assert.Equal("process_start_failed", result.StderrHead);
+            Assert.Equal(2, gitCli.Calls);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TerminalAdapter_ManagedCommit_PropagatesUnexpectedPreviewReaderFailure()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-git-preview-launch-");
+        try
+        {
+            var gitCli = new SequenceGitCli(
+                new GitCliResult(true, 0, root, string.Empty, string.Empty),
+                new GitCliResult(true, 0, "? new.txt\n", string.Empty, string.Empty))
+            {
+                ThrowOnCall = 3,
+                ExceptionToThrow = new InvalidOperationException("synthetic git process start failure")
+            };
+            var adapter = new TerminalAdapter(new WorkspacePathGuard(root), gitCli: gitCli);
+            var request = new TerminalRunRequest("powershell", ".", "git", ["commit", "-m", "test"], 10_000, false, "", "", "", false);
+
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute), request, confineWorkspace: true, CancellationToken.None));
+
+            Assert.Same(gitCli.ExceptionToThrow, error);
         }
         finally
         {

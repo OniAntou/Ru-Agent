@@ -10,20 +10,21 @@ public sealed class FileDeleteRestoreTests : IDisposable
     private readonly string _root;
     private readonly FileDeleteAdapter _delete;
     private readonly FileRestoreAdapter _restore;
+    private readonly InMemoryRecoveryStore _store = new();
 
     public FileDeleteRestoreTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "ru-del-restore-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
-        _delete = new FileDeleteAdapter(_root);
-        _restore = new FileRestoreAdapter(_root);
-        FileRestoreAdapter.ClearForTest();
+        _delete = new FileDeleteAdapter(_root, _store);
+        _restore = new FileRestoreAdapter(_root, _store);
+        _store.ClearForTest();
     }
 
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }
-        FileRestoreAdapter.ClearForTest();
+        _store.ClearForTest();
     }
 
     private string Full(string relative) => Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar));
@@ -189,7 +190,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         Assert.False(File.Exists(Full("del.txt")));
         var safeJson = result.ToJsonString();
         Assert.DoesNotContain(Convert.ToBase64String(recoveryBytes), safeJson);
-        Assert.True(FileRestoreAdapter.IsAvailable(recoveryId));
+        Assert.True(_store.IsAvailable(recoveryId));
     }
 
     [Fact]
@@ -208,7 +209,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         var hash = Hash(bytes);
         var canonical = Full("orig.txt");
         File.WriteAllText(canonical, content);
-        var recoveredId = FileRestoreAdapter.RegisterForTest(canonical, bytes, hash);
+        var recoveredId = _store.RegisterForTest(canonical, bytes, hash);
         // Prepare should succeed while available
         var prep = _restore.Prepare(new JsonObject { ["recovery_id"] = recoveredId });
         Assert.NotNull(prep);
@@ -223,7 +224,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         // After consumption, the recovery record is removed — replay fails unavailable
         var ex = Assert.Throws<FileNotFoundException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveredId }));
         Assert.Equal("recovery_unavailable", ex.Message);
-        Assert.False(FileRestoreAdapter.IsAvailable(recoveredId));
+        Assert.False(_store.IsAvailable(recoveredId));
     }
 
     [Fact]
@@ -233,7 +234,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         var bytes = Encoding.UTF8.GetBytes(content);
         var hash = Hash(bytes);
         var canonical = Full("target.txt");
-        var recoveryId = FileRestoreAdapter.RegisterForTest(canonical, bytes, hash);
+        var recoveryId = _store.RegisterForTest(canonical, bytes, hash);
         // Recreate file before restore
         File.WriteAllText(canonical, "recreated");
         var ex = Assert.Throws<InvalidOperationException>(() => _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId }));
@@ -262,7 +263,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         try
         {
             var bytes = Encoding.UTF8.GetBytes(content);
-            var recoveryId = FileRestoreAdapter.RegisterForTest(link, bytes, Hash(bytes));
+            var recoveryId = _store.RegisterForTest(link, bytes, Hash(bytes));
             var error = Assert.Throws<UnauthorizedAccessException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId }));
             Assert.Equal("hard_link_not_allowed", error.Message);
             Assert.Equal(content, File.ReadAllText(target));
@@ -281,7 +282,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         var bytes = Encoding.UTF8.GetBytes(content);
         var hash = Hash(bytes);
         var canonical = Full("once.txt");
-        var recoveryId = FileRestoreAdapter.RegisterForTest(canonical, bytes, hash);
+        var recoveryId = _store.RegisterForTest(canonical, bytes, hash);
         if (File.Exists(canonical)) File.Delete(canonical);
         var result = _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId });
         Assert.Equal("once", File.ReadAllText(canonical));
@@ -306,8 +307,8 @@ public sealed class FileDeleteRestoreTests : IDisposable
 
         var hash = Hash(content);
         var canonical = Full("binary.dat");
-        var recoveryId = FileRestoreAdapter.RegisterForTest(canonical, content, hash);
-        Assert.True(FileRestoreAdapter.IsAvailable(recoveryId));
+        var recoveryId = _store.RegisterForTest(canonical, content, hash);
+        Assert.True(_store.IsAvailable(recoveryId));
         if (File.Exists(canonical)) File.Delete(canonical);
         var result = _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId });
         var restored = File.ReadAllBytes(canonical);
@@ -330,7 +331,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
         var delResult = _delete.Execute(new JsonObject { ["path"] = "e2e.txt", ["expected_sha256"] = hash });
         Assert.False(File.Exists(Full("e2e.txt")));
         var recoveryId = delResult["recovery_id"]!.GetValue<string>();
-        Assert.True(FileRestoreAdapter.IsAvailable(recoveryId));
+        Assert.True(_store.IsAvailable(recoveryId));
         var restoreResult = _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId });
         var restored = File.ReadAllBytes(Full("e2e.txt"));
         Assert.Equal(bytes, restored);
@@ -338,7 +339,35 @@ public sealed class FileDeleteRestoreTests : IDisposable
         Assert.Equal(recoveryId, restoreResult["recovery_id"]!.GetValue<string>());
     }
 
+    /// <summary>
+    /// In-process runtimes must not resolve each other's recovery ids: every
+    /// execution service owns its store instead of sharing process-global
+    /// state, so a lookup in a foreign store fails closed as unavailable and
+    /// leaves the owning store untouched.
+    /// </summary>
+    [Fact]
+    public void Recovery_stores_are_isolated_between_adapters_in_one_process()
+    {
+        var otherStore = new InMemoryRecoveryStore();
+        var otherRestore = new FileRestoreAdapter(_root, otherStore);
+        var content = Encoding.UTF8.GetBytes("isolated recovery payload");
+        var canonical = Full("isolated.txt");
+        File.WriteAllBytes(canonical, content);
+        var recoveryId = _store.RegisterForTest(canonical, content, Hash(content));
 
+        Assert.True(_store.IsAvailable(recoveryId));
+        Assert.False(otherStore.IsAvailable(recoveryId));
+        Assert.False(otherStore.TryGetCanonicalPath(recoveryId, out _));
+
+        var error = Assert.Throws<FileNotFoundException>(
+            () => otherRestore.Prepare(new JsonObject { ["recovery_id"] = recoveryId }));
+        Assert.Equal("recovery_unavailable", error.Message);
+
+        // The foreign lookup neither consumes nor mutates the owning store.
+        Assert.True(_store.IsAvailable(recoveryId));
+        var ownedPrep = _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId });
+        Assert.Equal(recoveryId, ownedPrep["recovery_id"]!.GetValue<string>());
+    }
 
     private static bool TryCreateJunction(string junctionPath, string targetPath)
     {

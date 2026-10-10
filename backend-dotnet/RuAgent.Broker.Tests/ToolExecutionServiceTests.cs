@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
@@ -24,15 +23,7 @@ public sealed class ToolExecutionServiceTests
             sparse.SetLength(512L * 1024 * 1024);
         }
 
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            sessionRoot,
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath);
+        var session = CreateSession(sessionRoot);
         const string sessionId = "session-read-cancel";
         session.Open(sessionId, new HashSet<string>([RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal));
         try
@@ -68,16 +59,7 @@ public sealed class ToolExecutionServiceTests
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-help-service-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-help",
             new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal));
@@ -124,16 +106,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(workspaceRoot);
         Directory.CreateDirectory(externalRoot);
         File.WriteAllText(Path.Combine(externalRoot, "probe.txt"), "external-content");
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath);
+        var session = CreateSession(Path.Combine(root, "session"));
         var snapshot = EnvelopeTestSnapshots.FullAccessEmpty();
         const string sessionId = "session-full-read";
         const string runId = "run_full_read_11111111111111";
@@ -455,16 +428,7 @@ public sealed class ToolExecutionServiceTests
         var external = Path.Combine(root, "external");
         Directory.CreateDirectory(workspace);
         Directory.CreateDirectory(external);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-no-lease",
             new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
@@ -515,18 +479,7 @@ public sealed class ToolExecutionServiceTests
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
         var now = DateTimeOffset.UtcNow;
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            now.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, now);
+        var session = CreateSession(Path.Combine(root, "session"), now);
         session.Open(
             "session-terminal-unrestricted",
             new HashSet<string>(
@@ -625,18 +578,7 @@ public sealed class ToolExecutionServiceTests
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
         var now = DateTimeOffset.UtcNow;
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            now.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, now);
+        var session = CreateSession(Path.Combine(root, "session"), now);
         session.Open(
             "session-terminal-network-confined",
             new HashSet<string>(
@@ -702,18 +644,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(outsideDirectory);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-shell-full",
             new HashSet<string>(
@@ -760,18 +691,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-shell-agent",
             new HashSet<string>(
@@ -817,18 +737,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-edit-safe",
             new HashSet<string>(
@@ -877,16 +786,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-edit-preview-hardlink",
             new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceWrite], StringComparer.Ordinal));
@@ -1026,18 +926,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            System.Text.Json.JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open("session-stale", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);
         try
@@ -1069,18 +958,7 @@ public sealed class ToolExecutionServiceTests
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
         File.WriteAllText(Path.Combine(workspaceRoot, "listed.txt"), "x");
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-terminal-recognized",
             new HashSet<string>(
@@ -1133,18 +1011,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-spool";
         session.Open(
             sessionId,
@@ -1209,18 +1076,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         session.Open(
             "session-terminal-max",
             new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
@@ -1261,18 +1117,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-background";
         session.Open(
             sessionId,
@@ -1332,24 +1177,53 @@ public sealed class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task RemovingSessionReapsBackgroundProcessBeforeReturning()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-close-background-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var session = CreateSession(Path.Combine(root, "session"));
+        const string sessionId = "session-close-background";
+        session.Open(sessionId, new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
+        await using var service = new ToolExecutionService(session, root);
+        var pidFile = Path.Combine(root, "pid.txt");
+        try
+        {
+            var started = await service.ExecuteAuthenticatedV2Async(
+                TerminalV2Request(sessionId, "req-close-background", new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = TerminalTestSupport.PowerShellExecutable,
+                    ["arguments"] = new JsonArray(TerminalTestSupport.PowerShellArgs(
+                        $"[IO.File]::WriteAllText('{pidFile.Replace("'", "''")}', [string]$PID); Start-Sleep -Seconds 60")
+                        .Select(value => JsonValue.Create(value)).ToArray()),
+                    ["background"] = true,
+                }), CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Succeeded, started.Status);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (!File.Exists(pidFile)) await Task.Delay(20, deadline.Token);
+            var processId = int.Parse(await File.ReadAllTextAsync(pidFile, deadline.Token));
+            using var process = System.Diagnostics.Process.GetProcessById(processId);
+
+            await service.RemoveSessionAsync(sessionId);
+
+            Assert.True(process.HasExited);
+            Assert.Empty(service.HandleSessionTasks(sessionId, null)["tasks"]!.AsArray());
+        }
+        finally
+        {
+            await service.DisposeAsync();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Background_terminal_task_reports_exit_code_when_it_finishes()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-background-done-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-background-done";
         session.Open(
             sessionId,
@@ -1389,18 +1263,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-background-cap";
         session.Open(
             sessionId,
@@ -1490,18 +1353,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-move";
         session.Open(
             sessionId,
@@ -1556,18 +1408,7 @@ public sealed class ToolExecutionServiceTests
         Directory.CreateDirectory(root);
         var workspaceRoot = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspaceRoot);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(
-            descriptorPath,
-            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        var session = CreateSession(Path.Combine(root, "session"));
         const string sessionId = "session-terminal-deadline";
         session.Open(
             sessionId,
@@ -1721,6 +1562,63 @@ public sealed class ToolExecutionServiceTests
         });
 
     /// <summary>
+    /// Each execution service cleans only its own configured spool root: an
+    /// embedded runtime must be able to start without deleting another
+    /// runtime's spilled terminal output.
+    /// </summary>
+    [Fact]
+    public void CleanStaleSpoolFiles_only_cleans_the_configured_root()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-spool-isolation-" + Guid.NewGuid().ToString("N"));
+        var spoolA = Path.Combine(root, "spool-a");
+        var spoolB = Path.Combine(root, "spool-b");
+        var workspaceA = Path.Combine(root, "workspace-a");
+        var workspaceB = Path.Combine(root, "workspace-b");
+        Directory.CreateDirectory(spoolA);
+        Directory.CreateDirectory(spoolB);
+        Directory.CreateDirectory(workspaceA);
+        Directory.CreateDirectory(workspaceB);
+        File.WriteAllText(Path.Combine(spoolA, "stale-a.log"), "a");
+        File.WriteAllText(Path.Combine(spoolB, "stale-b.log"), "b");
+        try
+        {
+            var session = BrokerSession.CreateForHost(
+                Path.Combine(root, "session"),
+                DateTimeOffset.UtcNow.AddMinutes(30));
+            var serviceA = new ToolExecutionService(session, workspaceA, terminalSpoolRoot: spoolA);
+            var serviceB = new ToolExecutionService(session, workspaceB, terminalSpoolRoot: spoolB);
+
+            serviceA.CleanStaleSpoolFiles();
+
+            Assert.False(Directory.Exists(spoolA));
+            Assert.True(File.Exists(Path.Combine(spoolB, "stale-b.log")));
+            serviceB.CleanStaleSpoolFiles();
+            Assert.False(Directory.Exists(spoolB));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// The descriptor-free session the in-process execution authority runs on:
+    /// a temp root and a bounded lifetime, no broker.json and no bearer.
+    /// </summary>
+    private static BrokerSession CreateSession(string sessionRoot, DateTimeOffset? now = null)
+    {
+        Directory.CreateDirectory(sessionRoot);
+        return BrokerSession.CreateForHost(
+            sessionRoot,
+            (now ?? DateTimeOffset.UtcNow).AddMinutes(5),
+            now: now);
+    }
+
+    /// <summary>
     /// Directories this machine's toolchain resolves from. Only for tests that
     /// execute a real terminal command to assert streaming, spool or receipt
     /// semantics: they are not asserting the trust policy, so they opt the whole
@@ -1743,16 +1641,7 @@ public sealed class ToolExecutionServiceTests
         var root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
         var workspace = Path.Combine(root, "workspace");
         Directory.CreateDirectory(workspace);
-        var descriptor = new BrokerSessionDescriptor(
-            "http://127.0.0.1:18086",
-            "broker-token",
-            1,
-            Path.Combine(root, "session"),
-            DateTimeOffset.UtcNow.AddMinutes(5));
-        Directory.CreateDirectory(descriptor.SessionRoot);
-        var descriptorPath = Path.Combine(root, "broker.json");
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-        var session = BrokerSession.Load(descriptorPath);
+        var session = CreateSession(Path.Combine(root, "session"));
         var sessionId = "session-" + snapshot.Preset + "-" + Guid.NewGuid().ToString("N");
         var runId = "run_" + Guid.NewGuid().ToString("N");
         var lease = BrokerRunLease.CreateValidated(
@@ -1833,7 +1722,9 @@ public sealed class ToolExecutionServiceTests
 
             Assert.Equal(ToolResultStatuses.Failed, exists.Status);
             Assert.Equal("file_exists", exists.ErrorCode);
+            Assert.Contains("op=write", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("overwrite", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("same path and content", exists.SafeSummary, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -1910,7 +1801,7 @@ public sealed class ToolExecutionServiceTests
         }
         finally
         {
-            fixture.Service.RemoveSession(fixture.SessionId);
+            await fixture.Service.RemoveSessionAsync(fixture.SessionId);
             Directory.Delete(fixture.Root, recursive: true);
         }
     }

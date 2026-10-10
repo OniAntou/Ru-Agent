@@ -163,9 +163,17 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
         services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
         services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
-        var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
-        services.AddSingleton(_ =>
-            new RuBackend.Harness.Broker.BrokerToolGatewayFactory(brokerDescriptor));
+        // The Host's execution authority is in-process: one runtime per process,
+        // composed lazily by the authority so a host that never executes a tool
+        // never creates the tool service or touches the spool root. The gateway
+        // factory is the seam every call site resolves; it takes the lazy
+        // runtime so constructing it at host startup does not compose it.
+        services.AddSingleton(services => new InProcessExecutionAuthority(
+            services.GetRequiredService<DataPaths>(),
+            services.GetRequiredService<ILogger<InProcessExecutionAuthority>>()));
+        services.AddSingleton<IToolGatewayFactory>(services =>
+            new InProcessToolGatewayFactory(
+                services.GetRequiredService<InProcessExecutionAuthority>().Runtime));
         services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
             Path.Combine(
                 Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,

@@ -32,12 +32,10 @@ public sealed class AgentRunModelMetadataResolver(
                 ?? throw new ProviderCatalogException("provider_selection_missing");
             var modelLabel = selection.ModelLabel
                 ?? throw new ProviderCatalogException("provider_selection_invalid");
-            var callingMode = selection.CallingMode switch
+            if (!AgentRunCallingModeCodec.TryParseStoredValue(selection.CallingMode, out var callingMode))
             {
-                "native" => ProviderToolCallingMode.Native,
-                "text_selection" => ProviderToolCallingMode.TextSelection,
-                _ => throw new ProviderCatalogException("provider_selection_invalid"),
-            };
+                throw new ProviderCatalogException("provider_selection_invalid");
+            }
             return new AgentRunModelMetadata(
                 modelLabel,
                 selection.Protocol,

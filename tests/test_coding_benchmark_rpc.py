@@ -146,7 +146,36 @@ def test_completed_run_uses_documented_snake_case_rpc_and_collects_bounded_safe_
     assert trajectory == result
 
 
-def test_intervention_is_cancelled_over_rpc_without_approval_or_continue(tmp_path):
+def test_history_persistence_waits_finish_without_user_intervention(tmp_path, monkeypatch):
+    executable = tmp_path / "ru.exe"
+    executable.write_text("", encoding="utf-8")
+    executable.chmod(0o755)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(ru_trial.time, "sleep", lambda seconds: None)
+    statuses = ["waiting_history_user", "waiting_history", "running",
+                "waiting_history_final", "completed"]
+    bridges = []
+    result = ru_trial.run_ru(
+        executable, make_task(), workspace, tmp_path / "trial", trust_workspace=True,
+        bridge_factory=make_bridge_factory(
+            statuses=[{"run_id": RUN_ID, "status": status} for status in statuses],
+            seen=bridges,
+        ),
+    )
+
+    assert result["status"] == "completed"
+    methods = [method for method, _ in bridges[0].calls]
+    assert methods.count("run.status") == len(statuses)
+    assert not {"run.cancel", "run.approve", "run.trust", "run.continue"} & set(methods)
+    assert bridges[0].closed
+
+
+@pytest.mark.parametrize("run_status", [
+    "waiting_approval", "waiting_workspace_trust", "waiting_user", "waiting_input",
+    "reconciliation_required", "unknown_status",
+])
+def test_intervention_is_cancelled_over_rpc_without_approval_or_continue(tmp_path, run_status):
     executable = tmp_path / "ru.exe"
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
@@ -160,12 +189,12 @@ def test_intervention_is_cancelled_over_rpc_without_approval_or_continue(tmp_pat
         tmp_path / "trial",
         trust_workspace=True,
         bridge_factory=make_bridge_factory(
-            statuses=[{"run_id": RUN_ID, "status": "waiting_approval"}], seen=bridges
+            statuses=[{"run_id": RUN_ID, "status": run_status}], seen=bridges
         ),
     )
 
     assert result["status"] == "intervention_required"
-    assert result["run_status"] == "waiting_approval"
+    assert result["run_status"] == run_status
     rpc = bridges[0]
     methods = [method for method, _ in rpc.calls]
     assert methods.index("run.cancel") < methods.index("run.detach")
@@ -173,7 +202,8 @@ def test_intervention_is_cancelled_over_rpc_without_approval_or_continue(tmp_pat
     assert rpc.cancelled and rpc.closed
 
 
-def test_timeout_cancels_run_before_bridge_close(tmp_path, monkeypatch):
+@pytest.mark.parametrize("run_status", ["running", "waiting_history_final"])
+def test_timeout_cancels_run_before_bridge_close(tmp_path, monkeypatch, run_status):
     executable = tmp_path / "ru.exe"
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
@@ -191,7 +221,7 @@ def test_timeout_cancels_run_before_bridge_close(tmp_path, monkeypatch):
         trust_workspace=True,
         timeout_seconds=2,
         bridge_factory=make_bridge_factory(
-            statuses=[{"run_id": RUN_ID, "status": "running"}] * 4, seen=bridges
+            statuses=[{"run_id": RUN_ID, "status": run_status}] * 4, seen=bridges
         ),
     )
 

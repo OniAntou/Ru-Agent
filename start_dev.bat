@@ -4,25 +4,19 @@ echo Starting Ru Native WinUI 3 Desktop App (.NET 10 x64)...
 set "EXE=%~dp0gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe"
 set "LAUNCHER=%~dp0scripts\launch_gui.ps1"
 if not exist "%EXE%" (
-    echo Release publish output not found. Run build.bat and wait for [12/12] Build complete.
+    echo Release publish output not found. Run build.bat and wait for [11/11] Build complete.
     echo Expected: "%EXE%"
     endlocal
     exit /b 1
 )
 if not exist "%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe" (
-    echo Backend publish output not found. Run build.bat and wait for [12/12] Build complete.
+    echo Backend publish output not found. Run build.bat and wait for [11/11] Build complete.
     echo Expected: "%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe"
     endlocal
     exit /b 1
 )
-if not exist "%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe" (
-    echo Broker publish output not found. Run build.bat and wait for [12/12] Build complete.
-    echo Expected: "%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe"
-    endlocal
-    exit /b 1
-)
 if not exist "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0-windows\win-x64\publish\RuAgent.Cli.exe" (
-    echo CLI publish output not found. Run build.bat and wait for [12/12] Build complete.
+    echo CLI publish output not found. Run build.bat and wait for [11/11] Build complete.
     echo Expected: "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0-windows\win-x64\publish\RuAgent.Cli.exe"
     endlocal
     exit /b 1

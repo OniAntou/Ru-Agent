@@ -18,15 +18,16 @@ canonical identity. Full Access additionally requires the GUI gate or CLI
 
 The canonical profiles are `plan` (workspace read/Web auto; terminal and
 mutation deny outright, read-only; external structured access asks), `standard`
-(bounded-local in-workspace mutation auto; external/escape ask), and
+(bounded-local in-workspace mutation auto; external/escape ask; terminal uses
+the existing classifier and approval rules), and
 `full_access` (external structured file and arbitrary terminal auto; only
 structured protected paths — harness key/database files and runtime descriptors
 — deny). Full Access terminal runs as
-the current Windows user, can affect data outside the workspace, and is not a
-network/path sandbox. Hard timeout, output cap, cancellation, and process-tree
-cleanup remain enforced. Shared coordination still serializes active runs
-through the membership lease and journals authoritative external changes, but it
-cannot infer every side effect of an arbitrary command.
+the current Windows user and may access paths and network resources available
+to that user; there is no OS sandbox. Hard timeout, output cap, cancellation,
+and process-tree cleanup remain enforced. Shared coordination still serializes
+active runs through the membership lease and journals authoritative external
+changes, but it cannot infer every side effect of an arbitrary command.
 
 External tools such as Codex, Opencode, editors, and build processes are not
 identified by process name. Ru detects their file changes by comparing an

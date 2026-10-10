@@ -11,7 +11,7 @@ namespace RuAgent.Harness.Core;
 /// branches. Moved verbatim from AgentRunCoordinator; the orchestrator
 /// (RunOneStepAsync) keeps the branching decision and delegates here.
 /// </summary>
-internal sealed class AgentRunStepHandlers
+internal sealed partial class AgentRunStepHandlers
 {
     private readonly IHarnessEventStore _store;
     private readonly IIdGenerator _ids;
@@ -535,99 +535,6 @@ internal sealed class AgentRunStepHandlers
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
-    /// <summary>
-    /// A final step can arrive with neither text nor tool calls when the model
-    /// returns an empty completion. Fail closed with a precise bounded code so
-    /// the run reports a real failure instead of an unhandled internal error.
-    /// </summary>
-    private async Task<AgentRunStepResult> FailEmptyFinalStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        int droppedCount,
-        ModelContextSnapshot context,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken,
-        string? reasoningText = null)
-    {
-        const string errorCode = "empty_model_reply";
-        if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.EmptyModelReply))
-        {
-            return await HandleRecoveryAdviceStepAsync(
-                    run,
-                    modelStepId,
-                    step,
-                    droppedCount,
-                    AgentRecoveryNotes.BuildEmptyNote(),
-                    AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.EmptyModelReply),
-                    errorCode,
-                    promptReceiptPayload,
-                    promptComposedEvent,
-                    cancellationToken,
-                    reasoningText)
-                .ConfigureAwait(false);
-        }
-
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Fail);
-        if (!transition.Accepted)
-        {
-            throw new InvalidOperationException(transition.ErrorCode);
-        }
-
-        var assistantPayloadId = _ids.NewPayloadId();
-        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
-        var assistantPayload = new HarnessPayloadIntent(
-            assistantPayloadId,
-            HarnessPayloadKind.AssistantStep,
-            // An empty model reply is audit-only: it must never reach the client.
-            HarnessPayloadAudience.InternalOnly,
-            HarnessPayloadEncoding.Json,
-            Math.Max(assistantBytes.Length, 1),
-            assistantBytes);
-        var events = new List<HarnessEventIntent>
-        {
-            promptComposedEvent,
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelStepCompleted,
-                modelStepId: modelStepId,
-                payloadId: assistantPayloadId,
-                safeCount: step.ToolCalls.Count,
-                safeCode: errorCode),
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.RunFailed,
-                safeCode: errorCode),
-        };
-        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
-        var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload };
-        if (reasoningEvent is not null && reasoningPayload is not null)
-        {
-            events.Insert(2, reasoningEvent);
-            commitPayloads.Add(reasoningPayload);
-        }
-        var next = run.Advance(
-            transition.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            events.Count,
-            _time.UtcNow,
-            errorCode);
-        var committed = await CommitAsync(
-                run,
-                next,
-                events,
-                commitPayloads,
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return AgentRunStepResult.Blocked(committed, errorCode);
-    }
-
     public async Task<AgentRunStepResult> HandleToolStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
@@ -729,9 +636,9 @@ internal sealed class AgentRunStepHandlers
         string? reasoningText = null,
         ProviderContinuation? providerContinuation = null)
     {
-        if (string.IsNullOrEmpty(step.Text))
+        if (string.IsNullOrWhiteSpace(step.Text))
         {
-            return await FailEmptyFinalStepAsync(
+            return await HandleModelReplyFailureAsync(
                     run,
                     modelStepId,
                     step,

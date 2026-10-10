@@ -32,6 +32,12 @@ public sealed class PolicyContextFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
 
+        if (arguments.ContainsKey("sandbox"))
+        {
+            throw new PolicyContextException("malformed_call",
+                hint: "sandbox is no longer supported; remove it from the call.");
+        }
+
         // Preimages are Broker-captured at execution time and must never enter
         // the model proposal; `regex` is the retired name of `is_regex`.
         if (arguments.ContainsKey("expected_sha256") || arguments.ContainsKey("regex"))

@@ -108,6 +108,9 @@ Each attempt starts in a fresh workspace and session. An approval/user wait
 records an intervention outcome and requests cancellation. Timeout also
 requests cancellation before terminating the bridge. Cancellation failure is
 reported explicitly. Closing a bridge alone is not proof the Host run stopped.
+History persistence waits (`waiting_history`, `waiting_history_user`, and
+`waiting_history_final`) are acknowledged automatically by the Host. The
+adapter polls through them within the same task deadline.
 Existing Ru start/attach behavior and configured provider selection apply;
 there is no alternate provider or execution path.
 
@@ -123,6 +126,15 @@ a coincidentally correct final workspace.
 with the terminal run's authoritative cursor: true means it caught up, false
 means partial evidence, and null means the cursor was unavailable. Available
 token totals must not be presented as exact final usage when incomplete.
+
+The dated [Step 5 Preview Free pilot](../../docs/operations/verification.md#step-5-preview-free-coding-pilot-2026-10-09)
+records actual runtime fingerprints and separates candidate correctness,
+unattended completion, scope violations and provider/policy interruptions.
+The [post-refactor Nemotron rerun](../../docs/operations/verification.md#post-refactor-live-coding-rerun-2026-10-10)
+records another nine-task native trial with an isolated Host and the existing
+selected model. Its 0/9 result includes three completed runs without patches;
+run completion alone is not task acceptance. The two dated trials use different
+provider/model and runtime conditions and are not a controlled comparison.
 
 ## Environment and comparison limits
 

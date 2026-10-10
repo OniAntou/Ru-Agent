@@ -1,8 +1,8 @@
 namespace RuAgent.Hosting;
 
 /// <summary>
-/// Locates the sibling executables and the working root, for both ways Ru is laid
-/// out on disk.
+/// Locates the sibling host executable and the working root, for both ways Ru is
+/// laid out on disk.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,16 +24,12 @@ public static class RuAppLayout
     /// <summary>The host executable name shared by both layouts.</summary>
     public const string HostExecutableName = "RuBackend.exe";
 
-    /// <summary>The broker executable name shared by both layouts.</summary>
-    public const string BrokerExecutableName = "RuAgent.Broker.exe";
-
     /// <summary>
-    /// True when every executable of the runtime sits beside the running assembly.
+    /// True when the host executable sits beside the running assembly.
     /// </summary>
     public static bool IsFlatLayout(string appBaseDirectory) =>
         !string.IsNullOrWhiteSpace(appBaseDirectory)
-        && File.Exists(Path.Combine(appBaseDirectory, HostExecutableName))
-        && File.Exists(Path.Combine(appBaseDirectory, BrokerExecutableName));
+        && File.Exists(Path.Combine(appBaseDirectory, HostExecutableName));
 
     /// <summary>
     /// Resolves the host executable: an explicit override, then a sibling of the
@@ -59,41 +55,6 @@ public static class RuAppLayout
         if (!string.IsNullOrWhiteSpace(projectRoot))
         {
             foreach (var candidate in RepoHostCandidates(projectRoot))
-            {
-                if (File.Exists(candidate))
-                {
-                    return Path.GetFullPath(candidate);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves the broker executable: an explicit override, then a sibling, then the
-    /// repository build output.
-    /// </summary>
-    public static string? ResolveBrokerExecutable(string? projectRoot, string appBaseDirectory)
-    {
-        var overridden = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE");
-        if (!string.IsNullOrWhiteSpace(overridden) && File.Exists(overridden))
-        {
-            return Path.GetFullPath(overridden);
-        }
-
-        if (!string.IsNullOrWhiteSpace(appBaseDirectory))
-        {
-            var sibling = Path.Combine(appBaseDirectory, BrokerExecutableName);
-            if (File.Exists(sibling))
-            {
-                return Path.GetFullPath(sibling);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(projectRoot))
-        {
-            foreach (var candidate in RepoBrokerCandidates(projectRoot))
             {
                 if (File.Exists(candidate))
                 {
@@ -133,11 +94,5 @@ public static class RuAppLayout
     {
         yield return Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "win-x64", "publish", HostExecutableName);
         yield return Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", HostExecutableName);
-    }
-
-    private static IEnumerable<string> RepoBrokerCandidates(string projectRoot)
-    {
-        yield return Path.Combine(projectRoot, "backend-dotnet", "RuAgent.Broker", "bin", "Release", "net10.0", "win-x64", "publish", BrokerExecutableName);
-        yield return Path.Combine(projectRoot, "backend-dotnet", "RuAgent.Broker", "bin", "Release", "net10.0", BrokerExecutableName);
     }
 }

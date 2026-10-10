@@ -22,7 +22,8 @@ namespace RuBackend.Tests.Harness;
 /// A live model is not needed and not used: the scripted runner returns the tool call the
 /// way a provider would.
 ///
-/// It constructs <c>BackendWebApplicationFactory</c> with <c>withInProcessBroker: true</c>,
+/// It runs the production in-process execution authority through
+/// <c>BackendWebApplicationFactory</c>,
 /// so it belongs to the heavy collection for the reason that collection documents: it
 /// competes for the same ports, process handles and CPU, and running it beside the other
 /// heavy suites made its activity-arrival deadline fail non-deterministically.
@@ -60,8 +61,7 @@ public sealed class TodoWriteEndToEndTests
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
             dataPaths: tmp.DataPaths,
-            modelStepRunner: new ScriptedStepRunner(steps),
-            withInProcessBroker: true);
+            modelStepRunner: new ScriptedStepRunner(steps));
         using var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
         var created = await CreateRunAsync(

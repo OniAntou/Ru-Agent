@@ -198,7 +198,7 @@ To run the TUI reliably while iterating:
 - `bin/ru.cmd` (and `ruagent.cmd`) resolve to the shared publish output under
   `gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/`, so a
   rebuilt `RuAgent.Cli.exe` has to be published **and** copied there.
-- **Kill `RuAgent.Cli`, `RuBackend`, and `RuAgent.Broker` first.**
+- **Kill `RuAgent.Cli` and `RuBackend` first.**
   Windows locks the running image, so the copy silently fails otherwise.
 - Launch it in its own console window. Started from a parent with no console
   the process runs but has nowhere to draw, and nothing appears.

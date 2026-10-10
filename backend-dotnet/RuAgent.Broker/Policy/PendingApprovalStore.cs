@@ -306,6 +306,26 @@ public sealed class PendingApprovalStore
         return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved);
     }
 
+    /// <summary>
+    /// Forgets every pending v2 approval bound to one run. Called when a session
+    /// closes so a closed session cannot leave a consumable approval behind.
+    /// </summary>
+    public void RemoveRun(string runId)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+        {
+            return;
+        }
+
+        foreach (var pair in _v2)
+        {
+            if (string.Equals(pair.Value.Binding.RunId, runId, StringComparison.Ordinal))
+            {
+                _v2.TryRemove(pair.Key, out _);
+            }
+        }
+    }
+
     public void ClearV2() => _v2.Clear();
 
     public void ClearAll()

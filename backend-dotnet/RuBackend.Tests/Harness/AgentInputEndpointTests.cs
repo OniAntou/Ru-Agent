@@ -28,7 +28,7 @@ public sealed class AgentInputEndpointTests
             var runner = new RecordingRunner(
                 AskUserStep("Which environment?", "staging", "production"),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "input park");
@@ -100,7 +100,7 @@ public sealed class AgentInputEndpointTests
         BackendWebApplicationFactory? factory = null;
         try
         {
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
             var client = factory.CreateAuthenticatedClient();
 
             var fakeRunId = "run_" + new string('a', 32);
@@ -141,7 +141,7 @@ public sealed class AgentInputEndpointTests
             var runner = new RecordingRunner(
                 AskUserStep("Pick one", "a", "b"),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "input stale");
@@ -195,7 +195,7 @@ public sealed class AgentInputEndpointTests
             var runner = new RecordingRunner(AskUserWithReadStep(), FinalStep("done"));
             string runId;
             string inputId;
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             using (factory)
             {
                 var client = factory.CreateAuthenticatedClient();
@@ -211,7 +211,7 @@ public sealed class AgentInputEndpointTests
 
             // A new host process: nothing in memory carries the park, so the answer
             // must work from durable state alone.
-            restarted = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            restarted = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var restartedClient = restarted.CreateAuthenticatedClient();
             RuBackend.Harness.AgentV1Service.ClearHostInputsForTests();
             using var answer = await restartedClient.PostAsJsonAsync(

@@ -74,7 +74,8 @@ public sealed class AgentCommandEnvironmentTests
             ("PRIVATE_KEY_PEM", secretValue),
             ("OLD_ACCESS_KEY", secretValue),
             ("REFRESH_KEY_ID", secretValue),
-            ("AUTH_KEY_VALUE", secretValue));
+            ("AUTH_KEY_VALUE", secretValue),
+            ("OPENROUTER_API_KEY", secretValue));
 
         var environment = new AgentCommandEnvironment(snapshot);
 
@@ -86,7 +87,7 @@ public sealed class AgentCommandEnvironmentTests
         }
 
         Assert.Contains("PATH", environment.ChildEnvironment.Keys);
-        Assert.Equal(15, environment.StrippedNames.Count);
+        Assert.Equal(16, environment.StrippedNames.Count);
     }
 
     [Fact]
@@ -165,22 +166,27 @@ public sealed class AgentCommandEnvironmentTests
     }
 
     [Fact]
-    public void Redaction_seeds_cover_only_the_stripped_ru_owned_bearer_values()
+    public void Redaction_seeds_cover_all_stripped_secret_values_without_inheriting_them()
     {
         var ruBearer = "ru-bearer-123";
         var workerToken = "worker-token-456";
         var thirdPartyKey = "third-party-key-789";
+        var openRouterKey = "openrouter-key-012";
         var snapshot = SnapshotWith(
             ("PATH", @"C:\Windows"),
             ("RU_BEARER_TOKEN", ruBearer),
             ("WORKER_TOKEN", workerToken),
-            ("THIRD_PARTY_API_KEY", thirdPartyKey));
+            ("THIRD_PARTY_API_KEY", thirdPartyKey),
+            ("OPENROUTER_API_KEY", openRouterKey));
         var environment = new AgentCommandEnvironment(snapshot);
 
         var seeds = environment.GetRedactionSeeds();
 
         Assert.Contains(ruBearer, seeds);
         Assert.Contains(workerToken, seeds);
-        Assert.DoesNotContain(thirdPartyKey, seeds);
+        Assert.Contains(thirdPartyKey, seeds);
+        Assert.Contains(openRouterKey, seeds);
+        Assert.DoesNotContain("OPENROUTER_API_KEY", environment.ChildEnvironment.Keys);
+        Assert.DoesNotContain(openRouterKey, environment.ChildEnvironment.Values);
     }
 }

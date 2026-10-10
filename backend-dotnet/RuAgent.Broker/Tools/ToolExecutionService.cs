@@ -18,13 +18,13 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools;
 
-public sealed partial class ToolExecutionService
+public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
 {
-    // Dispatch coordination: V2 tool.execute is gated in AgentConnection before dispatch:
+    // Dispatch coordination: V2 tool.execute is gated in BrokerExecutionRuntime before dispatch:
     //  - tool.evaluate (allow) → authorization_token (60s) → tool.execute
     //  - tool.evaluate (ask) → approval_id (30m) → approval.respond → authorization_token (60s) → tool.execute
     // This service's ExecuteAsync is the v1 terminal/file path (scope grant + optional approval). It never bypasses
-    // the V2 authorization check; AgentConnection consumes the authorization_token BEFORE invoking the tool handler.
+    // the V2 authorization check; the runtime consumes the authorization_token BEFORE invoking the tool handler.
     // V2 approvals never invoke adapters via approval.respond; only tool.execute after token consumption invokes adapters.
     private static readonly Regex StableCodePattern = new("^[a-z][a-z0-9_]{0,63}$", RegexOptions.Compiled);
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
@@ -42,6 +42,9 @@ public sealed partial class ToolExecutionService
     private readonly FileWriteAdapter _fileWrite;
     private readonly FileDeleteAdapter _fileDelete;
     private readonly FileRestoreAdapter _fileRestore;
+    // One store per service: recovery ids stay opaque even when several
+    // runtimes live in one process.
+    private readonly InMemoryRecoveryStore _recoveryStore = new();
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +56,7 @@ public sealed partial class ToolExecutionService
     private readonly WebOptions _webOptions;
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
+    private readonly HttpClient? _ownedWebHttpClient;
 
     public ToolExecutionService(
         BrokerSession session,
@@ -61,7 +65,8 @@ public sealed partial class ToolExecutionService
         HttpClient? webHttpClient = null,
         ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
-        IReadOnlyList<string>? trustedExecutableDirectories = null)
+        IReadOnlyList<string>? trustedExecutableDirectories = null,
+        string? terminalSpoolRoot = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -72,9 +77,10 @@ public sealed partial class ToolExecutionService
         _fileSearch = new FileSearchAdapter(_workspace.Root);
         _fileRead = new FileReadAdapter(_workspace.Root);
         _fileWrite = new FileWriteAdapter(_workspace.Root);
-        _fileDelete = new FileDeleteAdapter(_workspace.Root);
-        _fileRestore = new FileRestoreAdapter(_workspace.Root);
+        _fileDelete = new FileDeleteAdapter(_workspace.Root, _recoveryStore);
+        _fileRestore = new FileRestoreAdapter(_workspace.Root, _recoveryStore);
         _mutationResolver = new CanonicalPathResolver(_workspace.Root);
+        _spools = new TerminalOutputSpool(terminalSpoolRoot);
         _helpDocs = HelpDocsTool.CreateDefault();
         _approvalTokens = approvalTokens ?? new ApprovalTokenService();
         _terminal = new TerminalAdapter(
@@ -102,6 +108,13 @@ public sealed partial class ToolExecutionService
         if (_webOptions.Enabled)
         {
             var webClient = webHttpClient ?? CreateWebHttpClient();
+            if (webHttpClient is null)
+            {
+                // An injected client stays owned by its caller; a client this
+                // service created itself dies with the service.
+                _ownedWebHttpClient = webClient;
+            }
+
             var webPolicy = new WebPolicy();
             var sanitizer = new WebContentSanitizer();
             _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
@@ -118,8 +131,19 @@ public sealed partial class ToolExecutionService
 
     internal int CachedRootToolSetCount => _toolSetsByRoot.Count;
 
-    public void RemoveSession(string sessionId)
+    internal HttpClient? OwnedWebHttpClientForTest => _ownedWebHttpClient;
+
+    /// <summary>Cancels owned terminal tasks and disposes the owned web client.</summary>
+    public void Dispose()
     {
+        lock (_terminalLifetimeGate) _stopping = true;
+        _backgroundTasks.CancelAll();
+        _ownedWebHttpClient?.Dispose();
+    }
+
+    private void RemoveSessionState(string sessionId)
+    {
+        _backgroundTasks.RemoveSession(sessionId);
         _approvals.RemoveSession(sessionId);
         // A deleted session must not leave its plan behind: the store is keyed by
         // session and nothing else would ever clear it.
@@ -131,8 +155,9 @@ public sealed partial class ToolExecutionService
     }
 
     /// <summary>
-    /// Drops spilled spool files from a previous Broker process. Spool ids are
-    /// per-process, so a restart makes every older file unreachable.
+    /// Drops spilled spool files from a previous process in this service's
+    /// configured spool root. Spool ids are per-process, so a restart makes
+    /// every older file unreachable; a second runtime's root must stay intact.
     /// </summary>
     public void CleanStaleSpoolFiles() => _spools.CleanStaleRoot();
 
@@ -140,25 +165,6 @@ public sealed partial class ToolExecutionService
 
     public IReadOnlyList<AgentToolCapability> ListCapabilities() =>
         _catalog.Registry.ListCapabilities();
-
-    public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile) =>
-        _catalog.Registry.ListCapabilities(profile, EnabledWebScopes());
-
-    private IReadOnlySet<string> EnabledWebScopes()
-    {
-        var scopes = new HashSet<string>(StringComparer.Ordinal);
-        if (_webOptions.FetchEnabled)
-        {
-            scopes.Add(ToolScope.WebFetch);
-        }
-
-        if (_webOptions.SearchEnabled)
-        {
-            scopes.Add(ToolScope.WebSearch);
-        }
-
-        return scopes;
-    }
 
     private IReadOnlyDictionary<string, ToolExecutor> BuildExecutors() =>
         BuildExecutorsCore();
@@ -254,7 +260,7 @@ public sealed partial class ToolExecutionService
     {
         "is_directory" => "target is a directory, and file tools address files: list it and act on the files inside, or remove it with an approved terminal command.",
         "file_not_found" => "file does not exist: list the directory to check the path, or create it with write.",
-        "file_exists" => "file already exists: read it first, or repeat the write with overwrite true.",
+        "file_exists" => "file already exists: read it, then retry with op=write, the same path and content, and overwrite=true; use edit for a partial change.",
         _ => "Tool input or output failed.",
     };
 

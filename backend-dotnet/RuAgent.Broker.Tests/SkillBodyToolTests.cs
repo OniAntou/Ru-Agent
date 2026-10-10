@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
@@ -268,17 +267,9 @@ public sealed class SkillBodyToolTests
                 new System.Text.UTF8Encoding(false));
             var sessionRoot = Path.Combine(root, "session");
             Directory.CreateDirectory(sessionRoot);
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:18088",
-                "token",
-                1,
-                sessionRoot,
-                DateTimeOffset.UtcNow.AddMinutes(5));
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(
-                descriptorPath,
-                JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            return new Fixture(root, BrokerSession.Load(descriptorPath));
+            return new Fixture(
+                root,
+                BrokerSession.CreateForHost(sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5)));
         }
 
         public ToolExecutionService CreateService(Func<bool>? pythonAvailable = null)

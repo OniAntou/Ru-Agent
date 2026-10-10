@@ -6,7 +6,8 @@ namespace RuAgent.Hosting;
 /// <summary>
 /// Watches the GUI parent process that started the managed Host (via RU_PARENT_PID).
 /// If the parent dies (e.g., Task Manager kill where MainWindow.OnWindowClosed is not run),
-/// the Host shuts down gracefully so the Broker Job is cleaned.
+/// the Host shuts down gracefully so the in-process execution authority is disposed
+/// and the runtime descriptor and single-instance locks are released.
 /// Only active when Host is started as --managed-runtime and env var is valid.
 /// </summary>
 public sealed class ParentProcessWatcher : IHostedService, IDisposable

@@ -18,9 +18,13 @@ public sealed class TemporaryGitIndex : IDisposable
         };
     }
 
-    public static TemporaryGitIndex Create()
+    public static TemporaryGitIndex Create(string? tempDirectory = null)
     {
-        var path = Path.Combine(Path.GetTempPath(), "ru-git-index-" + Guid.NewGuid().ToString("N"));
+        var directory = string.IsNullOrWhiteSpace(tempDirectory)
+            ? Path.GetTempPath()
+            : tempDirectory;
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "ru-git-index-" + Guid.NewGuid().ToString("N"));
         using (File.Create(path))
         {
         }

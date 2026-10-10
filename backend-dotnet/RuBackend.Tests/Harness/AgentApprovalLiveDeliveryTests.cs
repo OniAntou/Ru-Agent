@@ -45,8 +45,7 @@ public sealed class AgentApprovalLiveDeliveryTests
 
             factory = new BackendWebApplicationFactory(
                 dataPaths: dataPaths,
-                modelStepRunner: runner,
-                withInProcessBroker: true);
+                modelStepRunner: runner);
             using var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var runId = await CreateRunAndTrustAsync(client, sessionId, workspace, "live approval delivery");

@@ -334,8 +334,7 @@ public sealed partial class AgentV1Service
         // another prompt. The decision is durable at this point, and the
         // memory still only ever allows the exact intent through the Broker.
         // External-directory approvals keep the Broker session grant only.
-        // The memory is in-process: a host restart or a session delete asks
-        // again.
+        // Memory is in-process; restarting the Host or deleting the session clears it.
         if (!externalDirectoryRequested)
         {
             SessionApprovalLedger.Remember(

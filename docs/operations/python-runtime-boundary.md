@@ -32,7 +32,7 @@ Current boundary classes are:
 
 - `managed-startup`: the two configured C# entrypoint files,
   `backend-dotnet/RuBackend/Program.cs` and
-  `backend-dotnet/RuAgent.Hosting/BrokerChildLaunchPlan.cs`;
+  `backend-dotnet/RuBackend/Hosting/InProcessExecutionAuthority.cs`;
 - `tooling`: every file under `scripts/`, `tools/`, and `tests/`;
 - `legacy`: every other scanned file — the rest of `backend-dotnet/**` plus
   `gui-winui3/**`, `gui-winui3.Tests/**`, and `gui-winui3.Harness/**` — that is
@@ -42,11 +42,15 @@ The scan roots are `scripts`, `tools`, `tests`, `backend-dotnet`, `gui-winui3`,
 `gui-winui3.Tests`, and `gui-winui3.Harness`.
 
 The managed model runtime is the Host's in-process typed model step
-(`WorkerV2StepService` behind `IModelStepRunner`): there is no worker process,
-loopback port, wire protocol, or provider bootstrap file, and the only managed
-child process is `RuAgentBroker` (ADR-0012). There is no device v1 graph, no
-OmniVoice process, no shared lease coordinator, and no provider credential
+(`ModelStepService` behind `IModelStepRunner`): there is no worker process,
+loopback port, wire protocol, or provider bootstrap file. Tool execution is
+in process as well (`BrokerExecutionRuntime` behind `IToolGatewayFactory`,
+ADR-0014), so the Host starts no managed child at all: the Broker child, its
+loopback lease and `RuAgentBroker.exe` are gone. There is no device v1 graph,
+no OmniVoice process, no shared lease coordinator, and no provider credential
 written to disk. Media adapters
 (voice, STT, VTS, observation) and their Python counterparts are gone; this
-inventory is classification evidence, not evidence that the separate
-OS-enforced filesystem/network sandbox project is complete.
+inventory is classification evidence, not evidence of OS-level confinement.
+Terminal children in `standard` and `full_access` run as the current Windows
+user without OS filesystem or network confinement. Structured file tools retain
+their own path protections.

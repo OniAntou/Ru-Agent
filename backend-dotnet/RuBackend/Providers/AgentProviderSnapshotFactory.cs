@@ -86,7 +86,7 @@ public sealed class AgentProviderSnapshotFactory(
             options.ToJsonString(),
             maximumOutput,
             selected.Model,
-            CallingModeValue(toolCallingMode),
+            AgentRunCallingModeCodec.ToStoredValue(toolCallingMode),
             contextWindowTokens,
             contextWindowSource,
             contextWindowVersion,
@@ -129,12 +129,10 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
 
-        var toolCallingMode = pin.CallingMode switch
+        if (!AgentRunCallingModeCodec.TryParseStoredValue(pin.CallingMode, out var toolCallingMode))
         {
-            "native" => ProviderToolCallingMode.Native,
-            "text_selection" => ProviderToolCallingMode.TextSelection,
-            _ => throw new ProviderCatalogException("provider_selection_invalid"),
-        };
+            throw new ProviderCatalogException("provider_selection_invalid");
+        }
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: true,
             allowNativeAnthropic: true,
@@ -282,13 +280,6 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
     }
-
-    private static string CallingModeValue(ProviderToolCallingMode mode) => mode switch
-    {
-        ProviderToolCallingMode.Native => "native",
-        ProviderToolCallingMode.TextSelection => "text_selection",
-        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-    };
 
     private async Task RemoveTerminalSnapshotsAsync(CancellationToken ct)
     {

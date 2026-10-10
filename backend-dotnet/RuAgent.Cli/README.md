@@ -103,7 +103,7 @@ agent rpc
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
 - `--preset` selects one canonical, session-scoped profile: `plan` is read-only — workspace read/Web auto, terminal/mutation denied outright, external structured access asks; `standard` auto-allows bounded-local in-workspace mutation and asks for external/escape/risky intent; `full_access` (alias `full`) is the skip-all mode — external structured files and arbitrary terminal auto while only structured protected paths (harness key/database files and runtime descriptors) remain denied. Repository cleanliness is not an input.
 - Workspace trust is explicit once per canonical identity. `--trust-workspace` approves the returned identity and continues the same run; without it, an untrusted identity returns `workspace_trust_required` without prompting. A moved or recreated identity requires trust again.
-- `--preset full_access` requires `--confirm-full-access`; without it the command returns `full_access_confirmation_required` before session creation or preset mutation. With it, the existing policy route receives `X-Interactive-Confirmed: true`. Full-access terminal runs as the current Windows user, can access data outside the workspace, and is not a network/path sandbox; timeout, output, cancellation, and process-tree controls remain.
+- `--preset full_access` requires `--confirm-full-access`; without it the command returns `full_access_confirmation_required` before session creation or preset mutation. With it, the existing policy route receives `X-Interactive-Confirmed: true`. Terminal children run as the current Windows user, can access data outside the workspace and network resources, and have no OS filesystem/network confinement; timeout, output, cancellation, and process-tree controls remain.
 - Preset updates retry expected versions `0..3` and bind the positive returned version to the run. The CLI creates a durable snapshot token before mutation; the Host persists prior/applied selection and token atomically, enforces capacity without evicting active snapshots, and restores with CAS/single-use semantics. A malformed or lost mutation response uses the known token for safe restore; a lost restore response can replay only while the restored state still matches, otherwise the command fails closed before streaming. Failed creation or trust handling restores the exact prior selection, including a new session with no prior selection.
 - `--json` is accepted with explicit `--trust-workspace` and, for Full Access, explicit `--confirm-full-access`; it never auto-approves an approval or workspace.
 - `attach` streams an existing run's durable events from `after_sequence=0` via `AgentSseClient`.
@@ -138,13 +138,17 @@ without a new model proposal, and an `ask_user` park resumes the same way once
 Canonical `plan` is read-only: workspace read/Web auto, terminal/mutation denied
 outright, external structured access asks.
 `standard` auto-allows bounded-local in-workspace mutation and asks for
-external/escape/risky intent. `full_access` (the skip-all mode) allows external
+external/escape/risky intent under existing approval rules. Terminal children
+in both execution presets run as the current Windows user without OS filesystem
+or network confinement; obsolete sandbox arguments are rejected by schema.
+`full_access` (the skip-all mode) allows external
 structured files and arbitrary terminal while only structured protected paths
 (harness key/database files and runtime descriptors) remain denied. Web is
 automatic in all profiles; `web_approval_required` is only an explicit-rule
 compatibility reason. Full-access terminal runs as the current Windows user and
-is not a path/network sandbox. Time, machine status, app discovery, and optional
-volume commands use the terminal; notes use `write` with `op=write`.
+has no OS filesystem/network confinement. Time, machine status, app discovery,
+and optional volume commands use the terminal; notes use `write` with
+`op=write`.
 `files.apply_patch` and `app.open` are not model-usable. Managed
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
 prompt guidance only and grant nothing; a `requires: python` frontmatter entry
@@ -158,7 +162,7 @@ is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 
 - **Interactive** (`SafeEventRenderer`): displays only safe envelope fields (`protocol_version`, `event_id`, `run_id`, `session_id`, `sequence`, `event_type`, `occurred_at`, `status`, `safe_summary`, `payload_ref`). Never fetches private payloads; `payload_ref` is shown opaque.
 - **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Full Access is accepted only with explicit `--confirm-full-access`; `--trust-workspace` is the explicit non-interactive trust confirmation and is allowed with `--json`, while approval and global-policy confirmations remain rejected with `--json`. Under `--json`, slash-command surfaces write their human text to stderr, bare picker commands refuse with a bounded `interactive_required`, and a chat run that reaches an approval request ends the chat (exit 0) with a bounded `approval_required` notice on stderr naming `ru agent approve <run-id> <approval-id>` or `ru agent deny <run-id> <approval-id>` — the run stays waiting server-side and is never auto-denied; an `ask_user` park ends it the same way with an `input_required` notice naming `ru agent answer <run-id> <input-id> "<answer>"`. A `--json` chat stream may include blank separator lines between turns, so consumers should skip empty lines. A transient frame's raw `data` is therefore withheld and reported as `data_bytes` — its bounded size, not its text — so the machine-readable trace never carries streamed assistant text or tool output.
-- **Live terminal frames**: transient `tool.output.delta` frames render as `[transient:<seq>] <type> <preview>` with the preview bounded to 200 chars; any forbidden field (`command`/`output`/`secret`/...) is replaced with `[redacted]`. A `transient.frames_dropped` event renders an explicit `WARNING dropped-frames` notice. Final tool output is referenced only by opaque `payload_ref`; the actual head/tail bytes are fetched solely by the explicit `agent output` command.
+- **Live terminal frames**: transient `tool.output.delta` frames render as `[transient:<seq>] <type> <preview>` with the preview bounded to 200 chars; any forbidden field (`command`/`output`/`secret`/...) is replaced with `[redacted]`. Terminal output redaction also seeds from every nonempty secret environment value stripped before child launch, including provider API keys; child processes do not inherit those values. A `transient.frames_dropped` event renders an explicit `WARNING dropped-frames` notice. Final tool output is referenced only by opaque `payload_ref`; the actual head/tail bytes are fetched solely by the explicit `agent output` command.
 
 ## Cancellation
 

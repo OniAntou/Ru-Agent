@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Terminal;
@@ -43,6 +44,84 @@ public sealed class BackgroundTaskRegistry
     private readonly object _gate = new();
     private readonly Dictionary<string, Dictionary<string, TaskEntry>> _sessions = new(StringComparer.Ordinal);
     private long _sequence;
+
+    /// <summary>Cancels running task tokens owned by one session, retaining their entries.</summary>
+    public void CancelSession(string sessionId)
+    {
+        List<TaskEntry> toCancel;
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var tasks))
+            {
+                return;
+            }
+
+            toCancel = tasks.Values
+                .Where(entry => entry.State == BackgroundTaskState.Running)
+                .ToList();
+            foreach (var entry in toCancel)
+            {
+                entry.CancellationRequested = true;
+            }
+        }
+
+        CancelLifetimes(toCancel);
+    }
+
+    /// <summary>Cancels running tasks and removes all retained state for one session.</summary>
+    public void RemoveSession(string sessionId)
+    {
+        List<TaskEntry> removed;
+        lock (_gate)
+        {
+            if (!_sessions.Remove(sessionId, out var tasks))
+            {
+                return;
+            }
+
+            removed = tasks.Values.ToList();
+            foreach (var entry in removed)
+            {
+                if (entry.State == BackgroundTaskState.Running)
+                {
+                    entry.CancellationRequested = true;
+                }
+            }
+        }
+
+        CancelLifetimes(removed.Where(entry => entry.CancellationRequested));
+        foreach (var entry in removed)
+        {
+            entry.DisposeLifetime();
+        }
+    }
+
+    /// <summary>Cancels running task tokens across all sessions during service shutdown.</summary>
+    public void CancelAll()
+    {
+        List<TaskEntry> toCancel;
+        lock (_gate)
+        {
+            toCancel = _sessions.Values
+                .SelectMany(tasks => tasks.Values)
+                .Where(entry => entry.State == BackgroundTaskState.Running)
+                .ToList();
+            foreach (var entry in toCancel)
+            {
+                entry.CancellationRequested = true;
+            }
+        }
+
+        CancelLifetimes(toCancel);
+    }
+
+    private static void CancelLifetimes(IEnumerable<TaskEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            entry.CancelLifetime();
+        }
+    }
 
     /// <summary>
     /// Registers one running task. False when the session already keeps the
@@ -143,6 +222,7 @@ public sealed class BackgroundTaskRegistry
     /// </summary>
     public void Complete(string sessionId, string executionId, string resultStatus, int? exitCode, string finalText)
     {
+        TaskEntry completed;
         lock (_gate)
         {
             if (!TryFind(sessionId, executionId, out var entry))
@@ -152,7 +232,7 @@ public sealed class BackgroundTaskRegistry
 
             entry.State = entry.Killed
                 ? BackgroundTaskState.Killed
-                : entry.Lifetime.IsCancellationRequested
+                : entry.CancellationRequested || entry.Lifetime.IsCancellationRequested
                     ? BackgroundTaskState.Expired
                     : resultStatus switch
                     {
@@ -167,8 +247,10 @@ public sealed class BackgroundTaskRegistry
                 ? finalText[..TerminalLimits.MaxSpoolChars]
                 : finalText;
             entry.Text.Append(retained);
-            entry.Lifetime.Dispose();
+            completed = entry;
         }
+
+        completed.DisposeLifetime();
     }
 
     public bool TryRead(string sessionId, string executionId, out BackgroundTaskSnapshot snapshot)
@@ -194,9 +276,10 @@ public sealed class BackgroundTaskRegistry
     /// <summary>Cancels a running task's lifetime token so the runner kills its process tree.</summary>
     public BackgroundKillOutcome Kill(string sessionId, string executionId)
     {
+        TaskEntry entry;
         lock (_gate)
         {
-            if (!TryFind(sessionId, executionId, out var entry))
+            if (!TryFind(sessionId, executionId, out entry!))
             {
                 return BackgroundKillOutcome.Unknown;
             }
@@ -207,17 +290,11 @@ public sealed class BackgroundTaskRegistry
             }
 
             entry.Killed = true;
-            try
-            {
-                entry.Lifetime.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // The task completed between the state check and the cancel.
-            }
-
-            return BackgroundKillOutcome.Killing;
+            entry.CancellationRequested = true;
         }
+
+        entry.CancelLifetime();
+        return BackgroundKillOutcome.Killing;
     }
 
     /// <summary>Bounded snapshot of one session's tasks, oldest first.</summary>
@@ -302,8 +379,36 @@ public sealed class BackgroundTaskRegistry
 
         public bool Killed { get; set; }
 
+        public bool CancellationRequested { get; set; }
+
         public bool IsBackground { get; set; }
 
         public long Sequence { get; }
+
+        private int _lifetimeDisposed;
+
+        public void CancelLifetime()
+        {
+            try
+            {
+                Lifetime.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Completion or removal won the race; the token can no longer drive a task.
+            }
+            catch (AggregateException)
+            {
+                // Cancellation is already signaled. A faulty callback must not prevent peer tasks from being cancelled.
+            }
+        }
+
+        public void DisposeLifetime()
+        {
+            if (Interlocked.Exchange(ref _lifetimeDisposed, 1) == 0)
+            {
+                Lifetime.Dispose();
+            }
+        }
     }
 }

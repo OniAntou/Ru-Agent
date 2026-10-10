@@ -11,13 +11,23 @@ public sealed class FileDeleteAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
     private readonly int _maxRecoveryBytes;
+    private readonly InMemoryRecoveryStore _recoveryStore;
 
     public FileDeleteAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
+        : this(workspaceRoot, new InMemoryRecoveryStore(), maxRecoveryBytes)
+    {
+    }
+
+    // A shared store is required when delete and restore must observe the same
+    // recovery ids (ToolExecutionService owns one per instance).
+    internal FileDeleteAdapter(string workspaceRoot, InMemoryRecoveryStore recoveryStore, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        ArgumentNullException.ThrowIfNull(recoveryStore);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _resolver = new CanonicalPathResolver(_workspaceRoot);
         _maxRecoveryBytes = FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
+        _recoveryStore = recoveryStore;
     }
 
     public FileDeletePrepareResult Prepare(JsonObject arguments)
@@ -166,7 +176,7 @@ public sealed class FileDeleteAdapter
 
         var recoveryId = "payload_" + Guid.NewGuid().ToString("N");
         // Store for restore – byte-exact, shared with FileRestoreAdapter
-        FileRestoreAdapter.RegisterWithId(recoveryId, reResolved.CanonicalPath, recoveryBytes, currentHash, _maxRecoveryBytes);
+        _recoveryStore.RegisterWithId(recoveryId, reResolved.CanonicalPath, recoveryBytes, currentHash, _maxRecoveryBytes);
         return new JsonObject
         {
             ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, reResolved.CanonicalPath),

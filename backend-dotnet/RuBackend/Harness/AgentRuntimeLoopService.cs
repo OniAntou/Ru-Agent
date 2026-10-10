@@ -184,7 +184,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly IModelContextLimitProvider _contextLimit;
     private readonly Prompting.AgentToolRuntimeAvailability _runtimeAvailability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
-    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly InMemoryRetainedApprovalStash _retainedStash;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
 
@@ -205,7 +205,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IModelContextLimitProvider? contextLimit = null,
         Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        Broker.IToolGatewayFactory? brokerGateways = null,
         IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
         SessionWorkStateStore? workStates = null)
     {
@@ -230,9 +230,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             ?? (pinnedModelMetadataResolver is null
                 ? new DynamicModelContextLimitProvider(_settings)
                 : new DynamicModelContextLimitProvider(pinnedModelMetadataResolver));
-        // The Broker is the execution authority for web tools, so the model is
-        // told about them from the Broker's own configuration. The Host holds
-        // no web adapter of its own to ask.
+        // The execution authority is in-process now, but the model is still
+        // told about web tools from the same configuration the authority
+        // parses: managed startup enables them, so the availability stays
+        // pinned to that composition.
         _runtimeAvailability = runtimeAvailability ?? new Prompting.AgentToolRuntimeAvailability(
             WebSearchEnabled: true,
             WebFetchEnabled: true);
@@ -408,7 +409,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     /// See <see cref="WorkspaceBaselineTracker"/> for why capturing is once per session.
     /// </summary>
     private readonly WorkspaceBaselineTracker _capturedBaselines = new();
-    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
     private readonly RetainedInputRehydrator? _retainedInputRehydrator;
     private readonly HarnessRecoveryScanner _recoveryScanner;
@@ -423,7 +424,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         WorkspaceExternalChangeMonitor? workspaceChangeMonitor = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        Broker.IToolGatewayFactory? brokerGateways = null,
         RetainedApprovalRehydrator? retainedApprovalRehydrator = null,
         RetainedInputRehydrator? retainedInputRehydrator = null)
     {

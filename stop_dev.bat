@@ -3,7 +3,7 @@ setlocal
 echo Stopping Ru Desktop and backend processes...
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$names = @('RuApp', 'RuBackend', 'RuAgent.Broker', 'RuAgent.Cli');" ^
+    "$names = @('RuApp', 'RuBackend', 'RuAgent.Cli');" ^
     "$root = '%~dp0'.TrimEnd('\') + '\';" ^
     "$mine = { param($p) $p.Path -and $p.Path.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) };" ^
     "$targets = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $names -contains $_.ProcessName -and (& $mine $_) });" ^

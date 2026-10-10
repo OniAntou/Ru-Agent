@@ -1,4 +1,5 @@
 using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Git;
 
@@ -96,10 +97,15 @@ public sealed class StreamingGitCli : IGitCli
 
         if (result.Status == "cancelled")
         {
-            return new GitCliResult(false, -1, string.Empty, string.Empty, "git_cancelled");
+            throw new OperationCanceledException(cancellationToken);
         }
 
         if (result.Status != "succeeded" && result.Status != "failed")
+        {
+            return new GitCliResult(false, -1, string.Empty, result.StderrHead, result.StderrHead);
+        }
+
+        if (result.ExitCode is null)
         {
             return new GitCliResult(false, -1, string.Empty, result.StderrHead, result.StderrHead);
         }

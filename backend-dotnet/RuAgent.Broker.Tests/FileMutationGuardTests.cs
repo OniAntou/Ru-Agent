@@ -252,6 +252,15 @@ public sealed class FileMutationGuardTests : IDisposable
                     File.Delete(temp);
                     swapped.TrySetResult(false);
                 }
+                catch (FileNotFoundException)
+                {
+                    // The guard's delete won the race: the destination was gone
+                    // before the editor's replace ran. That is a legitimate
+                    // "editor did not swap" outcome for the delete variant, not
+                    // a harness failure (this flaked under load).
+                    File.Delete(temp);
+                    swapped.TrySetResult(false);
+                }
                 return;
             }
 

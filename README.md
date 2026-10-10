@@ -10,7 +10,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-5%2C806%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-5%2C802%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -25,10 +25,10 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Platform** | Windows 10/11 x64 — self-contained folder, nothing to install |
 | **Surfaces** | WinUI 3 desktop app · full-screen terminal UI · stdio RPC bridge + TypeScript SDK |
 | **Model access** | Your provider, your key (Windows Credential Manager); no Ru account |
-| **Tools** | **13** bounded tools; tool calls execute in the Broker, and Host-intercepted `ask_user` parks the run for a user answer |
+| **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
 | **Public surface** | **42 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 5,806 passing across 12 projects |
+| **Tests** | 5,802 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -57,11 +57,12 @@ a bounded result, never a frozen app.
 | --- | --- | --- |
 | **RuApp** | `gui-winui3/` | WinUI 3 desktop app — chat, approvals, terminal panel, settings |
 | **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 42 HTTP routes, SSE events, run orchestration |
-| **RuAgent.Broker** | `backend-dotnet/RuAgent.Broker/` | The single execution authority — every tool call runs here under policy and approval |
+| **RuAgent.Broker** | `backend-dotnet/RuAgent.Broker/` | The execution authority library — the Host runs every tool call through it under policy and approval |
 | **RuAgent.Cli** | `backend-dotnet/RuAgent.Cli/` | Terminal tracer: one-shot runs, full-screen TUI, session tooling |
 
-The four executables ship side by side in one folder; the app starts the Host
-and the Broker itself, and the CLI can drive the same loopback surface.
+The three executables ship side by side in one folder; the app starts the Host
+itself, which executes tools in-process, and the CLI can drive the same
+loopback surface.
 
 Business data uses one local SQLite database, `agent_harness.db`: settings,
 sessions and messages, activity, runs and workspaces. Existing JSON/JSONL data
@@ -77,6 +78,9 @@ Every run uses one of three canonical, session-scoped presets:
   structured access asks like Standard.
 - **`standard`**: bounded-local in-workspace mutation runs automatically;
   external structured access, path escape, and risky terminal intent ask first.
+  Its existing classifier and approval rules remain in force. Terminal
+  children run as the current Windows user without OS filesystem or network
+  confinement; the `bash` schema rejects obsolete sandbox arguments.
 - **`full_access`**: the skip-all mode — external structured files and arbitrary
   terminal commands run automatically; structured protected paths (the harness's
   own key/database files and runtime descriptors, plus any user-added
@@ -104,8 +108,8 @@ Approvals remain exact-intent and single-use. The current reasons include
 `terminal_unknown_executable`,
 `terminal_external_mutation_requires_approval`,
 `terminal_timeout_requires_approval`, and
-`terminal_protected_path_requires_approval` (the last names a protected location
-in the approval and is never offered as a reusable `allow_always` rule).
+`terminal_protected_path_requires_approval` (protected-path asks name their
+exact stake and are never offered as a reusable `allow_always` rule).
 `web_approval_required` remains a
 compatibility reason for an explicit ask rule, but the canonical `plan` profile
 allows Web and does not synthesize that approval. No provider, model, protocol,
@@ -113,8 +117,8 @@ or tool fallback bypasses a denial.
 
 > **Full Access terminal warning:** commands run as the current Windows user,
 > can read or change data outside the workspace, and can use the network. This
-> is not a network/path sandbox. Process timeout, output cap, cancellation, and
-> process-tree cleanup still apply. Structured file tools separately retain
+> has no OS filesystem or network confinement. Process timeout, output cap,
+> cancellation, and process-tree cleanup still apply. Structured file tools retain
 > canonical/symlink/junction/hard-link containment and protected-path denial.
 
 ### Background tasks
@@ -195,7 +199,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,806 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,802 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -207,7 +211,7 @@ contention as a failure (exit code 75) rather than a flaky result.
 | Document | What is in it |
 | --- | --- |
 | [docs/README.md](docs/README.md) | The documentation index |
-| [docs/architecture.md](docs/architecture.md) | How the four executables fit together |
+| [docs/architecture.md](docs/architecture.md) | How the three executables fit together |
 | [CONTEXT.md](CONTEXT.md) | The domain language |
 | [docs/operations/agent-tools.md](docs/operations/agent-tools.md) | Every tool, its bounds, and the policy matrix |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, verification by impact, and contribution practices |
@@ -226,5 +230,6 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 - **No live-provider task-quality baseline.** Deterministic tests prove wiring,
   limits and cancellation; the evaluator's scripted oracles do not measure model
   quality, token usage or cost.
-- Out of scope for now: subagent orchestration, LSP integration, MCP discovery, and an
-  OS-level filesystem or network sandbox.
+- Out of scope for now: subagent orchestration, LSP integration, and MCP discovery.
+  Terminal children run as the current Windows user; structured file tools keep
+  their separate canonical path containment and protected-path rules.

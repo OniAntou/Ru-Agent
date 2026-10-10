@@ -2,8 +2,7 @@
 # prove the published output boots in managed mode, authenticates /status with
 # the descriptor bearer and shuts down cleanly.
 #
-# This covers the publish layout (apphost, runtimeconfig, sibling
-# RuAgent.Broker.exe carried by the project reference) that the Debug
+# This covers the publish layout (apphost, runtimeconfig) that the Debug
 # build-and-run rpc smoke never exercises, without paying for the full
 # build.bat release matrix.
 #
@@ -20,6 +19,11 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $work = Join-Path $env:TEMP ("ru-publish-smoke-" + [guid]::NewGuid().ToString("N"))
+$work = [IO.Path]::GetFullPath($work)
+$smokeTempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\', '/')
+if (-not [string]::Equals((Split-Path -Parent $work), $smokeTempRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Publish smoke work directory must be a direct child of the temporary directory."
+}
 $publishDir = Join-Path $work "publish"
 $dataRoot = Join-Path $work "data"
 $logRoot = Join-Path $work "logs"
@@ -27,7 +31,7 @@ $hostStdoutPath = Join-Path $work "host.stdout.log"
 $hostStderrPath = Join-Path $work "host.stderr.log"
 $projectPath = Join-Path $repoRoot "backend-dotnet/RuBackend/RuBackend.csproj"
 $token = "publish-smoke-bearer"
-$environmentNames = @("RU_DATA_ROOT", "RU_LOG_ROOT", "RU_DESKTOP_TOKEN", "RU_AGENT_BROKER_EXE")
+$environmentNames = @("RU_DATA_ROOT", "RU_LOG_ROOT", "RU_DESKTOP_TOKEN")
 
 # Captured before anything can fail so the finally block always restores exactly
 # the caller's environment, never a partially-set one.
@@ -200,11 +204,11 @@ try {
         throw "dotnet publish did not produce $backendExe."
     }
 
-    # The managed host starts the Broker from beside the host, so a publish that
-    # dropped the project-reference apphost would only fail at runtime.
+    # Execution is in-process: the Broker ships as a library, so a published
+    # RuAgent.Broker.exe would mean a stale executable stage survived.
     $brokerExe = Join-Path $publishDir "RuAgent.Broker.exe"
-    if (-not (Test-Path -LiteralPath $brokerExe)) {
-        throw "RuAgent.Broker.exe was not published beside RuBackend.exe."
+    if (Test-Path -LiteralPath $brokerExe) {
+        throw "RuAgent.Broker.exe must not be published: execution is in-process."
     }
 
     # Probe the port as late as possible: the publish can take minutes, and a
@@ -215,8 +219,6 @@ try {
     $env:RU_DATA_ROOT = $dataRoot
     $env:RU_LOG_ROOT = $logRoot
     $env:RU_DESKTOP_TOKEN = $token
-    # Force the sibling broker: an inherited override would hide a broken layout.
-    [Environment]::SetEnvironmentVariable("RU_AGENT_BROKER_EXE", $null, "Process")
 
     Write-Smoke "starting published RuBackend on $baseUrl (data root: $dataRoot)..."
     # --urls must come before --managed-runtime: the command-line configuration

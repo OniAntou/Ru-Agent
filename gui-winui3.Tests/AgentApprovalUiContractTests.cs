@@ -157,21 +157,25 @@ public sealed class AgentApprovalUiContractTests
         Assert.Contains("scope: \"session\"", GuiSource.MethodBody(code, "OnAlwaysClick"), StringComparison.Ordinal);
         Assert.Contains("scope: \"always\"", GuiSource.MethodBody(code, "OnRememberClick"), StringComparison.Ordinal);
 
-        // The external-directory case keeps the one-time label; every other ask is
-        // remembered by the session ledger. The branch reads the same
-        // allowSessionDirectory value the visibility rules use, which the chat view
-        // fills from the pinned CanAllowSessionDirectory predicate.
+        // The external-directory case keeps the one-time label; every other ask
+        // whose memory the evaluator honours is remembered by the session ledger.
+        // The branch reads the same predicates the visibility rules use, which
+        // the chat view fills from the pinned CanAllowSessionDirectory /
+        // CanRememberForSession rules.
         string show = GuiSource.MethodBody(code, "Show");
         int predicate = show.IndexOf("allowSessionDirectory", StringComparison.Ordinal);
+        int sessionMemory = show.IndexOf("allowSessionMemory", StringComparison.Ordinal);
         int folderOnce = show.IndexOf("\"Allow once\"", StringComparison.Ordinal);
         int sessionRemembered = show.IndexOf("\"Allow (remember for session)\"", StringComparison.Ordinal);
         Assert.True(predicate >= 0, "The label must key off the external-directory predicate.");
-        Assert.True(folderOnce > predicate, "The external-directory label must be the single-use one.");
-        Assert.True(sessionRemembered > folderOnce, "Every other ask must read as session-remembered.");
+        Assert.True(sessionMemory >= 0, "The label must key off the session-memory predicate.");
+        Assert.True(folderOnce > predicate, "The one-time label must follow the predicates.");
+        Assert.True(sessionRemembered > folderOnce, "The session-remembered label must be the fallback.");
 
         string chat = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
         Assert.Contains("ApprovalPanel.Show(", chat, StringComparison.Ordinal);
         Assert.Contains("CanAllowSessionDirectory(", chat, StringComparison.Ordinal);
+        Assert.Contains("CanRememberForSession(", chat, StringComparison.Ordinal);
 
         // The removed policy-management surface must not be referenced from the card.
         Assert.DoesNotContain("Policies", code, StringComparison.Ordinal);
@@ -276,6 +280,17 @@ public sealed class AgentApprovalUiContractTests
             AgentApprovalSummaryPresentation.Render(
                 AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval),
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void An_explicit_rule_ask_never_promises_session_memory()
+    {
+        // The evaluator matches an explicit ask rule ahead of the session-memory
+        // allow, so remembering the intent cannot suppress the next ask; the
+        // label must stay single-use instead of promising memory the server
+        // ignores.
+        Assert.False(AgentApprovalPresentation.CanRememberForSession(
+            AgentApprovalSummaryPresentation.RuleAsks));
     }
 
     [Fact]
@@ -386,7 +401,7 @@ public sealed class AgentApprovalUiContractTests
             "Workspace work runs automatically; leaving the workspace, network, or unrecognized commands ask.",
             OptionSubtitle(named["PresetStandardText"]));
         Assert.Equal(
-            "Asks nothing; still not a sandbox.",
+            "Skips approval prompts; terminal runs as your Windows user.",
             OptionSubtitle(named["PresetFullAccessText"]));
     }
 

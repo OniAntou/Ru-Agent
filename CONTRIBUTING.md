@@ -4,8 +4,9 @@ This guide covers setup, verification and contribution practices. Agent
 workflow lives in [AGENTS.md](AGENTS.md); domain language and current wiring live
 in [CONTEXT.md](CONTEXT.md) and [docs/architecture.md](docs/architecture.md).
 
-Ru is a native Windows coding agent with a WinUI 3 app, terminal TUI, ASP.NET
-Core Public Host and private Broker. The default product is .NET 10 and its
+Ru is a native Windows coding agent with a WinUI 3 app, terminal TUI, and
+ASP.NET Core Public Host that runs the Broker execution authority in process.
+The default product is .NET 10 and its
 published runtime is self-contained. Python may back optional skills/document
 capabilities when the default path remains in-process .NET; a missing
 interpreter produces a named failure. Bundling one requires an ADR.
@@ -25,7 +26,7 @@ interpreter produces a named failure. Bundling one requires an ADR.
 .\start_dev.bat      # development launch
 ```
 
-`build.bat` currently runs 12 stages and publishes the desktop executable to:
+`build.bat` currently runs 11 stages and publishes the desktop executable to:
 
 ```powershell
 gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe

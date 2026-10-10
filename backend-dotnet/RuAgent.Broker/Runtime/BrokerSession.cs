@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
 
@@ -18,7 +16,6 @@ public sealed class BrokerSessionException : Exception
 
 public sealed class BrokerSession
 {
-    private const long MaximumDescriptorBytes = 1 * 1024 * 1024;
     private readonly object _gate = new();
     private string? _activeSessionId;
     private readonly Dictionary<string, HashSet<string>> _scopesBySession = new(StringComparer.Ordinal);
@@ -28,19 +25,26 @@ public sealed class BrokerSession
 
     public SessionDirectoryGrantRegistry DirectoryGrants { get; private set; } = new();
 
-    private BrokerSession(string descriptorPath, BrokerSessionDescriptor descriptor)
+    private BrokerSession(string sessionRoot, DateTimeOffset expiresAt)
     {
-        DescriptorPath = descriptorPath;
-        Descriptor = descriptor;
+        SessionRoot = sessionRoot;
+        ExpiresAt = expiresAt;
     }
 
-    public string DescriptorPath { get; }
-    public BrokerSessionDescriptor Descriptor { get; }
+    /// <summary>The workspace root the session's leases and policy grants are bound to.</summary>
+    public string SessionRoot { get; }
 
     /// <summary>
-    /// Capability list every run lease must advertise. The BrokerHost pins it
-    /// from its options (web tools extend the authoritative fallback set);
-    /// lease opens fail closed when a connection advertises anything else.
+    /// Lifetime of the v1 policy grant the execution service derives from this
+    /// session. The in-process authority sets it to <see cref="DateTimeOffset.MaxValue"/>
+    /// because the runtime is bounded by the Host process, not a timestamp.
+    /// </summary>
+    public DateTimeOffset ExpiresAt { get; }
+
+    /// <summary>
+    /// Capability list every run lease must advertise. The execution authority
+    /// pins it from its composition (web tools extend the authoritative fallback
+    /// set); lease opens fail closed when a lease advertises anything else.
     /// </summary>
     public IReadOnlyList<string> AdvertisedCapabilities
     {
@@ -163,6 +167,21 @@ public sealed class BrokerSession
             {
                 _activeSessionId = null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Run ids currently leased by one session. The runtime reads them before
+    /// closing a session so session-scoped pending approvals can be dropped.
+    /// </summary>
+    public IReadOnlyList<string> RunIdsForSession(string sessionId)
+    {
+        lock (_gate)
+        {
+            return _runLeases.Values
+                .Where(lease => string.Equals(lease.SessionId, sessionId, StringComparison.Ordinal))
+                .Select(lease => lease.RunId)
+                .ToArray();
         }
     }
 
@@ -348,116 +367,35 @@ public sealed class BrokerSession
         }
     }
 
-    public static BrokerSession Load(string descriptorPath, DateTimeOffset? now = null)
+    /// <summary>
+    /// Creates the session the in-process execution authority runs on: no
+    /// descriptor file, loopback base URL, or bearer token. Lease, scope and
+    /// directory-grant behavior is the only session behavior left.
+    /// </summary>
+    public static BrokerSession CreateForHost(
+        string sessionRoot,
+        DateTimeOffset expiresAt,
+        IReadOnlyList<string>? advertisedCapabilities = null,
+        DateTimeOffset? now = null)
     {
-        if (string.IsNullOrWhiteSpace(descriptorPath))
-        {
-            throw new BrokerSessionException("missing_descriptor");
-        }
-
-        var fullDescriptorPath = Path.GetFullPath(descriptorPath);
-        if (!File.Exists(fullDescriptorPath))
-        {
-            throw new BrokerSessionException("missing_descriptor");
-        }
-
-        try
-        {
-            if (new FileInfo(fullDescriptorPath).Length > MaximumDescriptorBytes)
-            {
-                throw new BrokerSessionException("invalid_descriptor");
-            }
-        }
-        catch (IOException error)
-        {
-            throw new BrokerSessionException("invalid_descriptor", error.Message);
-        }
-
-        BrokerSessionDescriptor? descriptor;
-        try
-        {
-            descriptor = JsonSerializer.Deserialize<BrokerSessionDescriptor>(
-                ReadBoundedText(fullDescriptorPath, checked((int)MaximumDescriptorBytes)),
-                BrokerSessionDescriptor.JsonOptions);
-        }
-        catch (JsonException error)
-        {
-            throw new BrokerSessionException("invalid_descriptor", error.Message);
-        }
-        catch (IOException error)
-        {
-            throw new BrokerSessionException("invalid_descriptor", error.Message);
-        }
-
-        if (descriptor is null)
-        {
-            throw new BrokerSessionException("invalid_descriptor");
-        }
-
-        if (string.IsNullOrWhiteSpace(descriptor.AuthToken))
-        {
-            throw new BrokerSessionException("missing_token");
-        }
-
-        if (descriptor.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersion && descriptor.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersionV2)
-        {
-            throw new BrokerSessionException("unsupported_version");
-        }
-
-        if (!Uri.TryCreate(descriptor.BaseUrl, UriKind.Absolute, out var baseUri)
-            || !string.Equals(baseUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            || !baseUri.IsLoopback
-            || baseUri.Port is < 1024 or > 65535)
-        {
-            throw new BrokerSessionException("invalid_base_url");
-        }
-
-        if (string.IsNullOrWhiteSpace(descriptor.SessionRoot)
-            || !Path.IsPathRooted(descriptor.SessionRoot))
-        {
-            throw new BrokerSessionException("root_escape");
-        }
-
-        var sessionRoot = Path.GetFullPath(descriptor.SessionRoot);
-        var descriptorDirectory = Path.GetDirectoryName(fullDescriptorPath)
-            ?? throw new BrokerSessionException("invalid_descriptor");
-        if (!IsUnderRoot(descriptorDirectory, sessionRoot))
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionRoot);
+        if (!Path.IsPathRooted(sessionRoot))
         {
             throw new BrokerSessionException("root_escape");
         }
 
         var effectiveNow = now ?? DateTimeOffset.UtcNow;
-        if (descriptor.ExpiresAt <= effectiveNow)
+        if (expiresAt <= effectiveNow)
         {
             throw new BrokerSessionException("expired");
         }
 
-        var normalizedDescriptor = descriptor with { SessionRoot = sessionRoot };
-        return new BrokerSession(fullDescriptorPath, normalizedDescriptor);
-    }
-
-    private static string ReadBoundedText(string path, int maximumBytes)
-    {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
-        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
-        var buffer = new byte[Math.Min(maximumBytes, 81920)];
-        int read;
-        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        var session = new BrokerSession(Path.GetFullPath(sessionRoot), expiresAt);
+        if (advertisedCapabilities is not null)
         {
-            if (output.Length > maximumBytes - read)
-                throw new BrokerSessionException("invalid_descriptor");
-            output.Write(buffer, 0, read);
+            session.ConfigureAdvertisedCapabilities(advertisedCapabilities);
         }
-        using var text = new StreamReader(new MemoryStream(output.ToArray(), writable: false), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return text.ReadToEnd();
-    }
 
-    private static bool IsUnderRoot(string root, string candidate)
-    {
-        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(candidate));
-        return !Path.IsPathRooted(relative)
-            && !relative.Equals("..", StringComparison.Ordinal)
-            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+        return session;
     }
 }

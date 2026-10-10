@@ -18,10 +18,9 @@ using Xunit;
 namespace RuBackend.Tests.Harness;
 
 public sealed partial class HeadlessCodingLoopTests
-{    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Native_anthropic_tools_execute_reads_and_writes_then_resume_fresh_approval(bool keepBrokerProcess)
+{
+    [Fact]
+    public async Task Native_anthropic_tools_execute_reads_and_writes_then_resume_fresh_approval()
     {
         using var workspace = GitWorkspace.Create();
         using var approvalFile = ApprovalFile.Create();
@@ -34,16 +33,13 @@ public sealed partial class HeadlessCodingLoopTests
         var credentials = new EphemeralTestCredentialStore();
         await credentials.SetAsync("Ru", "anthropic_api_key", "synthetic-test-key", default);
         var provider = new ScriptedAnthropicHandler(approvalFile.Path);
-        using var broker = keepBrokerProcess ? SharedBrokerSession.Create() : null;
         string runId;
         string approvalId;
         using (var firstFactory = new BackendWebApplicationFactory(
                    dataPaths: workspace.DataPaths,
                    credentialStore: credentials,
                    settingsStore: settings,
-                   withInProcessBroker: true,
-                   providerHandler: provider,
-                   sharedBrokerDescriptorPath: broker?.DescriptorPath))
+                   providerHandler: provider))
         {
             using var client = firstFactory.CreateAuthenticatedClient();
             runId = await CreateTrustedRunAsync(client, workspace.Path);
@@ -87,9 +83,7 @@ public sealed partial class HeadlessCodingLoopTests
             dataPaths: workspace.DataPaths,
             credentialStore: credentials,
             settingsStore: settings,
-            withInProcessBroker: true,
-            providerHandler: provider,
-            sharedBrokerDescriptorPath: broker?.DescriptorPath);
+            providerHandler: provider);
         using var restartedClient = restartedFactory.CreateAuthenticatedClient();
         Assert.True(await WaitForApprovalCountAsync(restartedClient, runId, 2, TimeSpan.FromSeconds(30)));
         var rehydratedEvents = await ReadEventsAsync(restartedClient, runId);
@@ -122,7 +116,7 @@ public sealed partial class HeadlessCodingLoopTests
         await credentials.SetAsync("Ru", "anthropic_api_key", "synthetic-test-key", default);
         var provider = new InterruptedAnthropicHandler();
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths,
-            credentialStore: credentials, settingsStore: settings, withInProcessBroker: true, providerHandler: provider);
+            credentialStore: credentials, settingsStore: settings, providerHandler: provider);
         using var client = factory.CreateAuthenticatedClient();
 
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
@@ -160,7 +154,7 @@ public sealed partial class HeadlessCodingLoopTests
         await credentials.SetAsync("Ru", "anthropic_api_key", "synthetic-test-key", default);
         var provider = new DuplicateIndexAnthropicHandler();
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths,
-            credentialStore: credentials, settingsStore: settings, withInProcessBroker: true, providerHandler: provider);
+            credentialStore: credentials, settingsStore: settings, providerHandler: provider);
         using var client = factory.CreateAuthenticatedClient();
 
         var runId = await CreateTrustedRunAsync(client, workspace.Path);

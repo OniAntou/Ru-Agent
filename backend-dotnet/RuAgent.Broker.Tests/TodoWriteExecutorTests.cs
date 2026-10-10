@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
@@ -182,7 +181,7 @@ public sealed class TodoWriteExecutorTests
             Envelope("""{"todos":[{"content":"one","status":"pending"}]}"""),
             CancellationToken.None);
 
-        service.RemoveSession(Session);
+        await service.RemoveSessionAsync(Session);
 
         Assert.Empty(service.ReadTodos(Session));
     }
@@ -241,17 +240,9 @@ public sealed class TodoWriteExecutorTests
             Directory.CreateDirectory(root);
             var sessionRoot = Path.Combine(root, "session");
             Directory.CreateDirectory(sessionRoot);
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:18087",
-                "token",
-                1,
-                sessionRoot,
-                DateTimeOffset.UtcNow.AddMinutes(5));
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(
-                descriptorPath,
-                JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            return new Fixture(root, BrokerSession.Load(descriptorPath));
+            return new Fixture(
+                root,
+                BrokerSession.CreateForHost(sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5)));
         }
 
         public ToolExecutionService CreateService()

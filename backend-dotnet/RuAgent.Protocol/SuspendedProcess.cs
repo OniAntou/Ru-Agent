@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
@@ -34,6 +35,7 @@ namespace RuAgent.Protocol;
 /// own automatic job object is irrelevant here: the child is out of any job once it
 /// is assigned to this one, and because it was suspended there is nothing left
 /// behind when that happens.
+///
 /// </remarks>
 public static class SuspendedProcess
 {
@@ -69,7 +71,7 @@ public static class SuspendedProcess
         SafeFileHandle? stderrRead = null;
         SafeFileHandle? stderrWrite = null;
         IntPtr environmentBlock = IntPtr.Zero;
-        ProcessHandleList? attributeList = null;
+        ProcessAttributeList? attributeList = null;
         var inheritHandles = new List<SafeFileHandle>();
         try
         {
@@ -92,7 +94,7 @@ public static class SuspendedProcess
 
             var commandLine = BuildCommandLine(startInfo);
             environmentBlock = BuildEnvironmentBlock(startInfo.Environment);
-            attributeList = CreateHandleListAttribute(inheritHandles);
+            attributeList = ProcessAttributeList.Create(inheritHandles);
 
             var startupInfo = new StartupInfoEx
             {
@@ -124,8 +126,9 @@ public static class SuspendedProcess
                 out var processInformation);
             if (!created)
             {
+                var error = Marshal.GetLastWin32Error();
                 throw new Win32Exception(
-                    Marshal.GetLastWin32Error(),
+                    error,
                     $"Could not create {startInfo.FileName}.");
             }
 
@@ -245,9 +248,6 @@ public static class SuspendedProcess
             throw new Win32Exception(error, "Could not restrict pipe handle inheritance.");
         }
     }
-
-    private static ProcessHandleList CreateHandleListAttribute(IReadOnlyList<SafeFileHandle> handles) =>
-        ProcessHandleList.Create(handles);
 
     private static string BuildCommandLine(ProcessStartInfo startInfo)
     {
@@ -426,4 +426,5 @@ public static class SuspendedProcess
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr hObject);
+
 }

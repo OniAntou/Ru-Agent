@@ -112,9 +112,9 @@ public sealed class PublicHostSingleInstance : IDisposable
     }
 
     /// <summary>
-    /// Claims the lock for one canonical log root. Every managed host writes its
-    /// Broker session descriptor under the log root, so hosts with different data
-    /// roots still conflict there.
+    /// Claims the lock for one canonical log root. Every managed host creates its
+    /// in-process execution session under the log root, so hosts with different
+    /// data roots still conflict there.
     /// </summary>
     public static PublicHostSingleInstance AcquireForLogRoot(string logRoot)
     {
@@ -125,8 +125,9 @@ public sealed class PublicHostSingleInstance : IDisposable
     /// <summary>
     /// Claims the shared data root, the shared log root, and the public port
     /// together, so one guard releases all three for the host lifetime. The roots
-    /// are claimed first: a second host must fail before it can start a Broker or
-    /// publish a descriptor over the live instance's files.
+    /// are claimed first: a second host must fail before it can compose its
+    /// in-process execution session or publish a descriptor over the live
+    /// instance's files.
     /// </summary>
     public static PublicHostSingleInstance AcquireForPortAndDataRoot(int publicPort, string dataRoot, string logRoot)
     {

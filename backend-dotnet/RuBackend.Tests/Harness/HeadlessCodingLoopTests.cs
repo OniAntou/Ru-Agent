@@ -1,5 +1,3 @@
-extern alias Broker;
-
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -15,7 +13,6 @@ using RuAgent.Protocol;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
 using RuBackend.Tests.Fakes;
-using BrokerHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -28,10 +25,8 @@ namespace RuBackend.Tests.Harness;
 [Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed partial class HeadlessCodingLoopTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Native_responses_batch_continuation_survives_approval_restart_and_returns_to_provider(bool keepBrokerProcess)
+    [Fact]
+    public async Task Native_responses_batch_continuation_survives_approval_restart_and_returns_to_provider()
     {
         using var workspace = GitWorkspace.Create();
         using var approvalFile = ApprovalFile.Create();
@@ -45,16 +40,13 @@ public sealed partial class HeadlessCodingLoopTests
         await credentials.SetAsync("Ru", "openai_api_key", "synthetic-test-key", default);
         var provider = new ScriptedResponsesHandler(approvalFile.Path);
         var callIds = provider.CallIds;
-        using var broker = keepBrokerProcess ? SharedBrokerSession.Create() : null;
         string runId;
         string approvalId;
         var firstFactory = new BackendWebApplicationFactory(
             dataPaths: workspace.DataPaths,
             credentialStore: credentials,
             settingsStore: settings,
-            withInProcessBroker: true,
-            providerHandler: provider,
-            sharedBrokerDescriptorPath: broker?.DescriptorPath);
+            providerHandler: provider);
         using (firstFactory)
         {
             using var client = firstFactory.CreateAuthenticatedClient();
@@ -95,9 +87,7 @@ public sealed partial class HeadlessCodingLoopTests
             dataPaths: workspace.DataPaths,
             credentialStore: credentials,
             settingsStore: settings,
-            withInProcessBroker: true,
-            providerHandler: provider,
-            sharedBrokerDescriptorPath: broker?.DescriptorPath);
+            providerHandler: provider);
         using var restartedClient = restartedFactory.CreateAuthenticatedClient();
         Assert.True(await WaitForApprovalCountAsync(restartedClient, runId, 2, TimeSpan.FromSeconds(30)),
             "restart did not re-evaluate and publish a fresh approval for the retained proposal");
@@ -139,7 +129,7 @@ public sealed partial class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
 
-        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
 
@@ -199,8 +189,7 @@ public sealed partial class HeadlessCodingLoopTests
 
         using var factory = new BackendWebApplicationFactory(
             dataPaths: workspace.DataPaths,
-            modelStepRunner: runner,
-            withInProcessBroker: true);
+            modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
 
@@ -264,8 +253,7 @@ public sealed partial class HeadlessCodingLoopTests
 
         using var factory = new BackendWebApplicationFactory(
             dataPaths: workspace.DataPaths,
-            modelStepRunner: runner,
-            withInProcessBroker: true);
+            modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
 
@@ -296,7 +284,7 @@ public sealed partial class HeadlessCodingLoopTests
             var runner = new ScriptedRunner();
             runner.Enqueue(ToolCall("files.read", $$"""{"path":{{JsonSerializer.Serialize(outside)}}}"""));
 
-            using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
             using var client = factory.CreateAuthenticatedClient();
             var runId = await CreateTrustedRunAsync(client, workspace.Path);
 
@@ -336,7 +324,7 @@ public sealed partial class HeadlessCodingLoopTests
         var runner = new ScriptedRunner();
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
 
-        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var desktopClient = factory.CreateAuthenticatedClient();
         using var cliClient = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(desktopClient, workspace.Path);
@@ -506,51 +494,6 @@ public sealed partial class HeadlessCodingLoopTests
         {
             if (File.Exists(Path)) File.Delete(Path);
         }
-    }
-
-    private sealed class SharedBrokerSession : IDisposable
-    {
-        private readonly string _root;
-        private readonly BrokerHostHost _host;
-
-        public string DescriptorPath { get; }
-
-        private SharedBrokerSession(string root, string descriptorPath, BrokerHostHost host)
-        {
-            _root = root;
-            DescriptorPath = descriptorPath;
-            _host = host;
-        }
-
-        public static SharedBrokerSession Create()
-        {
-            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ru-shared-broker-" + Guid.NewGuid().ToString("N"));
-            var sessionRoot = System.IO.Path.Combine(root, "broker-session");
-            Directory.CreateDirectory(sessionRoot);
-            var descriptorPath = System.IO.Path.Combine(sessionRoot, "broker.json");
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:" + GetFreePort(),
-                "broker-test-" + Guid.NewGuid().ToString("N"),
-                1,
-                sessionRoot,
-                DateTimeOffset.UtcNow.AddHours(2));
-            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            var host = BrokerHostHost.StartAsync(descriptorPath).GetAwaiter().GetResult();
-            return new SharedBrokerSession(root, descriptorPath, host);
-        }
-
-        public void Dispose()
-        {
-            _host.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
-        }
-    }
-
-    private static int GetFreePort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-        listener.Start();
-        return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     private sealed class ScriptedRunner : IModelStepRunner

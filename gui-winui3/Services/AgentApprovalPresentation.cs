@@ -35,6 +35,21 @@ public static class AgentApprovalPresentation
     ];
 
     /// <summary>
+    /// Whether an allow is remembered for the rest of the chat session, as the
+    /// approve button's label promises. An explicit ask rule (`rule_asks`,
+    /// which outranks the remembered allow) keeps the single-use label; every
+    /// other reason keeps the session memory the ledger provides.
+    /// </summary>
+    public static bool CanRememberForSession(string? askReason)
+    {
+        var trimmed = askReason?.Trim();
+        return !string.Equals(
+            trimmed,
+            AgentApprovalSummaryPresentation.RuleAsks,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Whether the pending approval may be remembered as a project rule. The
     /// server only honours allow_always for known ask reasons that are not
     /// external-directory asks (those keep the session grant instead); unknown

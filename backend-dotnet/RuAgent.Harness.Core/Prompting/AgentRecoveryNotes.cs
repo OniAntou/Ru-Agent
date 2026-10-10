@@ -13,6 +13,7 @@ public enum AgentRecoveryKind
     UnverifiedAfterToolFailure,
     EmptyModelReply,
     ModelRepairable,
+    OutputTruncated,
 }
 
 /// <summary>
@@ -42,10 +43,10 @@ public static class AgentRecoveryNotes
     public const int MaximumUnverifiedNotes = 4;
     public const int MaximumEmptyNotes = 2;
     public const int MaximumModelRepairableNotes = 4;
+    public const int MaximumTruncatedNotes = 2;
 
     // Global cap across every recovery case, counted from the context for the
-    // whole run. Per-case budgets sum to 10, so this leaves headroom for a case
-    // added later without immediately bottlenecking every long task.
+    // whole run. This bounds recovery across all cases, including truncation.
     public const int MaximumNotesPerRun = 12;
 
     /// <summary>
@@ -77,6 +78,12 @@ public static class AgentRecoveryNotes
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.EmptyModelReply)} - the last model "
         + "reply was empty. Answer with text or a valid tool call.";
 
+    public static string BuildTruncatedNote() =>
+        $"{NotePrefix} {KindMarker(AgentRecoveryKind.OutputTruncated)} - the provider "
+        + "hit its output limit. The incomplete reply was not accepted and none of "
+        + "its tool calls executed. Use a shorter valid tool call or a concise reply; "
+        + "split large edits into smaller steps. Do not repeat the unfinished output.";
+
     /// <summary>
     /// Names the runner's model-repairable rejection and asks the model to redo
     /// it. The code is a bounded runner code, so it is safe text.
@@ -103,6 +110,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.UnverifiedAfterToolFailure => "unverified_after_tool_failure",
         AgentRecoveryKind.EmptyModelReply => "empty_model_reply",
         AgentRecoveryKind.ModelRepairable => "model_repairable",
+        AgentRecoveryKind.OutputTruncated => "model_output_truncated",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -111,6 +119,7 @@ public static class AgentRecoveryNotes
         AgentRecoveryKind.UnverifiedAfterToolFailure => MaximumUnverifiedNotes,
         AgentRecoveryKind.EmptyModelReply => MaximumEmptyNotes,
         AgentRecoveryKind.ModelRepairable => MaximumModelRepairableNotes,
+        AgentRecoveryKind.OutputTruncated => MaximumTruncatedNotes,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

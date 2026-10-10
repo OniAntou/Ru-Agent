@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using OpenTelemetry;
-using OpenTelemetry.Trace;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Diagnostics;
@@ -9,10 +7,10 @@ namespace RuAgent.Broker.Diagnostics;
 /// <summary>
 /// OpenTelemetry seam for tool execution. Runs parallel to the JSONL
 /// diagnostics and never replaces them: without a listener every helper is a
-/// no-op, and without <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> nothing leaves the
-/// loopback host. Privacy: only bounded codes and the tool identity are
-/// recorded. Arguments, outputs, summaries, paths and payloads must never
-/// become tags.
+/// no-op. The Host owns the tracer provider; the execution authority only
+/// produces spans on <see cref="Source"/>. Privacy: only bounded codes and the
+/// tool identity are recorded. Arguments, outputs, summaries, paths and
+/// payloads must never become tags.
 /// </summary>
 public static class BrokerTelemetry
 {
@@ -93,28 +91,5 @@ public static class BrokerTelemetry
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Builds the broker tracer provider. OTLP export is added only when
-    /// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set; otherwise traces stay
-    /// in-process. Never throws: telemetry must not break the broker.
-    /// </summary>
-    public static TracerProvider? CreateProvider()
-    {
-        try
-        {
-            var builder = Sdk.CreateTracerProviderBuilder().AddSource(SourceName);
-            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(OtlpEndpointVariable)))
-            {
-                builder.AddOtlpExporter();
-            }
-
-            return builder.Build();
-        }
-        catch
-        {
-            return null;
-        }
     }
 }

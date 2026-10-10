@@ -346,7 +346,9 @@ public sealed class ManagedCommitService(IGitCli cli)
         return (HashText(cachedDiff.Stdout), null, effectivePaths);
     }
 
-    private async Task<bool?> RealIndexIsEmptyAsync(string repositoryRoot, CancellationToken cancellationToken)
+    private async Task<bool?> RealIndexIsEmptyAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
     {
         var result = await cli.RunAsync(
             new[] { "diff", "--cached", "--quiet" }, repositoryRoot, cancellationToken);
@@ -358,13 +360,17 @@ public sealed class ManagedCommitService(IGitCli cli)
         };
     }
 
-    private async Task<string?> ReadHeadOidAsync(string repositoryRoot, CancellationToken cancellationToken)
+    private async Task<string?> ReadHeadOidAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
     {
         var result = await cli.RunAsync(new[] { "rev-parse", "HEAD" }, repositoryRoot, cancellationToken);
         return result.Succeeded && result.Stdout.Trim().Length == 40 ? result.Stdout.Trim() : null;
     }
 
-    private async Task<string?> ReadBranchNameAsync(string repositoryRoot, CancellationToken cancellationToken)
+    private async Task<string?> ReadBranchNameAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
     {
         var result = await cli.RunAsync(
             new[] { "symbolic-ref", "--quiet", "--short", "HEAD" },

@@ -2,7 +2,7 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces, updated 2026-09-24.
+v2 surfaces, updated 2026-10-10.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -12,7 +12,7 @@ Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
 is tested infrastructure but is not production-composed; connector libraries are
 not advertised Agent tools.
 
-> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract. The managed Runtime Worker it describes was retired on 2026-09-30: model generation runs in the Host process ([ADR 0012](../adr/0012-in-process-model-runner.md)) and the Host's only managed child is the Broker.
+> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract. The managed Runtime Worker it describes was retired on 2026-09-30 (model generation runs in the Host process, [ADR 0012](../adr/0012-in-process-model-runner.md)) and the Broker child was retired on 2026-10-10 (tool execution runs in process, [ADR 0014](../adr/0014-in-process-execution-and-terminal-sandbox.md)): the Host has no managed child.
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. There is no device/runtime v1 boundary; Agent
@@ -104,7 +104,8 @@ stable sorted relative paths without content access; `grep` takes `query`
 and returns bounded match locations without raw file content; `write`
 carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 `mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
-flag on `run`/`shell`.
+flag on `run`/`shell`. The schema has no sandbox selector; obsolete sandbox
+arguments are rejected.
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. `ask_user` takes
@@ -136,7 +137,7 @@ boundary.
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, harness-protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/risky intent asks under existing approval rules; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
@@ -159,11 +160,13 @@ a cursor. Paging does not authorize a new operation or bypass Broker approval.
 Canonical `plan` denies terminal and mutation. Canonical `standard` allows only
 classifier-bounded local terminal intent inside the trusted workspace; deletion,
 unknown executables, arbitrary shell, external cwd/argv, and other risky intent
-ask with the existing reason codes. Repository cleanliness does not change the
-decision. Canonical `full_access` delegates arbitrary terminal execution as the
-current Windows user. It can read or change data outside the workspace and open
-sockets; it is not a network/path sandbox. Hard timeout, output cap,
-cancellation, redaction, and process-tree cleanup still apply.
+ask with the existing reason codes. Standard and full-access children run as
+the current Windows user, without OS filesystem or network confinement. The
+`bash` schema rejects obsolete sandbox arguments. Repository cleanliness does
+not change the decision. Canonical `full_access` delegates arbitrary terminal
+execution. Hard timeout, output cap, cancellation, redaction, and process-tree
+cleanup still apply. API keys remain in credential storage and diagnostics
+redact secrets.
 
 An explicit absolute structured-file path outside the trusted root asks for
 `external_directory_required` under `standard`. Approval records a
@@ -196,12 +199,18 @@ proposals under the current lease; the model is not asked to reissue an approved
 call. An `ask_user` call parks the same way without a Broker decision: the asked
 call is completed by the answer route, and the durable rehydrator resumes the
 remaining retained proposals without a new model proposal. A denial may return a repair hint, while an exact repeated call is stopped
-by `repeated_tool_call` before duplicate dispatch. An empty final step is answered
-once with a bounded `[HARNESS RECOVERY]` note before the run fails as
+by `repeated_tool_call` before duplicate dispatch. An empty or whitespace-only
+final step is answered up to two times with a bounded `[HARNESS RECOVERY]` note before the run fails as
 `empty_model_reply`. A runner-rejected tool call or selection
 (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is
-likewise answered up to 2 notes before failing with the original runner code;
-provider and prompt failures never take the note path.
+likewise answered up to four times before failing with the original runner code.
+A `Length` finish is not a completed turn: the entire step, including partial
+tool calls, is suppressed before any execution and gets up to two recovery notes
+requesting smaller output, then fails as `model_output_truncated`. A
+`ContentFilter` or `Error` finish fails immediately as `model_content_filtered`
+or `model_reply_error`. All recovery kinds share a cumulative 12-note run cap;
+provider-transient failures retain their existing retry/Continue behavior, and
+prompt failures never take the note path.
 
 The shared budget remains 256 model-initiated tool calls per window; there is no
 new low per-step cap. Read-only calls may execute concurrently in chunks of at
@@ -225,16 +234,16 @@ Agent text and voice turns share the same execution ownership chain:
 ```text
 WinUI authenticated Agent composer
         -> ASP.NET Core Public Host and session grant
-        -> in-process typed model step (WorkerV2StepService)
-        -> private RuAgentBroker policy and canonical binding
-        -> bounded adapter plus readback verification
+        -> in-process typed model step (ModelStepService)
+        -> in-process execution authority policy and canonical binding (BrokerExecutionRuntime)
+        -> bounded adapter plus readback verification (terminal OS confinement retired)
         -> typed receipt back to the Host
         -> visible reply
 ```
 
-The Public Host keeps one active Broker lease. It reuses a valid matching
-session, and closes the previous lease before opening a different Agent
-session. Close or open failure stops before adapter execution; the Broker
+The Public Host keeps one active execution grant. It reuses a valid matching
+session, and closes the previous grant before opening a different Agent
+session. Close or open failure stops before adapter execution; the authority
 continues to reject concurrent owners with `session_conflict`.
 
 The desktop session switch also waits for the previous Harness run's
@@ -265,10 +274,10 @@ Agent turns continue through normal streamed generation. Unrelated
 conversation is never forced through a tool-selection path.
 
 The Public Host derives `model_tools` from canonical model exposure and runtime
-availability, while the Broker session owns executable scopes and publishes the actual
+availability, while the execution session owns executable scopes and publishes the actual
 resulting grant as `agent.session`. Managed startup enables the Host web
 configuration and the default headless model loop advertises both read-only
-Web bindings through the Broker gateway. Workspace `SKILL.md` roots are
+Web bindings through the in-process gateway. Workspace `SKILL.md` roots are
 prompt guidance and grant nothing by themselves. WinUI renders a received grant;
 it does not infer workspace, terminal, Web, connector, or skill access.
 
@@ -309,19 +318,20 @@ into desktop side effects; structured selection is the only action channel.
 ## File and terminal boundaries
 
 File and terminal bindings use the canonical matrix above. `plan` terminal
-authority is denied. `standard` confines terminal execution to classifier-bounded
+authority is denied. `standard` limits automatic terminal execution to classifier-bounded
 local intent and asks for external/escape/risky intent. `full_access` may run
 arbitrary `bash` as the current Windows user against any path and may open
-sockets; this is terminal delegation, not a network/path sandbox. Repository
+sockets, including outside the workspace; terminal execution has no OS
+filesystem/network confinement. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup. Structured protected paths
 (harness key/database files and runtime descriptors) remain denied, but they do
 not re-impose terminal confinement.
 
-Background terminal tasks are session-scoped and owned by the Broker: at most
+Background terminal tasks are session-scoped and owned by the execution authority: at most
 `TerminalLimits.MaxBackgroundTasksPerSession` run at once, a task that reaches
 its lifetime is killed (`expired`), `mode=kill` stops it (`killed`), and a
-Broker restart drops every task (a stale id fails closed). The kill path kills
+host restart drops every task (a stale id fails closed). The kill path kills
 the process tree by parentage first and then the Job Object, so a descendant
 created before the job assignment landed cannot survive. The model context
 carries one bounded `background_tasks` reference per step naming the tasks that
@@ -411,7 +421,7 @@ later access still has to use an advertised tool under Broker policy.
 
 Skill guidance is rendered as untrusted `ExternalSkill` prompt content. It
 uses `SKILL.md` only and never executes tools by itself.
-`RuAgentBroker` remains the only authority
+The in-process execution authority remains the only owner
 for canonical paths, capabilities, scopes, approvals, and execution.
 
 ## Typed command channel
@@ -440,8 +450,9 @@ private-host validation. Canonical
 legacy `web_approval_required` reason. Redirects are validated hop-by-hop and
 private/reserved targets are rejected. Responses retain byte, UTF-8,
 content-type, sanitizer, and citation caps, and all returned content stays
-explicitly untrusted. These are bounded Web-tool controls, not the future
-OS-enforced filesystem/network sandbox.
+explicitly untrusted. These are bounded Web-tool controls: web tools run
+Host-side. Terminal children also run as the current user without OS-level
+filesystem/network confinement (ADR-0015).
 
 ## Agent activity shown in WinUI
 
@@ -462,13 +473,16 @@ or private payload content.
 ## Agent permission UX
 
 Every Agent run is session-scoped. The chat composer offers canonical `Plan`,
-`Standard` (default), and opt-in `Full Access`; the Broker remains the only
-authority. Plan is read-only: workspace read/Web auto, terminal/mutation denied
-outright, external structured access asks. Standard auto-allows bounded-local
-in-workspace mutation and asks for external/escape/risky intent. Full Access is
-the skip-all mode: external structured files and arbitrary terminal auto while
-only structured protected paths (harness key/database files and runtime
-descriptors) remain denied.
+`Standard` (default), and opt-in `Full Access`; the in-process execution
+authority remains the only authority. Plan is read-only: workspace read/Web
+auto, terminal/mutation denied outright, external structured access asks.
+Standard auto-allows bounded-local in-workspace mutation and asks for
+external/escape/risky intent under its existing rules. Terminal/git children
+in both execution presets run as the current Windows user without OS
+filesystem/network confinement. Full
+Access is the skip-all mode: external structured files and arbitrary terminal
+auto while only structured protected paths (harness key/database files and
+runtime descriptors) remain denied.
 
 Workspace trust is not a preset. It is explicit once per canonical identity:
 the GUI requires a guarded Approve action, while CLI `run`/`chat` require
@@ -512,9 +526,9 @@ reason code:
 
 Standard auto-allows only classifier-bounded local terminal intent; arbitrary
 shell, deletion, unknown executables, external cwd/argv, and other risky forms
-ask even if the repository is clean. Full Access removes those profile asks and
-delegates terminal execution to the current Windows user, but it is not a
-network/path sandbox. The CLI exposes the same model through `agent approve` /
+ask even if the repository is clean. Both presets launch terminal children as
+the current Windows user without OS filesystem/network confinement. Full Access
+removes those profile asks. The CLI exposes the same model through `agent approve` /
 `agent deny`; `agent run` and `agent chat` accept `--preset
 plan|standard|full_access`, `--trust-workspace`, and
 `--confirm-full-access`. `--json` is accepted only with explicit trust and
@@ -621,9 +635,9 @@ entry expires after 30 minutes under a per-session cap, and the memory dies
 with the session or a host restart. Ordering is
 `consume one-time approval under snapshot N
 → execute already-authorized call under N → persist final receipt → build/bind
-N+1 → invalidate other pending N decisions`; Broker restart before dispatch
-invalidates ephemeral decision and causes safe re-evaluation, never adapter
-invocation. File tools follow the same ordering with `tool.execution_requested`
+N+1 → invalidate other pending N decisions`; a host restart before dispatch
+invalidates the ephemeral decision and causes safe re-evaluation, never
+adapter invocation. File tools follow the same ordering with `tool.execution_requested`
 persisted before dispatch and `FileRecoveryStore` for
 recoverable deletes. The deterministic Broker approval probe uses
 `write` with `op=write` (and file delete/restore ops) only inside a fresh temporary

@@ -6,11 +6,12 @@ using RuAgent.Protocol.Harness;
 namespace RuBackend.Hosting;
 
 // Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, start Broker, publish
-// descriptor. Moved verbatim from Program.cs so startup order is unchanged.
+// acquire single instance, generate credentials, publish descriptor. Moved
+// verbatim from Program.cs so startup order is unchanged. The execution
+// authority itself is composed in DI (InProcessExecutionAuthority); this
+// bootstrap no longer starts or owns any child process.
 internal sealed record ManagedRuntimeBootstrap(
     string? PublicBearer,
-    BrokerChildProcessManager BrokerChildManager,
     RuntimeDescriptorWriter DescriptorWriter,
     PublicHostSingleInstance SingleInstance);
 
@@ -26,8 +27,9 @@ internal sealed class HostStartupException : Exception
 
 internal static class ManagedRuntimeBootstrapper
 {
-    // Web tool configuration is defined once and shared: the Host executor uses
-    // it directly, the Broker process receives it through the environment.
+    // Web tool configuration is defined once and shared: the in-process
+    // execution authority receives it through the environment and parses it
+    // with the Broker child's rules.
     public const string BrokerWebSearchEndpoint = "https://www.google.com/search";
 
     internal static async Task<ManagedRuntimeBootstrap> StartAsync(IConfiguration configuration, string projectRoot)
@@ -58,10 +60,11 @@ internal static class ManagedRuntimeBootstrapper
 
         // The single instance is the shared data root and log root, not only the
         // port: a host on another port would publish its runtime descriptor over
-        // the same data root, and a host with another data root would write its
-        // Broker session under the same log root. Both roots are claimed before the
-        // Broker starts and held for the host lifetime. A held lock fails closed;
-        // only a namespace this account cannot create falls back to Local.
+        // the same data root, and a host with another data root would host its
+        // in-process execution session under the same log root. Both roots are
+        // claimed before the descriptor is published and held for the host
+        // lifetime. A held lock fails closed; only a namespace this account
+        // cannot create falls back to Local.
         var effectiveDataRoot = string.IsNullOrWhiteSpace(configDataRoot)
             ? PublicHostRuntimeOptions.GetDefaultBusinessRoot(projectRoot)
             : configDataRoot;
@@ -87,39 +90,18 @@ internal static class ManagedRuntimeBootstrapper
         Environment.SetEnvironmentVariable("RU_LOG_ROOT", managedLogRoot);
         configuration["RU_LOG_ROOT"] = managedLogRoot;
 
-        // Web tool configuration is forwarded to the Broker process (the execution
-        // authority) through the environment before the child starts.
-        // Web egress requires explicit approval by default: read-only risk class
-        // alone must never auto-allow traffic outside the loopback boundary.
+        // Web tool configuration is defined once and shared: the Host's
+        // in-process execution authority reads these variables with the Broker
+        // child's parsing rules at composition time. Web egress requires
+        // explicit approval by default: read-only risk class alone must never
+        // auto-allow traffic outside the loopback boundary.
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", "true");
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
-        // Start the Broker in its own Job
-        var managedBrokerChildManager = new RuAgent.Hosting.BrokerChildProcessManager();
-        var startup = new BrokerChildStartupOptions(
-            null,
-            Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"),
-            publicPort);
-        var brokerStarted = await managedBrokerChildManager
-            .StartAsync(projectRoot, startup)
-            .ConfigureAwait(false);
-        if (!brokerStarted)
-        {
-            throw new HostStartupException($"Broker start failed: {managedBrokerChildManager.LastError}", 4);
-        }
-
-        // Propagate broker descriptor to Host's env for Broker client
-        var brokerDescriptorPath = managedBrokerChildManager.BrokerDescriptorPath;
-        if (!string.IsNullOrWhiteSpace(brokerDescriptorPath))
-        {
-            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR", brokerDescriptorPath);
-            configuration["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath;
-        }
-
-        // Publish ACL-restricted descriptor after the Broker is running and before
-        // health is available. A valid descriptor at this point belongs to a live
-        // instance that holds the lock elsewhere; refuse to clobber it.
+        // Publish ACL-restricted descriptor before health is available. A valid
+        // descriptor at this point belongs to a live instance that holds the
+        // lock elsewhere; refuse to clobber it.
         var proc = Process.GetCurrentProcess();
         var descriptor = new RuntimeDescriptor(
             RuntimeDescriptor.CurrentProtocolVersion,
@@ -136,7 +118,6 @@ internal static class ManagedRuntimeBootstrapper
 
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,
-            managedBrokerChildManager,
             managedDescriptorWriter,
             managedSingleInstance);
     }

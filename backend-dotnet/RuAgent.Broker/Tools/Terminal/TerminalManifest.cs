@@ -27,7 +27,8 @@ public sealed record TerminalShellRequest(
     string SessionId = "",
     bool ReadOnly = false,
     IReadOnlyList<string>? WriteSet = null,
-    bool Approved = false);
+    bool Approved = false,
+    bool Network = false);
 
 public static class TerminalManifests
 {

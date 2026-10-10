@@ -6,12 +6,275 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** coverage via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,806 passed / 0 failed / 0 skipped** after the investigated Backend fixture-cleanup rerun (2026-10-09, SQLite consolidation). The initial full invocation stopped at Backend; the targeted Backend rerun and remaining GUI project completed the sequential coverage. See the SQLite section below for per-project counts and failures. |
-| Python suite | **211 passed, 1 skipped** (2026-10-09, SQLite consolidation), via `.venv\Scripts\python.exe -m pytest tests -q`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
-| Release build | `build.bat` passed **12/12** stages on 2026-10-07 and published self-contained `RuApp.exe`, `RuBackend.exe`, the Broker and `RuAgent.Cli.exe`, flattened into one directory. |
-| Managed runtime smoke | Historical dated runs below cover isolated startup, bearer `/status` and process-tree shutdown. This smoke was not rerun for the 2026-10-04 publish; native terminal and real-provider acceptance also remain unmeasured for this delivery. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,802 passed / 0 failed / 0 skipped** (2026-10-11, terminal OS sandbox retirement). Log: `artifacts/remove-sandbox-dotnet-final.log`. Earlier failures and focused reruns are recorded below. |
+| Python suite | **211 passed, 1 skipped** (2026-10-11, terminal OS sandbox retirement), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/remove-sandbox-pytest-final.log`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
+| Live coding benchmark | Latest small C# diagnostic **unresolved** (2026-10-11), current Kilo `stepfun/step-5-preview-free`, `standard`: `model_history_invalid` after 15.058 seconds, no source change. Report: `artifacts/ru-small-csharp-no-sandbox-20261011/report.json`. The earlier custom nine-task result was **0/9 resolved** (2026-10-10); see the dated run below. Neither is an official dataset score or a model-independent measure of Ru. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Terminal OS sandbox retirement (2026-10-11)
+
+[ADR 0015](../adr/0015-retire-terminal-os-sandbox.md) retires AppContainer
+profiles, ACL grants, capability attributes and sandbox escape UI/arguments.
+Terminal and managed Git launch as the current Windows user. Ordinary preset
+and approval policies, process-tree cleanup, cancellation, timeout and output
+bounds remain. A real standard-preset approved PowerShell child writes outside
+workspace/TEMP and connects an ephemeral loopback listener without a network
+capability, proving the former OS boundary is absent.
+
+Credential storage and structured protected-path denials remain. Child
+processes do not inherit secret environment variables; all stripped values now
+seed terminal output redaction. Regression tests reproduced the old redactor
+leaking a key across its emission boundary (three RED cases), then verified
+chunk splits, longest matches and complete overlapping matches. A real process
+writes a synthetic key in separate chunks; both frames and receipts redact it.
+This does not claim that unrestricted current-user commands cannot retrieve
+credentials independently.
+
+Verification:
+
+- The first full .NET run failed an obsolete sandbox-only approval-ledger test;
+  that case was removed while ordinary approval-memory coverage was retained
+  (`artifacts/remove-sandbox-dotnet.log`).
+- The second full run passed the first eleven projects, then failed one GUI
+  assertion expecting obsolete sandbox copy
+  (`artifacts/remove-sandbox-dotnet-green.log`). The corrected GUI suite passed
+  **1,299**; the final Broker suite passed **894**, including the fourth redactor
+  regression (`artifacts/remove-sandbox-gui-final.log`,
+  `artifacts/remove-sandbox-broker-final.log`). Combined with the unchanged
+  projects from the full run, the total is **5,802 passing tests** across
+  12 projects. A final complete invocation subsequently passed all **5,802 / 0
+  failed / 0 skipped** (`artifacts/remove-sandbox-dotnet-final.log`). No failed
+  assertion was weakened to permit an execution-policy regression.
+- Python tooling suite: **211 passed, 1 skipped**
+  (`artifacts/remove-sandbox-pytest-final.log`). The first run exposed stale
+  documentation vocabulary and a README badge; both were corrected without
+  changing the guards (`artifacts/remove-sandbox-pytest.log`).
+- `build.bat`: **11/11 stages passed**
+  (`artifacts/remove-sandbox-release.log`), refreshing the flat distributable.
+- Redactor RED and initial GREEN evidence: `artifacts/remove-sandbox-redactor-red.log`
+  and `artifacts/remove-sandbox-redactor-green.log`.
+
+The scripted CLI RPC smoke completed its session/run/attach/event workflow
+(`artifacts/remove-sandbox-rpc-smoke.log`). It used an isolated ephemeral Host,
+synthetic model and temporary data root; its ignored runner copy retained the
+temporary directory instead of deleting it. This proves transport wiring.
+
+A separate small C# shipping diagnostic used the new flat Release binaries and
+the current user-selected Kilo `stepfun/step-5-preview-free`, `chat_completions`,
+`standard`, one attempt and a 180-second bound. The pristine baseline failed the
+exact-threshold assertion. The live run read files and issued tool calls, then
+failed after **15.058 seconds** with **`model_history_invalid`**, following a
+`malformed_call` receipt and `repeated_tool_call` recovery note. No source file
+changed and independent grading remained red. This trace does not establish
+the root cause; sandbox retirement has not demonstrated improved coding-task
+completion. Evidence: `artifacts/ru-small-csharp-no-sandbox-20261011/manifest.json`,
+`trajectory.json`, `report.json` and `prediction.patch`. The run preserved the
+model selection, shut down its own isolated Host and retained its data root.
+No interactive desktop UI was operated.
+
+## Provider finish-reason and tool-feedback fixes (2026-10-10)
+
+Behavioral regressions reproduced acceptance of incomplete model steps and a
+whitespace-only reply throwing at presentation. Six initial regression cases
+failed on the old behavior; the corrected Core suite subsequently passed. The
+final full matrix includes ten additional Core cases and two Protocol cases.
+A `Length` finish now rejects the whole step before tool proposal/dispatch and
+gets up to two same-model recovery notes requesting smaller output. Exhaustion
+reports `model_output_truncated`. `ContentFilter` and `Error` finishes fail
+immediately as `model_content_filtered` and `model_reply_error`; whitespace-only
+text uses existing empty-reply recovery. Suppressed steps retain typed finish
+metadata for internal audit and never enter the conversation outbox. This is
+not a heuristic that requires every legitimate reply to edit a file.
+
+Tool descriptions/examples now clarify Windows workspace-relative paths,
+`op=write` plus `overwrite=true` for replacing existing files, exact fresh text
+for edits, and argument vectors excluding the executable. The `file_exists`
+repair hint includes the required operation. Schema digests, versions, grants,
+presets and approval behavior did not change. Stale recovery-count claims in
+architecture and tool guidance were corrected to the existing four unverified,
+four model-repairable and two empty notes, plus two new truncation notes, under
+the same cumulative twelve-note cap.
+
+Verification:
+
+- `scripts/test_dotnet.ps1 -Configuration Debug`: **5,849 passed**, no failures
+  or skips across 12 projects (`artifacts/benchmark-fixes-dotnet.log`).
+- `.venv\Scripts\python.exe -m pytest tests -q`: **211 passed, 1 skipped**
+  (`artifacts/benchmark-fixes-pytest.log`).
+- `build.bat`: **11/11 stages passed**, refreshed flat Release distribution
+  (`artifacts/benchmark-fixes-release.log`).
+- Behavioral RED evidence: `artifacts/model-finish-red.log` (six failures);
+  the first Core GREEN run passed 474 before four additional cap/text-only cases
+  brought the final Core count to 478.
+
+A small C# shipping diagnostic reused the earlier prompt and pristine baseline
+on the new flat Release binaries with the existing Nemotron/OpenRouter
+selection, `standard` and a 600-second deadline. A first local setup was excluded:
+run creation returned `invalid_workspace` before model execution while Host data
+and workspace were colocated under one artifact parent. A second setup with a
+separate TEMP data root created a run, but parked after **43.41 seconds** with
+`provider_rate_limited`, before any tool call or source edit. The runner cancelled
+it; the persisted state is terminal, the owned Host shut down, and the independent
+verifier still failed the exact-threshold check. This is provider interruption,
+not a measured coding improvement or a new corpus score. Artifacts are under
+`artifacts/ru-small-csharp-fixes-20261010` (excluded setup) and
+`artifacts/ru-small-csharp-fixes-20261010-run2` (live diagnostic). Provider/model
+selection was not changed and no approval/Continue was supplied. The new TEMP
+data directory remains locally with the diagnostic evidence; no recursive
+cleanup was retried after the earlier automatic review rejection. Native UI,
+crash-orphan collection and another complete live corpus run remain unverified.
+
+## Post-refactor live coding rerun (2026-10-10)
+
+The owner requested a live rerun after sandbox/client simplification. All nine
+custom Terminal/SWE-style tasks ran sequentially, once each, using the existing
+selection `models.dev:openrouter` / `nvidia/nemotron-3.5-lightning:free` /
+`chat_completions`. No provider/model switch, approval grant, Continue, or task
+patch intervention was performed. The runner used `standard`, fresh trusted
+workspaces/sessions, the task's 1,800-second agent deadline and 120-second
+external verifier deadline. .NET SDK was `10.0.303`, Node `v24.13.0`, and Python
+`3.13.14` on native Windows. Grading remains native-local, outside an OS sandbox.
+
+The flat Release CLI and Host from the preceding verified `build.bat` were used.
+Host execution authority runs in process; there is no Broker executable. The
+checkout is `1f383ab0`; binaries were built from the changes before that commit,
+so the Host's embedded version still names base revision `4d925e4d`. The manifest
+retains executable and eleven assembly SHA-256 fingerprints. A separate Host
+used a free loopback port and fresh TEMP data/log roots; only non-secret provider
+settings and catalog data were copied in. Credentials were read through the
+existing Windows Credential Manager. The user's normal data root was not
+migrated or modified by this run.
+
+Artifacts are under ignored `artifacts/ru-live-post-refactor-20261010`:
+`manifest.json`, `report.json`, `analysis.json`, public tool-payload analysis,
+terminal-state evidence, per-task trajectories, verifier results and patches.
+The local driver `artifacts/run-live-20261010.py` invokes the existing
+`benchmark.run_live` one task at a time and checkpoints the aggregate report.
+Two setup probes failed before any scored run (legacy settings had no SQLite
+business table; a doubled URL separator prevented readiness). Both were fixed
+in this local driver. No product or benchmark-runner source changed.
+
+Wall time was **41.00 minutes**, summed agent time **40.77 minutes**. Strict
+reward was **0/9**, Terminal **0/6** and SWE **0/3**. Three runs reported
+`completed`, but all three left source unchanged and failed the verifier. Six
+stopped for approval and were cancelled; persisted final states confirm all
+nine runs are terminal (three completed, six cancelled). Only one candidate
+changed source, and none passed every verifier group. Partial passes on
+unchanged starters are not improvements. All event trajectories caught up to
+the authoritative cursor. Token totals and actual billing remain unknown.
+
+| Task | Agent minutes | Stop | Candidate groups passed | Source changed |
+| --- | ---: | --- | ---: | --- |
+| `cs-atomic-ledger` | 0.17 | External directory approval (`list /`) | 0/7 | No |
+| `cs-single-flight-cache` | 6.66 | Completed without patch | 5/8 | No |
+| `py-dependency-scheduler` | 0.22 | External directory approval (`/workspace/...`) | 3/6 | No |
+| `py-stream-parser` | 4.58 | Completed without patch | 2/6 | No |
+| `ts-generation-pager` | 14.76 | Unknown executable approval (`node`) | 3/6 | `src/pager.ts` |
+| `ts-transaction-store` | 7.97 | Completed without patch | 4/7 | No |
+| `cs-lease-renewal` | 2.52 | Unknown executable approval (`cat`) | 2/7 | No |
+| `py-migration-rollback` | 2.79 | Terminal external-mutation approval | 2/6 | No |
+| `ts-session-replay` | 1.10 | Unknown executable approval | 2/7 | No |
+
+Observed failures include invented Linux paths, attempts to read directories
+as files, create-only writes to existing files (`file_exists`), mismatched edit
+text (`edit_no_match`), and missing required tool arguments (`malformed_call`).
+Pager eventually used a valid overwrite, but its patch still failed shared
+promise identity, stale-generation isolation and refresh behavior. Its terminal
+call redundantly put `node` in the argument list as well as the executable.
+Cache and parser returned long public final text (33,203 and 32,715 characters)
+without edits. Their exact provider finish reasons were not retained in the
+public final-text payload, so output truncation is a hypothesis, not an isolated
+cause. Source inspection separately shows the Coordinator routes a non-empty
+text-only step to final handling without distinguishing `Length`; this warrants
+a focused regression before changing completion behavior.
+
+These results identify model/tool-use, unattended approval and completion
+problems under this selection. They do not prove a regression from Step 5:
+that pilot used another provider/model and older runtime. One attempt per public
+custom task cannot establish general coding quality or parity with other agents.
+Crash-orphan sandbox cleanup and interactive native GUI/TUI acceptance remain
+open. Both the trial Host and evidence-replay Host shut down cleanly.
+Automatic approval review rejected deletion of the three owned trial TEMP
+directories (`blocked by policy`); those data/log directories remain locally.
+The documentation/count guards passed **19 tests** and `git diff --check`
+passed after this evidence update. The full .NET/Python matrix and Release
+build were not repeated for this documentation-only change; their preceding
+results remain recorded below.
+
+## Sandbox lifecycle and client simplification (2026-10-10)
+
+Session close, directory-grant revocation and async Host shutdown cancel and drain
+terminal pumps before sandbox release. Closing a foreign run leaves its lease
+and execution untouched. Disposed authority/runtime instances reject new work.
+Recreated sandbox entries use fresh profile names/SIDs; failed extensions roll
+back new grants, and failed creation removes its temporary directory. Crash
+orphan profiles/ACEs still need eventual cleanup, but are not revived by a new
+entry. A failed drain remains blocked and can be retried.
+
+WinUI and CLI share the event-feed reconnect loop and durable cursor handling.
+Callback failures propagate instead of being retried as transport failures.
+CLI parking retains durable text recovery and leaves the server run available
+for Continue. Preset and durable provider calling-mode conversions use shared
+codecs. Managed Git preserves sandbox start failures through its readers;
+workspace discovery uses the current checkout marker instead of retired `src`.
+
+The final full invocation passed all **5,837** tests:
+
+| Project | Passed |
+| --- | ---: |
+| Broker | 928 |
+| CLI | 1,279 |
+| Client | 211 |
+| Harness Core | 468 |
+| Harness Persistence | 176 |
+| Hosting | 39 |
+| Protocol | 86 |
+| Runtime Adapters | 195 |
+| Runtime Worker | 69 |
+| Session Interchange | 43 |
+| Backend | 1,040 |
+| GUI | 1,303 |
+| Total | 5,837 |
+
+`artifacts/simplification-full-dotnet.log` retains the first invocation:
+Broker **927 passed**, then CLI **1 failed / 1,278 passed** because cancellation
+ended the newly shared subscription before parked-run payload recovery.
+The fix preserves the existing assertion; seven focused park/resume checks and
+`artifacts/simplification-full-dotnet-final.log` passed. Focused RED experiments
+and corrected fixture failures remain in `artifacts/simplification-*.log`.
+The final GUI compile has neither the prior nullable highlighter warning nor
+the filtered `Assert.Single` analyzer warning.
+
+The first Python run was **1 failed / 210 passed / 1 skipped**: a partial docs
+update changed the README count before the verification table, because the
+update script used the Windows default text encoding. The UTF-8 update now
+keeps both counts aligned; `artifacts/simplification-pytest-final.log` records
+**211 passed / 1 skipped**, including route, tool, docs and benchmark guards.
+
+Commands:
+
+```powershell
+.\scripts\test_dotnet.ps1 -Configuration Debug
+.venv\Scripts\python.exe -m pytest tests -q
+.\build.bat
+.\scripts\publish_smoke.ps1
+```
+
+Release packaging passed **11/11 stages**. Both the standalone publish smoke
+and the flat distributable smoke passed authenticated `/status` and clean
+`/host/shutdown`, using isolated temporary data/log roots and synthetic bearer
+authority. The flat smoke used a retained local copy of the canonical smoke
+script with publishing replaced by the existing flat output; it is validation
+evidence, not an additional production launch path. Logs:
+`artifacts/simplification-release-build.log`,
+`artifacts/simplification-publish-smoke.log`,
+`artifacts/simplification-flat-smoke.log`.
+
+Real-provider task quality and interactive native UI acceptance are separate
+and were not exercised by the deterministic matrices.
 
 ## SQLite business-persistence consolidation (2026-10-09)
 
@@ -98,6 +361,124 @@ GUI dependency graphs contain neither `DocumentFormat.OpenXml` nor its framework
 package. Documentation/count/link guards passed **19 tests**; `git diff --check`
 passed for the affected files. The full 12-project matrix, publishing and native
 picker/clipboard interaction were not run for this scoped removal.
+
+## Step 5 Preview Free coding pilot (2026-10-09)
+
+The live pilot uses `models.dev:kilo`, `stepfun/step-5-preview-free` and
+`chat_completions`, with default reasoning, a 1,000,000-token catalog context
+and Ru's effective 8,192-token output cap per model step. Each custom task gets
+one fresh Git workspace/session, the `standard` preset, explicit Workspace
+Trust, a 1,800-second agent deadline and a 120-second verifier deadline. The
+runner never approves tool requests or continues parked runs. This is native
+Windows execution of the custom public corpus, not an official benchmark score
+or an OS sandbox.
+
+CLI and Host Debug builds passed with zero warnings/errors. Live
+attempts used the fresh Debug CLI, whose automatic Host discovery selected the
+existing published Release Host/Broker. The manifest records those actual
+runtime binaries separately from the Debug compilation check; checkout HEAD
+must not be interpreted as their build revision. All trials keep this runtime
+selection. The Host reports `1.0.0+eb3a00fd5843c28bb66374337b8fe8fe46864f4e`;
+the backend commit between that revision and checkout `2e0ca685` only retires
+Worker class/namespace names.
+
+The first nine
+attempts were invalid: the adapter cancelled `waiting_history_user` before
+provider execution. A minimal live probe progressed automatically through that
+state and completed with the requested model. The adapter now polls automatic
+history persistence within the original deadline; a regression failed before
+the fix, and the focused benchmark/RPC/process suite passed **30 tests** after
+it. Tests retain cancellation for approval, user-input, reconciliation,
+unknown-state and timeout outcomes, including a stalled history write.
+The full Python suite passed **211 tests with one skip**; the .NET matrix and
+release distribution were not rerun for this Python-only adapter correction.
+
+Ignored local artifacts are under
+`artifacts/ru-step5-preview-free-20261009-run1` (excluded pilot and diagnostic)
+and `artifacts/ru-step5-preview-free-20261009-run2` (corrected runner). The latter
+manifest records checkout/binary/runner fingerprints and run conditions;
+per-task reports retain safe trajectories, fixture fingerprints, patches and
+external grader results. Kilo's public gateway catalog advertised zero input
+and output prices for this exact free model at preflight. Actual billing and
+unreported token usage remain unknown.
+
+All nine corrected trials finished in **60.99 minutes wall time** (60.82
+minutes summed agent time). Strict reward and unattended completion were both
+**0/9**: Terminal-style **0/6**, SWE-style **0/3**. Four runs failed with
+`empty_model_reply`, three stopped for tool approval and two parked after
+`provider_rate_limited`. Every trajectory caught up to its authoritative event
+cursor, but none reported token totals. The empty-reply cause was not isolated.
+
+| Task | Agent minutes | Stop | Candidate grading |
+| --- | ---: | --- | --- |
+| `cs-atomic-ledger` | 4.85 | Empty model reply | 0/7 groups; no source change |
+| `cs-single-flight-cache` | 4.96 | Empty model reply | 5/8 groups; no source change |
+| `py-dependency-scheduler` | 6.10 | Empty model reply | 3/6 groups; no source change |
+| `py-stream-parser` | 8.19 | Terminal external-mutation approval | **6/6 groups, 152 checks passed** |
+| `ts-generation-pager` | 5.04 | Empty model reply | 2/6 groups; no source change |
+| `ts-transaction-store` | 3.36 | Unknown executable approval | 4/7 groups; no source change |
+| `cs-lease-renewal` | 20.50 | Provider rate limit | Invalid: changed immutable project file |
+| `py-migration-rollback` | 6.71 | Terminal external-mutation approval | Invalid: extra root verification script |
+| `ts-session-replay` | 1.10 | Provider rate limit | 2/7 groups; no source change |
+
+Only **1/9 admitted candidates** passed the complete verifier; its unfinished
+run still receives reward zero. Partial passing groups on unchanged starters
+are not agent improvements. Two separate diagnostic `grade-patch` runs applied
+only exported source changes to fresh SWE baselines, excluding forbidden files:
+Python migration passed all four regression and two preservation groups; C#
+lease passed four of five regression and both preservation groups, but still
+failed expiry/takeover and rejection of old mutations. These diagnostics do not
+repair the original submissions or change their rewards. The local `summary.md`
+and `analysis.json` retain this distinction alongside the original `report.json`.
+
+This pilot exposes provider/harness reliability, approval and instruction-scope
+failures under these exact conditions. It does not establish a pure algorithmic
+solve rate or a ranking against other coding agents.
+
+## Small C# task and explicit free-model switch (2026-10-09)
+
+A separate diagnostic reduces the task to one shipping-threshold bug in a
+fresh, tiny .NET 10 repository. Its existing console verifier checks below,
+exactly at and above the threshold, an empty order and a negative subtotal.
+Only `src/Shipping.cs` may change; the baseline fails the exact-threshold check.
+This is a smoke task, not another scored Terminal/SWE corpus attempt.
+
+The initial `models.dev:kilo` / `stepfun/step-5-preview-free` attempt parked
+with `provider_rate_limited` after **56.09 seconds**, before any tool calls.
+At the owner's request, the atomic settings picker then explicitly selected
+`models.dev:openrouter` / `nvidia/nemotron-3.5-lightning:free` and read back the
+persisted selection. Both Ru's catalog and OpenRouter's public model API
+listed the selected model; the latter advertised tool support and zero input
+and output prices. This is an explicit configuration change, not a runtime
+fallback. Default reasoning and the `standard` preset remain in use.
+
+The first fresh Nemotron attempt ended with Ru status `completed` after
+**71.45 seconds**, but failed task acceptance: it made three successful `list`
+calls, never read source content, edited no file and ran no test command.
+Client-visible final text contained malformed tool markup. The independent
+post-run verifier still failed the exact-threshold check; immutable files and
+Git status were unchanged. A completed run is not evidence of a solved task.
+
+A second fresh attempt with the same model and prompt stopped after
+**160.84 seconds** at `waiting_approval` /
+`terminal_external_mutation_requires_approval`. It corrected an empty-path
+`list` call after `malformed_call`, successfully read both source and tests,
+then proposed the exact required `dotnet run --project
+tests/Shipping.Tests.csproj` command with no network intent. The Broker required
+approval before dispatch; the runner cancelled the parked run without granting
+permission. No source changed, and the independent verifier still failed.
+Neither Nemotron attempt encountered a provider rate limit, but unattended
+task acceptance is **0/2**. These two runs do not isolate the cause of the first
+attempt's malformed final text or establish a model-quality comparison.
+
+Unlike the earlier nine-task pilot, this diagnostic explicitly pins the Debug
+Host and Broker through `RU_AGENT_HOST_EXE` and `RU_AGENT_BROKER_EXE`, with the
+Debug CLI. The Broker Debug build passed with zero warnings/errors. Ignored
+artifacts under `artifacts/ru-small-csharp-20261009` retain the failing baseline,
+selection evidence, binary hashes, per-attempt metadata and verifier results.
+Native UI behavior, actual billing and larger-task quality remain unmeasured.
+The focused documentation/count guards passed **13 tests**. No product source
+changed for this selection and diagnostic; the full .NET matrix was not rerun.
 
 ## Welcome trim, light meteor retirement and terminal mark (2026-10-09)
 
@@ -953,7 +1334,7 @@ retirement changes:
 | Runtime-boundary scan | `865` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
 | Historical backend deterministic Harness | `contract` / `passed`; owned cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
-| Release build | `build.bat` `13/13`; GUI and managed Worker published |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
 
 Managed startup is now unconditional. The legacy runtime setting, parser, and
 special retirement error were removed in the first legacy cleanup wave.
@@ -993,7 +1374,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 
 | Gate | Result |
 | --- | --- |
-| Python suite | `504 passed` |
+| Python suite | **211 passed, 1 skipped** (2026-10-11, terminal OS sandbox retirement), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/remove-sandbox-pytest-final.log`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
 | Ruff | passed |
 | Mypy | passed (`50` source files) |
 | Dependency check | `pip check` passed |
@@ -1004,7 +1385,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 | Historical backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
-| Release build | `build.bat` `13/13`; GUI, managed Worker/Core, Broker, and backend published |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
 | `git diff --check` | passed |
 
 The retired selector and no-op live diagnostic were subsequently hard-deleted.

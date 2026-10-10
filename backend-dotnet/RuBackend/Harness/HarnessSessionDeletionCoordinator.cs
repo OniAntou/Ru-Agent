@@ -24,14 +24,14 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
     private readonly IHarnessSessionArtifactStore _artifacts;
     private readonly ISessionStore _sessions;
     private readonly TimeProvider _clock;
-    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly IAgentRuntimeRunCleanup? _runCleanup;
 
     public HarnessSessionDeletionCoordinator(
         IHarnessSessionArtifactStore artifacts,
         ISessionStore sessions,
         TimeProvider clock,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        Broker.IToolGatewayFactory? brokerGateways = null,
         IAgentRuntimeRunCleanup? runCleanup = null)
     {
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
@@ -45,10 +45,16 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         string sessionId,
         CancellationToken cancellationToken)
     {
-        if (_brokerGateways is not null
-            && !await _brokerGateways.RevokeSessionGrantsAsync(sessionId, cancellationToken).ConfigureAwait(false))
+        if (_brokerGateways is not null)
         {
-            throw new HarnessStoreException("broker_revoke_rejected");
+            if (!await _brokerGateways.RevokeSessionGrantsAsync(sessionId, cancellationToken).ConfigureAwait(false))
+            {
+                throw new HarnessStoreException("broker_revoke_rejected");
+            }
+
+            // Grants alone are not enough: the session close removes the
+            // authority's run leases and clears its tasks, approvals and output.
+            await _brokerGateways.CloseSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         }
 
         // The tombstone must land before any artifact row is removed: a create

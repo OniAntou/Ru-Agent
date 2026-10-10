@@ -234,6 +234,9 @@ public sealed class PolicySnapshotEvaluator
     private static bool IsPlanPreset(BoundPolicySnapshot snapshot) =>
         string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal);
 
+    private static bool IsStandardPreset(BoundPolicySnapshot snapshot) =>
+        string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal);
+
     private static bool IsPlanGatedCall(PolicyContext context) =>
         string.Equals(context.OperationClass, PolicyOperationClasses.Write, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Edit, StringComparison.Ordinal)

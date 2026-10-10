@@ -265,7 +265,8 @@ namespace RuApp.Views
                     summary,
                     terminalCommand,
                     AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary),
-                    AgentApprovalPresentation.CanRememberAllowAlways(controller.PendingApprovalSummary));
+                    AgentApprovalPresentation.CanRememberAllowAlways(controller.PendingApprovalSummary),
+                    AgentApprovalPresentation.CanRememberForSession(controller.PendingApprovalSummary));
 
                 // Approval arrives via SSE while the user may be scrolled up; bring
                 // the Approve/Deny prompt into view and put the keyboard on it. The
@@ -1441,7 +1442,7 @@ namespace RuApp.Views
             var dialog = new ContentDialog
             {
                 Title = "Allow Full Access for this session?",
-                Content = "Full Access runs terminal commands as the current Windows user and may read or write data outside the workspace, including network resources. Process timeout, output, and cancellation controls still apply; Full Access is not a network or path sandbox.",
+                Content = "Full Access skips terminal approval prompts. Commands run as the current Windows user and may read or write outside the workspace or use the network. Process timeout, output, and cancellation controls still apply.",
                 PrimaryButtonText = "Allow",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,

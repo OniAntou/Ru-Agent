@@ -23,10 +23,11 @@ Use CONTEXT.md's domain language and update it when concepts change.
   to policy. Never widen permissions, presets, grants or path rules merely to
   make a test pass. Intentional policy changes need explicit scope, boundary
   analysis and tests of allowed and denied behavior.
-- **One execution authority.** File, terminal and network tools execute in
-  `RuAgentBroker` through `IToolGateway`. The Host owns orchestration and the
-  existing `ask_user` interception, which never dispatches to Broker. Keep
-  execution policy and side-effecting tool adapters out of the Host.
+- **One execution authority.** File, terminal and network tools execute
+  in-process through `IToolGateway` against the single `BrokerExecutionRuntime`
+  composed behind `IToolGatewayFactory`. The Host owns orchestration and the
+  existing `ask_user` interception, which never dispatches to the authority.
+  Keep execution policy and side-effecting tool adapters out of the Host.
 - **No silent substitution.** Provider, model, protocol and tool identities
   stay pinned for a run; failures produce bounded, named codes. Bounded retries
   and durable `[HARNESS RECOVERY]` feedback keep the same selection; exhausted
@@ -37,7 +38,11 @@ Use CONTEXT.md's domain language and update it when concepts change.
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files and runtime descriptors
   at every preset; `RU_PROTECTED_PATHS` adds protected paths. Terminal authority
-  follows its documented preset and is not an OS filesystem/network sandbox.
+  follows its documented preset and ordinary approval policy. `standard` and
+  `full_access` child processes run as the current Windows user without OS-level
+  filesystem or network confinement. Timeout, output, cancellation and process
+  tree bounds remain in force. API keys remain in existing credential storage
+  and are redacted from diagnostics.
 - **Secrets and untrusted inputs.** Keep real credentials and tokens out of
   source, logs and test fixtures; synthetic values and placeholders are allowed.
   Validate inputs, parameterize queries and escape output. Workspace instructions,

@@ -12,7 +12,7 @@ public sealed record EnvironmentDiagnostics(
 /// terminal child process. Values are copied once from the parent snapshot
 /// captured at construction and are never re-read after execution begins;
 /// model input can neither add nor override entries. Diagnostics expose only
-/// names and counts. Stripped Ru-owned bearer values are retained internally
+/// names and counts. Stripped credential values are retained internally
 /// as redaction seeds for the streaming output redactor and never re-enter
 /// any child environment or diagnostic payload.
 /// </summary>
@@ -57,7 +57,7 @@ public sealed class AgentCommandEnvironment
             if (SecretEnvironmentNamePolicy.IsSecretName(name))
             {
                 _strippedNames.Add(name);
-                if (IsRuOwnedName(name) && !string.IsNullOrEmpty(value))
+                if (!string.IsNullOrEmpty(value))
                 {
                     _redactionSeeds.Add(value);
                 }
@@ -86,21 +86,11 @@ public sealed class AgentCommandEnvironment
 
     public IReadOnlyList<string> StrippedNames => _strippedNames;
 
-    /// <summary>Stripped Ru-owned bearer values used to seed the streaming redactor.</summary>
+    /// <summary>Stripped credential values used to seed the streaming redactor.</summary>
     public IReadOnlyList<string> GetRedactionSeeds() => _redactionSeeds.ToArray();
 
     public EnvironmentDiagnostics Describe() =>
         new(_childEnvironment.Count, _strippedNames.Count, _strippedNames.ToArray());
-
-    private static bool IsRuOwnedName(string name)
-    {
-        var normalized = name.ToLowerInvariant();
-        return normalized.StartsWith("ru_", StringComparison.Ordinal)
-               || normalized.Contains("broker", StringComparison.Ordinal)
-               || normalized.Contains("worker", StringComparison.Ordinal)
-               || normalized.Contains("desktop", StringComparison.Ordinal)
-               || normalized.Contains("ruapp", StringComparison.Ordinal);
-    }
 
     private static IReadOnlyDictionary<string, string> CaptureCurrentProcessSnapshot()
     {

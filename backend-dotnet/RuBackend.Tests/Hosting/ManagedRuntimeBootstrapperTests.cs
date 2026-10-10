@@ -19,7 +19,7 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
     }
 
     [Fact]
-    public async Task SameDataRootOnAnotherPortFailsClosedBeforeTheBrokerOrDescriptor()
+    public async Task SameDataRootOnAnotherPortFailsClosedBeforeTheDescriptor()
     {
         var (thread, release) = HoldLockOnWorkerThread(() => PublicHostSingleInstance.AcquireForDataRoot(_root));
         try
@@ -49,7 +49,7 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
     }
 
     [Fact]
-    public async Task SameLogRootOnAnotherDataRootFailsClosedBeforeTheBrokerOrDescriptor()
+    public async Task SameLogRootOnAnotherDataRootFailsClosedBeforeTheDescriptor()
     {
         var logRoot = Path.Combine(_root, "logs");
         var firstDataRoot = Path.Combine(_root, "data-a");
@@ -80,6 +80,59 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
         {
             release.Set();
             thread.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task StartPublishesTheDescriptorWithoutStartingABrokerChild()
+    {
+        var dataRoot = Path.Combine(_root, "data");
+        var logRoot = Path.Combine(_root, "logs");
+        var port = FindFreePort();
+        var previousToken = Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
+        var previousLogRoot = Environment.GetEnvironmentVariable("RU_LOG_ROOT");
+        var previousDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
+        var previousWebEnabled = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED");
+        var previousWebEndpoint = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT");
+        var previousWebRequireApproval = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL");
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["RU_DATA_ROOT"] = dataRoot,
+                    ["RU_LOG_ROOT"] = logRoot,
+                    ["urls"] = $"http://127.0.0.1:{port}",
+                })
+                .Build();
+
+            var bootstrap = await ManagedRuntimeBootstrapper.StartAsync(configuration, _root);
+            try
+            {
+                Assert.NotNull(bootstrap.PublicBearer);
+                Assert.True(File.Exists(Path.Combine(dataRoot, "runtime_descriptor.json")));
+
+                // The child topology is gone: the bootstrap publishes only the
+                // Host descriptor, never a broker descriptor, and creates no
+                // Broker session state of its own.
+                Assert.False(File.Exists(Path.Combine(logRoot, "agent", "session", "broker.json")));
+                Assert.False(Directory.Exists(Path.Combine(logRoot, "agent", "session")));
+                Assert.Equal(previousDescriptor, Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR"));
+            }
+            finally
+            {
+                bootstrap.DescriptorWriter.Cleanup();
+                bootstrap.SingleInstance.Dispose();
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_DESKTOP_TOKEN", previousToken);
+            Environment.SetEnvironmentVariable("RU_LOG_ROOT", previousLogRoot);
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR", previousDescriptor);
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", previousWebEnabled);
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", previousWebEndpoint);
+            Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", previousWebRequireApproval);
         }
     }
 

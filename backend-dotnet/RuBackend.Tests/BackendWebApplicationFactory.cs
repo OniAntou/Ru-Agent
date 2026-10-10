@@ -1,8 +1,5 @@
-extern alias Broker;
-
 using System.Net.Http.Headers;
 using System.Net;
-using System.Net.Sockets;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -13,7 +10,6 @@ using RuBackend.Business.Settings;
 using RuBackend.Diagnostics;
 using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
-using BrokerHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 
 namespace RuBackend.Tests;
 
@@ -24,12 +20,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ICredentialStore? _credentialStore;
     private readonly ISettingsStore? _settingsStore;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
-    private readonly bool _withInProcessBroker;
     private readonly HttpMessageHandler? _providerHandler;
-    private readonly string? _sharedBrokerDescriptorPath;
-    private BrokerHostHost? _brokerHost;
-    private string? _brokerDescriptorPath;
-    private string? _brokerRoot;
 
     public BackendWebApplicationFactory(
         DataPaths? dataPaths = null,
@@ -37,9 +28,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ISettingsStore? settingsStore = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
-        bool withInProcessBroker = false,
-        HttpMessageHandler? providerHandler = null,
-        string? sharedBrokerDescriptorPath = null)
+        HttpMessageHandler? providerHandler = null)
     {
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
@@ -49,16 +38,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _settingsStore = settingsStore;
         _diagnosticEmitter = diagnosticEmitter;
         ModelStepRunnerOverride = modelStepRunner;
-        _withInProcessBroker = withInProcessBroker;
         _providerHandler = providerHandler;
-        _sharedBrokerDescriptorPath = sharedBrokerDescriptorPath;
-        if (_withInProcessBroker && _sharedBrokerDescriptorPath is null)
-        {
-            // The Broker host builds its own generic host; starting it inside
-            // ConfigureWebHost would recurse through the hosting startup
-            // pipeline, so it must live before the test server is built.
-            StartInProcessBroker();
-        }
     }
 
     internal RuAgent.Harness.Core.IModelStepRunner? ModelStepRunnerOverride { get; }
@@ -119,76 +99,15 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_diagnosticEmitter);
             }
 
-            if (_withInProcessBroker)
-            {
-                services.RemoveAll<RuBackend.Harness.Broker.BrokerToolGatewayFactory>();
-                services.AddSingleton(_ =>
-                    new RuBackend.Harness.Broker.BrokerToolGatewayFactory(_sharedBrokerDescriptorPath ?? _brokerDescriptorPath));
-            }
-
+            // The execution authority is the production in-process one
+            // (InProcessExecutionAuthority + InProcessToolGatewayFactory);
+            // no test seam replaces it.
         });
-    }
-
-    private void StartInProcessBroker()
-    {
-        var root = Path.Combine(
-            Path.GetTempPath(),
-            "ru-backend-broker-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        var sessionRoot = Path.Combine(root, "broker-session");
-        Directory.CreateDirectory(sessionRoot);
-        _brokerRoot = root;
-        _brokerDescriptorPath = Path.Combine(sessionRoot, "broker.json");
-        var descriptor = new RuAgent.Protocol.BrokerSessionDescriptor(
-            "http://127.0.0.1:" + GetFreePort(),
-            "broker-test-" + Guid.NewGuid().ToString("N"),
-            1,
-            sessionRoot,
-            DateTimeOffset.UtcNow.AddHours(2));
-        File.WriteAllText(
-            _brokerDescriptorPath,
-            System.Text.Json.JsonSerializer.Serialize(
-                descriptor,
-                RuAgent.Protocol.BrokerSessionDescriptor.JsonOptions));
-        _brokerHost = BrokerHostHost.StartAsync(_brokerDescriptorPath)
-            .GetAwaiter()
-            .GetResult();
-    }
-
-    private static int GetFreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing && _brokerHost is not null)
-        {
-            try
-            {
-                _brokerHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        _brokerHost = null;
-        if (disposing && _brokerRoot is not null)
-        {
-            try
-            {
-                Directory.Delete(_brokerRoot, recursive: true);
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        _brokerRoot = null;
         if (!disposing || _ownedDataRoot is null)
         {
             return;

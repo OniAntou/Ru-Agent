@@ -1,3 +1,5 @@
+using System.Threading;
+using System.Threading.Tasks;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using Xunit;
@@ -67,7 +69,16 @@ public sealed class BackgroundTaskRegistryTests
     {
         var registry = new BackgroundTaskRegistry();
         Assert.True(registry.TryStart("session", "t1", 1, enforceCap: true, isBackground: true, out var token));
-        await Task.Delay(100);
+        // The 1 ms lifetime timer is a thread-pool callback; under a loaded
+        // suite it can land later than a fixed delay (this flaked twice). Poll
+        // to a bounded deadline instead: cancellation still must happen, only
+        // the wait is no longer an assumption about scheduler latency.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (!token.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+        }
+
         Assert.True(token.IsCancellationRequested);
 
         registry.Complete("session", "t1", ToolResultStatuses.Cancelled, null, string.Empty);
@@ -101,5 +112,90 @@ public sealed class BackgroundTaskRegistryTests
 
         Assert.False(registry.TryRead("session", "task-0", out _));
         Assert.True(registry.TryRead("session", $"task-{total - 1}", out _));
+    }
+
+    [Fact]
+    public void CancelSession_cancels_only_running_tasks_in_that_session()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session-a", "running-a1", 60_000, true, true, out var first));
+        Assert.True(registry.TryStart("session-a", "running-a2", 60_000, true, true, out var second));
+        Assert.True(registry.TryStart("session-a", "completed-a", 60_000, true, true, out var completed));
+        Assert.True(registry.TryStart("session-b", "running-b", 60_000, true, true, out var otherSession));
+        registry.Complete("session-a", "completed-a", ToolResultStatuses.Succeeded, 0, "done");
+
+        registry.CancelSession("session-a");
+
+        Assert.True(first.IsCancellationRequested);
+        Assert.True(second.IsCancellationRequested);
+        Assert.False(otherSession.IsCancellationRequested);
+        Assert.False(completed.IsCancellationRequested);
+        Assert.True(registry.TryRead("session-a", "completed-a", out var retained));
+        Assert.Equal(BackgroundTaskState.Exited, retained.State);
+        Assert.True(registry.TryRead("session-b", "running-b", out var untouched));
+        Assert.Equal(BackgroundTaskState.Running, untouched.State);
+    }
+
+    [Fact]
+    public void RemoveSession_cancels_running_tasks_and_drops_all_entries_without_mutating_other_sessions()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session-a", "running-a", 60_000, true, true, out var removedToken));
+        Assert.True(registry.TryStart("session-a", "completed-a", 60_000, true, true, out _));
+        registry.Complete("session-a", "completed-a", ToolResultStatuses.Succeeded, 0, "done");
+        Assert.True(registry.TryStart("session-b", "running-b", 60_000, true, true, out var otherSessionToken));
+        Assert.True(registry.TryStart("session-b", "completed-b", 60_000, true, true, out _));
+        registry.Complete("session-b", "completed-b", ToolResultStatuses.Succeeded, 0, "keep");
+
+        registry.RemoveSession("session-a");
+
+        Assert.True(removedToken.IsCancellationRequested);
+        Assert.False(registry.TryRead("session-a", "running-a", out _));
+        Assert.False(registry.TryRead("session-a", "completed-a", out _));
+        Assert.False(otherSessionToken.IsCancellationRequested);
+        Assert.True(registry.TryRead("session-b", "running-b", out var running));
+        Assert.Equal(BackgroundTaskState.Running, running.State);
+        Assert.True(registry.TryRead("session-b", "completed-b", out var completed));
+        Assert.Equal("keep", completed.Text);
+    }
+
+    [Fact]
+    public void CancelAll_cancels_running_tasks_in_every_session()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session-a", "running-a", 60_000, true, true, out var first));
+        Assert.True(registry.TryStart("session-b", "running-b", 60_000, true, true, out var second));
+
+        registry.CancelAll();
+
+        Assert.True(first.IsCancellationRequested);
+        Assert.True(second.IsCancellationRequested);
+        Assert.True(registry.TryRead("session-a", "running-a", out var retainedA));
+        Assert.Equal(BackgroundTaskState.Running, retainedA.State);
+        Assert.True(registry.TryRead("session-b", "running-b", out var retainedB));
+        Assert.Equal(BackgroundTaskState.Running, retainedB.State);
+    }
+
+    [Fact]
+    public void CancelSession_invokes_callbacks_outside_the_registry_lock()
+    {
+        var registry = new BackgroundTaskRegistry();
+        Assert.True(registry.TryStart("session", "task", 60_000, true, true, out var token));
+        using var callbackCompleted = new ManualResetEventSlim();
+        var callbackWaitTimedOut = false;
+        using var registration = token.Register(() =>
+        {
+            _ = Task.Run(() =>
+            {
+                registry.TryRead("session", "task", out _);
+                callbackCompleted.Set();
+            });
+
+            callbackWaitTimedOut = !callbackCompleted.Wait(TimeSpan.FromSeconds(2));
+        });
+
+        registry.CancelSession("session");
+
+        Assert.False(callbackWaitTimedOut);
     }
 }

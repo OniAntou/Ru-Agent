@@ -26,8 +26,8 @@ public sealed class SuspendedProcessTests : IDisposable
         using (read)
         using (write)
         {
-            var factory = typeof(SuspendedProcess).GetMethod(
-                "CreateHandleListAttribute", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var factory = typeof(SuspendedProcess).Assembly.GetType("RuAgent.Protocol.ProcessAttributeList")!
+                .GetMethod("Create", BindingFlags.Static | BindingFlags.Public)!;
             var attribute = factory.Invoke(null, [new[] { write }])!;
             try
             {
@@ -43,15 +43,12 @@ public sealed class SuspendedProcessTests : IDisposable
             finally
             {
                 if (attribute is IDisposable owner) owner.Dispose();
-                else if (attribute is IntPtr oldPointer)
-                {
-                    typeof(SuspendedProcess).GetMethod("DeleteProcThreadAttributeList", BindingFlags.Static | BindingFlags.NonPublic)!
-                        .Invoke(null, [oldPointer]);
-                    Marshal.FreeHGlobal(oldPointer);
-                }
             }
         }
     }
+
+    private static IntPtr ReadPointer(object attribute, string property) =>
+        (IntPtr)attribute.GetType().GetProperty(property)!.GetValue(attribute)!;
 
     public void Dispose()
     {

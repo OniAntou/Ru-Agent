@@ -1,12 +1,23 @@
 ---
-status: accepted
+status: superseded-in-part
 date: 2026-08-29
 current_extension: ADR-0011 model autonomy and workspace trust boundary
   (`0011-model-autonomy-and-workspace-trust-boundary.md`, accepted
   2026-09-24).
+superseded_by: ADR-0014 in-process execution and terminal sandbox
+  (`0014-in-process-execution-and-terminal-sandbox.md`, accepted 2026-10-10),
+  for the Broker child process, its WebSocket lease and `RuAgentBroker.exe`;
+  the single-execution-authority invariant remains in force.
 ---
 
 # RuAgentBroker is the single tool execution authority
+
+> Superseded in part by [ADR 0014](0014-in-process-execution-and-terminal-sandbox.md)
+> on 2026-10-10: the Broker child process, its authenticated WebSocket lease
+> and `RuAgentBroker.exe` were retired when tool execution moved into the Host
+> process; the single-execution-authority invariant this ADR established — one
+> code path behind `IToolGateway` — remains in force. This file remains as
+> migration history.
 
 > Current execution profile: [ADR 0011](0011-model-autonomy-and-workspace-trust-boundary.md)
 > keeps Broker as the sole execution authority and binds its canonical profile

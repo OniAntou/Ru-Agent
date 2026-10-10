@@ -35,9 +35,8 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", Log
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
 // Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, start Broker, publish
-// descriptor. The manager uses the same log/session root and returns the final
-// values after readiness succeeds.
+// acquire single instance, generate credentials, publish descriptor. The
+// execution authority itself is composed inside DI.
 ManagedRuntimeBootstrap? bootstrap = null;
 if (isManagedRuntime)
 {
@@ -133,26 +132,43 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
     });
 }));
 
-// Hook shutdown cleanup for managed runtime: descriptor cleanup, job shutdown
+// Hook shutdown cleanup for managed runtime: authority disposal, descriptor
+// cleanup, single-instance release.
 if (isManagedRuntime)
 {
     var lifetime = app.Lifetime;
-    bootstrap!.BrokerChildManager.Exited += (_, _) =>
-    {
-        // The broker is gone, and this host owns no fallback: it stops. Say why
-        // before it does, because the alternative is an app that vanishes while the reader
-        // only sees turns failing with no explanation anywhere.
-        app.Logger.LogError(
-            "managed runtime Broker exited unexpectedly ({Reason}); stopping the host",
-            bootstrap.BrokerChildManager.LastError ?? "unknown");
-        lifetime.StopApplication();
-    };
+
+    // Resolve the authority at startup so a DI composition failure fails the
+    // managed host with a bounded code (exit 4) instead of surfacing as a tool
+    // error on the first request. The runtime itself is composed lazily.
+    var executionAuthority = ResolveExecutionAuthority(app, bootstrap!);
+
     lifetime.ApplicationStopping.Register(() =>
     {
-        try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
-        try { bootstrap.BrokerChildManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Broker dispose failed during shutdown."); }
-        try { bootstrap.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
+        try { executionAuthority.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "In-process execution authority dispose failed during shutdown."); }
+        try { bootstrap!.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
+        try { bootstrap!.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     });
+}
+
+static InProcessExecutionAuthority ResolveExecutionAuthority(WebApplication app, ManagedRuntimeBootstrap bootstrap)
+{
+    try
+    {
+        return app.Services.GetRequiredService<InProcessExecutionAuthority>();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine("{\"error_code\":\"in_process_execution_unavailable\"}");
+        app.Logger.LogError(ex, "in-process execution authority could not be composed; stopping the host");
+        try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Descriptor cleanup failed during startup failure."); }
+        try { bootstrap.SingleInstance.Dispose(); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Single-instance release failed during startup failure."); }
+        Environment.Exit(4);
+        // Environment.Exit never returns; this guard exists only because the
+        // compiler requires a terminator here (Exit is not annotated as
+        // non-returning), so it is never executed.
+        throw new UnreachableException("Environment.Exit(4) did not terminate the process.");
+    }
 }
 
 app.UseWebSockets();

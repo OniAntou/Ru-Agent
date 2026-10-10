@@ -15,8 +15,8 @@ namespace RuBackend.Tests.Harness;
 /// Exercises the replayed activity feed against a real in-process Broker.
 /// </summary>
 /// <remarks>
-/// This suite constructs <c>BackendWebApplicationFactory</c> with
-/// <c>withInProcessBroker: true</c>, so it belongs to the heavy collection: it gates
+/// This suite runs the production in-process execution authority through
+/// <c>BackendWebApplicationFactory</c>, so it belongs to the heavy collection: it gates
 /// on the same ports, process handles and CPU as the other heavy suites, and running
 /// it beside them starved the wall-clock deadlines its replay assertions wait on. The
 /// symptom was a replayed task list that arrived as zero rows in a full-assembly run
@@ -181,8 +181,7 @@ public sealed class AgentRunActivitiesTests
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
             dataPaths: tmp.DataPaths,
-            modelStepRunner: new ScriptedStepRunner(steps),
-            withInProcessBroker: true);
+            modelStepRunner: new ScriptedStepRunner(steps));
         using var client = factory.CreateAuthenticatedClient();
 
         var session = await CreateSessionAsync(client);
@@ -253,8 +252,7 @@ public sealed class AgentRunActivitiesTests
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
             dataPaths: tmp.DataPaths,
-            modelStepRunner: new ScriptedStepRunner(steps, reasoning),
-            withInProcessBroker: true);
+            modelStepRunner: new ScriptedStepRunner(steps, reasoning));
         using var client = factory.CreateAuthenticatedClient();
 
         var session = await CreateSessionAsync(client);
@@ -314,8 +312,7 @@ public sealed class AgentRunActivitiesTests
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
             dataPaths: tmp.DataPaths,
-            modelStepRunner: new ScriptedStepRunner(steps),
-            withInProcessBroker: true);
+            modelStepRunner: new ScriptedStepRunner(steps));
         using var client = factory.CreateAuthenticatedClient();
 
         var session = await CreateSessionAsync(client);

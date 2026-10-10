@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
@@ -103,6 +102,44 @@ public sealed class WebExecutorTests
         Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
     }
 
+    /// <summary>
+    /// Ownership boundary: a web client the service creates itself is disposed
+    /// with the service, while an injected client stays owned by its caller and
+    /// keeps working after the service is disposed.
+    /// </summary>
+    [Fact]
+    public async Task Service_disposes_only_the_web_client_it_created()
+    {
+        using var fixture = SessionFixture.Create();
+
+        var handler = new TrackingHandler();
+        using var injected = new HttpClient(handler);
+        var injectedService = new ToolExecutionService(
+            fixture.Session,
+            fixture.Root,
+            webOptions: new WebOptions(true, new Uri("https://93.184.216.34/search")),
+            webHttpClient: injected);
+        Assert.Null(injectedService.OwnedWebHttpClientForTest);
+
+        injectedService.Dispose();
+
+        Assert.False(handler.Disposed);
+        using var response = await injected.GetAsync(new Uri("https://93.184.216.34/"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var ownedService = new ToolExecutionService(
+            fixture.Session,
+            fixture.Root,
+            webOptions: new WebOptions(true, new Uri("https://93.184.216.34/search")));
+        var owned = ownedService.OwnedWebHttpClientForTest;
+        Assert.NotNull(owned);
+
+        ownedService.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => owned.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://93.184.216.34/"))));
+    }
+
     private static AgentEnvelope Envelope(string requestId, string toolId, JsonObject arguments) =>
         new(1, requestId, AgentMessageTypes.ToolRequest, "web-session", null, 30_000, new JsonObject
         {
@@ -140,6 +177,23 @@ public sealed class WebExecutorTests
         }
     }
 
+    private sealed class TrackingHandler : HttpMessageHandler
+    {
+        public bool Disposed { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("ok"),
+            });
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
     private sealed class GoogleThenDuckHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -174,15 +228,9 @@ public sealed class WebExecutorTests
             Directory.CreateDirectory(root);
             var sessionRoot = Path.Combine(root, "session");
             Directory.CreateDirectory(sessionRoot);
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:18086",
-                "token",
-                1,
-                sessionRoot,
-                DateTimeOffset.UtcNow.AddMinutes(5));
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            return new SessionFixture(root, BrokerSession.Load(descriptorPath));
+            return new SessionFixture(
+                root,
+                BrokerSession.CreateForHost(sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5)));
         }
 
         public void Dispose()

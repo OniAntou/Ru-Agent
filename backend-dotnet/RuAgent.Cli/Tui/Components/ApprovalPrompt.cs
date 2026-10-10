@@ -17,10 +17,8 @@ public sealed class ApprovalPrompt
     public const string Deny = "deny";
     public const string TrustApprove = "trust_approve";
 
-    // A protected-path ask is deliberately absent from this set: it is not
-    // remembered, so a single approval cannot become standing access to a
-    // credential directory. The GUI mirrors this in
-    // AgentApprovalPresentation.OneTimeOnlyReasons.
+    // Protected-path asks are deliberately absent: remembering one could turn
+    // a single approval into standing access to a credential directory.
     private static readonly HashSet<string> RememberableAskReasons = new(StringComparer.Ordinal)
     {
         "terminal_delete_requires_approval",
@@ -93,8 +91,9 @@ public sealed class ApprovalPrompt
     /// </summary>
     public static ApprovalPrompt For(string safeSummary, bool offerDirectory = false)
     {
+        var reason = safeSummary?.Trim() ?? string.Empty;
         var directoryAllowed = string.Equals(
-            safeSummary?.Trim(),
+            reason,
             "external_directory_required",
             StringComparison.Ordinal);
         // Labels stay within SlashDropdown.LabelColumn so they are never clipped.
@@ -108,12 +107,15 @@ public sealed class ApprovalPrompt
         {
             choices.Add(new("3 · folder", "allow this folder for the session", AllowDirectory));
         }
-        else if (!directoryAllowed && RememberableAskReasons.Contains(safeSummary?.Trim() ?? string.Empty))
+        else if (!directoryAllowed && RememberableAskReasons.Contains(reason))
         {
             choices.Add(new("3 · always", "allow and remember for this project", AllowAlways));
         }
 
-        return new ApprovalPrompt(TuiText.Truncate(safeSummary, 60), choices, defaultIndex: 1);
+        return new ApprovalPrompt(
+            TuiText.Truncate(safeSummary, 60),
+            choices,
+            defaultIndex: 1);
     }
 
     /// <summary>

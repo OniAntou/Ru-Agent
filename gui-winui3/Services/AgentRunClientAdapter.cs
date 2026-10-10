@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using Microsoft.UI.Dispatching;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
@@ -117,9 +118,6 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
         => _apiClient.ContinueAsync(runId, cancellationToken);
 
 
-    private const int MaxStreamResumes = 3;
-    private static readonly TimeSpan StreamResumeDelay = TimeSpan.FromMilliseconds(500);
-
     /// <summary>
     /// Streams run events, transparently resuming from the last durable sequence
     /// when the transport breaks mid-stream (bounded retries), mirroring the CLI
@@ -139,64 +137,39 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
     {
         ArgumentNullException.ThrowIfNull(onEvent);
 
-        var cursor = afterSequence;
-        var resumes = 0;
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            AgentApiException? transportFailure = null;
-            try
-            {
-                using var sse = _sseFactory();
-                await foreach (var frame in sse.ReadEventsAsync(runId, cursor, cancellationToken).ConfigureAwait(false))
+        await AgentRunFeed.FollowAsync(
+                afterSequence,
+                (cursor, token) => ReadEventsAsync(runId, cursor, token),
+                token => IsRunTerminalAsync(runId, token),
+                (frame, token) => DispatchFrameAsync(
+                    frame,
+                    onEvent,
+                    onActivity,
+                    onSummary,
+                    onAssistantDelta,
+                    onToolOutput,
+                    token),
+                cancellationToken,
+                new AgentRunFeedOptions
                 {
-                    if (frame.DurableSequence is { } sequence && sequence > cursor)
-                    {
-                        cursor = sequence;
-                    }
-
-                    await DispatchFrameAsync(
-                            frame,
-                            onEvent,
-                            onActivity,
-                            onSummary,
-                            onAssistantDelta,
-                            onToolOutput,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is IOException or HttpRequestException or System.Net.Sockets.SocketException)
-            {
-                transportFailure = new AgentApiException(
-                    "stream_interrupted",
-                    $"event stream broke: {ex.Message}",
-                    inner: ex);
-            }
-
-            if (transportFailure is null
-                && await IsRunTerminalAsync(runId, cancellationToken).ConfigureAwait(false) != false)
-            {
-                // True: terminal. Null: the status check itself failed, so keep
-                // the historical behavior of treating a clean stream end as done
-                // rather than spinning against an unreachable backend.
-                return;
-            }
-
-            resumes++;
-            if (resumes > MaxStreamResumes)
-            {
-                throw transportFailure
-                    ?? new AgentApiException(
+                    IncludeSocketExceptions = true,
+                    TransportFailureFactory = (failure, _) => new AgentApiException(
                         "stream_interrupted",
-                        "event stream ended before the run reached a terminal state");
-            }
+                        $"event stream broke: {failure.Message}",
+                        inner: failure),
+                })
+            .ConfigureAwait(false);
+    }
 
-            await Task.Delay(StreamResumeDelay, cancellationToken).ConfigureAwait(false);
+    private async IAsyncEnumerable<SseFrame> ReadEventsAsync(
+        string runId,
+        long afterSequence,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var sse = _sseFactory();
+        await foreach (var frame in sse.ReadEventsAsync(runId, afterSequence, cancellationToken).ConfigureAwait(false))
+        {
+            yield return frame;
         }
     }
 
@@ -275,19 +248,8 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
     /// </returns>
     private async Task<bool?> IsRunTerminalAsync(string runId, CancellationToken cancellationToken)
     {
-        try
-        {
-            var run = await _apiClient.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            return run.Status is "completed" or "failed" or "cancelled" or "interrupted";
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        var run = await _apiClient.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        return run.Status is "completed" or "failed" or "cancelled" or "interrupted";
     }
 
     private async Task DispatchAsync(Func<Task> callback, CancellationToken cancellationToken)

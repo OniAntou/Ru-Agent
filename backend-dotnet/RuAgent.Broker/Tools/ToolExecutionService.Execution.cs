@@ -318,7 +318,7 @@ public sealed partial class ToolExecutionService
 
     private ToolPolicyDecision EvaluateWithOpScope(string sessionId, ToolManifest manifest, JsonObject arguments)
     {
-        var grant = new PolicyGrant(sessionId, _session.ScopesFor(sessionId), _session.Descriptor.ExpiresAt);
+        var grant = new PolicyGrant(sessionId, _session.ScopesFor(sessionId), _session.ExpiresAt);
         var decision = _policy.Evaluate(grant, manifest);
         if (!decision.Allowed)
         {
@@ -639,7 +639,9 @@ public sealed partial class ToolExecutionService
             ToolResultStatuses.Failed => new ToolExecutionOutcome(
                 ToolResultStatuses.Failed,
                 output,
-                result.ExitCode is null ? "process_start_failed" : "process_exit_nonzero",
+                result.ExitCode is null
+                    ? "process_start_failed"
+                    : "process_exit_nonzero",
                 "Terminal process failed.",
                 ToolVerificationStates.NotRequired),
             ToolResultStatuses.TimedOut => new ToolExecutionOutcome(

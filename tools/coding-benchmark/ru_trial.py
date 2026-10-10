@@ -20,8 +20,9 @@ from rpc_process import (
 MAX_PROVIDER_LABEL_CHARS = 256
 POLL_INTERVAL_SECONDS = 1
 TERMINAL_STATUSES = {"completed", "failed", "cancelled", "interrupted"}
+ACTIVE_STATUSES = {"running", "waiting_history", "waiting_history_user", "waiting_history_final"}
 INTERVENTION_STATUSES = {
-    "waiting_workspace_trust", "waiting_history", "waiting_history_user", "waiting_history_final",
+    "waiting_workspace_trust",
     "waiting_approval", "waiting_user", "reconciliation_required",
 }
 RUN_ID_PATTERN = re.compile(r"run_[0-9a-f]{32}\Z")
@@ -239,7 +240,7 @@ def run_ru(
                 status = "completed" if run_status == "completed" else run_status
                 _catch_up_terminal_events(bridge, subscription_id, state, deadline)
                 break
-            if run_status in INTERVENTION_STATUSES or run_status != "running":
+            if run_status in INTERVENTION_STATUSES or run_status not in ACTIVE_STATUSES:
                 status = "intervention_required"
                 cancel_error = _best_effort_cancel(bridge, run_id, subscription_id)
                 _consume_notifications(bridge, subscription_id, state)

@@ -190,16 +190,17 @@ public sealed partial class ToolExecutionService
             return RootToolSet.Create(
                 root,
                 _approvalTokens,
-                _trustedExecutableDirectories);
+                _trustedExecutableDirectories,
+                _recoveryStore);
         }
 
         return _toolSetsByRoot.GetOrAdd(
             root,
-            static (resolvedRoot, state) => RootToolSet.Create(
+            resolvedRoot => RootToolSet.Create(
                 resolvedRoot,
-                state.Approvals,
-                state.TrustedDirectories),
-            (Approvals: _approvalTokens, TrustedDirectories: _trustedExecutableDirectories));
+                _approvalTokens,
+                _trustedExecutableDirectories,
+                _recoveryStore));
     }
 
     private static bool IsFullAccessProfile(AgentPolicyProfile profile) =>
@@ -226,7 +227,8 @@ public sealed partial class ToolExecutionService
         public static RootToolSet Create(
             string canonicalRoot,
             ApprovalTokenService approvalTokens,
-            IReadOnlyList<string>? trustedExecutableDirectories = null)
+            IReadOnlyList<string>? trustedExecutableDirectories,
+            InMemoryRecoveryStore recoveryStore)
         {
             return new RootToolSet
             {
@@ -235,8 +237,8 @@ public sealed partial class ToolExecutionService
                 Search = new FileSearchAdapter(canonicalRoot),
                 Read = new FileReadAdapter(canonicalRoot),
                 Write = new FileWriteAdapter(canonicalRoot),
-                Delete = new FileDeleteAdapter(canonicalRoot),
-                Restore = new FileRestoreAdapter(canonicalRoot),
+                Delete = new FileDeleteAdapter(canonicalRoot, recoveryStore),
+                Restore = new FileRestoreAdapter(canonicalRoot, recoveryStore),
                 Edit = new FileEditAdapter(canonicalRoot),
                 MutationResolver = new CanonicalPathResolver(canonicalRoot),
                 Terminal = new TerminalAdapter(
@@ -272,7 +274,7 @@ public sealed partial class ToolExecutionService
 
     private RootToolSet ResolveRestoreTools(ToolExecutionContext context, JsonObject arguments)
     {
-        if (!FileRestoreAdapter.TryGetCanonicalPath(
+        if (!_recoveryStore.TryGetCanonicalPath(
                 ReadOptionalString(arguments, "recovery_id"),
                 out var canonicalPath)
             || string.IsNullOrWhiteSpace(canonicalPath))

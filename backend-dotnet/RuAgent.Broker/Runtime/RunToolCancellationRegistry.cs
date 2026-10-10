@@ -58,10 +58,19 @@ public sealed class RunToolCancellationRegistry
             catch (ObjectDisposedException)
             {
             }
+            catch (AggregateException)
+            {
+                // The source is signalled even when a callback fails; cancel peers too.
+            }
         }
 
         bucket.Clear();
         return signalled;
+    }
+
+    public void CancelAll()
+    {
+        foreach (var runId in _byRun.Keys) CancelRun(runId);
     }
 
     public sealed class Registration : IDisposable

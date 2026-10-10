@@ -19,7 +19,7 @@ public static class PolicySnapshotMapper
         ArgumentNullException.ThrowIfNull(snapshot);
         return new BrokerPolicySnapshotWire(
             Version: snapshot.Version,
-            Preset: PresetName(snapshot.Preset),
+            Preset: AgentPermissionPresetMapper.ToWireValue(snapshot.Preset),
             Workspace: WorkspaceToWire(snapshot.Workspace),
             OrderedRules: RulesToWire(snapshot.OrderedRules),
             CreatedAt: FormatTimestamp(snapshot.CreatedAt));
@@ -62,14 +62,6 @@ public static class PolicySnapshotMapper
         CwdPattern: matcher.CwdPattern,
         OperationClass: matcher.OperationClass,
         NetworkIntent: matcher.NetworkIntent);
-
-    private static string PresetName(AgentPermissionPreset preset) => preset switch
-    {
-        AgentPermissionPreset.Plan => BrokerPolicyContracts.PlanPresetWireValue,
-        AgentPermissionPreset.Standard => BrokerPolicyContracts.StandardPresetWireValue,
-        AgentPermissionPreset.FullAccess => BrokerPolicyContracts.FullAccessPresetWireValue,
-        _ => throw new ArgumentOutOfRangeException(nameof(preset), $"Unknown preset '{preset}'."),
-    };
 
     private static string ScopeName(PolicyRuleScope scope) => scope switch
     {

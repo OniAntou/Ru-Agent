@@ -193,6 +193,29 @@ public sealed class AgentRunClientAdapterTests
             Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
         };
 
+    [Fact]
+    public async Task SubscribeEvents_does_not_retry_a_callback_io_failure_as_a_transport_error()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Responder = request => request.RequestUri!.AbsolutePath.EndsWith("/events", StringComparison.Ordinal)
+                ? SseResponse(DurableSseFrame(5, "started"))
+                : RunStatusResponse("completed"),
+        };
+        using var http = new HttpClient(handler);
+        using var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        var failure = new IOException("renderer failed");
+        var delivered = 0;
+        var error = await Assert.ThrowsAsync<IOException>(() => adapter.SubscribeEventsAsync(RunId, 0, _ =>
+        {
+            delivered++;
+            throw failure;
+        }));
+        Assert.Same(failure, error);
+        Assert.Equal(1, delivered);
+        Assert.Single(handler.Requests);
+    }
+
     private static HttpResponseMessage RunStatusResponse(string status) =>
         new(HttpStatusCode.OK)
         {

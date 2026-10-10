@@ -1,7 +1,3 @@
-extern alias Broker;
-
-using System.Net;
-using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,7 +13,6 @@ using RuAgent.Harness.Persistence;
 using RuBackend.Harness;
 using RuBackend.Harness.Reconciliation;
 using Xunit;
-using BrokerTestHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 
 namespace RuBackend.Tests.Harness;
 
@@ -1005,45 +1000,20 @@ public sealed class HarnessRecoveryScannerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Real_broker_restart_rehydrates_and_re_evaluates_without_reproposal(
+    public async Task Execution_authority_restart_rehydrates_and_re_evaluates_without_reproposal(
         bool resolveBeforeRestart)
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
-        var previousWorkspaceRoot = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
-        var brokerRoot = Path.Combine(fixture.RootPath, "broker-restart");
         var workspaceRoot = Path.Combine(fixture.RootPath, "workspace");
-        var sessionRoot = Path.Combine(brokerRoot, "session");
-        var externalFile = Path.Combine(brokerRoot, "two.txt");
-        var descriptorPath = Path.Combine(brokerRoot, "broker.json");
-        Directory.CreateDirectory(brokerRoot);
+        var externalFile = Path.Combine(fixture.RootPath, "two.txt");
         Directory.CreateDirectory(workspaceRoot);
-        Directory.CreateDirectory(sessionRoot);
         await File.WriteAllTextAsync(Path.Combine(workspaceRoot, "one.txt"), "one");
         await File.WriteAllTextAsync(Path.Combine(workspaceRoot, "three.txt"), "three");
         await File.WriteAllTextAsync(externalFile, "two");
-        Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", workspaceRoot);
-        BrokerTestHostHost? brokerA = null;
-        BrokerTestHostHost? brokerB = null;
-        RuBackend.Harness.Broker.BrokerToolGatewayFactory? factoryA = null;
-        RuBackend.Harness.Broker.BrokerToolGatewayFactory? factoryB = null;
+        InProcessExecutionFixture? authorityA = null;
+        InProcessExecutionFixture? authorityB = null;
         try
         {
-            async Task<BrokerTestHostHost> StartBrokerAsync()
-            {
-                var descriptor = new RuAgent.Protocol.BrokerSessionDescriptor(
-                    "http://127.0.0.1:" + GetFreePort(),
-                    "broker-restart-" + Guid.NewGuid().ToString("N"),
-                    1,
-                    sessionRoot,
-                    DateTimeOffset.UtcNow.AddMinutes(30));
-                await File.WriteAllTextAsync(
-                    descriptorPath,
-                    JsonSerializer.Serialize(
-                        descriptor,
-                        RuAgent.Protocol.BrokerSessionDescriptor.JsonOptions));
-                return await BrokerTestHostHost.StartAsync(descriptorPath);
-            }
-
             var run = (await fixture.SeedRunAsync(
                 new HarnessRunStatus(HarnessRunState.Running))).Run;
             var snapshot = PolicySnapshotCanonicalizer.Create(
@@ -1056,10 +1026,8 @@ public sealed class HarnessRecoveryScannerTests
                     new string('a', 64)),
                 [],
                 DateTimeOffset.UtcNow);
-            brokerA = await StartBrokerAsync();
-            factoryA = new RuBackend.Harness.Broker.BrokerToolGatewayFactory(descriptorPath);
-            var gatewayA = Assert.IsType<RuBackend.Harness.Broker.BrokerToolGateway>(
-                factoryA.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value));
+            authorityA = new InProcessExecutionFixture(workspaceRoot);
+            var gatewayA = authorityA.Factory.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value);
             var model = new RestartModelRunner(externalFile);
             var first = NewRestartCoordinator(
                 model,
@@ -1077,7 +1045,7 @@ public sealed class HarnessRecoveryScannerTests
 
             if (resolveBeforeRestart)
             {
-                var authorized = await factoryA.RespondApprovalAsync(
+                var authorized = await authorityA.Factory.RespondApprovalAsync(
                     run.RunId.Value,
                     oldApprovalId,
                     "allow_session_directory",
@@ -1086,15 +1054,12 @@ public sealed class HarnessRecoveryScannerTests
                 await first.ResumeAfterApprovalAsync(run.RunId, CancellationToken.None);
             }
 
-            await factoryA.DisposeAsync();
-            factoryA = null;
-            await brokerA.DisposeAsync();
-            brokerA = null;
-
-            brokerB = await StartBrokerAsync();
-            factoryB = new RuBackend.Harness.Broker.BrokerToolGatewayFactory(descriptorPath);
-            var gatewayB = Assert.IsType<RuBackend.Harness.Broker.BrokerToolGateway>(
-                factoryB.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value));
+            // A restart replaces the whole execution authority: the new runtime
+            // shares no lease, grant or approval state with the old one.
+            authorityA.Dispose();
+            authorityA = null;
+            authorityB = new InProcessExecutionFixture(workspaceRoot);
+            var gatewayB = authorityB.Factory.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value);
             var second = NewRestartCoordinator(
                 model,
                 gatewayB,
@@ -1126,7 +1091,7 @@ public sealed class HarnessRecoveryScannerTests
             Assert.Single(model.Requests);
 
             var freshApprovalId = approvals[1].Event.ApprovalId!.Value.Value;
-            var freshAuthorized = await factoryB.RespondApprovalAsync(
+            var freshAuthorized = await authorityB.Factory.RespondApprovalAsync(
                 run.RunId.Value,
                 freshApprovalId,
                 "allow_session_directory",
@@ -1147,27 +1112,8 @@ public sealed class HarnessRecoveryScannerTests
         }
         finally
         {
-            if (factoryB is not null)
-            {
-                await factoryB.DisposeAsync();
-            }
-
-            if (factoryA is not null)
-            {
-                await factoryA.DisposeAsync();
-            }
-
-            if (brokerB is not null)
-            {
-                await brokerB.DisposeAsync();
-            }
-
-            if (brokerA is not null)
-            {
-                await brokerA.DisposeAsync();
-            }
-
-            Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", previousWorkspaceRoot);
+            authorityB?.Dispose();
+            authorityA?.Dispose();
             await fixture.DisposeAsync();
         }
     }
@@ -2415,13 +2361,6 @@ public sealed class HarnessRecoveryScannerTests
             new FixedTime(now ?? Timestamp),
             _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).SweepPendingRunsAsync(CancellationToken.None);
         return sweep.Recovered;
-    }
-
-    private static int GetFreePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     private static EventId NewEventId() =>

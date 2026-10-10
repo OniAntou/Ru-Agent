@@ -100,6 +100,58 @@ public sealed class AgentProviderSnapshotTests : IDisposable
     }
 
     [Fact]
+    public async Task Recreated_openai_pin_preserves_legacy_calling_mode_and_rejects_unknown_mode()
+    {
+        var settings = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await settings.SaveAsync((await settings.ReadAsync(default)) with
+        {
+            Backend = "OpenAI",
+            OpenAiModel = "gpt-5.6-sol",
+        }, default);
+        await using var harness = await BackendHarnessTestFixture.CreateAsync();
+        var run = await harness.SeedRunAsync();
+        var runId = run.Run.RunId;
+        var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
+        var credentials = new TrackingCredentials();
+        var catalog = new ProviderCatalogService(
+            new HttpClient(new TrackingCatalogHandler()), credentials, TimeProvider.System);
+        using (var firstFactory = new AgentProviderSnapshotFactory(
+                   settings, credentials, catalog, selections, (_, _) => Task.FromResult(false)))
+        {
+            _ = await firstFactory.GetAsync(runId, default);
+        }
+
+        await SetCallingModeAsync(harness.Options.DatabasePath, runId, "text_selection");
+
+        using var restartedFactory = new AgentProviderSnapshotFactory(
+            settings,
+            credentials,
+            new ProviderCatalogService(
+                new HttpClient(new TrackingCatalogHandler()), credentials, TimeProvider.System),
+            selections,
+            (_, _) => Task.FromResult(false));
+        var resumed = await restartedFactory.GetAsync(runId, default);
+        var metadata = await new AgentRunModelMetadataResolver(restartedFactory, selections)
+            .ResolveAsync(runId, default);
+
+        Assert.Equal(ProviderToolCallingMode.TextSelection, resumed.ToolCallingMode);
+        Assert.Equal(ProviderToolCallingMode.TextSelection, metadata.ToolCallingMode);
+
+        await SetCallingModeAsync(harness.Options.DatabasePath, runId, "unknown_mode");
+        using var invalidFactory = new AgentProviderSnapshotFactory(
+            settings,
+            credentials,
+            new ProviderCatalogService(
+                new HttpClient(new TrackingCatalogHandler()), credentials, TimeProvider.System),
+            selections,
+            (_, _) => Task.FromResult(false));
+        var invalidMode = await Assert.ThrowsAsync<ProviderCatalogException>(
+            () => new AgentRunModelMetadataResolver(invalidFactory, selections)
+                .ResolveAsync(runId, default));
+        Assert.Equal("provider_selection_invalid", invalidMode.Code);
+    }
+
+    [Fact]
     public async Task Recreated_openai_pin_rejects_anthropic_credential_account_before_reads()
     {
         var settings = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
@@ -516,6 +568,17 @@ public sealed class AgentProviderSnapshotTests : IDisposable
     private static async Task<ProviderBootstrapData> ReadAsync(AgentProviderSnapshotFactory factory, RunId run)
     {
         return await factory.GetAsync(run, default);
+    }
+
+    private static async Task SetCallingModeAsync(string databasePath, RunId runId, string callingMode)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+        await using var update = connection.CreateCommand();
+        update.CommandText = "UPDATE agent_run_provider_selections SET calling_mode = $calling_mode WHERE run_id = $run_id";
+        update.Parameters.AddWithValue("$calling_mode", callingMode);
+        update.Parameters.AddWithValue("$run_id", runId.Value);
+        Assert.Equal(1, await update.ExecuteNonQueryAsync());
     }
 
     public void Dispose()

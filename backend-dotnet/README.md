@@ -11,16 +11,17 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         |
         | bearer token or authenticated SSE
         v
-ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
+ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime, one process)
         |\
-        | \-- in-process typed model step (WorkerV2StepService behind IModelStepRunner)
+        | \-- in-process typed model step (ModelStepService behind IModelStepRunner)
         |     `-- bounded provider adapters + one-step AssistantStep
         |
-        |-- owned private RuAgentBroker in one kill-on-close Job Object
-        |     `-- leased loopback endpoint, profile-scoped file/terminal tools
+        |-- in-process execution authority (BrokerExecutionRuntime behind IToolGatewayFactory)
+        |     |-- policy, approvals, profile-scoped structured file tools
+        |     `-- AppContainer-sandboxed terminal/git children in standard
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
-Public Host owns the Broker child in one Job Object; RuApp/CLI only own the
+The Public Host is one process with no managed child; RuApp/CLI only own the
 Public Host descriptor lease and long-lived SSE client leases.
 ```
 
@@ -34,9 +35,10 @@ dependency-free test fixture. Git commit
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions and their message history, activity, Agent run ordering,
-metadata filtering, and every public endpoint contract. Agent generation runs
-in process through the typed `WorkerV2StepService`; the only managed child is
-the private Broker.
+metadata filtering, and every public endpoint contract. Agent generation and
+tool execution run in process through the typed `ModelStepService` and the
+`BrokerExecutionRuntime` composed behind `IToolGatewayFactory`; the Host starts
+no managed child.
 
 Session deletion uses the stable `DELETE /sessions/{sessionId}` route and an
 application envelope. Only `status: "ok"` means that the deletion coordinator
@@ -61,14 +63,11 @@ persistent text.
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates a 256-bit
-desktop secret, starts the private RuAgentBroker before serving public traffic,
-assigns the owned child to one kill-on-close Windows Job Object, publishes an
-ACL-restricted loopback descriptor for
-`RuAgent.Client` start-or-attach,
-probes Broker and public readiness, and terminates the owned Broker tree on
-shutdown or failure. `RuApp` and `RuAgent.Cli` never start the Broker
-directly; they validate the descriptor and `GET /status` bearer, and poll for a
-valid descriptor if stale/absent. Agent v2 (in-process
+desktop secret, publishes an ACL-restricted loopback descriptor for
+`RuAgent.Client` start-or-attach, and probes public readiness before serving.
+`RuApp` and `RuAgent.Cli` never start an execution process; they validate the
+descriptor and `GET /status` bearer, and poll for a valid descriptor if
+stale/absent. Agent v2 (in-process
 one-step model generation, `/agent/v1/*` 22 routes, SSE reconnect with durable
 `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
@@ -108,8 +107,13 @@ checks and structured protected-path denial remain active.
 
 Full-access terminal runs as the current Windows user, can read or change data
 outside the workspace, and can open sockets. It is not an OS-enforced
-filesystem/network sandbox. Hard timeout, output cap, cancellation, redaction,
-and process-tree cleanup still apply. Web is automatic in all canonical
+filesystem/network sandbox. `standard` terminal and managed-git children are
+confined in a per-session Windows AppContainer: workspace and session temp
+writes only, network off unless an authorized `network_intent` command,
+session directory grants as ACL grants, and a `sandbox: "off"` escape that asks
+`terminal_sandbox_escape_requires_approval` one time. A sandbox setup failure
+fails the call closed as `sandbox_setup_failed`. Hard timeout, output cap,
+cancellation, redaction, and process-tree cleanup still apply. Web is automatic in all canonical
 profiles; `web_approval_required` remains available only to an explicit ask
 rule. `files.apply_patch` is not advertised or model-usable. The managed Git
 workflow retains temporary-index isolation, path rollback attribution, and

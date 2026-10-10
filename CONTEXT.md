@@ -1,7 +1,7 @@
 # Ru Assistant
 
 Ru is a local Vietnamese-English coding assistant whose desktop, public host,
-runtime processes, and persistent conversation state are maintained in this
+in-process runtime, and persistent conversation state are maintained in this
 repository. The media surfaces (voice/STT, VTube Studio, screen observation)
 were removed on 2026-09-13.
 
@@ -9,15 +9,15 @@ were removed on 2026-09-13.
 
 **Public Host**:
 The ASP.NET Core process that exclusively owns RuApp's authenticated HTTP and
-SSE contract and, when launched as `RuBackend.exe --managed-runtime`,
-owns the Broker child in one Job Object and runs Agent model generation
-in process (ADR-0012; RuApp/CLI start-or-attach via descriptor).
+SSE contract and, when launched as `RuBackend.exe --managed-runtime`, runs
+Agent model generation and the tool execution authority in process (ADR-0012,
+ADR-0014; RuApp/CLI start-or-attach via descriptor).
 _Avoid_: Edge, proxy, FastAPI backend
 
 **Runtime Worker**:
 The retired private model-generation process. It was an authenticated loopback
 managed C# process that served Agent v2 on `/worker/v2`; model generation now
-runs inside the Public Host through the typed `WorkerV2StepService` behind
+runs inside the Public Host through the typed `ModelStepService` behind
 `IModelStepRunner`, so no worker process, port, or protocol exists (ADR-0012).
 There is no device v1 boundary, no Python Worker startup, and no media adapter
 graph.
@@ -42,8 +42,9 @@ _Avoid_: Compatibility routes
 **Worker Contract**:
 The retired versioned typed commands, events, ordering, cancellation, limits,
 errors, and capabilities that the Host exchanged with the managed C# Runtime
-Worker over `/worker/v2`. In-process model steps are typed calls; the only
-private transport left is the Broker lease (ADR-0012).
+Worker over `/worker/v2`. In-process model steps are typed calls, and no
+private transport remains: tool execution is in process as well (ADR-0012,
+ADR-0014).
 _Avoid_: Runtime HTTP relay
 
 **Agent Session**:
@@ -76,15 +77,18 @@ _Avoid_: global memory, cross-session authority, model prose as proof, or work
 state as permission
 
 **RuAgentBroker**:
-The private, process-isolated .NET service — the Host's only managed child
-process — that validates tool manifests, session scopes, approval state, and
-adapter execution before a local action.
-_Avoid_: public API route, unrestricted shell
+The in-process execution runtime and class library that validates tool
+manifests, session scopes, approval state, and adapter execution before a local
+action. It no longer runs as a child process: the Host composes
+`BrokerExecutionRuntime` behind `IToolGatewayFactory` (ADR-0014).
+_Avoid_: public API route, unrestricted shell, separate broker process
 
 **Execution Authority**:
-The single module that actually performs a model-visible tool call:
-RuAgentBroker, reached through the `IToolGateway` seam. No in-process Host
-copy of tool semantics may exist.
+The single code path that actually performs a model-visible tool call:
+`BrokerExecutionRuntime`, reached through the `IToolGateway` seam created by
+`IToolGatewayFactory` inside the Host process. The Host keeps orchestration and
+the `ask_user` interception only; no second copy of tool semantics, policy, or
+adapters may exist.
 _Avoid_: dual execution paths, HarnessToolGateway
 
 **Tool Manifest**:
@@ -207,7 +211,8 @@ A durable `ModelContextNote` beginning with `[HARNESS RECOVERY]`, addressed to
 the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
-`model_repairable` notes, 2 `empty_model_reply` note — under a global cap of
+`model_repairable` notes, 2 `empty_model_reply` notes and 2
+`model_output_truncated` notes — under a global cap of
 12 notes per run, measured over the recovery notes visible in the assembled
 context. A note is persisted with the system role and is therefore never folded
 away by compaction, so the cap is cumulative for the whole run rather than
@@ -222,6 +227,10 @@ until explicit reconciliation. A repeated `policy_denied` tool receipt followed
 by prose is a tool outcome, not an approval decision, so it may still take the
 bounded `unverified_after_tool_failure` notes with the denial code as the
 terminal code.
+Provider `Length` finishes suppress the whole incomplete step, including any
+partial tool calls, before execution; bounded recovery requests smaller output.
+`ContentFilter` and `Error` finishes fail as `model_content_filtered` and
+`model_reply_error` without recovery. Whitespace-only final text counts as empty.
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 **Agent Persona Source**:
@@ -316,18 +325,28 @@ again. No preset or clean-repository state grants trust.
 _Avoid_: repository-marker, path-only, or preset-implied trust
 
 **Workspace Terminal**:
-The terminal adapter runs under Broker policy with bounded output, hard timeout,
-cancellation, redaction, and process-tree cleanup. `plan` denies terminal
-authority. `standard` allows only classifier-bounded local intent inside the
-trusted workspace; external cwd/argv, arbitrary shell, deletion, unknown
-executables, and other risky intent ask. `full_access` delegates arbitrary
-terminal execution as the current Windows user. Full Access can read or change
-data outside the workspace and use the network; it is not a path or network
-sandbox. Structured protected-path denial does not become terminal confinement,
-and clean/dirty repository state does not change a decision. An ambiguous
-mutation outcome pauses for inspection until explicit Continue.
-_Avoid_: treating repository cleanliness as authorization or Full Access
-terminal as sandboxed
+The terminal adapter runs under execution-authority policy with bounded output,
+hard timeout, cancellation, redaction, and process-tree cleanup. `plan` denies
+terminal authority. `standard` retains classifier-bounded intent and its
+existing approval rules; `full_access` retains its existing arbitrary-terminal
+policy. Both launch child processes as the current Windows user, without OS
+filesystem or network confinement, including outside the workspace. The `bash`
+schema has no sandbox selector
+and rejects obsolete sandbox arguments. Structured protected-path denial does
+not confine terminal commands, and clean/dirty repository state does not change
+a decision. An ambiguous mutation outcome pauses for inspection until explicit
+Continue. API keys remain in credential storage and are redacted from
+diagnostics.
+_Avoid_: treating repository cleanliness as authorization or terminal
+approvals as OS confinement
+
+**Run Event Feed**:
+One client-side SSE subscription path owns frame dispatch and bounded reconnect
+for WinUI and CLI. Durable event IDs advance the resume cursor; transient frames
+remain outside durable history. WinUI keeps its cumulative reconnect retry
+bound, while CLI progress can refill its retry budget. Consumer callback errors
+propagate and are not retried as transport failures.
+_Avoid_: replaying transient frames as durable history or hiding callback errors
 
 **Multimodal Image Payload**:
 A client-attached image (`image/png`, `image/jpeg`, `image/webp`) resized to at

@@ -19,7 +19,9 @@ public sealed record GitRepositoryLocation(
 /// </summary>
 public sealed class GitRepositoryLocator(IGitCli cli)
 {
-    public async Task<GitRepositoryLocation> LocateAsync(string workingDirectory, CancellationToken cancellationToken)
+    public async Task<GitRepositoryLocation> LocateAsync(
+        string workingDirectory,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(workingDirectory))
         {

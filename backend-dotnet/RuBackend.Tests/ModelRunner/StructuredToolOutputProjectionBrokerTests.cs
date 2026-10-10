@@ -277,15 +277,9 @@ public sealed class StructuredToolOutputProjectionBrokerTests
             var sessionRoot = Path.Combine(root, "session");
             Directory.CreateDirectory(workspace);
             Directory.CreateDirectory(sessionRoot);
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:18086",
-                "broker-token",
-                2,
+            var session = Broker::RuAgent.Broker.Runtime.BrokerSession.CreateForHost(
                 sessionRoot,
                 DateTimeOffset.UtcNow.AddMinutes(5));
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            var session = Broker::RuAgent.Broker.Runtime.BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
             const string sessionId = "session-projection-broker";
             session.Open(sessionId, new HashSet<string>(
             [

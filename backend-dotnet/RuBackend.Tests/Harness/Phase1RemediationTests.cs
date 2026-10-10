@@ -318,8 +318,7 @@ public sealed class Phase1RemediationTests
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(
             dataPaths: tmp.DataPaths,
-            modelStepRunner: fakeRunner,
-            withInProcessBroker: true);
+            modelStepRunner: fakeRunner);
         using var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
         var created = await CreateRunAsync(client, sessionId, tmp.Path, "drive me", "key-" + Guid.NewGuid().ToString("N"));

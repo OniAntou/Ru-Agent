@@ -264,6 +264,26 @@ public sealed class PolicyEvaluationTests
         }
     }
 
+    [Fact]
+    public void Obsolete_sandbox_field_is_rejected()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        var error = Assert.Throws<PolicyContextException>(() =>
+            factory.Create(
+                "bash",
+                "1.0.0",
+                new JsonObject
+                {
+                    ["mode"] = "run",
+                    ["executable"] = "git",
+                    ["arguments"] = new JsonArray("status"),
+                    ["sandbox"] = "off",
+                }));
+
+        Assert.Equal("malformed_call", error.Code);
+    }
+
     [Theory]
     [InlineData("plan", "deny")]
     [InlineData("standard", "ask")]

@@ -246,7 +246,7 @@ public sealed class AgentApprovalEndpointTests
             var runner = new ScriptedRunner(
                 ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external directory approval");
@@ -297,7 +297,7 @@ public sealed class AgentApprovalEndpointTests
                 ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
                 ToolCall("files.list", JsonSerializer.Serialize(new { path = externalPath })),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "grant reuse");
@@ -352,7 +352,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"),
                 ToolCall("files.read", externalArguments),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "first grant");
@@ -407,7 +407,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"),
                 ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "grant then delete");
@@ -463,7 +463,7 @@ public sealed class AgentApprovalEndpointTests
             var runner = new ScriptedRunner(
                 ToolCall("terminal.run", argumentsJson),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "terminal reason");
@@ -502,8 +502,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(
                 dataPaths: dataPaths,
-                modelStepRunner: runner,
-                withInProcessBroker: true);
+                modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(
@@ -610,7 +609,7 @@ public sealed class AgentApprovalEndpointTests
             var runner = new ScriptedRunner(
                 ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember me");
@@ -672,7 +671,7 @@ public sealed class AgentApprovalEndpointTests
             var runner = new ScriptedRunner(
                 TwoSameTerminalCalls(),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember in run");
@@ -717,7 +716,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"),
                 ToolCall("terminal.run", Command("session-memory")),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember across runs");
@@ -771,7 +770,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"),
                 ToolCall("terminal.run", Command("second")),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "different intent");
@@ -817,7 +816,7 @@ public sealed class AgentApprovalEndpointTests
                 FinalStep("done"),
                 ToolCall("terminal.run", Command("fresh")),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "first session");
@@ -867,7 +866,7 @@ public sealed class AgentApprovalEndpointTests
             var runner = new ScriptedRunner(
                 ToolCall("files.read", JsonSerializer.Serialize(new { path = externalFile })),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external approval");
@@ -901,7 +900,7 @@ public sealed class AgentApprovalEndpointTests
     private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(string wsPath, RuBackend.Business.DataPaths dataPaths)
     {
         var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
-        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
         var runBody = new

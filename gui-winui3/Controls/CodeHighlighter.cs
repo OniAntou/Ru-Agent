@@ -68,7 +68,7 @@ public static class CodeHighlighter
     private static HashSet<string> Keywords(string words) =>
         new(words.Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
 
-    public static IReadOnlyList<Span> Highlight(string code, string? language)
+    public static IReadOnlyList<Span> Highlight(string? code, string? language)
     {
         if (string.IsNullOrEmpty(code))
         {

@@ -104,7 +104,7 @@ public sealed class StreamingProcessRunner
             // The child never ran, or could not be contained: leave nothing
             // behind and return a stable start failure to the caller.
             DisposeStarted(started);
-            return StartFailure(spec, stopwatch.ElapsedMilliseconds);
+            return StartFailure(spec, stopwatch.ElapsedMilliseconds, "process_start_failed");
         }
 
         using var registered = started.Process;
@@ -229,13 +229,13 @@ public sealed class StreamingProcessRunner
         }
     }
 
-    private static StreamingProcessResult StartFailure(ProcessRunSpec spec, long elapsedMs) => new(
+    private static StreamingProcessResult StartFailure(ProcessRunSpec spec, long elapsedMs, string code) => new(
         Status: "failed",
         ExitCode: null,
         DurationMs: (int)elapsedMs,
         StdoutHead: string.Empty,
         StdoutTail: string.Empty,
-        StderrHead: "process_start_failed",
+        StderrHead: code,
         StderrTail: string.Empty,
         StdoutBytes: 0,
         StderrBytes: 0,
@@ -418,52 +418,4 @@ public sealed class StreamingProcessRunner
         return text[..chars];
     }
 
-    private sealed class ChunkRedactor(IReadOnlyList<string> seeds)
-    {
-        private readonly string[] _seeds = seeds.OrderByDescending(seed => seed.Length).ToArray();
-        private readonly int _holdBack = seeds.Count == 0 ? 0 : seeds.Max(seed => seed.Length) - 1;
-        private string _pending = string.Empty;
-
-        public bool RedactedAnything { get; private set; }
-
-        public string Push(string chunk)
-        {
-            if (_seeds.Length == 0)
-            {
-                return chunk;
-            }
-
-            _pending += chunk;
-            var safeLength = Math.Max(0, _pending.Length - _holdBack);
-            var safePart = _pending[..safeLength];
-            _pending = _pending[safeLength..];
-            return Redact(safePart);
-        }
-
-        public string Flush()
-        {
-            var remaining = _pending;
-            _pending = string.Empty;
-            return Redact(remaining);
-        }
-
-        private string Redact(string input)
-        {
-            if (_seeds.Length == 0 || input.Length == 0)
-            {
-                return input;
-            }
-
-            foreach (var seed in _seeds)
-            {
-                if (input.Contains(seed, StringComparison.Ordinal))
-                {
-                    input = input.Replace(seed, "[redacted]", StringComparison.Ordinal);
-                    RedactedAnything = true;
-                }
-            }
-
-            return input;
-        }
-    }
 }

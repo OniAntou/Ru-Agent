@@ -83,7 +83,9 @@ exception text are forbidden.
 
 ## OpenTelemetry traces (parallel to JSONL)
 
-The host and broker processes expose OpenTelemetry spans alongside JSONL:
+The Host exposes OpenTelemetry spans alongside JSONL for both sources (tool
+execution runs in process, so the broker source is exported by the Host
+provider):
 - Sources `RuAgent.Harness` (`agent.model_step`, outcome tag `step.outcome`)
   and `RuAgent.Broker` (`tool.execute`, tags `tool.id`, `tool.status`,
   `error.code`, `verification.state`).

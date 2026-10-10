@@ -78,7 +78,7 @@ public static class PolicySnapshotCanonicalizer
         {
             writer.WriteStartObject();
             writer.WriteNumber("version", snapshot.Version);
-            writer.WriteString("preset", PresetName(snapshot.Preset));
+            writer.WriteString("preset", AgentPermissionPresetMapper.ToWireValue(snapshot.Preset));
             WriteWorkspace(writer, snapshot.Workspace);
             WriteRules(writer, snapshot.OrderedRules);
             writer.WriteEndObject();
@@ -214,14 +214,6 @@ public static class PolicySnapshotCanonicalizer
             writer.WriteString(propertyName, value);
         }
     }
-
-    private static string PresetName(AgentPermissionPreset preset) => preset switch
-    {
-        AgentPermissionPreset.Plan => "plan",
-        AgentPermissionPreset.Standard => "standard",
-        AgentPermissionPreset.FullAccess => "full_access",
-        _ => throw new ArgumentOutOfRangeException(nameof(preset)),
-    };
 
     private static string ScopeName(PolicyRuleScope scope) => scope switch
     {

@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-08.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-10.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
@@ -18,24 +18,23 @@ always mapped.
 
 ## Process topology
 
-Public Host (`RuBackend.exe --managed-runtime`, ASP.NET Core) owns the
-Broker child lifecycle in one Windows kill-on-close Job Object. `RuApp` (WinUI)
-and the headless `RuAgent.Cli` start-or-attach the Public Host through the
-shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator` with
-ACL-restricted loopback descriptor and bearer probe). On first start the Public
-Host creates a per-run desktop secret, starts the isolated `RuAgentBroker` on a
-dynamic loopback port, binds ASP.NET Core on port 8000, waits for Broker and
-public readiness, and assigns the Broker to one Job Object. Model generation
-runs in the Host process itself (ADR-0012), so the Broker is the only managed
-child process. Managed startup is unconditional.
+Public Host (`RuBackend.exe --managed-runtime`, ASP.NET Core) is a single
+process that owns model generation, the tool execution authority and the
+durable Harness. `RuApp` (WinUI) and the headless `RuAgent.Cli` start-or-attach
+the Public Host through the shared `RuAgent.Client` (`PublicHostStarter`/
+`PublicHostLocator` with ACL-restricted loopback descriptor and bearer probe).
+On first start the Public Host creates a per-run desktop secret, binds ASP.NET
+Core on port 8000, and publishes its own descriptor for clients. Model
+generation and tool execution run in the Host process itself (ADR-0012,
+ADR-0014): the retired Broker child, its authenticated WebSocket lease and
+`RuAgentBroker.exe` are gone, so the Host starts no managed child. Managed
+startup is unconditional.
 The managed Host exits after ten minutes without an in-flight request, recent
 request or registered run (`RU_HOST_IDLE_MINUTES`, `0` disables this timer), or
-when explicitly stopped or its owned child exits unexpectedly. The owned Broker enters one Job
-Object, but ownership is Public Host, not WinUI. Startup succeeds only after
-public readiness; shutdown, startup failure, or an unexpected child exit
-terminates the owned Broker tree.
+when explicitly stopped. Startup succeeds only after public readiness; a
+managed startup failure exits with a bounded code.
 
-Closing the GUI sends an authenticated `POST /host/shutdown` so the Host and its owned Broker Job exit gracefully; CLI detach still does not force-kill the shared Host.
+Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits gracefully; CLI detach still does not force-kill the shared Host.
 Host single-instance claims bind the physical identity of both data and log
 directories, including aliases. Directory handles retain those roots for the
 claim lifetime. Each mutex has a dedicated owner thread until disposal, so
@@ -200,35 +199,39 @@ argument matching; HTTP approval binding keeps its existing client-audience
 and legacy compatibility checks. Codec sharing does not move policy decisions
 or tool execution out of their existing owners.
 
-Full-access terminal authority delegates execution to the current Windows user.
-It can read or change data outside the workspace and use the network; it is not
-a network/path sandbox. Hard timeout, output cap, cancellation, redaction, and
-process-tree cleanup remain active. Structured file tools independently retain
-canonical/symlink/junction/hard-link containment and protected-path denial.
+Terminal children in `standard` and `full_access` run as the current Windows
+user and may access files outside the workspace and network resources available
+to that user; there
+is no OS filesystem or network sandbox (ADR-0015). Standard keeps its existing
+classifier and approval rules; Full Access keeps its existing arbitrary-
+terminal policy. The `bash` schema rejects obsolete sandbox arguments. Hard
+timeout, output cap, cancellation, redaction, and process-tree cleanup remain
+active. Structured file tools independently retain canonical/symlink/junction/
+hard-link containment and protected-path denial. API keys remain in credential
+storage and diagnostics redact secrets.
 
 The current managed process flow (Phase 2 cutover) is:
 
 ```text
 RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Public Host :8000
-                                                                (RuBackend.exe --managed-runtime, owns one kill-on-close Job Object)
+                                                                (RuBackend.exe --managed-runtime, one process, no managed child)
                                                                   |-- direct business, persistence, and durable Harness (Core + SQLite agent_harness.db + encrypted payloads)
-                                                                  |-- in-process typed model step (WorkerV2StepService behind IModelStepRunner, one-step AssistantStep)
+                                                                  |-- in-process typed model step (ModelStepService behind IModelStepRunner, one-step AssistantStep)
                                                                   |     `-- bounded provider adapters (OpenAI-compatible Chat Completions, OpenAI Responses, Anthropic Messages) via exact protocol dispatch
-                                                                  `-- private call to RuAgentBroker execution boundary (profile-scoped file/terminal tools)
-                                                                 Broker owned child:
-                                                                   `-- RuAgentBroker
-                                                                         `-- policy, approvals, and local action adapters
+                                                                  `-- in-process execution authority (BrokerExecutionRuntime behind IToolGatewayFactory)
+                                                                        |-- policy, approvals, and local action adapters (structured files)
+                                                                        `-- current-user terminal/git children, bounded by Job Object and policy
 ```
 
 The public Agent path uses the in-process typed model runner. Durable policy/file-tool work is complete, with headless terminal and
 reconciliation surfaces from Phase 3:
 
 - In-process model runner: one typed `ModelGenerationRequest` → one provider generation → `AssistantStep(text, tool_calls, finish_reason)`. A native provider may return optional narration plus one or more ordered calls; a text-selection provider still emits exactly one JSON object with no surrounding selection prose. Provider errors map to bounded stable codes without provider/model fallback. The runner composes one system message with composer `2.0.0` from seven ordered blocks: persona, execution contract, environment, profile/effective policy, instruction blocks, capabilities, and runtime context. It returns a receipt whose version, block ids/order, and per-instruction digests Core validates before completion or tool dispatch. What that receipt attests is bounded: the `instruction.*` digests bind the exact instruction bytes in the context, while the other block digests are checked for shape and the caller does not receive the rendered prompt text. The typed step result carries text, tool calls, finish reason, and the prompt receipt, plus optional bounded `usage` and `reasoning_text`.
-- Agent API/SSE: 22 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers the exact intent as a project rule, or `deny`; any allow also remembers the exact intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots, so an identical call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, exact matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). A non-terminal parked run (`waiting_user`, `reconciliation_required`) keeps its workspace lock until the client continues or reconciles it; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; after the case budget (2 unverified notes) or the global cap (6 notes per window) is spent the run fails as before with the tool error code. An empty final step is answered the same way once (1 note) before failing as `empty_model_reply`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 2 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
+- Agent API/SSE: 22 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers the exact intent as a project rule, or `deny`; any allow also remembers the exact intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots, so an identical call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, exact matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). A non-terminal parked run (`waiting_user`, `reconciliation_required`) keeps its workspace lock until the client continues or reconciles it; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
 - Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants, while Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools in every preset. Canonical fallback ask reasons are `external_directory_required`, `terminal_delete_requires_approval`, `terminal_external_mutation_requires_approval`, and `terminal_unknown_executable`. `terminal_timeout_requires_approval` and `web_approval_required` remain compatibility reasons for explicit rules; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
-- Tool Definition ownership: `RuAgent.Protocol` contains exactly 13 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `ask_user`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `ask_user` is Host-intercepted before gateway dispatch: it parks the run in `WaitingUser` with a durable `input.requested` event and never reaches the Broker. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and the model-step `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog, deliberately excluding the Host-intercepted `ask_user`. `RuAgentBroker` is the only managed tool execution authority.
+- Tool Definition ownership: `RuAgent.Protocol` contains exactly 13 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `ask_user`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `ask_user` is Host-intercepted before gateway dispatch: it parks the run in `WaitingUser` with a durable `input.requested` event and never reaches the Broker. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and the model-step `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog, deliberately excluding the Host-intercepted `ask_user`. `RuAgentBroker` is the only tool execution authority.
 - File tools: `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator; `list` enumerates one directory (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation); and `help` searches the five bundled offline documentation resources, is workspace-independent and never reads workspace files. `grep` (regex content search with `file_glob`/`case_sensitive`/`is_regex` filters and bounded results) and `glob` (ordinal path-pattern results with traversal caps) remain standalone tools, alongside Host-prepared hash-guarded `write` with `op=write`/`edit` and recoverable `write` with `op=delete`/`op=restore` (preimage hashes are captured internally, never supplied in model proposal JSON; encrypted recovery copy remains bounded, opaque, one-time, and never in diagnostics). Model-facing definitions require preservation of user-supplied absolute paths inside a session-granted directory; Broker canonicalization and containment remain authoritative. `edit` preserves CRLF style when LF markers are supplied; `grep` uses canonical `is_regex`, bounded concurrent reads, cancellation, and ordinal output ordering; recovery caps are configurable below a 4 MiB hard maximum. `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
-- Model surface: the thirteen Protocol definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Full-access terminal runs as the current Windows user, can access data outside the workspace, and can open sockets: it is not a network/path sandbox. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. MCP stdio bridge code remains test infrastructure and is not production-composed; mail/calendar/task connectors are not advertised Agent tools.
+- Model surface: the thirteen Protocol definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. MCP stdio bridge code remains test infrastructure and is not production-composed; mail/calendar/task connectors are not advertised Agent tools.
 - Accepted limitation — executable identity on the terminal path: the policy
   classifies a `bash` command by the executable token the model supplied
   (`PolicyContextFactory` keeps it verbatim and the analyzers match on
@@ -290,7 +293,7 @@ The current Agent flow is:
 
 ```text
 RuApp -> ASP.NET Core public contract -> in-process typed model step -> bounded provider adapters
-ASP.NET Core public contract -> private Broker lease -> RuAgentBroker (tool execution)
+ASP.NET Core public contract -> IToolGateway -> BrokerExecutionRuntime (tool execution; current-user terminal bounded by policy and Job Object)
 ```
 
 The in-process typed model step is the active Agent generation path; the typed
@@ -366,7 +369,7 @@ instruction files and discovered skills are untrusted guidance; none can grant
 tools, capabilities, paths, network access, or approvals. Skills are rendered
 as `ExternalSkill`, and their `allowed-tools` metadata is descriptive only.
 Workspace `SKILL.md` bodies never execute tools.
-`RuAgentBroker` remains authoritative for path
+The in-process execution authority remains authoritative for path
 canonicalization, tool policy, approval, and execution; runtime references and
 tool results stay untrusted.
 Invalid context or receipt metadata fails closed with the bounded
@@ -376,37 +379,29 @@ tools by default with their `network.search`/`network.fetch` scope labels; no
 settings field controls their exposure. Returned web text is bounded,
 sanitized, and wrapped with the `[untrusted_web_reference]` marker.
 
-Prompt composition is not an authority boundary. Broker policy, approvals,
-workspace trust, protected paths, external-directory grants, and cancellation
-remain authoritative. Workspace `SKILL.md` bodies are untrusted prompt
-guidance only and never execute tools or grant anything; subagent
-orchestration, LSP, extension/plugin/MCP discovery,
-arbitrary system overrides, Chat compatibility, UI redesign, and the future
-OS-enforced filesystem/network sandbox are outside this implementation.
+Prompt composition is not an authority boundary. Execution-authority policy,
+approvals, workspace trust, protected paths, external-directory grants, and
+cancellation remain authoritative. Workspace `SKILL.md` bodies are untrusted
+prompt guidance only and never execute tools or grant anything; subagent
+orchestration, LSP, extension/plugin/MCP discovery, arbitrary system overrides,
+Chat compatibility, UI redesign, and OS filesystem/network confinement are
+outside this implementation. Terminal children run as the current Windows
+user; structured file tools stay in-process under canonical path containment
+and protected-path denial (ADR-0015).
 
 ## Harness ownership
 
-The vNext Harness is a test-only owner. Its CLI creates a
-temporary data/log root, two dynamically leased loopback ports, memory-only
-bearers, and one Broker and ASP.NET Core edge child. While the port
-leases are still held, it prebuilds Broker and edge sequentially; both are then
-started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
-during a cold build. It classifies all 42 HTTP contract entries
-(20 non-Agent plus 22 additive `/agent/v1/*`), uses deterministic fixtures for
-safe mutations plus additive Agent v2 tracer fixtures (idempotency,
-workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
-identity, policy snapshots, SSE cursor, payload binding, file discovery/read
-and hash-guarded mutations/patch/delete/restore with configurable bounded recovery caps, approval
-first-writer-wins and snapshot ordering), records
-operator-required `POST /host/shutdown` as an explicit skip, and removes the
-temporary root during idempotent
-cleanup. An early child exit is recorded only as its
-role, exit code, and lifecycle classification; raw child output is not copied
-into the public artifact.
-The Harness does not change the Public Host's normal production ownership of
-the Broker child in its Job Object, nor the start-or-attach `RuAgent.Client`
-contract for RuApp/CLI; credentials and fixed runtime defaults remain
-Public Host-owned.
+The `scripts/harness` Python package is test-only tooling, exercised by the
+`tests/test_harness_*` suite: bounded helpers for temporary data/log roots,
+leased loopback ports, child-process lifecycle classification, public-route
+classification with safe fixture request descriptions, and artifact assembly.
+It is not a production contract gate — the managed .NET suites, the route
+checker and `build.bat` are — and it owns no production process: the Public
+Host is a single process (ADR-0014), so no Broker or worker child exists. An
+early child exit is recorded only as its role, exit code, and lifecycle
+classification; raw child output is not copied into the public artifact.
+The Harness does not change the start-or-attach `RuAgent.Client` contract for
+RuApp/CLI; credentials and fixed runtime defaults remain Public Host-owned.
 
 The GUI Harness extends that ownership boundary through an explicit
 RuAppComposition: production uses the managed backend provider, while a
@@ -419,9 +414,9 @@ an existing RuApp instance and drives only the `agent-*` scenarios.
 
 | Owner | Responsibilities |
 | --- | --- |
-| RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own the Broker child. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 42 HTTP routes (20 non-Agent + 22 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`WorkerV2StepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Broker child ownership in one kill-on-close Job Object. The managed Host exits after the configured idle window when no request or run remains active. |
-| RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, then validates the hash before capabilities. The Host projects thirteen Protocol definitions; the Broker binds twelve of them as separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, and `skill` tools, deliberately excluding the Host-intercepted `ask_user`, which never reaches the Broker. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity`; the grant is lost on restart, never shared with new sessions, and never authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. `files.apply_patch` is not advertised. The Broker has no public HTTP contract. |
+| RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own any execution process. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 42 HTTP routes (20 non-Agent + 22 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`ModelStepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and the in-process execution authority (`BrokerExecutionRuntime` behind `IToolGatewayFactory`). The managed Host exits after the configured idle window when no request or run remains active. |
+| RuAgentBroker | In-process execution authority for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; the run's immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root bind to the run lease, and the hash is validated before capabilities are advertised. The Host projects thirteen Protocol definitions; the authority binds twelve of them as separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, and `skill` tools, deliberately excluding the Host-intercepted `ask_user`, which never reaches it. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity`; the grant is lost on restart, never shared with new sessions, and never authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. Terminal children run as the current Windows user without OS filesystem/network confinement; policy approvals, timeout, output and Job Object process-tree bounds remain. `files.apply_patch` is not advertised. The authority has no public HTTP contract and no child process. |
 
 Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
 route ownership selector, or alternate host mode.
@@ -437,12 +432,20 @@ every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
 with durable `id: <sequence>` and reconnect via `Last-Event-ID` or
 `?after_sequence=` with `cursor_mismatch` rejection.
 
-The only private contract left is the Broker lease: the Host opens one
-profile-scoped lease per turn loop, and `RuAgent.Cli` never speaks it directly;
-the CLI is a thin HTTP/SSE client. The typed Worker protocol v2 (`/worker/v2`)
-and its WebSocket transport were retired with the worker executable
-([ADR 0012](adr/0012-in-process-model-runner.md)); one model step is now a
-typed in-process call that returns `AssistantStep(text, tool_calls,
+WinUI and CLI use the shared client event-feed reconnect path. It advances the
+resume cursor only from durable event IDs and dispatches transient activity,
+assistant-delta, summary, and tool-output frames without treating them as
+durable history. Reconnect accounting preserves each client's presentation
+policy: WinUI keeps a cumulative retry bound, while CLI progress can refill its
+retry budget. Exceptions from event callbacks propagate to the caller; they
+are not interpreted as transport failures and do not trigger a reconnect.
+
+No private wire contract remains: the Broker lease was retired with the child
+process ([ADR 0014](adr/0014-in-process-execution-and-terminal-sandbox.md)),
+and `RuAgent.Cli` is a thin HTTP/SSE client. The typed Worker protocol v2
+(`/worker/v2`) and its WebSocket transport were retired with the worker
+executable ([ADR 0012](adr/0012-in-process-model-runner.md)); one model step is
+now a typed in-process call that returns `AssistantStep(text, tool_calls,
 finish_reason)` with bounded payloads, ordering, cancellation, and stable
 error codes. One generation may contain optional narration and one or more
 ordered native calls; text-selected calls remain exactly one JSON object.
@@ -462,7 +465,7 @@ and run handles.
 The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, the in-process model step, and LLM providers:
 - **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
 - **Backend validation & persistence:** `POST /agent/v1/runs` has a 26 MiB JSON request-body bound for encoded `image_attachments` data URLs, distinct from decoded image bounds. ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MiB), total decoded size (<=20 MiB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
-- **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `WorkerV2StepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
+- **Model step integration:** the typed `ModelGenerationRequest.Images` carries decrypted `UserImage` payloads. `ModelStepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
 - **Provider projection:** Model adapters project images into provider-native payloads:
   - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
   - Anthropic Messages: `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}`

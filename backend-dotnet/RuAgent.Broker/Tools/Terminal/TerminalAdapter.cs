@@ -128,11 +128,9 @@ public sealed class TerminalAdapter
         var intent = CanonicalizeRun(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
-        // Network is audit metadata and an approval classifier, never a separate
-        // scope gate: PolicySnapshotEvaluator asks ExternalMutation on the
-        // operation class and V2 authorization arrives via Approved/token.
-        if (request.Network && !grant.Scopes.Contains(ToolScope.TerminalNetwork)
-            && !request.Approved && string.IsNullOrWhiteSpace(request.ApprovalToken))
+        var networkAuthorized = IsNetworkAuthorized(
+            grant, request.Network, request.Approved, request.ApprovalToken);
+        if (request.Network && !networkAuthorized)
         {
             throw new UnauthorizedAccessException("terminal_network_requires_approval");
         }
@@ -182,15 +180,35 @@ public sealed class TerminalAdapter
             }
         }
 
-        return ExecuteIntentAsync(intent, cancellationToken, retainOutput, killTimeoutMs);
+        return ExecuteIntentAsync(
+            intent,
+            cancellationToken,
+            retainOutput,
+            killTimeoutMs);
     }
+
+    /// <summary>
+    /// The single authorized-network condition: a declared network intent is
+    /// authorized by the terminal-network scope, an approved execution, or a
+    /// one-time approval token. This is request policy, not OS network isolation.
+    /// </summary>
+    internal static bool IsNetworkAuthorized(
+        PolicyGrant? grant,
+        bool networkIntent,
+        bool approved,
+        string? approvalToken) =>
+        networkIntent
+        && ((grant?.Scopes.Contains(ToolScope.TerminalNetwork) ?? false)
+            || approved
+            || !string.IsNullOrWhiteSpace(approvalToken));
 
     public async Task<StreamingProcessResult> RunApprovedShellAsync(
         TerminalShellRequest request,
         bool confineWorkspace,
         CancellationToken cancellationToken,
         Action<string>? retainOutput = null,
-        int? killTimeoutMs = null)
+        int? killTimeoutMs = null,
+        PolicyGrant? grant = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateWriteSet(request.ReadOnly, request.WriteSet);
@@ -204,12 +222,9 @@ public sealed class TerminalAdapter
 
         // Shell scripts always require explicit approval through the same
         // one-time token path as terminal.run: the evaluator asks (never auto)
-        // and V2 authorization arrives via Approved/token. Confinement stays as
-        // defense in depth behind that gate.
+        // and V2 authorization arrives via Approved/token. Working-directory checks apply before execution.
         EnsureShellApprovalTokenValid(request);
 
-        // The intent carries the full approved argv (runtime prefix included),
-        // so execution must run exactly what the approval bound.
         return await _runner.RunAsync(
             new ProcessRunSpec(
                 intent.ResolvedExecutable,
@@ -326,11 +341,16 @@ public sealed class TerminalAdapter
         }
 
         var location = await _gitLocator.LocateAsync(intent.CanonicalWorkingDirectory, cancellationToken).ConfigureAwait(false);
-        if (location.Resolution != GitRepositoryResolution.Found || string.IsNullOrEmpty(location.RepositoryRoot))
+        if (location.Resolution == GitRepositoryResolution.NoRepository)
         {
             var err = "error: not a git repository (or any of the parent directories)";
             return new StreamingProcessResult(
                 "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
+        }
+
+        if (location.Resolution != GitRepositoryResolution.Found || string.IsNullOrEmpty(location.RepositoryRoot))
+        {
+            return ManagedCommitFailure(intent, location.StderrTail);
         }
 
         var repoRoot = location.RepositoryRoot;
@@ -343,6 +363,11 @@ public sealed class TerminalAdapter
 
         if (!statusResult.Succeeded)
         {
+            if (statusResult.ExitCode < 0)
+            {
+                return ManagedCommitFailure(intent, statusResult.FailureReason);
+            }
+
             var err = "error: unable to read git status before commit: " + statusResult.Stderr;
             return new StreamingProcessResult(
                 "failed", 1, 0, string.Empty, string.Empty, err, err, 0, err.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
@@ -400,6 +425,17 @@ public sealed class TerminalAdapter
 
         return new StreamingProcessResult(
             "failed", 1, 50, string.Empty, string.Empty, failMsg, failMsg, 0, failMsg.Length, 0, 0, 1, 0, intent.CanonicalWorkingDirectory);
+    }
+
+    private static StreamingProcessResult ManagedCommitFailure(CanonicalCommandIntent intent, string failureCode)
+    {
+        var timedOut = failureCode == "git_timed_out";
+        var code = failureCode == "process_start_failed"
+            ? failureCode
+            : timedOut ? failureCode : "git_command_failed";
+        return new StreamingProcessResult(
+            timedOut ? "timed_out" : "failed", code == "git_command_failed" ? 1 : null, 0, string.Empty, string.Empty, code, string.Empty,
+            0, code.Length, 0, 0, 0, 0, intent.CanonicalWorkingDirectory);
     }
 
     private void EnforceWorkingDirectoryPolicy(CanonicalCommandIntent intent, bool confineWorkspace)

@@ -1487,7 +1487,19 @@ public sealed partial class AgentCommands
                 await _out.FlushAsync().ConfigureAwait(false);
             }
 
-            await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
+            try
+            {
+                await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested
+                && string.Equals(parkedRunId, runId, StringComparison.Ordinal))
+            {
+                // Parking deliberately cancels the subscription. Preserve the
+                // durable-text recovery leg before the caller winds down the turn.
+                sessionRenderer.Flush();
+                await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+                throw;
+            }
             sessionRenderer.Flush();
             // The recovery reprints a lost suffix through the same surface/writer the turn
             // streamed through, so it works for both engines; only the truncation repaint is

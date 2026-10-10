@@ -1,4 +1,3 @@
-using System.Text.Json;
 using RuAgent.Broker.Runtime;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
@@ -9,37 +8,70 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class BrokerSessionTests
 {
+    /// <summary>
+    /// In-process runtime sessions are descriptor-free: no broker.json, no
+    /// loopback base URL, no bearer token — only the root and lifetime are
+    /// real. Lease, scope and close behavior must stay exact.
+    /// </summary>
     [Fact]
-    public void Load_accepts_a_loopback_descriptor_under_its_session_root()
+    public void CreateForHost_opens_a_run_lease_and_closes_without_a_descriptor_file()
     {
-        using var fixture = DescriptorFixture.Create();
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
 
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        Assert.False(session.IsReady);
+        Assert.Equal(Path.GetFullPath(fixture.Root), session.SessionRoot);
+        Assert.True(session.Open("session-host", new HashSet<string>(["workspace.write"], StringComparer.Ordinal)));
+        Assert.Equal(new[] { "workspace.write" }, session.ScopesFor("session-host").ToArray());
 
-        Assert.Equal(fixture.Descriptor.BaseUrl, session.Descriptor.BaseUrl);
-        Assert.Equal(fixture.Descriptor.AuthToken, session.Descriptor.AuthToken);
-        Assert.Equal(Path.Combine(Path.GetFullPath(fixture.Root), "session"), session.Descriptor.SessionRoot);
+        var lease = CreateLease(
+            "run_11111111111111111111111111111111",
+            "session-host",
+            LeaseTestSnapshots.WorkspaceId,
+            LeaseTestSnapshots.DisplayHash,
+            Path.GetTempPath(),
+            LeaseTestSnapshots.StandardEmpty());
+        Assert.True(session.TryOpenRunLease(lease, out var leaseError));
+        Assert.Null(leaseError);
+        Assert.Equal(lease.RunId, session.ActiveRunLease!.RunId);
+
+        Assert.True(session.TryCloseRun(lease.RunId));
+        Assert.Null(session.ActiveRunLease);
+        Assert.True(session.Owns("session-host"));
+
+        session.Close("session-host");
+
+        Assert.False(session.IsReady);
+        Assert.False(session.Owns("session-host"));
     }
 
-    [Theory]
-    [InlineData("missing_token")]
-    [InlineData("root_escape")]
-    [InlineData("expired")]
-    public void Load_rejects_invalid_descriptors(string scenario)
+    [Fact]
+    public void CreateForHost_applies_advertised_capabilities_and_fails_closed_on_bad_inputs()
     {
-        using var fixture = DescriptorFixture.Create(scenario);
+        var root = Path.Combine(Path.GetTempPath(), "ru-host-session-" + Guid.NewGuid().ToString("N"));
 
-        var error = Assert.Throws<BrokerSessionException>(
-            () => BrokerSession.Load(fixture.DescriptorPath, fixture.Now));
+        var rootEscape = Assert.Throws<BrokerSessionException>(
+            () => BrokerSession.CreateForHost(
+                "relative" + Path.DirectorySeparatorChar + "session",
+                DateTimeOffset.UtcNow.AddMinutes(30)));
+        Assert.Equal("root_escape", rootEscape.Code);
 
-        Assert.Equal(scenario, error.Code);
+        var expired = Assert.Throws<BrokerSessionException>(
+            () => BrokerSession.CreateForHost(root, DateTimeOffset.UtcNow.AddSeconds(-1)));
+        Assert.Equal("expired", expired.Code);
+
+        var session = BrokerSession.CreateForHost(
+            root,
+            DateTimeOffset.UtcNow.AddMinutes(30),
+            advertisedCapabilities: ["read"]);
+        Assert.Equal(new[] { "read" }, session.AdvertisedCapabilities);
     }
 
     [Fact]
     public void A_different_owner_must_wait_until_the_active_session_closes()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var scopes = new HashSet<string>(["workspace.write"], StringComparer.Ordinal);
 
         Assert.True(session.Open("session-1", scopes));
@@ -53,8 +85,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void Closing_a_session_drops_only_its_own_grants()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var grantedDirectory = Path.Combine(fixture.Root, "external");
         Directory.CreateDirectory(grantedDirectory);
         Assert.True(session.Open("broker-owner"));
@@ -75,8 +107,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void V2_run_open_requires_valid_lease_before_advertising_capabilities()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var snapshot = LeaseTestSnapshots.StandardEmpty();
         var lease = BrokerRunLease.CreateValidated(
             "run_11111111111111111111111111111111",
@@ -102,8 +134,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void V2_run_leases_coexist_across_sessions()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         Assert.True(session.Open("session-owner"));
 
         var lease = CreateLease(
@@ -123,8 +155,6 @@ public sealed class BrokerSessionTests
     [Fact]
     public void V2_identity_hash_mismatch_fails_closed()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
         var ex = Assert.Throws<AgentProtocolException>(() => BrokerRunLease.CreateValidated(
             "run_11111111111111111111111111111111",
             "session-1",
@@ -144,8 +174,6 @@ public sealed class BrokerSessionTests
     [Fact]
     public void V2_lease_expired_fails_closed()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
         var snapshot = LeaseTestSnapshots.StandardEmpty();
         var ex = Assert.Throws<AgentProtocolException>(() => BrokerRunLease.CreateValidated(
             "run_11111111111111111111111111111111",
@@ -166,8 +194,6 @@ public sealed class BrokerSessionTests
     [Fact]
     public void Phase_one_snapshot_advertises_every_canonical_tool()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
         var lease = CreateLease(
             "run_22222222222222222222222222222222",
             "session-2",
@@ -212,8 +238,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void Rebind_increments_binding_version()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var first = CreateLease(
             "run_cccc3333333333333333333333333333",
             "session-rebind",
@@ -240,8 +266,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void Rebind_requires_a_monotonically_newer_snapshot_version()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var root = Path.Combine(Path.GetTempPath(), "ru-rebind-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -284,8 +310,8 @@ public sealed class BrokerSessionTests
     [Fact]
     public void Rebind_rejects_a_moved_workspace_identity()
     {
-        using var fixture = DescriptorFixture.Create();
-        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        using var fixture = SessionFixture.Create();
+        var session = fixture.Session;
         var first = CreateLease(
             "run_eeee5555555555555555555555555555",
             "session-moved-rebind",
@@ -379,43 +405,28 @@ public sealed class BrokerSessionTests
             snapshot,
             bindingVersion);
 
-    private sealed class DescriptorFixture : IDisposable
+    /// <summary>
+    /// A descriptor-free session over a throwaway root, disposed with its root.
+    /// </summary>
+    private sealed class SessionFixture : IDisposable
     {
-        private DescriptorFixture(
-            string root,
-            string descriptorPath,
-            BrokerSessionDescriptor descriptor,
-            DateTimeOffset now)
+        private SessionFixture(string root, BrokerSession session)
         {
             Root = root;
-            DescriptorPath = descriptorPath;
-            Descriptor = descriptor;
-            Now = now;
+            Session = session;
         }
 
         public string Root { get; }
-        public string DescriptorPath { get; }
-        public BrokerSessionDescriptor Descriptor { get; }
-        public DateTimeOffset Now { get; }
+        public BrokerSession Session { get; }
 
-        public static DescriptorFixture Create(string? scenario = null)
+        public static SessionFixture Create(DateTimeOffset? now = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-agent-session-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
-            var sessionRoot = Path.Combine(root, "session");
-            Directory.CreateDirectory(sessionRoot);
-            var descriptorPath = Path.Combine(root, "broker.json");
-            var now = DateTimeOffset.UtcNow;
-            var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:18086",
-                scenario == "missing_token" ? string.Empty : "broker-token",
-                1,
-                scenario == "root_escape" ? Path.Combine(root, "..", "outside") : sessionRoot,
-                scenario == "expired" ? now.AddSeconds(-1) : now.AddMinutes(5));
-            File.WriteAllText(
-                descriptorPath,
-                JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-            return new DescriptorFixture(root, descriptorPath, descriptor, now);
+            var effectiveNow = now ?? DateTimeOffset.UtcNow;
+            return new SessionFixture(
+                root,
+                BrokerSession.CreateForHost(root, effectiveNow.AddMinutes(5), now: effectiveNow));
         }
 
         public void Dispose()
@@ -443,4 +454,3 @@ internal static class LeaseTestSnapshots
         [],
         CreatedAt);
 }
-

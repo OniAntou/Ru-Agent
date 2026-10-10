@@ -1,6 +1,6 @@
 # Coding-agent capability baseline
 
-This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-08: background terminal tasks are implemented, submission and durable argument ownership have been consolidated, and custom multilingual Terminal/SWE-style benchmarks are available. Live-provider task quality remains unmeasured.
+This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-11: terminal OS confinement was retired under ADR-0015; terminal children run as the current Windows user, while Job Object bounds, ordinary approvals, and secret redaction remain. The [post-refactor Nemotron rerun](verification.md#post-refactor-live-coding-rerun-2026-10-10) resolved 0/9 custom tasks under `standard`; its model/tool-use and approval failures do not establish general coding quality.
 
 ## Reference workflows
 
@@ -19,7 +19,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters | Real-provider task-quality baseline has not been measured |
+| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](verification.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery and explicit `/follow`/`/continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |
@@ -35,8 +35,8 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 | Background terminal tasks | Session-scoped Broker registry with a per-session cap and lifetime; foreground commands auto-move to the background at their timeout; live `read_output` paging; `mode=kill`; `/tasks` command, the compact right-hand card, a tabbed details panel (Changes, Tasks) with a title-bar visibility toggle, and a bounded `background_tasks` prompt reference | Live-provider long-task behavior and native card/panel acceptance |
 | Interactive terminal (GUI) | ConPTY plus vendored xterm.js in WebView2, PowerShell in the session workspace; a user-only surface the Agent can neither see nor call, killed with the app or a workspace change; the WebView2 runtime ships with Windows 11 | Native terminal rendering, resize and Unicode acceptance |
 | External instructions | Workspace AGENTS and lazy Markdown skills | Instructions remain untrusted and never confer execution authority |
-| Workflow evaluation | Eleven hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; live-provider results are not available |
-| Coding benchmark | Six custom Terminal-style tasks and three SWE-style issue repositories across C#, Python and TypeScript; external graders, reference self-tests, fresh Git baselines and opt-in native RPC trials | Compact public corpus; real-provider Ru quality, official dataset scores and container parity remain unmeasured |
+| Workflow evaluation | Eleven hashed scenario oracles; isolated scripted CLI/Host/Broker tool-cycle runner | Scripted wiring is not model quality; eleven cases remain unmeasured or unmet; this workflow evaluator has no live quality run |
+| Coding benchmark | Six custom Terminal-style tasks and three SWE-style issue repositories across C#, Python and TypeScript; external graders, reference self-tests, fresh Git baselines and opt-in native RPC trials | Compact public corpus; dated Step 5 pilot and post-refactor Nemotron rerun recorded under different conditions; official dataset scores and container parity remain unmeasured |
 
 ## Acceptance boundary
 
@@ -54,8 +54,10 @@ The [coding benchmark](../../tools/coding-benchmark/README.md) provides separate
 source-task and issue-to-patch suites. Its oracle self-test verifies starter
 failures and reference passes, including SWE regression/preservation groups.
 Native grading executes trusted code and is not an OS sandbox. The existing
-workflow evaluator above still measures scripted integration; neither result
-should be reported as a live-model coding score.
+workflow evaluator above still measures scripted integration. Oracle self-tests
+and scripted workflows do not measure model quality; native live trials provide
+condition-specific evidence with pinned runtime, model and policy. Candidate
+grader correctness and unattended run completion must be reported separately.
 
 Session listing queries indexed SQLite summaries across all stored sessions and returns the newest 500, ordered by UTC update time and then session ID. More rows set `sessions_truncated`; there is no filesystem scan, byte-budget or summary-cache deadline. The one-time legacy import validates transcript files separately.
 
@@ -65,4 +67,4 @@ Transcript retention is capped at 2,000 rows, 200,000 Unicode scalars and 16,000
 
 ## Remaining independent projects
 
-OS-enforced process-tree/filesystem/network sandboxing, built-in subagent orchestration, LSP, executable plugin/MCP integration and installers remain distinct architectural projects. They require explicit execution boundaries, dependency and authority designs; a UI affordance or allowlist is not proof that those capabilities exist.
+Built-in subagent orchestration, LSP, executable plugin/MCP integration and installers remain distinct architectural projects. They require explicit execution boundaries, dependency and authority designs; a UI affordance or allowlist is not proof that those capabilities exist. Terminal OS sandboxing has been retired by [ADR 0015](../adr/0015-retire-terminal-os-sandbox.md).

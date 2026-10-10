@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Paths;
 
@@ -9,108 +8,31 @@ public sealed class FileRestoreAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
     private readonly int _maxRecoveryBytes;
-
-    // In-memory registry for Broker-level tests (process-isolated). For the persistence-backed Host path, FileRecoveryStore is used directly.
-    private static readonly ConcurrentDictionary<string, RecoveryRecord> _store = new();
-    // ExecuteWithBytes is the adapter boundary used by persistence-backed hosts. Keep
-    // a short-lived replay ledger for those opaque ids as well; otherwise a caller could
-    // invoke that public API repeatedly with the same recovery bytes.
-    private static readonly ConcurrentDictionary<string, DateTimeOffset> _externalConsumed = new();
-    private static readonly TimeSpan ExternalConsumedTtl = TimeSpan.FromMinutes(30);
-    private const int MaxRecoveryRecords = 4096;
-
-    private sealed record RecoveryRecord(
-        string CanonicalPath,
-        byte[] Content,
-        string Sha256,
-        DateTimeOffset CreatedAt,
-        bool IsConsumed);
+    private readonly InMemoryRecoveryStore _store;
 
     public FileRestoreAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
+        : this(workspaceRoot, new InMemoryRecoveryStore(), maxRecoveryBytes)
+    {
+    }
+
+    // A shared store is required when delete and restore must observe the same
+    // recovery ids (ToolExecutionService owns one per instance).
+    internal FileRestoreAdapter(string workspaceRoot, InMemoryRecoveryStore store, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        ArgumentNullException.ThrowIfNull(store);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _resolver = new CanonicalPathResolver(_workspaceRoot);
         _maxRecoveryBytes = FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
-    }
-
-    // For testing: allow injecting a recovery directly (simulates Host gateway having stored recovery)
-    internal static string RegisterForTest(string canonicalPath, byte[] content, string sha256)
-    {
-        ArgumentNullException.ThrowIfNull(content);
-        ValidateRecoveryHash(content, sha256);
-        PruneStore(DateTimeOffset.UtcNow);
-        if (content.Length > FileDeleteAdapter.MaxRecoveryBytes)
-        {
-            throw new ArgumentException("recovery_too_large", nameof(content));
-        }
-
-        var id = "payload_" + Guid.NewGuid().ToString("N");
-        var record = new RecoveryRecord(canonicalPath, (byte[])content.Clone(), sha256, DateTimeOffset.UtcNow, false);
-        _store[id] = record;
-        PruneStore(DateTimeOffset.UtcNow);
-        return id;
-    }
-
-    internal static void RegisterWithId(string recoveryId, string canonicalPath, byte[] content, string sha256, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
-    {
-        ArgumentNullException.ThrowIfNull(content);
-        ValidateRecoveryHash(content, sha256);
-        PruneStore(DateTimeOffset.UtcNow);
-        if (content.Length > FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes))
-        {
-            throw new ArgumentException("recovery_too_large", nameof(content));
-        }
-
-        var record = new RecoveryRecord(canonicalPath, (byte[])content.Clone(), sha256, DateTimeOffset.UtcNow, false);
-        _store[recoveryId] = record;
-        PruneStore(DateTimeOffset.UtcNow);
-    }
-
-    internal static void ClearForTest()
-    {
-        _store.Clear();
-        _externalConsumed.Clear();
-    }
-
-    internal static bool IsAvailable(string recoveryId)
-    {
-        PruneStore(DateTimeOffset.UtcNow);
-        return _store.TryGetValue(recoveryId, out var rec)
-            && !rec.IsConsumed;
-    }
-
-    /// <summary>
-    /// Peeks the restore target without reserving or consuming the record, so
-    /// the dispatcher can select the session-granted adapter root for an
-    /// external restore. Returns false for unknown, consumed, or missing ids;
-    /// callers then fall back to the lease toolset, which raises the native
-    /// recovery error. Never throws.
-    /// </summary>
-    internal static bool TryGetCanonicalPath(string? recoveryId, out string? canonicalPath)
-    {
-        canonicalPath = null;
-        if (string.IsNullOrWhiteSpace(recoveryId))
-        {
-            return false;
-        }
-
-        if (_store.TryGetValue(recoveryId, out var record) && !record.IsConsumed)
-        {
-            canonicalPath = record.CanonicalPath;
-            return true;
-        }
-
-        return false;
+        _store = store;
     }
 
     public JsonObject Prepare(JsonObject arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        PruneStore(DateTimeOffset.UtcNow);
         var recoveryId = GetRequiredString(arguments, "recovery_id");
 
-        if (!_store.TryGetValue(recoveryId, out var record))
+        if (!_store.TryGet(recoveryId, out var record))
         {
             throw new FileNotFoundException("recovery_unavailable");
         }
@@ -123,7 +45,7 @@ public sealed class FileRestoreAdapter
         // Never perform a filesystem mutation from an inconsistent recovery
         // record. This also protects the test/persistence seam if a corrupted
         // payload or hash reaches the adapter.
-        ValidateRecoveryHash(record.Content, record.Sha256);
+        InMemoryRecoveryStore.ValidateRecoveryHash(record.Content, record.Sha256);
 
         var resolved = _resolver.Resolve(record.CanonicalPath);
 
@@ -146,10 +68,9 @@ public sealed class FileRestoreAdapter
     public JsonObject Execute(JsonObject arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        PruneStore(DateTimeOffset.UtcNow);
         var recoveryId = GetRequiredString(arguments, "recovery_id");
 
-        if (!_store.TryGetValue(recoveryId, out var record))
+        if (!_store.TryGet(recoveryId, out var record))
         {
             throw new FileNotFoundException("recovery_unavailable");
         }
@@ -162,8 +83,7 @@ public sealed class FileRestoreAdapter
             throw new InvalidOperationException("recovery_consumed");
         }
 
-        var reserved = record with { IsConsumed = true };
-        if (!_store.TryUpdate(recoveryId, reserved, record))
+        if (!_store.TryReserve(recoveryId, record, out var reserved))
         {
             throw new InvalidOperationException("recovery_consumed");
         }
@@ -188,7 +108,7 @@ public sealed class FileRestoreAdapter
             reservationHeld = false;
             // One-time contract: the record is removed after a successful restore so
             // a replay fails as unavailable, matching the Host recovery store.
-            _store.TryRemove(recoveryId, out _);
+            _store.TryRemove(recoveryId);
 
             return new JsonObject
             {
@@ -202,7 +122,7 @@ public sealed class FileRestoreAdapter
         {
             if (reservationHeld)
             {
-                _store.TryUpdate(recoveryId, record, reserved);
+                _store.Release(recoveryId, record, reserved);
             }
 
             throw;
@@ -252,13 +172,12 @@ public sealed class FileRestoreAdapter
 
         // A recovery id owned by the in-memory registry must be consumed through the
         // normal path, never through a caller-supplied byte array.
-        if (_store.ContainsKey(recoveryId))
+        if (_store.ContainsRecord(recoveryId))
         {
             throw new InvalidOperationException("recovery_unavailable");
         }
 
-        PruneExternalConsumed(DateTimeOffset.UtcNow);
-        if (!_externalConsumed.TryAdd(recoveryId, DateTimeOffset.UtcNow))
+        if (!_store.TryConsumeExternal(recoveryId))
         {
             throw new InvalidOperationException("recovery_consumed");
         }
@@ -292,32 +211,8 @@ public sealed class FileRestoreAdapter
         {
             if (reservationHeld)
             {
-                _externalConsumed.TryRemove(recoveryId, out _);
+                _store.ReleaseExternal(recoveryId);
             }
-        }
-    }
-
-    private static void PruneExternalConsumed(DateTimeOffset now)
-    {
-        var cutoff = now - ExternalConsumedTtl;
-        foreach (var entry in _externalConsumed)
-        {
-            if (entry.Value <= cutoff)
-            {
-                _externalConsumed.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
-            }
-        }
-
-        if (_externalConsumed.Count <= MaxRecoveryRecords)
-        {
-            return;
-        }
-
-        foreach (var entry in _externalConsumed
-                     .OrderBy(pair => pair.Value)
-                     .Take(_externalConsumed.Count - MaxRecoveryRecords))
-        {
-            _externalConsumed.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
         }
     }
 
@@ -407,39 +302,6 @@ public sealed class FileRestoreAdapter
 
             return (resolved, restoredBytes);
         });
-    }
-
-    private static void PruneStore(DateTimeOffset now)
-    {
-        var cutoff = now - TimeSpan.FromMinutes(30);
-        foreach (var entry in _store)
-        {
-            if (entry.Value.CreatedAt <= cutoff)
-            {
-                _store.TryRemove(new KeyValuePair<string, RecoveryRecord>(entry.Key, entry.Value));
-            }
-        }
-
-        if (_store.Count <= MaxRecoveryRecords)
-        {
-            return;
-        }
-
-        foreach (var entry in _store
-                     .OrderBy(pair => pair.Value.CreatedAt)
-                     .Take(_store.Count - MaxRecoveryRecords))
-        {
-            _store.TryRemove(new KeyValuePair<string, RecoveryRecord>(entry.Key, entry.Value));
-        }
-    }
-
-    private static void ValidateRecoveryHash(byte[] content, string sha256)
-    {
-        if (!FileHashService.IsValidSha256(sha256)
-            || !string.Equals(FileHashService.ComputeBytesHash(content), sha256, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("invalid_recovery_hash");
-        }
     }
 
     private static byte[] ReadBoundedBytes(string canonicalPath, int maxRecoveryBytes)

@@ -55,13 +55,20 @@ namespace RuApp.Controls
         /// Presents one pending approval. A blank command hides the command block, so
         /// a non-terminal approval does not show an empty code box. The plain approve
         /// label follows the Host's session approval ledger: remembered for the
-        /// session on every non-external ask, single-use on an external-directory ask
-        /// (whose session grant is the separate session button). The session
-        /// affordance appears only for external-directory asks because the server
-        /// fails that command for every other reason; the Always allow affordance
-        /// appears for every other known ask reason and saves a project rule.
+        /// session on every ask whose memory the evaluator honours, single-use on an
+        /// external-directory ask (whose session grant is the separate session
+        /// button) and an explicit rule ask, which outranks remembered allows. The
+        /// session affordance appears only for external-directory asks
+        /// because the server fails that command for every other reason; the Always
+        /// allow affordance appears for every other known ask reason and saves a
+        /// project rule.
         /// </summary>
-        public void Show(string summary, string? command, bool allowSessionDirectory = false, bool allowRememberAlways = false)
+        public void Show(
+            string summary,
+            string? command,
+            bool allowSessionDirectory = false,
+            bool allowRememberAlways = false,
+            bool allowSessionMemory = true)
         {
             SummaryText.Text = summary ?? string.Empty;
 
@@ -76,14 +83,17 @@ namespace RuApp.Controls
                 CommandContainer.Visibility = Visibility.Collapsed;
             }
 
-            ApproveButtonLabel.Text = allowSessionDirectory
+            bool allowOnce = allowSessionDirectory || !allowSessionMemory;
+            ApproveButtonLabel.Text = allowOnce
                 ? "Allow once"
                 : "Allow (remember for session)";
             AutomationProperties.SetName(
                 ApproveButton,
                 allowSessionDirectory
                     ? "Allow this folder call once"
-                    : "Allow and remember for this chat session");
+                    : allowSessionMemory
+                        ? "Allow and remember for this chat session"
+                        : "Allow this call once");
 
             AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
             RememberButton.Visibility = !allowSessionDirectory && allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;

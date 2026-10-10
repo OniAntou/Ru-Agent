@@ -7,12 +7,9 @@ namespace RuAgent.Hosting;
 public sealed class PublicHostRuntimeOptions
 {
     public const int DefaultPublicPort = 8000;
-    public const int DefaultBrokerPortRangeStart = 1024;
-    public const int DefaultBrokerPortRangeEnd = 65535;
     public const string DefaultBindUrl = "http://127.0.0.1:8000";
 
     public int PublicPort { get; init; } = DefaultPublicPort;
-    public int BrokerPort { get; init; }
     public string ProjectRoot { get; init; } = Directory.GetCurrentDirectory();
     public string DataRoot { get; init; } = string.Empty;
     public string LogRoot { get; init; } = string.Empty;
@@ -24,7 +21,6 @@ public sealed class PublicHostRuntimeOptions
         string? dataRoot = null,
         string? logRoot = null,
         int publicPort = DefaultPublicPort,
-        int? brokerPort = null,
         string? instanceNonce = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
@@ -35,15 +31,10 @@ public sealed class PublicHostRuntimeOptions
         var resolvedDataRoot = string.IsNullOrWhiteSpace(dataRoot) ? string.Empty : Path.GetFullPath(dataRoot.Trim());
         var resolvedLogRoot = string.IsNullOrWhiteSpace(logRoot) ? ResolveLogRoot(resolvedProjectRoot, null) : Path.GetFullPath(logRoot.Trim());
         var descriptorPath = ResolveDescriptorPath(resolvedDataRoot, resolvedLogRoot, resolvedProjectRoot);
-        var selectedBrokerPort = brokerPort ?? FindFreeLoopbackPort();
-        if (selectedBrokerPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(brokerPort));
-        if (selectedBrokerPort == publicPort || selectedBrokerPort == 8001)
-            throw new ArgumentException("Broker port must not collide.");
 
         return new PublicHostRuntimeOptions
         {
             PublicPort = publicPort,
-            BrokerPort = selectedBrokerPort,
             ProjectRoot = resolvedProjectRoot,
             DataRoot = resolvedDataRoot,
             LogRoot = resolvedLogRoot,

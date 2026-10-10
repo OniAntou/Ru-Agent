@@ -141,9 +141,11 @@ public sealed class StreamingProcessRunnerTests
         var secret = "ru-bearer-super-secret-value";
         var runner = new StreamingProcessRunner(redactionSeeds: [secret]);
         var frames = new List<string>();
-        // The secret is split across two echo statements so the chunks arrive separately.
+        // No newline separates the writes: the actual secret spans decoder chunks.
+        var script = $"[Console]::Write('{secret[..10]}'); Start-Sleep -Milliseconds 100; "
+            + $"[Console]::Write('{secret[10..]}:after')";
         var result = await runner.RunAsync(
-            CmdSpec($"echo {secret.Substring(0, 10)}& echo {secret.Substring(10)}"),
+            CmdSpec($"powershell -NoProfile -EncodedCommand {EncodePowerShell(script)}"),
             (_, _, text, _, token) =>
             {
                 frames.Add(text);
@@ -152,6 +154,8 @@ public sealed class StreamingProcessRunnerTests
             CancellationToken.None);
 
         Assert.DoesNotContain(secret, result.StdoutHead, StringComparison.Ordinal);
+        Assert.Contains("[redacted]", result.StdoutHead, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, string.Concat(frames), StringComparison.Ordinal);
         foreach (var frame in frames)
         {
             Assert.DoesNotContain(secret, frame, StringComparison.Ordinal);

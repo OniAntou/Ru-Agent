@@ -41,6 +41,8 @@ def _write_stub_commands(
         f'  del /q "%RU_BUILD_TEST_ROOT%\\{omitted_path}" >nul 2>&1\n'
         if omitted_path else ""
     )
+    # The Broker publish tree is deliberately populated as a stale leftover: the
+    # build must neither clean, publish nor flatten it any more.
     (bin_dir / "dotnet.cmd").write_text(
         "@echo off\n"
         ">>\"%RU_BUILD_TEST_ROOT%\\dotnet.invocations\" echo %*\n"
@@ -139,9 +141,10 @@ def test_publish_order_and_self_contained_gui_flags(tmp_path: Path) -> None:
     commands = (tmp_path / "checkout/dotnet.invocations").read_text(encoding="utf-8").splitlines()
     publishes = [command for command in commands if command.startswith("publish ")]
     cli = next(i for i, command in enumerate(publishes) if "RuAgent.Cli.csproj" in command)
-    broker = next(i for i, command in enumerate(publishes) if "RuAgent.Broker.csproj" in command)
     backend = next(i for i, command in enumerate(publishes) if "RuBackend.csproj" in command)
-    assert cli < broker < backend
+    assert cli < backend
+    # The Broker ships as a library: it must not have a publish stage.
+    assert not any("RuAgent.Broker.csproj" in command for command in publishes)
     gui = next(command for command in publishes if "RuApp.csproj" in command)
     assert all(flag in gui.split() for flag in (
         "-p:Platform=x64", "-p:RuntimeIdentifier=win-x64", "-p:SelfContained=true",
@@ -185,10 +188,12 @@ def test_release_flattens_every_executable_into_one_directory(tmp_path: Path) ->
     for executable in (
         "RuApp.exe",
         "RuBackend.exe",
-        "RuAgent.Broker.exe",
         "RuAgent.Cli.exe",
     ):
         assert (publish / executable).is_file(), f"Missing from the flat layout: {executable}"
+    # The Broker is a library now: a stale broker publish tree must never reach
+    # the flat layout.
+    assert not (publish / "RuAgent.Broker.exe").exists()
 
 
 def test_flat_layout_stage_does_not_copy_the_destination_into_itself(tmp_path: Path) -> None:
@@ -320,7 +325,6 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
     for project, executable, target_framework in (
         ("RuBackend", "RuBackend.exe", "net10.0"),
-        ("RuAgent.Broker", "RuAgent.Broker.exe", "net10.0"),
         ("RuAgent.Cli", "RuAgent.Cli.exe", "net10.0-windows"),
     ):
         service = (
@@ -361,8 +365,9 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
 
 
 def test_start_dev_accepts_a_layout_without_the_worker_publish(tmp_path: Path) -> None:
-    """The Worker executable no longer ships, so the four remaining publishes are
-    the whole preflight. This fails if the removed guard is reintroduced."""
+    """The Worker and Broker executables no longer ship, so the three remaining
+    publishes are the whole preflight. This fails if a removed guard is
+    reintroduced."""
     repo_root = Path(__file__).resolve().parents[1]
     script = tmp_path / "start_dev.bat"
     shutil.copy2(repo_root / "start_dev.bat", script)
@@ -379,7 +384,6 @@ def test_start_dev_accepts_a_layout_without_the_worker_publish(tmp_path: Path) -
     (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
     for project, executable, target_framework in (
         ("RuBackend", "RuBackend.exe", "net10.0"),
-        ("RuAgent.Broker", "RuAgent.Broker.exe", "net10.0"),
         ("RuAgent.Cli", "RuAgent.Cli.exe", "net10.0-windows"),
     ):
         service = (

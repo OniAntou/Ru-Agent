@@ -8,7 +8,7 @@ using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;
 
-public sealed class AgentRunCoordinatorTests
+public sealed partial class AgentRunCoordinatorTests
 {
     [Fact]
     public async Task Null_provider_call_id_fails_before_model_step_commit()

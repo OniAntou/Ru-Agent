@@ -224,17 +224,6 @@ public sealed class BrokerApprovalState
         }
     }
 
-    public void InvalidateRunTokens(string runId)
-    {
-        lock (_sync)
-        {
-            if (_runs.TryGetValue(runId, out var run))
-            {
-                run.Tokens.Clear();
-            }
-        }
-    }
-
     public void ClearRun(string runId)
     {
         lock (_sync)

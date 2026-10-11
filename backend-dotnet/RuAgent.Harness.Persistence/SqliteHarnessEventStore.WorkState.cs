@@ -56,9 +56,21 @@ public sealed partial class SqliteHarnessEventStore
                 await TryMarkWorkStatePartialAsync(connection, transaction, currentRun, commit,
                     receipt, cancellationToken).ConfigureAwait(false);
             }
-            catch (SqliteException)
+            catch (SqliteException error) when (error.SqliteErrorCode == 19)
             {
+                // A constraint or trigger rejection is a shape problem with the
+                // derived work state, not with the event being committed: the
+                // receipt commit proceeds and coverage is projected as partial
+                // (pinned by the failed-state-update store tests).
                 continue;
+            }
+            catch (SqliteException error)
+            {
+                // Every other SQLite failure (I/O, database full, corrupt page)
+                // is an infrastructure fault: aborting the commit is the only
+                // honest answer, because continuing would leave the durable
+                // event stream and the work state silently out of sync.
+                throw new HarnessStoreException("session_work_state_unavailable", error);
             }
         }
     }
@@ -79,11 +91,19 @@ public sealed partial class SqliteHarnessEventStore
         catch (HarnessStoreException error) when (error.Code.StartsWith("session_work_state_", StringComparison.Ordinal))
         {
         }
-        catch (SqliteException)
-        {
-        }
         catch (Exception error) when (error is ArgumentException or JsonException)
         {
+        }
+        catch (SqliteException error) when (error.SqliteErrorCode == 19)
+        {
+            // The degradation marker itself was rejected: nothing more can be
+            // written for this receipt, and the commit still stands.
+        }
+        catch (SqliteException error)
+        {
+            // An infrastructure failure while writing the marker aborts the
+            // commit for the same reason the primary update does.
+            throw new HarnessStoreException("session_work_state_unavailable", error);
         }
     }
 

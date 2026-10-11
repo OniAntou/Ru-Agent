@@ -100,6 +100,15 @@ public sealed class AgentConversationOutboxDispatcher
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
+    /// <summary>
+    /// How many scheduled retries a transient session-store failure may spend
+    /// before the intent fails durably. The backoff caps at 60s, so this is
+    /// several minutes of retries; a store that keeps failing past that is no
+    /// longer transient, and retrying forever would pin the run in its history
+    /// wait with no terminal code the user could act on.
+    /// </summary>
+    public const int MaximumTransientDispatchAttempts = 12;
+
     private readonly HarnessOutboxStore _outbox;
     private readonly HarnessPayloadStore _payloads;
     private readonly ISessionStore _sessions;
@@ -195,6 +204,18 @@ public sealed class AgentConversationOutboxDispatcher
         switch (append)
         {
             case SessionAppendOutcome.TransientFailure:
+                if (claim.AttemptCount >= MaximumTransientDispatchAttempts)
+                {
+                    // The retry budget is spent: fail the intent with the code
+                    // that describes the failure instead of rescheduling again.
+                    return await FailAsync(
+                            claim,
+                            "session_store_transient",
+                            now,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 var retry = await _outbox.RetryAsync(
                         claim.IntentId,
                         claim.ClaimToken,

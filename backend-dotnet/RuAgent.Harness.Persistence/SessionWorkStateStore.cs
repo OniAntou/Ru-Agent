@@ -122,7 +122,7 @@ public sealed class SessionWorkStateStore(
         ArgumentNullException.ThrowIfNull(state);
         if (expectedVersion < 0 || state.Version != expectedVersion + 1)
             throw new ArgumentOutOfRangeException(nameof(expectedVersion));
-        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken).ConfigureAwait(false);
+        var health = await HarnessSqliteSchema.EnsureInitializedAsync(_options, cancellationToken).ConfigureAwait(false);
         if (!health.IsAvailable) throw new HarnessStoreException(health.ErrorCode ?? "harness_store_unavailable");
         await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: false);

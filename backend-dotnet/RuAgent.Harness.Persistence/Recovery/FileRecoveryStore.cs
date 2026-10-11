@@ -151,6 +151,24 @@ public sealed class FileRecoveryStore
         PayloadId recoveryId,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            return await ConsumeRecoveryCoreAsync(runId, recoveryId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SqliteException error)
+        {
+            // Two consumers racing for the same recovery make the deferred
+            // transaction lose its write lock; the caller must see the store's
+            // own bounded code rather than a raw SQLite exception.
+            throw new HarnessStoreException("payload_recovery_unavailable", error);
+        }
+    }
+
+    private async Task<byte[]> ConsumeRecoveryCoreAsync(
+        RunId runId,
+        PayloadId recoveryId,
+        CancellationToken cancellationToken)
+    {
         _ = runId.Value;
         _ = recoveryId.Value;
         await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
@@ -197,13 +215,14 @@ public sealed class FileRecoveryStore
         runCheck.CommandText = "SELECT terminal_at_utc FROM agent_runs WHERE run_id = $run_id";
         runCheck.Parameters.AddWithValue("$run_id", runId.Value);
         var terminalObj = await runCheck.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        if (terminalObj is null || terminalObj == DBNull.Value)
+        if (terminalObj is null)
         {
-            // run not found? treat as unavailable
-            // If terminal_at_utc is not null, run is terminal -> expired
-            // But we already checked consumed; if terminal, we should expire
+            // The run row is gone: the recovery bytes must not be released to a
+            // caller whose run no longer exists.
+            throw new HarnessStoreException("payload_recovery_unavailable");
         }
-        else if (terminalObj is string termStr && !string.IsNullOrWhiteSpace(termStr))
+
+        if (terminalObj is string termStr && !string.IsNullOrWhiteSpace(termStr))
         {
             throw new HarnessStoreException("payload_recovery_unavailable");
         }

@@ -49,7 +49,7 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
         CancellationToken cancellationToken)
     {
         ValidateSessionId(sessionId);
-        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+        var health = await HarnessSqliteSchema.EnsureInitializedAsync(_options, cancellationToken)
             .ConfigureAwait(false);
         if (!health.IsAvailable)
         {
@@ -90,7 +90,7 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
         CancellationToken cancellationToken)
     {
         ValidateSessionId(sessionId);
-        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+        var health = await HarnessSqliteSchema.EnsureInitializedAsync(_options, cancellationToken)
             .ConfigureAwait(false);
         if (!health.IsAvailable)
         {
@@ -143,7 +143,7 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
         CancellationToken cancellationToken)
     {
         ValidateSessionId(sessionId);
-        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+        var health = await HarnessSqliteSchema.EnsureInitializedAsync(_options, cancellationToken)
             .ConfigureAwait(false);
         if (!health.IsAvailable)
         {

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 
@@ -15,6 +16,43 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 public static partial class HarnessSqliteSchema
 {
     public const int CurrentVersion = 18;
+
+    /// <summary>
+    /// Process-wide memo of a successful initialization, keyed by database path.
+    /// <see cref="InitializeAsync"/> runs a full integrity probe
+    /// (<c>PRAGMA quick_check</c> scans the whole file) plus the table and index
+    /// shape checks, which is startup work; request-path callers (session
+    /// artifact operations, work-state saves) must not pay it per operation.
+    /// Results are only cached when the store is available: a transient storage
+    /// failure must be able to recover on the next call.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, Task<HarnessStoreHealth>> InitializedStores =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The request-path entry point: initializes the store at most once per
+    /// database path per process. Startup keeps calling
+    /// <see cref="InitializeAsync"/> directly so the full probe still runs once.
+    /// </summary>
+    public static async Task<HarnessStoreHealth> EnsureInitializedAsync(
+        HarnessSqliteOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var key = Path.GetFullPath(options.DatabasePath);
+        if (InitializedStores.TryGetValue(key, out var cached))
+        {
+            return await cached.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var health = await InitializeAsync(options, cancellationToken).ConfigureAwait(false);
+        if (health.IsAvailable)
+        {
+            InitializedStores.TryAdd(key, Task.FromResult(health));
+        }
+
+        return health;
+    }
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -315,7 +353,16 @@ public static partial class HarnessSqliteSchema
             }
             catch
             {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // A failed rollback (cancelled token, I/O error) must not
+                    // replace the migration failure the caller reports.
+                }
+
                 throw;
             }
         }

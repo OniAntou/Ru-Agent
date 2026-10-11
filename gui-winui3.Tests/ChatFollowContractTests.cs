@@ -101,6 +101,32 @@ public sealed class ChatFollowContractTests
     }
 
     [Fact]
+    public void Near_bottom_requires_a_consistent_read()
+    {
+        // maxOffset - verticalOffset is also true when the offset reads past
+        // the extent: a shrinking transcript (bulk reload, row recycle) then
+        // reads as "near bottom" and every scroll call yanks the reader upward
+        // to a transient extent. All three nearness sites share one helper.
+        var code = GuiSource.ViewText("ChatView");
+
+        var helper = GuiSource.MethodBody(code, "IsNearBottom");
+        Assert.Contains("verticalOffset <= maxOffset", helper, StringComparison.Ordinal);
+
+        foreach (var member in new[]
+                 {
+                     "ScrollChatToBottom",
+                     "RetryScrollAfterLayout",
+                     "OnChatScrollViewChanged",
+                 })
+        {
+            Assert.Contains(
+                "IsNearBottom(scroller)",
+                GuiSource.MethodBody(code, member),
+                StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Deferred_layout_work_runs_low_priority_and_never_throws()
     {
         // MethodBody cannot tell the declaration apart from a call site that

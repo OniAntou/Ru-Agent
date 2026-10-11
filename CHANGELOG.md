@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Near-bottom detection requires a consistent read: an offset past the extent is a mid-layout inconsistency, not nearness. Previously a shrinking transcript read as "near bottom" and every scroll call yanked the reader upward to a transient extent. All three nearness sites share one `IsNearBottom` helper.
+
 - **fix(gui)**: Bulk transcript reloads no longer scroll on pre-reset numbers: a `ReplaceAll` drops the virtualized panel before it measures, so a fresh open parked at its oldest message and a turn-end reload yanked a parked reader to the top. Both paths settle after layout — opens land on the latest, reloads restore a parked reader's offset (clamped) while follow mode still lands latest.
 
 - **fix(gui)**: Live reply text renders literal instead of re-parsing partial Markdown every delta: unclosed bold, fences, and lists flipped the parse tree frame to frame and reflowed the whole reply mid-turn, while a reopened session parsed once and stood still. Streaming surfaces (`IsStreaming` reply block and live text slices) now render plain text and parse Markdown once when the turn settles; complete, fail, and abandon all settle explicitly.

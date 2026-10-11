@@ -631,10 +631,7 @@ namespace RuApp.Views
 
             if (scroller.ScrollableHeight > 0)
             {
-                double verticalOffset = scroller.VerticalOffset;
-                double maxOffset = scroller.ScrollableHeight;
-                bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
-                if (nearBottom || _followOutput)
+                if (IsNearBottom(scroller) || _followOutput)
                 {
                     // Streaming snapshots and activity batches can arrive dozens
                     // of times per second. A ChangeView forces a layout pass, so
@@ -645,7 +642,7 @@ namespace RuApp.Views
                     if (now - _lastScrollChangeTick >= ScrollChangeMinIntervalMs)
                     {
                         _lastScrollChangeTick = now;
-                        scroller.ChangeView(null, maxOffset, null, disableAnimation: true);
+                        scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
                     }
                     else
                     {
@@ -683,13 +680,10 @@ namespace RuApp.Views
 
             if (scroller.ScrollableHeight > 0)
             {
-                double verticalOffset = scroller.VerticalOffset;
-                double maxOffset = scroller.ScrollableHeight;
-                bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
-                if (nearBottom)
+                if (IsNearBottom(scroller))
                 {
                     _lastScrollChangeTick = Environment.TickCount64;
-                    scroller.ChangeView(null, maxOffset, null, disableAnimation: true);
+                    scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
                 }
                 else
                 {
@@ -701,6 +695,22 @@ namespace RuApp.Views
         private long _lastScrollChangeTick;
         private bool _scrollRetryQueued;
         private const long ScrollChangeMinIntervalMs = 120;
+
+        /// <summary>
+        /// True when the reader sits at the live edge. An offset read past the
+        /// extent is an inconsistent mid-layout read, not nearness: without the
+        /// validity check a shrinking transcript (bulk reload, row recycle)
+        /// reads as "near bottom" and every scroll call yanks the reader
+        /// upward to a transient extent.
+        /// </summary>
+        private static bool IsNearBottom(ScrollViewer scroller)
+        {
+            double maxOffset = scroller.ScrollableHeight;
+            double verticalOffset = scroller.VerticalOffset;
+            return maxOffset > 0
+                && verticalOffset <= maxOffset
+                && maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
+        }
 
         /// <summary>
         /// Runs an action after the pending layout pass. A bulk ReplaceAll drops
@@ -795,8 +805,7 @@ namespace RuApp.Views
             }
 
             double maxOffset = scroller.ScrollableHeight;
-            _followOutput = maxOffset <= 0
-                || maxOffset - scroller.VerticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
+            _followOutput = maxOffset <= 0 || IsNearBottom(scroller);
             if (_followOutput)
             {
                 NewMessagesPill.Visibility = Visibility.Collapsed;

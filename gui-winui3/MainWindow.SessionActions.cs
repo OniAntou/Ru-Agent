@@ -75,7 +75,7 @@ namespace RuApp
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = ShellRoot.XamlRoot,
             };
-            await dialog.ShowAsync();
+            await ContentDialogGate.ShowAsync(dialog);
         }
 
         /// <summary>
@@ -198,7 +198,7 @@ namespace RuApp
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = ShellRoot.XamlRoot,
             };
-            await dialog.ShowAsync();
+            await ContentDialogGate.ShowAsync(dialog);
         }
 
         /// <summary>
@@ -243,7 +243,7 @@ namespace RuApp
                         XamlRoot = ShellRoot.XamlRoot
                     };
 
-                    var result = await dialog.ShowAsync();
+                    var result = await ContentDialogGate.ShowAsync(dialog);
                     if (result != ContentDialogResult.Primary)
                     {
                         return;
@@ -263,7 +263,7 @@ namespace RuApp
                             DefaultButton = ContentDialogButton.Close,
                             XamlRoot = ShellRoot.XamlRoot
                         };
-                        await errorDialog.ShowAsync();
+                        await ContentDialogGate.ShowAsync(errorDialog);
                     }
 
                     return;
@@ -341,7 +341,7 @@ namespace RuApp
                     XamlRoot = ShellRoot.XamlRoot
                 };
 
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary)
                 {
                     return;
                 }

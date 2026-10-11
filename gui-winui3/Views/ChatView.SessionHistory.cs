@@ -578,7 +578,7 @@ namespace RuApp.Views
                 };
                 try
                 {
-                    await dialog.ShowAsync();
+                    await ContentDialogGate.ShowAsync(dialog);
                 }
                 catch (Exception ex)
                 {

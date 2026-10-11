@@ -490,7 +490,7 @@ public sealed class AgentSessionUiSourceContractTests
         int requestGate = RequiredSourceIndex(dialog, "controller.NeedsWorkspaceTrust");
         int guard = RequiredSourceIndex(dialog, "_workspaceTrustDialogRunId = run.RunId");
         int dialogConstruction = RequiredSourceIndex(dialog, "new ContentDialog");
-        int show = RequiredSourceIndex(dialog, "await dialog.ShowAsync()");
+        int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
 
         Assert.True(currentRun < controllerGate, "The current run must be read before controller validity.");
         Assert.True(controllerGate < runGate, "Controller validity must precede run validity.");
@@ -506,7 +506,7 @@ public sealed class AgentSessionUiSourceContractTests
     {
         var code = GuiSource.ViewText("ChatView");
         var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
-        int show = RequiredSourceIndex(dialog, "await dialog.ShowAsync()");
+        int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
         var invocations = ReadTrustInvocations(dialog);
 
         Assert.Equal(2, invocations.Count);

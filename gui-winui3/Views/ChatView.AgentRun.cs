@@ -104,6 +104,14 @@ namespace RuApp.Views
         private string? _workspaceTrustDialogHandledSessionId;
         private AgentRunController? _workspaceTrustDialogController;
 
+        /// <summary>
+        /// Earliest time the trust prompt may be attempted again after a dialog
+        /// failure. The failure path itself refreshes the inline state, which
+        /// would otherwise re-enter the prompt immediately; the cooldown leaves
+        /// the retry to the monitor's next refresh instead of looping.
+        /// </summary>
+        private DateTimeOffset _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
+
         private void UpdateSendButtonMode(bool isAgentRunning)
         {
             if (SendButton is null) return;
@@ -179,6 +187,7 @@ namespace RuApp.Views
                 _workspaceTrustDialogHandledRunId = null;
                 _workspaceTrustDialogHandledSessionId = null;
                 _workspaceTrustDialogController = null;
+                _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
             }
         }
 
@@ -336,6 +345,14 @@ namespace RuApp.Views
                 return;
             }
 
+            if (DateTimeOffset.UtcNow < _workspaceTrustPromptRetryAfter)
+            {
+                // A failed prompt set a short cooldown: the refresh that follows
+                // the failure must not re-enter the prompt immediately. The
+                // monitor's next refresh retries once the cooldown elapses.
+                return;
+            }
+
             if (_workspaceTrustDialogHandledRunId is not null
                 && ReferenceEquals(_workspaceTrustDialogController, controller)
                 && string.Equals(_workspaceTrustDialogHandledRunId, run.RunId, StringComparison.Ordinal)
@@ -344,6 +361,7 @@ namespace RuApp.Views
                 return;
             }
 
+            _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
             _workspaceTrustDialogRunId = run.RunId;
             _workspaceTrustDialogSessionId = run.SessionId;
             _workspaceTrustDialogController = controller;
@@ -351,6 +369,7 @@ namespace RuApp.Views
             UpdateAgentInlineState();
 
             Exception? failure = null;
+            var dialogAnswered = false;
             try
             {
                 var dialog = new ContentDialog
@@ -363,7 +382,8 @@ namespace RuApp.Views
                     XamlRoot = XamlRoot,
                 };
 
-                ContentDialogResult result = await dialog.ShowAsync();
+                ContentDialogResult result = await ContentDialogGate.ShowAsync(dialog);
+                dialogAnswered = true;
                 bool isCurrentRequest = ReferenceEquals(_agentController, controller)
                     && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
                     && controller.CurrentRun is { } currentRun
@@ -393,10 +413,26 @@ namespace RuApp.Views
                 bool ownsGuard = ReferenceEquals(_workspaceTrustDialogController, controller)
                     && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
                     && string.Equals(_workspaceTrustDialogSessionId, run.SessionId, StringComparison.Ordinal);
+                bool retryable = failure is not null && ContentDialogGate.IsDialogConflict(failure);
+                if (retryable)
+                {
+                    // Set before the state refresh below, so the refresh that this
+                    // failure triggers cannot re-enter the prompt immediately.
+                    _workspaceTrustPromptRetryAfter = DateTimeOffset.UtcNow.AddSeconds(1);
+                }
+
                 if (ownsGuard)
                 {
-                    _workspaceTrustDialogHandledRunId = run.RunId;
-                    _workspaceTrustDialogHandledSessionId = run.SessionId;
+                    if (!retryable)
+                    {
+                        // Only an answered prompt (or a non-dialog failure) counts
+                        // as handled. A prompt that never opened must be offered
+                        // again: the run is parked on trust, and the monitor
+                        // refresh retries within its interval.
+                        _workspaceTrustDialogHandledRunId = run.RunId;
+                        _workspaceTrustDialogHandledSessionId = run.SessionId;
+                    }
+
                     _workspaceTrustDialogRunId = null;
                     _workspaceTrustDialogSessionId = null;
                 }
@@ -409,7 +445,16 @@ namespace RuApp.Views
 
                 if (failure is not null && ownsGuard)
                 {
-                    ShowAgentError(failure);
+                    if (retryable)
+                    {
+                        // A prompt that could not open is not a start failure:
+                        // say what happened and let the next refresh retry it.
+                        ShowAgentInlineStatus("Could not open the workspace trust prompt. Close any open dialog; the prompt will reappear.");
+                    }
+                    else
+                    {
+                        ShowAgentError(failure);
+                    }
                 }
             }
         }
@@ -1448,7 +1493,7 @@ namespace RuApp.Views
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot,
             };
-            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+            return await ContentDialogGate.ShowAsync(dialog) == ContentDialogResult.Primary;
         }
 
         private bool IsProjectRootWorkspace(string? workspace)

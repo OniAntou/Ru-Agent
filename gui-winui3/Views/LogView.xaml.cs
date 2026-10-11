@@ -336,7 +336,7 @@ namespace RuApp.Views
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.XamlRoot,
             };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary)
             {
                 return;
             }

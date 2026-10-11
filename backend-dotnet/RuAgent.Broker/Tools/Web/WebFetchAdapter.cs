@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Text;
 using RuAgent.Broker.Configuration;
 
 namespace RuAgent.Broker.Tools.Web;
@@ -28,8 +26,13 @@ public sealed class WebFetchAdapter
         _maxResponseBytes = maxResponseBytes;
     }
 
-    public async Task<WebFetchResult> FetchAsync(Uri uri, CancellationToken cancellationToken)
+    public async Task<WebFetchResult> FetchAsync(Uri uri, CancellationToken cancellationToken,
+        int offset = 0, int limit = WebContentSanitizer.DefaultMaxCharacters)
     {
+        if (offset is < 0 or > WebOptions.MaxConfiguredResponseBytes)
+            throw new ArgumentException("web_offset_invalid", nameof(offset));
+        if (limit is < 1 or > WebContentSanitizer.DefaultMaxCharacters)
+            throw new ArgumentException("web_limit_invalid", nameof(limit));
         var current = uri;
         for (var redirect = 0; redirect <= 5; redirect++)
         {
@@ -63,52 +66,17 @@ public sealed class WebFetchAdapter
                 throw new InvalidDataException("web_content_type_not_supported");
             }
 
-            var text = await ReadBoundedAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
-            var title = current.Host;
+            var text = await WebResponseReader.ReadAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
+            var extracted = _sanitizer.Extract(current.Host, current, text,
+                contentType.Contains("html", StringComparison.OrdinalIgnoreCase),
+                Math.Min(limit, _maxResponseBytes), offset);
             return new WebFetchResult(
-                new SourceCitation(title, current),
-                _sanitizer.Sanitize(title, current, text, Math.Min(256_000, _maxResponseBytes)),
-                contentType);
+                new SourceCitation(extracted.Title, current),
+                extracted.Text,
+                contentType, offset, extracted.NextOffset);
         }
 
         throw new InvalidDataException("web_redirect_limit");
     }
 
-    private static async Task<string> ReadBoundedAsync(HttpResponseMessage response, int limit, CancellationToken cancellationToken)
-    {
-        if (response.Content.Headers.ContentLength is long contentLength && contentLength > limit)
-        {
-            throw new InvalidDataException("web_response_too_large");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var memory = new MemoryStream(Math.Min(limit, 64 * 1024));
-        var buffer = new byte[8192];
-        var total = 0;
-        while (true)
-        {
-            var count = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (count == 0)
-            {
-                break;
-            }
-
-            total += count;
-            if (total > limit)
-            {
-                throw new InvalidDataException("web_response_too_large");
-            }
-
-            await memory.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            return new System.Text.UTF8Encoding(false, true).GetString(memory.ToArray());
-        }
-        catch (DecoderFallbackException error)
-        {
-            throw new InvalidDataException("web_encoding_invalid", error);
-        }
-    }
 }

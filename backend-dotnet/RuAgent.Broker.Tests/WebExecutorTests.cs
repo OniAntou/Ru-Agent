@@ -140,6 +140,26 @@ public sealed class WebExecutorTests
             () => owned.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://93.184.216.34/"))));
     }
 
+    [Fact]
+    public async Task Service_preserves_fetch_paging_arguments_through_approval()
+    {
+        using var fixture = SessionFixture.Create();
+        fixture.Session.Open("web-session", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebFetch]));
+        using var http = new HttpClient(new Handler());
+        await using var service = new ToolExecutionService(fixture.Session, fixture.Root,
+            webOptions: new WebOptions(true), webHttpClient: http);
+        var pending = await service.ExecuteAsync(Envelope("page", "web_fetch",
+            new JsonObject { ["url"] = "https://93.184.216.34/page", ["offset"] = 8, ["limit"] = 7 }), CancellationToken.None);
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
+        var result = await service.RespondToApprovalAsync(new AgentEnvelope(1, "approval", AgentMessageTypes.ApprovalResponse,
+            "web-session", null, 30_000, new JsonObject { ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(), ["approved"] = true }), CancellationToken.None);
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Contains("content: looking", result.Output["content"]!.GetValue<string>());
+        Assert.Equal(8, result.Output["offset"]!.GetValue<int>());
+        Assert.Equal(15, result.Output["next_offset"]!.GetValue<int>());
+        Assert.True(result.Output["truncated"]!.GetValue<bool>());
+    }
+
     private static AgentEnvelope Envelope(string requestId, string toolId, JsonObject arguments) =>
         new(1, requestId, AgentMessageTypes.ToolRequest, "web-session", null, 30_000, new JsonObject
         {

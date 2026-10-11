@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(web)**: Reject navigation and CAPTCHA anchors as search results, read Bing result headings/snippets and decode tracking URLs to their destinations. Replace HTML regex extraction with an in-process DOM parser, preserve code/Markdown/JSON layout and HTTP links, honor response charset/BOM, and raise the default download bound from 256 KiB to 4 MiB. Fetch output is separately bounded to 32000 characters and supports optional `offset`/`limit` paging with `next_offset`/`truncated` metadata; empty pages and recognized challenges return named failures. Free search-engine relevance and availability remain dependent on upstream services.
+
 - **fix(provider)**: Reassemble indexed Chat Completions tool calls before model-step parsing. Interleaved arguments, repeated call ids, split function names and out-of-order opening chunks now preserve each call's identity and order. Missing ids receive distinct response-local identities; conflicting ids, mixed indexed/unindexed calls and oversized arguments return a named protocol failure. Usage carried on an argument-only chunk is retained.
 
 - **fix(broker,model)**: Treat an omitted terminal argument vector as empty, matching the tool schema, and preserve named argument errors instead of flattening them to `adapter_error`. Preserve a provider's `length` finish before parsing native or text-encoded tool calls so an incomplete step cannot become an executable tool batch.

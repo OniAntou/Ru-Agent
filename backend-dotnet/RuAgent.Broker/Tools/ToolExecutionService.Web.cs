@@ -142,7 +142,9 @@ public sealed partial class ToolExecutionService
             throw new ArgumentException("web_uri_invalid");
         }
 
-        var fetched = await _webFetch.FetchAsync(uri, cancellationToken).ConfigureAwait(false);
+        var fetched = await _webFetch.FetchAsync(uri, cancellationToken,
+            ReadOptionalInt(arguments, "offset") ?? 0,
+            ReadOptionalInt(arguments, "limit") ?? WebContentSanitizer.DefaultMaxCharacters).ConfigureAwait(false);
         return ToolExecutionOutcome.Succeeded(
             new JsonObject
             {
@@ -150,6 +152,9 @@ public sealed partial class ToolExecutionService
                 ["source"] = ToJson(fetched.Source),
                 ["content"] = fetched.SanitizedText,
                 ["content_type"] = fetched.ContentType,
+                ["offset"] = fetched.Offset,
+                ["next_offset"] = fetched.NextOffset,
+                ["truncated"] = fetched.NextOffset is not null,
             },
             ToolVerificationStates.NotRequired,
             "Web page fetched.");

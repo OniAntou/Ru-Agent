@@ -107,7 +107,8 @@ carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 flag on `run`/`shell`. The schema has no sandbox selector; obsolete sandbox
 arguments are rejected.
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
-default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
+default 10); `web_fetch` takes `url` plus optional `offset` (0–4194304,
+default 0) and `limit` (1–32000, default 32000); `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. `ask_user` takes
 `question` (1–2048) plus optional `options` (at most 8 strings of 512 chars) and
 is Host-intercepted before gateway dispatch: it never reaches the Broker, parks
@@ -126,8 +127,27 @@ redirect and private-host validation, so a fallback never widens the network
 boundary the call was granted under. When every engine fails, or when anchors
 were present but none resolved to a usable target, the call fails closed as
 `web_search_parse_failed` or the earliest engine's bounded error rather than
-returning an empty answer. Fetch keeps the pre-existing bounded, sanitized,
-explicitly-untrusted behavior. The `network_intent`
+returning an empty answer. Known engines require their result markup; CAPTCHA
+and navigation anchors cannot win the race. Bing links are decoded to the
+public destination and titles/snippets come from the result block. This does
+not guarantee upstream relevance or availability: free engines may still
+block requests or return weak results.
+
+Web downloads default to 4 MiB, with the existing configurable 4 MiB ceiling.
+Fetch parses HTML locally through AngleSharp without loading resources or
+executing scripts, prefers main/article content, removes navigation/scripts,
+and preserves paragraphs, preformatted code and HTTP links. Markdown, JSON
+and source text preserve newlines and indentation. HTTP charset and BOM are
+honored; invalid encodings fail as `web_encoding_invalid`. Returned content
+is explicitly untrusted and limited to 32000 extracted UTF-16 characters per
+page, separate from the download bound. Output includes `offset`, `next_offset`
+and `truncated`; pass `next_offset` as the next request's `offset`. Each page
+fetches the source again, so a changed page can shift offsets. Offsets beyond
+the extracted document fail as `web_offset_out_of_range`. Recognized challenge
+forms fail as `web_page_blocked`; empty JavaScript-only shells fail as
+`web_content_empty`. Authentication, JavaScript execution and binary/PDF text
+extraction are not provided by these tools (`web_content_type_not_supported`).
+The `network_intent`
 argument on a bash request is descriptive input metadata, not a security
 boundary.
 

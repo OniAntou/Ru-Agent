@@ -6,13 +6,100 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,837 passed / 0 failed / 0 skipped** (2026-10-11, indexed Chat Completions call repairs). Log: `artifacts/quality-indexed-chat-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
-| Python suite | **213 passed, 1 skipped** (2026-10-11, coding recovery/feedback repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/quality-pytest-complete.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal launch/exit-code repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-terminal-release.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,856 passed / 0 failed / 0 skipped** (2026-10-11, web-tool repairs). Log: `artifacts/web-repair-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| Python suite | **213 passed, 1 skipped** (2026-10-11, web-tool repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/web-repair-full-python-final.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, web-tool repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/web-repair-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Web-tool repairs and remaining upstream limits (2026-10-11)
+
+Eight new replay cases failed on the original implementation
+(`artifacts/web-quality-red.log`): known-engine navigation anchors were accepted,
+Bing used a breadcrumb rather than the result heading/destination, JSON scalar
+responses escaped as an unbounded parser exception, plain code lost whitespace
+and generic syntax, and ordinary documentation exceeded the download bound.
+The final repair uses AngleSharp 1.8.4 for local DOM parsing, preserves code,
+text and links, and separates the 4 MiB download ceiling from 32000-character
+output pages. An initial restore with AngleSharp 1.4.0 was rejected by the
+existing NuGet audit policy (`artifacts/web-anglesharp-restore.log`); the final
+version restores and builds without that warning. No audit rule was weakened.
+
+The complete sequential Debug matrix passed **5,856 tests / 0 failures / 0
+skips**, across all 12 projects (`artifacts/web-repair-full-dotnet.log`). Broker
+contributed 921 passing tests, including 19 new adapter/executor cases. Paging
+is also checked through the real service approval path. Documentation guards
+passed 15 tests (`artifacts/web-repair-docs.log`). The first full Python run
+had 1 failure, 212 passes and 1 skip because README's older 5809-test badge did
+not match the already-recorded 5837-test run
+(`artifacts/web-repair-full-python.log`); README and the current verification
+row now reflect the new 5856-test run. The final full Python rerun passed
+213 tests with one Windows-inapplicable POSIX skip
+(`artifacts/web-repair-full-python-final.log`). `build.bat` then passed all
+11 stages and published the updated self-contained distribution, including
+AngleSharp (`artifacts/web-repair-release.log`). Historical figures below
+remain intact.
+
+The final direct-service public-HTTP rerun made 12 calls, with synthetic
+sessions/approvals and the production connection policy, no keys or model
+requests (`artifacts/web-live-check/report.json`,
+`artifacts/web-live-check/run-final.log`). All five text URLs succeeded:
+Example Domain, Microsoft Learn C# async, Python sqlite3, TypeScript narrowing,
+and the raw TypeScript README. Python sqlite3 was read to completion over four
+pages (offsets 0, 32000, 64000, 96000), including transaction control. The PDF
+probe still correctly failed as `web_content_type_not_supported`; PDF extraction
+and browser/JavaScript execution are outside this HTTP text tool.
+
+Search no longer accepts DuckDuckGo's homepage or Mojeek navigation as results.
+The isolated engine rerun rejected those layouts and Google as
+`web_search_parse_failed`; Bing supplied actual titles, snippets and decoded
+destination URLs (`artifacts/web-engine-check/report.json`). However, all three
+live coding queries still returned weak or unrelated upstream Bing results.
+The query echoed in Bing's response was complete, and ordinary English-market
+and RSS diagnostic variants did not fix relevance. Additional public Brave
+and Yahoo probes returned HTTP 429 and HTTP 500 respectively
+(`artifacts/web-engine-check/extra-sources.log`); they were not added to the
+engine set. No CAPTCHA was solved and no browser session was used.
+
+**This repairs the parser and fetch defects; it does not establish reliable
+live search relevance.** Free engines remain dependent on their upstream
+availability and ranking. Deterministic tests, live HTTP text retrieval,
+live-model behavior and interactive UI acceptance are separate evidence.
+
+## Live web-tool diagnostic (2026-10-11)
+
+On checkout `18180d7c`, 47 focused Broker web adapter, executor, capability and
+connection-policy tests passed (`artifacts/web-tools-focused-tests.log`). A
+separate diagnostic then called the real `ToolExecutionService`, with synthetic
+session scopes, one-use approvals, the production HTTP connection policy and
+default enabled web options (Google plus the fixed fallback race, 256 KiB
+response bound). This used public HTTP requests, no model generation, no user
+session and no API keys. Report: `artifacts/web-live-check/report-before-fix.json`.
+
+All three coding-oriented search queries reported success but returned only
+the DuckDuckGo homepage with title `here`, rather than query results. An
+engine-by-engine check of the Python query confirmed Google failed to parse,
+DuckDuckGo returned that same false result, Bing returned tracking URLs and
+placeholder snippets, and Mojeek returned navigation links. DuckDuckGo's saved
+HTTP 202 response was a bot-challenge page. Known-engine parsers fall through
+to generic absolute-anchor extraction when their expected result blocks are
+absent; this allows a challenge/navigation link to win the race and cancel
+other engines. Evidence: `artifacts/web-engine-check/report-before-fix.json` and
+`artifacts/web-engine-check/duckduckgo-response.html`. No challenge was solved.
+
+Of six fetch URLs, Example Domain, the Microsoft Learn C# `async` page and
+the raw TypeScript README succeeded. Python's `sqlite3` documentation and the
+TypeScript narrowing handbook failed with `web_response_too_large`. The PDF
+probe failed with the expected `web_content_type_not_supported`. Fetch is
+HTTP text extraction without JavaScript execution; its regex sanitizer flattens
+whitespace and does not preserve code-block layout or links as Markdown.
+
+This is one small live sample from this machine, not a stability or relevance
+benchmark. It demonstrates a false-success search defect and default fetch
+limits that exclude ordinary documentation pages. Production code and web
+configuration were not changed in this assessment.
 
 ## Indexed Chat Completions call repairs (2026-10-11)
 

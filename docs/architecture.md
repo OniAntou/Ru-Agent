@@ -392,7 +392,14 @@ Invalid context or receipt metadata fails closed with the bounded
 context retry. Managed runtime wiring enables the standalone `web_search`/`web_fetch`
 tools by default with their `network.search`/`network.fetch` scope labels; no
 settings field controls their exposure. Returned web text is bounded,
-sanitized, and wrapped with the `[untrusted_web_reference]` marker.
+sanitized, and wrapped with the `[untrusted_web_reference]` marker. Search uses
+engine-specific DOM result selectors; known-engine challenge/navigation links
+are rejected and Bing redirect links are decoded. Fetch uses an in-process
+AngleSharp parser with no resource loader or JavaScript execution, preserves
+code and plain text, and pages extracted text through optional `offset`/`limit`.
+The default download bound is 4 MiB; output defaults to 32000 UTF-16 characters
+with `next_offset`/`truncated` metadata. Pages refetch the source rather than
+retaining a snapshot. Free upstream search relevance remains unguaranteed.
 
 Prompt composition is not an authority boundary. Execution-authority policy,
 approvals, workspace trust, protected paths, external-directory grants, and

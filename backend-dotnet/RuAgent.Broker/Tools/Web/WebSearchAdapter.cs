@@ -8,27 +8,6 @@ namespace RuAgent.Broker.Tools.Web;
 
 public sealed class WebSearchAdapter
 {
-    private static readonly Regex GoogleResultPattern = new(
-        "<a[^>]+href=[\\\"'](?<url>/url\\?q=[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex LinkPattern = new(
-        "<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex ResultLinkPattern = new(
-        "<a\\b(?=[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__a\\b[^\\\"']*[\\\"'])[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex BingResultPattern = new(
-        "<li[^>]*\\bclass=\"[^\"]*\\bb_algo\\b[^\"]*\"[^>]*>.*?<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>(?:.*?<p>(?<snippet>.*?)</p>)?",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex DuckDuckGoSnippetPattern = new(
-        "<a[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__snippet\\b[^\\\"']*[\\\"'][^>]*>(?<snippet>.*?)</a>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex GoogleSnippetPattern = new(
-        "<span[^>]*\\bclass=[\\\"']st[\\\"'][^>]*>(?<snippet>.*?)</span>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    private static readonly Regex MojeekResultPattern = new(
-        "<a[^>]*\\bclass=\"[^\"]*\\btitle\\b[^\"]*\"[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly string[] GoogleUserAgents =
     [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -225,14 +204,13 @@ public sealed class WebSearchAdapter
                 throw new InvalidDataException("web_content_type_not_supported");
             }
 
-            var body = await ReadBoundedAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
+            var body = await WebResponseReader.ReadAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
             var isJson = contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
-            var htmlResultAnchorCount = isJson ? 0 : CountResultAnchors(body, endpoint);
             var candidates = isJson
                 ? ParseJsonCandidates(body)
-                : ParseHtmlCandidates(body, endpoint);
+                : WebSearchHtmlParser.Parse(body, endpoint).Select(candidate => new SearchCandidate(candidate.Url, candidate.Title, candidate.Snippet)).ToArray();
             var results = new List<SourceCitation>();
-            var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenUrls = new HashSet<string>(StringComparer.Ordinal);
             foreach (var candidate in candidates)
             {
                 if (!TryResolveCandidateUrl(current, candidate.Url, out var url)
@@ -283,129 +261,16 @@ public sealed class WebSearchAdapter
 
     private static void ApplyBrowserHeaders(HttpRequestMessage request, Uri endpoint)
     {
-        if (endpoint.Host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase))
+        if (WebSearchHtmlParser.IsEngine(endpoint, "google.com"))
         {
             request.Headers.TryAddWithoutValidation("User-Agent", GoogleUserAgents[0]);
             request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
         }
-        else if (endpoint.Host.EndsWith("bing.com", StringComparison.OrdinalIgnoreCase)
-            || endpoint.Host.EndsWith("mojeek.com", StringComparison.OrdinalIgnoreCase))
+        else if (WebSearchHtmlParser.IsEngine(endpoint, "bing.com")
+            || WebSearchHtmlParser.IsEngine(endpoint, "mojeek.com"))
         {
             request.Headers.TryAddWithoutValidation("User-Agent", GoogleUserAgents[0]);
         }
-    }
-
-    private static int CountResultAnchors(string html, Uri endpoint)
-    {
-        if (IsGoogleEndpoint(endpoint))
-        {
-            return GoogleResultPattern.Matches(html).Count;
-        }
-
-        if (IsBingEndpoint(endpoint))
-        {
-            return BingResultPattern.Matches(html).Count;
-        }
-
-        if (IsMojeekEndpoint(endpoint))
-        {
-            return MojeekResultPattern.Matches(html).Count;
-        }
-
-        return ResultLinkPattern.Matches(html).Count;
-    }
-
-    private static bool IsGoogleEndpoint(Uri endpoint) =>
-        endpoint.Host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsBingEndpoint(Uri endpoint) =>
-        endpoint.Host.EndsWith("bing.com", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsMojeekEndpoint(Uri endpoint) =>
-        endpoint.Host.EndsWith("mojeek.com", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDuckDuckGoEndpoint(Uri endpoint) =>
-        endpoint.Host.EndsWith("duckduckgo.com", StringComparison.OrdinalIgnoreCase);
-
-    private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html, Uri endpoint)
-    {
-        if (IsGoogleEndpoint(endpoint))
-        {
-            var google = GoogleResultPattern.Matches(html);
-            var googleSnippets = GoogleSnippetPattern.Matches(html);
-            return google
-                .Select((match, index) => new SearchCandidate(
-                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
-                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                    index < googleSnippets.Count
-                        ? WebUtility.HtmlDecode(googleSnippets[index].Groups["snippet"].Value.Trim())
-                        : null))
-                .ToArray();
-        }
-
-        if (IsBingEndpoint(endpoint))
-        {
-            var bing = BingResultPattern.Matches(html)
-                .Select(match => new SearchCandidate(
-                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
-                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                    match.Groups["snippet"].Success
-                        ? WebUtility.HtmlDecode(match.Groups["snippet"].Value.Trim())
-                        : null))
-                .ToArray();
-            if (bing.Length > 0)
-            {
-                return bing;
-            }
-        }
-
-        if (IsDuckDuckGoEndpoint(endpoint))
-        {
-            var links = ResultLinkPattern.Matches(html);
-            if (links.Count > 0)
-            {
-                var duckSnippets = DuckDuckGoSnippetPattern.Matches(html);
-                return links
-                    .Select((match, index) => new SearchCandidate(
-                        WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
-                        WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                        index < duckSnippets.Count
-                            ? WebUtility.HtmlDecode(duckSnippets[index].Groups["snippet"].Value.Trim())
-                            : null))
-                    .ToArray();
-            }
-        }
-
-        if (IsMojeekEndpoint(endpoint))
-        {
-            var mojeek = MojeekResultPattern.Matches(html)
-                .Select(match => new SearchCandidate(
-                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
-                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                    null))
-                .ToArray();
-            if (mojeek.Length > 0)
-            {
-                return mojeek;
-            }
-        }
-
-        return ParseGenericHtmlCandidates(html);
-    }
-
-    private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html) =>
-        ParseGenericHtmlCandidates(html);
-
-    private static IReadOnlyList<SearchCandidate> ParseGenericHtmlCandidates(string html)
-    {
-        var resultLinks = ResultLinkPattern.Matches(html);
-        var links = resultLinks.Count > 0 ? resultLinks : LinkPattern.Matches(html);
-        return links
-            .Select(match => new SearchCandidate(
-                WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
-                WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
-                null))
-            .ToArray();
     }
 
     private static bool TryResolveCandidateUrl(Uri responseUri, string rawUrl, out Uri url)
@@ -431,7 +296,7 @@ public sealed class WebSearchAdapter
             return false;
         }
 
-        if (candidate.Host.EndsWith("duckduckgo.com", StringComparison.OrdinalIgnoreCase)
+        if (WebSearchHtmlParser.IsEngine(candidate, "duckduckgo.com")
             && string.Equals(candidate.AbsolutePath, "/l/", StringComparison.Ordinal))
         {
             var target = ReadQueryValue(candidate.Query, "uddg");
@@ -441,6 +306,27 @@ public sealed class WebSearchAdapter
             {
                 return false;
             }
+        }
+
+        if (WebSearchHtmlParser.IsEngine(candidate, "bing.com") && candidate.AbsolutePath == "/ck/a")
+        {
+            var target = ReadQueryValue(candidate.Query, "u");
+            if (target is null) return false;
+            if (target.StartsWith("a1", StringComparison.Ordinal))
+            {
+                try
+                {
+                    var encoded = target[2..].Replace('-', '+').Replace('_', '/');
+                    encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
+                    target = new UTF8Encoding(false, true).GetString(Convert.FromBase64String(encoded));
+                }
+                catch (Exception error) when (error is FormatException or DecoderFallbackException)
+                {
+                    return false;
+                }
+            }
+            if (!Uri.TryCreate(target, UriKind.Absolute, out candidate)
+                || candidate.Scheme is not ("http" or "https")) return false;
         }
 
         url = candidate;
@@ -514,6 +400,7 @@ public sealed class WebSearchAdapter
 
     private static IEnumerable<JsonElement> EnumerateObjectResults(JsonElement root)
     {
+        if (root.ValueKind != JsonValueKind.Object) return Array.Empty<JsonElement>();
         foreach (var property in new[] { "results", "items", "data" })
         {
             if (root.TryGetProperty(property, out var value)
@@ -540,47 +427,6 @@ public sealed class WebSearchAdapter
     }
 
     private sealed record SearchCandidate(string Url, string Title, string? Snippet);
-
-    private static async Task<string> ReadBoundedAsync(
-        HttpResponseMessage response,
-        int limit,
-        CancellationToken cancellationToken)
-    {
-        if (response.Content.Headers.ContentLength is long contentLength && contentLength > limit)
-        {
-            throw new InvalidDataException("web_response_too_large");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var memory = new MemoryStream(Math.Min(limit, 64 * 1024));
-        var buffer = new byte[8192];
-        var total = 0;
-        while (true)
-        {
-            var count = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (count == 0)
-            {
-                break;
-            }
-
-            total += count;
-            if (total > limit)
-            {
-                throw new InvalidDataException("web_response_too_large");
-            }
-
-            await memory.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            return new UTF8Encoding(false, true).GetString(memory.ToArray());
-        }
-        catch (DecoderFallbackException error)
-        {
-            throw new InvalidDataException("web_encoding_invalid", error);
-        }
-    }
 
     private static string Bound(string value, int max) =>
         value.Length <= max ? value : value[..max];

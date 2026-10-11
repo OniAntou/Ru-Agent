@@ -5,7 +5,7 @@ namespace RuAgent.Broker.Configuration;
 
 public sealed record WebOptions
 {
-    public const int DefaultMaxResponseBytes = 256 * 1024;
+    public const int DefaultMaxResponseBytes = 4 * 1024 * 1024;
     public const int MaxConfiguredResponseBytes = 4 * 1024 * 1024;
 
     public static readonly Uri DefaultGoogleEndpoint = new("https://www.google.com/search");

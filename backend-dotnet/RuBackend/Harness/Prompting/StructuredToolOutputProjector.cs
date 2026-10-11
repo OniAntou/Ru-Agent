@@ -75,6 +75,26 @@ internal static class StructuredToolOutputProjector
                 return ProjectionDocument.ForArray(root, "results", grepResults, grepOffset, toolCallId, providerCallId);
             }
 
+            if (toolId == "web_fetch" && root.ContainsKey("offset")
+                && root["content"] is JsonValue webContent && webContent.TryGetValue<string>(out var webText))
+            {
+                if (!ReadNonnegativeInteger(root, "offset", out var webOffset))
+                    throw ProjectionFailure();
+                const string contentMarker = "\ncontent: ";
+                const string suffix = "\n[/untrusted_web_reference]";
+                const string truncatedMarker = "...[truncated]";
+                var start = webText.IndexOf(contentMarker, StringComparison.Ordinal);
+                if (start < 0 || !webText.StartsWith("[untrusted_web_reference]\n", StringComparison.Ordinal)
+                    || !webText.EndsWith(suffix, StringComparison.Ordinal))
+                    throw ProjectionFailure();
+                start += contentMarker.Length;
+                var body = webText[start..^suffix.Length];
+                if (HasMore(root) && body.EndsWith(truncatedMarker, StringComparison.Ordinal))
+                    body = body[..^truncatedMarker.Length];
+                return ProjectionDocument.ForWrappedText(root, body, webOffset,
+                    webText[..start], suffix, toolCallId, providerCallId);
+            }
+
             if (toolId.Length == 0 && root["results"] is JsonArray && root["count"] is JsonValue
                 && (HasMore(root) || requiresProjection))
             {
@@ -196,6 +216,8 @@ internal static class StructuredToolOutputProjector
         private readonly bool _cursorInBytes;
         private readonly string? _toolCallId;
         private readonly string? _providerCallId;
+        private readonly string _prefix = "";
+        private readonly string _suffix = "";
 
         private ProjectionDocument(
             JsonObject root,
@@ -204,7 +226,9 @@ internal static class StructuredToolOutputProjector
             int sourceOffset,
             bool cursorInBytes,
             string? toolCallId,
-            string? providerCallId)
+            string? providerCallId,
+            string prefix = "",
+            string suffix = "")
         {
             _root = root;
             _field = field;
@@ -213,6 +237,8 @@ internal static class StructuredToolOutputProjector
             _cursorInBytes = cursorInBytes;
             _toolCallId = toolCallId;
             _providerCallId = providerCallId;
+            _prefix = prefix;
+            _suffix = suffix;
             FullVisibleLength = text.Length;
         }
 
@@ -256,6 +282,10 @@ internal static class StructuredToolOutputProjector
             string? providerCallId) =>
             new(root, field, items, offset, toolCallId, providerCallId);
 
+        internal static ProjectionDocument ForWrappedText(JsonObject root, string text, int offset,
+            string prefix, string suffix, string? toolCallId, string? providerCallId) =>
+            new(root, "content", text, offset, false, toolCallId, providerCallId, prefix, suffix);
+
         internal string Serialize(int visibleLength)
         {
             var projected = (JsonObject)_root.DeepClone();
@@ -264,12 +294,14 @@ internal static class StructuredToolOutputProjector
                 var length = SafePrefixLength(_text, visibleLength);
                 var visible = _text[..length];
                 var advance = _cursorInBytes ? StrictUtf8.GetByteCount(visible) : visible.Length;
-                projected[_field] = visible;
+                var hasMore = length < _text.Length || ReadSourceTruncated(projected);
+                projected[_field] = _prefix.Length == 0 ? visible
+                    : _prefix + visible + (hasMore ? "...[truncated]" : "") + _suffix;
                 projected["projection_next_offset"] = checked(_sourceOffset + advance);
                 projected["projection_visible_characters"] = length;
                 if (_cursorInBytes)
                     projected["projection_visible_bytes"] = advance;
-                projected["projection_has_more"] = length < _text.Length || ReadSourceTruncated(projected);
+                projected["projection_has_more"] = hasMore;
             }
             else
             {
@@ -303,7 +335,14 @@ internal static class StructuredToolOutputProjector
             return length;
         }
 
-        private static bool ReadSourceTruncated(JsonObject root) =>
-            root["truncated"] is JsonValue value && value.TryGetValue<bool>(out var truncated) && truncated;
+        private static bool ReadSourceTruncated(JsonObject root)
+        {
+            // Modern grep distinguishes an incomplete scan from a known next page.
+            // Preserve legacy receipts that only carry truncated, while never turning
+            // a timeout/scan cap with next_offset=null into an endless paging cursor.
+            if (root.ContainsKey("next_offset"))
+                return ReadNonnegativeInteger(root, "next_offset", out _);
+            return root["truncated"] is JsonValue value && value.TryGetValue<bool>(out var truncated) && truncated;
+        }
     }
 }

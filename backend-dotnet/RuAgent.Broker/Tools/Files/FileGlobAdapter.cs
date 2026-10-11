@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Tools.Files;
@@ -79,7 +78,7 @@ public sealed class FileGlobAdapter
         const int maxScannedEntries = FileToolLimits.MaxEntries * 16;
 
         // Precompile regex for pattern
-        var regex = GlobToRegex(pattern);
+        var glob = new FileGlobPattern(pattern);
 
         while (stack.Count > 0)
         {
@@ -161,12 +160,7 @@ public sealed class FileGlobAdapter
                 bool matches = false;
                 try
                 {
-                    matches = regex.IsMatch(relative);
-                    if (!matches && !pattern.Contains('/') && !pattern.Contains('\\'))
-                    {
-                        var fileName = Path.GetFileName(relative);
-                        matches = regex.IsMatch(fileName);
-                    }
+                    matches = glob.IsMatch(relative);
                 }
                 catch
                 {
@@ -265,21 +259,6 @@ public sealed class FileGlobAdapter
         {
             throw new ArgumentException("invalid_path", ex);
         }
-    }
-
-    private static Regex GlobToRegex(string pattern)
-    {
-        // Normalize pattern to use '/'
-        var normalized = pattern.Replace('\\', '/');
-        // Escape regex chars, then replace glob wildcards
-        var escaped = Regex.Escape(normalized);
-        // Replace \*\* first (escaped is \*\*)
-        escaped = escaped.Replace(@"\*\*", "___DOUBLESTAR___");
-        escaped = escaped.Replace(@"\*", "[^/]*");
-        escaped = escaped.Replace(@"\?", "[^/]");
-        escaped = escaped.Replace("___DOUBLESTAR___", ".*");
-        var regexPattern = "^" + escaped + "$";
-        return new Regex(regexPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     private static string GetRequiredString(JsonObject obj, string key)

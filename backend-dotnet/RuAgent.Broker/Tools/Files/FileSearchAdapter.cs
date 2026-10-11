@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -48,9 +47,10 @@ public sealed class FileSearchAdapter
         if (offset < 0 || offset > FileToolLimits.MaxOffset) throw new ArgumentException("invalid_offset");
         // Collect enough per file that the global page stays complete: a file
         // capped at max_results would hide matches belonging to later pages.
+        // One extra match distinguishes a full final page from a known next page.
         // Both inputs are range-checked above, so the sum cannot overflow.
-        var collectLimit = offset + maxResults;
-        var fileGlobRegex = fileGlob is null ? null : GlobToRegex(fileGlob);
+        var collectLimit = offset + maxResults + 1;
+        var fileGlobRegex = fileGlob is null ? null : new FileGlobPattern(fileGlob);
         var baseResolved = ResolveChecked(basePath);
         var stopwatch = Stopwatch.StartNew();
         var candidates = new List<(string Path, string Relative)>();
@@ -69,8 +69,7 @@ public sealed class FileSearchAdapter
 
             var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, baseResolved.CanonicalPath);
             if (fileGlobRegex is null
-                || fileGlobRegex.IsMatch(relative)
-                || fileGlobRegex.IsMatch(Path.GetFileName(relative)))
+                || fileGlobRegex.IsMatch(relative))
             {
                 try
                 {
@@ -111,7 +110,7 @@ public sealed class FileSearchAdapter
                 if (resolved.IsProtected || resolved.IsOutsideWorkspace) continue;
                 if (Directory.Exists(resolved.CanonicalPath)) { stack.Push(resolved.CanonicalPath); continue; }
                 var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath);
-                if (fileGlobRegex is not null && !fileGlobRegex.IsMatch(relative) && !fileGlobRegex.IsMatch(Path.GetFileName(relative))) continue;
+                if (fileGlobRegex is not null && !fileGlobRegex.IsMatch(relative)) continue;
                 try
                 {
                     HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
@@ -131,21 +130,47 @@ public sealed class FileSearchAdapter
         }
         }
 
-        var outcomes = new ConcurrentBag<FileSearchOutcome>();
-        await Parallel.ForEachAsync(
-            candidates,
-            new ParallelOptions { MaxDegreeOfParallelism = _maxSearchConcurrency, CancellationToken = cancellationToken },
-            async (candidate, token) => outcomes.Add(await SearchCandidateAsync(candidate.Path, candidate.Relative, query, queryRegex, caseSensitive, collectLimit, token).ConfigureAwait(false))).ConfigureAwait(false);
+        // Consume batches in ordinal path order. Bound collection by the requested
+        // offset/page plus a lookahead; stop opening later files once the page is known.
+        candidates.Sort((left, right) => StringComparer.Ordinal.Compare(left.Relative, right.Relative));
+        var outcomes = new List<FileSearchOutcome>();
+        var results = new List<JsonObject>();
+        for (var index = 0; index < candidates.Count && results.Count < collectLimit; index += _maxSearchConcurrency)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
+            var remaining = collectLimit - results.Count;
+            var batch = candidates.Skip(index).Take(_maxSearchConcurrency)
+                .Select(candidate => SearchCandidateAsync(candidate.Path, candidate.Relative, query,
+                    queryRegex, caseSensitive, remaining, stopwatch, cancellationToken));
+            var completed = await Task.WhenAll(batch).ConfigureAwait(false);
+            outcomes.AddRange(completed);
+            foreach (var outcome in completed)
+                results.AddRange(outcome.Matches.Take(collectLimit - results.Count));
+        }
 
-        var results = outcomes.SelectMany(outcome => outcome.Matches).OrderBy(result => result["path"]!.GetValue<string>(), StringComparer.Ordinal).ThenBy(result => result["line"]!.GetValue<int>()).ToList();
         var final = results.Skip(offset).Take(maxResults).ToList();
-        var truncated = traversalCapped || results.Count >= collectLimit || candidates.Count >= FileToolLimits.MaxEntries * 32 || stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
+        var hasMore = results.Count > offset + maxResults;
+        var incomplete = traversalCapped || outcomes.Any(outcome => outcome.Incomplete);
+        int? nextOffset = hasMore && offset + final.Count <= FileToolLimits.MaxOffset ? offset + final.Count : null;
         stopwatch.Stop();
-        var arr = new JsonArray(final.Select(result => (JsonNode)result).ToArray());
-        return new JsonObject { ["results"] = arr, ["count"] = final.Count, ["truncated"] = truncated, ["scanned_files"] = candidates.Count, ["scanned_directories"] = visited.Count, ["skipped"] = outcomes.Count(outcome => outcome.Skipped), ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds };
+        return new JsonObject
+        {
+            ["results"] = new JsonArray(final.Select(result => (JsonNode)result).ToArray()),
+            ["count"] = final.Count,
+            ["truncated"] = incomplete || hasMore,
+            ["offset"] = offset,
+            ["next_offset"] = nextOffset,
+            ["scan_incomplete"] = incomplete,
+            ["discovered_files"] = candidates.Count,
+            ["scanned_files"] = outcomes.Count,
+            ["scanned_directories"] = visited.Count,
+            ["skipped"] = outcomes.Count(outcome => outcome.Skipped),
+            ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds,
+        };
     }
 
-    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, CancellationToken cancellationToken)
+    private async Task<FileSearchOutcome> SearchCandidateAsync(string path, string relative, string query, Regex? queryRegex, bool caseSensitive, int collectLimit, Stopwatch budget, CancellationToken cancellationToken)
     {
         try
         {
@@ -160,9 +185,11 @@ public sealed class FileSearchAdapter
             using var reader = new StringReader(text);
             string? line;
             var lineNumber = 0;
+            var incomplete = false;
             while ((line = reader.ReadLine()) is not null)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (budget.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { incomplete = true; break; }
                 lineNumber++;
                 Match? match = null;
                 if (queryRegex is not null)
@@ -174,7 +201,8 @@ public sealed class FileSearchAdapter
                     catch (RegexMatchTimeoutException)
                     {
                         // Catastrophic backtracking on one line must not fail the
-                        // whole search: this line simply reports no match.
+                        // whole search, but the caller must know the scan is incomplete.
+                        incomplete = true;
                         continue;
                     }
                 }
@@ -182,11 +210,14 @@ public sealed class FileSearchAdapter
                 var index = queryRegex is null ? line.IndexOf(query, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase) : (match!.Success ? match.Index : -1);
                 if (index >= 0 && matches.Count < collectLimit)
                 {
-                    var preview = line.Length > 512 ? line[..512] : line;
-                    matches.Add(new JsonObject { ["path"] = relative, ["line"] = lineNumber, ["column"] = index + 1, ["preview"] = preview, ["line_text"] = preview });
+                    var previewStart = line.Length > 512 ? Math.Max(0, index - 128) : 0;
+                    var preview = line.Substring(previewStart, Math.Min(512, line.Length - previewStart));
+                    matches.Add(new JsonObject { ["path"] = relative, ["line"] = lineNumber, ["column"] = index + 1,
+                        ["preview_column"] = previewStart + 1, ["preview"] = preview, ["line_text"] = preview });
+                    if (matches.Count == collectLimit) break;
                 }
             }
-            return new FileSearchOutcome(matches, false);
+            return new FileSearchOutcome(matches, false, incomplete);
         }
         catch (OperationCanceledException) { throw; }
         catch (UnauthorizedAccessException) { return FileSearchOutcome.SkippedFile; }
@@ -194,7 +225,7 @@ public sealed class FileSearchAdapter
         catch (ArgumentException) { return FileSearchOutcome.SkippedFile; }
     }
 
-    private sealed record FileSearchOutcome(IReadOnlyList<JsonObject> Matches, bool Skipped)
+    private sealed record FileSearchOutcome(IReadOnlyList<JsonObject> Matches, bool Skipped, bool Incomplete = false)
     {
         public static FileSearchOutcome SkippedFile => new(Array.Empty<JsonObject>(), true);
     }
@@ -228,7 +259,7 @@ public sealed class FileSearchAdapter
         if (binaryProbeBytes < 0) throw new ArgumentOutOfRangeException(nameof(binaryProbeBytes));
         // Probe for binary (zero byte) while retaining prefix
         var probeLength = Math.Min(binaryProbeBytes, maximumBytes);
-        var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
         var buffer = new byte[Math.Min(maximumBytes, 81920)];
         var totalRead = 0;
         var probeChecked = 0;
@@ -279,18 +310,6 @@ public sealed class FileSearchAdapter
         {
             throw new ArgumentException("invalid_utf8", ex);
         }
-    }
-
-    private static Regex GlobToRegex(string pattern)
-    {
-        var normalized = pattern.Replace('\\', '/');
-        var escaped = Regex.Escape(normalized);
-        escaped = escaped.Replace(@"\*\*", "___DOUBLESTAR___");
-        escaped = escaped.Replace(@"\*", "[^/]*");
-        escaped = escaped.Replace(@"\?", "[^/]");
-        escaped = escaped.Replace("___DOUBLESTAR___", ".*");
-        var regexPattern = "^" + escaped + "$";
-        return new Regex(regexPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     private static string GetRequiredString(JsonObject obj, string key)

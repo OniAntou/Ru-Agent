@@ -107,10 +107,13 @@ _Avoid_: treating a Broker manifest or adapter list as the model contract
 
 **Tool Output Projection**:
 A bounded, untrusted model-visible view of a durable Broker receipt. Structured
-`read`, `grep`, and terminal `read_output` projections retain their own cursor
-units (UTF-8 bytes, match results, and UTF-16 characters respectively); a cursor
+`read`, `grep`, `web_fetch`, and terminal `read_output` projections retain their
+own cursor units (UTF-8 bytes, match results, extracted UTF-16 characters, and
+spool UTF-16 characters respectively); a cursor
 continues the same source or spool and never changes the receipt, tool authority,
-or approval state. Missing source identity fails closed when clipping needs a
+or approval state. Grep's `next_offset` means a known next page; a
+`scan_incomplete` flag with no cursor describes incomplete coverage, not a
+pagination promise. Missing source identity fails closed when clipping needs a
 cursor. The bounded prompt may still omit older output exchanges.
 _Avoid_: treating projected output as a new receipt, complete history, or authority
 

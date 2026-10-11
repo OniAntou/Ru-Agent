@@ -98,10 +98,10 @@ session task list (at most 64 rows of `content` plus a `status` of `pending`,
 `glob` takes `pattern`
 (required) plus optional `path` and `max_results` (1–128, default 128) and returns
 stable sorted relative paths without content access; `grep` takes `query`
-(1–1024 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
+(1–2048 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
 (default false), `is_regex` (default false), `max_results` (1–128, default
-128) and `offset` (0–10000, default 0) for paging the ordinal results,
-and returns bounded match locations without raw file content; `write`
+128) and `offset` (0–50000, default 0) for paging the ordinal results,
+and returns bounded match locations with previews up to 512 characters. `write`
 carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 `mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
 flag on `run`/`shell`. The schema has no sandbox selector; obsolete sandbox
@@ -168,12 +168,37 @@ Large structured tool results are projected into bounded prompt references while
 their durable Broker receipts stay unchanged. When a reference carries
 `projection_has_more: true`, continue the same source using
 `projection_next_offset`: `read` cursors count UTF-8 bytes, `grep` cursors count
-matches from the original query offset (an omitted `offset` means zero), and
-`bash` `read_output` cursors count UTF-16 characters within the same
+matches from the original query offset (an omitted `offset` means zero),
+`web_fetch` cursors count UTF-16 characters in extracted content (excluding
+the untrusted wrapper/truncation marker), and `bash` `read_output` cursors count UTF-16 characters within the same
 `execution_id`/spool. The projection names its visible unit and retains source,
 receipt, and spool metadata; it does not claim older output exchanges remain in
 the bounded model history. Missing call context fails closed if clipping needs
 a cursor. Paging does not authorize a new operation or bypass Broker approval.
+
+### File discovery output
+
+Both
+`glob` and `grep file_glob` share pattern semantics: `**/` matches zero or more
+directories, including root files; `*` and `?` do not cross a path separator,
+and filename-only patterns also match nested filenames. Literal pattern text
+is escaped rather than replaced through wildcard placeholders.
+
+Grep previews include the match instead of always showing the line's prefix.
+`column` is the absolute 1-based line column; `preview_column` names the first
+column of the preview. Results retain ordinal path/line ordering. Grep scans
+ordered batches with bounded concurrency and bounds collection by the requested
+offset/page plus one lookahead, stopping before later files once the page is known. Output
+includes `offset`, `next_offset`, `scan_incomplete`, `discovered_files` and
+`scanned_files` (the files actually searched). A final exact-size page has no
+next cursor. `truncated` can also indicate a scan/time bound or regex timeout;
+`scan_incomplete=true` means coverage is incomplete, not proof that another
+page exists. Narrow the path/query in that case. Each page re-scans files;
+changing files or hitting discovery bounds can change the ordered result set.
+The 50000-offset ceiling can prevent continuation even when more matches are
+known; narrow the query/path rather than exceeding it. If prompt projection
+clips the returned page, prefer its `projection_next_offset` over the receipt's
+`next_offset`.
 
 ### Session folder grants and bash approval
 

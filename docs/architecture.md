@@ -399,7 +399,10 @@ AngleSharp parser with no resource loader or JavaScript execution, preserves
 code and plain text, and pages extracted text through optional `offset`/`limit`.
 The default download bound is 4 MiB; output defaults to 32000 UTF-16 characters
 with `next_offset`/`truncated` metadata. Pages refetch the source rather than
-retaining a snapshot. Free upstream search relevance remains unguaranteed.
+retaining a snapshot. Structured Host projection retains the untrusted web
+wrapper and advances a clipped page by extracted text characters, excluding
+the wrapper/marker; its cursor takes precedence over the original page cursor.
+Free upstream search relevance remains unguaranteed.
 
 Prompt composition is not an authority boundary. Execution-authority policy,
 approvals, workspace trust, protected paths, external-directory grants, and

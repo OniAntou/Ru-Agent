@@ -10,7 +10,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-5%2C856%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-5%2C866%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -28,7 +28,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
 | **Public surface** | **42 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 5,856 passing across 12 projects |
+| **Tests** | 5,866 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -199,7 +199,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,856 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,866 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

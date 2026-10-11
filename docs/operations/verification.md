@@ -6,13 +6,61 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,856 passed / 0 failed / 0 skipped** (2026-10-11, web-tool repairs). Log: `artifacts/web-repair-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
-| Python suite | **213 passed, 1 skipped** (2026-10-11, web-tool repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/web-repair-full-python-final.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, web-tool repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/web-repair-release.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,866 passed / 0 failed / 0 skipped** (2026-10-11, discovery and output-projection upgrades). Log: `artifacts/tools-upgrade-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| Python suite | **213 passed, 1 skipped** (2026-10-11, discovery and output-projection upgrades), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tools-upgrade-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, discovery and output-projection upgrades). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tools-upgrade-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Discovery and output-projection upgrades (2026-10-11)
+
+Commit `b00282f0` records the preceding web repairs. Seven new discovery
+regressions failed before this upgrade (`artifacts/tools-discovery-red.log`):
+recursive globs excluded root files, a literal wildcard placeholder name was
+misread, long-line previews omitted their match, exact final pages claimed
+more results, no explicit next cursor was returned, and small queries read
+all candidate files. The focused discovery run then passed all 41 tests
+(`artifacts/tools-discovery-green.log`). Glob/grep now share a literal-aware
+nonbacktracking matcher. Grep consumes ordinal bounded batches, collects only
+up to the offset/page/lookahead bound, and exposes actual scanned counts,
+preview columns and separate scan-incompleteness/next-page metadata.
+
+A Host projection regression also failed before repair
+(`artifacts/tools-discovery-projection-red.log`): a scan/time bound with no
+known next page invented a nonadvancing model cursor. Modern receipts now use
+`next_offset` for continuation; legacy receipts retain the old `truncated`
+compatibility path. Two web projection regressions failed before repair
+(`artifacts/tools-web-projection-red.log`): generic clipping lost structured
+JSON/cursors, and a full fetched page with more pages supplied no model cursor.
+Structured web projection preserves its wrapper/marker and counts only the
+extracted text for a UTF-16 cursor. The final focused Host run passed 32 tests
+(`artifacts/tools-web-projection-green.log`).
+
+The first full discovery matrix stopped on one Help inventory failure:
+927 Broker tests passed, but longer documentation displaced `op=write` from
+its bounded excerpt (`artifacts/tools-discovery-full-dotnet.log`). Splitting
+the details into a dedicated documentation section fixed the bundled Help
+output without weakening the inventory assertion
+(`artifacts/tools-discovery-help-green.log`). A subsequent 12-project discovery
+matrix passed 5864 tests before the two web projection cases were added
+(`artifacts/tools-discovery-full-dotnet-final.log`). The final 12-project
+matrix passed **5,866 tests / 0 failures / 0 skips**, including 928 Broker and
+1043 Host tests (`artifacts/tools-upgrade-full-dotnet.log`).
+
+An actual-service read-only probe searched the real Protocol checkout through
+`ToolExecutionService`, using a synthetic session with only workspace/system
+read scopes, no provider requests or user credentials
+(`artifacts/tools-upgrade-smoke/report.json`). `glob **/*.cs` returned 37 paths,
+including 15 root files. Three `grep web_fetch` pages followed cursors 0, 1, 2
+and ended with no next cursor; the first page searched 8 of 37 discovered
+files, while the final page scanned the remainder to establish completion.
+This is functional and file-count evidence, not a timing benchmark or
+live-model/native-UI acceptance. Free upstream search relevance is unchanged.
+The full Python suite passed 213 tests with one POSIX-only skip on Windows
+(`artifacts/tools-upgrade-full-python.log`), and `build.bat` passed all 11
+Release stages (`artifacts/tools-upgrade-release.log`).
 
 ## Web-tool repairs and remaining upstream limits (2026-10-11)
 

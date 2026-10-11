@@ -143,6 +143,12 @@ selected model. Its 0/9 result includes three completed runs without patches;
 run completion alone is not task acceptance. The two dated trials use different
 provider/model and runtime conditions and are not a controlled comparison.
 
+The [post-terminal-fix SWE rerun](../../docs/operations/verification.md#post-terminal-fix-swe-rerun-2026-10-11)
+repeats the three SWE tasks with matching instructions/baselines and the same
+Step 5 model, preset and 300-second deadlines. All three timed out, resolving
+0/3; Python and TypeScript produced empty patches. One attempt per task does
+not establish a causal effect of the fixes.
+
 ## Environment and comparison limits
 
 Terminal tasks follow Harbor's `instruction.md`, `task.toml`, `environment/`,

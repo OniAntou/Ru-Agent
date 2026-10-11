@@ -551,6 +551,10 @@ public sealed partial class ToolExecutionService
         {
             outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
         }
+        catch (ToolExecutionException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool arguments were rejected.", VerificationFailure(binding));
+        }
         catch (UnauthorizedAccessException error)
         {
             outcome = ToolExecutionOutcome.Failed(

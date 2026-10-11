@@ -6,13 +6,80 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug -NoRestore`: **5,815 passed / 0 failed / 0 skipped** (2026-10-11, terminal launch/exit-code repairs). Log: `artifacts/quality-terminal-full-dotnet-complete.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,822 passed / 0 failed / 0 skipped** (2026-10-11, tool argument/truncation repairs). Log: `artifacts/quality-tool-arguments-truncation-full.log`. Earlier interrupted matrices and environment failures are recorded below. |
 | Python suite | **213 passed, 1 skipped** (2026-10-11, coding recovery/feedback repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/quality-pytest-complete.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal launch/exit-code repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-terminal-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
-| Live coding benchmark | Final custom SWE diagnostic: **0/3 resolved** within 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, rebuilt Release; Python candidate passed all groups but its run timed out. Report: `artifacts/quality-swe-20261011-run2/report.json`. Separate small C# diagnostic passed in 70.906 s. Conditions and incomplete outcomes are recorded below; these are not official dataset scores. |
+| Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Tool argument and truncation repairs (2026-10-11)
+
+An omitted `bash` run-mode argument vector now means an empty vector, matching
+the advertised schema. Mode-specific argument parsing retains its named error
+instead of flattening it to `adapter_error`. The model runner preserves a
+provider's `length` finish before parsing native calls or text selections and
+returns no executable calls or continuation for that incomplete step. The
+Harness's existing bounded truncation recovery stays in charge.
+
+Three terminal regression cases failed before the fix
+(`artifacts/terminal-arguments-red.log`): omitted arguments, missing executable
+and missing shell script. All eight launch-feedback cases passed after the fix
+(`artifacts/terminal-arguments-green.log`), and the Broker suite passed 902 tests
+(`artifacts/terminal-arguments-broker-suite.log`). Three model-step cases also
+failed before the fix: a complete native call was promoted despite `length`,
+an incomplete native call threw a parse error, and a text selection was
+promoted. All three pass after the fix (`artifacts/truncated-step-red.log`,
+`artifacts/truncated-step-green.log`).
+
+Final verification: `scripts/test_dotnet.ps1 -Configuration Debug` passed all
+12 projects, **5,822 passed / 0 failed / 0 skipped**
+(`artifacts/quality-tool-arguments-truncation-full.log`). The focused current
+documentation and route-guidance guards passed 15 cases
+(`artifacts/quality-tool-arguments-truncation-docs.log`), and `git diff --check`
+passed. The Release package, full Python suite and interactive native UI were
+not revalidated in this repair pass.
+
+Trace inspection of run 3 found that Python's empty `write` arguments occurred
+at 8,192 output tokens, while the provider reported `tool_calls`, not `length`.
+The truncation repair above does not change that upstream finish marker or
+raise the pinned output limit. Python and TypeScript also supplied shell
+scripts with `mode=run`; their existing malformed-call feedback correctly
+requested shell mode. These repairs have not yet been evaluated by another
+real-provider benchmark, so the latest measured resolution remains 0/3 below.
+
+## Post-terminal-fix SWE rerun (2026-10-11)
+
+The three custom SWE tasks were rerun on committed `96f658c2`, using the
+rebuilt Release Host/CLI, Kilo `stepfun/step-5-preview-free`, `chat_completions`,
+confirmed `full_access`, one fresh workspace/session per task and one attempt
+with a 300-second agent deadline. Each task's fixture, effective instruction
+hash and Git baseline match run 2. Graders and reference solutions were not
+supplied as model input. This rerun does not cover the six Terminal-style tasks.
+
+| Task | Run outcome | Agent seconds | Passing groups | Reward |
+| --- | --- | --- | --- | --- |
+| `cs-lease-renewal` | timeout | 300.016 | 6/7 | 0 |
+| `py-migration-rollback` | timeout | 300.013 | 2/6 | 0 |
+| `ts-session-replay` | timeout | 300.013 | 2/7 | 0 |
+
+C# changed only `src/LeaseRegistry.cs` and still failed expiry/takeover behavior.
+Python and TypeScript left source unchanged and exported empty patches; their
+passing groups are baseline preservation behavior. Durable receipts record two
+malformed Python calls, one malformed TypeScript call and one nonzero C# command.
+All three timed-out runs were durably cancelled, with no nonterminal run left
+in the isolated database, and the diagnostic Host was stopped. Runtime binary
+hashes remained unchanged throughout the run.
+
+Overall resolution remains **0/3**. Run 2's Python candidate passed 6/6 groups;
+this attempt produced no Python repair. One stochastic attempt per task cannot
+attribute that difference to the terminal fixes or establish stable improvement.
+Reports, trajectories and patches are under
+`artifacts/quality-swe-20261011-run3/`; `comparison-and-runtime-audit.json`
+records matching fixtures and final cancellation evidence. This is live-model
+evidence on a small custom corpus, not an official SWE-bench score or native UI
+acceptance.
 
 ## Terminal launch and exit-code repairs (2026-10-11)
 
@@ -28,7 +95,8 @@ The two exit-code regression cases failed on the old implementation
 passed after the repair (`artifacts/quality-process-exit-green.log`). The valid
 missing-executable regression failed for foreground and background requests
 (`artifacts/quality-launch-feedback-valid-red.log`); the first fixture attempt
-omitted the required argument array and tested an invalid request, so that log
+omitted the optional argument array and exposed a separate executor/schema
+mismatch, now covered by the subsequent argument-vector repair; that first log
 is retained separately. Focused launch/streaming checks passed 20 cases
 (`artifacts/quality-terminal-green.log`). A local diagnostic then ran Python
 directly and through `cmd`, retaining exit code zero in both cases

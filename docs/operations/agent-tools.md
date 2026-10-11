@@ -172,7 +172,9 @@ more detail; public SSE summaries do not expose these diagnostic excerpts.
 
 On Windows, `bash` with `mode=shell` defaults to Windows PowerShell 5.1
 (`powershell.exe`); scripts use PowerShell syntax. `mode=run` takes a separate
-executable and argument vector. The tool description states this explicitly so
+executable and an optional argument vector (omission means no arguments).
+Missing mode-specific fields such as `executable` or `script` return
+`invalid_arguments` rather than `adapter_error`. The tool description states this explicitly so
 the model does not assume Unix `head`/`tail` commands are available.
 
 Canonical `plan` denies terminal and mutation. Canonical `standard` allows only

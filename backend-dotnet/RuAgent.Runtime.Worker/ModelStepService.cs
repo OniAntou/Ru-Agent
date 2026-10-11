@@ -382,6 +382,14 @@ public sealed class ModelStepService
             }
 
         finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
+        if (finishReason == "length")
+        {
+            // A completed JSON call can precede a cut-off call in the same batch.
+            // Preserve the provider's finish marker before parsing or promoting
+            // any calls, so the Harness can recover the whole incomplete step.
+            return new ModelStepServiceResult(text.Length == 0 ? null : text.ToString(),
+                [], finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text));
+        }
         var providerStepId = string.IsNullOrWhiteSpace(modelStepId)
             ? DirectModelStepId
             : modelStepId;

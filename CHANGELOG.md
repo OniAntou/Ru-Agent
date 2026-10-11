@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker,model)**: Treat an omitted terminal argument vector as empty, matching the tool schema, and preserve named argument errors instead of flattening them to `adapter_error`. Preserve a provider's `length` finish before parsing native or text-encoded tool calls so an incomplete step cannot become an executable tool batch.
+
 - **fix(terminal)**: Keep the native process handle before resuming a Windows child so quick commands retain their exit code. Resolve executables and shell runtimes before task registration so launch-resolution failures keep their actionable error code and cannot report a background task as started.
 
 - **fix(tooling,protocol)**: Disclose benchmark final-workspace restrictions in the effective task instruction, record its hash separately from fixture identity, and clarify the default Windows PowerShell syntax in terminal tool guidance.

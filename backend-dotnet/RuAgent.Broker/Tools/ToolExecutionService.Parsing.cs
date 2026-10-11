@@ -84,6 +84,9 @@ public sealed partial class ToolExecutionService
 
     private static IReadOnlyList<string> ReadArguments(JsonNode? node)
     {
+        // The run-mode schema makes the argument vector optional.
+        if (node is null) return Array.Empty<string>();
+
         if (node is not JsonArray values || values.Count > 64)
         {
             throw new ToolExecutionException("invalid_arguments");

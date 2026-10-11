@@ -1,9 +1,15 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-10.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-11.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
+
+The model runner preserves a provider's `length` finish before parsing or
+promoting native or text-encoded tool calls. An incomplete step returns no
+executable calls or continuation; the Harness records it internally and applies
+its existing bounded truncation recovery. Even a complete call preceding a
+truncated call is discarded with that step.
 
 ## Coding core and plugins
 

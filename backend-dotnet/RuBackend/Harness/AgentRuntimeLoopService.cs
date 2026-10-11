@@ -401,6 +401,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _workerGate = new(MaxConcurrentRuns, MaxConcurrentRuns);
+    private readonly Dictionary<string, Task> _workers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CancellationTokenSource> _workerCancellation = new(StringComparer.Ordinal);
+    private readonly object _workerLock = new();
     private readonly ConcurrentDictionary<string, string> _recoveredApprovalIds =
         new(StringComparer.Ordinal);
 
@@ -447,24 +451,40 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     public int ActiveWorkCount { get; private set; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {        while (!stoppingToken.IsCancellationRequested)
+    {
+        try
         {
-            var nextDelay = IdlePollInterval;
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var hasActiveRuns = await StepOnceAsync(stoppingToken).ConfigureAwait(false);
-                nextDelay = hasActiveRuns ? PollInterval : IdlePollInterval;
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception error)
-            {
-                _logger.LogWarning(error, "agent runtime loop iteration failed");
-            }
+                var nextDelay = IdlePollInterval;
+                try
+                {
+                    var hasActiveRuns = await StepOnceAsync(stoppingToken, waitForWorkers: false).ConfigureAwait(false);
+                    nextDelay = hasActiveRuns ? PollInterval : IdlePollInterval;
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception error)
+                {
+                    _logger.LogWarning(error, "agent runtime loop iteration failed");
+                }
 
-            await Task.Delay(nextDelay, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(nextDelay, stoppingToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            Task[] workers;
+            lock (_workerLock) workers = _workers.Values.ToArray();
+            await Task.WhenAll(workers).ConfigureAwait(false);
+            lock (_workerLock)
+            {
+                foreach (var source in _workerCancellation.Values) source.Dispose();
+                _workerCancellation.Clear();
+                _workers.Clear();
+            }
         }
     }
 
@@ -472,7 +492,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     /// Runs one iteration. Returns true when at least one run is registered, which is
     /// the signal the loop uses to choose its next poll interval.
     /// </summary>
-    internal async Task<bool> StepOnceAsync(CancellationToken cancellationToken)
+    internal async Task<bool> StepOnceAsync(CancellationToken cancellationToken, bool waitForWorkers = true)
     {
         // Outbox delivery first so history transitions land before any new model step.
         var dispatch = await _dispatcher.DispatchOnceAsync(cancellationToken).ConfigureAwait(false);
@@ -485,37 +505,52 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         // Published for the managed host's idle-shutdown policy: a registered run (even
         // parked) keeps the host alive so a detached turn keeps progressing.
         ActiveWorkCount = registrations.Count;
-        if (registrations.Count == 0)
-        {
-            return false;
-        }
-
         // A long-running terminal command must not stall every other run. Keep a
         // bounded degree of concurrency so a burst of runs cannot exhaust the host
         // with model/process work while still allowing independent runs to progress.
-        using var gate = new SemaphoreSlim(MaxConcurrentRuns, MaxConcurrentRuns);
-        var tasks = registrations.Select(async registration =>
+        var tasks = new List<Task>();
+        lock (_workerLock)
         {
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            foreach (var completed in _workers.Where(pair => pair.Value.IsCompleted).Select(pair => pair.Key).ToArray())
             {
-                var runId = new RunId(registration.RunId);
-                _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
-                await DriveRunIfRunningAsync(
-                        registration.RunId,
-                        registration.WorkspaceRoot,
-                        policySnapshot,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                _workers.Remove(completed);
+                _workerCancellation[completed].Dispose();
+                _workerCancellation.Remove(completed);
             }
-            finally
+            foreach (var registration in registrations)
             {
-                gate.Release();
+                if (!_workers.TryGetValue(registration.RunId, out var worker))
+                {
+                    var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    var workerToken = source.Token;
+                    _workerCancellation.Add(registration.RunId, source);
+                    worker = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _workerGate.WaitAsync(workerToken).ConfigureAwait(false);
+                            try
+                            {
+                                var runId = new RunId(registration.RunId);
+                                // A queued run may have been removed while another worker held the slot.
+                                if (!_roots.TryGetRoot(runId, out _)) return;
+                                _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
+                                await DriveRunIfRunningAsync(registration.RunId, registration.WorkspaceRoot,
+                                    policySnapshot, workerToken).ConfigureAwait(false);
+                            }
+                            finally { _workerGate.Release(); }
+                        }
+                        catch (OperationCanceledException) when (workerToken.IsCancellationRequested) { }
+                        catch (Exception error) { _logger.LogWarning(error, "agent run worker failed for {RunId}", registration.RunId); }
+                    }, CancellationToken.None);
+                    _workers.Add(registration.RunId, worker);
+                }
+                tasks.Add(worker);
             }
-        });
+        }
 
-        await Task.WhenAll(tasks).ConfigureAwait(false);
-        return true;
+        if (waitForWorkers) await Task.WhenAll(tasks).ConfigureAwait(false);
+        return registrations.Count > 0;
     }
 
     private async Task DriveRunIfRunningAsync(
@@ -593,6 +628,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     /// </summary>
     public async Task CancelAndRemoveRunAsync(RunId runId, CancellationToken cancellationToken)
     {
+        lock (_workerLock)
+        {
+            if (_workerCancellation.TryGetValue(runId.Value, out var source)) source.Cancel();
+        }
         await _roots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
         RemoveRunRegistration(runId);
     }

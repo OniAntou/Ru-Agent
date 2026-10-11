@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui,host)**: Keep run discovery and outbox polling responsive while model/tool workers are busy, with four worker slots and owned cancellation/shutdown. Drop stale run callbacks and history reloads after session/turn switches; serialize Files refreshes while retaining the newest workspace; validate edited keys against the pinned provider instead of the shared picker catalog. Close live SSE when its run is deleted without inventing a terminal outcome, and preserve the latest run's workspace in session exports.
+
 - **fix(gui)**: Transcript follow rejects inconsistent layout extents even when follow mode is active. Opening a session realizes its latest message after flushing layout; a bulk reload restores the visible message and its screen position for readers parked in history, with a bounded pixel fallback. Deferred scrolling is discarded after another session, transcript reset or reader scroll input. The virtualized panel keeps its scroll offset, and active following settles again when realized rows change the measured extent. Layout changes preserve the reader's follow intent instead of treating a temporary empty panel as a request to follow. Scroll handling now lives in its own view partial.
 
 - **fix(gui)**: Live reply text renders literal instead of re-parsing partial Markdown every delta: unclosed bold, fences, and lists flipped the parse tree frame to frame and reflowed the whole reply mid-turn, while a reopened session parsed once and stood still. Streaming surfaces (`IsStreaming` reply block and live text slices) now render plain text and parse Markdown once when the turn settles; complete, fail, and abandon all settle explicitly.

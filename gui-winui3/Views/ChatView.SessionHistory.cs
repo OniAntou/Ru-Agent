@@ -181,11 +181,19 @@ namespace RuApp.Views
             }
 
             var sessionId = _activeSessionId;
+            var sessionGeneration = _sessionOpenGeneration;
+            var assistant = _activeAgentAssistantMessage;
+            var runId = _activeAgentRunId;
+            bool OwnsReload() => !_scrollingDisposed && !cancellationToken.IsCancellationRequested
+                && sessionGeneration == _sessionOpenGeneration
+                && string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
+                && string.Equals(runId, _activeAgentRunId, StringComparison.Ordinal)
+                && ReferenceEquals(assistant, _activeAgentAssistantMessage);
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
             var history = await _apiService.GetSessionMessagesAsync(sessionId, cancellationToken);
-            if (history is null || cancellationToken.IsCancellationRequested || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            if (history is null || !OwnsReload())
             {
                 return null;
             }
@@ -392,34 +400,12 @@ namespace RuApp.Views
                 }
             }
 
-            if (DispatcherQueue.HasThreadAccess)
-            {
-                Apply();
-            }
-            else
-            {
-                var applied = new TaskCompletionSource<bool>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-                if (!DispatcherQueue.TryEnqueue(() =>
-                {
-                    try
-                    {
-                        Apply();
-                        applied.TrySetResult(true);
-                    }
-                    catch (Exception error)
-                    {
-                        applied.TrySetException(error);
-                    }
-                }))
-                {
-                    return null;
-                }
+            bool didApply = await Services.OwnedUiUpdate.ApplyAsync(
+                DispatcherQueue.HasThreadAccess ? null : action => DispatcherQueue.TryEnqueue(() => action()),
+                OwnsReload,
+                Apply);
 
-                await applied.Task.ConfigureAwait(false);
-            }
-
-            return preserveStreamedReply ? streamedReply : latestAssistant;
+            return didApply ? (preserveStreamedReply ? streamedReply : latestAssistant) : null;
         }
 
         /// <summary>

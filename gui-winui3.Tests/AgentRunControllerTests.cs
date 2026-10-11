@@ -14,6 +14,29 @@ namespace RuApp.Tests;
 
 public sealed class AgentRunControllerTests
 {
+    [Fact]
+    public async Task Old_adopted_feed_cannot_unset_busy_on_new_run()
+    {
+        var firstGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fake = new FakeClient { Run = MakeRunWith("waiting_user", "waiting_user"), SubscriptionGate = firstGate };
+        using var controller = new AgentRunController(fake);
+        try
+        {
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            await controller.DetachCurrentRunAsync();
+            fake.Run = MakeRun() with { RunId = "run_22222222222222222222222222222222" };
+            fake.SubscriptionGate = secondGate;
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            Assert.True(controller.IsBusy);
+            firstGate.TrySetResult(true);
+            await Task.Delay(500);
+            Assert.Equal(fake.Run.RunId, controller.CurrentRun?.RunId);
+            Assert.True(controller.IsBusy, "A cancelled old subscription must not mark the new run idle.");
+        }
+        finally { secondGate.TrySetResult(true); }
+    }
+
     private const string RunId = "run_12345678901234567890123456789012";
 
     private static AgentRunModel MakeRun() =>

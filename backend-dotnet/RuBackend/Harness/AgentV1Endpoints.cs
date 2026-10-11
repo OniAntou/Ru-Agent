@@ -450,6 +450,13 @@ public static class AgentV1Endpoints
                 while (!ct.IsCancellationRequested && !isTerminal)
                 {
                     var reloadedRun = await store.GetRunAsync(runIdObj, ct);
+                    if (reloadedRun is null)
+                    {
+                        // Deletion removes the durable row. Close without fabricating a
+                        // terminal outcome; a reconnect/refresh receives run_not_found.
+                        await context.Response.Body.FlushAsync(ct);
+                        return;
+                    }
                     if (reloadedRun is not null)
                     {
                         run = reloadedRun;

@@ -22,7 +22,9 @@ namespace RuApp.Controls
         public ObservableCollection<FileTreeRow> Files { get; } = new();
 
         private string? _workspacePath;
-        private bool _isFilesLoading;
+        private FileTreeRefreshController? _filesRefresh;
+        private FileTreeRefreshController FilesRefresh => _filesRefresh ??= new(
+            root => Task.Run(() => FileTreeLister.List(root, depth: 0)), ApplyFilesListing);
 
         public void SetWorkspace(string? path)
         {
@@ -33,6 +35,10 @@ namespace RuApp.Controls
             }
 
             _workspacePath = normalized;
+            Files.Clear();
+            FilesRootText.Text = normalized ?? "No workspace";
+            ToolTipService.SetToolTip(FilesRootText, normalized);
+            ShowFilesStatus(normalized is null ? "No workspace open." : "Loading…");
             _ = RefreshFilesAsync();
         }
 
@@ -41,55 +47,24 @@ namespace RuApp.Controls
             await RefreshFilesAsync();
         }
 
-        private async Task RefreshFilesAsync()
+        private Task RefreshFilesAsync()
         {
-            if (_isFilesLoading)
+            Files.Clear();
+            ShowFilesStatus(_workspacePath is null ? "No workspace open." : "Loading…");
+            return FilesRefresh.RefreshAsync(_workspacePath);
+        }
+
+        private void ApplyFilesListing(FileTreeListing? listing, bool failed)
+        {
+            Files.Clear();
+            if (listing is null)
             {
+                ShowFilesStatus(failed ? "Cannot read this folder." : "No workspace open.");
                 return;
             }
-
-            _isFilesLoading = true;
-            try
-            {
-                Files.Clear();
-                if (_workspacePath is null)
-                {
-                    FilesRootText.Text = "No workspace";
-                    ToolTipService.SetToolTip(FilesRootText, null);
-                    ShowFilesStatus("No workspace open.");
-                    return;
-                }
-
-                FilesRootText.Text = _workspacePath;
-                ToolTipService.SetToolTip(FilesRootText, _workspacePath);
-                string root = _workspacePath;
-                FileTreeListing listing;
-                try
-                {
-                    listing = await Task.Run(() => FileTreeLister.List(root, depth: 0));
-                }
-                catch (Exception)
-                {
-                    ShowFilesStatus("Cannot read this folder.");
-                    return;
-                }
-
-                foreach (var row in listing.Rows)
-                {
-                    Files.Add(row);
-                }
-
-                if (listing.Truncated)
-                {
-                    Files.Add(FileTreeRow.Note("… more entries not listed", 0));
-                }
-
-                ShowFilesStatus(Files.Count == 0 ? "This folder is empty." : null);
-            }
-            finally
-            {
-                _isFilesLoading = false;
-            }
+            foreach (var row in listing.Rows) Files.Add(row);
+            if (listing.Truncated) Files.Add(FileTreeRow.Note("… more entries not listed", 0));
+            ShowFilesStatus(Files.Count == 0 ? "This folder is empty." : null);
         }
 
         private async void OnFileRowClick(object sender, ItemClickEventArgs e)
@@ -106,6 +81,7 @@ namespace RuApp.Controls
             }
 
             row.IsExpanded = true;
+            var generation = FilesRefresh.Generation;
             FileTreeListing listing;
             try
             {
@@ -115,12 +91,13 @@ namespace RuApp.Controls
             }
             catch (Exception)
             {
+                if (generation != FilesRefresh.Generation) return;
                 row.IsExpanded = false;
                 InsertAfter(row, new[] { FileTreeRow.Note("Cannot read this folder.", row.Depth + 1) });
                 return;
             }
 
-            if (!row.IsExpanded)
+            if (generation != FilesRefresh.Generation || !row.IsExpanded)
             {
                 return;
             }

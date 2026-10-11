@@ -105,9 +105,10 @@ public sealed class AgentSidePanelUiContractTests
 
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.Files.cs");
         Assert.Contains(
-            "FileTreeLister.List",
+            "FilesRefresh.RefreshAsync",
             GuiSource.MethodBody(code, "RefreshFilesAsync"),
             StringComparison.Ordinal);
+        Assert.Contains("FileTreeLister.List", code, StringComparison.Ordinal);
         Assert.Contains("MaxFileTreeRows", code, StringComparison.Ordinal);
         Assert.Contains(
             "CollapseFileRow",

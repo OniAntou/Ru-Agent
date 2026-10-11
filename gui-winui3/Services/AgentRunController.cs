@@ -279,6 +279,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 _subscriptionCts = cts;
                 _pendingCreateRequest = requestSnapshot;
                 ownershipGeneration = ++_runOwnershipGeneration;
+                _assistantDeltaKeys.Clear();
+                _toolOutputKeys.Clear();
+                _streamTerminalStatus = null;
             }
         }
 
@@ -292,6 +295,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         RunOnUi(() =>
         {
+            if (_runOwnershipGeneration != ownershipGeneration) return;
             OnPropertyChanged(nameof(IsBusy));
             _isCancelRequested = false;
             _waitKind = null;
@@ -302,12 +306,6 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingInputQuestion = null;
             PendingInputOptions = Array.Empty<string>();
             Events.Clear();
-            lock (_gate)
-            {
-                _assistantDeltaKeys.Clear();
-                _toolOutputKeys.Clear();
-                _streamTerminalStatus = null;
-            }
             RefreshCommands();
         });
 
@@ -367,10 +365,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             RunOnUi(() =>
             {
-                if (_runOwnershipGeneration == ownershipGeneration)
-                {
-                    _statusText = accepted ? "Event monitoring stopped." : "Ready";
-                }
+                if (_runOwnershipGeneration != ownershipGeneration) return;
+                _statusText = accepted ? "Event monitoring stopped." : "Ready";
                 _isCancelRequested = false;
                 _isBusy = false;
                 RefreshCommands();
@@ -422,6 +418,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             RunOnUi(() =>
             {
+                if (_runOwnershipGeneration != ownershipGeneration) return;
                 // The stream died before the run's terminal snapshot, so the host
                 // may still own the run. Keep the run reference (Stop stays
                 // available) and say what the user can do instead of leaving a
@@ -492,12 +489,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private async Task CancelLateCreatedRunAsync(string runId, CancellationTokenSource createCts)
     {
+        long cleanupGeneration;
         try
         {
             await _client.CancelAsync(runId).ConfigureAwait(false);
             lock (_gate)
             {
                 if (!ReferenceEquals(_subscriptionCts, createCts)) return;
+                cleanupGeneration = _runOwnershipGeneration;
                 _currentRunId = null;
                 _subscriptionCts = null;
                 _isCancelRequested = false;
@@ -505,6 +504,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             RunOnUi(() =>
             {
+                if (_runOwnershipGeneration != cleanupGeneration) return;
                 _isBusy = false;
                 _isCancelRequested = false;
                 _statusText = "Ready";
@@ -516,12 +516,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             lock (_gate)
             {
                 if (!ReferenceEquals(_subscriptionCts, createCts)) return;
+                cleanupGeneration = _runOwnershipGeneration;
                 _currentRunId = runId;
                 _isCancelRequested = false;
             }
 
             RunOnUi(() =>
             {
+                if (_runOwnershipGeneration != cleanupGeneration) return;
                 _statusText = $"Could not cancel the run after the session changed: {ex.Message}";
                 RefreshCommands();
             });
@@ -567,8 +569,17 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         long ownershipGeneration;
         lock (_gate)
         {
+            if (_currentRunId is not null || _isBusy || cts.IsCancellationRequested)
+            {
+                cts.Dispose();
+                return Task.FromResult(false);
+            }
+            _isBusy = true;
             _subscriptionCts = cts;
             ownershipGeneration = ++_runOwnershipGeneration;
+            _assistantDeltaKeys.Clear();
+            _toolOutputKeys.Clear();
+            _streamTerminalStatus = null;
             // Hand the run id over before the first UI frame: the delta/activity
             // handlers read it on the SSE thread, and a UI-queued assignment lets
             // the opening frames arrive while it is still null and be dropped.
@@ -576,10 +587,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
 
         var token = cts.Token;
-        _isBusy = true;
 
         RunOnUi(() =>
         {
+            if (_runOwnershipGeneration != ownershipGeneration) return;
             OnPropertyChanged(nameof(IsBusy));
             _isCancelRequested = false;
             _waitKind = WaitKindFor(run);
@@ -590,12 +601,6 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingInputQuestion = null;
             PendingInputOptions = Array.Empty<string>();
             Events.Clear();
-            lock (_gate)
-            {
-                _assistantDeltaKeys.Clear();
-                _toolOutputKeys.Clear();
-                _streamTerminalStatus = null;
-            }
 
             CurrentRun = run;
             RunAdopted?.Invoke(this, new AgentRunAdoptedEventArgs(run));
@@ -632,8 +637,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        long ownershipGeneration;
+        lock (_gate) ownershipGeneration = _runOwnershipGeneration;
         RunOnUi(() =>
         {
+            if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
             _statusText = "Cancelling run...";
             RefreshCommands();
         });
@@ -641,12 +649,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         try
         {
             await _client.CancelAsync(runId, cancellationToken).ConfigureAwait(false);
-            ReleaseCurrentRun(runId, "Cancellation request sent.");
+            ReleaseCurrentRun(runId, "Cancellation request sent.", ownershipGeneration);
         }
         catch (Exception ex)
         {
             RunOnUi(() =>
             {
+                if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
                 _statusText = $"Cancel error: {ex.Message}";
                 _isBusy = true;
                 _isCancelRequested = false;
@@ -837,27 +846,26 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// run keeps running under the session that parked it). The run-id check keeps a
     /// stale completion from clearing a newer run.
     /// </summary>
-    private void ReleaseCurrentRun(string runId, string statusText)
+    private void ReleaseCurrentRun(string runId, string statusText, long? ownershipGeneration = null)
     {
         RunOnUi(() =>
         {
-            if (string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+            if (!string.Equals(_currentRunId, runId, StringComparison.Ordinal)
+                || (ownershipGeneration.HasValue && _runOwnershipGeneration != ownershipGeneration.Value)) return;
+            lock (_gate)
             {
-                lock (_gate)
-                {
-                    _currentRunId = null;
-                    _subscriptionCts = null;
-                    _isCancelRequested = false;
-                }
-                _waitKind = null;
-                PendingApprovalId = null;
-                PendingApprovalSummary = null;
-                PendingApprovalCommand = null;
-                PendingInputId = null;
-                PendingInputQuestion = null;
-                PendingInputOptions = Array.Empty<string>();
-                CurrentRun = null;
+                _currentRunId = null;
+                _subscriptionCts = null;
+                _isCancelRequested = false;
             }
+            _waitKind = null;
+            PendingApprovalId = null;
+            PendingApprovalSummary = null;
+            PendingApprovalCommand = null;
+            PendingInputId = null;
+            PendingInputQuestion = null;
+            PendingInputOptions = Array.Empty<string>();
+            CurrentRun = null;
 
             _statusText = statusText;
             _isBusy = false;
@@ -1047,7 +1055,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
+        string? runId;
+        long ownershipGeneration;
+        lock (_gate)
+        {
+            runId = _currentRunId;
+            ownershipGeneration = _runOwnershipGeneration;
+        }
         if (runId is null)
         {
             return;
@@ -1056,7 +1070,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         var run = await _client.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
         RunOnUi(() =>
         {
-            if (!string.Equals(_currentRunId, run.RunId, StringComparison.Ordinal))
+            if (!OwnsFeedLocked(runId, ownershipGeneration)
+                || !string.Equals(_currentRunId, run.RunId, StringComparison.Ordinal))
             {
                 return;
             }
@@ -1160,7 +1175,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             lock (_gate)
             {
-                _streamTerminalStatus = model.Status;
+                if (OwnsFeedLocked(runId, ownershipGeneration)) _streamTerminalStatus = model.Status;
             }
         }
 
@@ -1356,13 +1371,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         return Task.CompletedTask;
     }
 
-    private Task OnAssistantDeltaAsync(AgentAssistantDeltaModel model)
+    private Task OnAssistantDeltaAsync(AgentAssistantDeltaModel model, string runId, long ownershipGeneration)
     {
         ArgumentNullException.ThrowIfNull(model);
-        string? runId;
         lock (_gate)
         {
-            if (!_isBusy || _isCancelRequested || _currentRunId is null)
+            if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested || _currentRunId is null)
             {
                 if (!_isCancelRequested)
                 {
@@ -1376,7 +1390,6 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 return Task.CompletedTask;
             }
 
-            runId = _currentRunId;
         }
 
         RunOnUi(() =>
@@ -1385,7 +1398,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 lock (_gate)
                 {
-                    if (!_isBusy
+                    if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy
                         || _isCancelRequested
                         || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
                     {
@@ -1420,18 +1433,16 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         return Task.CompletedTask;
     }
 
-    private Task OnToolOutputAsync(AgentToolOutputModel model)
+    private Task OnToolOutputAsync(AgentToolOutputModel model, string runId, long ownershipGeneration)
     {
         ArgumentNullException.ThrowIfNull(model);
-        string? runId;
         lock (_gate)
         {
-            if (!_isBusy || _isCancelRequested || _currentRunId is null)
+            if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested || _currentRunId is null)
             {
                 return Task.CompletedTask;
             }
 
-            runId = _currentRunId;
         }
 
         RunOnUi(() =>
@@ -1440,7 +1451,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 lock (_gate)
                 {
-                    if (!_isBusy
+                    if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy
                         || _isCancelRequested
                         || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
                     {
@@ -1651,23 +1662,24 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 model =>
                 {
                     onFrame?.Invoke();
-                    return OnAssistantDeltaAsync(model);
+                    return OnAssistantDeltaAsync(model, runId, ownershipGeneration);
                 },
                 model =>
                 {
                     onFrame?.Invoke();
-                    return OnToolOutputAsync(model);
+                    return OnToolOutputAsync(model, runId, ownershipGeneration);
                 })
             .ConfigureAwait(false);
         // The SSE stream ends after the terminal snapshot, but the create response
         // may be stale (or the stream may have disconnected). Refresh the durable
         // run before changing command state so Cancel is never left enabled for a
         // completed run and a disconnect is not reported as success.
+        if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
         try
         {
             await RefreshAsync(token).ConfigureAwait(false);
         }
-        catch (Exception) when (!token.IsCancellationRequested && TryApplyTerminalStreamSnapshot())
+        catch (Exception) when (!token.IsCancellationRequested && TryApplyTerminalStreamSnapshot(runId, ownershipGeneration))
         {
             // The SSE stream already delivered the authoritative terminal
             // snapshot. A follow-up GET can race backend shutdown/restart; do
@@ -1676,6 +1688,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         RunOnUi(() =>
         {
+            if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
             var terminal = IsTerminalStatus(CurrentRun?.Status);
             if (terminal)
             {
@@ -1728,28 +1741,23 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // A cancelled session open kills the follow before the run ever produced
-            // anything: the latch must release so the session now opening can adopt
-            // its own run instead of being blocked by this stale reference forever.
-            // Once a frame arrived the run did materialize, so Stop must stay.
-            if (!sawFrame && string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+            RunOnUi(() =>
             {
-                ReleaseCurrentRun(runId, "Event monitoring stopped.");
-            }
-            else
-            {
-                RunOnUi(() =>
+                if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
+                if (!sawFrame) ReleaseCurrentRun(runId, "Event monitoring stopped.", ownershipGeneration);
+                else
                 {
                     _statusText = "Event monitoring stopped.";
                     _isBusy = false;
                     RefreshCommands();
-                });
-            }
+                }
+            });
         }
         catch (Exception)
         {
             RunOnUi(() =>
             {
+                if (!IsCurrentFeedOwner(runId, ownershipGeneration)) return;
                 _statusText = "Event stream ended unexpectedly. Use Stop to end the run, then send again.";
                 _isBusy = false;
                 RefreshCommands();
@@ -1769,14 +1777,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private bool TryApplyTerminalStreamSnapshot()
+    private bool TryApplyTerminalStreamSnapshot(string runId, long ownershipGeneration)
     {
         string? status;
-        string? runId;
         lock (_gate)
         {
+            if (!OwnsFeedLocked(runId, ownershipGeneration)) return false;
             status = _streamTerminalStatus;
-            runId = _currentRunId;
         }
 
         if (!IsTerminalStatus(status) || string.IsNullOrWhiteSpace(runId))
@@ -1786,7 +1793,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         RunOnUi(() =>
         {
-            if (!string.Equals(_currentRunId, runId, StringComparison.Ordinal)
+            if (!IsCurrentFeedOwner(runId, ownershipGeneration)
                 || CurrentRun is not { } current)
             {
                 return;

@@ -22,6 +22,11 @@ they arrive, and usage on argument-only chunks remains available.
 
 ## Coding core and plugins
 
+Session lists and interchange exports share `SessionWorkspaceResolver` to resolve
+the latest durable run's encrypted workspace metadata. Export resolves the requested
+session directly, independently of the session-list cap. Sessions without a readable
+workspace retain an unset working directory.
+
 The coding core is the product: Public Host, Broker execution authority, the
 in-process Agent v2 model runner, the durable Agent SSE stream, and the
 `RuApp`/`RuAgent.Cli` clients. The coding core never depends on a media

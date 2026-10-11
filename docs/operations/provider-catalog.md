@@ -15,6 +15,14 @@ fails as `catalog_unauthorized` with an empty catalog once it is signed out — 
 is not sent anonymously, so no picker offers a model that cannot run. The keyless
 Custom OpenAI endpoint keeps serving its catalog.
 
+The Settings key probe pins the provider and key edit generation before saving.
+It validates through a direct forced catalog request for that provider, bypassing
+the shared picker controller's current selection and GUI refresh throttle.
+Changing provider or editing the key supersedes the probe: its delayed result cannot
+clear the new input, display a verdict for another provider or initiate key removal.
+Only an owned `catalog_unauthorized` result removes the saved key; removal failure
+is reported. Transport failures retain the key with an unverified status.
+
 The GUI refreshes on startup, successful provider/model/key settings changes,
 opening the model selector and every five minutes while Chat is active. It
 stops polling when Chat is inactive or the window closes. Repeated manual

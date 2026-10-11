@@ -66,6 +66,14 @@ The Continue path is the same on both clients: a parked run
 (`waiting_user`, `reconciliation_required`) resumes only when the client
 continues or reconciles it.
 
+The runtime polls the conversation outbox and registered runs independently of
+long model/tool work. At most four run workers execute concurrently; each run
+has one scheduled worker, including while it waits for a slot. Session deletion
+cancels its owned worker, and host shutdown waits for workers to unwind.
+When an SSE poll finds that the durable run row was deleted, the response closes
+cleanly and releases its live subscription. It emits no fabricated terminal
+snapshot; subsequent run reads/reconnects receive the existing not-found response.
+
 ### Token usage accounting
 
 Opening Ru does not call a model, so startup alone has no provider token usage.
@@ -274,6 +282,13 @@ authoritative if a follow-up `GET` races host shutdown or restart. A late
 history/outbox failure after visible assistant deltas does not append a generic
 failure sentence to the answer or replace it with a duplicate failure banner;
 the durable run/event status remains available for diagnostics.
+Stream callbacks and completion/error settlement carry the run's ownership
+generation. A detached subscription cannot clear a newer run's busy state or
+overwrite its terminal status, assistant deltas or tool output. History reloads
+recheck session generation, run and assistant identity when the UI update executes;
+turn cleanup also checks that identity after awaiting the reload. The Files tab
+serializes root reads, keeps the newest requested workspace and discards superseded
+results/errors, including pending folder expansions.
 If the terminal snapshot races conversation-outbox delivery, a session-history
 reload that still contains only the user turn preserves the already-rendered
 assistant bubble. A later history refresh can reconcile it once the persisted

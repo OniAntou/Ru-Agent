@@ -1263,8 +1263,13 @@ namespace RuApp.Views
                 _activeAgentAssistantMessage.SettleSegments();
             }
             ChatMessageItem? placeholder = _activeAgentAssistantMessage;
+            var sessionGeneration = _sessionOpenGeneration;
+            var runId = _activeAgentRunId;
 
             string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
+            if (sessionGeneration != _sessionOpenGeneration
+                || !string.Equals(runId, _activeAgentRunId, StringComparison.Ordinal)
+                || !ReferenceEquals(placeholder, _activeAgentAssistantMessage)) return;
             string fallbackText = latestAssistant
                 ?? StripDisplayMarkers(placeholder?.Content ?? string.Empty);
             if (latestAssistant is null

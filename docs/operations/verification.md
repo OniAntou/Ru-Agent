@@ -6,13 +6,23 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,909 passed / 0 failed / 0 skipped** (2026-10-11, preset adoption + mode hardening). Log: `artifacts/review-remediation-full-dotnet.log`. One CLI run flaked once on a timing-sensitive test (1 failure, rerun green twice); earlier interrupted matrices and environment failures are recorded below. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug -NoRestore`: **5,957 passed / 0 failed / 0 skipped** (2026-10-11, GUI/backend ownership and scheduling fixes). Backend 1,049; GUI 1,352. Log: `artifacts/gui-backend-fixes-dotnet.log`. The initial implementation matrix's export test requested unsupported writable formats; that test setup was corrected to the catalog's `CanWrite` set. Original log: `artifacts/gui-backend-fixes-dotnet-initial.log`. |
 | Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, native transcript scroll follow-up). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-scroll-native-final-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## GUI/backend review fixes (2026-10-11)
+
+All seven findings in [the review](../reviews/2026-10-11-gui-backend-review.md)
+have implementation changes and regression coverage: owned run workers, stale
+stream/history settlement, deleted-run SSE cleanup, provider key probes, latest
+Files refresh and export workspace resolution. The full Debug matrix above passed;
+documentation guards passed **19 tests**. Native race acceptance, live providers,
+Release publish and the full Python suite were not rerun in this follow-up.
+Prior Release/native/Python evidence in this document remains dated evidence.
 
 ## Transcript scroll regression (2026-10-11)
 

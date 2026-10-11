@@ -543,7 +543,8 @@ public sealed class ProviderSetupGuidanceTests
             "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
             body,
             StringComparison.Ordinal);
-        Assert.Contains("catalog_unauthorized", body, StringComparison.Ordinal);
+        Assert.Contains("ProviderKeyProbe.RunAsync", body, StringComparison.Ordinal);
+        Assert.Contains("catalog_unauthorized", GuiSource.Text("Services", "ProviderKeyProbe.cs"), StringComparison.Ordinal);
         Assert.Contains("RemoveProviderAsync", body, StringComparison.Ordinal);
     }
 

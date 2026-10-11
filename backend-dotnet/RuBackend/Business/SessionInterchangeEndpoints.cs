@@ -1,3 +1,6 @@
+using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Workspace;
+using RuBackend.Harness.Workspace;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -41,6 +44,9 @@ public static class SessionInterchangeEndpoints
         string sessionId,
         string? harness,
         ISessionStore sessions,
+        HarnessSqliteOptions sqliteOptions,
+        SqliteWorkspaceStore workspaceStore,
+        WorkspaceTrustService trustService,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -74,7 +80,7 @@ public static class SessionInterchangeEndpoints
 
             var transcript = ToTranscript(
                 document,
-                await WorkingDirectoryForAsync(sessions, sessionId, cancellationToken).ConfigureAwait(false));
+                await WorkingDirectoryForAsync(sessionId, sqliteOptions, workspaceStore, trustService, cancellationToken).ConfigureAwait(false));
             var files = format.Write(transcript);
 
             return Results.Ok(new
@@ -256,20 +262,15 @@ public static class SessionInterchangeEndpoints
     /// where that agent looks for its sessions.
     /// </remarks>
     private static async Task<string?> WorkingDirectoryForAsync(
-        ISessionStore sessions,
         string sessionId,
+        HarnessSqliteOptions sqliteOptions,
+        SqliteWorkspaceStore workspaceStore,
+        WorkspaceTrustService trustService,
         CancellationToken cancellationToken)
     {
-        var summaries = await sessions.ListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var summary in summaries)
-        {
-            if (string.Equals(summary.Id, sessionId, StringComparison.Ordinal))
-            {
-                return summary.WorkspacePath;
-            }
-        }
-
-        return null;
+        var workspaces = await SessionWorkspaceResolver.ResolveAsync(
+            [sessionId], sqliteOptions, workspaceStore, trustService, cancellationToken).ConfigureAwait(false);
+        return workspaces.TryGetValue(sessionId, out var workspace) ? workspace.Path : null;
     }
 
     /// <summary>

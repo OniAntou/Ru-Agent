@@ -583,6 +583,12 @@ public sealed class BusinessEndpointTests
             Assert.NotNull(entry);
             Assert.Equal(Path.GetFileName(workspacePath), entry.Value.GetProperty("workspace_label").GetString());
             Assert.Equal(workspacePath, entry.Value.GetProperty("workspace_path").GetString());
+            foreach (var format in RuAgent.SessionInterchange.SessionFormatCatalog.All.Where(value => value.CanWrite).Select(value => value.Id))
+            {
+                var exported = await client.GetFromJsonAsync<JsonElement>($"/sessions/{sessionId}/export?harness={format}");
+                Assert.True(exported.GetProperty("status").GetString() == "ok", $"Export failed for {format}: {exported}");
+                Assert.Equal(workspacePath, exported.GetProperty("session").GetProperty("working_directory").GetString());
+            }
             Assert.False(string.IsNullOrEmpty(entry.Value.GetProperty("workspace_id").GetString()));
         }
         finally

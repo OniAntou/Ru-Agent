@@ -14,6 +14,36 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentSseReconnectTests
 {
     [Fact]
+    public async Task Live_feed_closes_after_its_run_is_deleted()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(client, session, tmp.Path, "prompt", "review-delete-" + Guid.NewGuid().ToString("N"));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var response = await client.GetAsync($"/agent/v1/runs/{runId}/events?live=1", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        var read = response.Content.ReadAsStringAsync(timeout.Token);
+        try
+        {
+            var artifacts = factory.Services.GetRequiredService<RuAgent.Harness.Persistence.IHarnessSessionArtifactStore>();
+            await artifacts.CloseAndDeleteAsync(session, DateTimeOffset.UtcNow, CancellationToken.None);
+            await Task.WhenAny(read, Task.Delay(1000));
+            Assert.True(read.IsCompleted, "The run is gone, but the live SSE response remains open indefinitely.");
+            Assert.DoesNotContain("final_snapshot", await read, StringComparison.Ordinal);
+            var hub = factory.Services.GetRequiredService<HarnessLiveEventHub>();
+            Assert.True(await WaitUntilAsync(() => hub.SubscriberCount == 0, TimeSpan.FromSeconds(2)));
+            using var missing = await client.GetAsync($"/agent/v1/runs/{runId}");
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+        finally
+        {
+            timeout.Cancel();
+            try { await read; } catch (OperationCanceledException) { }
+        }
+    }
+
+    [Fact]
     public async Task Sse_durable_id_and_last_event_id_and_after_sequence_equal_acceptance()
     {
         using var tmp = TempWorkspace.Create();

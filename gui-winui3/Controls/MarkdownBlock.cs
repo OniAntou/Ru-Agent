@@ -109,6 +109,151 @@ namespace RuApp.Controls
         /// prose, never to a swallowed reply.
         /// </summary>
         /// <summary>
+        /// One flat run of an emphasis span: plain text plus the styles the
+        /// renderer applies. Pure so the emphasis contract is unit-testable
+        /// without building XAML.
+        /// </summary>
+        internal sealed record EmphasisSegment(
+            string Text,
+            bool Bold,
+            bool Italic,
+            bool Mono,
+            bool Strike,
+            int? LinkGroup,
+            string? LinkUrl,
+            bool IsBreak);
+
+        /// <summary>
+        /// Flattens an emphasis span (bold, italic, strikethrough) into runs.
+        /// Every Markdig leaf inside emphasis maps to visible text: code keeps
+        /// its content in mono, links keep label and target, breaks stay
+        /// breaks, entities decode, and nested markers combine. A genuinely
+        /// unknown leaf is skipped. Nothing here may stringify a node: Markdig
+        /// does not override ToString on inlines, so rendering a child with
+        /// ToString leaks a .NET type name such as
+        /// Markdig.Syntax.Inlines.CodeInline onto the screen.
+        /// </summary>
+        internal static IReadOnlyList<EmphasisSegment> FlattenEmphasis(EmphasisInline emphasis)
+        {
+            ArgumentNullException.ThrowIfNull(emphasis);
+            var segments = new List<EmphasisSegment>();
+            int linkGroups = 0;
+
+            void AddText(string text, bool bold, bool italic, bool mono, bool strike, int? linkGroup, string? linkUrl)
+            {
+                if (text.Length == 0)
+                {
+                    return;
+                }
+
+                segments.Add(new EmphasisSegment(text, bold, italic, mono, strike, linkGroup, linkUrl, IsBreak: false));
+            }
+
+            void AppendLink(LinkInline link, bool bold, bool italic, bool strike)
+            {
+                int start = segments.Count;
+                foreach (var child in link)
+                {
+                    Append(child, bold, italic, strike, linkGroup: null, linkUrl: null);
+                }
+
+                int group = linkGroups++;
+                string? url = link.Url;
+                if (segments.Count == start)
+                {
+                    string label = link.Label;
+                    string text = label.Length > 0 ? label : url ?? string.Empty;
+                    AddText(text, bold, italic, mono: false, strike, group, url);
+                    return;
+                }
+
+                for (int index = start; index < segments.Count; index++)
+                {
+                    var stamped = segments[index];
+                    segments[index] = stamped with { LinkGroup = group, LinkUrl = url };
+                }
+            }
+
+            void Append(Markdig.Syntax.Inlines.Inline node, bool bold, bool italic, bool strike, int? linkGroup, string? linkUrl)
+            {
+                switch (node)
+                {
+                    case LiteralInline literal:
+                        AddText(literal.Content.ToString(), bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        break;
+                    case CodeInline code:
+                        AddText(code.Content, bold, italic, mono: true, strike, linkGroup, linkUrl);
+                        break;
+                    case LineBreakInline lineBreak:
+                        if (lineBreak.IsHard)
+                        {
+                            segments.Add(new EmphasisSegment(string.Empty, Bold: false, Italic: false, Mono: false, strike, linkGroup, linkUrl, IsBreak: true));
+                        }
+                        else
+                        {
+                            AddText(" ", bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        }
+
+                        break;
+                    case LinkInline link:
+                        AppendLink(link, bold, italic, strike);
+                        break;
+                    case AutolinkInline auto:
+                        AddText(auto.Url ?? string.Empty, bold, italic, mono: false, strike, linkGroups++, auto.Url);
+                        break;
+                    case HtmlEntityInline entity:
+                    {
+                        string decoded = entity.Transcoded.ToString();
+                        AddText(decoded.Length > 0 ? decoded : entity.Original.ToString(), bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        break;
+                    }
+                    case HtmlInline html:
+                        AddText(html.Tag ?? string.Empty, bold, italic, mono: false, strike, linkGroup, linkUrl);
+                        break;
+                    case EmphasisInline nested:
+                        foreach (var child in nested)
+                        {
+                            Append(
+                                child,
+                                bold || nested.DelimiterCount >= 2,
+                                italic || nested.DelimiterCount == 1,
+                                strike || nested.DelimiterChar == '~',
+                                linkGroup,
+                                linkUrl);
+                        }
+
+                        break;
+                    case ContainerInline container:
+                        foreach (var child in container)
+                        {
+                            Append(child, bold, italic, strike, linkGroup, linkUrl);
+                        }
+
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            foreach (var child in emphasis)
+            {
+                // A strikethrough root carries no bold or italic of its own: the
+                // old renderer never styled `~~x~~` beyond the strike, and the
+                // span supplies the decoration. Nested markers still combine.
+                bool rootStrike = emphasis.DelimiterChar == '~';
+                Append(
+                    child,
+                    bold: !rootStrike && emphasis.DelimiterCount >= 2,
+                    italic: !rootStrike && emphasis.DelimiterCount == 1,
+                    strike: rootStrike,
+                    linkGroup: null,
+                    linkUrl: null);
+            }
+
+            return segments;
+        }
+
+        /// <summary>
         /// Table cells as tab-separated text for the copy button. Pure so the
         /// shape is unit-testable without building XAML.
         /// </summary>
@@ -722,54 +867,96 @@ namespace RuApp.Controls
 
             private void AddEmphasis(Paragraph paragraph, EmphasisInline emphasis, double size, FontWeight? weight, FontFamily fontFamily)
             {
-                if (emphasis.DelimiterChar == '~')
+                var segments = FlattenEmphasis(emphasis);
+                if (segments.Count == 0)
                 {
-                    var struck = new Span();
-                    foreach (var child in emphasis)
-                    {
-                        if (child is LiteralInline literal)
-                        {
-                            struck.Inlines.Add(CreateRun(literal.Content.ToString(), size, weight, fontFamily));
-                        }
-                    }
-
-                    struck.TextDecorations = Windows.UI.Text.TextDecorations.Strikethrough;
-                    paragraph.Inlines.Add(struck);
                     return;
                 }
 
-                bool bold = emphasis.DelimiterCount >= 2;
-                foreach (var child in emphasis)
+                if (emphasis.DelimiterChar == '~')
                 {
-                    switch (child)
+                    // RichText paragraphs carry no border for quotes and no tag
+                    // for strike: one span holds the decoration so every run in
+                    // it inherits the strikethrough.
+                    var struck = new Span { TextDecorations = Windows.UI.Text.TextDecorations.Strikethrough };
+                    AppendSegments(struck.Inlines, segments, size, weight, fontFamily);
+                    if (struck.Inlines.Count > 0)
                     {
-                        case LiteralInline literal:
-                            var run = CreateRun(literal.Content.ToString(), size, weight, fontFamily);
-                            if (bold)
-                            {
-                                run.FontWeight = FontWeights.Bold;
-                            }
-                            else
-                            {
-                                run.FontStyle = Windows.UI.Text.FontStyle.Italic;
-                            }
+                        paragraph.Inlines.Add(struck);
+                    }
 
-                            paragraph.Inlines.Add(run);
-                            break;
-                        case ContainerInline nested:
-                            AddInlines(paragraph, nested, size, bold ? FontWeights.Bold : weight, fontFamily);
-                            break;
-                        default:
-                            var fallback = new Run { Text = child.ToString(), FontSize = size, FontFamily = fontFamily };
-                            if (bold)
-                            {
-                                fallback.FontWeight = FontWeights.Bold;
-                            }
+                    return;
+                }
 
-                            paragraph.Inlines.Add(fallback);
-                            break;
+                AppendSegments(paragraph.Inlines, segments, size, weight, fontFamily);
+            }
+
+            private void AppendSegments(InlineCollection target, IReadOnlyList<EmphasisSegment> segments, double size, FontWeight? weight, FontFamily fontFamily)
+            {
+                int index = 0;
+                while (index < segments.Count)
+                {
+                    var segment = segments[index];
+                    if (segment.IsBreak)
+                    {
+                        target.Add(new LineBreak());
+                        index++;
+                        continue;
+                    }
+
+                    if (segment.LinkGroup is null)
+                    {
+                        target.Add(MakeSegmentRun(segment, size, weight, fontFamily));
+                        index++;
+                        continue;
+                    }
+
+                    var link = new Hyperlink();
+                    if (Uri.TryCreate(segment.LinkUrl, UriKind.Absolute, out var uri)
+                        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                    {
+                        link.NavigateUri = uri;
+                    }
+
+                    int? group = segment.LinkGroup;
+                    while (index < segments.Count
+                        && !segments[index].IsBreak
+                        && segments[index].LinkGroup == group)
+                    {
+                        link.Inlines.Add(MakeSegmentRun(segments[index], size, weight, fontFamily));
+                        index++;
+                    }
+
+                    if (link.Inlines.Count > 0)
+                    {
+                        target.Add(link);
                     }
                 }
+            }
+
+            private Run MakeSegmentRun(EmphasisSegment segment, double size, FontWeight? weight, FontFamily fontFamily)
+            {
+                var run = new Run
+                {
+                    Text = segment.Text,
+                    FontSize = segment.Mono ? MonoFontSize : size,
+                    FontFamily = segment.Mono ? MonoFont : fontFamily,
+                };
+                if (segment.Bold)
+                {
+                    run.FontWeight = FontWeights.Bold;
+                }
+                else if (weight.HasValue)
+                {
+                    run.FontWeight = weight.Value;
+                }
+
+                if (segment.Italic)
+                {
+                    run.FontStyle = Windows.UI.Text.FontStyle.Italic;
+                }
+
+                return run;
             }
 
             private static Run CreateRun(string text, double size, FontWeight? weight, FontFamily fontFamily)

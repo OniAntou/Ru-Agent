@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Emphasis rendering no longer stringifies Markdig nodes: a code span nested in bold/italic (`**`standard`**`) printed the literal `Markdig.Syntax.Inlines.CodeInline` because the fallback branch called `ToString()` on the node, and code spans inside `~~strikethrough~~` vanished entirely. Emphasis now flattens to styled runs (code keeps mono, links keep label and target, breaks stay breaks, nested markers combine) through one pure, unit-tested helper, with strikethrough decoration preserved via a single span.
+
 - **feat(agent)**: Opening a GUI session adopts the stored session preset into the composer (`GET /agent/v1/sessions/{sessionId}/preset`), so a `plan` session reopened later still shows `Plan` and the next send keeps it instead of silently re-grading the session. The prompt contract now states that the run's permission mode is described only by the profile block, so a model cannot mistake a mode described in the product documentation for its own.
 
 - **fix(gui)**: ContentDialogs are serialized through one gate, so a workspace-trust prompt can no longer fail with "An async operation was not properly started. Only a single ContentDialog can be open at any time." when another dialog is open or still closing. A prompt that could not open no longer marks the run as handled: it retries on the monitor refresh after a short cooldown and reports a bounded inline status instead of a start failure, so a parked run keeps its approve affordance.

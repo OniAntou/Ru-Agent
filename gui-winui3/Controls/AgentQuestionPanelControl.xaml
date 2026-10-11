@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Hallmark · component: question-card · genre: modern-minimal · theme: Ru app tokens (App.xaml)
+     states: default · hover · focus · active · disabled (+loading/error/success via host SetSubmitEnabled/disable)
+     contrast: body ink-on-surface · muted 11px ≥4.5:1 on surface (both themes) · pre-emit critique: P5 H5 E4 S5 R5 V4 -->
 <UserControl
     x:Class="RuApp.Controls.AgentQuestionPanelControl"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -10,8 +13,7 @@
     <Border x:Name="Panel"
             Visibility="Collapsed"
             Background="{StaticResource RuSurfaceBrush}"
-            BorderBrush="{StaticResource RuLineBrush}"
-            BorderThickness="1"
+            BorderThickness="0"
             CornerRadius="{StaticResource AppCardCornerRadius}"
             Padding="16,14"
             Margin="0,0,0,4"
@@ -33,12 +35,11 @@
                               VerticalAlignment="Center" />
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                    <TextBlock Text="NEEDS YOUR ANSWER"
+                    <TextBlock Text="Agent question"
                                FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="10.5"
+                               FontSize="13"
                                FontWeight="SemiBold"
-                               CharacterSpacing="100"
-                               Foreground="{StaticResource RuAccentBrush}" />
+                               Foreground="{StaticResource RuInkBrush}" />
                     <TextBlock Text="Reply to resume the run"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="11"
@@ -50,9 +51,8 @@
                        TextWrapping="Wrap"
                        FontFamily="{StaticResource RuUiFontFamily}"
                        FontSize="14"
-                       FontWeight="SemiBold"
                        LineHeight="20"
-                       Foreground="{StaticResource RuInkBrush}"
+                       Foreground="{StaticResource RuMutedBrush}"
                        AutomationProperties.AutomationId="AgentQuestionText"
                        AutomationProperties.LiveSetting="Polite" />
             <ScrollViewer Grid.Row="2"
@@ -72,14 +72,13 @@
                             <Button Click="OnOptionClick"
                                     HorizontalAlignment="Stretch"
                                     HorizontalContentAlignment="Stretch"
-                                    MinHeight="38"
+                                    MinHeight="40"
                                     Padding="0"
                                     AutomationProperties.Name="{Binding}"
                                     Background="{StaticResource RuCanvasBrush}"
                                     Foreground="{StaticResource RuInkBrush}"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{StaticResource AppControlCornerRadius}">
+                                    BorderThickness="0"
+                                    CornerRadius="{StaticResource AppInsetCornerRadius}">
                                 <Grid ColumnDefinitions="*,Auto" Padding="12,6">
                                     <TextBlock Text="{Binding}"
                                                TextWrapping="Wrap"

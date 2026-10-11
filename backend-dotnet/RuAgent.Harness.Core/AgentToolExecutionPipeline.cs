@@ -9,7 +9,7 @@ using RuAgent.Protocol;
 
 namespace RuAgent.Harness.Core;
 
-internal sealed class AgentToolExecutionPipeline
+internal sealed partial class AgentToolExecutionPipeline
 {
     private const string AskUserToolId = "ask_user";
     private const string AskUserArgumentHint = "ask_user requires a question string and at most 8 option strings; send one question at a time.";
@@ -74,105 +74,28 @@ internal sealed class AgentToolExecutionPipeline
                 .ConfigureAwait(false);
         }
 
-        var prepared = new List<PreparedToolExecution>(modelCalls.Count);
-        var proposals = new Dictionary<int, ToolProposal>(modelCalls.Count);
-        var denied = new Dictionary<int, DeniedToolExecution>();
-        var asks = new List<AskDecision>(modelCalls.Count);
-        var inputAsks = new List<InputAsk>();
+        var batch = new ProposalBatch(modelCalls.Count);
         try
         {
             for (var index = 0; index < modelCalls.Count; index++)
             {
                 var modelCall = modelCalls[index];
                 var proposal = new ToolProposal(
-                    run.RunId,
-                    modelStepId,
-                    _ids.NewToolCallId(),
-                    modelCall.ProviderCallId,
-                    index + 1,
-                    modelCall.ToolId,
-                    modelCall.ToolVersion,
-                    modelCall.Arguments);
-                proposals.Add(proposal.ModelOrder, proposal);
-                run = await PersistProposalAsync(
-                        run,
-                        modelStepId,
-                        proposal,
-                        modelCall,
-                        cancellationToken)
+                    run.RunId, modelStepId, _ids.NewToolCallId(), modelCall.ProviderCallId,
+                    index + 1, modelCall.ToolId, modelCall.ToolVersion, modelCall.Arguments);
+                batch.Proposals.Add(proposal.ModelOrder, proposal);
+                // Keep proposal persistence interleaved with evaluation: gathering the
+                // whole batch first would change durable failure and receipt ordering.
+                run = await PersistProposalAsync(run, modelStepId, proposal, modelCall, cancellationToken)
                     .ConfigureAwait(false);
-                if (modelCall.ToolId is AskUserToolId)
-                {
-                    HandleAskUserProposal(proposal, denied, inputAsks);
-                    continue;
-                }
-
-                var decision = await EvaluateProposalAsync(
-                        run,
-                        proposal,
-                        prepared,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (decision.Decision == PolicyDecision.Ask)
-                {
-                    if (decision.ApprovalId is null)
-                    {
-                        throw new InvalidOperationException("approval_id_missing");
-                    }
-
-                    asks.Add(new AskDecision(proposal, decision));
-                    continue;
-                }
+                await EvaluateBatchProposalAsync(run, proposal, batch, cancellationToken).ConfigureAwait(false);
             }
 
-            if (inputAsks.Count > 0)
-            {
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                await RevokeAllApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                return await PauseForInputAsync(
-                        run,
-                        modelStepId,
-                        inputAsks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (asks.Count > 0)
-            {
-                await RevokeExtraApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                return await PauseForApprovalAsync(
-                        run,
-                        modelStepId,
-                        asks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            return await CompleteExecutionsAsync(
-                    run,
-                    modelStepId,
-                    prepared,
-                    proposals,
-                    denied,
-                    new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            return await CompleteBatchAsync(run, modelStepId, batch, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            // A batch abort still leaves the approvals it registered revoked:
-            // cleanup is best-effort and must never replace the original failure
-            // the caller is unwinding with.
-            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
-            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+            await AbortBatchAsync(batch).ConfigureAwait(false);
             throw;
         }
     }
@@ -962,83 +885,8 @@ internal sealed class AgentToolExecutionPipeline
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(retained);
         ValidateRetainedApprovalStep(run, retained);
-        var proposals = retained.Proposals.ToDictionary(proposal => proposal.ModelOrder);
-        var prepared = new List<PreparedToolExecution>(retained.Proposals.Count);
-        var denied = new Dictionary<int, DeniedToolExecution>();
-        var asks = new List<AskDecision>(retained.Proposals.Count);
-        var inputAsks = new List<InputAsk>();
-        try
-        {
-            foreach (var proposal in retained.Proposals)
-            {
-                if (proposal.ToolId is AskUserToolId)
-                {
-                    HandleAskUserProposal(proposal, denied, inputAsks);
-                    continue;
-                }
-
-                var decision = await EvaluateProposalAsync(
-                        run,
-                        proposal,
-                        prepared,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (decision.Decision == PolicyDecision.Ask)
-                {
-                    asks.Add(new AskDecision(proposal, decision));
-                }
-            }
-
-            if (inputAsks.Count > 0)
-            {
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                await RevokeAllApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                return await PauseForInputAsync(
-                        run,
-                        retained.ModelStepId,
-                        inputAsks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (asks.Count > 0)
-            {
-                await RevokeExtraApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                return await PauseForApprovalAsync(
-                        run,
-                        retained.ModelStepId,
-                        asks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            return await CompleteExecutionsAsync(
-                    run,
-                    retained.ModelStepId,
-                    prepared,
-                    proposals,
-                    denied,
-                    new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            // A batch abort still leaves the approvals it registered revoked:
-            // cleanup is best-effort and must never replace the original failure
-            // the caller is unwinding with.
-            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
-            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-            throw;
-        }
+        return await ResumeBatchAsync(run, retained.ModelStepId, retained.Proposals, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1055,83 +903,8 @@ internal sealed class AgentToolExecutionPipeline
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(retained);
         ValidateRetainedInputStep(run, retained);
-        var proposals = retained.Proposals.ToDictionary(proposal => proposal.ModelOrder);
-        var prepared = new List<PreparedToolExecution>(retained.Proposals.Count);
-        var denied = new Dictionary<int, DeniedToolExecution>();
-        var asks = new List<AskDecision>(retained.Proposals.Count);
-        var inputAsks = new List<InputAsk>();
-        try
-        {
-            foreach (var proposal in retained.Proposals)
-            {
-                if (proposal.ToolId is AskUserToolId)
-                {
-                    HandleAskUserProposal(proposal, denied, inputAsks);
-                    continue;
-                }
-
-                var decision = await EvaluateProposalAsync(
-                        run,
-                        proposal,
-                        prepared,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (decision.Decision == PolicyDecision.Ask)
-                {
-                    asks.Add(new AskDecision(proposal, decision));
-                }
-            }
-
-            if (inputAsks.Count > 0)
-            {
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                await RevokeAllApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                return await PauseForInputAsync(
-                        run,
-                        retained.ModelStepId,
-                        inputAsks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (asks.Count > 0)
-            {
-                await RevokeExtraApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-                await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-                prepared.Clear();
-                return await PauseForApprovalAsync(
-                        run,
-                        retained.ModelStepId,
-                        asks[0],
-                        proposals,
-                        denied,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            return await CompleteExecutionsAsync(
-                    run,
-                    retained.ModelStepId,
-                    prepared,
-                    proposals,
-                    denied,
-                    new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            // A batch abort still leaves the approvals it registered revoked:
-            // cleanup is best-effort and must never replace the original failure
-            // the caller is unwinding with.
-            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
-            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-            throw;
-        }
+        return await ResumeBatchAsync(run, retained.ModelStepId, retained.Proposals, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal async Task<AgentToolPipelineResult> RefreshRetainedApprovalAsync(
@@ -1147,52 +920,24 @@ internal sealed class AgentToolExecutionPipeline
         }
 
         ValidateRetainedApprovalStep(run, retained);
-        var proposals = retained.Proposals.ToDictionary(proposal => proposal.ModelOrder);
-        var prepared = new List<PreparedToolExecution>(retained.Proposals.Count);
-        var denied = new Dictionary<int, DeniedToolExecution>();
-        var asks = new List<AskDecision>(retained.Proposals.Count);
+        var batch = new ProposalBatch(retained.Proposals);
         try
         {
             foreach (var proposal in retained.Proposals)
             {
-                var decision = await EvaluateProposalAsync(
-                        run,
-                        proposal,
-                        prepared,
-                        denied,
-                        cancellationToken)
+                // Refresh never executes a batch or resolves an input question.
+                var decision = await EvaluateProposalAsync(run, proposal, batch.Prepared, batch.Denied, cancellationToken)
                     .ConfigureAwait(false);
                 if (decision.Decision == PolicyDecision.Ask)
-                {
-                    asks.Add(new AskDecision(proposal, decision));
-                }
+                    batch.Approvals.Add(new AskDecision(proposal, decision));
             }
 
-            await RevokeExtraApprovalsAsync(asks, cancellationToken).ConfigureAwait(false);
-            if (asks.Count == 0)
-            {
-                throw new InvalidOperationException("retained_approval_gate_missing");
-            }
-
-            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
-            prepared.Clear();
-            return await PauseForApprovalAsync(
-                    run,
-                    retained.ModelStepId,
-                    asks[0],
-                    proposals,
-                    denied,
-                    cancellationToken,
-                    preserveWaitingState: true)
-                .ConfigureAwait(false);
+            return await CompleteBatchAsync(run, retained.ModelStepId, batch, cancellationToken,
+                preserveWaitingState: true).ConfigureAwait(false);
         }
         catch
         {
-            // A batch abort still leaves the approvals it registered revoked:
-            // cleanup is best-effort and must never replace the original failure
-            // the caller is unwinding with.
-            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
-            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+            await AbortBatchAsync(batch).ConfigureAwait(false);
             throw;
         }
     }

@@ -64,36 +64,25 @@ public sealed class AgentSessionRecoveryTests
     }
 
     [Fact]
-    public void ChatView_waits_for_the_previous_agent_run_to_cancel_before_switching_session()
+    public void ChatView_delegates_switch_ownership_and_the_outgoing_run_stop()
     {
+        // Stop-before-switch and latest-click behavior are exercised by
+        // ChatSessionPresentationTests; this only pins the view's ownership seam.
         var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
-
-        int stop = body.IndexOf("await StopActiveAgentAsync(force: true);", StringComparison.Ordinal);
-        int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);
-
-        Assert.True(stop >= 0, "Switching sessions must await cancellation of the previous run.");
-        Assert.True(switchSession >= 0, "OpenSessionAsync must set the active session.");
-        Assert.True(
-            stop < switchSession,
-            "The cancellation must be awaited before the active session changes: a "
-                + "fire-and-forget cancel races the next create request and surfaces as "
-                + "\"workspace busy\".");
+        Assert.Contains("await _sessionPresentation.OpenAsync(", body, StringComparison.Ordinal);
+        Assert.Contains("() => StopActiveAgentAsync(force: true)", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("_activeSessionId =", body, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void The_outgoing_draft_is_saved_before_the_incoming_one_is_restored()
+    public void The_view_restores_the_incoming_draft_after_the_owned_switch()
     {
-        // Both halves key off the active session id, so saving after the switch would
-        // file the outgoing text under the incoming conversation, and restoring before
-        // it would look up the wrong id.
-        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
-
-        int save = body.IndexOf("Save(_activeSessionId", StringComparison.Ordinal);
-        int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);
+        var code = GuiSource.ViewText("ChatView");
+        var body = GuiSource.MethodBody(code, "OpenSessionAsync");
+        int open = body.IndexOf("await _sessionPresentation.OpenAsync(", StringComparison.Ordinal);
         int restore = body.IndexOf("RestoreComposerDraft(sessionId)", StringComparison.Ordinal);
-
-        Assert.True(save >= 0 && restore >= 0, "OpenSessionAsync must move the composer drafts.");
-        Assert.True(save < switchSession, "The outgoing draft must be saved under the outgoing session id.");
-        Assert.True(switchSession < restore, "The incoming draft must be restored after the switch.");
+        Assert.True(open >= 0 && restore > open);
+        Assert.Contains("RetainComposerDraft(checkOnly: false)", body, StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.TrySave(_activeSessionId", GuiSource.MethodBody(code, "RetainComposerDraft"), StringComparison.Ordinal);
     }
 }

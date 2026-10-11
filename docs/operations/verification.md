@@ -6,7 +6,7 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug -NoRestore`: **5,957 passed / 0 failed / 0 skipped** (2026-10-11, GUI/backend ownership and scheduling fixes). Backend 1,049; GUI 1,352. Log: `artifacts/gui-backend-fixes-dotnet.log`. The initial implementation matrix's export test requested unsupported writable formats; that test setup was corrected to the catalog's `CanWrite` set. Original log: `artifacts/gui-backend-fixes-dotnet-initial.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,997 passed / 0 failed / 0 skipped** (2026-10-12, session and tool-batch simplification). Backend 1,049; GUI 1,383; Harness Core 486; CLI 1,289. Log: `artifacts/architecture-simplification-dotnet.log`. |
 | Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, native transcript scroll follow-up). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-scroll-native-final-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
@@ -14,12 +14,84 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Sidebar startup rendering (2026-10-12)
+
+Startup previously assigned an empty row collection and only rendered sidebar
+sections when a session poll changed its fingerprint. An empty initial result
+therefore left Workspaces, Recents and persisted workspace pins invisible until
+a local action changed sessions. The startup regression guard failed before the
+fix (`artifacts/sidebar-startup-red.log`: 1 failed, 1,384 passed). Startup now
+renders after resolving the app root and before starting the Host; unchanged
+polls also repair a missing row collection while retaining existing rows.
+
+The final scoped Debug GUI run passed **1,385 tests / 0 failed / 0 skipped**
+(`artifacts/sidebar-startup-gui.log`). Documentation guards passed **19 tests**;
+`git diff --check` passed. An initial command attempted an unsupported
+`-TestFilter` runner argument and did not execute tests; the preserved red and
+green runs above used the supported GUI project filter.
+
+Native restart acceptance and the user's deleted PPTX run were not reproduced.
+The user confirmed the run used `standard`; no execution preset or approval
+policy was changed. Its model latency and shell failures remain unmeasured.
+
+## Live transcript activity boundaries (2026-10-12)
+
+Three regression inputs reproduced the live-only orphaned sentence suffixes
+(`artifacts/live-activity-boundary-red.log`: 3 failed). The old splitter moved
+the boundary backward to a word or line edge, while text rendering could still
+have preceding deltas queued. Live insertion now renders pending preceding text,
+freezes its full event-ordered extent and settles that slice; subsequent text
+keeps a new live tail. Earlier queued activities are drained before accepting
+later deltas, preserving ordering across model steps. The obsolete boundary
+heuristic and its tests are replaced by behavioral live-segment coverage.
+
+The scoped `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter
+gui-winui3` run passed **1,384 tests / 0 failed / 0 skipped**
+(`artifacts/live-activity-gui-final.log`); documentation guards passed **19 tests**.
+This is deterministic render-model and source-wiring evidence;
+native GUI acceptance, real-provider streaming, Release publish and the full
+backend/Python matrices were not rerun for this local presentation fix. The
+full-matrix row above remains the preceding architecture snapshot.
+
+## Architecture simplification (2026-10-12)
+
+GUI session identity, open-request ownership, run monitoring and turn completion
+now belong to `ChatSessionPresentation`. Tests cover overlapping switches,
+outgoing-session bootstrap, stale monitor callbacks and completion admission.
+Same-run accumulator rebinding preserves event deduplication; two regression
+tests failed before the repair (`artifacts/session-presentation-dedup-red.log`).
+
+Tool-batch classification, pause and cleanup share one implementation across
+initial execution and retained approval/input paths. Proposal persistence still
+precedes each evaluation, and approval refresh does not execute tools. Three
+regression cases verify that a later evaluation failure revokes fresh approvals,
+discards prepared executions and executes nothing.
+
+CLI turn cancellation, active/parked/followable run identities and ordered unique
+assistant payload references belong to `ChatRunSession`. Behavioral tests cover
+failed Continue, parking, interruption, overlapping turn admission and reset.
+The existing command/rendering file remains large; this change isolates run
+lifetime rather than completing a terminal presentation redesign.
+
+The first GUI implementation run passed 1,377 tests and failed three source
+guards that required the previous inline ownership
+(`artifacts/session-presentation-gui.log`). Those guards now check the deliberate
+ownership seam, with behavior covered by the new presentation tests. Final full
+Debug verification passed **5,997 tests across 12 projects**, with no failures or
+skips (`artifacts/architecture-simplification-dotnet.log`). Documentation guards
+passed **19 tests**. Native UI acceptance, live providers, coding benchmarks,
+Release publish and the full Python suite were not rerun in this change.
+
 ## GUI/backend review fixes (2026-10-11)
 
 All seven findings in [the review](../reviews/2026-10-11-gui-backend-review.md)
 have implementation changes and regression coverage: owned run workers, stale
 stream/history settlement, deleted-run SSE cleanup, provider key probes, latest
-Files refresh and export workspace resolution. The full Debug matrix above passed;
+Files refresh and export workspace resolution. That full Debug matrix passed
+**5,957 tests across 12 projects** (Backend 1,049; GUI 1,352;
+`artifacts/gui-backend-fixes-dotnet.log`). Its initial export test requested
+unsupported writable formats; the test setup was corrected to the catalog's
+`CanWrite` set (`artifacts/gui-backend-fixes-dotnet-initial.log`).
 documentation guards passed **19 tests**. Native race acceptance, live providers,
 Release publish and the full Python suite were not rerun in this follow-up.
 Prior Release/native/Python evidence in this document remains dated evidence.

@@ -132,45 +132,10 @@ namespace RuApp.Views
 
         private void StartAgentMonitor()
         {
-            var previous = _agentMonitorCts;
-            _agentMonitorCts = new CancellationTokenSource();
-            previous?.Cancel();
-            previous?.Dispose();
-            _ = MonitorAgentRunAsync(_agentMonitorCts.Token);
-        }
-
-        private async Task MonitorAgentRunAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested && _agentController is not null)
-                {
-                    await Task.Delay(Services.UiTiming.AgentRetryDelay, cancellationToken);
-                    if (_agentController.CurrentRun is null)
-                    {
-                        return;
-                    }
-
-                    if (IsTerminalStatus(_agentController.CurrentRun.Status))
-                    {
-                        await CompleteActiveAgentTurnAsync(cancellationToken);
-                        return;
-                    }
-
-                    await _agentController.RefreshAsync(cancellationToken);
-                    UpdateAgentInlineState();
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-            }
-            catch (Exception exception)
-            {
-                // The run may still be alive server-side, so this is a refresh
-                // failure, not a start failure: say exactly that instead of
-                // dropping it behind the start-failure copy.
-                ShowAgentInlineStatus($"Could not refresh the Coding Agent run: {exception.Message}");
-            }
+            if (_agentController is not { } controller) return;
+            _ = _sessionPresentation.StartMonitoring(
+                controller, CompleteActiveAgentTurnAsync, UpdateAgentInlineState,
+                exception => ShowAgentInlineStatus($"Could not refresh the Coding Agent run: {exception.Message}"));
         }
 
         private async Task<string?> ReloadSessionHistoryAsync(CancellationToken cancellationToken)
@@ -695,44 +660,14 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
-                // The ticket is taken before the first await: the *last* click
-                // must win. Two rapid switches both wait on the outgoing stop,
-                // and settling order is not click order.
-                var requestTicket = ++_sessionOpenRequestTicket;
-                string outgoingDraft = ChatInputTextBox?.Text ?? string.Empty;
-                var outgoingAttachments = PendingAttachments.ToList();
-                if (!_composerDrafts.CanSave(_activeSessionId, outgoingDraft, outgoingAttachments))
-                {
-                    ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-                    return;
-                }
-                // A workspace is single-owner while a run is non-terminal. Wait for
-                // the cancellation commit before switching sessions; fire-and-forget
-                // cancellation races the next create request and surfaces as the
-                // misleading "workspace busy" error.
-                await StopActiveAgentAsync(force: true);
-                if (requestTicket != _sessionOpenRequestTicket) return;
-
-                // This attempt takes ownership of the transcript from here. Both halves of
-                // the draft move key off the active session id, so the outgoing draft is
-                // filed under the outgoing session first and the switch comes after it.
-                if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox?.Text, PendingAttachments))
-                {
-                    ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-                    return;
-                }
-                _activeSessionId = sessionId;
-                _sessionOpenGenerationSessionId = sessionId;
-                // The generation bump is what tells a load still in flight for the previous
-                // session that it has been superseded, so it stops instead of painting its
-                // history under this session's title. The open token stops the superseded
-                // load's I/O as well, instead of only discarding its paint.
-                var previousOpenCts = _sessionOpenCts;
-                _sessionOpenCts = new CancellationTokenSource();
-                previousOpenCts?.Cancel();
-                previousOpenCts?.Dispose();
-                generation = ++_sessionOpenGeneration;
-                var openToken = _sessionOpenCts.Token;
+                var openedSession = await _sessionPresentation.OpenAsync(
+                    sessionId,
+                    () => RetainComposerDraft(checkOnly: true),
+                    () => StopActiveAgentAsync(force: true),
+                    () => RetainComposerDraft(checkOnly: false));
+                if (openedSession is not { } open) return;
+                generation = open.Generation;
+                var openToken = open.Cancellation;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
                 _sidePanelRunRunning = null;
@@ -1050,20 +985,18 @@ namespace RuApp.Views
         /// True while the attempt that started as <paramref name="generation"/> is still the
         /// one whose session is open. A superseded attempt must not touch the transcript.
         /// </summary>
-        private bool IsCurrentOpen(long generation) =>
-            _sessionOpenGeneration == generation
-            && string.Equals(_activeSessionId, _sessionOpenGenerationSessionId, StringComparison.Ordinal);
+        private bool IsCurrentOpen(long generation) => _sessionPresentation.IsCurrent(generation);
 
-        /// <summary>
-        /// Makes <paramref name="sessionId"/> the active session and takes the transcript away
-        /// from any open attempt still in flight. Session-creating paths go through here so a
-        /// load that started for the previous session can always tell it has been superseded.
-        /// </summary>
-        private void ActivateSession(string sessionId)
+        private void ActivateSession(string sessionId) => _sessionPresentation.Activate(sessionId);
+
+        private bool RetainComposerDraft(bool checkOnly)
         {
-            _activeSessionId = sessionId;
-            _sessionOpenGenerationSessionId = sessionId;
-            _sessionOpenGeneration++;
+            var text = ChatInputTextBox?.Text ?? string.Empty;
+            bool retained = checkOnly
+                ? _composerDrafts.CanSave(_activeSessionId, text, PendingAttachments.ToList())
+                : _composerDrafts.TrySave(_activeSessionId, text, PendingAttachments);
+            if (!retained) ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
+            return retained;
         }
 
         private static double HorizontalInsetFor(double width) =>
@@ -1228,12 +1161,7 @@ namespace RuApp.Views
         {
             DisposeChatScrolling();
             SidePanel?.ShutdownTerminal();
-            _agentMonitorCts?.Cancel();
-            _agentMonitorCts?.Dispose();
-            _agentMonitorCts = null;
-            _sessionOpenCts?.Cancel();
-            _sessionOpenCts?.Dispose();
-            _sessionOpenCts = null;
+            _sessionPresentation.Dispose();
             if (_contextMeterTimer is not null)
             {
                 _contextMeterTimer.Tick -= OnContextMeterTimerTick;

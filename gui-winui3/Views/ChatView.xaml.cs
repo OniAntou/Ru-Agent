@@ -107,33 +107,16 @@ namespace RuApp.Views
         private ApiService? _apiService;
         private HarnessEventSink? _harnessEvents;
         private string? _harnessScenario;
-        private string _activeSessionId = "default";
+        private readonly ChatSessionPresentation _sessionPresentation = new();
+        private string _activeSessionId => _sessionPresentation.SessionId;
         public string CurrentSessionId => _activeSessionId;
 
-        /// <summary>
-        /// Which open attempt owns the transcript. Bumped when an attempt becomes the
-        /// active one; every await inside that attempt re-checks it and stops if a
-        /// newer attempt has taken over.
-        /// </summary>
-        private long _sessionOpenGeneration;
-        private CancellationTokenSource? _sessionOpenCts;
-
-        /// <summary>
-        /// Last click of "open this session", taken before the first await. Two
-        /// fast switches both wait on the outgoing run's stop, and without the
-        /// ticket the click whose stop happened to settle last owned the
-        /// transcript -- which is not the click the user made last.
-        /// </summary>
-        private long _sessionOpenRequestTicket;
-
-        /// <summary>The session <see cref="_sessionOpenGeneration"/> was opened for.</summary>
-        private string _sessionOpenGenerationSessionId = string.Empty;
+        private long _sessionOpenGeneration => _sessionPresentation.Generation;
 
         private IReadOnlyList<TodoItemModel>? _latestTodos;
         private bool _todoPanelExpanded;
         private string _activeSessionTitle = "New Chat";
         private AgentRunController? _agentController;
-        private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentBusySeen;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
@@ -163,10 +146,8 @@ namespace RuApp.Views
         private string? _activeAgentRunId;
         private string? _activeWorkspaceId;
         private bool _activeAgentReplyReceived;
-        private bool _activeAgentReplyCompleted;
         private AgentModelUsage? _activeAgentUsage;
         private readonly RetainedContextMeterPresenter _retainedContextMeter = new();
-        private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;
         private readonly object _accumulatorLock = new();

@@ -51,6 +51,17 @@ public sealed class AgentReplyRenderScheduler
         _accumulator.Invalidate();
     }
 
+    /// <summary>
+    /// Renders received text before an activity is inserted on the presentation
+    /// context. Unlike Flush, keeps the accumulator alive for subsequent deltas.
+    /// The queued callback remains owned and can render any later text.
+    /// </summary>
+    public void ApplyPending()
+    {
+        var snapshot = _accumulator.TakeSnapshot();
+        if (snapshot is not null) _apply(snapshot);
+    }
+
     public AgentReplySnapshot? Flush()
     {
         AgentReplySnapshot? snapshot;

@@ -165,6 +165,7 @@ public sealed class ChatFollowContractTests
 
         Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
         Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OpenSessionAsync"), StringComparison.Ordinal);
+        Assert.Contains("RetainComposerDraft(checkOnly: false)", GuiSource.MethodBody(code, "OpenSessionAsync"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "RetainComposerDraft"), StringComparison.Ordinal);
     }
 }

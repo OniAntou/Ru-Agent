@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Render sidebar sections and persisted workspace pins before backend startup, including when the initial session list is empty or unavailable. Unchanged polls rebuild a missing sidebar without requiring a new chat; normal unchanged polls retain their existing rows.
+
+- **fix(gui)**: Live activity boundaries render preceding pending text before insertion and freeze at its actual end, preventing question/status rows from splitting off trailing words or punctuation. Earlier batched activities are drained before subsequent text deltas, and frozen prose settles its Markdown while the next tail remains live.
+
+- **refactor(agent)**: Tool execution and retained approval/input resume share batch classification, pause and cleanup logic while retaining durable ordering and fresh authorization. CLI turn cancellation and retained run identities have one owner; repeated assistant payload references are recovered once.
+
+- **fix(gui)**: Session opening and run-monitor lifetime share one testable presentation owner. The latest session click stays authoritative even while an outgoing session is being created, and late refresh results/errors cannot update another session or turn. Reply accumulation preserves duplicate/reset identities when the same run is rebound, allowing the legacy view deduplication state to be removed.
+
 - **feat(gui)**: Redesigned the inline question panel: an icon chip header with a "reply to resume" hint, a semibold question hero, full-width option rows with chevrons (long options wrap instead of clipping at a fixed height), a taller answer row, and a floating-card shadow matching the composer. Behavior, bounds, automation ids, and keyboard handling are unchanged; option buttons now expose their own text as the accessible name.
 
 - **fix(gui)**: Sidebar section headings use their own non-selectable hover surface. Recents spacing sits outside its row hit area, so hovering the heading no longer fills the gap above it; session and workspace rows retain their usual hover feedback.

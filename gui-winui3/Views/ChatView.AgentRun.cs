@@ -546,10 +546,7 @@ namespace RuApp.Views
             // wrong transcript.
             _queuedTurns.Clear();
 
-            var monitor = _agentMonitorCts;
-            _agentMonitorCts = null;
-            monitor?.Cancel();
-            monitor?.Dispose();
+            _sessionPresentation.StopMonitoring();
             _agentActionPending = false;
             _workspaceTrustDialogRunId = null;
             _workspaceTrustDialogSessionId = null;
@@ -1201,9 +1198,8 @@ namespace RuApp.Views
             _workspaceTrustDialogHandledSessionId = null;
             _workspaceTrustDialogController = null;
             _activeAgentReplyReceived = false;
-            _activeAgentReplyCompleted = false;
+            _sessionPresentation.BeginTurn();
             _activeAgentUsage = null;
-            _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
             lock (_accumulatorLock)
             {
@@ -1242,12 +1238,8 @@ namespace RuApp.Views
 
         private async Task CompleteActiveAgentTurnAsync(CancellationToken cancellationToken)
         {
-            if (_activeAgentReplyCompleted)
-            {
-                return;
-            }
-
-            _activeAgentReplyCompleted = true;
+            var completion = _sessionPresentation.TryBeginCompletion();
+            if (completion is null) return;
             // Flush any pending coalesced render before completing
             AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
             if (pending != null && _activeAgentAssistantMessage != null)
@@ -1268,15 +1260,12 @@ namespace RuApp.Views
                 _activeAgentAssistantMessage.SettleSegments();
             }
             ChatMessageItem? placeholder = _activeAgentAssistantMessage;
-            var sessionGeneration = _sessionOpenGeneration;
             var runId = _activeAgentRunId;
 
             string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
-            if (sessionGeneration != _sessionOpenGeneration
+            if (!_sessionPresentation.IsCurrent(completion.Value)
                 || !string.Equals(runId, _activeAgentRunId, StringComparison.Ordinal)
                 || !ReferenceEquals(placeholder, _activeAgentAssistantMessage)) return;
-            string fallbackText = latestAssistant
-                ?? StripDisplayMarkers(placeholder?.Content ?? string.Empty);
             if (latestAssistant is null
                 && !_activeAgentReplyReceived
                 && placeholder is not null
@@ -1292,7 +1281,6 @@ namespace RuApp.Views
             // second time, below the work it explained.
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
-            _agentDeltaKeys.Clear();
             UpdateAgentInlineState();
 
             // Queued turns waited for exactly this moment: the previous turn is over
@@ -1344,7 +1332,6 @@ namespace RuApp.Views
 
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
-            _agentDeltaKeys.Clear();
         }
 
         private void AbandonActiveAgentReply(bool removeUserMessage = false)
@@ -1375,8 +1362,7 @@ namespace RuApp.Views
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             _activeAgentReplyReceived = false;
-            _activeAgentReplyCompleted = false;
-            _agentDeltaKeys.Clear();
+            _sessionPresentation.BeginTurn();
         }
 
         private async Task<SessionInfo> CreateValidatedAgentSessionAsync(CancellationToken cancellationToken)
@@ -1540,8 +1526,7 @@ namespace RuApp.Views
         }
 
 
-        private static bool IsTerminalStatus(string? status) => status is
-            "completed" or "failed" or "cancelled" or "interrupted";
+        private static bool IsTerminalStatus(string? status) => ChatSessionPresentation.IsTerminalStatus(status);
 
         private void ShowAgentError(Exception exception)
         {

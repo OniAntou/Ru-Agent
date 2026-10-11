@@ -65,6 +65,10 @@ row is a UI draft named `New Session`, visible only while open. Leaving without
 sending hides the row; the first accepted chat keeps the same session ID and
 shows a prompt-derived title until durable history supplies the server title.
 Hiding an empty draft does not delete the Host record.
+The GUI's `ChatSessionPresentation` owns the active session identity, asynchronous
+open/load cancellation, run-monitor lifetime and once-per-turn completion.
+It keeps the latest session click authoritative; WinUI renders the transcript
+and retains/restores composer drafts through that owner.
 Sidebar placement is separate UI state: app-root sessions default to Recents;
 manual grouping/reordering survives refresh and restart but never changes the
 Conversation Session's actual working directory or execution permissions.
@@ -215,7 +219,10 @@ client-local preset table
 One model step may contain optional narration and one or more ordered native
 tool calls. The Host persists the assistant call batch and every durable result;
 approval resume rehydrates and re-evaluates the retained proposals without a new
-model proposal. Read-only calls may execute concurrently in model order with at
+model proposal. Initial execution, approval/input resume and approval refresh
+share proposal-batch classification, pause and abort cleanup in the Harness;
+initial proposal persistence stays interleaved with evaluation, and refresh
+cannot execute the batch. Read-only calls may execute concurrently in model order with at
 most eight active, while mutations and terminal calls retain sequential
 barriers. A text-selection provider path still emits exactly one JSON selection.
 _Avoid_: one-call-per-step rule, reissuing approved calls

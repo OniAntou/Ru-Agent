@@ -104,6 +104,10 @@ public sealed class AgentReplyAccumulator
                 return;
             }
 
+            // The live view binds every frame. Rebinding the same run must not
+            // forget delivered deltas or replayed reset frames.
+            if (string.Equals(_runId, runId, StringComparison.Ordinal)) return;
+
             _runId = runId;
             _generation++;
             _seenKeys.Clear();

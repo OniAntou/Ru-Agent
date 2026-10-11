@@ -44,8 +44,9 @@ namespace RuApp.Models
         /// <summary>
         /// True while this slice still streams: its MarkdownBlock renders
         /// literal text so partial Markdown cannot reflow the reply mid-turn.
-        /// The turn settles it (see <see cref="ChatMessageItem.SettleSegments"/>)
-        /// when the reply completes, fails, or is abandoned.
+        /// An activity freezes and settles its preceding slice; the new tail
+        /// remains live. The turn settles remaining slices (see
+        /// <see cref="ChatMessageItem.SettleSegments"/>) on completion or failure.
         /// </summary>
         public bool IsLive
         {

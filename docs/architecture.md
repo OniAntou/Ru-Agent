@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-11.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-12.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
@@ -55,6 +55,23 @@ when explicitly stopped. Startup succeeds only after public readiness; a
 managed startup failure exits with a bounded code.
 
 Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits gracefully; CLI detach still does not force-kill the shared Host.
+
+GUI conversation ownership lives in the WinUI-independent
+`ChatSessionPresentation`. It waits for the outgoing run stop, retains its
+composer draft, then activates only the latest requested session. Activation
+cancels the previous history load; monitor callbacks and turn completion are
+scoped to the active session/turn. `AgentRunController` retains HTTP/SSE run
+ownership, while `ChatView` renders history, activities and scroll effects.
+The shell renders sidebar sections and persisted workspace pins before Host
+startup, independently of session polling. An unchanged poll retains rendered
+rows, but rebuilds them if the sidebar has not been populated.
+`AgentReplyAccumulator` is the view's sole reply-delta deduplication owner;
+rebinding the same run preserves delivered-frame and reset identities.
+Live transcript activity insertion renders preceding pending deltas before
+`AgentLiveSegmentBuilder` freezes text at its received end. Queued earlier
+activities are drained before later text is accepted. Frozen slices settle
+Markdown once; only the next tail remains live. No line/word heuristic moves
+sentence suffixes across activity rows.
 Host single-instance claims bind the physical identity of both data and log
 directories, including aliases. Directory handles retain those roots for the
 claim lifetime. Each mutex has a dedicated owner thread until disposal, so
@@ -308,6 +325,13 @@ reconciliation surfaces from Phase 3:
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - Interactive and headless CLI: `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run execution to HTTP/SSE. Its Terminal.Gui TUI owns terminal presentation, command navigation, attachment submission and run-following interaction; it also exposes headless commands and safe event envelopes. Model execution and execution policy remain Harness/Broker owned. Commands include `agent approve`/`deny`, policy management, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
 - CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
+- CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.
+
+The Harness tool pipeline uses one proposal-batch implementation for classification,
+input/approval pause selection, execution and abort cleanup. Initial proposal
+persistence remains interleaved with evaluation. Retained approval/input entrypoints
+validate their distinct identities before common re-evaluation and preparation;
+approval refresh retains its waiting state and never executes the batch.
 
 The current Agent flow is:
 

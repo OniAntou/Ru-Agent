@@ -232,6 +232,9 @@ namespace RuApp
 
             _sidebarAppRoot = projectRoot;
             InitializeSidebarMotion();
+            // Section chrome and persisted workspace pins do not depend on a
+            // successful session fetch or a change in the session fingerprint.
+            RenderWorkspaceSidebar();
 
             BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
             if (backendSession != null)
@@ -998,7 +1001,7 @@ namespace RuApp
                 }
             }
 
-            if (!string.Equals(
+            if (_sidebarRows.Count == 0 || !string.Equals(
                 Services.SidebarRowFingerprint.ForSessions(Sessions),
                 before,
                 StringComparison.Ordinal))

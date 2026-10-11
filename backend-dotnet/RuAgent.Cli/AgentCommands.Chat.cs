@@ -334,11 +334,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        CancellationTokenSource? turnCts = null;
-        string? activeRunId = null;
-        string? parkedRunId = null;
-        string? followableRunId = null;
-        var assistantPayloadRefs = new List<string>();
+        using var runSession = new ChatRunSession();
 
         // Slash-command surfaces: the pickers run through the TG panels or the sequential
         // reader. --json owns stdout, so every human-facing line a slash command prints goes
@@ -926,7 +922,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task RecoverMissingAssistantTextAsync(
             string runId,
-            List<string> payloadRefs,
+            IReadOnlyList<string> payloadRefs,
             CancellationToken recoveryToken)
         {
             if (payloadRefs.Count == 0)
@@ -1015,8 +1011,7 @@ public sealed partial class AgentCommands
         {
             await RefreshSessionTitleAsync().ConfigureAwait(false);
             sessionRenderer.EndTurn();
-            turnCts?.Dispose();
-            turnCts = null;
+            runSession.EndTurn();
         }
 
         async Task UpdateLegendAsync()
@@ -1251,13 +1246,11 @@ public sealed partial class AgentCommands
 
                 // A parked run emits no further driving frames; the server holds the SSE
                 // stream open, which used to read as an eternally spinning "Thinking" row.
-                // Release the stream instead: the catch treats a set parkedRunId as a
+                // Release the stream instead: the catch treats a set runSession.ParkedRunId as a
                 // pause, not a user interruption, so no cancel is posted.
                 if (TryReadParkedTransition(frame, out var parkedRun))
                 {
-                    parkedRunId = parkedRun;
-                    followableRunId = null;
-                    turnCts?.Cancel();
+                    runSession.ParkActiveRun(parkedRun!);
                 }
 
                 if (cmd.Json)
@@ -1431,7 +1424,7 @@ public sealed partial class AgentCommands
                             if (stepEnvelope is { EventType: "model.step_completed" }
                                 && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
                             {
-                                assistantPayloadRefs.Add(stepEnvelope.PayloadRef);
+                                runSession.RecordAssistantPayload(stepEnvelope.PayloadRef);
                             }
                         }
                         catch (System.Text.Json.JsonException)
@@ -1501,19 +1494,19 @@ public sealed partial class AgentCommands
                 await StreamRunEventsResumedAsync(runId, OnFrameAsync, ct, afterSequence).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested
-                && string.Equals(parkedRunId, runId, StringComparison.Ordinal))
+                && string.Equals(runSession.ParkedRunId, runId, StringComparison.Ordinal))
             {
                 // Parking deliberately cancels the subscription. Preserve the
                 // durable-text recovery leg before the caller winds down the turn.
                 sessionRenderer.Flush();
-                await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+                await RecoverMissingAssistantTextAsync(runId, runSession.AssistantPayloads, ct).ConfigureAwait(false);
                 throw;
             }
             sessionRenderer.Flush();
             // The recovery reprints a lost suffix through the same surface/writer the turn
             // streamed through, so it works for both engines; only the truncation repaint is
             // sequential-only (the TG transcript cannot rebuild what it already painted).
-            await RecoverMissingAssistantTextAsync(runId, assistantPayloadRefs, ct).ConfigureAwait(false);
+            await RecoverMissingAssistantTextAsync(runId, runSession.AssistantPayloads, ct).ConfigureAwait(false);
 
             await _out.FlushAsync().ConfigureAwait(false);
         }
@@ -1525,20 +1518,11 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task ReportInterruptionAsync()
         {
-            var userCancelled = turnCts?.IsCancellationRequested == true;
+            var cancelRunId = runSession.InterruptedRunId;
             await FinishTurnAsync().ConfigureAwait(false);
-            // Only the run actually being followed may be cancelled. An earlier park can
-            // still be tracked (parkedRunId is kept for bare Continue when the user resumes
-            // a different run), so "some run is parked" must not suppress the cancel for a
-            // different active run.
-            var cancelRunId = userCancelled
-                && activeRunId is not null
-                && !string.Equals(activeRunId, parkedRunId, StringComparison.Ordinal)
-                    ? activeRunId
-                    : null;
             if (cancelRunId is null)
             {
-                if (parkedRunId is null)
+                if (runSession.ParkedRunId is null)
                 {
                     await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
                 }
@@ -1570,7 +1554,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task ContinueParkedRunAsync(string? runIdArg)
         {
-            var targetRunId = string.IsNullOrWhiteSpace(runIdArg) ? parkedRunId : runIdArg.Trim();
+            var targetRunId = string.IsNullOrWhiteSpace(runIdArg) ? runSession.ParkedRunId : runIdArg.Trim();
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("no parked run · nothing to continue")).ConfigureAwait(false);
@@ -1614,10 +1598,7 @@ public sealed partial class AgentCommands
             {
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_runnable: run {targetRunId} is {run.Status} and cannot be continued.")).ConfigureAwait(false);
-                if (string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal))
-                {
-                    parkedRunId = null;
-                }
+                runSession.ForgetParked(targetRunId);
 
                 await _out.FlushAsync().ConfigureAwait(false);
                 return;
@@ -1637,27 +1618,19 @@ public sealed partial class AgentCommands
 
             await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
 
-            turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            runSession.BeginContinue(targetRunId, cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
-            activeRunId = targetRunId;
-            followableRunId = targetRunId;
-            var wasParkedRun = string.Equals(parkedRunId, targetRunId, StringComparison.Ordinal);
-            assistantPayloadRefs.Clear();
+
 
             try
             {
-                await _agentClient.ContinueAsync(targetRunId, turnCts.Token).ConfigureAwait(false);
-                if (wasParkedRun)
-                {
-                    // Only a confirmed continue drops the parked tracking: a rejected POST
-                    // must leave bare "Continue" working for the same run. The run is
-                    // moving again now, so the follow's cancel guard may target it.
-                    parkedRunId = null;
-                }
+                await _agentClient.ContinueAsync(targetRunId, runSession.Token).ConfigureAwait(false);
+                // Only a confirmed Continue releases this run's parked identity.
+                runSession.ForgetParked(targetRunId);
 
-                await FollowRunAsync(targetRunId, run.LastSequence, turnCts.Token).ConfigureAwait(false);
+                await FollowRunAsync(targetRunId, run.LastSequence, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -1670,7 +1643,7 @@ public sealed partial class AgentCommands
                 // run stays waiting server-side. Wind the turn down and let the caller
                 // exit the chat instead of settling for a "continue_error" line.
                 await FinishTurnAsync().ConfigureAwait(false);
-                followableRunId = targetRunId;
+                runSession.RememberFollowable(targetRunId);
                 throw;
             }
             catch (AgentApiException ex)
@@ -1760,8 +1733,7 @@ public sealed partial class AgentCommands
                     if (IsParkedRunStatus(run.Status))
                     {
                         await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
-                        parkedRunId = candidateRunId;
-                        followableRunId = null;
+                        runSession.RememberParked(candidateRunId);
                         var notice = Tui.TuiTranscript.FormatParkedNotice(candidateRunId, run.Status);
                         if (cmd.Json)
                         {
@@ -1780,7 +1752,7 @@ public sealed partial class AgentCommands
                     }
 
                     await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
-                    followableRunId = candidateRunId;
+                    runSession.RememberFollowable(candidateRunId);
                     var followNotice = string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
                         ? $"run {candidateRunId} is waiting for approval · use /follow {candidateRunId}"
                         : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or follow with '/follow {candidateRunId}'";
@@ -1813,7 +1785,7 @@ public sealed partial class AgentCommands
         int? dispatcherExitCode = null;
 
         var sessionCommands = new ChatSessionCommands(
-            () => turnCts is not null,
+            () => runSession.IsTurnActive,
             () => sessionId,
             ct => _sessionClient.CreateAsync(ct),
             async (query, ct) => ChatSessionWorkflow.Filter(await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
@@ -1913,14 +1885,14 @@ public sealed partial class AgentCommands
 
         async Task FollowRetainedRunAsync(string? runIdArg)
         {
-            if (turnCts is not null)
+            if (runSession.IsTurnActive)
             {
                 await WriteDiagnosticLineAsync(_err, "run_busy: finish or cancel the active run before following another run").ConfigureAwait(false);
                 return;
             }
 
             var targetRunId = string.IsNullOrWhiteSpace(runIdArg)
-                ? followableRunId ?? activeRunId
+                ? runSession.FollowableRunId ?? runSession.ActiveRunId
                 : runIdArg.Trim();
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
@@ -1966,7 +1938,7 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            followableRunId = targetRunId;
+            runSession.RememberFollowable(targetRunId);
             var pendingApproval = default(RuAgent.Protocol.Harness.HarnessSafeEventEnvelope);
             if (string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
             {
@@ -1997,10 +1969,7 @@ public sealed partial class AgentCommands
 
             await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
 
-            turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            activeRunId = targetRunId;
-            parkedRunId = null;
-            assistantPayloadRefs.Clear();
+            runSession.BeginFollow(targetRunId, cancellationToken);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
@@ -2011,8 +1980,8 @@ public sealed partial class AgentCommands
                 {
                     var decision = await RequestApprovalAsync(
                         Tui.ApprovalPrompt.For(pendingApproval.SafeSummary),
-                        turnCts.Token).ConfigureAwait(false);
-                    var latest = await _agentClient.GetRunAsync(targetRunId, turnCts.Token).ConfigureAwait(false);
+                        runSession.Token).ConfigureAwait(false);
+                    var latest = await _agentClient.GetRunAsync(targetRunId, runSession.Token).ConfigureAwait(false);
                     if (!ChatRunWorkflow.SameSnapshot(run, latest)
                         || !string.Equals(latest.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase))
                     {
@@ -2023,12 +1992,12 @@ public sealed partial class AgentCommands
 
                     if (decision == Tui.ApprovalPrompt.Deny)
                     {
-                        await _agentClient.DenyAsync(targetRunId, pendingApproval.ApprovalId!, turnCts.Token).ConfigureAwait(false);
+                        await _agentClient.DenyAsync(targetRunId, pendingApproval.ApprovalId!, runSession.Token).ConfigureAwait(false);
                         sessionRenderer.Note("denied · this tool call aborts", Tui.TuiToken.Err);
                     }
                     else
                     {
-                        await _agentClient.ApproveAsync(targetRunId, pendingApproval.ApprovalId!, decision, turnCts.Token).ConfigureAwait(false);
+                        await _agentClient.ApproveAsync(targetRunId, pendingApproval.ApprovalId!, decision, runSession.Token).ConfigureAwait(false);
                         var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session"
                             : decision == Tui.ApprovalPrompt.AllowAlways ? "remembered for this project"
                             : "once";
@@ -2036,15 +2005,14 @@ public sealed partial class AgentCommands
                     }
                 }
 
-                await FollowRunAsync(targetRunId, run.LastSequence, turnCts.Token).ConfigureAwait(false);
+                await FollowRunAsync(targetRunId, run.LastSequence, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
-                activeRunId = null;
-                followableRunId = null;
+                runSession.ForgetCompletedRun();
             }
             catch (RunParkedException)
             {
                 await FinishTurnAsync().ConfigureAwait(false);
-                followableRunId = targetRunId;
+                runSession.RememberFollowable(targetRunId);
             }
             catch (OperationCanceledException)
             {
@@ -2097,10 +2065,7 @@ public sealed partial class AgentCommands
 
             sessionId = targetSessionId;
             sessionTitle = replay.Title;
-            activeRunId = null;
-            parkedRunId = null;
-            followableRunId = null;
-            assistantPayloadRefs.Clear();
+            runSession.ResetSession();
             sessionTitleProbes = 0;
             turn = 0;
             lastTotalTokens = null;
@@ -2204,7 +2169,7 @@ public sealed partial class AgentCommands
 
             // The GUI accepts a bare typed "Continue" while a run is parked. Only claim
             // that literal when a parked run is known: otherwise it is an ordinary prompt.
-            if (parkedRunId is not null
+            if (runSession.ParkedRunId is not null
                 && string.Equals(promptLine, "continue", StringComparison.OrdinalIgnoreCase))
             {
                 if (!cmd.Json && !tgMode)
@@ -2286,13 +2251,9 @@ public sealed partial class AgentCommands
 
             try
             {
-                turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                runSession.BeginNewTurn(ct);
                 // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
                 // guard can never POST a cancel against a park left over from a prior turn.
-                activeRunId = null;
-                parkedRunId = null;
-                followableRunId = null;
-                assistantPayloadRefs.Clear();
                 sessionRenderer.Width = Tui.TuiViewport.Width();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                 if (!cmd.Json && !tgMode)
@@ -2303,12 +2264,11 @@ public sealed partial class AgentCommands
                         attachmentLabels: attachmentLabels.Count == 0 ? null : attachmentLabels));
                 }
                 sessionRenderer.BeginTurn();
-                var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
+                var resp = await _agentClient.CreateRunAsync(request, runSession.Token).ConfigureAwait(false);
                 hostAccepted = true;
                 submissions.Accept();
                 tgLoop?.ResumeQueuedSubmissions();
-                activeRunId = resp.RunId;
-                followableRunId = resp.RunId;
+                runSession.AcceptCreatedRun(resp.RunId);
 
                 if (submissionImages.Count > 0 || submissionTexts.Count > 0)
                 {
@@ -2341,7 +2301,7 @@ public sealed partial class AgentCommands
                             submissionPreset,
                             cmd.TrustWorkspace,
                             cmd.Json,
-                            turnCts.Token)
+                            runSession.Token)
                         .ConfigureAwait(false);
 
                 async Task<bool> ResolveTrust()
@@ -2352,7 +2312,7 @@ public sealed partial class AgentCommands
                             submissionPreset,
                             submissionWorkspace,
                             cmd.Json,
-                            turnCts.Token)
+                            runSession.Token)
                         .ConfigureAwait(false);
                     trustDeclined = outcome.Declined;
                     return outcome.Trusted;
@@ -2398,10 +2358,9 @@ public sealed partial class AgentCommands
                 transfer?.Dispose();
                 transfer = null;
 
-                await FollowRunAsync(resp.RunId, 0, turnCts.Token).ConfigureAwait(false);
+                await FollowRunAsync(resp.RunId, 0, runSession.Token).ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
-                activeRunId = null;
-                followableRunId = null;
+                runSession.ForgetCompletedRun();
             }
             catch (RunParkedException)
             {
@@ -2411,7 +2370,7 @@ public sealed partial class AgentCommands
                 // answers it with `ru agent approve` instead of this process reading a
                 // prompt it must not consume.
                 await FinishTurnAsync().ConfigureAwait(false);
-                followableRunId = activeRunId;
+                runSession.RememberFollowable(runSession.ActiveRunId);
                 dispatcherExitCode = 0;
                 return;
             }
@@ -2820,7 +2779,7 @@ public sealed partial class AgentCommands
                     (prompt, ct) => HandlePromptLineAsync(prompt, ct));
                 loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
                     line, sessionId, canonicalWorkspace, cmd.Preset,
-                    backendName ?? string.Empty, activeModel, parkedRunId is not null));
+                    backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null));
                 loop.SetSubmissionOwnershipHandlers(
                     snapshot =>
                     {

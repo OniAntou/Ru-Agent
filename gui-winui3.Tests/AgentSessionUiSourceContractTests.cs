@@ -340,6 +340,18 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void Sidebar_is_rendered_before_backend_start_and_empty_unchanged_polls_can_repair_it()
+    {
+        var code = GuiSource.ViewText("MainWindow");
+        var startup = GuiSource.MethodBody(code, "InitializeAppAsync");
+        var render = startup.IndexOf("RenderWorkspaceSidebar();", StringComparison.Ordinal);
+        var start = startup.IndexOf("_backendProvider.StartAsync", StringComparison.Ordinal);
+        Assert.True(render >= 0 && start > render, "Sidebar chrome must render without waiting for backend/session changes.");
+        var apply = GuiSource.MethodBody(code, "ApplySessions");
+        Assert.Contains("_sidebarRows.Count == 0", apply, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sidebar_shows_a_persistent_notice_when_the_session_list_is_truncated()
     {
         var document = GuiSource.Xml("MainWindow.xaml");

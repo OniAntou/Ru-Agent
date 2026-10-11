@@ -287,33 +287,10 @@ namespace RuApp.Views
                 return;
             }
 
-            var content = message.Content ?? string.Empty;
-            var frozen = Math.Min(_segmentFrozenLength, content.Length);
-            // Freeze on a line edge so a mid-sentence activity frame does not
-            // slice one sentence across two bubbles. The rest keeps streaming
-            // in the tail below the new row.
-            var splitAt = AgentSegmentSplitter.SnapToLineStart(content, frozen);
-            var segments = message.Segments;
-            if (segments is null)
-            {
-                segments = new ObservableCollection<AssistantSegment>();
-                message.Segments = segments;
-            }
-
-            if (segments.Count > 0 && segments[^1] is TextSegment tail)
-            {
-                tail.Text = content.Substring(frozen, splitAt - frozen);
-                tail.IsError = message.IsError;
-            }
-            else if (splitAt > frozen)
-            {
-                segments.Add(new TextSegment(content.Substring(frozen, splitAt - frozen)) { IsError = message.IsError, IsLive = true });
-            }
-
+            _replyRenderScheduler.ApplyPending();
+            var splitAt = AgentLiveSegmentBuilder.Freeze(message, item, _segmentFrozenLength);
             _activitySplitOffsetById[item.ActivityId] = splitAt;
             _segmentFrozenLength = splitAt;
-            segments.Add(new ActivitySegment(item.ActivityId, item));
-            segments.Add(new TextSegment(string.Empty) { IsError = message.IsError, IsLive = true });
         }
 
         private void UpdateLiveTailText(ChatMessageItem? message)
@@ -492,38 +469,13 @@ namespace RuApp.Views
                 return;
             }
 
-            string key = $"{run.RunId}:{delta.ModelStepId}:{delta.TransientSequence}";
-            if (!_agentDeltaKeys.Add(key))
-            {
-                return;
-            }
-
-            // Use accumulator as single authority for dedup + text; also keep legacy set for now
+            // Activities are batched separately from text rendering. Drain the
+            // earlier activity frames before accepting text from a later step.
+            FlushAgentActivities();
             bool accepted = delta.IsReset
                 ? _replyAccumulator.TryReset(run.RunId, delta.ModelStepId, delta.TransientSequence)
                 : _replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text);
-            if (!accepted)
-            {
-                // If no active accumulator (e.g., after Invalidate), begin with real runId and retry once
-                if (!_replyAccumulator.HasSession
-                    || !string.Equals(_replyAccumulator.SessionId, _activeSessionId, StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                _replyAccumulator.Rebind(_activeSessionId, run.RunId);
-                lock (_accumulatorLock)
-                {
-                    _activeAgentRunId = run.RunId;
-                }
-                accepted = delta.IsReset
-                    ? _replyAccumulator.TryReset(run.RunId, delta.ModelStepId, delta.TransientSequence)
-                    : _replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text);
-                if (!accepted)
-                {
-                    return;
-                }
-            }
+            if (!accepted) return;
 
             _activeAgentReplyReceived = true;
             _replyRenderScheduler.Schedule();

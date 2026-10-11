@@ -10,6 +10,39 @@ namespace RuApp.Tests;
 public sealed class AgentReplyAccumulatorTests
 {
     [Fact]
+    public void Rebinding_each_frame_to_the_same_run_keeps_duplicate_history()
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s1", "s1");
+        reply.Rebind("s1", "r1");
+        Assert.True(reply.TryAppend("r1", "m1", 1, "Chào anh"));
+        var first = reply.TakeSnapshot()!;
+
+        reply.Rebind("s1", "r1");
+        Assert.False(reply.TryAppend("r1", "m1", 1, "Chào anh"));
+        Assert.Null(reply.TakeSnapshot());
+        Assert.True(reply.TryAppend("r1", "m1", 2, "!"));
+        var next = reply.TakeSnapshot()!;
+        Assert.Equal("Chào anh!", next.Text);
+        Assert.Equal(first.Generation, next.Generation);
+    }
+
+    [Fact]
+    public void Replayed_reset_after_a_rebind_cannot_erase_the_retried_answer()
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s1", "r1");
+        reply.TryAppend("r1", "m1", 1, "partial");
+        reply.TryReset("r1", "m1", 2);
+        reply.TryAppend("r1", "m1", 3, "replacement");
+        Assert.Equal("replacement", reply.TakeSnapshot()!.Text);
+
+        reply.Rebind("s1", "r1");
+        Assert.False(reply.TryReset("r1", "m1", 2));
+        Assert.Null(reply.TakeSnapshot());
+    }
+
+    [Fact]
     public void Reply_dedup_preserves_unicode_and_rejects_an_old_run()
     {
         var reply = new AgentReplyAccumulator();

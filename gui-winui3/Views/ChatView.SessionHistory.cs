@@ -360,34 +360,26 @@ namespace RuApp.Views
                     double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
                         ? scroller.VerticalOffset
                         : null;
+                    bool wasFollowing = _followOutput;
+                    var preservedAnchor = CaptureTranscriptAnchor();
                     Messages.ReplaceAll(restored);
 
                     if (history.Count > 0)
                     {
-                        ScrollChatToBottom();
-                    }
-                    if (preservedOffset is double offset)
-                    {
                         // The reset above drops the virtualized panel to its top:
                         // a reader parked mid-history keeps their place once layout
                         // has run, while a following reader still lands latest.
-                        double restore = offset;
+                        double restore = preservedOffset ?? 0;
                         RunAfterLayout(() =>
                         {
-                            var s = ChatScrollViewer;
-                            if (s is null || s.ScrollableHeight <= 0)
+                            if (wasFollowing)
                             {
+                                ScrollToLatestAfterLayout();
                                 return;
                             }
 
-                            if (_followOutput)
-                            {
-                                _lastScrollChangeTick = Environment.TickCount64;
-                                s.ChangeView(null, s.ScrollableHeight, null, disableAnimation: true);
-                                return;
-                            }
-
-                            s.ChangeView(null, Math.Min(restore, s.ScrollableHeight), null, disableAnimation: true);
+                            RestoreTranscriptAnchor(preservedAnchor, restore);
+                            _followOutput = false;
                         });
                     }
 
@@ -540,47 +532,6 @@ namespace RuApp.Views
         }
 
 
-        private ScrollViewer? _chatScrollViewer;
-
-        /// <summary>
-        /// The ListView's own scroll host. The transcript ListView virtualizes,
-        /// so scrolling, offsets and follow state all come from this host.
-        /// Resolved lazily because the template part only exists after render.
-        /// </summary>
-        private ScrollViewer? ChatScrollViewer
-        {
-            get
-            {
-                if (_chatScrollViewer is null && ChatListView is not null)
-                {
-                    _chatScrollViewer = FindDescendantScrollViewer(ChatListView);
-                }
-
-                return _chatScrollViewer;
-            }
-        }
-
-        private static ScrollViewer? FindDescendantScrollViewer(DependencyObject root)
-        {
-            var queue = new Queue<DependencyObject>();
-            queue.Enqueue(root);
-            while (queue.Count > 0)
-            {
-                var current = queue.Dequeue();
-                if (current is ScrollViewer viewer)
-                {
-                    return viewer;
-                }
-
-                for (var index = 0; index < VisualTreeHelper.GetChildrenCount(current); index++)
-                {
-                    queue.Enqueue(VisualTreeHelper.GetChild(current, index));
-                }
-            }
-
-            return null;
-        }
-
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
@@ -620,142 +571,8 @@ namespace RuApp.Views
         }
 
 
-        private void ScrollChatToBottom()
-        {
-            var scroller = ChatScrollViewer;
-            if (scroller is null)
-            {
-                QueueScrollRetry();
-                return;
-            }
-
-            if (scroller.ScrollableHeight > 0)
-            {
-                if (IsNearBottom(scroller) || _followOutput)
-                {
-                    // Streaming snapshots and activity batches can arrive dozens
-                    // of times per second. A ChangeView forces a layout pass, so
-                    // coalesce them: the eye cannot track faster than this, but
-                    // the dispatcher queue can drown in it and stall the feed
-                    // into visible bursts.
-                    long now = Environment.TickCount64;
-                    if (now - _lastScrollChangeTick >= ScrollChangeMinIntervalMs)
-                    {
-                        _lastScrollChangeTick = now;
-                        scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
-                    }
-                    else
-                    {
-                        QueueScrollRetry();
-                    }
-                }
-                else
-                {
-                    ShowNewMessagesPill();
-                }
-                return;
-            }
-            QueueScrollRetry();
-        }
-
-        private void QueueScrollRetry()
-        {
-            if (_scrollRetryQueued)
-            {
-                return;
-            }
-
-            _scrollRetryQueued = true;
-            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RetryScrollAfterLayout);
-        }
-
-        private void RetryScrollAfterLayout()
-        {
-            _scrollRetryQueued = false;
-            var scroller = ChatScrollViewer;
-            if (scroller is null)
-            {
-                return;
-            }
-
-            if (scroller.ScrollableHeight > 0)
-            {
-                if (IsNearBottom(scroller))
-                {
-                    _lastScrollChangeTick = Environment.TickCount64;
-                    scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
-                }
-                else
-                {
-                    ShowNewMessagesPill();
-                }
-            }
-        }
-
-        private long _lastScrollChangeTick;
-        private bool _scrollRetryQueued;
-        private const long ScrollChangeMinIntervalMs = 120;
-
-        /// <summary>
-        /// True when the reader sits at the live edge. An offset read past the
-        /// extent is an inconsistent mid-layout read, not nearness: without the
-        /// validity check a shrinking transcript (bulk reload, row recycle)
-        /// reads as "near bottom" and every scroll call yanks the reader
-        /// upward to a transient extent.
-        /// </summary>
-        private static bool IsNearBottom(ScrollViewer scroller)
-        {
-            double maxOffset = scroller.ScrollableHeight;
-            double verticalOffset = scroller.VerticalOffset;
-            return maxOffset > 0
-                && verticalOffset <= maxOffset
-                && maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
-        }
-
-        /// <summary>
-        /// Runs an action after the pending layout pass. A bulk ReplaceAll drops
-        /// the virtualized panel before it measures, so offsets read synchronously
-        /// right after it still belong to the old content: scrolling on those
-        /// numbers lands mid-transcript, or parks a fresh open at its oldest
-        /// message while the reader watches the top.
-        /// </summary>
-        private void RunAfterLayout(Action action)
-        {
-            ArgumentNullException.ThrowIfNull(action);
-            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Deferred layout action failed: {ex.Message}");
-                }
-            });
-        }
-
-        /// <summary>
-        /// Lands a freshly opened session on its latest message. Runs after
-        /// layout: the ReplaceAll above reset the panel, so only post-layout
-        /// numbers point at the real bottom.
-        /// </summary>
-        private void ScrollToLatestAfterLayout()
-        {
-            var scroller = ChatScrollViewer;
-            if (scroller is null || scroller.ScrollableHeight <= 0)
-            {
-                return;
-            }
-
-            _lastScrollChangeTick = Environment.TickCount64;
-            scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
-        }
-
         // ComposerDraftStore owns unsent text and attachments per session.
         private readonly ComposerDraftStore _composerDrafts = new();
-        private bool _newMessagesPillWired;
-        private bool _followOutput = true;
 
         private void RestoreComposerDraft(string sessionId)
         {
@@ -778,119 +595,6 @@ namespace RuApp.Views
         }
 
         private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
-
-        private void EnsureNewMessagesPillWired()
-        {
-            if (_newMessagesPillWired)
-            {
-                return;
-            }
-
-            var scroller = ChatScrollViewer;
-            if (scroller is null)
-            {
-                return;
-            }
-
-            _newMessagesPillWired = true;
-            scroller.ViewChanged += (_, _) => OnChatScrollViewChanged();
-        }
-
-        private void OnChatScrollViewChanged()
-        {
-            var scroller = ChatScrollViewer;
-            if (scroller is null || NewMessagesPill is null)
-            {
-                return;
-            }
-
-            double maxOffset = scroller.ScrollableHeight;
-            _followOutput = maxOffset <= 0 || IsNearBottom(scroller);
-            if (_followOutput)
-            {
-                NewMessagesPill.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private void ShowNewMessagesPill()
-        {
-            if (_followOutput || NewMessagesPill is null)
-            {
-                return;
-            }
-
-            if (NewMessagesPill.Visibility == Visibility.Visible)
-            {
-                return;
-            }
-
-            NewMessagesPill.Visibility = Visibility.Visible;
-            PlayNewMessagesPillEntrance();
-        }
-
-        /// <summary>The pill rises into place once; hiding stays instant.</summary>
-        private void PlayNewMessagesPillEntrance()
-        {
-            if (NewMessagesPillSlide is null)
-            {
-                return;
-            }
-
-            if (!Services.UiTiming.AnimationsEnabled)
-            {
-                NewMessagesPill.Opacity = 1;
-                NewMessagesPillSlide.Y = 0;
-                return;
-            }
-
-            NewMessagesPill.Opacity = 0;
-            NewMessagesPillSlide.Y = 8;
-
-            var fade = new DoubleAnimation
-            {
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(150),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(fade, NewMessagesPill);
-            Storyboard.SetTargetProperty(fade, "Opacity");
-
-            var rise = new DoubleAnimation
-            {
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(150),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(rise, NewMessagesPillSlide);
-            Storyboard.SetTargetProperty(rise, "Y");
-
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fade);
-            storyboard.Children.Add(rise);
-            storyboard.Begin();
-        }
-
-        private void OnNewMessagesPillClick(object sender, RoutedEventArgs e)
-        {
-            _followOutput = true;
-            if (NewMessagesPill is not null)
-            {
-                NewMessagesPill.Visibility = Visibility.Collapsed;
-            }
-
-            ChatScrollViewer?.ChangeView(null, ChatScrollViewer?.ScrollableHeight, null, disableAnimation: true);
-            ChatInputTextBox?.Focus(FocusState.Programmatic);
-        }
-
-        private void JumpToLatestForNewTurn()
-        {
-            _followOutput = true;
-            if (NewMessagesPill is not null)
-            {
-                NewMessagesPill.Visibility = Visibility.Collapsed;
-            }
-        }
-
 
         private async Task StopActiveAgentAsync(bool force = false)
         {
@@ -1536,6 +1240,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            DisposeChatScrolling();
             SidePanel?.ShutdownTerminal();
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();

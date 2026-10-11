@@ -97,7 +97,10 @@ public sealed class ChatFollowContractTests
         var reload = GuiSource.MethodBody(code, "ReloadSessionHistoryAsync");
         Assert.Contains("preservedOffset", reload, StringComparison.Ordinal);
         Assert.Contains("Messages.ReplaceAll(restored)", reload, StringComparison.Ordinal);
-        Assert.Contains("Math.Min(restore", reload, StringComparison.Ordinal);
+        Assert.Contains("CaptureTranscriptAnchor", reload, StringComparison.Ordinal);
+        Assert.Contains("RestoreTranscriptAnchor", reload, StringComparison.Ordinal);
+        Assert.Contains("wasFollowing", reload, StringComparison.Ordinal);
+        Assert.DoesNotContain("ScrollChatToBottom()", reload[reload.IndexOf("Messages.ReplaceAll(restored)", StringComparison.Ordinal)..], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,8 +112,8 @@ public sealed class ChatFollowContractTests
         // to a transient extent. All three nearness sites share one helper.
         var code = GuiSource.ViewText("ChatView");
 
-        var helper = GuiSource.MethodBody(code, "IsNearBottom");
-        Assert.Contains("verticalOffset <= maxOffset", helper, StringComparison.Ordinal);
+        // Behaviour is tested on the shared policy; this pins every view entry
+        // point to it so a following flag cannot bypass validity again.
 
         foreach (var member in new[]
                  {
@@ -120,7 +123,7 @@ public sealed class ChatFollowContractTests
                  })
         {
             Assert.Contains(
-                "IsNearBottom(scroller)",
+                "ChatScrollPolicy.",
                 GuiSource.MethodBody(code, member),
                 StringComparison.Ordinal);
         }

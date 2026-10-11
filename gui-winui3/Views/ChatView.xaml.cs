@@ -183,6 +183,7 @@ namespace RuApp.Views
                 },
                 ApplyReplySnapshot);
             ChatListView.ItemsSource = Messages;
+            InitializeChatScrolling();
             AttachmentPreviewList.ItemsSource = PendingAttachments;
             QueuedTurnsList.ItemsSource = _queuedTurns.Items;
             _queuedTurns.Items.CollectionChanged += OnQueuedTurnsChanged;
@@ -199,7 +200,10 @@ namespace RuApp.Views
             => UpdateQueuedTurnsPanel();
 
         private void OnMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-            => UpdateViewMode();
+        {
+            _transcriptRevision++;
+            UpdateViewMode();
+        }
 
         private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
         {

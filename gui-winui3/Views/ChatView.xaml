@@ -666,6 +666,7 @@
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
                             <ItemsStackPanel Orientation="Vertical"
+                                             ItemsUpdatingScrollMode="KeepScrollOffset"
                                              HorizontalAlignment="Stretch" />
                         </ItemsPanelTemplate>
                     </ListView.ItemsPanel>

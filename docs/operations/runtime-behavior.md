@@ -492,6 +492,19 @@ vertical scrollbar sits at the far-right edge. Horizontal scrolling remains
 disabled and does not alter message
 width or composer alignment.
 
+Transcript follow uses a consistent viewport snapshot: an offset beyond the measured
+extent cannot trigger a scroll, including in follow mode. Wheel, pointer and navigation
+key input pause following; reaching the bottom or explicitly jumping to latest resumes
+it. Layout changes alone preserve this intent. Session opens realize the latest item;
+bulk reloads preserve a parked reader's first visible item and its position within the
+viewport, with a bounded pixel-offset fallback if the container is unavailable.
+These bulk actions flush layout once, rather than on every streaming delta. Deferred
+scroll actions are discarded after reader input, session replacement or another
+transcript reset. The virtualized panel uses `KeepScrollOffset`; completed view
+changes schedule another follow attempt when row realization changes the extent
+while follow mode remains active. A reader parked in history does not receive
+these follow attempts.
+
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions (including message history), activity,

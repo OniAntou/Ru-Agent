@@ -1,18 +1,77 @@
 # Verification
 
-> **The table below is the current state; entries under it are history.** Its numbers were last checked against the code when the 42-route contract and the 12-project matrix were confirmed, and they are maintained by hand. Run the scripts for the authoritative figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
-> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the live numbers are the table above (42 routes, 13 tools, in-process model runner only).
+> **The table below records the latest full-matrix evidence; entries under it are history or scoped checks.** Figures are maintained by hand. Run the scripts for authoritative current figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 43 routes, 13 tools, and an in-process model runner.
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
 | .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,909 passed / 0 failed / 0 skipped** (2026-10-11, preset adoption + mode hardening). Log: `artifacts/review-remediation-full-dotnet.log`. One CLI run flaked once on a timing-sensitive test (1 failure, rerun green twice); earlier interrupted matrices and environment failures are recorded below. |
 | Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, tool boundary repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tool-boundary-release.log`. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, native transcript scroll follow-up). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-scroll-native-final-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Transcript scroll regression (2026-10-11)
+
+The user reported upward jumps both on session open and while reading history.
+Pure viewport-policy tests reproduced the prior calculation errors: **8 failed,
+2 passed** (`artifacts/gui-scroll-red.log`). The fix rejects inconsistent extents
+even with follow enabled, preserves follow intent during layout changes, realizes
+the latest item on open and restores a visible-item anchor on bulk reload.
+Deferred callbacks check session, transcript and reader-input generations.
+
+The first compilation failed because importing `Windows.System` made
+`DispatcherQueuePriority` ambiguous; a `VirtualKey` alias corrected it. The next
+focused run passed 40 tests and failed one source assertion: it prohibited scrolling
+even in the existing branch that does not reset the list. That assertion now covers
+the post-reset branch, while behavioral tests cover the viewport policy. Logs:
+`artifacts/gui-scroll-focused.log`, `artifacts/gui-scroll-focused-green.log`.
+
+The scoped command `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter
+gui-winui3` passed **1,339 / 0 failed / 0 skipped**
+(`artifacts/gui-scroll-final-gui.log`). These tests alone did not establish
+native acceptance; the next user-authorized GUI probe reproduced an additional
+virtualized-panel failure.
+
+`build.bat` passed **11/11 stages** (`artifacts/gui-scroll-release.log`). The
+documentation checks (`test_current_documentation.py`, `test_guidance_route_counts.py`,
+`test_readme_counts.py`) passed **19 tests** (`artifacts/gui-scroll-docs.log`).
+
+### Native GUI follow-up
+
+With explicit user authorization, the Release GUI opened the latest stored
+session (12 messages). A native UI Automation request to scroll to 100% ended
+at 0% after transient measurements around 34%; physical wheel input also
+exercised history scrolling. The first calculation-only repair was insufficient.
+Evidence: `artifacts/gui-scroll-native-bottom-samples.json` and
+`artifacts/gui-scroll-uia-baseline.json`. Temporary layout diagnostics showed a
+constant message count with changing extents and visible-item indices, rather
+than a history reset.
+
+Setting `ItemsUpdatingScrollMode="KeepScrollOffset"` alone did not settle the
+latest position. The final change also schedules a guarded follow attempt after
+a completed view change when follow mode is active and realized row heights
+have moved the bottom. Reader input still cancels following and deferred work.
+Temporary diagnostics were removed from the shipped code.
+
+On the final Release, opening the same session **without another scroll
+request** reached 100% during the observation window and remained there
+(`artifacts/gui-scroll-uia-final-open.json`: 25 samples, 200 ms apart). Wheel
+input moved up into history to 79.21%, then back down to 100%; screenshots before,
+after and 1.5 seconds after each gesture are under
+`artifacts/gui-scroll-native-final-history-{up,down}-*.png`. This is acceptance
+for that stored, idle session; it does not cover every session, active streaming
+or a turn-end reload. Initial virtualization still needs layout settling.
+
+Final checks: **1,340 GUI tests / 0 failures / 0 skips**
+(`artifacts/gui-scroll-native-final-gui.log`), **11/11 Release stages**
+(`artifacts/gui-scroll-native-final-release.log`). The full backend/process
+matrix was not rerun for this local GUI change. A diagnostic attempt to publish
+only the GUI over the flattened directory made Host startup fail; rebuilding
+through `build.bat` restored the complete distributable before final acceptance.
 
 ## Review remediation (2026-10-11)
 

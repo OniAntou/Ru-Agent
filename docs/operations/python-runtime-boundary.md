@@ -41,6 +41,14 @@ Current boundary classes are:
 The scan roots are `scripts`, `tools`, `tests`, `backend-dotnet`, `gui-winui3`,
 `gui-winui3.Tests`, and `gui-winui3.Harness`.
 
+The interpreter rule is enforced, not just inventoried: the scanner exits 1 when a
+file with an interpreter suffix (`.py`, `.js`, `.ts`, …) appears under a product
+root, and CI runs that check directly. The pinned exception is the GUI's vendored
+browser assets, `gui-winui3/Assets/terminal/xterm.js` and `addon-fit.js`: WebView2
+parses them for the interactive terminal, they are not a shipped runtime, and
+`InteractiveTerminalContractTests` pins their presence. The allowlist is exact
+paths, so any other `.js`, `.ts`, or `.py` under a product root still fails.
+
 The managed model runtime is the Host's in-process typed model step
 (`ModelStepService` behind `IModelStepRunner`): there is no worker process,
 loopback port, wire protocol, or provider bootstrap file. Tool execution is

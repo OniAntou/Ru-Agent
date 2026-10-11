@@ -112,3 +112,24 @@ def test_a_python_file_inside_a_product_root_is_reported(tmp_path: Path) -> None
         "backend-dotnet/RuBackend/helper.py",
         "gui-winui3/Services/bridge.js",
     ]
+
+
+def test_the_vendored_browser_assets_are_the_only_product_tree_exception(tmp_path: Path) -> None:
+    """The GUI's xterm.js assets are parsed by WebView2, not shipped as a runtime.
+
+    The allowlist is exact paths: a different name beside them (or a renamed copy
+    elsewhere) still fails, so the exception cannot grow silently.
+    """
+    files = [
+        "gui-winui3/Assets/terminal/xterm.js",
+        "gui-winui3/Assets/terminal/addon-fit.js",
+        "gui-winui3/Assets/terminal/sneaky.js",
+    ]
+    for relative in files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("// pass", encoding="utf-8")
+
+    records = scan_runtime_boundary(tmp_path)
+
+    assert interpreter_files_in_product(records) == ["gui-winui3/Assets/terminal/sneaky.js"]

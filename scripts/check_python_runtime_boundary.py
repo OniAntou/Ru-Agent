@@ -22,6 +22,17 @@ _C_SHARP_STARTUP_FILES = (
 # tooling and are expected to hold Python.
 _PRODUCT_ROOTS = ("backend-dotnet/", "gui-winui3/", "gui-winui3.Tests/", "gui-winui3.Harness/")
 _INTERPRETER_SUFFIXES = (".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".lua")
+# The GUI's interactive terminal vendors xterm.js (MIT) for WebView2 to parse.
+# A browser library executed by a Windows component is not a shipped interpreter,
+# which is what this scanner exists to catch, and `InteractiveTerminalContractTests`
+# pins both files. The allowlist is exact paths, lowercase, so any other `.js`
+# under a product root still fails the check.
+_VENDORED_BROWSER_ASSETS = frozenset(
+    {
+        "gui-winui3/assets/terminal/addon-fit.js",
+        "gui-winui3/assets/terminal/xterm.js",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -106,13 +117,16 @@ def interpreter_files_in_product(records: Iterable[RuntimeBoundaryRecord]) -> li
 
     The repository rule is that Python, Node, and every other interpreter are tooling
     only: they may live under `scripts`, `tools`, and `tests`, and never inside the
-    shipped product. This is the check that fails when one appears there.
+    shipped product. This is the check that fails when one appears there. The
+    vendored browser assets in :data:`_VENDORED_BROWSER_ASSETS` are the pinned
+    exception: they are parsed by WebView2, not shipped as a runtime.
     """
     return sorted(
         record.path
         for record in records
         if record.path.startswith(_PRODUCT_ROOTS)
         and record.path.lower().endswith(_INTERPRETER_SUFFIXES)
+        and record.path.lower() not in _VENDORED_BROWSER_ASSETS
     )
 
 

@@ -304,7 +304,10 @@ public sealed class FileSearchAdapter
         // If totalRead == 0, empty file -> return empty string (not binary)
         try
         {
-            return StrictUtf8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
+            var bytes = output.GetBuffer().AsSpan(0, checked((int)output.Length));
+            // A UTF-8 signature is encoding metadata, not a column on line one.
+            if (bytes.StartsWith("\uFEFF"u8)) bytes = bytes[3..];
+            return StrictUtf8.GetString(bytes);
         }
         catch (DecoderFallbackException ex)
         {

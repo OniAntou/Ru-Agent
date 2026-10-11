@@ -113,7 +113,10 @@ spool UTF-16 characters respectively); a cursor
 continues the same source or spool and never changes the receipt, tool authority,
 or approval state. Grep's `next_offset` means a known next page; a
 `scan_incomplete` flag with no cursor describes incomplete coverage, not a
-pagination promise. Missing source identity fails closed when clipping needs a
+pagination promise. Text pages preserve character boundaries: file cursors are
+UTF-8 byte boundaries, web cursors are UTF-16 boundaries outside surrogate
+pairs, and a window too small to advance returns a named failure. Missing
+source identity fails closed when clipping needs a
 cursor. The bounded prompt may still omit older output exchanges.
 _Avoid_: treating projected output as a new receipt, complete history, or authority
 

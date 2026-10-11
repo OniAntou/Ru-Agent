@@ -183,10 +183,15 @@ Both
 directories, including root files; `*` and `?` do not cross a path separator,
 and filename-only patterns also match nested filenames. Literal pattern text
 is escaped rather than replaced through wildcard placeholders.
+Glob traversal observes the tool deadline and caller cancellation while
+enumerating, including after its worker has started; an expired deadline
+returns `process_timed_out` rather than a successful partial result.
 
 Grep previews include the match instead of always showing the line's prefix.
 `column` is the absolute 1-based line column; `preview_column` names the first
 column of the preview. Results retain ordinal path/line ordering. Grep scans
+UTF-8 files without treating a leading BOM as content or a line column, so
+first-line anchored regexes behave the same with and without a BOM. It scans
 ordered batches with bounded concurrency and bounds collection by the requested
 offset/page plus one lookahead, stopping before later files once the page is known. Output
 includes `offset`, `next_offset`, `scan_incomplete`, `discovered_files` and
@@ -199,6 +204,22 @@ The 50000-offset ceiling can prevent continuation even when more matches are
 known; narrow the query/path rather than exceeding it. If prompt projection
 clips the returned page, prefer its `projection_next_offset` over the receipt's
 `next_offset`.
+
+### Text paging boundaries
+
+File `read` keeps byte offsets and never returns a non-EOF page with zero
+visible bytes. If `limit` cannot hold the first complete UTF-8 character,
+`read_limit_too_small` asks for a larger window (at least 4 bytes can hold any
+Unicode character). An offset inside a UTF-8 character fails as
+`invalid_utf8_offset`; use the returned byte count or projection cursor.
+Malformed UTF-8, including an incomplete final character at EOF, fails as
+`invalid_utf8` instead of producing a page that cannot advance.
+
+Web pages keep UTF-16 offsets but shorten a page by one character when its end
+would split a surrogate pair. Their `next_offset` advances by the actual body
+length. An offset inside a pair fails as `web_offset_invalid_boundary`; a
+limit of 1 at an emoji fails as `web_limit_too_small` (retry with at least 2).
+Follow returned cursors rather than adding the requested limit to the offset.
 
 ### Session folder grants and bash approval
 

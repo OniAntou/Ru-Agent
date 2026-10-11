@@ -187,7 +187,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["glob"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
                 await Task.Run(
                     () => ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(
-                        TranslateGlobArguments(arguments)),
+                        TranslateGlobArguments(arguments), token),
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace glob completed."),

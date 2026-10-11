@@ -16,9 +16,10 @@ public sealed class FileGlobAdapter
         _resolver = new CanonicalPathResolver(_workspaceRoot);
     }
 
-    public JsonObject Execute(JsonObject arguments)
+    public JsonObject Execute(JsonObject arguments, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        cancellationToken.ThrowIfCancellationRequested();
         var basePath = GetOptionalString(arguments, "path") ?? ".";
         if (string.IsNullOrWhiteSpace(basePath))
         {
@@ -82,6 +83,7 @@ public sealed class FileGlobAdapter
 
         while (stack.Count > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
             {
                 break;
@@ -117,6 +119,7 @@ public sealed class FileGlobAdapter
 
             foreach (var entry in entries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
                 {
                     break;
@@ -198,6 +201,7 @@ public sealed class FileGlobAdapter
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         results.Sort(StringComparer.Ordinal);
 
         bool truncated = false;

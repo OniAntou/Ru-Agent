@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -147,7 +148,11 @@ public sealed class FileReadAdapter
         bool utfTruncated = false;
         if (bytesRead > 0)
         {
-            validLength = GetValidUtf8Length(buffer, bytesRead);
+            if (offset > 0 && (buffer[0] & 0xC0) == 0x80)
+                throw new ArgumentException("invalid_utf8_offset");
+            validLength = GetValidUtf8Length(buffer, bytesRead, allowIncompleteTail: isMore);
+            if (validLength == 0)
+                throw new ArgumentException("read_limit_too_small");
             if (validLength < bytesRead)
             {
                 utfTruncated = true;
@@ -203,72 +208,19 @@ public sealed class FileReadAdapter
         }
     }
 
-    private static int GetValidUtf8Length(byte[] buffer, int length)
+    private static int GetValidUtf8Length(byte[] buffer, int length, bool allowIncompleteTail)
     {
-        if (length == 0)
+        var bytes = buffer.AsSpan(0, length);
+        var consumed = 0;
+        while (consumed < length)
         {
-            return 0;
+            var status = Rune.DecodeFromUtf8(bytes[consumed..], out _, out var advance);
+            if (status == OperationStatus.NeedMoreData && allowIncompleteTail)
+                return consumed;
+            if (status != OperationStatus.Done)
+                throw new ArgumentException("invalid_utf8");
+            consumed += advance;
         }
-
-        // Walk backwards to find start of last UTF-8 sequence
-        int i = length - 1;
-        // If last byte is ASCII, valid
-        if ((buffer[i] & 0x80) == 0)
-        {
-            return length;
-        }
-
-        // Count trailing continuation bytes
-        int contCount = 0;
-        while (i >= 0 && (buffer[i] & 0xC0) == 0x80)
-        {
-            contCount++;
-            i--;
-            if (contCount >= 3)
-            {
-                break;
-            }
-        }
-
-        if (i < 0)
-        {
-            // All continuation bytes without start, truncate them
-            return length - contCount;
-        }
-
-        byte start = buffer[i];
-        int expected = 0;
-        if ((start & 0xE0) == 0xC0)
-        {
-            expected = 2;
-        }
-        else if ((start & 0xF0) == 0xE0)
-        {
-            expected = 3;
-        }
-        else if ((start & 0xF8) == 0xF0)
-        {
-            expected = 4;
-        }
-        else
-        {
-            // Invalid start byte, treat as truncated before it
-            return i;
-        }
-
-        int actual = contCount + 1;
-        if (actual < expected)
-        {
-            // Incomplete sequence
-            return i;
-        }
-
-        if (actual > expected)
-        {
-            // Should not happen with valid UTF-8, but if actual > expected, the extra bytes are part of next char? Then sequence is valid
-            return length;
-        }
-
         return length;
     }
 

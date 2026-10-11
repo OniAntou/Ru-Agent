@@ -6,13 +6,42 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,866 passed / 0 failed / 0 skipped** (2026-10-11, discovery and output-projection upgrades). Log: `artifacts/tools-upgrade-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
-| Python suite | **213 passed, 1 skipped** (2026-10-11, discovery and output-projection upgrades), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tools-upgrade-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, discovery and output-projection upgrades). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tools-upgrade-release.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,879 passed / 0 failed / 0 skipped** (2026-10-11, tool boundary repairs). Log: `artifacts/tool-boundary-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| Python suite | **213 passed, 1 skipped** (2026-10-11, tool boundary repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tool-boundary-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, tool boundary repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tool-boundary-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Tool boundary repairs (2026-10-11)
+
+The four outstanding findings at `50fd2e28` are repaired: web fetch pages no
+longer split UTF-16 surrogate pairs, read windows cannot return a non-EOF
+zero-progress page, grep strips the UTF-8 BOM before searching, and glob
+traversal observes deadline/caller cancellation after its worker starts.
+Small windows and offsets inside a character return named, repairable errors;
+malformed UTF-8 at EOF is rejected instead of generating an endless cursor.
+Protocol descriptions and the tool guide document these recovery actions.
+
+All 12 initial regression cases failed before repair
+(`artifacts/tool-boundary-red.log`). The affected focused set passed 51 tests
+(`artifacts/tool-boundary-green.log`); adding caller-cancellation coverage
+produced 13 passing boundary cases (`artifacts/tool-boundary-final-focused.log`).
+The final 12-project .NET matrix passed **5,879 tests / 0 failures / 0 skips**,
+including 941 Broker tests (`artifacts/tool-boundary-full-dotnet.log`).
+The original synthetic probe was repeated: BOM/no-BOM searches now agree,
+small file windows fail with the repair code, web pages survive strict UTF-8
+encoding and JSON roundtrip, and three 1 ms glob calls return `timed_out`
+(`artifacts/tool-boundary-smoke-green.log`). Cancellation is cooperative;
+these timings do not establish a hard real-time deadline.
+The Python suite passed 213 tests with one Windows/POSIX skip
+(`artifacts/tool-boundary-full-python.log`). Final bundled Help checks after
+README updates passed 12 tests (`artifacts/tool-boundary-final-help.log`).
+`build.bat` passed all 11 Release stages and refreshed the self-contained GUI,
+CLI and Host package (`artifacts/tool-boundary-release.log`).
+The prior discovery/web evidence below remains historical. These are tool
+correctness checks, not a new real-provider coding benchmark or native UI trial.
 
 ## Discovery and output-projection upgrades (2026-10-11)
 

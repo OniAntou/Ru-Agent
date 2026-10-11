@@ -52,7 +52,14 @@ public sealed class WebContentSanitizer
             throw new InvalidDataException("web_content_empty");
         if (offset > content.Length)
             throw new InvalidDataException("web_offset_out_of_range");
+        if (offset > 0 && offset < content.Length && char.IsHighSurrogate(content[offset - 1]) && char.IsLowSurrogate(content[offset]))
+            throw new InvalidDataException("web_offset_invalid_boundary");
         var count = Math.Min(maxCharacters, content.Length - offset);
+        if (count > 0 && offset + count < content.Length
+            && char.IsHighSurrogate(content[offset + count - 1]) && char.IsLowSurrogate(content[offset + count]))
+            count--;
+        if (count == 0 && offset < content.Length)
+            throw new InvalidDataException("web_limit_too_small");
         int? nextOffset = offset + count < content.Length ? offset + count : null;
         content = content.Substring(offset, count);
         if (nextOffset is not null) content += "...[truncated]";

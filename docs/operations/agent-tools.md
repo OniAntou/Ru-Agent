@@ -72,7 +72,7 @@ not advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **42 HTTP with no WebSocket route** (20 non-Agent + 22 `/agent/v1/*`).
+> - Public Contract is now **43 HTTP with no WebSocket route** (20 non-Agent + 23 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
@@ -564,9 +564,11 @@ or private payload content.
 
 Every Agent run is session-scoped. The chat composer offers canonical `Plan`,
 `Standard` (default), and opt-in `Full Access`; the in-process execution
-authority remains the only authority. Plan is read-only: workspace read/Web
-auto, terminal/mutation denied outright, external structured access asks.
-Standard auto-allows bounded-local in-workspace mutation and asks for
+authority remains the only authority. The selection is stored per session: opening
+a session loads its stored preset into the composer, so a `plan` session opened
+later still shows `Plan` and the next send keeps it. Plan is read-only: workspace
+read/Web auto, terminal/mutation denied outright, external structured access
+asks. Standard auto-allows bounded-local in-workspace mutation and asks for
 external/escape/risky intent under its existing rules. Terminal/git children
 in both execution presets run as the current Windows user without OS
 filesystem/network confinement. Full

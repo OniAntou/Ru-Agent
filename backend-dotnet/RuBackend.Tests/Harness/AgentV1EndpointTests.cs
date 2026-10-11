@@ -34,6 +34,7 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/commands"),
         ("POST", "/agent/v1/runs/{runId}/reconcile"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
+        ("GET", "/agent/v1/sessions/{sessionId}/preset"),
         ("GET", "/agent/v1/policies"),
         ("POST", "/agent/v1/policies"),
         ("DELETE", "/agent/v1/policies/{ruleId}"),
@@ -57,7 +58,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(42, doc.RootElement.GetArrayLength()); // 42 HTTP routes (20 non-Agent + 22 /agent/v1/*), no websocket
+        Assert.Equal(43, doc.RootElement.GetArrayLength()); // 43 HTTP routes (20 non-Agent + 23 /agent/v1/*), no websocket
     }
 
     [Theory]
@@ -75,6 +76,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
+    [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/preset")]
     [InlineData("GET", "/agent/v1/policies")]
     [InlineData("POST", "/agent/v1/policies")]
     [InlineData("DELETE", "/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
@@ -112,6 +114,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
+    [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/preset")]
     [InlineData("GET", "/agent/v1/policies")]
     [InlineData("POST", "/agent/v1/policies")]
     [InlineData("DELETE", "/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]

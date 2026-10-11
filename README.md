@@ -12,7 +12,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-5%2C901%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
-[![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
+[![Routes](https://img.shields.io/badge/routes-43%20HTTP-6E7681)](#your-data-stays-local)
 
 </div>
 
@@ -26,7 +26,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Surfaces** | WinUI 3 desktop app · full-screen terminal UI · stdio RPC bridge + TypeScript SDK |
 | **Model access** | Your provider, your key (Windows Credential Manager); no Ru account |
 | **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
-| **Public surface** | **42 HTTP routes** on `127.0.0.1` behind a bearer token |
+| **Public surface** | **43 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
 | **Tests** | 5,901 passing across 12 projects |
 
@@ -56,7 +56,7 @@ a bounded result, never a frozen app.
 | Component | Path | Role |
 | --- | --- | --- |
 | **RuApp** | `gui-winui3/` | WinUI 3 desktop app — chat, approvals, terminal panel, settings |
-| **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 42 HTTP routes, SSE events, run orchestration |
+| **RuBackend** | `backend-dotnet/RuBackend/` | ASP.NET Core Public Host — the 43 HTTP routes, SSE events, run orchestration |
 | **RuAgent.Broker** | `backend-dotnet/RuAgent.Broker/` | The execution authority library — the Host runs every tool call through it under policy and approval |
 | **RuAgent.Cli** | `backend-dotnet/RuAgent.Cli/` | Terminal tracer: one-shot runs, full-screen TUI, session tooling |
 
@@ -135,7 +135,7 @@ task appears or changes state, so a finished task is noticed without polling.
 ## Your data stays local
 
 - **Everything runs on your machine.** The app's entire surface is
-  **42 HTTP routes** (20 non-Agent plus 22 under `/agent/v1/*`) bound to
+  **43 HTTP routes** (20 non-Agent plus 23 under `/agent/v1/*`) bound to
   `127.0.0.1` behind a bearer token — nothing listens on the network.
 - **Keys** go into Windows Credential Manager (DPAPI) on your side of the
   glass. The GUI holds no credential.

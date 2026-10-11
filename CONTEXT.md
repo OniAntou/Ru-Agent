@@ -29,8 +29,8 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 42 HTTP method/path pairs with no WebSocket
-route (20 non-Agent plus 22 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 43 HTTP method/path pairs with no WebSocket
+route (20 non-Agent plus 23 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC

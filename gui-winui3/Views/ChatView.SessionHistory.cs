@@ -1087,6 +1087,15 @@ namespace RuApp.Views
                 // re-arm Continue/Stop for this session's newest non-terminal run.
                 // Bounded and fail-soft; a read failure never fails the open.
                 await TryAdoptSessionRunAsync(sessionId, openToken, generation);
+                if (IsCurrentOpen(generation))
+                {
+                    // The session keeps the preset it was stored with: without
+                    // this a plan session reopened in the GUI shows whatever the
+                    // previous session chose, and the next send silently
+                    // re-grades it. A missing or unreadable selection leaves the
+                    // current choice untouched.
+                    await AdoptStoredSessionPresetAsync(sessionId, openToken);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -1116,6 +1125,47 @@ namespace RuApp.Views
                 // the throttle window, so repaint by force with history in place.
                 UpdateContextUsage(force: true);
             }
+        }
+
+        /// <summary>
+        /// Adopts the stored permission preset of the session being opened, so
+        /// the Settings dropdown and the next send agree with the durable
+        /// choice instead of the previous session's. Best effort and bounded:
+        /// any read failure, an outdated response, or a missing selection
+        /// leaves the current choice untouched — never a surprise swap.
+        /// </summary>
+        private async Task AdoptStoredSessionPresetAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            if (_apiService is null
+                || string.IsNullOrWhiteSpace(sessionId)
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var stored = await _apiService.GetSessionPresetAsync(sessionId, cancellationToken);
+            if (stored is null
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
+                || cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var preset = stored.Preset switch
+            {
+                "plan" => AgentPermissionPreset.Plan,
+                "full_access" => AgentPermissionPreset.FullAccess,
+                _ => AgentPermissionPreset.Standard,
+            };
+            // Seed the send path's version cache with the stored selection: the
+            // next send skips the preset POST instead of re-writing the value
+            // this just read, and a session that is still on version 0 keeps
+            // the current behavior.
+            _agentPreset = preset;
+            _agentPresetSessionId = sessionId;
+            _agentPresetVersion = stored.Version;
+            UpdateAgentInlineState();
+            SessionPresetAdopted?.Invoke(this, new SessionPresetAdoptedEventArgs(sessionId, preset));
         }
 
         /// <summary>

@@ -33,6 +33,7 @@
   {"method":"POST","path":"/agent/v1/runs/{runId}/commands","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/runs/{runId}/reconcile","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/sessions/{sessionId}/runs","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ListSessionRunIdsAsync"]},
+  {"method":"GET","path":"/agent/v1/sessions/{sessionId}/preset","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionPresetAsync"]},
   {"method":"GET","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"DELETE","path":"/agent/v1/policies/{ruleId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},

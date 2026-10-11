@@ -31,6 +31,23 @@ public sealed class SystemPromptComposerTests
     }
 
     [Fact]
+    public void Compose_binds_the_permission_mode_to_the_profile_block_only()
+    {
+        // A weak model once read "plan" out of the product documentation carried
+        // in instruction blocks and announced plan mode while the run was
+        // standard. The execution contract must say exactly where the mode
+        // lives, so documentation can never pass as the run's own state.
+        var context = PromptFixtures.ValidContext(preset: "standard");
+
+        var snapshot = SystemPromptComposer.Compose(context);
+
+        Assert.Contains(
+            "Your current permission mode is stated only by the profile block",
+            snapshot.Text,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Compose_renders_effective_policy_before_instruction_blocks()
     {
         var context = PromptFixtures.ValidContext(preset: "plan");

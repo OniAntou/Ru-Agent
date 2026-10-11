@@ -2,8 +2,8 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-42 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
-public owner, and every entry is `aspnet-direct`. The 22 Agent v1 routes under
+43 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+public owner, and every entry is `aspnet-direct`. The 23 Agent v1 routes under
 `/agent/v1/*` and the `POST /host/shutdown` route are active alongside the
 settings, session rewind, activity, status, and model routes. They cover
 run creation, policy/approval/input/trust, cancellation, typed command dispatch, SSE
@@ -35,8 +35,8 @@ inputs, trust, cancel, continue, compact, commands, and reconcile) and the three
 routes (`GET`/`POST /agent/v1/policies` and `DELETE /agent/v1/policies/{ruleId}`)
 — which are driven through the Agent harness flow rather than direct WinUI
 callers; and the five workspace coordination routes, which external clients
-drive over HTTP. The remaining `/agent/v1/*` routes (run activities and session
-run listing) do have direct `ApiService` callers.
+drive over HTTP. The remaining `/agent/v1/*` routes (run activities, session
+run listing, and the session preset read) do have direct `ApiService` callers.
 
 Empty `winui_callers` is therefore expected for these reserved routes and is not a dead-route signal.
 

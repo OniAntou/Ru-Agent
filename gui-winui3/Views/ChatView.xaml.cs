@@ -40,6 +40,22 @@ namespace RuApp.Views
         public string Title { get; }
     }
 
+    /// <summary>
+    /// Raised when opening a session adopts its stored permission preset, so
+    /// the host can reflect the durable choice in its own preset surfaces.
+    /// </summary>
+    public sealed class SessionPresetAdoptedEventArgs : EventArgs
+    {
+        public SessionPresetAdoptedEventArgs(string sessionId, AgentPermissionPreset preset)
+        {
+            SessionId = sessionId;
+            Preset = preset;
+        }
+
+        public string SessionId { get; }
+        public AgentPermissionPreset Preset { get; }
+    }
+
     public sealed class ChatMessageTemplateSelector : DataTemplateSelector
     {
         public DataTemplate? UserTemplate { get; set; }
@@ -311,6 +327,8 @@ namespace RuApp.Views
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
+
+        public event EventHandler<SessionPresetAdoptedEventArgs>? SessionPresetAdopted;
 
         private ProviderCatalogController? _providerCatalogController;
         private bool _ownsProviderCatalogController;

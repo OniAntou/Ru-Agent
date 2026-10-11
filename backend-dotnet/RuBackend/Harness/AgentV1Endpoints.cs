@@ -33,6 +33,7 @@ public static class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/commands", PostCommandAsync);
         app.MapPost("/agent/v1/runs/{runId}/reconcile", PostReconcileAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/runs", GetSessionRunsAsync);
+        app.MapGet("/agent/v1/sessions/{sessionId}/preset", GetSessionPresetAsync);
         app.MapGet("/agent/v1/policies", GetPoliciesAsync);
         app.MapPost("/agent/v1/policies", PostPolicyAsync);
         app.MapDelete("/agent/v1/policies/{ruleId}", DeletePolicyAsync);
@@ -838,6 +839,12 @@ public static class AgentV1Endpoints
         }
 
         var result = await service.ListSessionRunsAsync(sessionId, limit, cursor, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetSessionPresetAsync(string sessionId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    {
+        var result = await service.GetSessionPresetAsync(sessionId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

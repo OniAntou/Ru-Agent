@@ -271,6 +271,7 @@ namespace RuApp
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
+                _chatView.SessionPresetAdopted += OnChatSessionPresetAdopted;
                 // A failure message that offers to open provider settings needs the
                 // window: the settings surface belongs to it, not to the transcript.
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
@@ -446,6 +447,17 @@ namespace RuApp
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
         {
             SyncSidebarSelection(e.SessionId);
+        }
+
+        private void OnChatSessionPresetAdopted(object? sender, SessionPresetAdoptedEventArgs e)
+        {
+            // The Settings dropdown shows the durable choice of the session that
+            // is open, not the previous session's. The switch may already have
+            // moved on when this arrives, so only the active session applies.
+            if (string.Equals(e.SessionId, _activeSessionId, StringComparison.Ordinal))
+            {
+                _settingsView?.SetCurrentPreset(e.Preset);
+            }
         }
 
         private void OnSettingsSaved(object? sender, EventArgs e)
@@ -827,6 +839,7 @@ namespace RuApp
             if (_chatView != null)
             {
                 _chatView.SessionOpened -= OnChatSessionOpened;
+                _chatView.SessionPresetAdopted -= OnChatSessionPresetAdopted;
                 DisposeSafely("chat view", _chatView.Dispose);
             }
 

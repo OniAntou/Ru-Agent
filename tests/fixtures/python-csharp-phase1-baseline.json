@@ -9,7 +9,7 @@
           },
           {
             "block_id": "agent.contract",
-            "sha256": "df97e6407543b94a2ca920387c192376918b706ec13f7798289e6a42ab383642"
+            "sha256": "2e26ef0f033fb684c242db2369364ae05c60f4d9cb6bd018d7214747338e41b1"
           },
           {
             "block_id": "environment",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "2cdabc19685ece02d1ace5b83b6f8995b40bd6a4e7e54fe6238182e45d33a971"
+        "prompt_sha256": "60d57fa5902648c5d62c8be98984fc9f842d2d8824f5166eecdb1ff8b968bd25"
       },
       "group": "prompt",
       "id": "prompt.basic",

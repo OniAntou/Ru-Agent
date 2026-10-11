@@ -119,7 +119,11 @@ definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
 `edit`, `bash`, `web_search`, `web_fetch`, `skill`, and Host-intercepted
 `ask_user`. `ask_user` never dispatches to the Broker: it parks the run in
 `WaitingUser` with a durable `input.requested` event until the client posts the
-answer, which arrives as that call's durable tool result. On provider-native
+answer, which arrives as that call's durable tool result. The execution contract
+also states that the run's current permission mode is described only by the
+profile block: documentation, workspace files, and skills describe the product
+and never the run's own mode, so a model cannot mistake a mode described in
+CONTEXT.md for the mode it is in. On provider-native
 paths, one generation may return optional narration and one or more ordered
 calls. The Host persists the assistant batch and matching durable tool results;
 it does not flatten native calls into prose. Compatibility text selection emits

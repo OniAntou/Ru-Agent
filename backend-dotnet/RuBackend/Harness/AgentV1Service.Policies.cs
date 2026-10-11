@@ -29,6 +29,51 @@ namespace RuBackend.Harness;
 public sealed partial class AgentV1Service
 {
     // Policy endpoints
+
+    /// <summary>
+    /// Reads the stored permission preset for one session. A session without a
+    /// stored selection answers 404: no caller may treat the absence of a row
+    /// as any particular preset, because that would silently re-grade a session
+    /// the user never opened under this preset.
+    /// </summary>
+    public async Task<AgentServiceResult> GetSessionPresetAsync(string sessionIdRaw, CancellationToken cancellationToken)
+    {
+        var sessionId = sessionIdRaw?.Trim() ?? string.Empty;
+        if (!IsSessionId(sessionId))
+        {
+            return BoundedError(400, "invalid_session_id", "session_id invalid.");
+        }
+
+        try
+        {
+            var selection = await _permissionStore.GetAsync(
+                    new SessionId(sessionId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (selection is null)
+            {
+                return BoundedError(404, "preset_not_found", "No stored preset for this session.");
+            }
+
+            return new AgentServiceResult(200, new
+            {
+                session_id = selection.SessionId.Value,
+                preset = AgentPermissionPresetMapper.ToWireValue(selection.Preset),
+                version = selection.Version,
+                updated_at = selection.UpdatedAt.ToString("O"),
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException ex)
+        {
+            _logger?.LogWarning(ex, "session preset read failed");
+            return BoundedError(500, ex.Code ?? "preset_read_failed", "Unable to read the session preset.");
+        }
+    }
+
     public async Task<AgentServiceResult> ListPoliciesAsync(string? scopeRaw, string? workspaceIdRaw, CancellationToken cancellationToken)
     {
         var scope = scopeRaw?.Trim().ToLowerInvariant();

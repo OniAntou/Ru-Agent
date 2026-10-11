@@ -29,6 +29,39 @@ public sealed class AgentSessionPermissionEndpointTests
     }
 
     [Fact]
+    public async Task SessionPreset_Read_ReturnsStoredSelection()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+
+        // No stored selection yet: the read answers 404 instead of inventing a
+        // preset the user never chose.
+        using var missing = await client.GetAsync($"/agent/v1/sessions/{sessionId}/preset");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        var body = new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 0 };
+        using var write = await client.PostAsJsonAsync("/agent/v1/policies", body);
+        Assert.Equal(HttpStatusCode.OK, write.StatusCode);
+
+        using var read = await client.GetAsync($"/agent/v1/sessions/{sessionId}/preset");
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        var json = await read.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(sessionId, json.GetProperty("session_id").GetString());
+        Assert.Equal("plan", json.GetProperty("preset").GetString());
+        Assert.Equal(1, json.GetProperty("version").GetInt64());
+
+        // An invalid session id is a bounded 400, not a 500.
+        using var invalid = await client.GetAsync("/agent/v1/sessions/not-a-session/preset");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear(dataPaths);
+    }
+
+    [Fact]
     public async Task SessionPreset_Standard_CreatesMonotonicVersion()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);

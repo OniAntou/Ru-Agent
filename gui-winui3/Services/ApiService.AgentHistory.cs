@@ -39,6 +39,57 @@ namespace RuApp.Services
             DateTimeOffset? CreatedAt,
             DateTimeOffset? TerminalAt);
 
+        /// <summary>
+        /// The stored permission preset for one session, with its monotonic
+        /// version. A session with no stored selection answers null: no caller
+        /// may treat the absence as any preset, because that would silently
+        /// re-grade a session the user never opened under this preset.
+        /// </summary>
+        public sealed record SessionPresetRead(string Preset, long Version);
+
+        /// <summary>
+        /// Reads the stored session preset before a session switch takes effect.
+        /// Best-effort like the other session reads: unknown means the session
+        /// keeps the preset the user already chose, never a surprise swap.
+        /// </summary>
+        public async Task<SessionPresetRead?> GetSessionPresetAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/preset", cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                if (!document.RootElement.TryGetProperty("preset", out var presetElement)
+                    || presetElement.ValueKind != JsonValueKind.String
+                    || document.RootElement.TryGetProperty("version", out var versionElement) == false
+                    || versionElement.ValueKind != JsonValueKind.Number
+                    || !versionElement.TryGetInt64(out var version))
+                {
+                    return null;
+                }
+
+                var preset = presetElement.GetString();
+                if (preset is not ("plan" or "standard" or "full_access"))
+                {
+                    return null;
+                }
+
+                return new SessionPresetRead(preset, version);
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetSessionPresetAsync", ex);
+            }
+
+            return null;
+        }
+
         public async Task<IReadOnlyList<SessionRunRef>?> ListSessionRunIdsAsync(string sessionId, CancellationToken cancellationToken)
         {
             try

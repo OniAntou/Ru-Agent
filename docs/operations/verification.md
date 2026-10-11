@@ -6,7 +6,7 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,901 passed / 0 failed / 0 skipped** (2026-10-11, review remediation + dialog gate). Log: `artifacts/review-remediation-full-dotnet.log`. One CLI run flaked once on a timing-sensitive test (1 failure, rerun green twice); earlier interrupted matrices and environment failures are recorded below. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,909 passed / 0 failed / 0 skipped** (2026-10-11, preset adoption + mode hardening). Log: `artifacts/review-remediation-full-dotnet.log`. One CLI run flaked once on a timing-sensitive test (1 failure, rerun green twice); earlier interrupted matrices and environment failures are recorded below. |
 | Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, tool boundary repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tool-boundary-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
@@ -52,8 +52,8 @@ repaired in this pass. The highlights, by area:
   failures; the last session click wins a fast switch; settings loading always
   clears its flag; trace lines go through one bounded background writer.
 
-Evidence: the full 12-project matrix passed **5,901 tests / 0 failures / 0
-skips** (`artifacts/review-remediation-full-dotnet.log`), the Python suite
+Evidence: the full 12-project matrix passed **5,909 tests / 0 failures / 0
+skips** (preset adoption + mode hardening; this run), the Python suite
 passed 214 with one Windows/POSIX skip
 (`artifacts/review-remediation-full-python.log`), the SDK typecheck/test/build
 passed 22 tests, and the scripted RPC smoke passed end to end (PASS, terminal

@@ -238,16 +238,66 @@ public sealed class TerminalIntentClassifierTests
     }
 
     [Fact]
-    public void Arbitrary_script_is_not_bounded_local()
+    public void Existing_workspace_python_script_is_bounded_local()
     {
         using var workspace = new TemporaryWorkspace();
         var factory = CreateFactory(workspace.Root);
+        File.WriteAllText(Path.Combine(workspace.Root, "script.py"), "print('ok')");
 
         var result = _classifier.Classify(Terminal(factory, "python", "script.py"));
 
         Assert.Equal(
-            new TerminalIntentClassification(false, "terminal_external_mutation_requires_approval"),
+            new TerminalIntentClassification(true, "bounded_local"),
             result);
+    }
+
+    [Fact]
+    public void Workspace_virtualenv_python_can_run_a_local_script()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        var executable = Path.Combine(workspace.Root, ".venv", "Scripts", "python.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "fixture");
+        File.WriteAllText(Path.Combine(workspace.Root, "edit.py"), "pass");
+        Assert.True(_classifier.Classify(Terminal(factory, executable, "-u", "edit.py", "slides.pptx")).IsBoundedLocal);
+    }
+
+    [Theory]
+    [InlineData("standard", "allow")]
+    [InlineData("plan", "deny")]
+    [InlineData("full_access", "allow")]
+    public void Python_file_policy_respects_the_selected_preset(string preset, string expected)
+    {
+        using var workspace = new TemporaryWorkspace();
+        File.WriteAllText(Path.Combine(workspace.Root, "edit.py"), "pass");
+        var (lease, factory) = Bind(workspace.Root, preset);
+        var decision = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot,
+            Terminal(factory, "python", "edit.py"), PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+        Assert.Equal(expected, decision.Decision);
+    }
+
+    [Theory]
+    [InlineData("-c", "print(1)")]
+    [InlineData("-m", "pip", "install", "python-pptx")]
+    [InlineData("missing.py")]
+    [InlineData("script.txt")]
+    public void Non_file_python_execution_still_asks(params string[] argv)
+    {
+        using var workspace = new TemporaryWorkspace();
+        Assert.False(_classifier.Classify(Terminal(CreateFactory(workspace.Root), "python", argv)).IsBoundedLocal);
+    }
+
+    [Fact]
+    public void Python_scripts_and_executables_outside_workspace_still_ask()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        var script = Path.Combine(workspace.Outside, "edit.py");
+        File.WriteAllText(script, "pass");
+        File.WriteAllText(Path.Combine(workspace.Root, "edit.py"), "pass");
+        Assert.False(_classifier.Classify(Terminal(factory, "python", script)).IsBoundedLocal);
+        Assert.False(_classifier.Classify(Terminal(factory, Path.Combine(workspace.Outside, "python.exe"), "edit.py")).IsBoundedLocal);
     }
 
     [Theory]
@@ -272,11 +322,11 @@ public sealed class TerminalIntentClassifierTests
     private static PolicyContextFactory CreateFactory(BrokerRunLease lease) =>
         new(lease);
 
-    private static (BrokerRunLease Lease, PolicyContextFactory Factory) Bind(string root)
+    private static (BrokerRunLease Lease, PolicyContextFactory Factory) Bind(string root, string preset = BrokerPolicyContracts.StandardPresetWireValue)
     {
         var snapshot = new BrokerPolicySnapshotWire(
             1,
-            BrokerPolicyContracts.StandardPresetWireValue,
+            preset,
             new BrokerPolicyWorkspaceIdentityWire(
                 "ws_33333333333333333333333333333333",
                 "VOL-CLASSIFIER",

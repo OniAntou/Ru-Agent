@@ -839,7 +839,7 @@ public sealed class PolicyEvaluationTests
 
         var pythonScript = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "script.py"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("ask", pythonScript.Decision);
-        Assert.Equal("terminal_external_mutation_requires_approval", pythonScript.ReasonCode);
+        Assert.Equal("terminal_python_script_requires_approval", pythonScript.ReasonCode);
     }
 
     [Fact]

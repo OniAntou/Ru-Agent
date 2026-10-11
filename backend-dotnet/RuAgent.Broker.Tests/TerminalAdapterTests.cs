@@ -12,6 +12,26 @@ namespace RuAgent.Broker.Tests;
 public sealed class TerminalAdapterTests
 {
     [Fact]
+    public void Python_file_auto_class_is_rechecked_at_execution_canonicalization()
+    {
+        var root = CreateTemporaryRoot("ru-python-auto-");
+        try
+        {
+            var executable = Path.Combine(root, "python.exe");
+            File.WriteAllText(executable, "fixture");
+            File.WriteAllText(Path.Combine(root, "edit.py"), "pass");
+            var adapter = CreateAdapter(root);
+            var request = Request(executable, ["edit.py"]);
+            Assert.Equal(TerminalOperationClass.WorkspaceScript, adapter.CanonicalizeRun(request).OperationClass);
+            File.Delete(Path.Combine(root, "edit.py"));
+            Assert.Equal(TerminalOperationClass.ExternalMutation, adapter.CanonicalizeRun(request).OperationClass);
+            Assert.Equal(TerminalOperationClass.ExternalMutation,
+                adapter.CanonicalizeRun(Request(executable, [Path.Combine(Path.GetTempPath(), "outside.py")])).OperationClass);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task Terminal_write_set_metadata_rejects_read_only_calls_with_paths()
     {
         var root = CreateTemporaryRoot("ru-terminal-write-set-");

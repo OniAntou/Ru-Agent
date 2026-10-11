@@ -6,13 +6,38 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,997 passed / 0 failed / 0 skipped** (2026-10-12, session and tool-batch simplification). Backend 1,049; GUI 1,383; Harness Core 486; CLI 1,289. Log: `artifacts/architecture-simplification-dotnet.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, native transcript scroll follow-up). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-scroll-native-final-release.log`. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **6,009 passed / 0 failed / 0 skipped** (2026-10-12, Standard workspace Python files). Broker 951; Backend 1,049; GUI 1,385; Harness Core 486; CLI 1,289. Log: `artifacts/standard-python-dotnet.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, Standard workspace Python files), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/standard-python-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, Standard workspace Python files and GUI follow-ups). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/standard-python-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Standard workspace Python files (2026-10-12)
+
+The user authorized a modest Standard relaxation. Existing workspace `.py`
+entries (optional `-u`/`-B`) are candidates for the appended `WorkspaceScript`
+class; Python analyzer version 2 marks them. Evaluation and execution check
+the canonical entry location; explicitly named interpreters must also live in
+the workspace. Inline code, arbitrary modules, package installation, arbitrary
+shell forms, protected/external targets and explicit ask/deny rules keep their
+existing gates. Scripts have current-user capabilities, not OS confinement.
+See [ADR 0016](../adr/0016-standard-workspace-python-files.md).
+
+Two regression cases failed before implementation (945 passed, 2 failed;
+`artifacts/standard-python-red.log`). The focused Broker run then passed 947
+tests (`artifacts/standard-python-broker.log`). With added preset/execution-leg
+coverage, the final full Debug matrix passed **6,009 tests across 12 projects**,
+with no failures or skips (`artifacts/standard-python-dotnet.log`). An initial
+documentation guard rejected the ADR's missing front matter; the metadata was
+corrected and all 19 guards passed. No native/provider PPTX acceptance was run.
+
+The full Python suite passed **214 tests, 1 skipped**
+(`artifacts/standard-python-full-python.log`); the skip is POSIX-only on Windows.
+`build.bat` passed **11/11 Release stages** (`artifacts/standard-python-release.log`),
+including a fresh flattened distributable with the GUI fixes. No application
+was automatically opened and no live credentials or user session data changed.
 
 ## Sidebar startup rendering (2026-10-12)
 
@@ -51,7 +76,8 @@ gui-winui3` run passed **1,384 tests / 0 failed / 0 skipped**
 This is deterministic render-model and source-wiring evidence;
 native GUI acceptance, real-provider streaming, Release publish and the full
 backend/Python matrices were not rerun for this local presentation fix. The
-full-matrix row above remains the preceding architecture snapshot.
+full matrix was not rerun at that step; later full runs are recorded in the
+table above and their dated sections.
 
 ## Architecture simplification (2026-10-12)
 

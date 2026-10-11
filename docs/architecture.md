@@ -293,10 +293,18 @@ reconciliation surfaces from Phase 3:
   never surfacing an approval and escaping workspace attribution. An operator
   with a legitimate per-user toolchain names it through
   `RU_TRUSTED_EXECUTABLE_DIRS`. Path-qualified and rooted requests are not
-  affected: policy already requires an approval for them, so a human confirms
-  the identity. The failure is a bounded tool code rather than an approval
+  affected by the PATH trust check. Policy asks for them except for eligible
+  workspace Python file execution: both the interpreter path and `.py` entry
+  file must be existing, canonical, unprotected workspace files. The failure is a bounded tool code rather than an approval
   prompt; the model can retry with a path-qualified command to reach an
-  approval. `RU_MAX_CONCURRENT_MODEL_STEPS` bounds how many provider
+  approval (or use an eligible workspace Python interpreter). Standard's
+  Python file exception does not inspect or confine script behavior; scripts
+  run as the Windows user, like build/test code. Inline code, arbitrary modules,
+  installation and arbitrary shells keep asking. Optional `-u`/`-B` flags are
+  supported before the `.py` file; explicit rule precedence, cwd/argument path
+  checks, declared-network approval, timeouts and protected targets still apply.
+  See [ADR 0016](adr/0016-standard-workspace-python-files.md).
+  `RU_MAX_CONCURRENT_MODEL_STEPS` bounds how many provider
   generations may be in flight at once, defaulting to the runtime loop's own
   run concurrency and lowering to 1 for single-slot local runtimes.
   Read-only model Git commands are prepared by `TerminalAdapter` with

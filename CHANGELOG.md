@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(policy)**: Standard automatically permits existing workspace `.py` files through `bash` run mode, including Python interpreters in workspace virtualenvs and optional `-u`/`-B` flags. Policy and execution canonicalization check the entry/executable paths. Inline code, arbitrary modules, package installation, unknown shell forms and external/protected paths retain their approval or deny behavior. Scripts run as the Windows user without OS confinement; this reduces repeated approval for local automation, not the capabilities of script code.
+
 - **fix(gui)**: Render sidebar sections and persisted workspace pins before backend startup, including when the initial session list is empty or unavailable. Unchanged polls rebuild a missing sidebar without requiring a new chat; normal unchanged polls retain their existing rows.
 
 - **fix(gui)**: Live activity boundaries render preceding pending text before insertion and freeze at its actual end, preventing question/status rows from splitting off trailing words or punctuation. Earlier batched activities are drained before subsequent text deltas, and frozen prose settles its Markdown while the next tail remains live.

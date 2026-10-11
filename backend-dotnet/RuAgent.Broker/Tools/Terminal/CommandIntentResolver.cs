@@ -319,7 +319,8 @@ public sealed class CommandIntentResolver
     /// directory order rather than by the policy decision, which only ever saw the
     /// name. Trusting the containing directory is what keeps that choice honest.
     /// Path-qualified and rooted requests do not come through here: policy already
-    /// requires an approval for them, so their identity is confirmed by a human.
+    /// requires approval except for eligible workspace Python file execution,
+    /// whose executable and entry-file paths are checked on both policy legs.
     /// </summary>
     private string RequireTrustedExecutable(string resolvedPath)
     {

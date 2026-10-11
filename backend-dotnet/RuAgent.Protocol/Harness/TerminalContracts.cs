@@ -15,6 +15,7 @@ public enum TerminalOperationClass
     GitMutation = 5,
     ExternalMutation = 6,
     DirectDelete = 7,
+    WorkspaceScript = 8,
 }
 
 /// <summary>

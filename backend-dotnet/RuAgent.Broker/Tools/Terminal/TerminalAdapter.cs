@@ -10,7 +10,7 @@ namespace RuAgent.Broker.Tools.Terminal;
 /// Single source of truth for which terminal operation classes execute without
 /// approval. PolicySnapshotEvaluator consumes this verdict for the evaluate leg;
 /// this adapter enforces the same verdict for the execution leg. Read-only, test,
-/// build, lint, and local-git run payloads execute on an authorization token;
+/// build, lint, local-git and eligible workspace Python file payloads execute on an authorization token;
 /// external mutation, delete, shell scripts, and unknown always ask for a
 /// one-time approval token bound to the exact intent hash. The local-git class
 /// only covers clean repository writes: `git config` mutations, `git -C`
@@ -24,7 +24,8 @@ public static class TerminalAutoPolicy
             or TerminalOperationClass.Test
             or TerminalOperationClass.Build
             or TerminalOperationClass.Lint
-            or TerminalOperationClass.GitMutation;
+            or TerminalOperationClass.GitMutation
+            or TerminalOperationClass.WorkspaceScript;
 }
 
 /// <summary>
@@ -86,6 +87,13 @@ public sealed class TerminalAdapter
                 request.TimeoutMs,
                 request.Network));
             var analysis = _analyzers.Analyze(intent.ResolvedExecutable, intent.Arguments);
+            if (analysis.OperationClass == TerminalOperationClass.WorkspaceScript
+                && (!intent.IsInsideWorkspace || intent.IsProtected
+                    || !WorkspacePythonScriptPolicy.IsLocalFile(_workspace.Root, intent.CanonicalWorkingDirectory,
+                    PythonCommandAnalyzer.ScriptPath(intent.Arguments))
+                    || ((Path.IsPathRooted(request.Executable) || request.Executable.Contains('/') || request.Executable.Contains('\\'))
+                        && !WorkspacePythonScriptPolicy.IsLocalFile(_workspace.Root, intent.CanonicalWorkingDirectory, intent.ResolvedExecutable))))
+                analysis = analysis with { OperationClass = TerminalOperationClass.ExternalMutation };
             return intent.Classified(analysis.OperationClass);
         }
         catch (CommandIntentException error)

@@ -41,7 +41,13 @@ public sealed class TerminalIntentClassifier
             return Reject("terminal_mode_invalid");
         }
 
-        if (context.BashMode != "shell" && HasPathQualifiedExecutable(context.ResolvedExecutable))
+        var pythonFile = context.BashMode != "shell"
+            && GitCommandAnalyzer.BaseName(context.ResolvedExecutable ?? string.Empty) is "python" or "python3" or "py"
+            && WorkspacePythonScriptPolicy.IsLocalFile(context.CanonicalWorkspaceRoot, context.CanonicalCwd ?? string.Empty,
+                PythonCommandAnalyzer.ScriptPath(context.Argv));
+        if (context.BashMode != "shell" && HasPathQualifiedExecutable(context.ResolvedExecutable)
+            && !(pythonFile && WorkspacePythonScriptPolicy.IsLocalFile(
+                context.CanonicalWorkspaceRoot, context.CanonicalCwd ?? string.Empty, context.ResolvedExecutable)))
         {
             return Reject("terminal_external_executable_requires_approval");
         }
@@ -68,6 +74,9 @@ public sealed class TerminalIntentClassifier
         {
             return Reject(RiskReason(analysis));
         }
+
+        if (analysis.OperationClass == TerminalOperationClass.WorkspaceScript && !pythonFile)
+            return Reject("terminal_python_script_requires_approval");
 
         if (context.Argv.Any(HasUnparsedShellSyntax))
         {

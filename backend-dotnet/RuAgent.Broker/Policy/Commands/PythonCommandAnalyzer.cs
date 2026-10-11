@@ -4,12 +4,13 @@ namespace RuAgent.Broker.Policy.Commands;
 
 /// <summary>
 /// Recognized Python ecosystem forms: pytest, ruff check, mypy — directly or through
-/// <c>python -m</c>. Arbitrary scripts, inline code, other module execution, pip
-/// installs, fixing linters, and interactive debugger flags never allow.
+/// <c>python -m</c>. Inline code, other module execution, pip
+/// installs, fixing linters, and interactive debugger flags ask. File scripts
+/// are candidates for WorkspaceScript; policy and execution check their paths.
 /// </summary>
 public sealed class PythonCommandAnalyzer : ICommandAnalyzer
 {
-    public const string AnalyzerVersion = "1";
+    public const string AnalyzerVersion = "2";
 
     public string Version => AnalyzerVersion;
 
@@ -29,6 +30,9 @@ public sealed class PythonCommandAnalyzer : ICommandAnalyzer
 
     private CommandAnalysis AnalyzePythonModule(IReadOnlyList<string> argv)
     {
+        if (ScriptPath(argv) is not null)
+            return new(AnalyzerVersion, TerminalOperationClass.WorkspaceScript, "none", "python_file_script");
+
         for (var i = 0; i + 1 < argv.Count; i++)
         {
             if (!string.Equals(argv[i], "-m", StringComparison.Ordinal))
@@ -47,6 +51,15 @@ public sealed class PythonCommandAnalyzer : ICommandAnalyzer
         }
 
         return new(AnalyzerVersion, TerminalOperationClass.Unknown, "none", "python_arbitrary_execution_asks");
+    }
+
+    internal static string? ScriptPath(IReadOnlyList<string> argv)
+    {
+        var index = 0;
+        while (index < argv.Count && argv[index] is "-u" or "-B") index++;
+        return index < argv.Count && !argv[index].StartsWith('-')
+            && string.Equals(Path.GetExtension(argv[index]), ".py", StringComparison.OrdinalIgnoreCase)
+            ? argv[index] : null;
     }
 
     private CommandAnalysis AnalyzePytest(IReadOnlyList<string> argv)

@@ -14,7 +14,7 @@ public sealed class PythonCommandAnalyzerTests
         var analysis = _analyzer.Analyze(@"C:\venv\Scripts\pytest.exe", ["-q", "tests"]);
 
         Assert.Equal(TerminalOperationClass.Test, analysis.OperationClass);
-        Assert.Equal("1", analysis.AnalyzerVersion);
+        Assert.Equal("2", analysis.AnalyzerVersion);
     }
 
     [Theory]
@@ -78,13 +78,13 @@ public sealed class PythonCommandAnalyzerTests
     }
 
     [Fact]
-    public void Arbitrary_python_execution_fails_closed()
+    public void File_scripts_are_candidates_but_inline_code_and_other_modules_ask()
     {
         var script = _analyzer.Analyze(@"C:\python\python.exe", ["script.py"]);
         var inline = _analyzer.Analyze(@"C:\python\python.exe", ["-c", "print(1)"]);
         var otherModule = _analyzer.Analyze(@"C:\python\python.exe", ["-m", "requests"]);
 
-        Assert.Equal(TerminalOperationClass.Unknown, script.OperationClass);
+        Assert.Equal(TerminalOperationClass.WorkspaceScript, script.OperationClass);
         Assert.Equal(TerminalOperationClass.Unknown, inline.OperationClass);
         Assert.Equal(TerminalOperationClass.Unknown, otherModule.OperationClass);
     }

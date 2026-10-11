@@ -190,7 +190,13 @@ read-only preset: workspace reads and Web are automatic, terminal and mutation
 are denied outright (no per-change asks), and external structured files ask like
 Standard. `standard` allows workspace reads, Web, in-workspace mutation, and
 bounded-local terminal; it asks for external structured files and risky
-terminal intent. `full_access` is the skip-all mode: external structured files
+terminal intent. Bounded-local includes existing `.py` entry files in the
+workspace, including a path-qualified Python interpreter in the workspace.
+Only optional `-u`/`-B` interpreter flags precede the entry file; inline code,
+arbitrary modules, package installation and arbitrary shells still ask. Entry
+paths are checked at policy and execution canonicalization, not enforced as an
+OS boundary: a Python script runs as the Windows user and can perform arbitrary
+work, like a build or test program. `full_access` is the skip-all mode: external structured files
 and risky/arbitrary terminal intent are automatic, and structured protected
 paths (the harness key/database files and runtime descriptors, plus any
 user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain

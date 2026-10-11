@@ -81,6 +81,43 @@ public sealed class ChatFollowContractTests
     }
 
     [Fact]
+    public void Bulk_reload_never_scrolls_on_pre_reset_numbers()
+    {
+        // A ReplaceAll drops the virtualized panel before it measures: offsets
+        // read synchronously right after it belong to the old content, so a
+        // fresh open parked at its oldest message and a turn-end reload yanked
+        // a parked reader to the top. Both paths settle after layout instead.
+        var code = GuiSource.ViewText("ChatView");
+
+        var open = GuiSource.MethodBody(code, "OpenSessionAsync");
+        Assert.Contains("Messages.ReplaceAll(opened)", open, StringComparison.Ordinal);
+        Assert.Contains("RunAfterLayout(ScrollToLatestAfterLayout)", open, StringComparison.Ordinal);
+        Assert.DoesNotContain("ScrollChatToBottom()", open, StringComparison.Ordinal);
+
+        var reload = GuiSource.MethodBody(code, "ReloadSessionHistoryAsync");
+        Assert.Contains("preservedOffset", reload, StringComparison.Ordinal);
+        Assert.Contains("Messages.ReplaceAll(restored)", reload, StringComparison.Ordinal);
+        Assert.Contains("Math.Min(restore", reload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Deferred_layout_work_runs_low_priority_and_never_throws()
+    {
+        // MethodBody cannot tell the declaration apart from a call site that
+        // passes a lambda, so this locates the declaration itself and reads a
+        // bounded window: the three markers below are jointly distinctive of
+        // the helper and of nothing else.
+        var code = GuiSource.ViewText("ChatView");
+        int declaration = code.IndexOf("private void RunAfterLayout(Action action)", StringComparison.Ordinal);
+        Assert.True(declaration >= 0, "RunAfterLayout must be declared.");
+
+        string window = code.Substring(declaration, Math.Min(1500, code.Length - declaration));
+        Assert.Contains("DispatcherQueuePriority.Low", window, StringComparison.Ordinal);
+        Assert.Contains("AppendTraceLine", window, StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException.ThrowIfNull(action)", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Restoring_a_draft_is_scoped_per_session()
     {
         // Composer drafts are keyed by session, so switching chats must not carry

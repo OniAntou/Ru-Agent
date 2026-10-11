@@ -356,11 +356,39 @@ namespace RuApp.Views
                         restored.Add(orphan);
                     }
 
+                    var scroller = ChatScrollViewer;
+                    double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
+                        ? scroller.VerticalOffset
+                        : null;
                     Messages.ReplaceAll(restored);
 
                     if (history.Count > 0)
                     {
                         ScrollChatToBottom();
+                    }
+                    if (preservedOffset is double offset)
+                    {
+                        // The reset above drops the virtualized panel to its top:
+                        // a reader parked mid-history keeps their place once layout
+                        // has run, while a following reader still lands latest.
+                        double restore = offset;
+                        RunAfterLayout(() =>
+                        {
+                            var s = ChatScrollViewer;
+                            if (s is null || s.ScrollableHeight <= 0)
+                            {
+                                return;
+                            }
+
+                            if (_followOutput)
+                            {
+                                _lastScrollChangeTick = Environment.TickCount64;
+                                s.ChangeView(null, s.ScrollableHeight, null, disableAnimation: true);
+                                return;
+                            }
+
+                            s.ChangeView(null, Math.Min(restore, s.ScrollableHeight), null, disableAnimation: true);
+                        });
                     }
 
                     UpdateViewMode();
@@ -673,6 +701,46 @@ namespace RuApp.Views
         private long _lastScrollChangeTick;
         private bool _scrollRetryQueued;
         private const long ScrollChangeMinIntervalMs = 120;
+
+        /// <summary>
+        /// Runs an action after the pending layout pass. A bulk ReplaceAll drops
+        /// the virtualized panel before it measures, so offsets read synchronously
+        /// right after it still belong to the old content: scrolling on those
+        /// numbers lands mid-transcript, or parks a fresh open at its oldest
+        /// message while the reader watches the top.
+        /// </summary>
+        private void RunAfterLayout(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Deferred layout action failed: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// Lands a freshly opened session on its latest message. Runs after
+        /// layout: the ReplaceAll above reset the panel, so only post-layout
+        /// numbers point at the real bottom.
+        /// </summary>
+        private void ScrollToLatestAfterLayout()
+        {
+            var scroller = ChatScrollViewer;
+            if (scroller is null || scroller.ScrollableHeight <= 0)
+            {
+                return;
+            }
+
+            _lastScrollChangeTick = Environment.TickCount64;
+            scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
+        }
 
         // ComposerDraftStore owns unsent text and attachments per session.
         private readonly ComposerDraftStore _composerDrafts = new();
@@ -1059,7 +1127,10 @@ namespace RuApp.Views
 
                     if (history.Count > 0)
                     {
-                        ScrollChatToBottom();
+                        // A fresh open always lands on the latest, after layout:
+                        // the reset above dropped the panel, so a synchronous
+                        // scroll would read the previous session's numbers.
+                        RunAfterLayout(ScrollToLatestAfterLayout);
                     }
                 }
 

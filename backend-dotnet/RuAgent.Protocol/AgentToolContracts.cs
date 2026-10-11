@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text.Json.Nodes;
 
 namespace RuAgent.Protocol;
@@ -13,7 +14,7 @@ public static class ToolResultStatuses
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [Succeeded, Failed, Cancelled, Denied, ApprovalRequired, TimedOut],
-        StringComparer.Ordinal);
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
 }
 
 public static class ApprovalPreviewFields
@@ -39,7 +40,7 @@ public static class ToolVerificationStates
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [NotRequired, Pending, Verified, Failed],
-        StringComparer.Ordinal);
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
 }
 
 public sealed record ToolRequest(

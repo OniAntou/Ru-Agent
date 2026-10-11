@@ -181,9 +181,8 @@ public static class AgentToolDefinitionCatalog
         // tighter foreground hard max when background is not set.
         ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
         ("network_intent", BooleanSchema()),
-        ("read_only", BooleanSchema()),
+        .. TerminalWriteSetProperties(),
         ("background", BooleanSchema()),
-        ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
         ("execution_id", StringSchema(TerminalLimits.MaxExecutionIdChars, minLength: 1)),
         // Paging bound mirrors the spool retention ceiling in RuAgent.Broker,
         // counted in UTF-16 characters: the in-memory window plus the spilled

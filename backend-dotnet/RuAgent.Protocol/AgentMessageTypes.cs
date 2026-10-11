@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace RuAgent.Protocol;
 
 public static class AgentMessageTypes
@@ -64,7 +66,7 @@ public static class AgentMessageTypes
             SessionTasks,
             SessionTasksResult,
         ],
-        StringComparer.Ordinal);
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
 
     public static IReadOnlySet<string> V2Only { get; } = new HashSet<string>(
         [
@@ -86,5 +88,5 @@ public static class AgentMessageTypes
             SessionTasks,
             SessionTasksResult,
         ],
-        StringComparer.Ordinal);
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
 }

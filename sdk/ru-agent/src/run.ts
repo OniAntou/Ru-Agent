@@ -101,6 +101,11 @@ export class Run {
       this.transport.offClose(onClose);
       if (subscriptionId !== undefined && subscriptionId !== "") {
         await this.transport.request("run.detach", { subscriptionId }).catch(() => undefined);
+      } else {
+        // The attach request may have created a server-side subscription whose
+        // response never arrived. Detaching by run is the bounded cleanup for
+        // exactly that case; it is a no-op when nothing was created.
+        await this.transport.request("run.detach", { runId: this.runId }).catch(() => undefined);
       }
     }
   }

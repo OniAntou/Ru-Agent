@@ -70,7 +70,18 @@ export class BridgeTransport {
       windowsHide: true,
     };
     // Windows cannot exec a .cmd/.bat directly without a shell; cmd.exe /d /s /c
-    // runs the batch file and forwards the remaining argv.
+    // runs the batch file and forwards the remaining argv. cmd performs %VAR%
+    // expansion and metacharacter interpretation on its own command line and
+    // offers no reliable way to escape those inside an argument, so an argument
+    // that carries them is refused rather than forwarded in a mangled shape.
+    if (/\.(cmd|bat)$/i.test(options.command)) {
+      const unsafe = args.filter((arg) => /[%^&|<>]/.test(arg));
+      if (unsafe.length > 0) {
+        throw new BridgeTransportError(
+          `bridge spawn refused: cmd.exe metacharacters cannot be escaped safely in arguments: ${unsafe.join(", ")}`,
+        );
+      }
+    }
     const child = /\.(cmd|bat)$/i.test(options.command)
       ? spawn("cmd.exe", ["/d", "/s", "/c", options.command, ...args], spawnOptions)
       : spawn(options.command, args, spawnOptions);
@@ -108,6 +119,7 @@ export class BridgeTransport {
       throw this.#exitError;
     }
     const id = this.#nextId++;
+    await this.#writeFrame(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n", method);
     return await new Promise<T>((resolve, reject) => {
       const pending: PendingRequest = { resolve: resolve as (value: unknown) => void, reject };
       if (timeoutMs > 0) {
@@ -117,8 +129,23 @@ export class BridgeTransport {
         }, timeoutMs);
       }
       this.#pending.set(id, pending);
-      this.#child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     });
+  }
+
+  /**
+   * Writes one frame, waiting for drain when the child's stdin buffer is full.
+   * Without this the parent buffered unbounded request data in memory whenever
+   * the bridge fell behind.
+   */
+  async #writeFrame(payload: string, method: string): Promise<void> {
+    try {
+      if (!this.#child.stdin.write(payload)) {
+        await new Promise<void>((resolve) => this.#child.stdin.once("drain", resolve));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BridgeTransportError(`bridge stdin write failed for "${method}": ${message}`);
+    }
   }
 
   async close(): Promise<void> {
@@ -162,6 +189,16 @@ export class BridgeTransport {
     return tail.length > 0 ? `; stderr: ${tail}` : "";
   }
 
+  /**
+   * A notification handler threw. The error is surfaced as a process warning
+   * (stderr, non-fatal) because no other channel exists this deep in the
+   * transport, and swallowing it silently would hide the only diagnostic.
+   */
+  #reportHandlerError(method: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    process.emitWarning(`ru-agent: notification handler for "${method}" failed: ${message}`);
+  }
+
   #handleLine(line: string): void {
     let message: Record<string, unknown>;
     try {
@@ -174,7 +211,16 @@ export class BridgeTransport {
 
     if (typeof message.method === "string") {
       const params = (message.params as Record<string, unknown>) ?? {};
-      for (const handler of this.#notificationHandlers) handler(message.method, params);
+      // Iterate a snapshot: a handler may subscribe or unsubscribe while it
+      // runs. Each handler is isolated -- a throwing listener must not become
+      // an uncaughtException or stop the remaining frames from being processed.
+      for (const handler of [...this.#notificationHandlers]) {
+        try {
+          handler(message.method, params);
+        } catch (error) {
+          this.#reportHandlerError(message.method, error);
+        }
+      }
       return;
     }
 

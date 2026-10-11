@@ -53,6 +53,32 @@ describe("BridgeTransport", () => {
     await transport.close();
   });
 
+  it("isolates a throwing notification handler and keeps delivering to the rest", async () => {
+    const transport = start();
+    const seen: string[] = [];
+    transport.onNotification((method) => {
+      seen.push(`first:${method}`);
+      throw new Error("listener exploded");
+    });
+    transport.onNotification((method) => seen.push(`second:${method}`));
+
+    // The throwing listener becomes a warning, not an uncaughtException, and
+    // the remaining handlers still see the notification.
+    await transport.request("run.event.test", {});
+    expect(seen).toEqual(["first:run.event", "second:run.event"]);
+    await transport.close();
+  });
+
+  it.skipIf(process.platform !== "win32")("refuses_cmd_metacharacters_in_arguments", () => {
+    expect(() =>
+      BridgeTransport.spawn({
+        command: cmdFixture,
+        args: ["%PATH%"],
+        agentArgs: [],
+      }),
+    ).toThrow(/metacharacters/);
+  });
+
   it("fails closed on a non-JSON stdout line", async () => {
     const transport = start("garbage");
     await expect(transport.request("anything", {})).rejects.toThrow(/invalid json/i);

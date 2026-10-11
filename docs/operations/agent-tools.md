@@ -157,6 +157,13 @@ a cursor. Paging does not authorize a new operation or bypass Broker approval.
 
 ### Session folder grants and bash approval
 
+Terminal launch resolves the executable or shell runtime before registering a
+foreground or background task. Resolution errors such as `executable_not_found`
+and `executable_not_trusted` retain their code instead of becoming
+`process_start_failed`; an unresolved background call cannot report a task as
+started. Windows children retain a native process handle before resume, so an
+immediate exit still yields its actual exit code.
+
 Failed terminal starts, nonzero exits and timeouts retain `exit_code` when
 available and already-redacted stdout/stderr head/tail excerpts, each bounded
 to 2,048 characters, in the private model-visible receipt. Failure status and

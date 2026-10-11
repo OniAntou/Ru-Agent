@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(terminal)**: Keep the native process handle before resuming a Windows child so quick commands retain their exit code. Resolve executables and shell runtimes before task registration so launch-resolution failures keep their actionable error code and cannot report a background task as started.
+
 - **fix(tooling,protocol)**: Disclose benchmark final-workspace restrictions in the effective task instruction, record its hash separately from fixture identity, and clarify the default Windows PowerShell syntax in terminal tool guidance.
 - **fix(tooling)**: Exclude build/interpreter caches from benchmark patch export, including staged files, using the same exclusions as workspace grading. A passing source candidate can now round-trip through SWE-style patch evaluation.
 

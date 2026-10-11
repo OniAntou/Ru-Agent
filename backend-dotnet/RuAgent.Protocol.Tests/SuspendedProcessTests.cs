@@ -50,6 +50,34 @@ public sealed class SuspendedProcessTests : IDisposable
     private static IntPtr ReadPointer(object attribute, string property) =>
         (IntPtr)attribute.GetType().GetProperty(property)!.GetValue(attribute)!;
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(7)]
+    public async Task Exit_code_survives_child_exit_before_the_caller_waits(int exitCode)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+        {
+            UseShellExecute = false,
+            WorkingDirectory = _root,
+        };
+        info.ArgumentList.Add("/d");
+        info.ArgumentList.Add("/c");
+        info.ArgumentList.Add($"echo finished & exit {exitCode}");
+        var started = SuspendedProcess.StartSuspended(info);
+        try
+        {
+            Assert.True(SuspendedProcess.Resume(started.ThreadHandle));
+            // EOF proves the child has closed its pipe before Process opens a
+            // handle through WaitForExit. PID lookup alone loses the exit code.
+            var output = await started.StandardOutput.ReadToEndAsync().WaitAsync(StartupBudget);
+            Assert.Contains("finished", output);
+            await started.Process.WaitForExitAsync().WaitAsync(StartupBudget);
+            Assert.Equal(exitCode, started.Process.ExitCode);
+        }
+        finally { KillAndDispose(started); }
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

@@ -154,6 +154,10 @@ public static class SuspendedProcess
                 // Process.StandardOutput/StandardError are only populated by Process.Start,
                 // so the readers are handed back directly rather than attached to it.
                 process = Process.GetProcessById(processInformation.dwProcessId);
+                // PID lookup opens its handle lazily. Retain it while the child
+                // is suspended so even an immediate exit remains waitable and
+                // its exit code survives until the caller disposes the Process.
+                _ = process.SafeHandle;
                 standardOutput = new StreamReader(
                     new FileStream(stdout, FileAccess.Read),
                     Encoding.UTF8,

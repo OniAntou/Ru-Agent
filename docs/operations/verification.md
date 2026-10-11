@@ -6,13 +6,57 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,809 passed / 0 failed / 0 skipped** (2026-10-11, coding recovery/feedback repairs). Log: `artifacts/quality-dotnet-complete.log`. Earlier interrupted matrix and focused diagnostic are recorded below. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug -NoRestore`: **5,815 passed / 0 failed / 0 skipped** (2026-10-11, terminal launch/exit-code repairs). Log: `artifacts/quality-terminal-full-dotnet-complete.log`. Earlier interrupted matrices and environment failures are recorded below. |
 | Python suite | **213 passed, 1 skipped** (2026-10-11, coding recovery/feedback repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/quality-pytest-complete.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, coding recovery/feedback repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-release-final.log`. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal launch/exit-code repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-terminal-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Final custom SWE diagnostic: **0/3 resolved** within 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, rebuilt Release; Python candidate passed all groups but its run timed out. Report: `artifacts/quality-swe-20261011-run2/report.json`. Separate small C# diagnostic passed in 70.906 s. Conditions and incomplete outcomes are recorded below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Terminal launch and exit-code repairs (2026-10-11)
+
+Windows process creation now opens and retains the `Process` handle while the
+child is suspended. A child that exits before the caller waits still retains
+its real exit code. Executable and shell resolution run before task
+registration, retaining `executable_not_found` and `executable_not_trusted`
+instead of collapsing them into `process_start_failed` or reporting an
+unresolved background task as started. Execution permissions are unchanged.
+
+The two exit-code regression cases failed on the old implementation
+(`artifacts/quality-process-exit-red.log`) and all six suspended-process tests
+passed after the repair (`artifacts/quality-process-exit-green.log`). The valid
+missing-executable regression failed for foreground and background requests
+(`artifacts/quality-launch-feedback-valid-red.log`); the first fixture attempt
+omitted the required argument array and tested an invalid request, so that log
+is retained separately. Focused launch/streaming checks passed 20 cases
+(`artifacts/quality-terminal-green.log`). A local diagnostic then ran Python
+directly and through `cmd`, retaining exit code zero in both cases
+(`artifacts/quality-terminal-diagnostic.log`). This does not change which bare
+executable directories are trusted.
+
+Environment failures are retained: the first full matrix was interrupted after
+a 512 MiB fixture could not be allocated on C
+(`artifacts/quality-terminal-full-dotnet.log`). A temporary root inside the
+checkout invalidated a no-repository fixture
+(`artifacts/quality-terminal-full-dotnet-retry.log`). Moving that root outside
+the checkout on D passed Broker/CLI/client/core checks, then failed five
+Windows key-store ACL tests (`artifacts/quality-terminal-full-dotnet-final.log`).
+Both volumes are NTFS; the D-root ACL setup was incompatible with those tests.
+The final invocation uses the normal Windows temporary directory after C free
+space recovered. No permission tests or key-store implementation were weakened.
+
+Final verification: the normal-temp full .NET matrix passed **5,815 tests** in
+all **12 projects**, with no failures/skips
+(`artifacts/quality-terminal-full-dotnet-complete.log`). Documentation guards
+passed **9 tests** (`artifacts/quality-terminal-docs.log`); `git diff --check`
+passed. The full Python suite was not rerun for these C# changes; its preceding
+213-pass result remains recorded separately.
+Release publishing completed all **11/11 stages**
+(`artifacts/quality-terminal-release.log`).
+
+No new live-model benchmark or interactive native UI acceptance is claimed for
+these launch fixes. The earlier custom SWE results remain unchanged.
 
 ## Coding recovery and feedback repairs (2026-10-11)
 

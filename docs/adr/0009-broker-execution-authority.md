@@ -12,6 +12,11 @@ superseded_by: ADR-0014 in-process execution and terminal sandbox
 
 # RuAgentBroker is the single tool execution authority
 
+> Terminal fallback update (2026-10-12): [ADR 0017](0017-workspace-terminal-policy.md)
+> replaces command-form and network approval heuristics with canonical launch-directory
+> policy. Terminal classifications and reason codes below are historical.
+
+
 > Superseded in part by [ADR 0014](0014-in-process-execution-and-terminal-sandbox.md)
 > on 2026-10-10: the Broker child process, its authenticated WebSocket lease
 > and `RuAgentBroker.exe` were retired when tool execution moved into the Host

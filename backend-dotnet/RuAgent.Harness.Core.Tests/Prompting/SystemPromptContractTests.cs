@@ -34,8 +34,8 @@ public sealed class SystemPromptContractTests
         Assert.Equal("2.0.0", SystemPromptReceipt.SupportedComposerVersion);
 
         var serialized = Encoding.UTF8.GetString(context.SerializeUtf8());
-        Assert.Contains("\"effective_policy\":{\"version\":\"1\",\"preset\":\"standard\"", serialized, StringComparison.Ordinal);
-        Assert.Contains("\"terminal_authority\":\"bounded_local\"", serialized, StringComparison.Ordinal);
+        Assert.Contains("\"effective_policy\":{\"version\":\"2\",\"preset\":\"standard\"", serialized, StringComparison.Ordinal);
+        Assert.Contains("\"terminal_authority\":\"workspace_current_user\"", serialized, StringComparison.Ordinal);
     }
 
     [Fact]

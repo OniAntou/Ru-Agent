@@ -83,7 +83,7 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         IReadOnlyList<HarnessPayloadIntent>? payloads = null,
         IReadOnlyList<ConversationOutboxIntent>? outbox = null,
         HarnessRunStatus? status = null,
-        int permissionProfileVersion = 1)
+        int? permissionProfileVersion = null)
     {
         var run = new AgentRun(
             Run(runNumber),

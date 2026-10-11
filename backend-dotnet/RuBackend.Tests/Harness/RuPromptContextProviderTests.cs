@@ -171,8 +171,8 @@ public sealed class RuPromptContextProviderTests
         Assert.Equal(expectedWirePreset, context.Preset);
         Assert.Equal(expectedWirePreset, AgentPolicyProfileCatalog.Get(expectedWirePreset).Preset);
         Assert.Equal(
-            AgentPolicyProfileCatalog.Get(expectedWirePreset).DecisionFor(AgentPolicySubject.RiskyTerminal),
-            AgentPolicyProfileCatalog.Get(context.Preset).DecisionFor(AgentPolicySubject.RiskyTerminal));
+            AgentPolicyProfileCatalog.Get(expectedWirePreset).DecisionFor(AgentPolicySubject.ExternalTerminal),
+            AgentPolicyProfileCatalog.Get(context.Preset).DecisionFor(AgentPolicySubject.ExternalTerminal));
         var serialized = System.Text.Encoding.UTF8.GetString(context.SerializeUtf8());
         Assert.Contains($"\"preset\":\"{expectedWirePreset}\"", serialized, StringComparison.Ordinal);
         Assert.Contains("\"effective_policy\":", serialized, StringComparison.Ordinal);

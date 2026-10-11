@@ -1,10 +1,12 @@
 ---
 title: Standard permits workspace Python entry files
-status: accepted
+status: superseded
 date: 2026-10-12
 ---
 
 # ADR 0016: Standard permits workspace Python entry files
+
+Superseded by [ADR 0017](0017-workspace-terminal-policy.md); retained as decision history.
 
 ## Context
 

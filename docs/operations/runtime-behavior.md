@@ -371,8 +371,8 @@ The typed model-step settings advertise thirteen tools, one purpose each:
 `web_search`, `web_fetch`, and Host-intercepted `ask_user`. The canonical matrix is: `plan` allows workspace
 read and Web but denies terminal and mutation outright (read-only, no
 per-change asks) and asks for external structured access; `standard`
-auto-allows bounded-local in-workspace mutation and asks for
-external/escape/risky intent; `full_access` is the skip-all mode — external
+auto-allows workspace mutation and executable/shell launches from a workspace cwd;
+external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
 structured files and arbitrary terminal auto-allow while structured protected
 paths (harness key/database files and runtime descriptors) and hard-invalid
 requests remain denied.
@@ -384,8 +384,8 @@ session, lost on restart, and never authorizes terminal. Full Access uses an
 ephemeral structured root per external call. Terminal children in `standard`
 and `full_access` run as the current Windows user without OS filesystem or
 network confinement, including outside the workspace (ADR-0015). Standard
-keeps its existing classifier and
-approval rules; Full Access keeps its existing arbitrary-terminal policy. The
+uses launch-directory permission under ADR-0017, with explicit ask/deny rules;
+Full Access also permits external launch directories. The
 `bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
 Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
 remain. Structured file tools retain their independent path protections. API

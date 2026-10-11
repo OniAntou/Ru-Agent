@@ -10,7 +10,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-6%2C009%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-5%2C970%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-43%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -28,7 +28,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
 | **Public surface** | **43 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 6,009 passing across 12 projects |
+| **Tests** | 5,970 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -76,11 +76,12 @@ Every run uses one of three canonical, session-scoped presets:
 - **`plan`**: workspace reads and Web run automatically; terminal and mutation
   requests are denied outright (read-only, no per-change asks); external
   structured access asks like Standard.
-- **`standard`**: bounded-local in-workspace mutation runs automatically;
-  external structured access, path escape, and risky terminal intent ask first.
-  Its existing classifier and approval rules remain in force. Terminal
-  children run as the current Windows user without OS filesystem or network
-  confinement; the `bash` schema rejects obsolete sandbox arguments.
+- **`standard`**: workspace mutation and executable/PowerShell launches with
+  a workspace working directory run automatically. External structured paths and
+  external launch directories ask. Explicit ask/deny rules and long foreground
+  approval remain. Terminal children run as the Windows user without OS
+  filesystem or network confinement; argv literals and user-installed toolchains
+  do not add approval prompts.
 - **`full_access`**: the skip-all mode — external structured files and arbitrary
   terminal commands run automatically; structured protected paths (the harness's
   own key/database files and runtime descriptors, plus any user-added
@@ -103,13 +104,11 @@ your user: anything that can read `%LOCALAPPDATA%\Ru\runtime_descriptor.json`
 can set that header. The actual boundary is the bearer token in an owner-only
 descriptor. Every preset change is recorded in the activity log.
 
-Approvals remain exact-intent and single-use. The current reasons include
-`external_directory_required`, `terminal_delete_requires_approval`,
-`terminal_unknown_executable`,
-`terminal_external_mutation_requires_approval`,
-`terminal_timeout_requires_approval`, and
-`terminal_protected_path_requires_approval` (protected-path asks name their
-exact stake and are never offered as a reusable `allow_always` rule).
+Approvals remain exact-intent and single-use. Current reasons include
+`external_directory_required`, `terminal_external_cwd_requires_approval`,
+`terminal_timeout_requires_approval`, `rule_asks`, and
+`terminal_protected_path_requires_approval` (never reusable as `allow_always`).
+Older command-classification reason codes remain readable in recorded activity.
 `web_approval_required` remains a
 compatibility reason for an explicit ask rule, but the canonical `plan` profile
 allows Web and does not synthesize that approval. No provider, model, protocol,
@@ -117,7 +116,7 @@ or tool fallback bypasses a denial.
 
 > **Full Access terminal warning:** commands run as the current Windows user,
 > can read or change data outside the workspace, and can use the network. This
-> has no OS filesystem or network confinement. Process timeout, output cap,
+> has no OS filesystem or network sandbox or confinement. Process timeout, output cap,
 > cancellation, and process-tree cleanup still apply. Structured file tools retain
 > canonical/symlink/junction/hard-link containment and protected-path denial.
 
@@ -199,7 +198,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 6,009 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 5,970 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

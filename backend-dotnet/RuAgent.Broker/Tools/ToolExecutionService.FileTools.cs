@@ -190,7 +190,6 @@ public sealed partial class ToolExecutionService
             return RootToolSet.Create(
                 root,
                 _approvalTokens,
-                _trustedExecutableDirectories,
                 _recoveryStore);
         }
 
@@ -199,7 +198,6 @@ public sealed partial class ToolExecutionService
             resolvedRoot => RootToolSet.Create(
                 resolvedRoot,
                 _approvalTokens,
-                _trustedExecutableDirectories,
                 _recoveryStore));
     }
 
@@ -227,7 +225,6 @@ public sealed partial class ToolExecutionService
         public static RootToolSet Create(
             string canonicalRoot,
             ApprovalTokenService approvalTokens,
-            IReadOnlyList<string>? trustedExecutableDirectories,
             InMemoryRecoveryStore recoveryStore)
         {
             return new RootToolSet
@@ -245,8 +242,7 @@ public sealed partial class ToolExecutionService
                     new WorkspacePathGuard(canonicalRoot),
                     approvalTokens,
                     intentResolver: new CommandIntentResolver(
-                        canonicalRoot,
-                        trustedExecutableDirectories: trustedExecutableDirectories)),
+                        canonicalRoot)),
                 CanonicalRoot = canonicalRoot,
             };
         }
@@ -287,7 +283,7 @@ public sealed partial class ToolExecutionService
 
     private RootToolSet ResolveRootToolSet(ToolExecutionContext context, string? pathInput)
     {
-        if (ActivePolicyProfile(context)?.TerminalAuthority == PresetTerminalAuthority.WindowsCurrentUser)
+        if (context.IsAuthenticatedV2Execution)
         {
             return ToolsFor(context);
         }

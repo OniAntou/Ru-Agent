@@ -10,9 +10,9 @@ public static class EffectivePolicyPromptProjector
         AgentPolicySubject.WorkspaceRead,
         AgentPolicySubject.Web,
         AgentPolicySubject.WorkspaceMutation,
-        AgentPolicySubject.BoundedLocalTerminal,
+        AgentPolicySubject.WorkspaceTerminal,
         AgentPolicySubject.ExternalStructuredFile,
-        AgentPolicySubject.RiskyTerminal,
+        AgentPolicySubject.ExternalTerminal,
         AgentPolicySubject.StructuredProtectedPath,
         AgentPolicySubject.HardInvalid,
     ];

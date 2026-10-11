@@ -128,25 +128,25 @@ public sealed class PolicyEvaluationTests
         { "plan", AgentPolicySubject.WorkspaceRead, "allow" },
         { "plan", AgentPolicySubject.Web, "allow" },
         { "plan", AgentPolicySubject.WorkspaceMutation, "deny" },
-        { "plan", AgentPolicySubject.BoundedLocalTerminal, "deny" },
+        { "plan", AgentPolicySubject.WorkspaceTerminal, "deny" },
         { "plan", AgentPolicySubject.ExternalStructuredFile, "ask" },
-        { "plan", AgentPolicySubject.RiskyTerminal, "deny" },
+        { "plan", AgentPolicySubject.ExternalTerminal, "deny" },
         { "plan", AgentPolicySubject.StructuredProtectedPath, "deny" },
         { "plan", AgentPolicySubject.HardInvalid, "deny" },
         { "standard", AgentPolicySubject.WorkspaceRead, "allow" },
         { "standard", AgentPolicySubject.Web, "allow" },
         { "standard", AgentPolicySubject.WorkspaceMutation, "allow" },
-        { "standard", AgentPolicySubject.BoundedLocalTerminal, "allow" },
+        { "standard", AgentPolicySubject.WorkspaceTerminal, "allow" },
         { "standard", AgentPolicySubject.ExternalStructuredFile, "ask" },
-        { "standard", AgentPolicySubject.RiskyTerminal, "ask" },
+        { "standard", AgentPolicySubject.ExternalTerminal, "ask" },
         { "standard", AgentPolicySubject.StructuredProtectedPath, "deny" },
         { "standard", AgentPolicySubject.HardInvalid, "deny" },
         { "full_access", AgentPolicySubject.WorkspaceRead, "allow" },
         { "full_access", AgentPolicySubject.Web, "allow" },
         { "full_access", AgentPolicySubject.WorkspaceMutation, "allow" },
-        { "full_access", AgentPolicySubject.BoundedLocalTerminal, "allow" },
+        { "full_access", AgentPolicySubject.WorkspaceTerminal, "allow" },
         { "full_access", AgentPolicySubject.ExternalStructuredFile, "allow" },
-        { "full_access", AgentPolicySubject.RiskyTerminal, "allow" },
+        { "full_access", AgentPolicySubject.ExternalTerminal, "allow" },
         { "full_access", AgentPolicySubject.StructuredProtectedPath, "deny" },
         { "full_access", AgentPolicySubject.HardInvalid, "deny" },
     };
@@ -187,7 +187,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Standard_preset_asks_only_for_terminal_risks()
+    public void Standard_workspace_launches_allow_arbitrary_commands()
     {
         var snapshot = PolicyEvalSnapshots.Empty();
         var (lease, factory) = Bind(snapshot);
@@ -203,12 +203,12 @@ public sealed class PolicyEvaluationTests
             lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
 
         Assert.Equal("allow", git.Decision);
-        Assert.Equal("ask", delete.Decision);
-        Assert.Equal("terminal_delete_requires_approval", delete.ReasonCode);
-        Assert.Equal("ask", network.Decision);
-        Assert.Equal("terminal_external_mutation_requires_approval", network.ReasonCode);
-        Assert.Equal("ask", unknown.Decision);
-        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+        Assert.Equal("allow", delete.Decision);
+        Assert.Equal("workspace_terminal_allow", delete.ReasonCode);
+        Assert.Equal("allow", network.Decision);
+        Assert.Equal("workspace_terminal_allow", network.ReasonCode);
+        Assert.Equal("allow", unknown.Decision);
+        Assert.Equal("workspace_terminal_allow", unknown.ReasonCode);
     }
 
     [Theory]
@@ -420,10 +420,10 @@ public sealed class PolicyEvaluationTests
     }
 
     [Theory]
-    [InlineData("Get-Date", "ask", "terminal_unknown_executable")]
-    [InlineData("Remove-Item ./old.txt", "ask", "terminal_delete_requires_approval")]
-    [InlineData("& $tool", "ask", "terminal_unknown_executable")]
-    public void Shell_always_asks_regardless_of_ast_classification(string script, string decision, string reason)
+    [InlineData("Get-Date", "allow", "workspace_terminal_allow")]
+    [InlineData("Remove-Item ./old.txt", "allow", "workspace_terminal_allow")]
+    [InlineData("& $tool", "allow", "workspace_terminal_allow")]
+    public void Workspace_shell_allows_regardless_of_ast_classification(string script, string decision, string reason)
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluation = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
@@ -788,62 +788,62 @@ public sealed class PolicyEvaluationTests
 
         var rg = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "pattern", "."), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", rg.Decision);
-        Assert.Equal("recognized_safe_form", rg.ReasonCode);
-        Assert.True(rg.AnalyzerRiskPending);
+        Assert.Equal("workspace_terminal_allow", rg.ReasonCode);
+        Assert.False(rg.AnalyzerRiskPending);
 
         var gitStatus = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "status"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", gitStatus.Decision);
-        Assert.True(gitStatus.AnalyzerRiskPending);
+        Assert.False(gitStatus.AnalyzerRiskPending);
 
         var gitCommit = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "commit"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", gitCommit.Decision);
 
         var dotnetTest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "test"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", dotnetTest.Decision);
-        Assert.True(dotnetTest.AnalyzerRiskPending);
+        Assert.False(dotnetTest.AnalyzerRiskPending);
 
         var pytest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pytest"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", pytest.Decision);
-        Assert.True(pytest.AnalyzerRiskPending);
+        Assert.False(pytest.AnalyzerRiskPending);
 
         var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "frobnicate.exe"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", unknown.Decision);
-        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+        Assert.Equal("allow", unknown.Decision);
+        Assert.Equal("workspace_terminal_allow", unknown.ReasonCode);
     }
 
     [Fact]
-    public void Standard_terminal_fallback_uses_analyzer_classes_for_the_extended_matrix()
+    public void Standard_terminal_fallback_is_independent_of_analyzer_classes()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluator = new PolicySnapshotEvaluator();
 
         var gitPush = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "push"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", gitPush.Decision);
-        Assert.Equal("terminal_external_mutation_requires_approval", gitPush.ReasonCode);
+        Assert.Equal("allow", gitPush.Decision);
+        Assert.Equal("workspace_terminal_allow", gitPush.ReasonCode);
 
         var dotnetRestore = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "restore"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", dotnetRestore.Decision);
-        Assert.Equal("terminal_external_mutation_requires_approval", dotnetRestore.ReasonCode);
+        Assert.Equal("allow", dotnetRestore.Decision);
+        Assert.Equal("workspace_terminal_allow", dotnetRestore.ReasonCode);
 
         var ruffCheck = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "ruff", "check", "."), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", ruffCheck.Decision);
-        Assert.True(ruffCheck.AnalyzerRiskPending);
+        Assert.False(ruffCheck.AnalyzerRiskPending);
 
         var pipInstall = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pip", "install", "requests"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", pipInstall.Decision);
-        Assert.Equal("terminal_external_mutation_requires_approval", pipInstall.ReasonCode);
+        Assert.Equal("allow", pipInstall.Decision);
+        Assert.Equal("workspace_terminal_allow", pipInstall.ReasonCode);
 
         var rgReplace = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "--replace", "x", "pattern"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", rgReplace.Decision);
-        Assert.Equal("terminal_unknown_executable", rgReplace.ReasonCode);
+        Assert.Equal("allow", rgReplace.Decision);
+        Assert.Equal("workspace_terminal_allow", rgReplace.ReasonCode);
 
         var pythonScript = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "script.py"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", pythonScript.Decision);
-        Assert.Equal("terminal_python_script_requires_approval", pythonScript.ReasonCode);
+        Assert.Equal("allow", pythonScript.Decision);
+        Assert.Equal("workspace_terminal_allow", pythonScript.ReasonCode);
     }
 
     [Fact]
-    public void Standard_submodule_status_is_bounded_but_script_and_update_forms_ask()
+    public void Standard_workspace_submodule_forms_are_allowed()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluator = new PolicySnapshotEvaluator();
@@ -869,8 +869,8 @@ public sealed class PolicyEvaluationTests
                 Terminal(factory, "git", form.Cast<object>().ToArray()),
                 PolicyRequestInvariants.Valid,
                 Now);
-            Assert.Equal("ask", evaluation.Decision);
-            Assert.Equal("terminal_external_mutation_requires_approval", evaluation.ReasonCode);
+            Assert.Equal("allow", evaluation.Decision);
+            Assert.Equal("workspace_terminal_allow", evaluation.ReasonCode);
         }
     }
 
@@ -938,8 +938,8 @@ public sealed class PolicyEvaluationTests
         AssertDeny(overCap, "timeout_exceeds_hard_max");
 
         var shell = standard.Evaluate(standardLease.Snapshot, Shell(standardFactory, "Get-Date"), valid, Now);
-        Assert.Equal("ask", shell.Decision);
-        Assert.Equal("terminal_unknown_executable", shell.ReasonCode);
+        Assert.Equal("allow", shell.Decision);
+        Assert.Equal("workspace_terminal_allow", shell.ReasonCode);
 
         var extendedShell = standard.Evaluate(
             standardLease.Snapshot, Shell(standardFactory, "Get-Date", 1_200_000), valid, Now);
@@ -1047,7 +1047,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Safe_terminal_run_is_automatic_shell_always_asks()
+    public void Workspace_run_and_shell_are_automatic_and_explicit_rules_still_match()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
@@ -1062,11 +1062,11 @@ public sealed class PolicyEvaluationTests
             Shell(factory, "Get-Date"),
             PolicyRequestInvariants.Valid,
             Now);
-        Assert.Equal("ask", shell.Decision);
-        Assert.Equal("terminal_unknown_executable", shell.ReasonCode);
+        Assert.Equal("allow", shell.Decision);
+        Assert.Equal("workspace_terminal_allow", shell.ReasonCode);
 
         Assert.Equal("allow", evaluation.Decision);
-        Assert.Equal("recognized_safe_form", evaluation.ReasonCode);
+        Assert.Equal("workspace_terminal_allow", evaluation.ReasonCode);
 
         var withExactRule = PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.Rule(
@@ -1114,14 +1114,14 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Standard_workspace_risk_remains_ask_without_repository_state()
+    public void Standard_workspace_commands_allow_without_repository_state()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry());
 
         var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", unknown.Decision);
-        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+        Assert.Equal("allow", unknown.Decision);
+        Assert.Equal("workspace_terminal_allow", unknown.ReasonCode);
     }
 
     [Fact]
@@ -1330,12 +1330,13 @@ public sealed class PolicyEvaluationTests
             "write",
             "1.0.0",
             new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
-        AgentPolicySubject.BoundedLocalTerminal => Terminal(factory, "git", "status"),
+        AgentPolicySubject.WorkspaceTerminal => Terminal(factory, "git", "status"),
         AgentPolicySubject.ExternalStructuredFile => factory.Create(
             "read",
             "1.0.0",
             new JsonObject { ["path"] = Path.Combine(Path.GetTempPath(), "ru-policy-outside.txt") }),
-        AgentPolicySubject.RiskyTerminal => Terminal(factory, "git", "push"),
+        AgentPolicySubject.ExternalTerminal => factory.Create("bash", "1.0.0", new JsonObject
+        { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = Path.GetTempPath() }),
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",
             "1.0.0",
@@ -1479,9 +1480,9 @@ public sealed class PolicyEvaluationTests
     }
 
     [Theory]
-    [InlineData("standard", true, "ask")]
+    [InlineData("standard", true, "allow")]
     [InlineData("full_access", true, "allow")]
-    [InlineData("standard", false, "ask")]
+    [InlineData("standard", false, "allow")]
     [InlineData("full_access", false, "allow")]
     public void Git_output_target_outside_the_workspace_uses_profile_policy(
         string preset,

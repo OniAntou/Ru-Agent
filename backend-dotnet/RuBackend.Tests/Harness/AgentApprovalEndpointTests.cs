@@ -445,9 +445,9 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Theory]
-    [InlineData("unknown-tool-xyz.exe", "terminal_unknown_executable")]
-    [InlineData("rm.exe", "terminal_delete_requires_approval")]
-    [InlineData("git", "terminal_external_mutation_requires_approval")]
+    [InlineData("unknown-tool-xyz.exe", "terminal_external_cwd_requires_approval")]
+    [InlineData("rm.exe", "terminal_external_cwd_requires_approval")]
+    [InlineData("git", "terminal_external_cwd_requires_approval")]
     public async Task Terminal_reason_reaches_public_api(string executable, string expectedReason)
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
@@ -533,7 +533,7 @@ public sealed class AgentApprovalEndpointTests
                 .ToArray();
             Assert.Single(requestedBefore);
             Assert.Equal(
-                "terminal_unknown_executable",
+                "terminal_external_cwd_requires_approval",
                 requestedBefore[0].GetProperty("safe_summary").GetString());
 
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -1096,8 +1096,7 @@ public sealed class AgentApprovalEndpointTests
                     "provider-batch-2",
                     "bash",
                     "1.0.0",
-                    JsonDocument.Parse(
-                        "{\"mode\":\"run\",\"executable\":\"unknown-tool-batch.exe\",\"arguments\":[\"--query-approval-state\"]}")
+                    JsonDocument.Parse(JsonSerializer.Serialize(new { mode = "run", executable = "unknown-tool-batch.exe", arguments = new[] { "--query-approval-state" }, working_directory = Path.GetTempPath() }))
                         .RootElement.Clone()),
                 new ModelToolCall(
                     "provider-batch-3",
@@ -1124,7 +1123,7 @@ public sealed class AgentApprovalEndpointTests
     }
 
     private static string Command(string marker) =>
-        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker } });
+        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker }, working_directory = Path.GetTempPath() });
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {
@@ -1157,7 +1156,7 @@ public sealed class AgentApprovalEndpointTests
             case "files.edit": id = "edit"; break;
             case "files.delete": id = "write"; node["op"] = "delete"; break;
             case "files.restore": id = "write"; node["op"] = "restore"; break;
-            case "terminal.run": id = "bash"; node["mode"] = "run"; break;
+            case "terminal.run": id = "bash"; node["mode"] = "run"; node["working_directory"] ??= Path.GetTempPath(); break;
             case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
             case "web.search": id = "web_search"; node.Remove("op"); break;
             case "web.fetch": id = "web_fetch"; node.Remove("op"); break;

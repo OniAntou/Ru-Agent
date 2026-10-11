@@ -7,9 +7,9 @@ public enum AgentPolicySubject
     WorkspaceRead,
     Web,
     WorkspaceMutation,
-    BoundedLocalTerminal,
+    WorkspaceTerminal,
     ExternalStructuredFile,
-    RiskyTerminal,
+    ExternalTerminal,
     StructuredProtectedPath,
     HardInvalid,
 }
@@ -24,7 +24,7 @@ public enum AgentPolicyDecision
 public enum PresetTerminalAuthority
 {
     Denied,
-    BoundedLocal,
+    WorkspaceCurrentUser,
     WindowsCurrentUser,
 }
 
@@ -39,9 +39,9 @@ public sealed record AgentPolicyProfile
         AgentPolicySubject.WorkspaceRead,
         AgentPolicySubject.Web,
         AgentPolicySubject.WorkspaceMutation,
-        AgentPolicySubject.BoundedLocalTerminal,
+        AgentPolicySubject.WorkspaceTerminal,
         AgentPolicySubject.ExternalStructuredFile,
-        AgentPolicySubject.RiskyTerminal,
+        AgentPolicySubject.ExternalTerminal,
         AgentPolicySubject.StructuredProtectedPath,
         AgentPolicySubject.HardInvalid,
     ];
@@ -157,9 +157,9 @@ public sealed record AgentPolicyProfile
         subject is AgentPolicySubject.WorkspaceRead
             or AgentPolicySubject.Web
             or AgentPolicySubject.WorkspaceMutation
-            or AgentPolicySubject.BoundedLocalTerminal
+            or AgentPolicySubject.WorkspaceTerminal
             or AgentPolicySubject.ExternalStructuredFile
-            or AgentPolicySubject.RiskyTerminal
+            or AgentPolicySubject.ExternalTerminal
             or AgentPolicySubject.StructuredProtectedPath
             or AgentPolicySubject.HardInvalid;
 
@@ -173,7 +173,7 @@ public sealed record AgentPolicyProfile
 
 public static class AgentPolicyProfileCatalog
 {
-    public const string Version = "1";
+    public const string Version = "2";
     public const string PlanPresetWireValue = BrokerPolicyContracts.PlanPresetWireValue;
     public const string StandardPresetWireValue = BrokerPolicyContracts.StandardPresetWireValue;
     public const string FullAccessPresetWireValue = BrokerPolicyContracts.FullAccessPresetWireValue;
@@ -189,7 +189,7 @@ public static class AgentPolicyProfileCatalog
     internal static PresetTerminalAuthority CanonicalTerminalAuthority(string preset) => preset switch
     {
         PlanPresetWireValue => PresetTerminalAuthority.Denied,
-        StandardPresetWireValue => PresetTerminalAuthority.BoundedLocal,
+        StandardPresetWireValue => PresetTerminalAuthority.WorkspaceCurrentUser,
         FullAccessPresetWireValue => PresetTerminalAuthority.WindowsCurrentUser,
         _ => throw new AgentProtocolException("invalid_preset"),
     };
@@ -210,25 +210,25 @@ public static class AgentPolicyProfileCatalog
         (PlanPresetWireValue, AgentPolicySubject.WorkspaceRead) => AgentPolicyDecision.Allow,
         (PlanPresetWireValue, AgentPolicySubject.Web) => AgentPolicyDecision.Allow,
         (PlanPresetWireValue, AgentPolicySubject.WorkspaceMutation) => AgentPolicyDecision.Deny,
-        (PlanPresetWireValue, AgentPolicySubject.BoundedLocalTerminal) => AgentPolicyDecision.Deny,
+        (PlanPresetWireValue, AgentPolicySubject.WorkspaceTerminal) => AgentPolicyDecision.Deny,
         (PlanPresetWireValue, AgentPolicySubject.ExternalStructuredFile) => AgentPolicyDecision.Ask,
-        (PlanPresetWireValue, AgentPolicySubject.RiskyTerminal) => AgentPolicyDecision.Deny,
+        (PlanPresetWireValue, AgentPolicySubject.ExternalTerminal) => AgentPolicyDecision.Deny,
         (PlanPresetWireValue, AgentPolicySubject.StructuredProtectedPath) => AgentPolicyDecision.Deny,
         (PlanPresetWireValue, AgentPolicySubject.HardInvalid) => AgentPolicyDecision.Deny,
         (StandardPresetWireValue, AgentPolicySubject.WorkspaceRead) => AgentPolicyDecision.Allow,
         (StandardPresetWireValue, AgentPolicySubject.Web) => AgentPolicyDecision.Allow,
         (StandardPresetWireValue, AgentPolicySubject.WorkspaceMutation) => AgentPolicyDecision.Allow,
-        (StandardPresetWireValue, AgentPolicySubject.BoundedLocalTerminal) => AgentPolicyDecision.Allow,
+        (StandardPresetWireValue, AgentPolicySubject.WorkspaceTerminal) => AgentPolicyDecision.Allow,
         (StandardPresetWireValue, AgentPolicySubject.ExternalStructuredFile) => AgentPolicyDecision.Ask,
-        (StandardPresetWireValue, AgentPolicySubject.RiskyTerminal) => AgentPolicyDecision.Ask,
+        (StandardPresetWireValue, AgentPolicySubject.ExternalTerminal) => AgentPolicyDecision.Ask,
         (StandardPresetWireValue, AgentPolicySubject.StructuredProtectedPath) => AgentPolicyDecision.Deny,
         (StandardPresetWireValue, AgentPolicySubject.HardInvalid) => AgentPolicyDecision.Deny,
         (FullAccessPresetWireValue, AgentPolicySubject.WorkspaceRead) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.Web) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.WorkspaceMutation) => AgentPolicyDecision.Allow,
-        (FullAccessPresetWireValue, AgentPolicySubject.BoundedLocalTerminal) => AgentPolicyDecision.Allow,
+        (FullAccessPresetWireValue, AgentPolicySubject.WorkspaceTerminal) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.ExternalStructuredFile) => AgentPolicyDecision.Allow,
-        (FullAccessPresetWireValue, AgentPolicySubject.RiskyTerminal) => AgentPolicyDecision.Allow,
+        (FullAccessPresetWireValue, AgentPolicySubject.ExternalTerminal) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.StructuredProtectedPath) => AgentPolicyDecision.Deny,
         (FullAccessPresetWireValue, AgentPolicySubject.HardInvalid) => AgentPolicyDecision.Deny,
         _ => null,
@@ -266,9 +266,9 @@ public static class AgentPolicyProfileCatalog
         AgentPolicySubject.WorkspaceRead => "workspace_read",
         AgentPolicySubject.Web => "web",
         AgentPolicySubject.WorkspaceMutation => "workspace_mutation",
-        AgentPolicySubject.BoundedLocalTerminal => "bounded_local_terminal",
+        AgentPolicySubject.WorkspaceTerminal => "workspace_terminal",
         AgentPolicySubject.ExternalStructuredFile => "external_structured_file",
-        AgentPolicySubject.RiskyTerminal => "risky_terminal",
+        AgentPolicySubject.ExternalTerminal => "external_terminal",
         AgentPolicySubject.StructuredProtectedPath => "structured_protected_path",
         AgentPolicySubject.HardInvalid => "hard_invalid",
         _ => throw new AgentProtocolException("invalid_subject"),
@@ -277,7 +277,7 @@ public static class AgentPolicyProfileCatalog
     public static string DescribeTerminalAuthority(PresetTerminalAuthority authority) => authority switch
     {
         PresetTerminalAuthority.Denied => "denied",
-        PresetTerminalAuthority.BoundedLocal => "bounded_local",
+        PresetTerminalAuthority.WorkspaceCurrentUser => "workspace_current_user",
         PresetTerminalAuthority.WindowsCurrentUser => "windows_current_user",
         _ => throw new AgentProtocolException("invalid_terminal_authority"),
     };
@@ -349,23 +349,23 @@ public static class AgentPolicyProfileCatalog
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.Web, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Deny),
-                    new AgentPolicyRule(AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Deny),
+                    new AgentPolicyRule(AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Deny),
                     new AgentPolicyRule(AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask),
-                    new AgentPolicyRule(AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Deny),
+                    new AgentPolicyRule(AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Deny),
                     new AgentPolicyRule(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny),
                     new AgentPolicyRule(AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny),
                 ]),
             new(
                 Version,
                 StandardPresetWireValue,
-                PresetTerminalAuthority.BoundedLocal,
+                PresetTerminalAuthority.WorkspaceCurrentUser,
                 [
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.Web, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Allow),
-                    new AgentPolicyRule(AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Allow),
+                    new AgentPolicyRule(AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask),
-                    new AgentPolicyRule(AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Ask),
+                    new AgentPolicyRule(AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Ask),
                     new AgentPolicyRule(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny),
                     new AgentPolicyRule(AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny),
                 ]),
@@ -377,9 +377,9 @@ public static class AgentPolicyProfileCatalog
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.Web, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Allow),
-                    new AgentPolicyRule(AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Allow),
+                    new AgentPolicyRule(AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Allow),
-                    new AgentPolicyRule(AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Allow),
+                    new AgentPolicyRule(AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny),
                     new AgentPolicyRule(AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny),
                 ]),
@@ -403,9 +403,9 @@ public static class AgentPolicyProfileCatalog
             case "workspace_read": subject = AgentPolicySubject.WorkspaceRead; return true;
             case "web": subject = AgentPolicySubject.Web; return true;
             case "workspace_mutation": subject = AgentPolicySubject.WorkspaceMutation; return true;
-            case "bounded_local_terminal": subject = AgentPolicySubject.BoundedLocalTerminal; return true;
+            case "workspace_terminal": subject = AgentPolicySubject.WorkspaceTerminal; return true;
             case "external_structured_file": subject = AgentPolicySubject.ExternalStructuredFile; return true;
-            case "risky_terminal": subject = AgentPolicySubject.RiskyTerminal; return true;
+            case "external_terminal": subject = AgentPolicySubject.ExternalTerminal; return true;
             case "structured_protected_path": subject = AgentPolicySubject.StructuredProtectedPath; return true;
             case "hard_invalid": subject = AgentPolicySubject.HardInvalid; return true;
             default: subject = default; return false;
@@ -428,7 +428,7 @@ public static class AgentPolicyProfileCatalog
         switch (value)
         {
             case "denied": authority = PresetTerminalAuthority.Denied; return true;
-            case "bounded_local": authority = PresetTerminalAuthority.BoundedLocal; return true;
+            case "workspace_current_user": authority = PresetTerminalAuthority.WorkspaceCurrentUser; return true;
             case "windows_current_user": authority = PresetTerminalAuthority.WindowsCurrentUser; return true;
             default: authority = default; return false;
         }

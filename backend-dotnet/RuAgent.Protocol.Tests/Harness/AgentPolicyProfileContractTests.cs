@@ -11,25 +11,25 @@ public sealed class AgentPolicyProfileContractTests
     [InlineData("plan", AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow)]
     [InlineData("plan", AgentPolicySubject.Web, AgentPolicyDecision.Allow)]
     [InlineData("plan", AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Deny)]
-    [InlineData("plan", AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Deny)]
+    [InlineData("plan", AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask)]
-    [InlineData("plan", AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Deny)]
+    [InlineData("plan", AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny)]
     [InlineData("plan", AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny)]
     [InlineData("standard", AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow)]
     [InlineData("standard", AgentPolicySubject.Web, AgentPolicyDecision.Allow)]
     [InlineData("standard", AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Allow)]
-    [InlineData("standard", AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Allow)]
+    [InlineData("standard", AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow)]
     [InlineData("standard", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask)]
-    [InlineData("standard", AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Ask)]
+    [InlineData("standard", AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Ask)]
     [InlineData("standard", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny)]
     [InlineData("standard", AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny)]
     [InlineData("full_access", AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.Web, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Allow)]
-    [InlineData("full_access", AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Allow)]
+    [InlineData("full_access", AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Allow)]
-    [InlineData("full_access", AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Allow)]
+    [InlineData("full_access", AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny)]
     [InlineData("full_access", AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny)]
     public void Catalog_returns_canonical_decision(
@@ -77,7 +77,7 @@ public sealed class AgentPolicyProfileContractTests
     public void Direct_construction_rejects_unknown_preset_with_invalid_preset()
     {
         var error = Assert.Throws<AgentProtocolException>(() => new AgentPolicyProfile(
-            "1",
+            "2",
             "trusted",
             PresetTerminalAuthority.Denied,
             ValidRules()));
@@ -106,7 +106,7 @@ public sealed class AgentPolicyProfileContractTests
             .ToList();
 
         var error = Assert.Throws<AgentProtocolException>(() => new AgentPolicyProfile(
-            "1",
+            "2",
             "plan",
             PresetTerminalAuthority.Denied,
             rules));
@@ -124,13 +124,13 @@ public sealed class AgentPolicyProfileContractTests
     public void Tampered_full_access_decision_is_rejected()
     {
         var rules = AgentPolicyProfileCatalog.Get("full_access").Rules
-            .Select(rule => rule.Subject == AgentPolicySubject.RiskyTerminal
+            .Select(rule => rule.Subject == AgentPolicySubject.ExternalTerminal
                 ? new AgentPolicyRule(rule.Subject, AgentPolicyDecision.Deny)
                 : rule)
             .ToList();
 
         var error = Assert.Throws<AgentProtocolException>(() => new AgentPolicyProfile(
-            "1",
+            "2",
             "full_access",
             PresetTerminalAuthority.WindowsCurrentUser,
             rules));
@@ -148,7 +148,7 @@ public sealed class AgentPolicyProfileContractTests
     public void Profile_rules_are_copied_into_a_read_only_collection()
     {
         var source = ValidRules();
-        var profile = new AgentPolicyProfile("1", "standard", PresetTerminalAuthority.BoundedLocal, source);
+        var profile = new AgentPolicyProfile("2", "standard", PresetTerminalAuthority.WorkspaceCurrentUser, source);
 
         source.Clear();
 
@@ -171,7 +171,7 @@ public sealed class AgentPolicyProfileContractTests
 
     [Theory]
     [InlineData("plan", PresetTerminalAuthority.Denied, "denied")]
-    [InlineData("standard", PresetTerminalAuthority.BoundedLocal, "bounded_local")]
+    [InlineData("standard", PresetTerminalAuthority.WorkspaceCurrentUser, "workspace_current_user")]
     [InlineData("full_access", PresetTerminalAuthority.WindowsCurrentUser, "windows_current_user")]
     public void Catalog_exposes_each_terminal_authority(
         string preset,
@@ -237,14 +237,14 @@ public sealed class AgentPolicyProfileContractTests
         AssertProfileJsonRejected(extraProfileField);
 
         var wrongVersion = ProfileJson();
-        wrongVersion["version"] = "2";
+        wrongVersion["version"] = "1";
         AssertProfileJsonRejected(wrongVersion);
     }
 
     private static void AssertProfileRejected(IReadOnlyList<AgentPolicyRule> rules)
     {
         var error = Assert.Throws<AgentProtocolException>(() =>
-            new AgentPolicyProfile("1", "standard", PresetTerminalAuthority.BoundedLocal, rules));
+            new AgentPolicyProfile("2", "standard", PresetTerminalAuthority.WorkspaceCurrentUser, rules));
         Assert.Equal("invalid_profile", error.Code);
     }
 
@@ -259,25 +259,25 @@ public sealed class AgentPolicyProfileContractTests
         new(AgentPolicySubject.WorkspaceRead, AgentPolicyDecision.Allow),
         new(AgentPolicySubject.Web, AgentPolicyDecision.Allow),
         new(AgentPolicySubject.WorkspaceMutation, AgentPolicyDecision.Allow),
-        new(AgentPolicySubject.BoundedLocalTerminal, AgentPolicyDecision.Allow),
+        new(AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow),
         new(AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Ask),
-        new(AgentPolicySubject.RiskyTerminal, AgentPolicyDecision.Ask),
+        new(AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Ask),
         new(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny),
         new(AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny),
     ];
 
     private static JsonObject ProfileJson() => new()
     {
-        ["version"] = "1",
+        ["version"] = "2",
         ["preset"] = "standard",
-        ["terminal_authority"] = "bounded_local",
+        ["terminal_authority"] = "workspace_current_user",
         ["rules"] = new JsonArray(
             new JsonObject { ["subject"] = "workspace_read", ["decision"] = "allow" },
             new JsonObject { ["subject"] = "web", ["decision"] = "allow" },
             new JsonObject { ["subject"] = "workspace_mutation", ["decision"] = "allow" },
-            new JsonObject { ["subject"] = "bounded_local_terminal", ["decision"] = "allow" },
+            new JsonObject { ["subject"] = "workspace_terminal", ["decision"] = "allow" },
             new JsonObject { ["subject"] = "external_structured_file", ["decision"] = "ask" },
-            new JsonObject { ["subject"] = "risky_terminal", ["decision"] = "ask" },
+            new JsonObject { ["subject"] = "external_terminal", ["decision"] = "ask" },
             new JsonObject { ["subject"] = "structured_protected_path", ["decision"] = "deny" },
             new JsonObject { ["subject"] = "hard_invalid", ["decision"] = "deny" }),
     };

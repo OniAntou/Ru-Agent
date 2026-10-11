@@ -16,7 +16,6 @@ public sealed class PolicyContextFactory
     private readonly string _canonicalRoot;
     private readonly string _sessionId;
     private readonly CommandAnalyzerRegistry _commandAnalyzers;
-    private readonly PowerShellScriptAnalyzer _powerShell;
 
     public PolicyContextFactory(BrokerRunLease lease, CommandAnalyzerRegistry? commandAnalyzers = null)
     {
@@ -24,7 +23,6 @@ public sealed class PolicyContextFactory
         _canonicalRoot = lease.CanonicalRoot;
         _sessionId = lease.SessionId;
         _commandAnalyzers = commandAnalyzers ?? new CommandAnalyzerRegistry();
-        _powerShell = new PowerShellScriptAnalyzer(_commandAnalyzers);
     }
 
     public PolicyContext Create(string toolId, string toolVersion, JsonObject arguments)
@@ -121,7 +119,7 @@ public sealed class PolicyContextFactory
                         "malformed_call",
                         hint: "bash mode \"shell\" requires script as a single string.");
                 _ = OptionalText(arguments, "shell");
-                terminalAnalysis = _powerShell.Analyze(script);
+                // Shell text is bound verbatim; the installed shell owns syntax validation.
             }
 
             if (arguments["arguments"] is JsonArray argvNode)

@@ -102,7 +102,7 @@ public sealed class AgentPolicyProfileParityTests
             "write",
             "1.0.0",
             new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
-        AgentPolicySubject.BoundedLocalTerminal => factory.Create(
+        AgentPolicySubject.WorkspaceTerminal => factory.Create(
             "bash",
             "1.0.0",
             new JsonObject
@@ -116,7 +116,7 @@ public sealed class AgentPolicyProfileParityTests
             "read",
             "1.0.0",
             new JsonObject { ["path"] = outsidePath }),
-        AgentPolicySubject.RiskyTerminal => factory.Create(
+        AgentPolicySubject.ExternalTerminal => factory.Create(
             "bash",
             "1.0.0",
             new JsonObject
@@ -124,7 +124,7 @@ public sealed class AgentPolicyProfileParityTests
                 ["mode"] = "run",
                 ["executable"] = "git",
                 ["arguments"] = new JsonArray("push"),
-                ["working_directory"] = ".",
+                ["working_directory"] = outsidePath,
             }),
         AgentPolicySubject.StructuredProtectedPath => factory.Create(
             "read",

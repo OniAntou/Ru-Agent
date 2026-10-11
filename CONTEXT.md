@@ -188,18 +188,22 @@ not prompt text or a client switch, is the canonical source used by both the
 effective-policy prompt projector and Broker fallback evaluation. `plan` is a
 read-only preset: workspace reads and Web are automatic, terminal and mutation
 are denied outright (no per-change asks), and external structured files ask like
-Standard. `standard` allows workspace reads, Web, in-workspace mutation, and
-bounded-local terminal; it asks for external structured files and risky
-terminal intent. Bounded-local includes existing `.py` entry files in the
-workspace, including a path-qualified Python interpreter in the workspace.
-Only optional `-u`/`-B` interpreter flags precede the entry file; inline code,
-arbitrary modules, package installation and arbitrary shells still ask. Entry
-paths are checked at policy and execution canonicalization, not enforced as an
-OS boundary: a Python script runs as the Windows user and can perform arbitrary
-work, like a build or test program. `full_access` is the skip-all mode: external structured files
-and risky/arbitrary terminal intent are automatic, and structured protected
-paths (the harness key/database files and runtime descriptors, plus any
-user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain
+Standard. Profile version 2 defines `standard` by the canonical launch directory:
+workspace reads, Web, structured workspace mutations, and executable/shell launches
+from a workspace cwd are automatic. External structured files and terminal launch
+directories outside the workspace ask. There is no language, command-form,
+argv-path, network-declaration or executable-install-location approval list.
+Both terminal modes run as the Windows user and can affect outside files and the
+network; workspace launch permission is not an OS confinement boundary.
+`full_access` also permits external structured files and arbitrary terminal
+launches automatically; structured protected paths and hard-invalid requests
+remain denied.
+Explicit deny/ask rules, exact single-use authorization, protected structured
+paths, hard-invalid requests and process lifetime/output bounds remain enforced.
+Foreground launches above fifteen minutes still ask in Standard; background
+launches use their bounded lifetime instead. API keys remain in credential storage
+and diagnostics redact secrets. See [ADR 0017](docs/adr/0017-workspace-terminal-policy.md).
+Structured protected paths and hard-invalid requests remain
 denied. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
@@ -363,9 +367,9 @@ _Avoid_: repository-marker, path-only, or preset-implied trust
 **Workspace Terminal**:
 The terminal adapter runs under execution-authority policy with bounded output,
 hard timeout, cancellation, redaction, and process-tree cleanup. `plan` denies
-terminal authority. `standard` retains classifier-bounded intent and its
-existing approval rules; `full_access` retains its existing arbitrary-terminal
-policy. Both launch child processes as the current Windows user, without OS
+terminal authority. `standard` automatically permits executable and shell
+launches from a workspace cwd; external cwd and explicit ask rules prompt.
+`full_access` also permits external cwd automatically. Both launch child processes as the current Windows user, without OS
 filesystem or network confinement, including outside the workspace. The `bash`
 schema has no sandbox selector
 and rejects obsolete sandbox arguments. Structured protected-path denial does

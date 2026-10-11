@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "3a9aaf3bb2d4cdf1bad3c70da0c0cb8efb82b88e914fc0c03c380a7fbc82d147"
+            "sha256": "a0fddbf4eb8a635f211f8fe71b4ebc4a8d01ffa19fd0cb52a4178f00e7b77088"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "2e26ef0f033fb684c242db2369364ae05c60f4d9cb6bd018d7214747338e41b1"
+            "sha256": "b848b6bc2461b3c0b90eb40d063a16dfbd9ac5af99ab5ef2c8bd103489157450"
           },
           {
             "block_id": "environment",
@@ -17,7 +17,7 @@
           },
           {
             "block_id": "profile",
-            "sha256": "1eaa0d4be6f6c2138608676c7f346ff1b0070b62903585961e163791006d3d80"
+            "sha256": "8e8566c4f60ed96b634516bfb81a539aca6fd879b0287a32348f40f651e4a286"
           },
           {
             "block_id": "instruction.root:AGENTS.md",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "60d57fa5902648c5d62c8be98984fc9f842d2d8824f5166eecdb1ff8b968bd25"
+        "prompt_sha256": "7ed45720ee1a32099559f0baec76a0c3cb75257942574a89ca056ada8aa5d815"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -44,20 +44,20 @@
           {
             "availability": "enabled",
             "description": "Read workspace files with bounded output",
-            "example_arguments_json": "{\"path\":\"README.md\"}",
+            "example_arguments_json": "{\u0022path\u0022:\u0022README.md\u0022}",
             "id": "files.read",
             "input_schema_digest": "458459e3b6bf0875eceb522fd2a90ee657cb04479d4520e32b31823d5dc427ce",
-            "input_schema_json": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}",
+            "input_schema_json": "{\u0022type\u0022:\u0022object\u0022,\u0022additionalProperties\u0022:false,\u0022properties\u0022:{\u0022path\u0022:{\u0022type\u0022:\u0022string\u0022}},\u0022required\u0022:[\u0022path\u0022]}",
             "scope": "workspace.read",
             "version": "1.2.0"
           },
           {
             "availability": "disabled",
             "description": "Search the hosted web boundary",
-            "example_arguments_json": "{\"query\":\"Ru Agent\"}",
+            "example_arguments_json": "{\u0022query\u0022:\u0022Ru Agent\u0022}",
             "id": "web.search",
             "input_schema_digest": "b6359a2244784e0bc6715183176fc1955455d69baa98da148e451a4ed3cde6e7",
-            "input_schema_json": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}",
+            "input_schema_json": "{\u0022type\u0022:\u0022object\u0022,\u0022additionalProperties\u0022:false,\u0022properties\u0022:{\u0022query\u0022:{\u0022type\u0022:\u0022string\u0022}},\u0022required\u0022:[\u0022query\u0022]}",
             "scope": "network.search",
             "version": "1.0.0"
           }
@@ -80,9 +80,9 @@
         ],
         "preset": "standard",
         "effective_policy": {
-          "version": "1",
+          "version": "2",
           "preset": "standard",
-          "terminal_authority": "bounded_local",
+          "terminal_authority": "workspace_current_user",
           "rules": [
             {
               "subject": "workspace_read",
@@ -97,7 +97,7 @@
               "decision": "allow"
             },
             {
-              "subject": "bounded_local_terminal",
+              "subject": "workspace_terminal",
               "decision": "allow"
             },
             {
@@ -105,7 +105,7 @@
               "decision": "ask"
             },
             {
-              "subject": "risky_terminal",
+              "subject": "external_terminal",
               "decision": "ask"
             },
             {
@@ -158,7 +158,7 @@
           "limit": 64,
           "path": "README.md"
         },
-        "text": "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\",\"limit\":64}}",
+        "text": "{\u0022tool_id\u0022:\u0022files.read\u0022,\u0022tool_version\u0022:\u00221.0.0\u0022,\u0022arguments\u0022:{\u0022path\u0022:\u0022README.md\u0022,\u0022limit\u0022:64}}",
         "tool_id": "files.read",
         "tool_version": "1.0.0"
       }

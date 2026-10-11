@@ -215,7 +215,7 @@ source for the effective-policy prompt projection and Broker fallback:
 | Preset | Canonical behavior |
 | --- | --- |
 | `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
-| `standard` | Bounded-local in-workspace mutation is automatic; external structured access, path escape, and risky terminal intent ask. |
+| `standard` | Workspace reads, Web, workspace mutations and executable/shell launches from a workspace cwd are automatic; external structured access and external terminal cwd ask. Explicit rules and long foreground approval still apply. |
 | `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
 
 Preset selection is session-scoped. Workspace trust is a separate explicit
@@ -239,9 +239,8 @@ or tool execution out of their existing owners.
 Terminal children in `standard` and `full_access` run as the current Windows
 user and may access files outside the workspace and network resources available
 to that user; there
-is no OS filesystem or network sandbox (ADR-0015). Standard keeps its existing
-classifier and approval rules; Full Access keeps its existing arbitrary-
-terminal policy. The `bash` schema rejects obsolete sandbox arguments. Hard
+is no OS filesystem or network sandbox (ADR-0015). Standard authorizes the canonical launch directory rather than command syntax
+(ADR-0017); Full Access also permits external launch directories. The `bash` schema rejects obsolete sandbox arguments. Hard
 timeout, output cap, cancellation, redaction, and process-tree cleanup remain
 active. Structured file tools independently retain canonical/symlink/junction/
 hard-link containment and protected-path denial. API keys remain in credential
@@ -265,57 +264,24 @@ reconciliation surfaces from Phase 3:
 
 - In-process model runner: one typed `ModelGenerationRequest` → one provider generation → `AssistantStep(text, tool_calls, finish_reason)`. A native provider may return optional narration plus one or more ordered calls; a text-selection provider still emits exactly one JSON object with no surrounding selection prose. Provider errors map to bounded stable codes without provider/model fallback. The runner composes one system message with composer `2.0.0` from seven ordered blocks: persona, execution contract, environment, profile/effective policy, instruction blocks, capabilities, and runtime context. It returns a receipt whose version, block ids/order, and per-instruction digests Core validates before completion or tool dispatch. What that receipt attests is bounded: the `instruction.*` digests bind the exact instruction bytes in the context, while the other block digests are checked for shape and the caller does not receive the rendered prompt text. The typed step result carries text, tool calls, finish reason, and the prompt receipt, plus optional bounded `usage` and `reasoning_text`.
 - Agent API/SSE: 23 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) plus the stored session-preset read (`GET /agent/v1/sessions/{sessionId}/preset`, 404 when the session has no stored selection), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers the exact intent as a project rule, or `deny`; any allow also remembers the exact intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots, so an identical call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, exact matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). A non-terminal parked run (`waiting_user`, `reconciliation_required`) keeps its workspace lock until the client continues or reconciles it; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
-- Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants, while Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools in every preset. Canonical fallback ask reasons are `external_directory_required`, `terminal_delete_requires_approval`, `terminal_external_mutation_requires_approval`, and `terminal_unknown_executable`. `terminal_timeout_requires_approval` and `web_approval_required` remain compatibility reasons for explicit rules; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
+- Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants, while Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools in every preset. Canonical fallback ask reasons are `external_directory_required`, `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval` and `terminal_timeout_requires_approval`; `rule_asks` identifies explicit ask rules. Legacy reason codes remain readable in retained activity; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
 - Tool Definition ownership: `RuAgent.Protocol` contains exactly 13 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `ask_user`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `ask_user` is Host-intercepted before gateway dispatch: it parks the run in `WaitingUser` with a durable `input.requested` event and never reaches the Broker. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and the model-step `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog, deliberately excluding the Host-intercepted `ask_user`. `RuAgentBroker` is the only tool execution authority.
 - File tools: `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator; `list` enumerates one directory (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation); and `help` searches the five bundled offline documentation resources, is workspace-independent and never reads workspace files. `grep` (regex content search with `file_glob`/`case_sensitive`/`is_regex` filters and bounded results) and `glob` (ordinal path-pattern results with traversal caps) remain standalone tools, alongside Host-prepared hash-guarded `write` with `op=write`/`edit` and recoverable `write` with `op=delete`/`op=restore` (preimage hashes are captured internally, never supplied in model proposal JSON; encrypted recovery copy remains bounded, opaque, one-time, and never in diagnostics). Model-facing definitions require preservation of user-supplied absolute paths inside a session-granted directory; Broker canonicalization and containment remain authoritative. `edit` preserves CRLF style when LF markers are supplied; `grep` uses canonical `is_regex`, bounded concurrent reads, cancellation, and ordinal output ordering; recovery caps are configurable below a 4 MiB hard maximum. `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
 - Model surface: the thirteen Protocol definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. MCP stdio bridge code remains test infrastructure and is not production-composed; mail/calendar/task connectors are not advertised Agent tools.
-- Accepted limitation — executable identity on the terminal path: the policy
-  classifies a `bash` command by the executable token the model supplied
-  (`PolicyContextFactory` keeps it verbatim and the analyzers match on
-  `Path.GetFileName`), while `CommandIntentResolver` later resolves that token
-  through the process `PATH`. The two decisions could therefore disagree about
-  which file runs. Narrowing this with a *policy-leg* check was rejected for two
-  reasons: resolving the real path inside the policy would make
-  `HasPathQualifiedExecutable` reject every path-qualified command and turn all
-  bounded-local terminal execution into an approval, and refusing a bare name
-  that resolves into a user-writable directory would break toolchains installed
-  under the user profile (scoop, chocolatey, portable installs). Both change who
-  may run what without approval, so neither is taken unilaterally.
-  The remaining gap is closed at the resolution point instead:
-  `CommandIntentResolver` now requires the resolved file to live in a trusted
-  directory — the Windows system and machine-wide `Program Files` directories,
-  including their subdirectories — and fails closed with
-  `executable_not_trusted` otherwise. Per-user directories are deliberately not
-  trusted, because they are exactly the vector: model-side arbitrary code
-  execution is already available through auto-executable build and test commands,
-  so a program written into `%USERPROFILE%\.dotnet\tools` or a scoop shim would
-  then run under a command identity that policy treats as permanently safe,
-  never surfacing an approval and escaping workspace attribution. An operator
-  with a legitimate per-user toolchain names it through
-  `RU_TRUSTED_EXECUTABLE_DIRS`. Path-qualified and rooted requests are not
-  affected by the PATH trust check. Policy asks for them except for eligible
-  workspace Python file execution: both the interpreter path and `.py` entry
-  file must be existing, canonical, unprotected workspace files. The failure is a bounded tool code rather than an approval
-  prompt; the model can retry with a path-qualified command to reach an
-  approval (or use an eligible workspace Python interpreter). Standard's
-  Python file exception does not inspect or confine script behavior; scripts
-  run as the Windows user, like build/test code. Inline code, arbitrary modules,
-  installation and arbitrary shells keep asking. Optional `-u`/`-B` flags are
-  supported before the `.py` file; explicit rule precedence, cwd/argument path
-  checks, declared-network approval, timeouts and protected targets still apply.
-  See [ADR 0016](adr/0016-standard-workspace-python-files.md).
-  `RU_MAX_CONCURRENT_MODEL_STEPS` bounds how many provider
-  generations may be in flight at once, defaulting to the runtime loop's own
-  run concurrency and lowering to 1 for single-slot local runtimes.
-  Read-only model Git commands are prepared by `TerminalAdapter` with
-  `core.fsmonitor=false`, an empty `diff.external`, and `--no-pager`;
-  `diff`, `log` and `show` additionally disable external diff and textconv.
-  Explicit helper/filter options require approval. This preparation occurs
-  after the managed-commit branch, preserving its preview/diff-hash contract;
-  `StreamingProcessRunner` still does not rewrite arbitrary commands.
-  Writing repository-local configuration is no longer automatic: a model `git
-  config` write can install the same program-selecting keys, so writes ask
-  while `--get`/`--list` reads stay auto-executable.
+- Terminal authority: [ADR 0017](adr/0017-workspace-terminal-policy.md) replaces
+  command-form approval with canonical launch-directory permission. `run` preserves
+  literal argv; `shell` explicitly selects PowerShell syntax. Both are automatic
+  from a workspace cwd in Standard. External cwd and long foreground calls ask;
+  explicit deny/ask rules precede automatic policy. Network and analyzer metadata
+  are not permission gates. User-installed tools resolve through sanitized absolute
+  PATH directories without an install-directory allowlist. The real executable,
+  argv, cwd, timeout and classified metadata are rebound before consuming each
+  authorization token. No OS confinement is claimed. Structured protected-path
+  denial and credential storage/redaction are unchanged.
+  Read-only Git preparation and the managed-commit temporary-index workflow remain
+  execution behavior, not separate authority. Legacy adapter-only callers retain
+  their older approval contract; production v2 calls use Broker authorization.
+  `RU_MAX_CONCURRENT_MODEL_STEPS` still bounds concurrent provider generation.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
   of public HTML engines and returns the first usable result, rather than
   substituting a second tool or a second provider. It is the one documented

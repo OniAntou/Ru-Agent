@@ -12,7 +12,7 @@ public sealed class AgentSessionPermissionStoreTests
     [InlineData(AgentPermissionPreset.Plan, "plan")]
     [InlineData(AgentPermissionPreset.Standard, "standard")]
     [InlineData(AgentPermissionPreset.FullAccess, "full_access")]
-    public async Task Every_preset_round_trips_as_canonical_text_with_profile_version_one(
+    public async Task Every_preset_round_trips_as_canonical_text_with_current_profile_version(
         AgentPermissionPreset preset,
         string expectedWireValue)
     {
@@ -54,7 +54,31 @@ public sealed class AgentSessionPermissionStoreTests
         Assert.True(await reader.ReadAsync());
         Assert.Equal("text", reader.GetString(0));
         Assert.Equal(expectedWireValue, reader.GetString(1));
-        Assert.Equal(1L, reader.GetInt64(2));
+        Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, reader.GetInt64(2));
+    }
+
+    [Fact]
+    public async Task Version_one_saved_selection_upgrades_for_a_new_run_without_changing_the_preset()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var store = new AgentSessionPermissionStore(fixture.Options);
+        var session = HarnessStoreTestFixture.Session(39);
+        await store.SetInteractivelyAsync(session, AgentPermissionPreset.Standard, 0,
+            HarnessStoreTestFixture.Timestamp, CancellationToken.None);
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE agent_session_settings SET permission_profile_version = 1";
+            await command.ExecuteNonQueryAsync();
+        }
+        var result = await store.EnsureForRunAsync(session, AgentPermissionPreset.Standard, 1,
+            HarnessStoreTestFixture.Timestamp.AddMinutes(1), CancellationToken.None);
+        Assert.Equal(SessionPermissionOutcome.Matched, result.Outcome);
+        var stored = await store.GetAsync(session, CancellationToken.None);
+        Assert.Equal(AgentPermissionPreset.Standard, stored!.Preset);
+        Assert.Equal(1L, stored.Version);
+        Assert.Equal(AgentPermissionPresetMapper.CurrentPermissionProfileVersion, stored.PermissionProfileVersion);
     }
 
     [Fact]
@@ -83,13 +107,13 @@ public sealed class AgentSessionPermissionStoreTests
 
         Assert.Equal(1L, first.Selection!.Version);
         Assert.Equal(2L, second.Selection!.Version);
-        Assert.Equal(1L, await ScalarAsync(
+        Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, await ScalarAsync(
             fixture,
             "SELECT permission_profile_version FROM agent_session_settings"));
     }
 
     [Fact]
-    public async Task New_run_uses_profile_version_one_and_canonical_preset_text()
+    public async Task New_run_uses_current_profile_version_and_canonical_preset_text()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         _ = await fixture.RegisterWorkspaceAsync(1);
@@ -104,7 +128,7 @@ public sealed class AgentSessionPermissionStoreTests
             CancellationToken.None);
 
         Assert.Equal(CreateRunOutcome.Created, created.Outcome);
-        Assert.Equal(1, created.Run!.PermissionProfileVersion);
+        Assert.Equal(AgentPermissionPresetMapper.CurrentPermissionProfileVersion, created.Run!.PermissionProfileVersion);
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
@@ -118,7 +142,7 @@ public sealed class AgentSessionPermissionStoreTests
         Assert.True(await reader.ReadAsync());
         Assert.Equal("text", reader.GetString(0));
         Assert.Equal("standard", reader.GetString(1));
-        Assert.Equal(1L, reader.GetInt64(2));
+        Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, reader.GetInt64(2));
     }
 
     [Fact]

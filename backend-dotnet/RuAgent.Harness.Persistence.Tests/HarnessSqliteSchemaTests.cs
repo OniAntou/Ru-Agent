@@ -523,7 +523,7 @@ public sealed class HarnessSqliteSchemaTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
-    public async Task Migrating_from_seven_resets_every_session_preset_to_plan_version_one(int legacyPreset)
+    public async Task Migrating_from_seven_resets_every_session_preset_to_plan_current_profile_version(int legacyPreset)
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await PrepareVersionSevenAsync(fixture);
@@ -557,7 +557,7 @@ public sealed class HarnessSqliteSchemaTests
         await using var reader = await read.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         Assert.Equal("plan", reader.GetString(0));
-        Assert.Equal(1L, reader.GetInt64(1));
+        Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, reader.GetInt64(1));
     }
 
     [Fact]
@@ -829,7 +829,7 @@ public sealed class HarnessSqliteSchemaTests
         await using var migratedReader = await migratedRows.ExecuteReaderAsync();
         Assert.True(await migratedReader.ReadAsync());
         Assert.Equal("plan", migratedReader.GetString(0));
-        Assert.Equal(1L, migratedReader.GetInt64(1));
+        Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, migratedReader.GetInt64(1));
         Assert.Equal("plan", migratedReader.GetString(2));
         Assert.Equal(0L, migratedReader.GetInt64(3));
         Assert.True(migratedReader.IsDBNull(4));
@@ -1414,7 +1414,7 @@ public sealed class HarnessSqliteSchemaTests
             Assert.True(await sentinelReader.ReadAsync());
             Assert.Equal(7L, sentinelReader.GetInt64(0));
             Assert.Equal("plan", sentinelReader.GetString(1));
-            Assert.Equal(1L, sentinelReader.GetInt64(2));
+            Assert.Equal((long)AgentPermissionPresetMapper.CurrentPermissionProfileVersion, sentinelReader.GetInt64(2));
             await using var run = verify.CreateCommand();
             run.CommandText = """
                 SELECT last_sequence, preset, permission_profile_version

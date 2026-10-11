@@ -12,6 +12,11 @@ superseded_by: ADR-0011 model autonomy and workspace trust boundary
 
 # Agent capability profiles (Standard / Full Access)
 
+> Terminal fallback update (2026-10-12): [ADR 0017](0017-workspace-terminal-policy.md)
+> replaces command-form and network approval heuristics with canonical launch-directory
+> policy. Terminal classifications and reason codes below are historical.
+
+
 > Current decision: [ADR 0011](0011-model-autonomy-and-workspace-trust-boundary.md)
 > defines the canonical `plan` / `standard` / `full_access` matrix, explicit
 > canonical-identity trust, and native multi-call behavior. The sections below

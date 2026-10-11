@@ -38,20 +38,18 @@ public sealed class TerminalLaunchFeedbackTests
     }
 
     [Theory]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    public async Task Invalid_executable_reports_resolution_error_before_registering_task(bool background, bool missing)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Invalid_executable_reports_resolution_error_before_registering_task(bool background)
     {
         var result = await ExecuteAsync(new JsonObject
         {
             ["mode"] = "run",
-            ["executable"] = missing ? Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.exe") : "cmd",
+            ["executable"] = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.exe"),
             ["background"] = background, ["arguments"] = new JsonArray(),
         });
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
-        Assert.Equal(missing ? "executable_not_found" : "executable_not_trusted", result.ErrorCode);
+        Assert.Equal("executable_not_found", result.ErrorCode);
         Assert.False(result.Output.ContainsKey("execution_id"));
     }
 
@@ -69,7 +67,7 @@ public sealed class TerminalLaunchFeedbackTests
             snapshot.Preset, snapshot.Version, EnvelopeTestSnapshots.HashOf(snapshot),
             DateTimeOffset.UtcNow.AddMinutes(5), snapshot);
         Assert.True(session.TryOpenRunLease(lease, out var error), error);
-        await using var service = new ToolExecutionService(session, root, trustedExecutableDirectories: []);
+        await using var service = new ToolExecutionService(session, root);
         try
         {
             return await service.ExecuteAuthenticatedV2Async(new AgentEnvelope(

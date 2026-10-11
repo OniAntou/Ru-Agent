@@ -25,7 +25,7 @@ The accepted matrix is:
 | Preset | Profile behavior |
 | --- | --- |
 | `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
-| `standard` | Bounded-local in-workspace mutation is automatic; external structured access, path escape, and risky terminal intent ask. |
+| `standard` | Workspace mutation and executable/shell launches from a workspace cwd are automatic; external structured paths and external launch directories ask (terminal semantics updated by ADR-0017). |
 | `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
 
 `standard` is the session-scoped default. `full_access` requires an explicit

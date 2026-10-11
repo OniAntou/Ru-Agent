@@ -87,8 +87,8 @@ the configured Google HTML engine raced against fixed free fallbacks (DuckDuckGo
 `ask_user` (Host-intercepted: it parks the run on a user question and never reaches the Broker). Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` is
 read-only: workspace read and Web auto while terminal and mutation deny outright
 and external structured access asks. `standard`
-auto-allows bounded-local in-workspace mutation and asks for external/escape or
-risky terminal intent. `full_access` is the skip-all mode: external structured
+auto-allows workspace mutation and executable/shell launches from a workspace cwd;
+external structured paths and external launch directories ask. `full_access` is the skip-all mode: external structured
 files and arbitrary terminal auto-allow while structured protected paths
 (harness key/database files and runtime descriptors) and hard-invalid requests
 remain denied. Repository cleanliness and prompt text never change this matrix.

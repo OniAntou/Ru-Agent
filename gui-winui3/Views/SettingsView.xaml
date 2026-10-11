@@ -376,7 +376,7 @@
                                                                        FontSize="12.5"
                                                                        Foreground="{StaticResource RuInkBrush}"
                                                                        TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="Workspace work runs automatically; leaving the workspace, network, or unrecognized commands ask."
+                                                            <TextBlock Text="Workspace edits and terminal commands run automatically. External working directories and explicit rules ask."
                                                                        Style="{StaticResource SettingDescStyle}" />
                                                         </StackPanel>
                                                         <FontIcon x:Name="PresetStandardCheck"

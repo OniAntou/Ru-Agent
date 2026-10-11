@@ -48,7 +48,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
-    private readonly IReadOnlyList<string>? _trustedExecutableDirectories;
     private readonly TerminalAdapter _terminal;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillBodyStore _skillBodies;
@@ -65,7 +64,6 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         HttpClient? webHttpClient = null,
         ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
-        IReadOnlyList<string>? trustedExecutableDirectories = null,
         string? terminalSpoolRoot = null)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -87,9 +85,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             _workspace,
             _approvalTokens,
             intentResolver: new CommandIntentResolver(
-                _workspace.Root,
-                trustedExecutableDirectories: trustedExecutableDirectories));
-        _trustedExecutableDirectories = trustedExecutableDirectories;
+                _workspace.Root));
         _defaultTools = new RootToolSet
         {
             List = _fileList,

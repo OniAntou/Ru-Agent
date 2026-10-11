@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.8.4" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.6.5" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <EmbeddedResource Include="..\..\README.md" LogicalName="RuAgent.Broker.HelpDocs.ru-overview.md" />
     <EmbeddedResource Include="..\..\docs\architecture.md" LogicalName="RuAgent.Broker.HelpDocs.architecture.md" />

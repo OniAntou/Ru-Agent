@@ -52,6 +52,7 @@ in the checkout indefinitely.
 - [SQLite business persistence](adr/0013-consolidate-business-persistence-in-sqlite.md)
 - [In-process execution (terminal sandbox portion superseded)](adr/0014-in-process-execution-and-terminal-sandbox.md)
 - [Retire terminal OS sandbox](adr/0015-retire-terminal-os-sandbox.md)
+- [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 
@@ -65,14 +66,13 @@ requires the GUI gate or CLI `--confirm-full-access`.
 
 The canonical profiles do not synthesize `web_approval_required`; that legacy
 reason remains available to an explicit ask rule. Current approval reasons also
-include `external_directory_required`, `terminal_delete_requires_approval`,
-`terminal_external_mutation_requires_approval`,
-`terminal_timeout_requires_approval`, `terminal_unknown_executable`, and
-`terminal_protected_path_requires_approval` (shown with its own copy, and never
-offered as a reusable `allow_always` rule).
+include `external_directory_required`, `terminal_external_cwd_requires_approval`,
+`terminal_timeout_requires_approval`, `rule_asks`, and
+`terminal_protected_path_requires_approval` (never reusable as `allow_always`).
+Legacy command-classification reasons are retained for recorded activity.
 Folder grants remain session-scoped, while workspace trust follows the canonical
 identity. Terminal children in both `standard` and `full_access` run as the
-current Windows user without OS filesystem or network confinement. Existing
-approval policies and structured file path protections remain. Hard timeout,
+current Windows user without OS filesystem or network confinement. Standard authorizes workspace launch directories under
+[ADR 0017](adr/0017-workspace-terminal-policy.md); structured protections remain. Hard timeout,
 output cap, cancellation, process-tree cleanup, credential storage and
 diagnostic redaction remain enforced.

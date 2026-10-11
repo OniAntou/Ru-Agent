@@ -7,15 +7,9 @@ using RuAgent.Protocol.Harness;
 namespace RuAgent.Broker.Tools.Terminal;
 
 /// <summary>
-/// Single source of truth for which terminal operation classes execute without
-/// approval. PolicySnapshotEvaluator consumes this verdict for the evaluate leg;
-/// this adapter enforces the same verdict for the execution leg. Read-only, test,
-/// build, lint, local-git and eligible workspace Python file payloads execute on an authorization token;
-/// external mutation, delete, shell scripts, and unknown always ask for a
-/// one-time approval token bound to the exact intent hash. The local-git class
-/// only covers clean repository writes: `git config` mutations, `git -C`
-/// overrides, and program-selecting git options are analyzed as unknown forms
-/// and ask despite their verb.
+/// Legacy adapter callers have no run-bound v2 policy token. These recognized
+/// classes retain their compatibility behavior; production v2 authorization is
+/// decided by PolicySnapshotEvaluator and consumed by BrokerExecutionRuntime.
 /// </summary>
 public static class TerminalAutoPolicy
 {
@@ -24,16 +18,15 @@ public static class TerminalAutoPolicy
             or TerminalOperationClass.Test
             or TerminalOperationClass.Build
             or TerminalOperationClass.Lint
-            or TerminalOperationClass.GitMutation
-            or TerminalOperationClass.WorkspaceScript;
+            or TerminalOperationClass.GitMutation;
 }
 
 /// <summary>
 /// The v2 terminal executor. Every call is canonicalized into a <see cref="CanonicalCommandIntent"/>
 /// whose hash binds the resolved executable, argv, canonical working directory, operation class,
-/// network intent, and timeout. Auto forms (see <see cref="TerminalAutoPolicy"/>) run directly;
-/// every other form requires a one-time approval token bound to that exact intent hash, so any
-/// change between approval and execution invalidates the authorization. Execution streams through
+/// network intent, and timeout. Production v2 calls carry Broker-validated authorization;
+/// legacy callers use the recognized classes or an exact single-use approval token.
+/// Execution streams through
 /// the <see cref="StreamingProcessRunner"/> which owns one Job Object per call.
 /// </summary>
 public sealed class TerminalAdapter
@@ -87,13 +80,6 @@ public sealed class TerminalAdapter
                 request.TimeoutMs,
                 request.Network));
             var analysis = _analyzers.Analyze(intent.ResolvedExecutable, intent.Arguments);
-            if (analysis.OperationClass == TerminalOperationClass.WorkspaceScript
-                && (!intent.IsInsideWorkspace || intent.IsProtected
-                    || !WorkspacePythonScriptPolicy.IsLocalFile(_workspace.Root, intent.CanonicalWorkingDirectory,
-                    PythonCommandAnalyzer.ScriptPath(intent.Arguments))
-                    || ((Path.IsPathRooted(request.Executable) || request.Executable.Contains('/') || request.Executable.Contains('\\'))
-                        && !WorkspacePythonScriptPolicy.IsLocalFile(_workspace.Root, intent.CanonicalWorkingDirectory, intent.ResolvedExecutable))))
-                analysis = analysis with { OperationClass = TerminalOperationClass.ExternalMutation };
             return intent.Classified(analysis.OperationClass);
         }
         catch (CommandIntentException error)
@@ -228,9 +214,8 @@ public sealed class TerminalAdapter
         var intent = CanonicalizeShell(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
-        // Shell scripts always require explicit approval through the same
-        // one-time token path as terminal.run: the evaluator asks (never auto)
-        // and V2 authorization arrives via Approved/token. Working-directory checks apply before execution.
+        // V2 authorization (automatic or approved) has already been consumed by
+        // the Broker. Legacy callers require an exact, single-use shell token.
         EnsureShellApprovalTokenValid(request);
 
         return await _runner.RunAsync(

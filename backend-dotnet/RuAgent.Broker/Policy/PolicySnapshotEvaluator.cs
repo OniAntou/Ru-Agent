@@ -69,7 +69,7 @@ public sealed record PolicyEvaluation(
 /// <summary>
 /// Authoritative decision point: non-overridable protocol invariants first, then ordered
 /// last-match-wins evaluation over the bound snapshot, then preset fallbacks. Terminal
-/// fallbacks are classified by the versioned command analyzer registry.
+/// fallbacks use the canonical launch directory independently of command syntax.
 /// </summary>
 public sealed class PolicySnapshotEvaluator
 {
@@ -77,11 +77,10 @@ public sealed class PolicySnapshotEvaluator
     private readonly TerminalIntentClassifier _terminalClassifier;
 
     public PolicySnapshotEvaluator(
-        ISessionDirectoryGrantRegistry? directoryGrants = null,
-        CommandAnalyzerRegistry? analyzers = null)
+        ISessionDirectoryGrantRegistry? directoryGrants = null)
     {
         _directoryGrants = directoryGrants ?? new SessionDirectoryGrantRegistry();
-        _terminalClassifier = new TerminalIntentClassifier(analyzers);
+        _terminalClassifier = new TerminalIntentClassifier();
     }
 
     public PolicyEvaluation Evaluate(
@@ -222,7 +221,7 @@ public sealed class PolicySnapshotEvaluator
         if (IsTerminal(context)
             && !context.Background
             && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs
-            && AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(AgentPolicySubject.RiskyTerminal)
+            && AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(AgentPolicySubject.ExternalTerminal)
                 != AgentPolicyDecision.Allow)
         {
             return Ask("terminal_timeout_requires_approval");
@@ -250,13 +249,12 @@ public sealed class PolicySnapshotEvaluator
         if (IsTerminal(context))
         {
             var classification = _terminalClassifier.Classify(context);
-            var subject = classification.IsBoundedLocal
-                ? AgentPolicySubject.BoundedLocalTerminal
-                : AgentPolicySubject.RiskyTerminal;
-            var reasonCode = classification.IsBoundedLocal
-                ? "recognized_safe_form"
-                : classification.ReasonCode;
-            return ProfileDecision(snapshot, subject, reasonCode, AnalyzerRiskPending: true);
+            var subject = classification.IsWorkspaceLaunch
+                ? AgentPolicySubject.WorkspaceTerminal
+                : AgentPolicySubject.ExternalTerminal;
+            if (classification.ReasonCode is "terminal_cwd_untrusted" or "terminal_tool_invalid" or "terminal_mode_invalid")
+                return Deny(classification.ReasonCode);
+            return ProfileDecision(snapshot, subject, classification.ReasonCode);
         }
 
         if (IsWebTool(context))

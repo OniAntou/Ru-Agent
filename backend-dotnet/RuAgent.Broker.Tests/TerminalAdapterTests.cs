@@ -12,7 +12,7 @@ namespace RuAgent.Broker.Tests;
 public sealed class TerminalAdapterTests
 {
     [Fact]
-    public void Python_file_auto_class_is_rechecked_at_execution_canonicalization()
+    public void Command_analysis_is_metadata_and_does_not_grant_workspace_authority()
     {
         var root = CreateTemporaryRoot("ru-python-auto-");
         try
@@ -24,8 +24,8 @@ public sealed class TerminalAdapterTests
             var request = Request(executable, ["edit.py"]);
             Assert.Equal(TerminalOperationClass.WorkspaceScript, adapter.CanonicalizeRun(request).OperationClass);
             File.Delete(Path.Combine(root, "edit.py"));
-            Assert.Equal(TerminalOperationClass.ExternalMutation, adapter.CanonicalizeRun(request).OperationClass);
-            Assert.Equal(TerminalOperationClass.ExternalMutation,
+            Assert.Equal(TerminalOperationClass.WorkspaceScript, adapter.CanonicalizeRun(request).OperationClass);
+            Assert.Equal(TerminalOperationClass.WorkspaceScript,
                 adapter.CanonicalizeRun(Request(executable, [Path.Combine(Path.GetTempPath(), "outside.py")])).OperationClass);
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -185,8 +185,7 @@ public sealed class TerminalAdapterTests
                 new WorkspacePathGuard(root),
                 approvals,
                 intentResolver: new CommandIntentResolver(
-                    root,
-                    trustedExecutableDirectories: TrustThisMachinesToolchain()));
+                    root));
 
             var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
@@ -278,8 +277,6 @@ public sealed class TerminalAdapterTests
 
     [Theory]
     [InlineData("argument_nul_rejected", "bad\0arg")]
-    [InlineData("interactive_flag_rejected", "--interactive")]
-    [InlineData("background_daemon_rejected", "--daemon")]
     public void Structural_argument_violations_are_denied_before_execution(string expectedCode, string argument)
     {
         var root = CreateTemporaryRoot("ru-terminal-structural-");
@@ -815,7 +812,7 @@ public sealed class TerminalAdapterTests
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
                 approvals,
-                intentResolver: new CommandIntentResolver(root, [bin], [bin]));
+                intentResolver: new CommandIntentResolver(root, [bin]));
 
             var powershellIntent = adapter.CanonicalizeShell(new TerminalShellRequest("powershell", ".", "Get-Date", 1_000, string.Empty));
             var pwshIntent = adapter.CanonicalizeShell(new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, string.Empty));
@@ -904,24 +901,11 @@ public sealed class TerminalAdapterTests
         }
     }
 
-    /// <summary>
-    /// Directories the machine's own toolchain resolves from. Only for tests that
-    /// assert streaming, approval or window semantics and need a real executable:
-    /// they are not asserting the trust policy, so they opt the whole PATH in
-    /// explicitly. Production defaults are far narrower, and the tests that check
-    /// the trust boundary itself pass a trusted set of their own.
-    /// </summary>
-    private static IReadOnlyList<string> TrustThisMachinesToolchain() =>
-        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(Path.IsPathRooted)
-            .ToArray();
 
     private static TerminalAdapter CreateAdapter(string root) => new(
         new WorkspacePathGuard(root),
         intentResolver: new CommandIntentResolver(
-            root,
-            trustedExecutableDirectories: TrustThisMachinesToolchain()));
+            root));
 
     private sealed class SequenceGitCli(params GitCliResult[] results) : IGitCli
     {

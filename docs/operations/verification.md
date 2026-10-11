@@ -6,15 +6,54 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **6,009 passed / 0 failed / 0 skipped** (2026-10-12, Standard workspace Python files). Broker 951; Backend 1,049; GUI 1,385; Harness Core 486; CLI 1,289. Log: `artifacts/standard-python-dotnet.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, Standard workspace Python files), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/standard-python-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, Standard workspace Python files and GUI follow-ups). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/standard-python-release.log`. |
+| .NET tests | **12-project** Debug coverage: **5,970 passed / 0 failed / 0 skipped** (2026-10-12, workspace terminal policy v2). Broker 910; Backend 1,050; GUI 1,385; Harness Core 486; CLI 1,289. Full runner log: `artifacts/terminal-redesign-dotnet.log`; its one stale GUI copy assertion was corrected and the complete GUI project passed in `artifacts/terminal-redesign-gui-final.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, workspace terminal policy v2), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/terminal-redesign-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, workspace terminal policy v2). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/terminal-redesign-release.log`. PowerShell SDK assemblies are absent from the new publish. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Workspace terminal redesign (2026-10-12)
+
+Profile v2 makes the canonical launch directory the Standard terminal gate,
+independent of executable, language, script form or network metadata. Literal
+argv stays literal; user-installed executable PATH locations resolve without
+an install-location allowlist. Protected/external cwd, explicit rules, Plan,
+long-call approval and process bounds retain their documented behavior.
+The unused PowerShell AST approval classifier and SDK are removed. Saved v1
+session selections upgrade only for new runs; historical runs stay pinned.
+See [ADR 0017](../adr/0017-workspace-terminal-policy.md).
+
+Intermediate runs exposed outdated policy/fixture assumptions and an execution
+receipt bug for approved external cwd; these were corrected. The full Debug
+runner passed all 11 backend projects, then failed one GUI assertion of the old
+Standard subtitle (1,384 GUI tests passed). Updating that assertion to the new
+contract and rerunning the complete GUI project passed all 1,385 tests. Together,
+current coverage is **5,970 tests across 12 projects**, with no remaining failures
+or skips. Logs: `artifacts/terminal-redesign-dotnet.log`,
+`artifacts/terminal-redesign-gui-final.log`. The final focused HTTP/conformance
+run passed 41 tests (`artifacts/terminal-redesign-http-focused.log`).
+
+The full Python tooling suite passed **214 tests, 1 skipped**
+(`artifacts/terminal-redesign-python.log`); the skip is POSIX-only on Windows.
+
+`build.bat` passed **11/11 Release stages** (`artifacts/terminal-redesign-release.log`).
+The flattened distributable changed from 1,087 files / 448,634,294 bytes to
+749 files / 353,677,576 bytes (about 428 to 337 MiB). No PowerShell SDK or
+System.Management.Automation assembly remains; publish dependency manifests
+also contain neither package. Footprint records:
+`artifacts/terminal-redesign-release-before.json` and
+`artifacts/terminal-redesign-release-after.json`. No user application was launched.
+Documentation guards passed 19 tests and `git diff --check` passed.
+
+These are deterministic policy, persistence, execution and presentation checks.
+No native GUI acceptance or live-model benchmark was run; approval reduction
+does not establish improved model latency or task completion.
+
 ## Standard workspace Python files (2026-10-12)
+
+Historical scoped policy, superseded by ADR 0017 above.
 
 The user authorized a modest Standard relaxation. Existing workspace `.py`
 entries (optional `-u`/`-B`) are candidates for the appended `WorkspaceScript`

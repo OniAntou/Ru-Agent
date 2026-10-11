@@ -312,7 +312,7 @@ public sealed partial class ToolExecutionService
         {
             wait.Cancel();
             var result = await pump.ConfigureAwait(false);
-            return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired, canonicalRoot), context);
+            return WithSpoolId(ProcessOutcome(result, context.ConfinementRequired && !context.IsAuthenticatedV2Execution, canonicalRoot), context);
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -479,7 +479,7 @@ public sealed partial class ToolExecutionService
             (token, retain) => tools.Terminal.RunAsync(
                 grant,
                 request,
-                context.ConfinementRequired,
+                context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs));
@@ -503,9 +503,8 @@ public sealed partial class ToolExecutionService
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        // Shell scripts always require explicit approval: the evaluator asks with
-        // terminal_unknown_executable and the execution leg consumes the same
-        // one-time token. Confinement is defense in depth, not the gate.
+        // Approved is authority-derived for authenticated v2 calls, including
+        // automatic workspace policy. Legacy callers need a shell token.
         if (!context.Approved && context.ApprovalToken is null)
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
@@ -544,7 +543,7 @@ public sealed partial class ToolExecutionService
             cancellationToken,
             (token, retain) => tools.Terminal.RunApprovedShellAsync(
                 shellRequest,
-                context.ConfinementRequired,
+                context.ConfinementRequired && !context.IsAuthenticatedV2Execution,
                 token,
                 retain,
                 killTimeoutMs: lifetimeMs,

@@ -73,6 +73,8 @@ internal static class BrokerGatewayContracts
     internal static string MapAskReasonCode(string? reasonCode) => reasonCode switch
     {
         "external_directory_required" => "external_directory_required",
+        "terminal_external_cwd_requires_approval" => "terminal_external_cwd_requires_approval",
+        "rule_asks" => "rule_asks",
         "terminal_delete_requires_approval" => "terminal_delete_requires_approval",
         "terminal_external_mutation_requires_approval" => "terminal_external_mutation_requires_approval",
         "terminal_timeout_requires_approval" => "terminal_timeout_requires_approval",

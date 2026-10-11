@@ -60,14 +60,14 @@ public sealed class SystemPromptComposerTests
         Assert.True(instructionIndex >= 0);
         Assert.True(profileIndex < instructionIndex);
         Assert.Contains(
-            "effective_policy:\nprofile_version: 1\npreset: plan\nterminal_authority: denied\nworkspace_read=allow\nweb=allow\nworkspace_mutation=deny\nbounded_local_terminal=deny\nexternal_structured_file=ask\nrisky_terminal=deny\nstructured_protected_path=deny\nhard_invalid=deny\nbroker_authority: true",
+            "effective_policy:\nprofile_version: 2\npreset: plan\nterminal_authority: denied\nworkspace_read=allow\nweb=allow\nworkspace_mutation=deny\nworkspace_terminal=deny\nexternal_structured_file=ask\nexternal_terminal=deny\nstructured_protected_path=deny\nhard_invalid=deny\nbroker_authority: true",
             snapshot.Text,
             StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData("standard", "terminal_authority: bounded_local", "bounded_local_terminal=allow", "risky_terminal=ask")]
-    [InlineData("full_access", "terminal_authority: windows_current_user", "risky_terminal=allow", "external_structured_file=allow")]
+    [InlineData("standard", "terminal_authority: workspace_current_user", "workspace_terminal=allow", "external_terminal=ask")]
+    [InlineData("full_access", "terminal_authority: windows_current_user", "external_terminal=allow", "external_structured_file=allow")]
     public void Compose_projects_the_canonical_effective_policy_summary(
         string preset,
         string terminalAuthority,

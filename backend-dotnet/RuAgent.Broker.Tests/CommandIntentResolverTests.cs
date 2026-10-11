@@ -19,9 +19,8 @@ public sealed class CommandIntentResolverTests
 
     private static CommandIntentResolver CreateResolver(
         string workspaceRoot,
-        IReadOnlyList<string>? searchDirectories = null,
-        IReadOnlyList<string>? trustedExecutableDirectories = null) =>
-        new(workspaceRoot, searchDirectories, trustedExecutableDirectories);
+        IReadOnlyList<string>? searchDirectories = null) =>
+        new(workspaceRoot, searchDirectories);
 
     [Fact]
     public void Resolves_bare_executable_through_sanitized_search_directories()
@@ -32,7 +31,7 @@ public sealed class CommandIntentResolverTests
         File.WriteAllText(fakeTool, "@echo ok\r\n");
         try
         {
-            var resolver = CreateResolver(workspace, [toolsDirectory], [toolsDirectory]);
+            var resolver = CreateResolver(workspace, [toolsDirectory]);
             var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
 
             Assert.Equal(Path.GetFullPath(fakeTool), intent.ResolvedExecutable);
@@ -195,32 +194,23 @@ public sealed class CommandIntentResolverTests
         }
     }
 
-    [Fact]
-    public void Rejects_interactive_password_prompt_and_background_daemon_forms()
+    [Theory]
+    [InlineData("--interactive")]
+    [InlineData("--password")]
+    [InlineData("--daemon")]
+    [InlineData("sudo")]
+    [InlineData("a; b | c & d\nnext")]
+    public void Argument_literals_are_not_interpreted_as_shell_or_global_flags(string argument)
     {
-        var workspace = CreateTemporaryRoot("ru-intent-deny-");
+        var workspace = CreateTemporaryRoot("ru-intent-literal-");
         try
         {
-            var resolver = CreateResolver(workspace, ["C:\\Windows\\System32"]);
-            var executable = Path.Combine(Environment.SystemDirectory, "where.exe");
-
-            Assert.Equal("interactive_flag_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["--tty"]))).Code);
-            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["sudo"]))).Code);
-            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["doas"]))).Code);
-            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["pkexec"]))).Code);
-            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["/prompt"]))).Code);
-            Assert.Equal("background_daemon_rejected", Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["--daemon"]))).Code);
+            var resolver = CreateResolver(workspace, EmptySearchDirectories);
+            var intent = resolver.ResolveRun(new CanonicalCommandRequest(
+                Path.Combine(Environment.SystemDirectory, "cmd.exe"), [argument]));
+            Assert.Equal(argument, Assert.Single(intent.Arguments));
         }
-        finally
-        {
-            Directory.Delete(workspace, recursive: true);
-        }
+        finally { Directory.Delete(workspace, recursive: true); }
     }
 
     [Fact]
@@ -257,7 +247,7 @@ public sealed class CommandIntentResolverTests
             Directory.CreateDirectory(bin);
             File.WriteAllText(Path.Combine(bin, "powershell.exe"), "stub");
             File.WriteAllText(Path.Combine(bin, "pwsh.exe"), "stub");
-            var resolver = CreateResolver(workspace, [bin], [bin]);
+            var resolver = CreateResolver(workspace, [bin]);
 
             var powershellIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date"));
             var pwshIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date", ShellRuntime: "pwsh"));
@@ -318,23 +308,19 @@ public sealed class CommandIntentResolverTests
     }
 
     [Fact]
-    public void A_bare_name_resolved_from_an_untrusted_directory_fails_closed()
+    public void A_bare_name_resolved_from_a_user_directory_binds_the_actual_file()
     {
-        // The property this whole check exists for: policy sees the bare token, so
-        // the file that actually runs is chosen by PATH order. A directory a program
-        // could have written into must not be able to win that race silently.
         var workspace = CreateTemporaryRoot("ru-intent-trust-");
         var untrusted = CreateTemporaryRoot("ru-intent-untrusted-");
         var fakeTool = Path.Combine(untrusted, "ru-fake-tool.cmd");
         File.WriteAllText(fakeTool, "@echo ok\r\n");
         try
         {
+            var resolverDirectory = untrusted;
             var resolver = CreateResolver(workspace, [untrusted]);
 
-            var error = Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool")));
-
-            Assert.Equal("executable_not_trusted", error.Code);
+            var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
+            Assert.Equal(Path.GetFullPath(Path.Combine(resolverDirectory, "ru-fake-tool.cmd")), intent.ResolvedExecutable);
         }
         finally
         {
@@ -344,10 +330,8 @@ public sealed class CommandIntentResolverTests
     }
 
     [Fact]
-    public void A_trusted_root_also_trusts_its_subdirectories()
+    public void Search_directory_can_be_a_toolchain_subdirectory()
     {
-        // Real installs live in a subdirectory of a machine-wide root,
-        // e.g. Program Files\Git\cmd or Program Files\dotnet.
         var installRoot = CreateTemporaryRoot("ru-intent-install-");
         var workspace = CreateTemporaryRoot("ru-intent-trust-sub-");
         var binDirectory = Path.Combine(installRoot, "cmd");
@@ -355,7 +339,7 @@ public sealed class CommandIntentResolverTests
         File.WriteAllText(Path.Combine(binDirectory, "ru-fake-tool.cmd"), "@echo ok\r\n");
         try
         {
-            var resolver = CreateResolver(workspace, [binDirectory], [installRoot]);
+            var resolver = CreateResolver(workspace, [binDirectory]);
             var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
 
             Assert.Equal(Path.GetFullPath(Path.Combine(binDirectory, "ru-fake-tool.cmd")), intent.ResolvedExecutable);
@@ -368,10 +352,8 @@ public sealed class CommandIntentResolverTests
     }
 
     [Fact]
-    public void A_sibling_directory_sharing_a_prefix_is_not_trusted()
+    public void Search_directory_resolves_without_an_install_location_allowlist()
     {
-        // Guard against the substring mistake: "C:\Program Files" must not match
-        // "C:\Program Files Evil" just because one starts with the other.
         var parent = CreateTemporaryRoot("ru-intent-prefix-");
         var trustedRoot = Path.Combine(parent, "trusted");
         var siblingRoot = Path.Combine(parent, "trusted-evil");
@@ -382,12 +364,11 @@ public sealed class CommandIntentResolverTests
         File.WriteAllText(Path.Combine(siblingRoot, "ru-fake-tool.cmd"), "@echo ok\r\n");
         try
         {
-            var resolver = CreateResolver(workspace, [siblingRoot], [trustedRoot]);
+            var resolverDirectory = siblingRoot;
+            var resolver = CreateResolver(workspace, [siblingRoot]);
 
-            var error = Assert.Throws<CommandIntentException>(
-                () => resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool")));
-
-            Assert.Equal("executable_not_trusted", error.Code);
+            var intent = resolver.ResolveRun(new CanonicalCommandRequest("ru-fake-tool"));
+            Assert.Equal(Path.GetFullPath(Path.Combine(resolverDirectory, "ru-fake-tool.cmd")), intent.ResolvedExecutable);
         }
         finally
         {
@@ -396,17 +377,15 @@ public sealed class CommandIntentResolverTests
     }
 
     [Fact]
-    public void A_path_qualified_executable_never_consults_the_trusted_set()
+    public void Path_qualified_executable_binds_the_actual_file()
     {
-        // Path-qualified commands already require an approval, so a human confirms
-        // the identity. Trusting is only about the PATH race for bare names.
         var workspace = CreateTemporaryRoot("ru-intent-qualified-");
         var untrusted = CreateTemporaryRoot("ru-intent-qualified-tools-");
         var executable = Path.Combine(untrusted, "ru-fake-tool.cmd");
         File.WriteAllText(executable, "@echo ok\r\n");
         try
         {
-            var resolver = CreateResolver(workspace, [untrusted], [untrusted]);
+            var resolver = CreateResolver(workspace, [untrusted]);
             var request = new CanonicalCommandRequest(executable);
 
             var intent = resolver.ResolveRun(request);

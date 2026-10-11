@@ -492,7 +492,7 @@ public abstract class ToolGatewayConformance : IDisposable
     // ---- execute: terminal ----
 
     [Fact]
-    public async Task Terminal_run_standard_analyzer_safe_form_is_allowed_and_executes()
+    public async Task Terminal_run_standard_workspace_form_is_allowed_and_executes()
     {
         var receipt = await ExecuteAllowedAsync("bash", new JsonObject
         {
@@ -507,7 +507,7 @@ public abstract class ToolGatewayConformance : IDisposable
     }
 
     [Fact]
-    public async Task Terminal_unknown_executable_requires_approval_in_standard()
+    public async Task Terminal_external_working_directory_requires_approval_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
             Proposal("bash", new JsonObject
@@ -515,11 +515,25 @@ public abstract class ToolGatewayConformance : IDisposable
                 ["mode"] = "run",
                 ["executable"] = "cmd.exe",
                 ["arguments"] = new JsonArray("/c", "echo", "conformance"),
+                ["working_directory"] = Path.GetTempPath(),
             }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Ask, decision.Decision);
-        Assert.Equal("terminal_unknown_executable", decision.SafeCode);
+        Assert.Equal("terminal_external_cwd_requires_approval", decision.SafeCode);
+    }
+
+    [Fact]
+    public async Task Standard_workspace_command_does_not_require_a_recognized_analyzer_form()
+    {
+        var receipt = await ExecuteAllowedAsync("bash", new JsonObject
+        {
+            ["mode"] = "run", ["executable"] = "cmd.exe",
+            ["arguments"] = new JsonArray("/c", "echo", "conformance"),
+        });
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        Assert.Equal("ok", receipt.Code);
+        Assert.Contains("conformance", Encoding.UTF8.GetString(receipt.ModelContent.Span));
     }
 
     // ---- helpers ----

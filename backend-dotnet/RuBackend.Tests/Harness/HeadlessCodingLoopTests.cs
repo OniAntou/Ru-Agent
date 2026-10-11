@@ -551,7 +551,11 @@ public sealed partial class HeadlessCodingLoopTests
             case "files.edit": id = "edit"; break;
             case "files.delete": id = "write"; node["op"] = "delete"; break;
             case "files.restore": id = "write"; node["op"] = "restore"; break;
-            case "terminal.run": id = "bash"; node["mode"] = "run"; break;
+            case "terminal.run":
+                id = "bash"; node["mode"] = "run";
+                if (node["executable"]?.GetValue<string>() == "unknown-tool-xyz.exe")
+                    node["working_directory"] = Path.GetTempPath();
+                break;
             case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
             case "web.search": id = "web_search"; node.Remove("op"); break;
             case "web.fetch": id = "web_fetch"; node.Remove("op"); break;

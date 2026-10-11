@@ -35,16 +35,16 @@
             "agent_profile": "ru-agent",
             "preset": "standard",
             "effective_policy": {
-              "version": "1",
+              "version": "2",
               "preset": "standard",
-              "terminal_authority": "bounded_local",
+              "terminal_authority": "workspace_current_user",
               "rules": [
                 { "subject": "workspace_read", "decision": "allow" },
                 { "subject": "web", "decision": "allow" },
                 { "subject": "workspace_mutation", "decision": "allow" },
-                { "subject": "bounded_local_terminal", "decision": "allow" },
+                { "subject": "workspace_terminal", "decision": "allow" },
                 { "subject": "external_structured_file", "decision": "ask" },
-                { "subject": "risky_terminal", "decision": "ask" },
+                { "subject": "external_terminal", "decision": "ask" },
                 { "subject": "structured_protected_path", "decision": "deny" },
                 { "subject": "hard_invalid", "decision": "deny" }
               ]

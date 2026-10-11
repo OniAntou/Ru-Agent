@@ -19,7 +19,7 @@ public sealed record AgentRun
         DateTimeOffset updatedAt,
         DateTimeOffset? terminalAt = null,
         string? terminalErrorCode = null,
-        int permissionProfileVersion = 1)
+        int? permissionProfileVersion = null)
     {
         _ = runId.Value;
         _ = sessionId.Value;
@@ -97,7 +97,7 @@ public sealed record AgentRun
         UpdatedAt = updatedAt;
         TerminalAt = terminalAt;
         TerminalErrorCode = terminalErrorCode;
-        PermissionProfileVersion = permissionProfileVersion;
+        PermissionProfileVersion = permissionProfileVersion ?? AgentPermissionPresetMapper.CurrentPermissionProfileVersion;
     }
 
     public RunId RunId { get; }

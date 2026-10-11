@@ -2,7 +2,7 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces, updated 2026-10-10.
+v2 surfaces, updated 2026-10-12.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -157,7 +157,7 @@ boundary.
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, harness-protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/risky intent asks under existing approval rules; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
@@ -225,7 +225,7 @@ Follow returned cursors rather than adding the requested limit to the offset.
 
 Terminal launch resolves the executable or shell runtime before registering a
 foreground or background task. Resolution errors such as `executable_not_found`
-and `executable_not_trusted` retain their code instead of becoming
+retains its code instead of becoming
 `process_start_failed`; an unresolved background call cannot report a task as
 started. Windows children retain a native process handle before resume, so an
 immediate exit still yields its actual exit code.
@@ -243,16 +243,17 @@ Missing mode-specific fields such as `executable` or `script` return
 `invalid_arguments` rather than `adapter_error`. The tool description states this explicitly so
 the model does not assume Unix `head`/`tail` commands are available.
 
-Canonical `plan` denies terminal and mutation. Canonical `standard` allows only
-classifier-bounded local terminal intent inside the trusted workspace; deletion,
-unknown executables, arbitrary shell, external cwd/argv, and other risky intent
-ask with the existing reason codes. Standard and full-access children run as
-the current Windows user, without OS filesystem or network confinement. The
-`bash` schema rejects obsolete sandbox arguments. Repository cleanliness does
-not change the decision. Canonical `full_access` delegates arbitrary terminal
-execution. Hard timeout, output cap, cancellation, redaction, and process-tree
-cleanup still apply. API keys remain in credential storage and diagnostics
-redact secrets.
+Canonical `plan` denies terminal and mutation. Profile version 2 makes Standard
+launch-directory based: both `run` and `shell` are automatic with a canonical cwd
+inside the trusted workspace. External launch directories ask; explicit ask/deny
+rules and long foreground approval still apply. Argument literals, inline code,
+package installation, executable install location and network metadata are not
+approval classifiers. PATH is sanitized and the real executable/argv/cwd are bound
+to the single-use authorization token. Standard and Full Access run as the Windows
+user without OS filesystem/network confinement. Full Access also permits external
+launch directories. Hard timeout, output cap, cancellation, redaction and process
+cleanup remain. API keys stay in credential storage. See
+[ADR 0017](../adr/0017-workspace-terminal-policy.md).
 
 An explicit absolute structured-file path outside the trusted root asks for
 `external_directory_required` under `standard`. Approval records a
@@ -408,8 +409,8 @@ into desktop side effects; structured selection is the only action channel.
 ## File and terminal boundaries
 
 File and terminal bindings use the canonical matrix above. `plan` terminal
-authority is denied. `standard` limits automatic terminal execution to classifier-bounded
-local intent and asks for external/escape/risky intent. `full_access` may run
+authority is denied. `standard` permits executable and shell launches from a canonical workspace cwd
+and asks for external cwd or explicit ask rules. `full_access` may run
 arbitrary `bash` as the current Windows user against any path and may open
 sockets, including outside the workspace; terminal execution has no OS
 filesystem/network confinement. Repository
@@ -446,7 +447,8 @@ Patch rollback restores only an applied target whose current hash still
 matches that patch's result; it preserves intervening editor changes.
 `write` with `op=delete` keeps its bounded recovery cap and opaque recovery ID.
 Bash children receive redirected stdin that is closed immediately; TTY/editor
-requests remain rejected by canonical command policy.
+requests cannot receive interactive input. Literal argv is not rejected by a
+global flag list; noninteractive operation and timeout/cancellation remain.
 
 ### Skill guidance (`SKILL.md`)
 
@@ -568,8 +570,8 @@ authority remains the only authority. The selection is stored per session: openi
 a session loads its stored preset into the composer, so a `plan` session opened
 later still shows `Plan` and the next send keeps it. Plan is read-only: workspace
 read/Web auto, terminal/mutation denied outright, external structured access
-asks. Standard auto-allows bounded-local in-workspace mutation and asks for
-external/escape/risky intent under its existing rules. Terminal/git children
+asks. Standard auto-allows workspace mutations and workspace executable/shell launches;
+external structured targets and external terminal cwd ask. Terminal/git children
 in both execution presets run as the current Windows user without OS
 filesystem/network confinement. Full
 Access is the skip-all mode: external structured files and arbitrary terminal
@@ -587,16 +589,11 @@ reason code:
   trong đoạn chat này, cho đến khi ứng dụng đóng. The approval opens a
   session-scoped directory grant in the Broker; the same session
   re-uses the grant on subsequent calls, and new sessions ask again.
-- `terminal_delete_requires_approval` — Lệnh terminal này sẽ xóa file.
-  The approval returns an ephemeral one-time terminal token and remembers
-  the exact intent for the session; no durable rule is created.
-- `terminal_unknown_executable` — Ru chưa nhận diện được executable của
-  lệnh terminal này. The approval returns an ephemeral one-time
-  terminal token and remembers the exact intent for the session.
-- `terminal_external_mutation_requires_approval` — Lệnh terminal này gây
-  mutation ngoài workspace (push/fetch mạng, cài package, restore).
-  The approval returns an ephemeral one-time terminal token and remembers
-  the exact intent for the session; no durable rule is created.
+- `terminal_external_cwd_requires_approval` — Lệnh sẽ chạy ở thư mục ngoài
+  workspace. Approval authorizes this exact launch, not a folder grant.
+- `rule_asks` — Rule của người dùng yêu cầu duyệt lời gọi này.
+- Older delete/unknown/network command-classification reason codes remain
+  readable in stored activity; profile v2 no longer emits them as fallback asks.
 - `terminal_protected_path_requires_approval` — Lệnh terminal này trỏ vào một
   **file tự bảo vệ của harness** (`agent_harness*`, `harness_key*`, runtime
   descriptor) hoặc một path user tự thêm qua `RU_PROTECTED_PATHS`. Terminal vốn
@@ -616,9 +613,8 @@ reason code:
   otherwise allow Web automatically; the returned authorization is
   single-use and exact-intent bound.
 
-Standard auto-allows only classifier-bounded local terminal intent; arbitrary
-shell, deletion, unknown executables, external cwd/argv, and other risky forms
-ask even if the repository is clean. Both presets launch terminal children as
+Standard auto-allows executable and shell launches from a workspace cwd; external
+cwd and explicit ask rules still prompt regardless of repository cleanliness. Both presets launch terminal children as
 the current Windows user without OS filesystem/network confinement. Full Access
 removes those profile asks. The CLI exposes the same model through `agent approve` /
 `agent deny`; `agent run` and `agent chat` accept `--preset

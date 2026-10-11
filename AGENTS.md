@@ -38,7 +38,9 @@ Use CONTEXT.md's domain language and update it when concepts change.
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files and runtime descriptors
   at every preset; `RU_PROTECTED_PATHS` adds protected paths. Terminal authority
-  follows its documented preset and ordinary approval policy. `standard` and
+  follows profile v2: Standard permits executable/shell launches from a workspace
+  cwd; external cwd and explicit ask rules require approval. This is launch
+  permission, not filesystem or network confinement. `standard` and
   `full_access` child processes run as the current Windows user without OS-level
   filesystem or network confinement. Timeout, output, cancellation and process
   tree bounds remain in force. API keys remain in existing credential storage

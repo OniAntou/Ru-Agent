@@ -48,8 +48,7 @@ CURRENT_REASON_DOCS = [
     ROOT / "docs/architecture.md",
     ROOT / "docs/operations/agent-tools.md",
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
-    ROOT / "docs/adr/0007-mode-capability-profiles.md",
-    ROOT / "docs/adr/0009-broker-execution-authority.md",
+    ROOT / "docs/adr/0017-workspace-terminal-policy.md",
 ]
 CURRENT_SECTION_BOUNDARIES = {
     ROOT / "docs/operations/agent-tools.md": ("## Current capability matrix", None),
@@ -132,9 +131,8 @@ def test_current_docs_describe_session_scoped_agent_permissions() -> None:
         for phrase in (
             "session-scoped",
             "external_directory_required",
-            "terminal_delete_requires_approval",
-            "terminal_unknown_executable",
-            "terminal_external_mutation_requires_approval",
+            "terminal_external_cwd_requires_approval",
+            "rule_asks",
             "terminal_timeout_requires_approval",
             "web_approval_required",
         ):
@@ -156,8 +154,8 @@ def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> 
         ),
         "standard": (
             r"\bstandard\b",
-            r"\bbounded[- ]local\b",
-            r"\bin[- ]workspace mutation\b",
+            r"\bworkspace (?:cwd|working directory)\b",
+            r"\b(?:in[- ]workspace|workspace) mutations?\b",
             r"\bauto\w*\b",
             r"\bexternal\b",
             r"\bask(?:s|ed)?\b",

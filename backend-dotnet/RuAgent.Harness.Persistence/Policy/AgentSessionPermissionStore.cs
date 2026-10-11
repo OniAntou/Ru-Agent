@@ -8,7 +8,7 @@ public sealed record AgentSessionPermissionSelection(
     AgentPermissionPreset Preset,
     long Version,
     DateTimeOffset UpdatedAt,
-    int PermissionProfileVersion = 1);
+    int PermissionProfileVersion);
 
 public enum SessionPermissionOutcome
 {
@@ -145,7 +145,7 @@ public sealed class AgentSessionPermissionStore
                         "preset_version_conflict");
                 }
 
-                var created = new AgentSessionPermissionSelection(sessionId, preset, 1, now);
+                var created = new AgentSessionPermissionSelection(sessionId, preset, 1, now, AgentPermissionPresetMapper.CurrentPermissionProfileVersion);
                 await InsertAsync(connection, transaction, created, cancellationToken)
                     .ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -492,6 +492,17 @@ public sealed class AgentSessionPermissionStore
             .ConfigureAwait(false);
         if (existing is not null)
         {
+            // Upgrade saved selection for new runs; existing runs keep their own version.
+            if (existing.Preset == preset && existing.Version == selectionVersion
+                && existing.PermissionProfileVersion == 1)
+            {
+                existing = existing with
+                {
+                    PermissionProfileVersion = AgentPermissionPresetMapper.CurrentPermissionProfileVersion,
+                    UpdatedAt = now,
+                };
+                await UpdateAsync(connection, transaction, existing, cancellationToken).ConfigureAwait(false);
+            }
             return existing.Preset == preset
                 && existing.Version == selectionVersion
                 && existing.PermissionProfileVersion == AgentPermissionPresetMapper.CurrentPermissionProfileVersion
@@ -522,7 +533,8 @@ public sealed class AgentSessionPermissionStore
             sessionId,
             AgentPermissionPreset.Standard,
             1,
-            now);
+            now,
+            AgentPermissionPresetMapper.CurrentPermissionProfileVersion);
         await InsertAsync(connection, transaction, created, cancellationToken)
             .ConfigureAwait(false);
         return new SessionPermissionResult(SessionPermissionOutcome.CreatedDefault, created);

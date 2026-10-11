@@ -398,7 +398,7 @@ public sealed class AgentApprovalUiContractTests
             "Reads and web run automatically; edits and terminal are refused.",
             OptionSubtitle(named["PresetPlanText"]));
         Assert.Equal(
-            "Workspace work runs automatically; leaving the workspace, network, or unrecognized commands ask.",
+            "Workspace edits and terminal commands run automatically. External working directories and explicit rules ask.",
             OptionSubtitle(named["PresetStandardText"]));
         Assert.Equal(
             "Skips approval prompts; terminal runs as your Windows user.",

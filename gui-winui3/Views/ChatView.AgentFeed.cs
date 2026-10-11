@@ -722,6 +722,15 @@ namespace RuApp.Views
                 return;
             }
 
+            if (output.IsReset)
+            {
+                // A retried execution replaces the superseded attempt's text:
+                // drop what it streamed before the retry's output arrives.
+                TerminalPanelControl.ResetOutput(output.ExecutionId);
+                _runningTerminalItem?.ResetTerminalOutput();
+                return;
+            }
+
             TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
             _runningTerminalExecutionId ??= output.ExecutionId;
 

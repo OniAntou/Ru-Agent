@@ -24,7 +24,7 @@ public sealed class SessionExportMenuSourceContractTests
     [Fact]
     public void The_handler_reads_the_format_off_the_item_that_was_clicked()
     {
-        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnExportSessionMenuClick");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "ExportSessionMenuAsync");
 
         Assert.Contains("ExportCodexItem", body, StringComparison.Ordinal);
         Assert.Contains("\"codex\"", body, StringComparison.Ordinal);
@@ -46,7 +46,7 @@ public sealed class SessionExportMenuSourceContractTests
         var item = GuiSource.Require(document, "ImportSessionItem");
         Assert.Equal("OnImportSessionMenuClick", GuiSource.AttributeValue(item, "Click"));
 
-        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnImportSessionMenuClick");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "ImportSessionMenuAsync");
         Assert.Contains("HarnessFromFileName", body, StringComparison.Ordinal);
         Assert.Contains("ImportSessionAsync", body, StringComparison.Ordinal);
 
@@ -68,7 +68,7 @@ public sealed class SessionExportMenuSourceContractTests
     [Fact]
     public void The_import_picker_reads_the_hosts_formats_and_caps_the_file_before_reading()
     {
-        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnImportSessionMenuClick");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "ImportSessionMenuAsync");
 
         Assert.Contains("FileTypeFilter.Add(\".jsonl\")", body, StringComparison.Ordinal);
         Assert.DoesNotContain("FileTypeFilter.Add(\".db\")", body, StringComparison.Ordinal);

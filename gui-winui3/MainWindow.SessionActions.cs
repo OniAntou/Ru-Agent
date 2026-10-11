@@ -30,6 +30,21 @@ namespace RuApp
         /// </remarks>
         private async void OnExportSessionMenuClick(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                await ExportSessionMenuAsync(sender);
+            }
+            catch (Exception ex)
+            {
+                // async void: an unhandled exception here tears the process down
+                // (a dialog opened while another is up is the common case).
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session export failed: {ex.Message}");
+                SetSessionActionError("Could not export the session");
+            }
+        }
+
+        private async Task ExportSessionMenuAsync(object sender)
+        {
             if (sender is not FrameworkElement item
                 || item.Tag is not string sessionId
                 || string.IsNullOrWhiteSpace(sessionId)
@@ -73,6 +88,22 @@ namespace RuApp
         /// fault.
         /// </remarks>
         private async void OnImportSessionMenuClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await ImportSessionMenuAsync();
+            }
+            catch (Exception ex)
+            {
+                // async void: the picker and the dialog can both throw (a dialog
+                // opened while another is up), and an unhandled exception would
+                // take the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session import failed: {ex.Message}");
+                SetSessionActionError("Could not import the session");
+            }
+        }
+
+        private async Task ImportSessionMenuAsync()
         {
             if (_apiService is null || ShellRoot.XamlRoot is null)
             {
@@ -170,7 +201,33 @@ namespace RuApp
             await dialog.ShowAsync();
         }
 
+        /// <summary>
+        /// One bounded status line for a session action that failed inside an
+        /// async void handler: the action must not die silently, and the failure
+        /// must not take the process down.
+        /// </summary>
+        private void SetSessionActionError(string message)
+        {
+            StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+            StatusText.Text = message;
+        }
+
         private async void OnDeleteSessionClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await DeleteSessionAsync(sender);
+            }
+            catch (Exception ex)
+            {
+                // async void: the confirm and error dialogs can both throw, and an
+                // unhandled exception here would take the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session delete failed: {ex.Message}");
+                SetSessionActionError("Could not delete the chat");
+            }
+        }
+
+        private async Task DeleteSessionAsync(object sender)
         {
             if (sender is FrameworkElement btn && btn.Tag is string sessionId && _apiService != null)
             {
@@ -374,6 +431,22 @@ namespace RuApp
         /// opens as one.
         /// </summary>
         private async void OnSessionUsageClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await ShowSessionUsageAsync(sender);
+            }
+            catch (Exception ex)
+            {
+                // async void: a failed load must leave a bounded status instead of
+                // an unhandled exception (and a stuck "open" overlay state).
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session usage failed: {ex.Message}");
+                CloseSessionUsage();
+                SetSessionActionError("Could not load the session usage");
+            }
+        }
+
+        private async Task ShowSessionUsageAsync(object sender)
         {
             if (sender is not FrameworkElement item
                 || item.Tag is not string sessionId

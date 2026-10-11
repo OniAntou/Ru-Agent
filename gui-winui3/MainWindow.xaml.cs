@@ -1124,6 +1124,21 @@ namespace RuApp
 
         private async void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            try
+            {
+                await HandleSessionSelectionChangedAsync();
+            }
+            catch (Exception ex)
+            {
+                // async void: switching sessions awaits the API, and an unhandled
+                // exception here would take the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session switch failed: {ex.Message}");
+                SetSessionActionError("Could not open the chat");
+            }
+        }
+
+        private async Task HandleSessionSelectionChangedAsync()
+        {
             if (_suppressSidebarSelection)
             {
                 return;
@@ -1154,7 +1169,14 @@ namespace RuApp
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
                 await _chatView.OpenSessionAsync(selected.Id, selected.Title);
-                SidebarSessionList.ScrollIntoView(selected);
+                // The open awaited, and the user may have selected another row in
+                // the meantime: scrolling must follow the row still selected, not
+                // the one this pass started from.
+                if (SidebarSessionList.SelectedItem is SessionInfo current
+                    && string.Equals(current.Id, selected.Id, StringComparison.Ordinal))
+                {
+                    SidebarSessionList.ScrollIntoView(selected);
+                }
             }
             else if (SidebarSessionList.SelectedItem is WorkspaceGroupRow groupRow)
             {

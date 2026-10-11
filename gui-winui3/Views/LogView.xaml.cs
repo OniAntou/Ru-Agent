@@ -311,6 +311,20 @@ namespace RuApp.Views
 
         private async void OnClearClicked(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                await ClearLogsAsync();
+            }
+            catch (Exception ex)
+            {
+                // async void: a dialog opened while another is up throws, and the
+                // exception would otherwise take the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[LogView] Clear logs failed: {ex.Message}");
+            }
+        }
+
+        private async Task ClearLogsAsync()
+        {
             if (_apiService == null) return;
 
             var dialog = new ContentDialog

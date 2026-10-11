@@ -145,8 +145,17 @@ namespace RuApp.Views
 
         private async void OnRefreshTimerTick(object? sender, object e)
         {
-            if (_refreshController != null) await _refreshController.RefreshAsync();
-            else await RefreshAsync();
+            try
+            {
+                if (_refreshController != null) await _refreshController.RefreshAsync();
+                else await RefreshAsync();
+            }
+            catch (Exception ex)
+            {
+                // async void on a timer: a failed refresh callback must not take
+                // the dispatcher down; the next tick tries again.
+                GuiDiagnosticWriter.AppendTraceLine($"[DiagnosticsView] Refresh failed: {ex.Message}");
+            }
         }
 
         public void SetActive(bool active)
@@ -526,7 +535,7 @@ namespace RuApp.Views
             try
             {
                 ExportButton.IsEnabled = false;
-                ExportButton.Content = "Dang xuat...";
+                ExportButton.Content = "Exporting…";
 
                 string? selectedLevel = DiagnosticSeverityFilter.ForSelectedIndex(LevelFilterCombo.SelectedIndex);
                 string? corr = string.IsNullOrWhiteSpace(CorrelationFilterBox.Text) ? null : CorrelationFilterBox.Text.Trim();

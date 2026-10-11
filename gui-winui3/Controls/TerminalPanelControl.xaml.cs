@@ -82,6 +82,20 @@ namespace RuApp.Controls
         }
 
         /// <summary>
+        /// Drops the text streamed for one execution's superseded attempt. A
+        /// reset for an execution with no block yet settles nothing: the retry's
+        /// output opens the block.
+        /// </summary>
+        public void ResetOutput(string executionId)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(executionId);
+
+            TerminalBlocks.FirstOrDefault(candidate =>
+                    string.Equals(candidate.ExecutionId, executionId, StringComparison.Ordinal))
+                ?.ResetText();
+        }
+
+        /// <summary>
         /// Completes the block opened for this execution. Matching is by execution
         /// id (see <see cref="TerminalBlockListPolicy.SelectCompletionTarget"/>):
         /// a known id that owns no block settles nothing, so one command's outcome

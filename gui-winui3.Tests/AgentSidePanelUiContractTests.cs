@@ -242,7 +242,7 @@ public sealed class AgentSidePanelUiContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "ForgetSidePanelState",
-            GuiSource.MethodBody(code, "OnDeleteSessionClick"),
+            GuiSource.MethodBody(code, "DeleteSessionAsync"),
             StringComparison.Ordinal);
 
         string forget = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ForgetSidePanelState");

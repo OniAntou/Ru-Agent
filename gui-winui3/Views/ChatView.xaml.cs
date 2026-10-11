@@ -96,6 +96,14 @@ namespace RuApp.Views
         private long _sessionOpenGeneration;
         private CancellationTokenSource? _sessionOpenCts;
 
+        /// <summary>
+        /// Last click of "open this session", taken before the first await. Two
+        /// fast switches both wait on the outgoing run's stop, and without the
+        /// ticket the click whose stop happened to settle last owned the
+        /// transcript -- which is not the click the user made last.
+        /// </summary>
+        private long _sessionOpenRequestTicket;
+
         /// <summary>The session <see cref="_sessionOpenGeneration"/> was opened for.</summary>
         private string _sessionOpenGenerationSessionId = string.Empty;
 
@@ -224,13 +232,19 @@ namespace RuApp.Views
             if (ContextMeterButton is null) return;
             var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
             ContextMeterButton.Background = canvas;
-            _contextHoverTimer?.Stop();
-            _contextHoverTimer?.Tick -= OnContextHoverTimerTick;
-            _contextHoverTimer = new DispatcherTimer
+            // One timer for the control's lifetime: a fresh DispatcherTimer per
+            // hover churned allocations and left the previous Tick handler behind
+            // until the next hover.
+            if (_contextHoverTimer is null)
             {
-                Interval = Services.UiTiming.ChatFlash
-            };
-            _contextHoverTimer.Tick += OnContextHoverTimerTick;
+                _contextHoverTimer = new DispatcherTimer
+                {
+                    Interval = Services.UiTiming.ChatFlash
+                };
+                _contextHoverTimer.Tick += OnContextHoverTimerTick;
+            }
+
+            _contextHoverTimer.Stop();
             _contextHoverTimer.Start();
         }
 
@@ -295,9 +309,6 @@ namespace RuApp.Views
                 StarryLivingField.IsActive = starry;
             }
         }
-
-        private static bool IsMeteorShowerTheme =>
-            MainWindow.CurrentTheme == UiTheme.DarkMeteorShower;
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 
@@ -368,6 +379,29 @@ namespace RuApp.Views
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
             _apiService = apiService;
+            if (_ownsProviderCatalogController && _providerCatalogController is not null)
+            {
+                // Replacing a controller this view owns means the old one has no
+                // other owner: dispose it (never blocking the UI thread) instead
+                // of leaving its requests to the GC. A fault is only logged.
+                var ownedCatalog = _providerCatalogController;
+                _ = ownedCatalog.DisposeAsync().AsTask().ContinueWith(
+                    static faulted => GuiDiagnosticWriter.AppendTraceLine(
+                        $"[ChatView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+            }
+            if (_ownsGroupedCatalogs && _groupedCatalogs is not null)
+            {
+                var ownedGrouped = _groupedCatalogs;
+                _ = ownedGrouped.DisposeAsync().AsTask().ContinueWith(
+                    static faulted => GuiDiagnosticWriter.AppendTraceLine(
+                        $"[ChatView] Grouped catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+            }
             if (_providerCatalogController != null)
             {
                 _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;

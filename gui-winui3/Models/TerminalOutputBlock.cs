@@ -81,6 +81,25 @@ public sealed class TerminalOutputBlock : INotifyPropertyChanged
 
     public string FooterText => IsTruncated ? "… output truncated" : string.Empty;
 
+    /// <summary>
+    /// Drops the text streamed for a superseded attempt so the block shows the
+    /// retried attempt's output only. A completed block keeps its text: the run
+    /// has already settled it.
+    /// </summary>
+    public void ResetText()
+    {
+        if (IsCompleted)
+        {
+            return;
+        }
+
+        _text.Clear();
+        _lineCount = 0;
+        IsTruncated = false;
+        OnPropertyChanged(nameof(Text));
+        OnPropertyChanged(nameof(FooterText));
+    }
+
     public void Complete(bool failed)
     {
         if (IsCompleted)

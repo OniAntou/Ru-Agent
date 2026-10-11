@@ -200,7 +200,9 @@ public sealed class GuiDiagnosticWriter : IDisposable
     /// catalog refresh, a clipboard paste). <c>Debug.WriteLine</c> is not a substitute:
     /// it is compiled out of Release, so those failures were invisible in a shipped
     /// build. The caller formats the line, so this never inspects the objects it
-    /// describes and never serializes them.
+    /// describes and never serializes them. The line is queued for one bounded
+    /// background writer: callers are on the UI thread, and opening a file on every
+    /// trace line stalled the interaction it was measuring.
     /// </remarks>
     public static bool AppendTraceLine(string line, string? logRoot = null)
     {
@@ -211,10 +213,29 @@ public sealed class GuiDiagnosticWriter : IDisposable
 
         try
         {
-            string bounded = line.Length > MaxTraceLineChars ? line[..MaxTraceLineChars] : line;
-            string path = Path.Combine(ResolveLogRoot(logRoot), TraceFileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.AppendAllText(path, bounded + Environment.NewLine);
+            lock (TraceGate)
+            {
+                // Bounded: a burst of failures must not grow the process's memory.
+                if (TraceQueue.Count >= TraceQueueCapacity)
+                {
+                    TraceQueue.Dequeue();
+                }
+
+                TraceQueue.Enqueue((
+                    line.Length > MaxTraceLineChars ? line[..MaxTraceLineChars] : line,
+                    logRoot));
+                if (!TraceWorkerStarted)
+                {
+                    TraceWorkerStarted = true;
+                    _ = Task.Factory.StartNew(
+                        TraceWorkerLoop,
+                        CancellationToken.None,
+                        TaskCreationOptions.LongRunning,
+                        TaskScheduler.Default);
+                }
+            }
+
+            TraceSignal.Set();
             return true;
         }
         catch
@@ -225,7 +246,51 @@ public sealed class GuiDiagnosticWriter : IDisposable
     }
 
     private const int MaxTraceLineChars = 2_000;
+    private const int TraceQueueCapacity = 256;
     private const string TraceFileName = "gui-trace.jsonl";
+    private static readonly object TraceGate = new();
+    private static readonly Queue<(string Line, string? LogRoot)> TraceQueue = new();
+    private static readonly AutoResetEvent TraceSignal = new(false);
+    private static bool TraceWorkerStarted;
+    private static int _traceWriteFailureCount;
+
+    /// <summary>Trace lines dropped by the background writer so far (tests and diagnostics).</summary>
+    public static int TraceWriteFailureCount => Volatile.Read(ref _traceWriteFailureCount);
+
+    private static void TraceWorkerLoop()
+    {
+        while (true)
+        {
+            TraceSignal.WaitOne(1000);
+            (string Line, string? LogRoot)[] batch;
+            lock (TraceGate)
+            {
+                if (TraceQueue.Count == 0)
+                {
+                    continue;
+                }
+
+                batch = TraceQueue.ToArray();
+                TraceQueue.Clear();
+            }
+
+            try
+            {
+                foreach (var (line, root) in batch)
+                {
+                    string path = Path.Combine(ResolveLogRoot(root), TraceFileName);
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    File.AppendAllText(path, line + Environment.NewLine);
+                }
+            }
+            catch
+            {
+                // A trace that cannot be written is dropped rather than retried
+                // hot: the failure counter is the diagnostic for it.
+                Interlocked.Increment(ref _traceWriteFailureCount);
+            }
+        }
+    }
 
     public void Dispose()
     {

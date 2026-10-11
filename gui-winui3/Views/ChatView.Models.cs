@@ -825,10 +825,6 @@ namespace RuApp.Views
                 ClearComposerStatus();
             }
             ScheduleContextMeterUpdate();
-            if (string.IsNullOrEmpty(ChatInputTextBox.Text))
-            {
-                return;
-            }
         }
 
         private DispatcherQueueTimer? _contextMeterTimer;

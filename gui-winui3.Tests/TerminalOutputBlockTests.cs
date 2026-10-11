@@ -50,4 +50,30 @@ public sealed class TerminalOutputBlockTests
         done.Complete(failed: false);
         Assert.Equal("done", done.StateText);
     }
+
+    [Fact]
+    public void ResetText_drops_a_superseded_attempt_and_keeps_accepting_output()
+    {
+        var block = new TerminalOutputBlock("exec_1", "Running test task");
+        block.AppendText("attempt one output");
+
+        block.ResetText();
+
+        Assert.Equal(string.Empty, block.Text);
+        Assert.False(block.IsTruncated);
+        block.AppendText("attempt two output");
+        Assert.Equal("attempt two output", block.Text);
+    }
+
+    [Fact]
+    public void ResetText_leaves_a_completed_block_alone()
+    {
+        var block = new TerminalOutputBlock("exec_1", "Running test task");
+        block.AppendText("settled output");
+        block.Complete(failed: false);
+
+        block.ResetText();
+
+        Assert.Equal("settled output", block.Text);
+    }
 }

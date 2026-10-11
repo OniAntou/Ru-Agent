@@ -235,6 +235,21 @@ namespace RuApp
 
         private async void OnWorkspaceGroupAddClick(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                await AddSessionToWorkspaceGroupAsync(sender);
+            }
+            catch (Exception ex)
+            {
+                // async void: a failed create (or a dialog collision) must leave a
+                // bounded status instead of an unhandled exception.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace add failed: {ex.Message}");
+                SetSessionActionError("Could not add a chat to this workspace");
+            }
+        }
+
+        private async Task AddSessionToWorkspaceGroupAsync(object sender)
+        {
             if (_apiService == null || _chatView == null) return;
             if (sender is not Button button || button.Tag is not string key) return;
             var path = ResolveWorkspacePath(key);
@@ -256,6 +271,21 @@ namespace RuApp
         }
 
         private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await PickAndPinWorkspaceAsync();
+            }
+            catch (Exception ex)
+            {
+                // async void: the picker can throw (interop failure) and the
+                // sidebar update must not die silently.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace picker failed: {ex.Message}");
+                SetSessionActionError("Could not add the workspace");
+            }
+        }
+
+        private async Task PickAndPinWorkspaceAsync()
         {
             var picker = new Windows.Storage.Pickers.FolderPicker();
             picker.FileTypeFilter.Add("*");

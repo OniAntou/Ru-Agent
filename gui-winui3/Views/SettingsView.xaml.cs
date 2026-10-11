@@ -476,6 +476,9 @@ namespace RuApp.Views
         public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
         {
             DisposeEventHandlers();
+            // A previous Initialize that owned its controller must not leave it
+            // behind when the view is re-initialized against a new backend.
+            DisposeOwnedProviderCatalogController();
             _apiService = apiService;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
@@ -525,28 +528,43 @@ namespace RuApp.Views
         private async Task LoadSettingsAsync()
         {
             _loading = true;
-            if (_apiService != null)
+            try
             {
-                var settings = await _apiService.GetSettingsAsync();
-                settings ??= new AppSettingsDto();
-                _lastSettings = settings;
+                if (_apiService != null)
+                {
+                    var settings = await _apiService.GetSettingsAsync();
+                    settings ??= new AppSettingsDto();
+                    _lastSettings = settings;
 
-                CustomEndpointUrlBox.Text = settings.CustomUrl;
-                CustomApiKeyBox.Password = string.Empty;
-                CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "sk-...";
-                ModelsDevApiKeyBox.Password = string.Empty;
-                ModelsDevKeyStatus.Text = string.Empty;
-                // Providers first: the current choice can only be named once
-                // the runtime rows exist.
-                await RefreshModelsDevProvidersAsync();
-                SetCurrentProvider(settings.BackendChoice ?? string.Empty);
+                    CustomEndpointUrlBox.Text = settings.CustomUrl;
+                    CustomApiKeyBox.Password = string.Empty;
+                    CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
+                        ? "Saved (leave blank to keep unchanged)"
+                        : "sk-...";
+                    ModelsDevApiKeyBox.Password = string.Empty;
+                    ModelsDevKeyStatus.Text = string.Empty;
+                    // Providers first: the current choice can only be named once
+                    // the runtime rows exist.
+                    await RefreshModelsDevProvidersAsync();
+                    SetCurrentProvider(settings.BackendChoice ?? string.Empty);
 
-                UpdateVisibilityForBackend(_providerChoice);
-                _providerCatalogController?.SetBackend(_providerChoice);
+                    UpdateVisibilityForBackend(_providerChoice);
+                    _providerCatalogController?.SetBackend(_providerChoice);
+                }
             }
-            _loading = false;
+            catch (Exception ex)
+            {
+                // The load is fire-and-forget: an escaping fault would be
+                // unobserved, so it is traced here and the panel keeps working.
+                GuiDiagnosticWriter.AppendTraceLine($"[SettingsView] Settings load failed: {ex.Message}");
+            }
+            finally
+            {
+                // The flag gates autosave and the row click handlers: a throw
+                // anywhere above must not leave the whole panel read-only until
+                // the next restart.
+                _loading = false;
+            }
         }
 
         /// <summary>
@@ -1084,24 +1102,36 @@ namespace RuApp.Views
         public void Dispose()
         {
             DisposeEventHandlers();
-            if (_providerCatalogController is not null)
-            {
-                if (_ownsProviderCatalogController)
-                {
-                    // Same reasoning as ChatView.Dispose: async disposal must
-                    // not block the UI thread's Dispose.
-                    var controller = _providerCatalogController;
-                    _ = controller.DisposeAsync().AsTask().ContinueWith(
-                        static faulted => GuiDiagnosticWriter.AppendTraceLine(
-                            $"[SettingsView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default);
-                }
-                _providerCatalogController = null;
-                _ownsProviderCatalogController = false;
-            }
+            DisposeOwnedProviderCatalogController();
             _apiService = null;
+        }
+
+        /// <summary>
+        /// Disposes the provider catalog controller when this view owns it and
+        /// clears the reference. Async disposal never blocks the UI thread: every
+        /// await inside the controller uses ConfigureAwait(false), so the task
+        /// completes independently and a fault is only logged.
+        /// </summary>
+        private void DisposeOwnedProviderCatalogController()
+        {
+            if (_providerCatalogController is null)
+            {
+                return;
+            }
+
+            if (_ownsProviderCatalogController)
+            {
+                var controller = _providerCatalogController;
+                _ = controller.DisposeAsync().AsTask().ContinueWith(
+                    static faulted => GuiDiagnosticWriter.AppendTraceLine(
+                        $"[SettingsView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+            }
+
+            _providerCatalogController = null;
+            _ownsProviderCatalogController = false;
         }
 
         private void DisposeEventHandlers()

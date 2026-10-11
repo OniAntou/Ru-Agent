@@ -928,6 +928,10 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
+                // The ticket is taken before the first await: the *last* click
+                // must win. Two rapid switches both wait on the outgoing stop,
+                // and settling order is not click order.
+                var requestTicket = ++_sessionOpenRequestTicket;
                 string outgoingDraft = ChatInputTextBox?.Text ?? string.Empty;
                 var outgoingAttachments = PendingAttachments.ToList();
                 if (!_composerDrafts.CanSave(_activeSessionId, outgoingDraft, outgoingAttachments))
@@ -940,6 +944,7 @@ namespace RuApp.Views
                 // cancellation races the next create request and surfaces as the
                 // misleading "workspace busy" error.
                 await StopActiveAgentAsync(force: true);
+                if (requestTicket != _sessionOpenRequestTicket) return;
 
                 // This attempt takes ownership of the transcript from here. Both halves of
                 // the draft move key off the active session id, so the outgoing draft is

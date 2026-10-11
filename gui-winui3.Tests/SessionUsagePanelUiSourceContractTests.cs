@@ -56,7 +56,7 @@ public sealed class SessionUsagePanelUiSourceContractTests
     public void Opening_the_menu_centres_a_panel_over_the_shell_and_reads_that_session()
     {
         string code = GuiSource.ViewText("MainWindow");
-        string open = GuiSource.MethodBody(code, "OnSessionUsageClick");
+        string open = GuiSource.MethodBody(code, "ShowSessionUsageAsync");
 
         // The session comes off the element that was clicked — the hover button or the
         // row menu item — never off "the session on screen": the whole point is asking

@@ -327,6 +327,25 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Drops the chunk text a superseded attempt streamed into this row, so the
+    /// retried attempt's output is the only thing the row shows.
+    /// </summary>
+    public void ResetTerminalOutput()
+    {
+        if (_terminalOutputText.Length == 0)
+        {
+            return;
+        }
+
+        _terminalOutputText = string.Empty;
+        OnPropertyChanged(nameof(TerminalOutputText));
+        OnPropertyChanged(nameof(TerminalPanelText));
+        OnPropertyChanged(nameof(ShowTerminalOutput));
+        OnPropertyChanged(nameof(HasTerminalOutput));
+        OnPropertyChanged(nameof(ShowRowDetailToggle));
+    }
+
     /// <summary>Chevron for the edit toggle: down when open, right when closed.</summary>
     public string EditPreviewChevronGlyph => IsEditPreviewExpanded ? "\uE70D" : "\uE76C";
 

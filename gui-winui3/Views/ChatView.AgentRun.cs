@@ -1054,7 +1054,7 @@ namespace RuApp.Views
                     _ => "standard",
                 };
                 var imagePayloads = attachments?
-                    .Where(a => a.IsImage && (!a.IsImage || !string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
+                    .Where(a => a.IsImage && (!string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
                     .ToList();
 

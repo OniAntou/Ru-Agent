@@ -373,7 +373,7 @@ public sealed class AgentSessionUiSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "FolderPicker",
-            GuiSource.MethodBody(code, "OnWorkspaceAddClick"),
+            GuiSource.MethodBody(code, "PickAndPinWorkspaceAsync"),
             StringComparison.Ordinal);
         Assert.Contains(
             "MergePinned",
@@ -381,7 +381,7 @@ public sealed class AgentSessionUiSourceContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "CreateSessionAsync",
-            GuiSource.MethodBody(code, "OnWorkspaceGroupAddClick"),
+            GuiSource.MethodBody(code, "AddSessionToWorkspaceGroupAsync"),
             StringComparison.Ordinal);
         Assert.Contains(
             "Unpin",

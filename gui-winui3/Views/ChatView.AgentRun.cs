@@ -369,7 +369,6 @@ namespace RuApp.Views
             UpdateAgentInlineState();
 
             Exception? failure = null;
-            var dialogAnswered = false;
             try
             {
                 var dialog = new ContentDialog
@@ -383,7 +382,6 @@ namespace RuApp.Views
                 };
 
                 ContentDialogResult result = await ContentDialogGate.ShowAsync(dialog);
-                dialogAnswered = true;
                 bool isCurrentRequest = ReferenceEquals(_agentController, controller)
                     && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
                     && controller.CurrentRun is { } currentRun
@@ -1536,6 +1534,11 @@ namespace RuApp.Views
             string status = exception switch
             {
                 AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message, api.BlockingRunId, api.BlockingRunStatus),
+                // A dialog collision is not a start failure: the gate absorbs it,
+                // and if one ever slips through, say what to do instead of
+                // reporting the run as broken.
+                _ when ContentDialogGate.IsDialogConflict(exception) =>
+                    "A dialog could not open because another one is still open. Close it and try again.",
                 _ => $"Coding Agent could not start: {exception.Message}"
             };
 

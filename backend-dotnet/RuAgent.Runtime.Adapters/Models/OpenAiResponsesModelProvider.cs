@@ -104,7 +104,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     {
                         var error = ReadObject(data["error"]);
                         var code = ReadString(error?["code"]) ?? ReadString(data["code"]) ?? "http_error";
-                        throw new ModelProviderException(MapErrorCode(code), false);
+                        throw MapError(code);
                     }
                     if (evt.Event == "response.failed")
                     {
@@ -133,7 +133,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                         AppendFunctionArguments(functionCalls, data, evt.Event.EndsWith(".done", StringComparison.Ordinal));
                         continue;
                     }
-                    if (evt.Event is "response.created" or "response.in_progress" or "response.output_item.added" or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
+                    if (evt.Event is "response.created" or "response.in_progress" or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
                         or "response.reasoning.done" or "response.queued")
                     {
                         continue;
@@ -222,7 +222,13 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     throw new ModelProviderException("malformed_payload", false);
                 tools.Add(new JsonObject { ["type"] = "function", ["name"] = name, ["parameters"] = schema.DeepClone(), ["strict"] = false });
             }
-            body["tools"] = tools;
+
+            // An empty list omits the key rather than declaring no tools, the
+            // same rule the other two protocol adapters follow.
+            if (tools.Count > 0)
+            {
+                body["tools"] = tools;
+            }
         }
         if (request.Settings["reasoning"] is JsonObject reasoning)
         {
@@ -271,9 +277,26 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         var delta = ReadString(data[isFinal ? "arguments" : "delta"]);
         if (!calls.TryGetValue(index, out var call) || call.ItemId != itemId || delta is null || call.IsFinal)
             throw new ModelProviderException("malformed_payload", false);
-        if (!isFinal) call.Arguments.Append(delta);
+        if (!isFinal)
+        {
+            call.Arguments.Append(delta);
+        }
+        else if (call.Arguments.Length == 0)
+        {
+            // A gateway may normalise the stream and send only the completed
+            // `.done` payload. The done value is then the source of truth for
+            // the arguments rather than a redundant echo that must match
+            // deltas that never arrived.
+            call.Arguments.Append(delta);
+        }
+        else if (call.Arguments.ToString() != delta)
+        {
+            // With deltas present, the done payload must agree with them: a
+            // disagreement is a broken stream, not a recoverable shape.
+            throw new ModelProviderException("malformed_payload", false);
+        }
+
         if (call.Arguments.Length > 64 * 1024) throw new ModelProviderException("response_too_large", false);
-        if (isFinal && call.Arguments.ToString() != delta) throw new ModelProviderException("malformed_payload", false);
         if (isFinal) call.IsFinal = true;
     }
 
@@ -308,13 +331,20 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         public bool IsFinal { get; set; }
     }
 
-    private static string MapErrorCode(string code) => code switch
+    /// <summary>
+    /// Stream-level error codes carry their own retryability, the same way the
+    /// HTTP status mapping does: a rate limit or a server fault reached the
+    /// provider and is transient, so it must not fail the run closed on the
+    /// first occurrence.
+    /// </summary>
+    private static ModelProviderException MapError(string code) => code switch
     {
-        "unauthorized" or "authentication_error" => "auth_failed",
-        "permission_error" or "forbidden" => "forbidden",
-        "rate_limit_exceeded" or "rate_limited" => "rate_limited",
-        _ when code.Contains("rate_limit") => "rate_limited",
-        _ => "http_error",
+        "unauthorized" or "authentication_error" => new("auth_failed", false),
+        "permission_error" or "forbidden" => new("forbidden", false),
+        "rate_limit_exceeded" or "rate_limited" => new("rate_limited", true),
+        _ when code.Contains("rate_limit") => new("rate_limited", true),
+        "server_error" or "overloaded" or "overloaded_error" => new("server_error", true),
+        _ => new("http_error", false),
     };
 
     private static string? ReadString(JsonNode? node)

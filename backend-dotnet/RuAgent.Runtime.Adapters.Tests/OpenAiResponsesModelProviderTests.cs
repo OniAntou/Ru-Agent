@@ -648,6 +648,41 @@ public sealed class OpenAiResponsesModelProviderTests
         Assert.Equal("vision_unsupported", ex.Code);
     }
 
+    [Fact]
+    public async Task GenerateAsync_accepts_a_done_only_arguments_stream()
+    {
+        // Some gateways normalise the stream and send the completed arguments
+        // only in `.done`; the done payload is then the source of truth rather
+        // than an echo that must match deltas that never arrived.
+        var responseOutput = new JsonArray
+        {
+            new JsonObject { ["type"] = "function_call", ["id"] = "item-a", ["call_id"] = "call-a", ["name"] = "files.read", ["arguments"] = "{\"path\":\"a.txt\"}" },
+        };
+        var settings = new JsonObject { ["model_tools"] = new JsonArray { new JsonObject { ["tool_id"] = "files.read", ["tool_version"] = "1.0.0", ["input_schema"] = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } }, ["required"] = new JsonArray("path"), ["additionalProperties"] = false } } } };
+        var sse =
+            SseEvent("response.output_item.added", new JsonObject { ["type"] = "response.output_item.added", ["output_index"] = 0, ["item"] = new JsonObject { ["id"] = "item-a", ["type"] = "function_call", ["call_id"] = "call-a", ["name"] = "files.read", ["arguments"] = "" } }) +
+            SseEvent("response.function_call_arguments.done", new JsonObject { ["type"] = "response.function_call_arguments.done", ["output_index"] = 0, ["item_id"] = "item-a", ["arguments"] = "{\"path\":\"a.txt\"}" }) +
+            SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed", ["output"] = responseOutput } });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(settings), CancellationToken.None));
+
+        var fragment = Assert.Single(deltas.SelectMany(delta => delta.ToolFragments));
+        Assert.Equal("call-a", fragment.ProviderCallId);
+        Assert.Equal("{\"path\":\"a.txt\"}", fragment.ArgumentsFragment);
+    }
+
+    [Fact]
+    public void ProjectRequestBody_omits_tools_when_the_tool_list_is_empty()
+    {
+        var provider = new OpenAiResponsesModelProvider(new HttpClient());
+        var body = JsonNode.Parse(provider.ProjectRequestBody(
+            Request(new JsonObject { ["model_tools"] = new JsonArray() }, maximumOutputTokens: 4096)))!.AsObject();
+
+        Assert.False(body.ContainsKey("tools"));
+    }
+
     private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null,
         int? maximumOutputTokens = null) => new(
         "test-model",

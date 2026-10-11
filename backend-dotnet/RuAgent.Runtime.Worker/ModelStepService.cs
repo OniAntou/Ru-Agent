@@ -652,7 +652,15 @@ public sealed class ModelStepService
         foreach (var fragment in fragments)
         {
             var hasProviderCallId = !string.IsNullOrEmpty(fragment.ProviderCallId);
+            // A repeated call id is the ordinary continuation shape for gateways
+            // that echo the id on every chunk: it names the call already in
+            // progress, so it must not open a second, nameless call. The indexed
+            // path accepts the same repetition (ChatToolCallAssembly), and the two
+            // assemblies must agree on the same protocol.
+            var repeatsCurrentCallId = hasProviderCallId
+                && string.Equals(groups[^1].ProviderCallId, fragment.ProviderCallId, StringComparison.Ordinal);
             var opensNewCall = hasProviderCallId
+                && !repeatsCurrentCallId
                 && (groups[^1].ProviderCallId is not null
                     || groups[^1].ToolName is not null
                     || groups[^1].Arguments.Length > 0);
@@ -960,6 +968,14 @@ public sealed class ModelStepService
         }
     }
 
+    /// <summary>
+    /// The single authoritative provider-code mapping. Retryability is a
+    /// property of the row, not of the exception's flag: adapter call sites set
+    /// <see cref="ModelProviderException.Retryable"/> for the codes that pass
+    /// through unchanged (<c>http_error</c>, <c>vision_unsupported</c>,
+    /// <c>empty_model_reply</c>, and unknown codes), while a listed code always
+    /// carries the retryability decided here.
+    /// </summary>
     private static ModelStepException MapProviderException(ModelProviderException error) => error.Code switch
     {
         "timeout" => new ModelStepException("provider_timeout", retryable: true, error),

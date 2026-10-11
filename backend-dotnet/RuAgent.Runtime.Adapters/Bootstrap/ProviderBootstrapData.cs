@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Runtime.Adapters.Models;
 
 namespace RuAgent.Runtime.Adapters.Bootstrap;
 
@@ -98,8 +99,8 @@ public sealed record ProviderBootstrapData
             return null;
         }
         if (value is < 1 or > 128000) throw new ArgumentException("Output cap is invalid.", nameof(value));
-        if (protocol == ProviderProtocols.AnthropicMessages && value > 8192)
-            throw new ArgumentException("Anthropic output cap exceeds 8192.", nameof(value));
+        if (protocol == ProviderProtocols.AnthropicMessages && value > AnthropicMessagesModelProvider.MaximumSupportedOutputTokens)
+            throw new ArgumentException("Anthropic output cap exceeds the adapter limit.", nameof(value));
         return value;
     }
 

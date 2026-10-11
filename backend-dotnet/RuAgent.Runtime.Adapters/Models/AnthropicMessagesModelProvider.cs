@@ -8,13 +8,20 @@ namespace RuAgent.Runtime.Adapters.Models;
 
 public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
+    /// <summary>
+    /// The largest output cap this adapter will send. The limit is a property of
+    /// the adapter's contract, so the bootstrap validation and the backend's
+    /// snapshot factory both reference it instead of repeating the literal.
+    /// </summary>
+    public const int MaximumSupportedOutputTokens = 8192;
+
     private readonly HttpClient _http;
     public AnthropicMessagesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
 
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.MaximumOutputTokens is null or <= 0 or > 8192) throw new ModelProviderException("malformed_payload", false);
+        if (request.MaximumOutputTokens is null or <= 0 or > MaximumSupportedOutputTokens) throw new ModelProviderException("malformed_payload", false);
         var body = request.PreparedBodyJson ?? BuildBody(request);
         using var message = new HttpRequestMessage(HttpMethod.Post, request.Endpoint)
         {
@@ -200,8 +207,18 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
                         {
                             var error = ReadObject(data["error"]);
                             var errType = ReadString(error?["type"]) ?? string.Empty;
-                            if (errType == "overloaded_error") throw new ModelProviderException("server_error", true);
-                            throw new ModelProviderException("http_error", false);
+                            var mapped = errType switch
+                            {
+                                "overloaded_error" => new ModelProviderException("server_error", true),
+                                "rate_limit_error" => new ModelProviderException("rate_limited", true),
+                                // The stream-level twin of a 5xx response: the request
+                                // reached Anthropic and the answer failed, so it keeps
+                                // the HTTP mapping's retryability instead of failing
+                                // the run closed on the first occurrence.
+                                "api_error" => new ModelProviderException("server_error", true),
+                                _ => new ModelProviderException("http_error", false),
+                            };
+                            throw mapped;
                         }
                         default: continue;
                     }
@@ -341,7 +358,15 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         };
         if (request.Settings["thinking"] is JsonObject thinking) body["thinking"] = (JsonObject)thinking.DeepClone();
         if (request.Settings["output_config"] is JsonObject oc) body["output_config"] = (JsonObject)oc.DeepClone();
-        if (request.NativeToolCalling) body["tools"] = BuildTools(request.Settings["model_tools"] as JsonArray);
+        if (request.NativeToolCalling)
+        {
+            var tools = BuildTools(request.Settings["model_tools"] as JsonArray);
+            if (tools.Count > 0)
+            {
+                body["tools"] = tools;
+            }
+        }
+
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
 
@@ -349,7 +374,11 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
 
     private static JsonArray BuildTools(JsonArray? modelTools)
     {
-        if (modelTools is null || modelTools.Count is < 1 or > 16) throw new ModelProviderException("malformed_payload", false);
+        // An absent or empty tool list omits the key, matching the other two
+        // protocol adapters: no tool is advertised, so there is nothing to
+        // declare. Only a shape that cannot be projected stays fatal.
+        if (modelTools is null || modelTools.Count == 0) return [];
+        if (modelTools.Count > 16) throw new ModelProviderException("malformed_payload", false);
         var tools = new JsonArray();
         foreach (var item in modelTools.OfType<JsonObject>())
         {

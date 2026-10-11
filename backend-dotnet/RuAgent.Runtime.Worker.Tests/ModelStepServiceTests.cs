@@ -336,6 +336,34 @@ public sealed class ModelStepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_treats_a_repeated_call_id_on_a_continuation_as_one_call()
+    {
+        // Gateways that echo the call id on every chunk stream one call as
+        // {id, name, args} then {id, "", args}. The repeated id names the call
+        // already in progress, so it must not open a second, nameless group --
+        // the indexed assembly accepts the same shape and the two assemblies
+        // must agree on the same protocol.
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"READ"),
+                    new ModelToolFragment("call-1", string.Empty, "ME.md\"}"),
+                },
+                true,
+                "tool_calls"));
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(includeTool: true),
+            CancellationToken.None);
+
+        var call = Assert.Single(result.ToolCalls);
+        Assert.Equal("call-1", call.ProviderCallId);
+        Assert.Equal("README.md", call.Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
     public async Task Step_service_assembles_a_second_call_whose_arguments_arrive_without_a_call_id()
     {
         // Providers put the call id and the tool name on a call's first fragment

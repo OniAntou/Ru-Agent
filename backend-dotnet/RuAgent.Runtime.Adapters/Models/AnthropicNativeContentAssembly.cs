@@ -135,21 +135,24 @@ internal sealed class AnthropicNativeContentAssembly
 
     private static JsonObject CreateText(JsonObject source)
     {
-        if (source.Count != 2 || ReadString(source["text"]) is not { Length: <= MaximumTextChars } text || text.Contains('\0'))
+        // Only the required fields are validated: a provider that adds a new
+        // sibling field to a valid block (for example citations) must not fail
+        // the step, matching how unknown stream events are ignored.
+        if (ReadString(source["text"]) is not { Length: <= MaximumTextChars } text || text.Contains('\0'))
             throw new ModelProviderException("malformed_payload", false);
         return new JsonObject { ["type"] = "text", ["text"] = text };
     }
 
     private static JsonObject CreateThinking(JsonObject source)
     {
-        if (source.Count != 2 || ReadString(source["thinking"]) is not { Length: <= MaximumTextChars } text || text.Contains('\0'))
+        if (ReadString(source["thinking"]) is not { Length: <= MaximumTextChars } text || text.Contains('\0'))
             throw new ModelProviderException("malformed_payload", false);
         return new JsonObject { ["type"] = "thinking", ["thinking"] = text };
     }
 
     private static JsonObject CreateRedacted(JsonObject source)
     {
-        if (source.Count != 2 || ReadString(source["data"]) is not { Length: > 0 and <= 32_768 } data || data.Contains('\0'))
+        if (ReadString(source["data"]) is not { Length: > 0 and <= 32_768 } data || data.Contains('\0'))
             throw new ModelProviderException("malformed_payload", false);
         return new JsonObject { ["type"] = "redacted_thinking", ["data"] = data };
     }
@@ -159,7 +162,7 @@ internal sealed class AnthropicNativeContentAssembly
         var id = ReadString(source["id"]);
         var name = ReadString(source["name"]);
         var input = ReadObject(source["input"]);
-        if (source.Count != 4 || id is null || id.Length > 256 || !_toolIds.Add(id)
+        if (id is null || id.Length > 256 || !_toolIds.Add(id)
             || name is null || name.Length > MaximumToolNameChars || input is null || input.Count > 0)
             throw new ModelProviderException("malformed_payload", false);
         return new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = name, ["input"] = new JsonObject() };

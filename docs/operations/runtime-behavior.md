@@ -379,6 +379,13 @@ An exhausted provider-transient failure
 `provider_transport_error`) is not failed either: it parks the run in
 `waiting_user` with a `ContinueRequested` that preserves the provider's code,
 and an explicit Continue retries the same provider in a fresh budget window.
+A provider stream that goes silent is the case behind `provider_timeout`: the
+SSE reader resets a 120-second idle watchdog on every received chunk and
+cancels a stream that sends nothing, so a provider that accepts the connection
+and stalls becomes the same retryable timeout instead of holding the step until
+the user cancels. The watchdog applies to all three protocols; the HTTP request
+timeout itself stays infinite because a whole-request bound would cut a healthy
+long generation.
 Approval-decision deny and reconciliation decisions stay outside this loop: a
 user deny keeps its fail-closed rule, the approval rules above are unchanged,
 and an ambiguous mutation still pauses until explicit reconciliation. An allow

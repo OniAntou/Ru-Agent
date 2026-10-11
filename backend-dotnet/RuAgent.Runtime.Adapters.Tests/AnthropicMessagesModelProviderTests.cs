@@ -514,26 +514,22 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.Equal("length", deltas[^1].FinishReason);
     }
 
-    [Fact]
-    public async Task GenerateAsync_maps_overloaded_error_to_server_error()
+    [Theory]
+    [InlineData("overloaded_error", "server_error", true)]
+    [InlineData("rate_limit_error", "rate_limited", true)]
+    [InlineData("api_error", "server_error", true)]
+    [InlineData("invalid_request_error", "http_error", false)]
+    public async Task GenerateAsync_maps_stream_error_events_like_http_failures(
+        string errorType,
+        string code,
+        bool retryable)
     {
-        var sse = MessageStart() + SseRaw("error", "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}");
+        var sse = MessageStart() + SseRaw("error", $"{{\"type\":\"error\",\"error\":{{\"type\":\"{errorType}\"}}}}");
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
         var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None)));
-        Assert.Equal("server_error", ex.Code);
-        Assert.True(ex.Retryable);
-    }
-
-    [Fact]
-    public async Task GenerateAsync_maps_generic_error_to_http_error()
-    {
-        var sse = MessageStart() + SseRaw("error", "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\"}}");
-        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
-        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
-        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None)));
-        Assert.Equal("http_error", ex.Code);
-        Assert.False(ex.Retryable);
+        Assert.Equal(code, ex.Code);
+        Assert.Equal(retryable, ex.Retryable);
     }
 
     [Theory]
@@ -692,6 +688,42 @@ public sealed class AnthropicMessagesModelProviderTests
 
         var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(req, CancellationToken.None)));
         Assert.Equal("vision_unsupported", ex.Code);
+    }
+
+    [Fact]
+    public void ProjectRequestBody_omits_tools_when_the_tool_list_is_empty()
+    {
+        var provider = new AnthropicMessagesModelProvider(new HttpClient());
+        var body = JsonNode.Parse(provider.ProjectRequestBody(
+            Request(new JsonObject { ["model_tools"] = new JsonArray() }, 8192, nativeToolCalling: true)))!.AsObject();
+
+        Assert.False(body.ContainsKey("tools"));
+    }
+
+    [Fact]
+    public async Task GenerateAsync_accepts_a_content_block_with_an_extra_sibling_field()
+    {
+        // Anthropic may add fields to a valid block (citations on text blocks).
+        // The required fields are validated; the extra ones are ignored instead
+        // of failing a step whose block content is perfectly readable.
+        var start = Sse("content_block_start", new JsonObject
+        {
+            ["type"] = "content_block_start",
+            ["index"] = 0,
+            ["content_block"] = new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = "",
+                ["citations"] = new JsonArray(),
+            },
+        });
+        var sse = MessageStart() + start + ContentBlockDeltaText(0, "hi") + ContentBlockStop() + MessageDelta() + MessageStop();
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
+
+        Assert.Contains(deltas, d => d.Text == "hi");
     }
 
     private static JsonObject NativeToolSettings() => new()

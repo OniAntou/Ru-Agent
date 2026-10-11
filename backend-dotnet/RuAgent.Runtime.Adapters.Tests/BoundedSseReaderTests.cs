@@ -175,4 +175,94 @@ public sealed class BoundedSseReaderTests
         Assert.Equal("one", events[0].Data);
         Assert.Equal("two", events[1].Data);
     }
+
+    [Fact]
+    public async Task Idle_provider_times_out_as_retryable_timeout()
+    {
+        var stream = new StallingStream(prefix: string.Empty);
+
+        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+        {
+            await foreach (var _ in BoundedSseReader.ReadAsync(
+                stream,
+                CancellationToken.None,
+                TimeSpan.FromMilliseconds(100)))
+            {
+            }
+        });
+
+        Assert.Equal("timeout", ex.Code);
+        Assert.True(ex.Retryable);
+    }
+
+    [Fact]
+    public async Task Idle_timeout_resets_after_each_received_chunk()
+    {
+        var stream = new StallingStream(prefix: "data: one\n\n");
+        var events = new List<ServerSentEvent>();
+
+        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+        {
+            await foreach (var e in BoundedSseReader.ReadAsync(
+                stream,
+                CancellationToken.None,
+                TimeSpan.FromMilliseconds(300)))
+            {
+                events.Add(e);
+            }
+        });
+
+        Assert.Equal("timeout", ex.Code);
+        Assert.Single(events);
+        Assert.Equal("one", events[0].Data);
+    }
+
+    /// <summary>A stream that serves a prefix once, then never produces another byte.</summary>
+    private sealed class StallingStream(string prefix) : Stream
+    {
+        private readonly byte[] _prefix = Encoding.UTF8.GetBytes(prefix);
+        private int _served;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (_served < _prefix.Length)
+            {
+                var count = Math.Min(buffer.Length, _prefix.Length - _served);
+                _prefix.AsSpan(_served, count).CopyTo(buffer.Span);
+                _served += count;
+                return count;
+            }
+
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

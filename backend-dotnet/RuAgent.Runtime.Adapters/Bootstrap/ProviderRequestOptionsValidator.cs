@@ -10,9 +10,6 @@ internal static class ProviderRequestOptionsValidator
     private static readonly IReadOnlySet<string> AllowedEfforts =
         new HashSet<string>(["none", "minimal", "low", "medium", "high", "xhigh", "max"], StringComparer.Ordinal);
 
-    public static JsonObject? ValidateAndClone(JsonObject? requestOptions, string parameterName) =>
-        ValidateAndClone(ProviderProtocols.ChatCompletions, requestOptions, parameterName);
-
     public static JsonObject? ValidateAndClone(string protocol, JsonObject? requestOptions, string parameterName)
     {
         ProviderProtocols.Require(protocol);

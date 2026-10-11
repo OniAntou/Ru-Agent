@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
 using RuAgent.Runtime.Adapters.Bootstrap;
+using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Business.Settings;
 
 namespace RuBackend.Providers;
@@ -242,7 +243,7 @@ public sealed class AgentProviderSnapshotFactory(
         if (!ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability))
             throw new ProviderCatalogException("model_unavailable");
         return selected.Protocol == ProviderProtocols.AnthropicMessages
-            ? Math.Min(capability.DocumentedMaxOutputTokens!.Value, 8192)
+            ? Math.Min(capability.DocumentedMaxOutputTokens!.Value, AnthropicMessagesModelProvider.MaximumSupportedOutputTokens)
             : null;
     }
 

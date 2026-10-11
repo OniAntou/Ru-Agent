@@ -41,10 +41,8 @@ internal static class AnthropicMessagesHistoryProjector
     {
         if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)
         {
-            var continuation = continuations.FirstOrDefault(candidate => !used.Contains(candidate)
-                && candidate.Provider == "anthropic" && candidate.Protocol == "anthropic_messages"
-                && candidate.Model == model && MatchesCalls(candidate, turn.ToolCalls));
-            if (continuation is null) throw new ModelRunnerProtocolException("provider_continuation_missing");
+            var continuation = ProviderContinuationMatch.FindAnthropic(continuations, used, turn.ToolCalls, model)
+                ?? throw new ModelRunnerProtocolException("provider_continuation_missing");
             used.Add(continuation);
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = new JsonArray(continuation.OutputItems.Select(item => item.DeepClone()).ToArray()) });
             foreach (var call in turn.ToolCalls) pendingCalls.Enqueue(call);
@@ -84,20 +82,4 @@ internal static class AnthropicMessagesHistoryProjector
         ["role"] = role,
         ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
     };
-
-    private static bool MatchesCalls(ProviderContinuation continuation, IReadOnlyList<ModelFunctionCall> calls)
-    {
-        var providerCalls = continuation.OutputItems.Where(item => item["type"]?.GetValue<string>() == "tool_use").ToArray();
-        if (providerCalls.Length != calls.Count) return false;
-        for (var index = 0; index < calls.Count; index++)
-        {
-            var input = providerCalls[index]["input"];
-            if (providerCalls[index]["id"]?.GetValue<string>() != calls[index].Id
-                || providerCalls[index]["name"]?.GetValue<string>() != calls[index].Name
-                || input is not JsonObject
-                || !JsonNode.DeepEquals(input, JsonNode.Parse(calls[index].Arguments.GetRawText())))
-                return false;
-        }
-        return true;
-    }
 }

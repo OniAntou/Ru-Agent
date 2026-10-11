@@ -349,6 +349,39 @@ public sealed class AgentActivityLifecycleTests
         Assert.Equal("transport_failure", receipt.Code);
     }
 
+    [Fact]
+    public async Task Transport_failure_retry_resets_the_superseded_tool_output_stream()
+    {
+        var frames = new List<HarnessTransientFrame>();
+        var buffer = new TransientFrameBuffer(32, frames.Add);
+        var model = new FakeModelStepRunner();
+        model.Enqueue(MutationToolStep());
+        var gateway = new FakeToolGateway(ToolAccessKind.Mutation, transportFailures: 1)
+        {
+            FailureOutputChunks = ["partial superseded output"],
+            OutputChunks = ["retried output"],
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink, frames: buffer);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
+        var toolFrames = frames.Where(frame => frame.Kind == TransientFrameKind.ToolOutput).ToArray();
+        // Attempt 1's chunk, the reset that drops it, then attempt 2's chunk:
+        // both attempts share one execution id, so without the reset the
+        // client rendered the two attempts concatenated.
+        Assert.Equal(3, toolFrames.Length);
+        Assert.Equal("partial superseded output", toolFrames[0].Content);
+        Assert.True(toolFrames[1].IsReset);
+        Assert.Equal(string.Empty, toolFrames[1].Content);
+        Assert.Equal("retried output", toolFrames[2].Content);
+        Assert.All(toolFrames, frame => Assert.Equal(gateway.ExecuteAttempts[0], frame.ExecutionId));
+    }
+
     private static AssistantStep MutationToolStep() =>
         new(
             "editing",
@@ -422,7 +455,8 @@ public sealed class AgentActivityLifecycleTests
         FakeToolGateway gateway,
         InMemoryHarnessEventStore store,
         IAgentActivitySink sink,
-        ReconciliationInspectionGate? inspectionGate = null) =>
+        ReconciliationInspectionGate? inspectionGate = null,
+        TransientFrameBuffer? frames = null) =>
         new(
             model,
             gateway,
@@ -431,7 +465,7 @@ public sealed class AgentActivityLifecycleTests
             new SequenceIdGenerator(),
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
-            new TransientFrameBuffer(32),
+            frames ?? new TransientFrameBuffer(32),
             inspectionGate: inspectionGate,
             activitySink: sink,
             promptContextProvider: new FakeSystemPromptContextProvider());

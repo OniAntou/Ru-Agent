@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
@@ -20,7 +19,24 @@ internal sealed class AgentRunCompaction
     private readonly IModelContextLimitProvider? _contextLimit;
     private readonly ContextBudgetPolicy _contextBudgetPolicy;
     private readonly IAgentActivitySink? _activitySink;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gate bookkeeping. One entry per run, reference-counted so the entry is
+    /// removed only when no caller holds or waits on it. Removing on "semaphore
+    /// idle" alone let a waiter that had already captured the old semaphore
+    /// overlap with a newcomer that got a fresh one; the overlap surfaced as
+    /// duplicate compaction work and a commit conflict. Refcounting closes that
+    /// window instead of tolerating it.
+    /// </summary>
+    private readonly object _gatesLock = new();
+    private readonly Dictionary<string, GateEntry> _gates = new(StringComparer.Ordinal);
+
+    private sealed class GateEntry
+    {
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+
+        public int RefCount { get; set; }
+    }
 
     public AgentRunCompaction(
         IHarnessEventStore store,
@@ -58,59 +74,92 @@ internal sealed class AgentRunCompaction
             throw new ArgumentOutOfRangeException(nameof(reason));
         }
 
-        var gate = _gates.GetOrAdd(runId.Value, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            if (run.State.IsTerminal())
-            {
-                return ContextCompactionResult.NoOp(run, strategy);
-            }
+        return await UnderRunGateAsync(
+                runId.Value,
+                async () =>
+                {
+                    var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+                    if (run.State.IsTerminal())
+                    {
+                        return ContextCompactionResult.NoOp(run, strategy);
+                    }
 
-            long? providerLimit = _contextLimit is null
-                ? null
-                : await _contextLimit.MaxPromptTokensAsync(runId, cancellationToken).ConfigureAwait(false);
-            if (providerLimit is not { } limitTokens)
-            {
-                return ContextCompactionResult.NotAvailable(run, strategy);
-            }
+                    long? providerLimit = _contextLimit is null
+                        ? null
+                        : await _contextLimit.MaxPromptTokensAsync(runId, cancellationToken).ConfigureAwait(false);
+                    if (providerLimit is not { } limitTokens)
+                    {
+                        return ContextCompactionResult.NotAvailable(run, strategy);
+                    }
 
-            var context = await _contextAssembler
-                .AssembleAsync(runId, cancellationToken)
-                .ConfigureAwait(false);
-            return await CompactSnapshotLockedAsync(
-                    run,
-                    context,
-                    limitTokens,
-                    strategy,
-                    reason,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            ReleaseGate(runId.Value, gate);
-        }
+                    var context = await _contextAssembler
+                        .AssembleAsync(runId, cancellationToken)
+                        .ConfigureAwait(false);
+                    return await CompactSnapshotLockedAsync(
+                            run,
+                            context,
+                            limitTokens,
+                            strategy,
+                            reason,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Releases a per-run gate and drops it when idle, so finished runs stop
-    /// accumulating one semaphore each over weeks of use.
+    /// Runs <paramref name="body"/> under the run's gate, holding one reference
+    /// on the entry for its whole duration: wait, body, release, unref. The
+    /// entry (and its semaphore) is removed and disposed only when the last
+    /// reference goes away, so a waiter and a newcomer can never end up on two
+    /// different semaphores for the same run.
     /// </summary>
-    /// <remarks>
-    /// Removal is best-effort and instance-checked: a waiter that already holds
-    /// this gate keeps working on it (its own release becomes a no-op remove),
-    /// while a newcomer gets a fresh gate. The resulting overlap window can only
-    /// surface as a versioned commit conflict, which both callers already handle
-    /// as <c>commit_conflict</c> instead of corrupting state.
-    /// </remarks>
-    private void ReleaseGate(string key, SemaphoreSlim gate)
+    private async Task<T> UnderRunGateAsync<T>(
+        string key,
+        Func<Task<T>> body,
+        CancellationToken cancellationToken)
     {
-        gate.Release();
-        if (gate.CurrentCount == 1)
+        GateEntry entry;
+        lock (_gatesLock)
         {
-            _gates.TryRemove(new KeyValuePair<string, SemaphoreSlim>(key, gate));
+            if (!_gates.TryGetValue(key, out entry!))
+            {
+                entry = new GateEntry();
+                _gates[key] = entry;
+            }
+
+            entry.RefCount++;
+        }
+
+        try
+        {
+            await entry.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await body().ConfigureAwait(false);
+            }
+            finally
+            {
+                entry.Gate.Release();
+            }
+        }
+        finally
+        {
+            GateEntry? toDispose = null;
+            lock (_gatesLock)
+            {
+                entry.RefCount--;
+                if (entry.RefCount == 0
+                    && _gates.TryGetValue(key, out var current)
+                    && ReferenceEquals(current, entry))
+                {
+                    _gates.Remove(key);
+                    toDispose = entry;
+                }
+            }
+
+            toDispose?.Gate.Dispose();
         }
     }
 
@@ -128,69 +177,65 @@ internal sealed class AgentRunCompaction
             return new ContextPreflightResult(run, context, null);
         }
 
-        var gate = _gates.GetOrAdd(
-            run.RunId.Value,
-            _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var preparedRequest = prepareStep is null
-                ? null
-                : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
-            if (preparedRequest?.Preparation is { } preparation
-                && preparation.MaxPromptTokens != limitTokens)
-                return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
-            var decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
-                EstimateInputTokens(context, preparedRequest),
-                limitTokens,
-                ContextCompactionStrategy.Normal);
-            if (decision.NeedsCompaction)
-            {
-                var compaction = await CompactSnapshotLockedAsync(
-                        run,
-                        context,
-                        limitTokens,
-                        ContextCompactionStrategy.Normal,
-                        ContextCompactionReason.Automatic,
-                        cancellationToken,
-                        outputReserveAlreadyAccounted: true,
-                        estimatedTokensOverride: EstimateInputTokens(context, preparedRequest))
-                    .ConfigureAwait(false);
-                if (compaction.Outcome == ContextCompactionOutcome.Committed)
+        return await UnderRunGateAsync(
+                run.RunId.Value,
+                async () =>
                 {
-                    run = compaction.Run!;
-                    context = await _contextAssembler
-                        .AssembleAsync(run.RunId, cancellationToken)
-                        .ConfigureAwait(false);
-                    preparedRequest = prepareStep is null
+                    var preparedRequest = prepareStep is null
                         ? null
                         : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
-                    if (preparedRequest?.Preparation is { } compactedPreparation
-                        && compactedPreparation.MaxPromptTokens != limitTokens)
+                    if (preparedRequest?.Preparation is { } preparation
+                        && preparation.MaxPromptTokens != limitTokens)
                         return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
-                    decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
+                    var decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
                         EstimateInputTokens(context, preparedRequest),
                         limitTokens,
                         ContextCompactionStrategy.Normal);
-                }
-                else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
-                    or ContextCompactionOutcome.RunNotFound)
-                {
-                    return new ContextPreflightResult(
-                        compaction.Run ?? run,
-                        null,
-                        compaction.ErrorCode ?? "commit_conflict");
-                }
-            }
+                    if (decision.NeedsCompaction)
+                    {
+                        var compaction = await CompactSnapshotLockedAsync(
+                                run,
+                                context,
+                                limitTokens,
+                                ContextCompactionStrategy.Normal,
+                                ContextCompactionReason.Automatic,
+                                cancellationToken,
+                                outputReserveAlreadyAccounted: true,
+                                estimatedTokensOverride: EstimateInputTokens(context, preparedRequest))
+                            .ConfigureAwait(false);
+                        if (compaction.Outcome == ContextCompactionOutcome.Committed)
+                        {
+                            run = compaction.Run!;
+                            context = await _contextAssembler
+                                .AssembleAsync(run.RunId, cancellationToken)
+                                .ConfigureAwait(false);
+                            preparedRequest = prepareStep is null
+                                ? null
+                                : await prepareStep(run, context, cancellationToken).ConfigureAwait(false);
+                            if (preparedRequest?.Preparation is { } compactedPreparation
+                                && compactedPreparation.MaxPromptTokens != limitTokens)
+                                return new ContextPreflightResult(run, context, "provider_metadata_mismatch");
+                            decision = _contextBudgetPolicy.EvaluateAvailablePromptTokens(
+                                EstimateInputTokens(context, preparedRequest),
+                                limitTokens,
+                                ContextCompactionStrategy.Normal);
+                        }
+                        else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
+                            or ContextCompactionOutcome.RunNotFound)
+                        {
+                            return new ContextPreflightResult(
+                                compaction.Run ?? run,
+                                null,
+                                compaction.ErrorCode ?? "commit_conflict");
+                        }
+                    }
 
-            return EstimateInputTokens(context, preparedRequest) > decision.UsablePromptTokens
-                ? new ContextPreflightResult(run, null, "context_limit_reached")
-                : new ContextPreflightResult(run, context, null, preparedRequest);
-        }
-        finally
-        {
-            ReleaseGate(run.RunId.Value, gate);
-        }
+                    return EstimateInputTokens(context, preparedRequest) > decision.UsablePromptTokens
+                        ? new ContextPreflightResult(run, null, "context_limit_reached")
+                        : new ContextPreflightResult(run, context, null, preparedRequest);
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static long EstimateInputTokens(

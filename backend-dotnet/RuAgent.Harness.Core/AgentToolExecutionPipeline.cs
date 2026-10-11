@@ -168,6 +168,10 @@ internal sealed class AgentToolExecutionPipeline
         }
         catch
         {
+            // A batch abort still leaves the approvals it registered revoked:
+            // cleanup is best-effort and must never replace the original failure
+            // the caller is unwinding with.
+            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
             await DiscardPreparedAsync(prepared).ConfigureAwait(false);
             throw;
         }
@@ -312,6 +316,25 @@ internal sealed class AgentToolExecutionPipeline
         asks.Count == 0
             ? Task.CompletedTask
             : RevokeApprovalsAsync(asks, cancellationToken);
+
+    /// <summary>
+    /// Revokes every pending approval a failed batch registered, and never
+    /// throws: this runs while the caller unwinds an exception, so a cleanup
+    /// failure must not replace the original failure. A gateway that cannot
+    /// revoke still fails closed when the stale approval or execution is
+    /// presented later.
+    /// </summary>
+    private async Task RevokeApprovalsBestEffortAsync(IReadOnlyList<AskDecision> asks)
+    {
+        try
+        {
+            await RevokeAllApprovalsAsync(asks, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort by contract; the original exception propagates.
+        }
+    }
 
     private async Task RevokeApprovalsAsync(
         IReadOnlyList<AskDecision> asks,
@@ -1009,6 +1032,10 @@ internal sealed class AgentToolExecutionPipeline
         }
         catch
         {
+            // A batch abort still leaves the approvals it registered revoked:
+            // cleanup is best-effort and must never replace the original failure
+            // the caller is unwinding with.
+            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
             await DiscardPreparedAsync(prepared).ConfigureAwait(false);
             throw;
         }
@@ -1098,6 +1125,10 @@ internal sealed class AgentToolExecutionPipeline
         }
         catch
         {
+            // A batch abort still leaves the approvals it registered revoked:
+            // cleanup is best-effort and must never replace the original failure
+            // the caller is unwinding with.
+            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
             await DiscardPreparedAsync(prepared).ConfigureAwait(false);
             throw;
         }
@@ -1157,6 +1188,10 @@ internal sealed class AgentToolExecutionPipeline
         }
         catch
         {
+            // A batch abort still leaves the approvals it registered revoked:
+            // cleanup is best-effort and must never replace the original failure
+            // the caller is unwinding with.
+            await RevokeApprovalsBestEffortAsync(asks).ConfigureAwait(false);
             await DiscardPreparedAsync(prepared).ConfigureAwait(false);
             throw;
         }
@@ -1243,9 +1278,18 @@ internal sealed class AgentToolExecutionPipeline
         AgentActivityProjector.PublishSafe(
             _activitySink,
             runId,
-            AgentActivityProjector.ProjectTodos($"act_todo_{Guid.NewGuid():N}", rows));
+            AgentActivityProjector.ProjectTodos(
+                AgentActivityProjector.ActivityId(proposal.ToolCallId.Value) + "_todos",
+                rows));
     }
 
+    /// <summary>
+    /// Cancels the prepared executions a failed or superseded batch left
+    /// behind. Never throws: an <see cref="OperationCanceledException"/> from a
+    /// racing gateway would otherwise replace the exception being unwound and
+    /// stop the remaining executions from being cancelled. The gateway still
+    /// fails closed when a stale execution is presented later.
+    /// </summary>
     private async Task DiscardPreparedAsync(IEnumerable<PreparedToolExecution> prepared)
     {
         foreach (var execution in prepared)
@@ -1255,7 +1299,7 @@ internal sealed class AgentToolExecutionPipeline
                 await _gateway.CancelAsync(execution.ExecutionId, CancellationToken.None)
                     .ConfigureAwait(false);
             }
-            catch (Exception error) when (error is not OperationCanceledException)
+            catch (Exception)
             {
                 // Cleanup is best-effort. The gateway remains responsible for
                 // failing closed when a stale execution is presented later.
@@ -1402,6 +1446,11 @@ internal sealed class AgentToolExecutionPipeline
                 // broker gateway instead of thrown. Read-only calls may retry
                 // even after dispatch because a read cannot double-apply. The
                 // second failure still reports terminally below.
+                //
+                // The retry replaces this attempt's streamed output, so a reset
+                // frame tells the client to drop what attempt 1 already
+                // rendered before attempt 2's output arrives.
+                outputStream.Reset();
                 if (proposals.TryGetValue(execution.ModelOrder, out var retryProposal))
                 {
                     AgentActivityProjector.PublishSafe(
@@ -1412,6 +1461,10 @@ internal sealed class AgentToolExecutionPipeline
             }
             catch (ToolTransportException)
             {
+                // Terminal failure: flush the redaction tail so the streamed
+                // output ends where the receipt says it ended instead of
+                // silently dropping the held suffix.
+                outputStream.Complete();
                 return new ToolExecutionReceipt(
                     execution.ExecutionId,
                     execution.ToolCallId,

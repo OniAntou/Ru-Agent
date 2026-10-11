@@ -39,6 +39,9 @@ public sealed class FakeToolGateway : IToolGateway, IApprovalCleanupGateway
 
     public IReadOnlyList<string> OutputChunks { get; set; } = [];
 
+    /// <summary>Chunks streamed before each transport failure, so a retried attempt's superseded output is observable.</summary>
+    public IReadOnlyList<string> FailureOutputChunks { get; set; } = [];
+
     public Func<ToolProposal, ToolProposalDecision>? DecisionFactory { get; set; }
 
     /// <summary>When set, returned from every ExecuteAsync call with the live identities.</summary>
@@ -96,6 +99,15 @@ public sealed class FakeToolGateway : IToolGateway, IApprovalCleanupGateway
         if (_remainingTransportFailures > 0)
         {
             _remainingTransportFailures--;
+            for (var index = 0; index < FailureOutputChunks.Count; index++)
+            {
+                await publishDelta(new ToolOutputChunk(
+                    execution.ExecutionId,
+                    index + 1,
+                    ToolOutputStream.Stdout,
+                    FailureOutputChunks[index]));
+            }
+
             throw new ToolTransportException("fake_transport_failure");
         }
 

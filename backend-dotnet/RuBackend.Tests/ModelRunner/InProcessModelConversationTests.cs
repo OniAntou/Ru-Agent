@@ -65,7 +65,7 @@ public sealed class InProcessModelConversationTests
             new ModelTurn("tool", "file contents", toolCallId: "provider-1", toolResultCode: "ok"),
         };
 
-        var items = OpenAiResponsesHistoryProjector.Project(turns, [continuation]);
+        var items = OpenAiResponsesHistoryProjector.Project(turns, [continuation], "gpt-5.6-luna");
 
         Assert.Equal("Reading the file.", items[0]!["content"]!.GetValue<string>());
         Assert.Equal("reasoning", items[1]!["type"]!.GetValue<string>());
@@ -79,7 +79,7 @@ public sealed class InProcessModelConversationTests
         [
             new JsonObject { ["type"] = "function_call", ["id"] = "item-1", ["call_id"] = "provider-1", ["name"] = "files.read", ["arguments"] = "{\"path\":\"b.txt\"}" },
         ]);
-        Assert.Throws<ModelRunnerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched]));
+        Assert.Throws<ModelRunnerProtocolException>(() => OpenAiResponsesHistoryProjector.Project(turns, [mismatched], "gpt-5.6-luna"));
     }
 
     [Fact]

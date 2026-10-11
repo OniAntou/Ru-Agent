@@ -732,39 +732,45 @@ public sealed class AgentRunCoordinator
     {
         HarnessEvent? request = null;
         var resolved = false;
-        var superseded = false;
         await foreach (var envelope in _store
             .ReadEventsAsync(runId, 0, cancellationToken)
             .ConfigureAwait(false))
         {
             var item = envelope.Event;
-            if (string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal)
-                && item.ApprovalId is { } found
-                && string.Equals(found.Value, approvalId.Value, StringComparison.Ordinal))
+            if (request is null)
             {
-                if (request is not null)
+                if (string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal)
+                    && item.ApprovalId is { } found
+                    && string.Equals(found.Value, approvalId.Value, StringComparison.Ordinal))
+                {
+                    request = item;
+                }
+
+                continue;
+            }
+
+            // Past the request only two events can change the verdict: another
+            // approval request (everything after it belongs to that batch, so a
+            // resolution can no longer apply to ours) or the resolution record
+            // itself. Either one ends the scan instead of walking the remaining
+            // history.
+            if (string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal))
+            {
+                if (item.ApprovalId is { } duplicate
+                    && string.Equals(duplicate.Value, approvalId.Value, StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException("approval_request_duplicate");
                 }
 
-                request = item;
-                continue;
+                break;
             }
 
-            if (request is not null
-                && string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal))
-            {
-                superseded = true;
-                continue;
-            }
-
-            if (!superseded
-                && request is not null
-                && item.Sequence > request.Sequence
+            if (item.Sequence > request.Sequence
                 && string.Equals(item.Kind, "run.state_changed", StringComparison.Ordinal)
                 && string.Equals(item.SafeCode, "approval_resolved", StringComparison.Ordinal))
             {
                 resolved = true;
+                break;
             }
         }
 

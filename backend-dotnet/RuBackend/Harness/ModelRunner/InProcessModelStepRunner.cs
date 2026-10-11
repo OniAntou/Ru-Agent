@@ -232,7 +232,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
                 RetainedAssistantEventIds(request.Context, modelMessages), cancellationToken).ConfigureAwait(false);
         return bootstrap.Protocol == ProviderProtocols.OpenAiResponses
-            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations), empty.Anthropic)
+            ? new NativeHistory(OpenAiResponsesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model), empty.Anthropic)
             : new NativeHistory(empty.Responses,
                 AnthropicMessagesHistoryProjector.Project(modelMessages, continuations, bootstrap.Model));
     }

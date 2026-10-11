@@ -42,7 +42,15 @@ public sealed record ProviderContinuation
     public string Protocol { get; }
     public string Model { get; }
     public int Version { get; }
-    public IReadOnlyList<JsonObject> OutputItems => Array.AsReadOnly(_outputItems.Select(item => (JsonObject)item.DeepClone()).ToArray());
+
+    /// <summary>
+    /// The validated output items as a shared read-only view. Callers must not
+    /// mutate the nodes or attach them to another JSON tree; a site that
+    /// inserts them into a payload clones first. Cloning on every read made
+    /// history assembly re-copy up to 128 KiB several times per model step.
+    /// </summary>
+    public IReadOnlyList<JsonObject> OutputItems => _outputItems;
+
     public ReadOnlyMemory<byte> SerializedOutputItems => _serializedOutputItems.ToArray();
 
     private static void ValidateOutputItems(string protocol, IReadOnlyList<JsonObject> items)

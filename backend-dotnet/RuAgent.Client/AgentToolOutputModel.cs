@@ -5,13 +5,16 @@ namespace RuAgent.Client;
 /// <summary>
 /// Validated transient tool-output text for one Agent tool execution. The model
 /// exposes only bounded text and validated execution identity; raw envelope
-/// JSON never reaches the desktop UI.
+/// JSON never reaches the desktop UI. A reset frame carries no text and tells
+/// the client to drop what it already rendered for that execution (a retried
+/// attempt replaces the superseded one).
 /// </summary>
 public sealed record AgentToolOutputModel(
     string Text,
     string ExecutionId,
     string? ModelStepId,
-    long TransientSequence)
+    long TransientSequence,
+    bool IsReset = false)
 {
     public const int MaximumTextCharacters = 64 * 1024;
 
@@ -37,7 +40,7 @@ public sealed record AgentToolOutputModel(
             }
 
             using var inner = JsonDocument.Parse(innerJson);
-            if (!TryReadInner(inner.RootElement, out var text, out var executionId, out var modelStepId))
+            if (!TryReadInner(inner.RootElement, out var text, out var executionId, out var modelStepId, out var isReset))
             {
                 return false;
             }
@@ -46,7 +49,8 @@ public sealed record AgentToolOutputModel(
                 text,
                 executionId,
                 modelStepId,
-                frame.TransientSequence.Value);
+                frame.TransientSequence.Value,
+                isReset);
             return true;
         }
         catch (JsonException)
@@ -93,11 +97,13 @@ public sealed record AgentToolOutputModel(
         JsonElement root,
         out string text,
         out string executionId,
-        out string? modelStepId)
+        out string? modelStepId,
+        out bool isReset)
     {
         text = string.Empty;
         executionId = string.Empty;
         modelStepId = null;
+        isReset = false;
         if (root.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -129,6 +135,14 @@ public sealed record AgentToolOutputModel(
                 case "model_step_id" when property.Value.ValueKind == JsonValueKind.Null:
                     modelStepId = null;
                     break;
+                case "reset" when property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    isReset = property.Value.GetBoolean();
+                    break;
+                case "reset" when property.Value.ValueKind == JsonValueKind.Null:
+                    // The host serializes unset optionals explicitly; a null
+                    // reset is an ordinary frame, not a reset frame.
+                    isReset = false;
+                    break;
                 default:
                     return false;
             }
@@ -136,8 +150,11 @@ public sealed record AgentToolOutputModel(
 
         return hasText
             && hasExecutionId
-            && text.Length is >= 1 and <= MaximumTextCharacters
-            && !text.Contains('\0')
+            // A reset frame is deliberately empty: it drops rendered text
+            // instead of carrying more.
+            && (isReset
+                ? text.Length == 0
+                : text.Length is >= 1 and <= MaximumTextCharacters && !text.Contains('\0'))
             && IsGeneratedId(executionId, "exec_")
             && (modelStepId is null || IsGeneratedId(modelStepId, "step_"));
     }

@@ -45,6 +45,60 @@ public sealed class AgentToolOutputModelTests
         Assert.Null(output!.ModelStepId);
     }
 
+    [Fact]
+    public void TryParse_accepts_the_host_shape_with_explicit_null_reset()
+    {
+        // The host's live publisher always writes the reset field, as null for
+        // an ordinary frame; the parser must accept the shape it actually emits.
+        var frame = Frame(
+            3,
+            new
+            {
+                text = "ready",
+                model_step_id = (string?)null,
+                execution_id = ExecutionId,
+                reset = (bool?)null,
+            });
+
+        Assert.True(AgentToolOutputModel.TryParse(frame, out var output));
+        Assert.False(output!.IsReset);
+        Assert.Equal("ready", output.Text);
+    }
+
+    [Fact]
+    public void TryParse_accepts_a_reset_frame_with_no_text()
+    {
+        var frame = Frame(
+            4,
+            new
+            {
+                text = "",
+                model_step_id = (string?)null,
+                execution_id = ExecutionId,
+                reset = true,
+            });
+
+        Assert.True(AgentToolOutputModel.TryParse(frame, out var output));
+        Assert.True(output!.IsReset);
+        Assert.Equal(string.Empty, output.Text);
+    }
+
+    [Fact]
+    public void TryParse_rejects_a_reset_frame_that_carries_text()
+    {
+        var frame = Frame(
+            5,
+            new
+            {
+                text = "not empty",
+                model_step_id = (string?)null,
+                execution_id = ExecutionId,
+                reset = true,
+            });
+
+        Assert.False(AgentToolOutputModel.TryParse(frame, out _));
+    }
+
     [Theory]
     [InlineData(true, "assistant.delta", 1, "{\"text\":\"hello\",\"execution_id\":\"exec_abcdef0123456789abcdef0123456789\"}")]
     [InlineData(true, "tool.output.delta", 0, "{\"text\":\"hello\",\"execution_id\":\"exec_abcdef0123456789abcdef0123456789\"}")]

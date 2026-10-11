@@ -124,7 +124,8 @@ public sealed partial class AgentCommands
             Tui.TuiViewport.Height(),
             Environment.GetEnvironmentVariable("NO_COLOR"),
             Environment.GetEnvironmentVariable("TERM"),
-            cmd.Classic);
+            cmd.Classic,
+            Console.IsInputRedirected || !ReferenceEquals(_in, Console.In));
         bool tgMode = engine == TuiEngine.TerminalGui;
         using IApplication? tgApp = tgMode ? Application.Create() : null;
         if (tgApp is not null)
@@ -187,7 +188,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        var sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
+        var sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
         if (tgWriter is not null)
         {
             // Ctrl+O parity: a classic row that advertises expansion (`· ctrl+o`) carries
@@ -196,14 +197,15 @@ public sealed partial class AgentCommands
             tgWriter.RetainedLinesProvider = () => sessionRenderer.Transcript.RetainedLines;
         }
 
-        var lineReader = new Tui.InteractiveLineReader
-        {
-            TopLabel = workspaceLabel,
-        };
+        var lineReader = new Tui.PlainChatInput();
+        if (!cmd.Json && !tgMode)
+            await humanOut.WriteLineAsync($"Ru Agent · {ChatDisplayText.Sanitize(workspaceLabel, 64)}").ConfigureAwait(false);
 
-        if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
+        static Tui.TuiSessionRenderer CreateSessionRenderer(TextWriter writer)
         {
-            try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
+            var renderer = new Tui.TuiSessionRenderer(writer);
+            renderer.Surface.SuppressRepaints = true;
+            return renderer;
         }
 
         // Header state for the Terminal.Gui header. The title is read from the
@@ -349,123 +351,19 @@ public sealed partial class AgentCommands
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestChoiceAsync(tgWindow!, list, ct)
-                : lineReader.ReadChoiceAsync(list, _out, ct);
+                : Task.FromResult<string?>(null);
         _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestSecretAsync(tgWindow!, null, ct)
-                : lineReader.ReadSecretAsync(_out, prompt, ct);
+                : Tui.ConsoleSecretInput.ReadAsync(_out, prompt, ct);
         _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
             : tgMode
                 ? TgPanelRequests.RequestSecretAsync(tgWindow!, providerDisplay, ct)
-                : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
+                : Tui.ConsoleSecretInput.ReadAsync(_out, $"API key for {ChatDisplayText.Sanitize(providerDisplay, 64)}: ", ct);
 
         int turn = 0;
-        bool landingScreenVisible = true;
-
-        // The composer reopens its own frame after a settled resize; this rebuilds the
-        // transcript around it so the new width applies end to end.
-        lineReader.OnScreenRefreshedAsync = () =>
-        {
-            RedrawScreenForResize();
-            return Task.CompletedTask;
-        };
-        lineReader.OnPasteImageAsync = ClipboardAttachAsync;
-
-        void RenderLandingScreen()
-        {
-            if (cmd.Json || cmd.Classic || tgMode || !Tui.TuiViewport.IsLiveConsole)
-            {
-                return;
-            }
-
-            var rows = Tui.TuiViewport.Height();
-            var width = Tui.TuiViewport.Width();
-            var landingLines = Tui.TuiHeader.ComposeLandingScreen(width, rows);
-
-            foreach (var line in landingLines)
-            {
-                _out.WriteLine(line);
-            }
-
-            // The sequential composer owns the box below the landing content.
-            var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
-                ? Tui.ComposerBox.Height + 1
-                : Tui.ComposerBox.Height;
-            var boxTop = Math.Max(1, rows - boxHeight + 1);
-            var cursorRow = landingLines.Count + 1;
-            for (var i = cursorRow; i < boxTop; i++)
-            {
-                _out.WriteLine(new string(' ', width));
-            }
-
-            _out.Flush();
-        }
-
-        /// <summary>
-        /// Recovery for a settled resize. A terminal that changed size has already reflowed the
-        /// rows this UI addressed absolutely, so patching the frame can never be reliable; the
-        /// deterministic answer is to reset the scrolling region, clear the screen, and rebuild
-        /// from the top. The visible transcript is restored from the bounded line history, so a
-        /// resize never blanks what the operator was reading.
-        /// </summary>
-        void RedrawScreenForResize()
-        {
-            if (cmd.Json || tgMode)
-            {
-                // The NDJSON trace has no screen to clear, and Console.Clear/ANSI
-                // bytes would corrupt stdout; Terminal.Gui owns its own redraws.
-                return;
-            }
-
-            if (_out == Console.Out && !Console.IsOutputRedirected)
-            {
-                try { Console.Clear(); } catch (IOException) { }
-            }
-            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
-
-            var rows = Tui.TuiViewport.Height();
-            var width = Tui.TuiViewport.Width();
-            sessionRenderer.Width = width;
-
-            if (landingScreenVisible && turn == 0)
-            {
-                RenderLandingScreen();
-                return;
-            }
-
-            // The status row and composer frame reopen below the reprinted tail.
-            var footerHeight = 1 + Tui.ComposerBox.Height;
-            var budget = Math.Max(0, rows - footerHeight - 2);
-            var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
-            foreach (var line in tail)
-            {
-                _out.WriteLine(Tui.InteractiveLineReader.ResizeEchoLine(line, width));
-            }
-
-            // Pin the reopened composer to the bottom without scrolling: pad with
-            // blank rows up to the box top via raw writes (kept out of the surface
-            // history). Newlines only scroll past the last viewport row, so this
-            // never grows the scrollback. PushToBottomAsync must stay out of this
-            // path: it unconditionally emits newlines at the bottom row.
-            var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
-                ? Tui.ComposerBox.Height + 1
-                : Tui.ComposerBox.Height;
-            var boxTop = Math.Max(1, rows - boxHeight + 1);
-            var cursorRow = tail.Count + 1;
-            for (var i = cursorRow; i < boxTop; i++)
-            {
-                _out.WriteLine();
-            }
-
-            _out.Flush();
-
-            Tui.TuiDebug.Log(
-                "layout",
-                $"redraw rows={rows} width={width} tail={tail.Count} budget={budget} history={sessionRenderer.Surface.HistoryCount}");
-        }
-
         // Every diagnostic line the REPL prints goes through here so --json keeps stdout
         // pure and TG mode lands the line in its transcript; sequential writes go to the
         // requested writer unchanged.
@@ -502,7 +400,7 @@ public sealed partial class AgentCommands
         void RefreshAttachmentLabels()
         {
             var label = CurrentAttachmentLabel();
-            lineReader.TopLabel = label;
+
             // The TG composer does not read TopLabel: push the same count/workspace
             // wording into its hint row after every mutation.
             if (tgMode)
@@ -974,18 +872,8 @@ public sealed partial class AgentCommands
 
             if (decision == Tui.AssistantTextRecovery.ReportTruncation)
             {
-                // A terminal cannot unprint, so the head cannot be appended after the tail.
-                // Rewrite the turn's block from the run's own text and rebuild the screen
-                // from the surface history, which is the path a resize already uses. The TG
-                // transcript is append-only through the bridge and has no scrollback rebuild,
-                // so it takes the bounded notice below instead of pretending a repair.
-                if (!tgMode && sessionRenderer.Transcript.RepaintAssistantText(full))
-                {
-                    RedrawScreenForResize();
-                    Tui.TuiDebug.Log("recover", $"repainted turn from durable text ({full.Length} chars)");
-                    return;
-                }
-
+                // Both output paths append text. Report missing history rather than
+                // clearing the screen or appending an older prefix after a newer tail.
                 await WriteDiagnosticLineAsync(
                         _err,
                         $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
@@ -1014,7 +902,7 @@ public sealed partial class AgentCommands
             runSession.EndTurn();
         }
 
-        async Task UpdateLegendAsync()
+        async Task RefreshModelSelectionAsync()
         {
             try
             {
@@ -1028,10 +916,7 @@ public sealed partial class AgentCommands
                     "Anthropic" => s.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                     _ => s.TryGetProperty("model", out var mProp) ? mProp.GetString() ?? "" : "",
                 };
-                string effort = ReadReasoningEffort(s);
 
-                string mLbl = string.IsNullOrWhiteSpace(curModel) ? (string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel) : curModel;
-                lineReader.Legend = string.IsNullOrWhiteSpace(effort) ? mLbl : $"{mLbl} · {effort}";
                 var backendChanged = !string.IsNullOrWhiteSpace(bName)
                     && !string.Equals(bName, backendName, StringComparison.Ordinal);
                 var modelChanged = !string.IsNullOrWhiteSpace(curModel)
@@ -1055,15 +940,14 @@ public sealed partial class AgentCommands
             }
             catch (Exception)
             {
-                // Live refresh failed; legend keeps the last known values.
-                string mLbl = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
-                lineReader.Legend = string.IsNullOrWhiteSpace(reasoningEffort) ? mLbl : $"{mLbl} · {reasoningEffort}";
+                // Settings refresh is best-effort; retain the last selected provider/model.
+
             }
 
             if (tgMode)
             {
                 // A /model or /backend switch must land on the TG composer meta row too.
-                tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+                RunOnTgUi(() => tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName));
             }
         }
 
@@ -1077,16 +961,11 @@ public sealed partial class AgentCommands
             TotalTokens: lastTotalTokens,
             ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
             ApiKeyConfigured: null);
-        await UpdateLegendAsync().ConfigureAwait(false);
+        await RefreshModelSelectionAsync().ConfigureAwait(false);
 
-        if (cmd.Json || string.IsNullOrWhiteSpace(cmd.SessionId))
+        if (!cmd.Json && !string.IsNullOrWhiteSpace(cmd.SessionId))
         {
-            RenderLandingScreen();
-        }
-        else
-        {
-            // A reopened session shows where the conversation stopped; a fresh session
-            // (or one whose replay cannot be read) keeps the landing screen.
+            // A reopened session shows its last messages; the TG frame owns its welcome view.
             var replay = await ChatSessionReplay.LoadAsync(_sessionClient, sessionId, cancellationToken).ConfigureAwait(false);
             if (replay.Title is not null)
             {
@@ -1094,19 +973,15 @@ public sealed partial class AgentCommands
             }
             if (replay.Messages.Length > 0)
             {
-                landingScreenVisible = false;
+
                 RenderSessionReplay(sessionId, replay);
             }
-            else
+            else if (replay.Error is not null)
             {
-                RenderLandingScreen();
-                if (replay.Error is not null)
-                {
-                    sessionRenderer.Note(
-                        $"session_replay_unavailable: {replay.Error}",
-                        Tui.TuiToken.Warn);
-                    sessionRenderer.Flush();
-                }
+                sessionRenderer.Note(
+                    $"session_replay_unavailable: {replay.Error}",
+                    Tui.TuiToken.Warn);
+                sessionRenderer.Flush();
             }
         }
 
@@ -1149,9 +1024,6 @@ public sealed partial class AgentCommands
             // has no run to adopt and must not spend the round trip.
             await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
         }
-
-        string prompt = Tui.TuiPalette.BoldPaint("❯ ");
-        string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
         /// <summary>
         /// Reads an <c>ask_user</c> request payload referenced by an input.requested
@@ -1623,7 +1495,6 @@ public sealed partial class AgentCommands
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
 
-
             try
             {
                 await _agentClient.ContinueAsync(targetRunId, runSession.Token).ConfigureAwait(false);
@@ -1677,7 +1548,7 @@ public sealed partial class AgentCommands
                 if (string.Equals(message.Role, "user", StringComparison.Ordinal))
                 {
                     sessionRenderer.Surface.WriteLine(
-                        Tui.InteractiveLineReader.BuildSubmitEcho(message.Text, width: sessionRenderer.Width));
+                        Tui.ChatPromptEcho.Format(message.Text));
                 }
                 else
                 {
@@ -2075,7 +1946,7 @@ public sealed partial class AgentCommands
             submissions.ClearPending();
             RefreshAttachmentLabels();
 
-            sessionRenderer = new Tui.TuiSessionRenderer(tgWriter ?? (TextWriter)_out);
+            sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
             sessionRenderer.Width = Tui.TuiViewport.Width();
             if (tgMode)
             {
@@ -2087,19 +1958,14 @@ public sealed partial class AgentCommands
                 });
             }
 
-            landingScreenVisible = replay.Messages.Length == 0;
             if (replay.Messages.Length > 0 && !cmd.Json)
             {
                 RenderSessionReplay(targetSessionId, replay);
             }
-            else
-            {
-                RenderLandingScreen();
-            }
 
             await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);
 
-            await UpdateLegendAsync().ConfigureAwait(false);
+            await RefreshModelSelectionAsync().ConfigureAwait(false);
             var otherWorkspace = await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
                 _sessionClient,
                 targetSessionId,
@@ -2174,7 +2040,7 @@ public sealed partial class AgentCommands
             {
                 if (!cmd.Json && !tgMode)
                 {
-                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(promptLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.ChatPromptEcho.Format(promptLine)).ConfigureAwait(false);
                 }
                 try
                 {
@@ -2192,15 +2058,6 @@ public sealed partial class AgentCommands
             // step-delta baseline resets here; the session cost itself keeps accumulating.
             usage.BeginTurn();
             turn++;
-            if (landingScreenVisible)
-            {
-                landingScreenVisible = false;
-                if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
-                {
-                    try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
-                }
-            }
-
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
                 submissionSessionId,
                 submissionPreset,
@@ -2258,9 +2115,8 @@ public sealed partial class AgentCommands
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                 if (!cmd.Json && !tgMode)
                 {
-                    sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(
+                    sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(
                         promptLine,
-                        width: sessionRenderer.Width,
                         attachmentLabels: attachmentLabels.Count == 0 ? null : attachmentLabels));
                 }
                 sessionRenderer.BeginTurn();
@@ -2461,434 +2317,393 @@ public sealed partial class AgentCommands
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }
-        try
+        async Task<bool> HandleSlashLineAsync(string slashLine)
         {
-            while (!cancellationToken.IsCancellationRequested)
-        {
-            if (engine == TuiEngine.TerminalGui)
+            if (!cmd.Json && !tgMode)
             {
-                // Terminal.Gui owns the keyboard and the frame from here on. The sequential
-                // loop never reads a line while TG runs: the same slash/prompt handlers below
-                // are driven by TgChatLoop, so command behaviour cannot drift between engines.
-                await RunTerminalGuiChatAsync().ConfigureAwait(false);
-                if (tgWindow!.HandOverToSequential && dispatcherExitCode is null)
-                {
-                    // The terminal shrank below the 80x24 floor while TG owned the screen,
-                    // so the window stopped the app. One-way handover: the same session,
-                    // handlers and copy continue on the sequential path. The writers the
-                    // shared machinery captured must leave the stopped Terminal.Gui buffer
-                    // and point back at the real console.
-                    engine = TuiEngine.Sequential;
-                    tgMode = false;
-                    // The bridge points into the stopped Terminal.Gui app: every diagnostic
-                    // written through it after this line would vanish. Diagnostics fall back
-                    // to the real console writer for the rest of the session.
-                    tgWriter = null;
-                    _slashCommands.ReprintPanelOnPickerCancel = false;
-                    humanOut = _out;
-                    _slashCommands.HumanOut = _out;
-                    sessionRenderer = new Tui.TuiSessionRenderer(_out);
+                await _out.WriteLineAsync(Tui.ChatPromptEcho.Format(slashLine)).ConfigureAwait(false);
+            }
+            var parts = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            var slashCmd = parts[0].ToLowerInvariant();
+            var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
-                    // Terminal.Gui renders on the alternate screen buffer and only restores
-                    // the normal one on dispose; the sequential session must be visible, so
-                    // wind the TG application down before the first sequential write. The
-                    // local stays set: an in-flight TG continuation may still call Invoke and
-                    // must observe NotInitializedException (caught) rather than a null
-                    // reference.
-                    tgApp!.Dispose();
-                    continue;
+            if (slashCmd is "/exit" or "/quit")
+            {
+                await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
+                await humanOut.FlushAsync().ConfigureAwait(false);
+                dispatcherExitCode = 0;
+                return true;
+            }
+            if (slashCmd == "/retry")
+            {
+                if (submissions.Retryable is null)
+                {
+                    await WriteDiagnosticLineAsync(humanOut, "no held submission to retry").ConfigureAwait(false);
+                    return true;
                 }
 
-                return dispatcherExitCode ?? 0;
+                var retry = submissions.Retryable;
+                await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
+                return true;
             }
-
-            // The sequential reader owns idle input.
-            var line = await lineReader.ReadLineWithContinuationAsync(_in, humanOut, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
-            if (line is null) break;
-            line = line.Trim().Trim('"', '\'');
-            if (string.IsNullOrEmpty(line) && pendingImages.Count == 0 && pendingTexts.Count == 0)
+            if (slashCmd is "/history")
             {
-                continue;
-            }
-
-            // A quoted path dropped onto the terminal arrives as the whole line; a file
-            // that exists on disk attaches instead of being sent as prose.
-            if (!string.IsNullOrEmpty(line) && IsDroppedAttachmentPath(line))
-            {
-                await AttachFileAsync(line).ConfigureAwait(false);
-                continue;
-            }
-
-            // The slash branch of the sequential key loop, in the shape the dispatcher
-            // expects: 'continue' became 'return true' (handled) and the /exit and
-            // /continue approval paths record their exit code for the caller below.
-            async Task<bool> HandleSlashLineAsync(string slashLine)
-            {
-                if (landingScreenVisible && !slashLine.StartsWith("/clear", StringComparison.OrdinalIgnoreCase))
+                // The TG loop owns its own Up/Down history; the sequential reader never
+                // sees a TG line, so reading it there would always report an empty list.
+                var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
+                if (history.Count == 0)
                 {
-                    landingScreenVisible = false;
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
                 }
-                if (!cmd.Json && !tgMode)
+                else
                 {
-                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(slashLine, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
+                    for (int i = 0; i < history.Count; i++)
+                    {
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
+                    }
                 }
-                var parts = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-                var slashCmd = parts[0].ToLowerInvariant();
-                var arg = parts.Length > 1 ? parts[1].Trim() : null;
+                await humanOut.FlushAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/clear")
+            {
+                turn = 0;
 
-                if (slashCmd is "/exit" or "/quit")
+                lastTotalTokens = null;
+                usage.BeginTurn();
+                if (tgMode)
                 {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
-                    await humanOut.FlushAsync().ConfigureAwait(false);
+                    // Clear the TG transcript and its header usage cluster in place; the
+                    // sequential layout below keeps its existing reset.
+                    RunOnTgUi(() => tgWindow!.ResetTranscript());
+                }
+                else if (!cmd.Json)
+                {
+                    await humanOut.WriteLineAsync("transcript reset").ConfigureAwait(false);
+                }
+
+                await humanOut.FlushAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (await HandleSessionWorkflowAsync(slashCmd, arg).ConfigureAwait(false))
+            {
+                await RefreshModelSelectionAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
+            {
+                await RefreshModelSelectionAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/rewind")
+            {
+                if (arg is null || !int.TryParse(arg, out var toIndex))
+                {
+                    await WriteDiagnosticLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
+                    return true;
+                }
+                try
+                {
+                    await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                }
+                catch (AgentApiException ex)
+                {
+                    await WriteDiagnosticLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await WriteDiagnosticLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
+                }
+                await _out.FlushAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/attach")
+            {
+                if (string.IsNullOrWhiteSpace(arg))
+                {
+                    await WriteDiagnosticLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
+                    return true;
+                }
+
+                await AttachFileAsync(arg).ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/attachments")
+            {
+                if (pendingImages.Count == 0 && pendingTexts.Count == 0)
+                {
+                    await WriteDiagnosticLineAsync(humanOut, "no attachments").ConfigureAwait(false);
+                    return true;
+                }
+
+                for (var i = 0; i < pendingImages.Count; i++)
+                {
+                    await WriteDiagnosticLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
+                }
+
+                for (var i = 0; i < pendingTexts.Count; i++)
+                {
+                    await WriteDiagnosticLineAsync(
+                        humanOut,
+                        $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
+                }
+
+                return true;
+            }
+            if (slashCmd is "/detach")
+            {
+                var total = submissions.Count;
+                if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
+                {
+                    submissions.ClearPending();
+                    RefreshAttachmentLabels();
+                    await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
+                    return true;
+                }
+
+                if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
+                {
+                    await WriteDiagnosticLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
+                    return true;
+                }
+
+                var detachedName = submissions.Detach(index);
+                await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
+
+                RefreshAttachmentLabels();
+                return true;
+            }
+            if (slashCmd is "/continue")
+            {
+                try
+                {
+                    await ContinueParkedRunAsync(arg).ConfigureAwait(false);
+                }
+                catch (RunParkedException)
+                {
+                    // Same escape as a fresh turn: an approval under --json ends the
+                    // chat rather than reading a prompt it must not answer.
                     dispatcherExitCode = 0;
                     return true;
                 }
-                if (slashCmd == "/retry")
-                {
-                    if (submissions.Retryable is null)
-                    {
-                        await WriteDiagnosticLineAsync(humanOut, "no held submission to retry").ConfigureAwait(false);
-                        return true;
-                    }
-
-                    var retry = submissions.Retryable;
-                    await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/history")
-                {
-                    // The TG loop owns its own Up/Down history; the sequential reader never
-                    // sees a TG line, so reading it there would always report an empty list.
-                    var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
-                    if (history.Count == 0)
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
-                        for (int i = 0; i < history.Count; i++)
-                        {
-                            await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
-                        }
-                    }
-                    await humanOut.FlushAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/clear")
-                {
-                    turn = 0;
-                    landingScreenVisible = true;
-                    lastTotalTokens = null;
-                    usage.BeginTurn();
-                    if (tgMode)
-                    {
-                        // Clear the TG transcript and its header usage cluster in place; the
-                        // sequential layout below keeps its existing reset.
-                        RunOnTgUi(() => tgWindow!.ResetTranscript());
-                    }
-                    else if (!cmd.Json && !tgMode && _out == Console.Out && !Console.IsOutputRedirected)
-                    {
-                        try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
-                    }
-                    RenderLandingScreen();
-                    await humanOut.FlushAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (await HandleSessionWorkflowAsync(slashCmd, arg).ConfigureAwait(false))
-                {
-                    await UpdateLegendAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
-                {
-                    await UpdateLegendAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/rewind")
-                {
-                    if (arg is null || !int.TryParse(arg, out var toIndex))
-                    {
-                        await WriteDiagnosticLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
-                        return true;
-                    }
-                    try
-                    {
-                        await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
-                    }
-                    catch (AgentApiException ex)
-                    {
-                        await WriteDiagnosticLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        await WriteDiagnosticLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
-                    }
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/attach")
-                {
-                    if (string.IsNullOrWhiteSpace(arg))
-                    {
-                        await WriteDiagnosticLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
-                        return true;
-                    }
-
-                    await AttachFileAsync(arg).ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/attachments")
-                {
-                    if (pendingImages.Count == 0 && pendingTexts.Count == 0)
-                    {
-                        await WriteDiagnosticLineAsync(humanOut, "no attachments").ConfigureAwait(false);
-                        return true;
-                    }
-
-                    for (var i = 0; i < pendingImages.Count; i++)
-                    {
-                        await WriteDiagnosticLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
-                    }
-
-                    for (var i = 0; i < pendingTexts.Count; i++)
-                    {
-                        await WriteDiagnosticLineAsync(
-                            humanOut,
-                            $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
-                    }
-
-                    return true;
-                }
-                if (slashCmd is "/detach")
-                {
-                    var total = submissions.Count;
-                    if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
-                    {
-                        submissions.ClearPending();
-                        RefreshAttachmentLabels();
-                        await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
-                        return true;
-                    }
-
-                    if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
-                    {
-                        await WriteDiagnosticLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
-                        return true;
-                    }
-
-                    var detachedName = submissions.Detach(index);
-                    await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
-
-                    RefreshAttachmentLabels();
-                    return true;
-                }
-                if (slashCmd is "/continue")
-                {
-                    try
-                    {
-                        await ContinueParkedRunAsync(arg).ConfigureAwait(false);
-                    }
-                    catch (RunParkedException)
-                    {
-                        // Same escape as a fresh turn: an approval under --json ends the
-                        // chat rather than reading a prompt it must not answer.
-                        dispatcherExitCode = 0;
-                        return true;
-                    }
-                    return true;
-                }
-                if (slashCmd == "/files")
-                {
-                    await HandleProjectFilesAsync(arg).ConfigureAwait(false);
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    return true;
-                }
-                if (slashCmd is "/follow")
-                {
-                    await FollowRetainedRunAsync(arg).ConfigureAwait(false);
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    return true;
-                }
-                await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 return true;
             }
-
-            /// <summary>
-            /// Report-only slash commands print into the read-only output window instead of
-            /// scrolling straight into the transcript. Both writers the command can reach are
-            /// pointed at a capture buffer for the run, so the window shows exactly what the
-            /// command printed; when it closes the same rows are written to the transcript, so
-            /// the report is still there to scroll back to. Sequential mode keeps printing
-            /// inline: there is no window over a scrolling region to float above.
-            /// </summary>
-            async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine)
+            if (slashCmd == "/files")
             {
-                var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
-                if (!tgMode || !Tui.InteractiveLineReader.IsReportCommand(command))
-                {
-                    return await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
-                }
+                await HandleProjectFilesAsync(arg).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return true;
+            }
+            if (slashCmd is "/follow")
+            {
+                await FollowRetainedRunAsync(arg).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return true;
+            }
+            await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+            return true;
+        }
 
-                var capture = new StringWriter();
-                var transcript = humanOut;
-                humanOut = capture;
-                _slashCommands.HumanOut = capture;
-                var handled = false;
-                try
-                {
-                    handled = await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
-                }
-                finally
-                {
-                    humanOut = transcript;
-                    _slashCommands.HumanOut = transcript;
-                }
-
-                var body = capture.ToString()
-                    .Replace("\r\n", "\n", StringComparison.Ordinal)
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .ToList();
-                if (body.Count > 0)
-                {
-                    await TgPanelRequests.RequestDocumentAsync(
-                        tgWindow!,
-                        command.TrimStart('/'),
-                        body,
-                        cancellationToken).ConfigureAwait(false);
-                    await transcript.WriteLineAsync(string.Join('\n', body)).ConfigureAwait(false);
-                    await transcript.FlushAsync().ConfigureAwait(false);
-                }
-
-                return handled;
+        /// <summary>
+        /// Report-only slash commands print into the read-only output window instead of
+        /// scrolling straight into the transcript. Both writers the command can reach are
+        /// pointed at a capture buffer for the run, so the window shows exactly what the
+        /// command printed; when it closes the same rows are written to the transcript, so
+        /// the report is still there to scroll back to. Sequential mode keeps printing
+        /// inline: there is no window over a scrolling region to float above.
+        /// </summary>
+        async Task<bool> HandleSlashLineWithDocumentAsync(string slashLine)
+        {
+            var command = slashLine.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries)[0];
+            if (!tgMode || !Tui.ChatCommandCatalog.IsReportCommand(command))
+            {
+                return await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
             }
 
-            /// <summary>
-            /// The TG engine's entry point: the window is already built and no sequential
-            /// surface fights Terminal.Gui. Slash lines and prompts go through the very same
-            /// local handlers the sequential loop calls, with their writers redirected to
-            /// the transcript.
-            /// </summary>
-            async Task RunTerminalGuiChatAsync()
+            var capture = new StringWriter();
+            var transcript = humanOut;
+            humanOut = capture;
+            _slashCommands.HumanOut = capture;
+            var handled = false;
+            try
             {
-                var loop = new TgChatLoop(tgWindow!, cancellationToken);
-                tgLoop = loop;
-                var guiDispatcher = new ChatLineDispatcher(
-                    HandleSlashLineWithDocumentAsync,
-                    (prompt, ct) => HandlePromptLineAsync(prompt, ct));
-                loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
-                    line, sessionId, canonicalWorkspace, cmd.Preset,
-                    backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null));
-                loop.SetSubmissionOwnershipHandlers(
-                    snapshot =>
-                    {
-                        submissions.Admit(snapshot);
-                        RefreshAttachmentLabels();
-                    },
-                    snapshot => ChatSubmissionState.Release(snapshot.Images));
-                loop.SetStateChangingCommandClassifier(IsStateChangingSlashCommand);
-                loop.SetSubmissionHandler(async (submission, _, ct) =>
+                handled = await HandleSlashLineAsync(slashLine).ConfigureAwait(false);
+            }
+            finally
+            {
+                humanOut = transcript;
+                _slashCommands.HumanOut = transcript;
+            }
+
+            var body = capture.ToString()
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .ToList();
+            if (body.Count > 0)
+            {
+                await TgPanelRequests.RequestDocumentAsync(
+                    tgWindow!,
+                    command.TrimStart('/'),
+                    body,
+                    cancellationToken).ConfigureAwait(false);
+                await transcript.WriteLineAsync(string.Join('\n', body)).ConfigureAwait(false);
+                await transcript.FlushAsync().ConfigureAwait(false);
+            }
+
+            return handled;
+        }
+
+        /// <summary>
+        /// The TG engine's entry point: the window is already built and no sequential
+        /// surface fights Terminal.Gui. Slash lines and prompts go through the very same
+        /// local handlers the sequential loop calls, with their writers redirected to
+        /// the transcript.
+        /// </summary>
+        async Task RunTerminalGuiChatAsync()
+        {
+            var loop = new TgChatLoop(tgWindow!, cancellationToken);
+            tgLoop = loop;
+            var guiDispatcher = new ChatLineDispatcher(
+                HandleSlashLineWithDocumentAsync,
+                (prompt, ct) => HandlePromptLineAsync(prompt, ct));
+            loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
+                line, sessionId, canonicalWorkspace, cmd.Preset,
+                backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null));
+            loop.SetSubmissionOwnershipHandlers(
+                snapshot =>
                 {
-                    if (submission.Prompt.TrimStart().StartsWith('/'))
-                    {
-                        await guiDispatcher.DispatchAsync(submission.Prompt, ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
-                    }
-                    if (dispatcherExitCode is not null)
-                    {
-                        // /exit and the fatal prompt paths record an exit code; the TG frame
-                        // has no natural end, so stop both the loop and the app.
-                        loop.Stop();
-                        tgApp!.Invoke(() => tgApp.RequestStop());
-                    }
+                    submissions.Admit(snapshot);
+                    RefreshAttachmentLabels();
+                },
+                snapshot => ChatSubmissionState.Release(snapshot.Images));
+            loop.SetStateChangingCommandClassifier(IsStateChangingSlashCommand);
+            loop.SetSubmissionHandler(async (submission, _, ct) =>
+            {
+                if (submission.Prompt.TrimStart().StartsWith('/'))
+                {
+                    await guiDispatcher.DispatchAsync(submission.Prompt, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
+                }
+                if (dispatcherExitCode is not null)
+                {
+                    // /exit and the fatal prompt paths record an exit code; the TG frame
+                    // has no natural end, so stop both the loop and the app.
+                    loop.Stop();
+                    tgApp!.Invoke(() => tgApp.RequestStop());
+                }
+            });
+
+            // Attachment mutations refresh the hint row through RefreshAttachmentLabels;
+            // these seams let the loop ask for the label/count and claim Ctrl+V
+            // clipboard pastes and dropped paths without parsing anything itself.
+            loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
+            loop.SetAttachmentCountProvider(() => submissions.Count);
+            loop.SetPasteHandler(ClipboardAttachAsync);
+            loop.SetDropHandler(line =>
+            {
+                // Same shape as the classic idle loop: a quoted/rooted path that exists
+                // on disk attaches instead of being sent as prose.
+                var candidate = line.Trim().Trim('"', '\'');
+                if (string.IsNullOrEmpty(candidate) || !IsDroppedAttachmentPath(candidate))
+                {
+                    return false;
+                }
+
+                _ = RunAttachmentAsync(() => AttachFileAsync(candidate));
+                return true;
+            });
+
+            // The drop attach starts its own task from a synchronous handler; failures
+            // that slip past AttachFileAsync's own error rows land in the transcript.
+            async Task RunAttachmentAsync(Func<Task> action)
+            {
+                try
+                {
+                    await action().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await WriteDiagnosticLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                }
+            }
+
+            tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
+            loop.RefreshAttachmentLabel();
+            tgApp!.AddTimeout(
+                TimeSpan.FromMilliseconds(200),
+                () =>
+                {
+                    tgWindow.FocusComposer();
+                    return false;
                 });
-
-                // Attachment mutations refresh the hint row through RefreshAttachmentLabels;
-                // these seams let the loop ask for the label/count and claim Ctrl+V
-                // clipboard pastes and dropped paths without parsing anything itself.
-                loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
-                loop.SetAttachmentCountProvider(() => submissions.Count);
-                loop.SetPasteHandler(ClipboardAttachAsync);
-                loop.SetDropHandler(line =>
+            tgApp.AddTimeout(
+                TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
+                () =>
                 {
-                    // Same shape as the classic idle loop: a quoted/rooted path that exists
-                    // on disk attaches instead of being sent as prose.
-                    var candidate = line.Trim().Trim('"', '\'');
-                    if (string.IsNullOrEmpty(candidate) || !IsDroppedAttachmentPath(candidate))
-                    {
-                        return false;
-                    }
-
-                    _ = RunAttachmentAsync(() => AttachFileAsync(candidate));
+                    tgWindow.Landing.Tick();
                     return true;
                 });
+            tgApp.Run(tgWindow);
+            // A stop that did not come from /exit (window closed under us) must still
+            // release the completion the caller awaits.
+            if (tgWindow.HandOverToSequential)
+            {
+                // The tiny-terminal stop ends the TG frame for good: an in-flight turn
+                // must not keep streaming into a stopped app (a floating panel can no
+                // longer be answered), and Stop() keeps the queue from firing later.
+                loop.Cancel();
+            }
 
-                // The drop attach starts its own task from a synchronous handler; failures
-                // that slip past AttachFileAsync's own error rows land in the transcript.
-                async Task RunAttachmentAsync(Func<Task> action)
-                {
-                    try
-                    {
-                        await action().ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        await WriteDiagnosticLineAsync(_err, $"attachment_error: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
-                    }
-                }
+            loop.Stop();
+            await loop.Completion.ConfigureAwait(false);
+        }
 
-                tgWindow!.Composer.SetMeta(cmd.Preset, activeModel, backendName);
-                loop.RefreshAttachmentLabel();
-                tgApp!.AddTimeout(
-                    TimeSpan.FromMilliseconds(200),
-                    () =>
-                    {
-                        tgWindow.FocusComposer();
-                        return false;
-                    });
-                tgApp.AddTimeout(
-                    TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
-                    () =>
-                    {
-                        tgWindow.Landing.Tick();
-                        return true;
-                    });
-                tgApp.Run(tgWindow);
-                // A stop that did not come from /exit (window closed under us) must still
-                // release the completion the caller awaits.
-                if (tgWindow.HandOverToSequential)
-                {
-                    // The tiny-terminal stop ends the TG frame for good: an in-flight turn
-                    // must not keep streaming into a stopped app (a floating panel can no
-                    // longer be answered), and Stop() keeps the queue from firing later.
-                    loop.Cancel();
-                }
+        try
+        {
+            if (tgMode)
+            {
+                await RunTerminalGuiChatAsync().ConfigureAwait(false);
+                if (!tgWindow!.HandOverToSequential || dispatcherExitCode is not null)
+                    return dispatcherExitCode ?? 0;
 
-                loop.Stop();
-                await loop.Completion.ConfigureAwait(false);
+                // One-way handover after a tiny viewport stops the frame. Dispose the
+                // alternate screen before writing to stdout; session/run state stays intact.
+                tgMode = false;
+                tgWriter = null;
+                _slashCommands.ReprintPanelOnPickerCancel = false;
+                humanOut = _out;
+                _slashCommands.HumanOut = _out;
+                sessionRenderer = CreateSessionRenderer(_out);
+                tgApp!.Dispose();
             }
 
             var dispatcher = new ChatLineDispatcher(
                 HandleSlashLineAsync,
                 (prompt, ct) => HandlePromptLineAsync(prompt, ct));
-            await dispatcher.DispatchAsync(line, cancellationToken).ConfigureAwait(false);
-            if (dispatcherExitCode is int exitCode)
+            return await lineReader.RunAsync(_in, humanOut, async (line, ct) =>
             {
-                return exitCode;
-            }
-        }
+                line = line.Trim();
+                if (line.Length == 0 && submissions.Count == 0) return null;
+                // Quotes belong to the prompt unless the whole line is an existing file.
+                var candidate = line.Trim('"', '\'');
+                if (candidate.Length > 0 && IsDroppedAttachmentPath(candidate))
+                {
+                    await AttachFileAsync(candidate).ConfigureAwait(false);
+                    return null;
+                }
+                await dispatcher.DispatchAsync(line, ct).ConfigureAwait(false);
+                return dispatcherExitCode;
+            }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            // Pending clipboard screenshots do not outlive the chat that owns them.
             submissions.ClearPending();
         }
-
-        return 0;
     }
 
     /// <summary>

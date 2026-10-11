@@ -132,14 +132,14 @@ public sealed class TgSlashSubmitTests
     {
         foreach (var command in new[] { "/attach", "/detach", "/rewind" })
         {
-            Assert.True(InteractiveLineReader.NeedsArgument(command), command);
+            Assert.True(ChatCommandCatalog.NeedsArgument(command), command);
         }
 
         foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/help", "/tree" })
         {
-            Assert.False(InteractiveLineReader.NeedsArgument(command), command);
+            Assert.False(ChatCommandCatalog.NeedsArgument(command), command);
         }
 
-        Assert.False(InteractiveLineReader.NeedsArgument(null));
+        Assert.False(ChatCommandCatalog.NeedsArgument(null));
     }
 }

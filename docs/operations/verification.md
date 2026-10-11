@@ -8,11 +8,40 @@
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
 | .NET tests | **12-project** Debug coverage: **5,970 passed / 0 failed / 0 skipped** (2026-10-12, workspace terminal policy v2). Broker 910; Backend 1,050; GUI 1,385; Harness Core 486; CLI 1,289. Full runner log: `artifacts/terminal-redesign-dotnet.log`; its one stale GUI copy assertion was corrected and the complete GUI project passed in `artifacts/terminal-redesign-gui-final.log`. |
 | Python suite | **214 passed, 1 skipped** (2026-10-12, workspace terminal policy v2), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/terminal-redesign-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, workspace terminal policy v2). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/terminal-redesign-release.log`. PowerShell SDK assemblies are absent from the new publish. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, TUI engine simplification). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tui-simplify-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## TUI engine simplification (2026-10-12)
+
+The classic ANSI composer/key loop and chat resize reconstruction are removed.
+Terminal.Gui owns interactive input and screen rendering; the text fallback
+owns only line reads, bounded history and append-only output. Redirected stdin
+also selects that fallback. Shared command completion no longer depends on
+an interactive line reader. Credential input retains no-echo and bounded paste,
+using the existing clipboard reader rather than a second native implementation.
+Plain input-loop exit/EOF/cancellation, quote preservation, prompt echo and
+redirected-input selection have regression coverage. Existing tests for removed
+classic rendering helpers were retired; Terminal.Gui and run/approval/input/
+queue/session/JSON coverage remain.
+
+The new contracts initially failed compilation before the replacement input
+existed (`artifacts/tui-simplify-red.log`). Intermediate compile runs identified
+remaining references to the retired resize callback. The first complete CLI
+run passed 1,228 tests and Client passed 214 (`artifacts/tui-simplify-cli.log`).
+After adding further regressions, a string assertion used culture comparison
+for an ESC character and falsely failed (1,231 passed, 1 failed;
+`artifacts/tui-simplify-cli-final.log`); exact ordinal comparison corrected it.
+The final complete CLI suite passed **1,232 tests / 0 failed / 0 skipped**
+(`artifacts/tui-simplify-cli-green.log`). Documentation guards passed 19 tests;
+`git diff --check` passed. `build.bat` completed all **11/11 Release stages**
+(`artifacts/tui-simplify-release.log`) and refreshed the flattened distributable.
+No application was launched. The full 12-project matrix and Python suite were
+not rerun for this CLI-only change; the table's full-matrix count above records
+the earlier terminal-policy snapshot. This is deterministic coverage; native
+terminal resize/IME and a live-provider coding task are unmeasured.
 
 ## Workspace terminal redesign (2026-10-12)
 

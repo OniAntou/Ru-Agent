@@ -13,7 +13,7 @@ public sealed class TgCommandPaletteTests
     [Fact]
     public void FilteringAndSelection_UseTheSharedKnownCommandCatalog()
     {
-        var palette = new TgCommandPalette(InteractiveLineReader.KnownCommands);
+        var palette = new TgCommandPalette(ChatCommandCatalog.KnownCommands);
 
         palette.SetQuery("/sta");
 

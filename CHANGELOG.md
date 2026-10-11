@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tui)**: Use Terminal.Gui as the only interactive screen engine. Remove the classic ANSI composer/key loop and resize rebuild; retain `--classic` as append-only line output, also used for redirected stdin/stdout and small/dumb terminals. Separate shared command metadata, plain input/history and no-echo credential input, reusing the existing clipboard reader. Plain `/clear` no longer erases terminal scrollback, history is capped at 100 submissions, and ordinary prompt quotes are preserved. Run, approval, queue and JSON contracts remain unchanged.
+
 - **feat(policy)**: Redesign Standard around the canonical terminal working directory: workspace executable and PowerShell launches are automatic, including inline code, package installation and user-installed toolchains. Remove command-form, argv shell-syntax and trusted-install-directory approval heuristics, plus the obsolete PowerShell AST analyzer and bundled PowerShell SDK dependency; external cwd, explicit ask/deny rules and long foreground approval remain. Profile v2 and prompts use workspace/external terminal subjects; both modes still run as the Windows user without OS confinement. Exact single-use authorization, structured protected paths, API-key storage/redaction and process bounds remain. Supersedes the Python-only exception.
 
 - **fix(gui)**: Render sidebar sections and persisted workspace pins before backend startup, including when the initial session list is empty or unavailable. Unchanged polls rebuild a missing sidebar without requiring a new chat; normal unchanged polls retain their existing rows.

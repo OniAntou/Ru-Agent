@@ -145,29 +145,5 @@ public sealed class TuiViewportTests
 
 public sealed class ComposerClearTests
 {
-    [Theory]
-    [InlineData(10, 30, "\u001b[2A\r\u001b[J")]
-    [InlineData(3, 30, "\u001b[2A\r\u001b[J")]
-    [InlineData(2, 30, "\u001b[1A\r\u001b[J")]
-    [InlineData(1, 30, "\u001b[1A\r\u001b[J")]
-    public void ComposeBoxClear_ReachesPastTheFrameWhenThereIsRoom(int cursorTop, int rows, string expected)
-    {
-        Assert.Equal(expected, InteractiveLineReader.ComposeBoxClear(cursorTop, rows));
-    }
 
-    [Theory]
-    [InlineData(10, 0)]
-    [InlineData(10, -1)]
-    public void ComposeBoxClear_WithoutAViewport_WritesNothing(int cursorTop, int rows)
-    {
-        Assert.Equal(string.Empty, InteractiveLineReader.ComposeBoxClear(cursorTop, rows));
-    }
-
-    [Fact]
-    public void ComposeBoxClear_OnATinyWindow_StillClearsTheFrame()
-    {
-        // A one-row window has no room for a second row of reach, but the frame still has to
-        // be erasable: the terminal clamps the move to the top of the screen.
-        Assert.Equal("\u001b[1A\r\u001b[J", InteractiveLineReader.ComposeBoxClear(1, 1));
-    }
 }

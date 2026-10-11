@@ -267,7 +267,7 @@ internal sealed class TgChatKeyboardBindings
             // fills the command in.
             if (key == Key.Enter
                 && picked is { } command
-                && !InteractiveLineReader.NeedsArgument(command))
+                && !ChatCommandCatalog.NeedsArgument(command))
             {
                 _submit();
             }

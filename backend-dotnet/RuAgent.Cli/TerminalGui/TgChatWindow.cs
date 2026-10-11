@@ -177,7 +177,7 @@ public sealed class TgChatWindow : Window
     /// </summary>
     public void ShowSlashDropdown()
     {
-        var matches = InteractiveLineReader.FindMatches(Composer.Input.Text?.ToString() ?? string.Empty);
+        var matches = ChatCommandCatalog.FindMatches(Composer.Input.Text?.ToString() ?? string.Empty);
         if (matches.Count == 0)
         {
             HideSlashDropdown();
@@ -645,7 +645,7 @@ public sealed class TgChatWindow : Window
     /// </summary>
     private void AppendSecret(string? text)
     {
-        var sanitized = InteractiveLineReader.SanitizePastedText(
+        var sanitized = ChatCommandCatalog.SanitizePastedText(
             text,
             MaxSecretChars - _secret.Length);
         if (sanitized.Length > 0)

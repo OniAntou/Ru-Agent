@@ -30,13 +30,13 @@ public static class TuiSurfaces
     ];
 
     /// <summary>
-    /// The command reference. Built from <see cref="InteractiveLineReader.KnownCommands"/> so a
+    /// The command reference. Built from <see cref="ChatCommandCatalog.KnownCommands"/> so a
     /// command can never be listed without its description, and a command added there shows up
     /// here even before it is filed into a group.
     /// </summary>
     public static IReadOnlyList<string> Help(int width)
     {
-        var known = InteractiveLineReader.KnownCommands;
+        var known = ChatCommandCatalog.KnownCommands;
         var knownByCommand = known.ToDictionary(c => c.Command, c => c, StringComparer.OrdinalIgnoreCase);
         var filed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sections = new List<PanelSection>();
@@ -47,7 +47,7 @@ public static class TuiSurfaces
             foreach (var command in commands)
             {
                 var info = knownByCommand.GetValueOrDefault(command)
-                    ?? new InteractiveLineReader.SlashCommandInfo(command, string.Empty);
+                    ?? new ChatCommandCatalog.SlashCommandInfo(command, string.Empty);
                 filed.Add(command);
                 rows.Add(new PanelRow(info.Syntax.Length > 0 ? info.Syntax : info.Command, info.Description));
             }

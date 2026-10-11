@@ -96,7 +96,7 @@ public sealed class TuiHelpPanelTests
     {
         var text = string.Join("\n", TuiSurfaces.Help(width).Select(TuiText.Strip));
 
-        foreach (var command in InteractiveLineReader.KnownCommands)
+        foreach (var command in ChatCommandCatalog.KnownCommands)
         {
             Assert.Contains(command.Command, text, StringComparison.Ordinal);
         }

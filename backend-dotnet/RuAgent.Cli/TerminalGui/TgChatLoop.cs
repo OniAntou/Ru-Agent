@@ -592,9 +592,9 @@ public sealed class TgChatLoop
     private void CompleteCommand()
     {
         var current = _window.Composer.Input.Text?.ToString() ?? string.Empty;
-        var completion = InteractiveLineReader.AutoComplete(
+        var completion = ChatCommandCatalog.AutoComplete(
             current,
-            InteractiveLineReader.KnownCommands.Select(command => command.Command));
+            ChatCommandCatalog.KnownCommands.Select(command => command.Command));
         if (completion is null)
         {
             return;

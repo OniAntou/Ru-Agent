@@ -10,8 +10,8 @@ public enum TuiEngine
 }
 
 /// <summary>
-/// Engine resolution for the chat TUI. Terminal.Gui is the default; a redirected, JSON,
-/// NO_COLOR, dumb or small terminal stays on the sequential fallback, and <c>--classic</c>
+/// Engine resolution for the chat TUI. Terminal.Gui is the default; redirected input/output, JSON,
+/// NO_COLOR, dumb or small terminal uses append-only line output, and <c>--classic</c>
 /// forces it explicitly.
 /// </summary>
 public static class TuiEngineSelection
@@ -23,9 +23,10 @@ public static class TuiEngineSelection
         int rows,
         string? noColor,
         string? term,
-        bool classic)
+        bool classic,
+        bool inputRedirected = false)
     {
-        if (outputRedirected || json || classic || noColor is not null)
+        if (inputRedirected || outputRedirected || json || classic || noColor is not null)
         {
             return TuiEngine.Sequential;
         }

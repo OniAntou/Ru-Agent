@@ -415,58 +415,14 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void InteractiveLineReader_AutoCompletes_NewSlashCommands()
+    public void ChatCommandCatalog_AutoCompletes_NewSlashCommands()
     {
         string[] cmds = ["/help", "/model", "/backend", "/rewind", "/tree", "/stats", "/tokens", "/export", "/status", "/history", "/clear", "/exit", "/quit"];
-        Assert.Equal("/tree", InteractiveLineReader.AutoComplete("/tr", cmds));
-        Assert.Null(InteractiveLineReader.AutoComplete("/stat", cmds)); // ambiguous with /status
-        Assert.Equal("/stats", InteractiveLineReader.AutoComplete("/stats", cmds));
-        Assert.Equal("/tokens", InteractiveLineReader.AutoComplete("/tok", cmds));
-        Assert.Equal("/export", InteractiveLineReader.AutoComplete("/exp", cmds));
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BoxRendering_UsesWidthProperly()
-    {
-        int width = 80;
-        var top = InteractiveLineReader.BuildTop(width, false);
-        var mid = InteractiveLineReader.BuildMid(width, "❯ ", "hello", false);
-        var bottom = InteractiveLineReader.BuildBottom(width, "model-test", false);
-
-        Assert.Contains("┌", top);
-        Assert.Contains("┐", top);
-        Assert.Contains("│ ❯ hello", mid);
-        Assert.Contains("└", bottom);
-        Assert.Contains("model-test", bottom);
-
-        int computedWidth = InteractiveLineReader.ComputeBoxWidth();
-        Assert.True(computedWidth >= 10);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildMid_PreventsBorderBreak_OnLongInput()
-    {
-        int width = 40;
-        string longInput = new string('x', 100);
-        var mid = InteractiveLineReader.BuildMid(width, "❯ ", longInput, false);
-        var stripped = TuiText.Strip(mid);
-
-        Assert.Equal(width, stripped.Length);
-        Assert.StartsWith("│ ❯ ", stripped, StringComparison.Ordinal);
-        Assert.EndsWith(" │", stripped, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildBottom_PreventsBorderBreak_OnLongLegend()
-    {
-        int width = 40;
-        string longLegend = new string('L', 100);
-        var bottom = InteractiveLineReader.BuildBottom(width, longLegend, false);
-        var stripped = TuiText.Strip(bottom);
-
-        Assert.Equal(width, stripped.Length);
-        Assert.StartsWith("└", stripped, StringComparison.Ordinal);
-        Assert.EndsWith("┘", stripped, StringComparison.Ordinal);
+        Assert.Equal("/tree", ChatCommandCatalog.AutoComplete("/tr", cmds));
+        Assert.Null(ChatCommandCatalog.AutoComplete("/stat", cmds)); // ambiguous with /status
+        Assert.Equal("/stats", ChatCommandCatalog.AutoComplete("/stats", cmds));
+        Assert.Equal("/tokens", ChatCommandCatalog.AutoComplete("/tok", cmds));
+        Assert.Equal("/export", ChatCommandCatalog.AutoComplete("/exp", cmds));
     }
 
     [Fact]
@@ -604,49 +560,6 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public async Task InteractiveLineReader_OnScreenRefreshedAsync_CanBeAssignedAndInvoked()
-    {
-        var reader = new InteractiveLineReader();
-        bool callbackCalled = false;
-        reader.OnScreenRefreshedAsync = () =>
-        {
-            callbackCalled = true;
-            return Task.CompletedTask;
-        };
-
-        Assert.NotNull(reader.OnScreenRefreshedAsync);
-        await reader.OnScreenRefreshedAsync();
-        Assert.True(callbackCalled);
-    }
-
-    [Fact]
-    public async Task InteractiveLineReader_PushToBottomAsync_SafeOnRedirectedOutput()
-    {
-        using var sw = new StringWriter();
-        await InteractiveLineReader.PushToBottomAsync(sw);
-        Assert.NotNull(sw.ToString());
-    }
-
-    [Theory]
-    // Màn hình trống (header ~7 dòng): không đệm, khung nằm ngay dưới nội dung.
-    [InlineData(7, 30, 0)]
-    [InlineData(1, 30, 0)]
-    [InlineData(15, 30, 0)]
-    // Output gần đầy màn hình (cách đáy <= 4 dòng): đệm nốt để ghim khung xuống đáy.
-    [InlineData(24, 30, 2)]
-    [InlineData(22, 30, 4)]
-    [InlineData(25, 30, 1)]
-    // Đã chạm/quá đáy hoặc không có console: không đệm.
-    [InlineData(26, 30, 0)]
-    [InlineData(40, 30, 0)]
-    [InlineData(0, 30, 0)]
-    [InlineData(-1, 30, 0)]
-    public void InteractiveLineReader_ComputePushLines_PadsOnlyNearBottom(int cursorTop, int windowHeight, int expected)
-    {
-        Assert.Equal(expected, InteractiveLineReader.ComputePushLines(cursorTop, windowHeight));
-    }
-
-    [Fact]
     public void TuiSessionRenderer_BeginEndTurn_PrintsTheTurnHeader_WithoutHanging()
     {
         TuiPalette.Level = TuiColorLevel.None;
@@ -659,181 +572,6 @@ public sealed class TuiInteractiveTests
 
         Assert.DoesNotContain("◆", sw.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("turn", sw.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_FormatsWithBrandBorderAndTimestamp()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var echo = InteractiveLineReader.BuildSubmitEcho("sửa lỗi busy", "21:35");
-
-            var stripped = TuiText.Strip(echo);
-            Assert.Contains("▌", stripped, StringComparison.Ordinal);
-            Assert.Contains("sửa lỗi busy", stripped, StringComparison.Ordinal);
-            Assert.Contains("21:35", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("> ", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("You", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("┌", stripped, StringComparison.Ordinal);
-            Assert.DoesNotContain("└", stripped, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.Code(TuiToken.Brand), echo, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.Code(TuiToken.Meta), echo, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
-
-            var lines = echo.Split('\n');
-            Assert.Equal(3, lines.Length);
-            Assert.Equal(lines[0], lines[2]);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_SupportsMultiline()
-    {
-        TuiPalette.Level = TuiColorLevel.None;
-        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb", "10:00");
-
-        var lines = echo.Split('\n');
-        Assert.Equal(2, lines.Length);
-        Assert.Contains("> a · 10:00", lines[0], StringComparison.Ordinal);
-        Assert.Contains("  b", lines[1], StringComparison.Ordinal);
-        Assert.DoesNotContain("You", echo, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_SupportsMultiline_TrueColor()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var echo = InteractiveLineReader.BuildSubmitEcho("a\nb", "10:00", width: 60);
-
-            var lines = echo.Split('\n');
-            Assert.Equal(4, lines.Length);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[0]);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[1]);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[2]);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[3]);
-            Assert.Contains("a", lines[1]);
-            Assert.Contains("b", lines[2]);
-            Assert.Contains("10:00", lines[1]);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
-
-    [Fact]
-    public void InteractiveLineReader_ResizeEchoLine_ExpandsToFullscreenWidth()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var echo80 = InteractiveLineReader.BuildSubmitEcho("Hello", "22:26", width: 80);
-            var lines80 = echo80.Split('\n');
-            Assert.Equal(3, lines80.Length);
-            Assert.All(lines80, l => Assert.Equal(80, TuiText.VisibleWidth(l)));
-
-            // Operator fullscreens the window to 142 columns
-            var resizedLines = lines80.Select(l => InteractiveLineReader.ResizeEchoLine(l, 142)).ToList();
-            Assert.Equal(3, resizedLines.Count);
-            Assert.All(resizedLines, l => Assert.Equal(142, TuiText.VisibleWidth(l)));
-
-            var stripped = TuiText.Strip(resizedLines[1]);
-            Assert.Contains("▌", stripped, StringComparison.Ordinal);
-            Assert.Contains("Hello", stripped, StringComparison.Ordinal);
-            Assert.Contains("22:26", stripped, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), resizedLines[1], StringComparison.Ordinal);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
-
-    [Fact]
-    public void InteractiveLineReader_ResizeEchoLine_ShrinksDownCleanly()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var echo140 = InteractiveLineReader.BuildSubmitEcho("sửa lỗi terminal", "15:30", width: 140);
-            var lines140 = echo140.Split('\n');
-            Assert.Equal(3, lines140.Length);
-            Assert.All(lines140, l => Assert.Equal(140, TuiText.VisibleWidth(l)));
-
-            // Operator shrinks the window down to 60 columns
-            var resizedLines = lines140.Select(l => InteractiveLineReader.ResizeEchoLine(l, 60)).ToList();
-            Assert.Equal(3, resizedLines.Count);
-            Assert.All(resizedLines, l => Assert.Equal(60, TuiText.VisibleWidth(l)));
-
-            var stripped = TuiText.Strip(resizedLines[1]);
-            Assert.Contains("sửa lỗi terminal", stripped, StringComparison.Ordinal);
-            Assert.Contains("15:30", stripped, StringComparison.Ordinal);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
-
-    [Fact]
-    public void InteractiveLineReader_ResizeEchoLine_LeavesNormalProseUnchanged()
-    {
-        var prose = "✦ Hello! I'm your assistant.";
-        var result = InteractiveLineReader.ResizeEchoLine(prose, 120);
-        Assert.Equal(prose, result);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_ShowsImageLabels()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var echo = InteractiveLineReader.BuildSubmitEcho(
-                "look at this", "21:35", width: 80, attachmentLabels: ["[image 1: cat.png]", "[file 1: notes.md]"]);
-
-            var stripped = TuiText.Strip(echo);
-            Assert.Contains("[image 1: cat.png]", stripped, StringComparison.Ordinal);
-            Assert.Contains("[file 1: notes.md]", stripped, StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_MonoShowsImageLabels()
-    {
-        TuiPalette.Level = TuiColorLevel.None;
-        var echo = InteractiveLineReader.BuildSubmitEcho("hi", "10:00", attachmentLabels: ["[image 1: a.png]"]);
-
-        Assert.Contains("[image 1: a.png]", echo, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(40)]
-    [InlineData(80)]
-    [InlineData(120)]
-    [InlineData(200)]
-    public void InteractiveLineReader_BuildBoxOpen_AdaptsToVariousTerminalWidths(int width)
-    {
-        var boxOpen = InteractiveLineReader.BuildBoxOpen(width, "❯ ", "model-test", false);
-        Assert.Contains("┌", boxOpen);
-        Assert.Contains("└", boxOpen);
-        Assert.Contains("model-test", boxOpen);
-
-        var top = InteractiveLineReader.BuildTop(width);
-        Assert.StartsWith("┌", top);
-        Assert.EndsWith("┐", top);
     }
 
     [Fact]
@@ -1265,20 +1003,6 @@ public sealed class TuiInteractiveTests
         Assert.Contains($"ru agent cancel {blockingRunId}", errStr, StringComparison.Ordinal);
         // The raw error envelope must never reach the transcript.
         Assert.DoesNotContain("error_code", errStr, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void InteractiveLineReader_BuildBottom_NeverSplitsAnsi_OnLongStyledLegend()
-    {
-        int width = 40;
-        string styledLegend = "\x1b[36m" + new string('L', 100) + "\x1b[0m";
-        var bottom = InteractiveLineReader.BuildBottom(width, styledLegend, false);
-        var stripped = TuiText.Strip(bottom);
-
-        Assert.Equal(width, stripped.Length);
-        int escCount = System.Text.RegularExpressions.Regex.Matches(bottom, "\x1b").Count;
-        int seqCount = System.Text.RegularExpressions.Regex.Matches(bottom, "\x1b\\[[0-9;]*[a-zA-Z]").Count;
-        Assert.Equal(escCount, seqCount);
     }
 
     [Fact]

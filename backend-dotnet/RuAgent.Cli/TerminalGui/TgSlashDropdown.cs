@@ -17,7 +17,7 @@ public sealed class TgSlashDropdown : View
     /// <summary>Command rows shown at once; older rows scroll with the selection.</summary>
     public const int MaxVisible = 8;
 
-    private IReadOnlyList<InteractiveLineReader.SlashCommandInfo> _matches = [];
+    private IReadOnlyList<ChatCommandCatalog.SlashCommandInfo> _matches = [];
     private int _selected;
 
     public TgSlashDropdown()
@@ -37,7 +37,7 @@ public sealed class TgSlashDropdown : View
     /// <summary>Bordered height for the current match set, used by the owner to anchor the view.</summary>
     public int PanelHeight => Math.Min(MaxVisible, Math.Max(1, _matches.Count)) + 2;
 
-    public void SetMatches(IReadOnlyList<InteractiveLineReader.SlashCommandInfo> matches)
+    public void SetMatches(IReadOnlyList<ChatCommandCatalog.SlashCommandInfo> matches)
     {
         ArgumentNullException.ThrowIfNull(matches);
         _matches = matches;

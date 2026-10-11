@@ -215,7 +215,7 @@ namespace RuApp.Controls
                 string? url = link.Url;
                 if (segments.Count == start)
                 {
-                    string label = link.Label;
+                    string label = link.Label ?? string.Empty;
                     string text = label.Length > 0 ? label : url ?? string.Empty;
                     AddText(text, bold, italic, mono: false, strike, group, url);
                     return;

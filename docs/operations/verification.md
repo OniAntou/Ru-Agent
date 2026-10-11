@@ -6,13 +6,62 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,879 passed / 0 failed / 0 skipped** (2026-10-11, tool boundary repairs). Log: `artifacts/tool-boundary-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
-| Python suite | **213 passed, 1 skipped** (2026-10-11, tool boundary repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tool-boundary-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,899 passed / 0 failed / 0 skipped** (2026-10-11, review remediation). Log: `artifacts/review-remediation-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| Python suite | **214 passed, 1 skipped** (2026-10-11, review remediation), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/review-remediation-full-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, tool boundary repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tool-boundary-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Review remediation (2026-10-11)
+
+An external review pass over the whole tree produced 11 high, 16 medium and a
+set of low findings; all high findings and the large majority of the rest are
+repaired in this pass. The highlights, by area:
+
+- **CI/tooling.** `scripts/check_python_runtime_boundary.py` treated the GUI's
+  vendored browser assets (`xterm.js`, `addon-fit.js`) as a shipped interpreter
+  and exited 1 on the repository itself while CI runs it bare. The two paths are
+  now the pinned, exact-path exception; the docs record the enforcement.
+- **Provider runtime.** A 120-second idle watchdog in the SSE reader turns a
+  silent provider into the retryable `provider_timeout` on all three protocols;
+  stream-level error events keep their HTTP retryability
+  (`rate_limit_error`/`api_error`, `server_error`/`overloaded`); a `.done`-only
+  Responses arguments stream is accepted; empty `model_tools` omits the key on
+  every protocol; extra sibling fields on a valid Anthropic block are ignored.
+- **Harness.** Batch aborts revoke the approvals they registered; cleanup never
+  replaces the original exception; a retried tool execution publishes a reset
+  frame (and the client model now parses the always-emitted `reset: null` field
+  that had made every live tool-output frame unparsable); the two native-history
+  projectors share one matcher with one identity guard.
+- **Persistence.** Infrastructure SQLite failures in a work-state update abort
+  the commit; recovery consume for a missing run fails closed; a failed
+  migration rollback no longer masks the error; request-path schema
+  initialization is memoized per database path; the conversation outbox spends a
+  bounded retry budget before failing an intent.
+- **CLI/RPC/SDK.** TUI wind-downs cancel the in-flight run and report discarded
+  queue entries; Esc between turns is remembered; panel requests answer a
+  wind-down with a cancel; `run`/`attach` report a failed cancel; bridge
+  backpressure drains through `RunAsync` with exit code 3 instead of killing the
+  process from the pump thread; filtered or unreadable durable frames end the
+  subscription with `run.detached`; `run.detach` accepts a run id for attach
+  cleanup; SDK handler exceptions become warnings; stdin backpressure is
+  respected; cmd metacharacters in `.cmd` spawn arguments fail closed.
+- **GUI.** Session/workspace/diagnostics async-void handlers catch their own
+  failures; the last session click wins a fast switch; settings loading always
+  clears its flag; trace lines go through one bounded background writer.
+
+Evidence: the full 12-project matrix passed **5,899 tests / 0 failures / 0
+skips** (`artifacts/review-remediation-full-dotnet.log`), the Python suite
+passed 214 with one Windows/POSIX skip
+(`artifacts/review-remediation-full-python.log`), the SDK typecheck/test/build
+passed 22 tests, and the scripted RPC smoke passed end to end (PASS, terminal
+`run.event` at sequence 7). Deferred with reasons: the reply-effect failure
+keeps its existing durable best-effort activity marker; a `Length`-finish step
+deliberately does not release held-back text (the whole step is suppressed);
+`InteractiveLineReader`'s key loop and the reconciliation-target scan keep
+their existing shapes, recorded here rather than rewritten in this pass.
 
 ## Tool boundary repairs (2026-10-11)
 

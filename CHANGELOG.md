@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(provider)**: Reassemble indexed Chat Completions tool calls before model-step parsing. Interleaved arguments, repeated call ids, split function names and out-of-order opening chunks now preserve each call's identity and order. Missing ids receive distinct response-local identities; conflicting ids, mixed indexed/unindexed calls and oversized arguments return a named protocol failure. Usage carried on an argument-only chunk is retained.
+
 - **fix(broker,model)**: Treat an omitted terminal argument vector as empty, matching the tool schema, and preserve named argument errors instead of flattening them to `adapter_error`. Preserve a provider's `length` finish before parsing native or text-encoded tool calls so an incomplete step cannot become an executable tool batch.
 
 - **fix(terminal)**: Keep the native process handle before resuming a Windows child so quick commands retain their exit code. Resolve executables and shell runtimes before task registration so launch-resolution failures keep their actionable error code and cannot report a background task as started.

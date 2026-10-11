@@ -6,13 +6,44 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 22 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,822 passed / 0 failed / 0 skipped** (2026-10-11, tool argument/truncation repairs). Log: `artifacts/quality-tool-arguments-truncation-full.log`. Earlier interrupted matrices and environment failures are recorded below. |
+| .NET tests | Full **12-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: **5,837 passed / 0 failed / 0 skipped** (2026-10-11, indexed Chat Completions call repairs). Log: `artifacts/quality-indexed-chat-full-dotnet.log`. Earlier interrupted matrices and environment failures are recorded below. |
 | Python suite | **213 passed, 1 skipped** (2026-10-11, coding recovery/feedback repairs), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/quality-pytest-complete.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal launch/exit-code repairs). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/quality-terminal-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Indexed Chat Completions call repairs (2026-10-11)
+
+Commit `bb27c06f` records the preceding terminal-argument and truncation repairs.
+The subsequent SSE replay pass reproduced four indexed-call failures through
+the real Chat Completions adapter and model runner: interleaved arguments were
+attached to the wrong call, a repeated id started a new call, a split function
+name was rejected, and out-of-order opening chunks reversed call order. All
+four failed before the repair (`artifacts/indexed-chat-tools-red.log`) and
+passed after it (`artifacts/indexed-chat-tools-green.log`).
+
+The adapter now assembles indexed calls in a separate bounded component and
+emits them in index order at completion. Wholly unindexed streams retain the
+existing compatibility path; mixed indexed/unindexed metadata, conflicting ids
+and oversized arguments are rejected. A replay with two indexed calls lacking
+provider ids also reproduced an ambiguous-call failure
+(`artifacts/indexed-chat-tools-missing-ids-red.log`); distinct generated ids now
+keep those calls separate. During iteration a regression was caught where an
+argument-only chunk's usage was dropped (`artifacts/indexed-chat-tools-usage-red.log`)
+and corrected before final verification. Indexed `length` output still returns
+no executable calls through the preceding truncation repair.
+
+Final verification: `scripts/test_dotnet.ps1 -Configuration Debug` passed all
+12 projects, **5,837 passed / 0 failed / 0 skipped**
+(`artifacts/quality-indexed-chat-full-dotnet.log`), including the 15 new indexed
+SSE replay cases. Current documentation and route-guidance checks passed 15
+tests (`artifacts/quality-indexed-chat-docs.log`), and `git diff --check` passed.
+
+These are deterministic SSE replay results, with synthetic credentials and no
+network provider calls. Another live-model benchmark, Release package build
+and interactive UI acceptance have not been run for this repair.
 
 ## Tool argument and truncation repairs (2026-10-11)
 

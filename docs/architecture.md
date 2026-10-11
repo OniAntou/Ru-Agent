@@ -11,6 +11,15 @@ executable calls or continuation; the Harness records it internally and applies
 its existing bounded truncation recovery. Even a complete call preceding a
 truncated call is discarded with that step.
 
+The Chat Completions adapter assembles indexed tool-call deltas by response-local
+`index` before the runner parses arguments or looks up tool names. Calls are
+emitted in index order at completion, retaining provider ids or assigning a
+distinct generated id when omitted. Assembly is bounded to 16 calls, 128-character
+names and 64 KiB of UTF-8 arguments per call. Conflicting ids and mixed indexed
+and unindexed call metadata are rejected; wholly unindexed compatibility streams
+retain their existing sequential parsing. Text and reasoning still stream as
+they arrive, and usage on argument-only chunks remains available.
+
 ## Coding core and plugins
 
 The coding core is the product: Public Host, Broker execution authority, the

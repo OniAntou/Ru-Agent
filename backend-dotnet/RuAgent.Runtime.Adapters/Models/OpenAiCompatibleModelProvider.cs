@@ -70,6 +70,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                 // for every run; instead, completion is remembered and only the
                 // usage tail is still consumed afterwards.
                 var completionSeen = false;
+                var indexedCalls = new ChatToolCallAssembly();
                 // A chunk cut mid-string cannot parse on its own. Sloppy emitters also
                 // split escape sequences across chunks, so a lone trailing backslash is
                 // a continuation, never content to repair yet.
@@ -91,7 +92,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
 
                         if (!completionSeen)
                         {
-                            yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "stop");
+                            yield return new ModelDelta(null, indexedCalls.Complete(), true, "stop");
                         }
                         yield break;
                     }
@@ -147,9 +148,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                     // a protocol failure.
                     var reasoning = ReadOptionalString(delta["reasoning_content"])
                         ?? TryReadString(delta["reasoning"]);
-                    var fragments = ReadToolFragments(delta);
+                    var fragments = ReadToolFragments(delta, indexedCalls);
                     var finishReason = ReadFinishReason(choice);
-                    if (text is null && reasoning is null && fragments.Count == 0 && finishReason is null)
+                    if (text is null && reasoning is null && fragments.Count == 0 && finishReason is null && usage is null)
                     {
                         continue;
                     }
@@ -174,6 +175,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                     if (completed)
                     {
                         completionSeen = true;
+                        fragments.AddRange(indexedCalls.Complete());
                     }
                     yield return new ModelDelta(text, fragments, completed, finishReason, usage, reasoning);
                 }
@@ -360,7 +362,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         return ReadOptionalString(delta["content"]);
     }
 
-    private static List<ModelToolFragment> ReadToolFragments(JsonObject delta)
+    private static List<ModelToolFragment> ReadToolFragments(JsonObject delta, ChatToolCallAssembly indexedCalls)
     {
         var fragments = new List<ModelToolFragment>();
         if (delta["tool_calls"] is not JsonArray calls)
@@ -388,6 +390,14 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
 
             var name = ReadOptionalString(function["name"]) ?? string.Empty;
             var arguments = ReadOptionalString(function["arguments"]) ?? string.Empty;
+            if (call.ContainsKey("index"))
+            {
+                if (call["index"] is not JsonValue indexValue || !indexValue.TryGetValue<int>(out var index))
+                    throw new ModelProviderException("malformed_payload", retryable: false);
+                indexedCalls.Append(index, providerCallId, name, arguments);
+                continue;
+            }
+            indexedCalls.ObserveUnindexed();
             try
             {
                 fragments.Add(new ModelToolFragment(providerCallId, name, arguments));

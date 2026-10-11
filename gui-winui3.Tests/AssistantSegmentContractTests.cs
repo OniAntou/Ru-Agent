@@ -109,6 +109,56 @@ public sealed class AssistantSegmentContractTests
                 && attribute.Value.Contains("AgentActivityTemplate", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Live_text_renders_plain_and_settled_text_parses_markdown()
+    {
+        // Streaming re-parses partial Markdown every delta: unclosed bold,
+        // fences and lists flip the parse tree frame to frame and the whole
+        // reply reflows mid-turn. Live surfaces therefore render literal text;
+        // the settled turn parses once and stands still.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+
+        var replyBlock = GuiSource.Require(document, "AgentReplyTextBlock");
+        Assert.Equal(
+            "{x:Bind IsStreaming, Mode=OneWay}",
+            GuiSource.AttributeValue(replyBlock, "PlainTextMode"));
+
+        var segmentTemplate = document.Descendants()
+            .FirstOrDefault(element =>
+                string.Equals(
+                    element.Attribute(GuiSource.Xaml + "Key")?.Value,
+                    "AssistantTextSegmentTemplate",
+                    StringComparison.Ordinal));
+        Assert.NotNull(segmentTemplate);
+        var segmentBlock = segmentTemplate!.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "MarkdownBlock");
+        Assert.NotNull(segmentBlock);
+        Assert.Equal(
+            "{x:Bind IsLive, Mode=OneWay}",
+            GuiSource.AttributeValue(segmentBlock!, "PlainTextMode"));
+    }
+
+    [Fact]
+    public void Every_turn_end_settles_the_live_slices()
+    {
+        // A slice that stays live after its turn keeps rendering literal text
+        // forever; complete, fail, and abandon must all settle explicitly.
+        var code = GuiSource.ViewText("ChatView");
+
+        foreach (var member in new[]
+                 {
+                     "CompleteActiveAgentTurnAsync",
+                     "FailActiveAgentReply",
+                     "AbandonActiveAgentReply",
+                 })
+        {
+            Assert.Contains(
+                "SettleSegments()",
+                GuiSource.MethodBody(code, member),
+                StringComparison.Ordinal);
+        }
+    }
+
     private static HashSet<string> DeclaredKeys(XDocument document) =>
         document.Descendants()
             .Select(element => element.Attribute(GuiSource.Xaml + "Key")?.Value)

@@ -1253,12 +1253,14 @@ namespace RuApp.Views
                 }
                 _activeAgentAssistantMessage.Content = pending.Text;
                 _activeAgentAssistantMessage.IsStreaming = false;
+                _activeAgentAssistantMessage.SettleSegments();
                 UpdateLiveTailText(_activeAgentAssistantMessage);
                 ScrollChatToBottom();
             }
             else if (_activeAgentAssistantMessage != null)
             {
                 _activeAgentAssistantMessage.IsStreaming = false;
+                _activeAgentAssistantMessage.SettleSegments();
             }
             ChatMessageItem? placeholder = _activeAgentAssistantMessage;
 
@@ -1325,6 +1327,7 @@ namespace RuApp.Views
                     UpdateLiveTailText(_activeAgentAssistantMessage);
                 }
                 _activeAgentAssistantMessage.IsStreaming = false;
+                _activeAgentAssistantMessage.SettleSegments();
                 _activeAgentAssistantMessage.IsError = !hasReply;
                 SyncSegmentErrorState(_activeAgentAssistantMessage);
             }
@@ -1351,6 +1354,7 @@ namespace RuApp.Views
             {
                 var abandonedMessage = _activeAgentAssistantMessage;
                 abandonedMessage.IsStreaming = false;
+                abandonedMessage.SettleSegments();
                 if (string.IsNullOrWhiteSpace(abandonedMessage.Content)
                     && Messages.Contains(abandonedMessage))
                 {

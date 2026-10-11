@@ -307,13 +307,13 @@ namespace RuApp.Views
             }
             else if (splitAt > frozen)
             {
-                segments.Add(new TextSegment(content.Substring(frozen, splitAt - frozen)) { IsError = message.IsError });
+                segments.Add(new TextSegment(content.Substring(frozen, splitAt - frozen)) { IsError = message.IsError, IsLive = true });
             }
 
             _activitySplitOffsetById[item.ActivityId] = splitAt;
             _segmentFrozenLength = splitAt;
             segments.Add(new ActivitySegment(item.ActivityId, item));
-            segments.Add(new TextSegment(string.Empty) { IsError = message.IsError });
+            segments.Add(new TextSegment(string.Empty) { IsError = message.IsError, IsLive = true });
         }
 
         private void UpdateLiveTailText(ChatMessageItem? message)

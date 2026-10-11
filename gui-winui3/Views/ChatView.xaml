@@ -454,6 +454,7 @@
                     </Border>
                     <controls:MarkdownBlock x:Name="AgentReplyTextBlock"
                                             MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                            PlainTextMode="{x:Bind IsStreaming, Mode=OneWay}"
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
@@ -481,6 +482,7 @@
 
         <DataTemplate x:Key="AssistantTextSegmentTemplate" x:DataType="models:TextSegment">
             <controls:MarkdownBlock MarkdownText="{x:Bind Text, Mode=OneWay}"
+                                    PlainTextMode="{x:Bind IsLive, Mode=OneWay}"
                                     Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                     FontSize="14"
                                     Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"

@@ -238,6 +238,27 @@ namespace RuApp.Models
 
         public bool HasSegments => Segments?.Count > 0;
 
+        /// <summary>
+        /// Ends live rendering for every text slice: the turn settled, so each
+        /// slice parses Markdown once instead of streaming literal text.
+        /// Pure model logic, so settling is unit-testable without XAML.
+        /// </summary>
+        public void SettleSegments()
+        {
+            if (Segments is null)
+            {
+                return;
+            }
+
+            foreach (var segment in Segments)
+            {
+                if (segment is TextSegment text)
+                {
+                    text.IsLive = false;
+                }
+            }
+        }
+
         /// <summary>Legacy feed: visible only when no chronological segments exist.</summary>
         public bool ShowLegacyActivityFeed => HasAgentActivities && !HasSegments;
 

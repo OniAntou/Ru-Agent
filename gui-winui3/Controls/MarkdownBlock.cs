@@ -34,6 +34,26 @@ namespace RuApp.Controls
             set => SetValue(MarkdownTextProperty, value);
         }
 
+        public static readonly DependencyProperty PlainTextModeProperty =
+            DependencyProperty.Register(
+                nameof(PlainTextMode),
+                typeof(bool),
+                typeof(MarkdownBlock),
+                new PropertyMetadata(false, OnPlainTextModeChanged));
+
+        /// <summary>
+        /// When true, the source renders as literal text with no Markdown
+        /// parsing. A streaming turn sets it: re-parsing partial Markdown
+        /// every delta flips unclosed constructs (bold, fences, lists) and
+        /// reflows the whole reply mid-turn. The settled turn clears it and
+        /// parses once, so the final layout stands still.
+        /// </summary>
+        public bool PlainTextMode
+        {
+            get => (bool)GetValue(PlainTextModeProperty);
+            set => SetValue(PlainTextModeProperty, value);
+        }
+
         public FontWeight FontWeightProperties => FontWeights.Normal;
 
         public MarkdownBlock()
@@ -59,24 +79,58 @@ namespace RuApp.Controls
             ((MarkdownBlock)d).RenderMarkdown();
         }
 
+        private static void OnPlainTextModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            ((MarkdownBlock)d).RenderMarkdown();
+        }
+
         private string? _lastRenderedText;
         private double _lastRenderedSize;
+        private bool _lastRenderedPlain;
+
+        /// <summary>
+        /// One line-height rule for parsed and literal paragraphs alike, so the
+        /// streaming-to-settled switch does not itself move the text.
+        /// </summary>
+        private static double LineHeightFor(double bodySize) => Math.Round(bodySize * 1.7);
 
         private void RenderMarkdown()
         {
             string source = (MarkdownText ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
             double bodySize = FontSize > 0 ? FontSize : 14;
+            bool plain = PlainTextMode;
 
-            if (string.Equals(source, _lastRenderedText, StringComparison.Ordinal) && Math.Abs(bodySize - _lastRenderedSize) < 0.01)
+            if (string.Equals(source, _lastRenderedText, StringComparison.Ordinal)
+                && Math.Abs(bodySize - _lastRenderedSize) < 0.01
+                && plain == _lastRenderedPlain)
             {
                 return;
             }
             _lastRenderedText = source;
             _lastRenderedSize = bodySize;
+            _lastRenderedPlain = plain;
 
             _richTextBlock.Blocks.Clear();
             _richTextBlock.FontFamily = UiFont;
             _richTextBlock.FontSize = bodySize;
+
+            if (plain)
+            {
+                // Literal text: no recovery splitting and no parsing, so a
+                // growing stream only ever appends instead of reflowing.
+                if (source.Length > 0)
+                {
+                    var paragraph = new Paragraph
+                    {
+                        Margin = new Thickness(0, 0, 0, 12),
+                        LineHeight = LineHeightFor(bodySize),
+                    };
+                    paragraph.Inlines.Add(new Run { Text = source, FontFamily = UiFont, FontSize = bodySize });
+                    _richTextBlock.Blocks.Add(paragraph);
+                }
+
+                return;
+            }
 
             // Collapsed pre-fix walls arrive as single overlong lines; recover
             // their section breaks first so the parser below sees real blocks.
@@ -284,7 +338,7 @@ namespace RuApp.Controls
             /// DeepSeek-like air: line height tracks the reader's size choice
             /// instead of sitting on a fixed 22px that pinches at 17.
             /// </summary>
-            private double TextLineHeight => Math.Round(bodySize * 1.7);
+            private double TextLineHeight => LineHeightFor(bodySize);
 
             public List<Paragraph> BuildBlocks(Markdig.Syntax.Block block, int indent)
             {

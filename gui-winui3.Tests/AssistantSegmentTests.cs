@@ -130,6 +130,56 @@ public sealed class AssistantSegmentTests
     }
 
     [Fact]
+    public void TextSegment_is_settled_by_default_and_notifies_on_liveness_change()
+    {
+        var segment = new TextSegment("a");
+        Assert.False(segment.IsLive);
+
+        var changes = new List<string?>();
+        segment.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
+        segment.IsLive = true;
+
+        Assert.True(segment.IsLive);
+        Assert.Contains("IsLive", changes);
+    }
+
+    [Fact]
+    public void SettleSegments_ends_live_rendering_for_text_slices_only()
+    {
+        var live = new TextSegment("streaming") { IsLive = true };
+        var settled = new TextSegment("frozen");
+        var activity = new ActivitySegment(
+            "act_11111111111111111111111111111111",
+            Item("act_11111111111111111111111111111111"));
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new System.Collections.ObjectModel.ObservableCollection<AssistantSegment>
+            {
+                settled,
+                activity,
+                live,
+            },
+        };
+
+        message.SettleSegments();
+
+        Assert.False(live.IsLive);
+        Assert.False(settled.IsLive);
+        Assert.Same(activity.Item, ((ActivitySegment)message.Segments[1]).Item);
+    }
+
+    [Fact]
+    public void SettleSegments_tolerates_a_message_without_segments()
+    {
+        var message = new ChatMessageItem { Role = "assistant" };
+
+        var exception = Record.Exception(() => message.SettleSegments());
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public void Message_hides_legacy_layout_once_segments_exist()
     {
         var message = new ChatMessageItem

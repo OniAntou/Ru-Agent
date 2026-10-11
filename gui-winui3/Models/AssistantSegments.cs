@@ -18,6 +18,7 @@ namespace RuApp.Models
     {
         private string _text;
         private bool _isError;
+        private bool _isLive;
 
         public TextSegment(string text)
         {
@@ -39,6 +40,25 @@ namespace RuApp.Models
         }
 
         public bool HasText => !string.IsNullOrEmpty(_text);
+
+        /// <summary>
+        /// True while this slice still streams: its MarkdownBlock renders
+        /// literal text so partial Markdown cannot reflow the reply mid-turn.
+        /// The turn settles it (see <see cref="ChatMessageItem.SettleSegments"/>)
+        /// when the reply completes, fails, or is abandoned.
+        /// </summary>
+        public bool IsLive
+        {
+            get => _isLive;
+            set
+            {
+                if (_isLive != value)
+                {
+                    _isLive = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
 
         public bool IsError
         {

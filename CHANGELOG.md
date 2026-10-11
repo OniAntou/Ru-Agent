@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Live reply text renders literal instead of re-parsing partial Markdown every delta: unclosed bold, fences, and lists flipped the parse tree frame to frame and reflowed the whole reply mid-turn, while a reopened session parsed once and stood still. Streaming surfaces (`IsStreaming` reply block and live text slices) now render plain text and parse Markdown once when the turn settles; complete, fail, and abandon all settle explicitly.
+
 - **fix(gui)**: Emphasis rendering no longer stringifies Markdig nodes: a code span nested in bold/italic (`**`standard`**`) printed the literal `Markdig.Syntax.Inlines.CodeInline` because the fallback branch called `ToString()` on the node, and code spans inside `~~strikethrough~~` vanished entirely. Emphasis now flattens to styled runs (code keeps mono, links keep label and target, breaks stay breaks, nested markers combine) through one pure, unit-tested helper, with strikethrough decoration preserved via a single span.
 
 - **feat(agent)**: Opening a GUI session adopts the stored session preset into the composer (`GET /agent/v1/sessions/{sessionId}/preset`), so a `plan` session reopened later still shows `Plan` and the next send keeps it instead of silently re-grading the session. The prompt contract now states that the run's permission mode is described only by the profile block, so a model cannot mistake a mode described in the product documentation for its own.

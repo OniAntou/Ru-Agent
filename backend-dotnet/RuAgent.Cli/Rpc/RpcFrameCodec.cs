@@ -16,67 +16,26 @@ public sealed record RpcFrameReadResult(RpcFrameStatus Status, string Line)
 }
 
 /// <summary>
-/// Reads and writes one NDJSON frame at a time. Characters are consumed one at a
-/// time because a TextReader is free to return the beginning of the next frame in
-/// the same read, and there is no way to push it back; reading exactly through the
-/// newline keeps back-to-back frames intact. The cap is measured in UTF-8 bytes,
-/// matching the on-the-wire limit, so multi-byte text cannot creep past it. An
-/// oversized line is drained to its newline before reporting TooLarge so the next
-/// read starts on a frame boundary instead of the middle of the rejected line.
+/// Reads and writes one NDJSON frame at a time. The frame cap is measured in
+/// UTF-8 bytes, matching the on-the-wire limit, so multi-byte text cannot creep
+/// past it. An oversized line is drained to its newline before reporting
+/// TooLarge so the next read starts on a frame boundary instead of the middle of
+/// the rejected line.
 /// </summary>
 public static class RpcFrameCodec
 {
-    public static async Task<RpcFrameReadResult> ReadFrameAsync(
+    // The buffered reader state must survive between frames on the same stream:
+    // a block read can return the start of the next frame, so a fresh reader per
+    // call would lose those characters. Callers that read a stream more than once
+    // therefore share one reader per TextReader instance.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<TextReader, RpcFrameReader> Readers = new();
+
+    public static Task<RpcFrameReadResult> ReadFrameAsync(
         TextReader reader,
         int maxFrameBytes,
-        CancellationToken cancellationToken)
-    {
-        var builder = new StringBuilder(Math.Min(4096, maxFrameBytes));
-        var buffer = new char[1];
-        var oversized = false;
-        var bytes = 0;
-        char? pendingHighSurrogate = null;
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                if (oversized)
-                {
-                    return new RpcFrameReadResult(RpcFrameStatus.TooLarge, string.Empty);
-                }
-
-                return builder.Length == 0
-                    ? RpcFrameReadResult.EndOfInput
-                    : new RpcFrameReadResult(RpcFrameStatus.Line, builder.ToString());
-            }
-
-            var c = buffer[0];
-            if (c == '\n')
-            {
-                return oversized
-                    ? new RpcFrameReadResult(RpcFrameStatus.TooLarge, string.Empty)
-                    : new RpcFrameReadResult(RpcFrameStatus.Line, builder.ToString());
-            }
-
-            if (c == '\r' || oversized)
-            {
-                continue;
-            }
-
-            var byteIncrement = Utf8ByteIncrement(c, ref pendingHighSurrogate);
-            if (bytes + byteIncrement > maxFrameBytes)
-            {
-                oversized = true;
-                builder.Clear();
-                continue;
-            }
-
-            bytes += byteIncrement;
-            builder.Append(c);
-        }
-    }
+        CancellationToken cancellationToken) =>
+        Readers.GetValue(reader, source => new RpcFrameReader(source, maxFrameBytes))
+            .ReadFrameAsync(cancellationToken);
 
     /// <summary>
     /// Counts the UTF-8 bytes of one code unit. A high surrogate costs 3 bytes until
@@ -84,7 +43,7 @@ public static class RpcFrameCodec
     /// unpaired high surrogate costs the 3 bytes of the replacement character it
     /// encodes to.
     /// </summary>
-    private static int Utf8ByteIncrement(char c, ref char? pendingHighSurrogate)
+    internal static int Utf8ByteIncrement(char c, ref char? pendingHighSurrogate)
     {
         if (pendingHighSurrogate is not null)
         {
@@ -124,5 +83,80 @@ public static class RpcFrameCodec
         cancellationToken.ThrowIfCancellationRequested();
         await writer.WriteLineAsync(message.ToJsonString()).ConfigureAwait(false);
         await writer.FlushAsync().ConfigureAwait(false);
+    }
+}
+
+/// <summary>
+/// One frame at a time from a text stream, buffering whole blocks between
+/// frames. Reading character-by-character made a megabyte frame a million
+/// awaits; the block buffer keeps the framing rule intact -- the characters
+/// after a frame's newline stay buffered for the next frame instead of being
+/// lost, which a one-shot block read could not guarantee.
+/// </summary>
+public sealed class RpcFrameReader
+{
+    private const int BufferChars = 4096;
+    private readonly TextReader _reader;
+    private readonly int _maxFrameBytes;
+    private readonly char[] _buffer = new char[BufferChars];
+    private int _start;
+    private int _count;
+
+    public RpcFrameReader(TextReader reader, int maxFrameBytes)
+    {
+        _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        _maxFrameBytes = maxFrameBytes;
+    }
+
+    public async Task<RpcFrameReadResult> ReadFrameAsync(CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder(Math.Min(4096, _maxFrameBytes));
+        var oversized = false;
+        var bytes = 0;
+        char? pendingHighSurrogate = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_start == _count)
+            {
+                _count = await _reader.ReadAsync(_buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                _start = 0;
+                if (_count == 0)
+                {
+                    if (oversized)
+                    {
+                        return new RpcFrameReadResult(RpcFrameStatus.TooLarge, string.Empty);
+                    }
+
+                    return builder.Length == 0
+                        ? RpcFrameReadResult.EndOfInput
+                        : new RpcFrameReadResult(RpcFrameStatus.Line, builder.ToString());
+                }
+            }
+
+            var c = _buffer[_start++];
+            if (c == '\n')
+            {
+                return oversized
+                    ? new RpcFrameReadResult(RpcFrameStatus.TooLarge, string.Empty)
+                    : new RpcFrameReadResult(RpcFrameStatus.Line, builder.ToString());
+            }
+
+            if (c == '\r' || oversized)
+            {
+                continue;
+            }
+
+            var byteIncrement = RpcFrameCodec.Utf8ByteIncrement(c, ref pendingHighSurrogate);
+            if (bytes + byteIncrement > _maxFrameBytes)
+            {
+                oversized = true;
+                builder.Clear();
+                continue;
+            }
+
+            bytes += byteIncrement;
+            builder.Append(c);
+        }
     }
 }

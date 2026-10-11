@@ -41,6 +41,21 @@ public sealed class RpcDispatchSurfaceTests
     }
 
     [Fact]
+    public async Task Run_detach_falls_back_to_run_id_when_no_subscription_id_is_given()
+    {
+        // The bounded cleanup for a client whose attach response never arrived:
+        // no bridge is wired here, so the answer is an explicit zero, not an error.
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")));
+
+        var result = await dispatcher.DispatchAsync(
+            Req("run.detach", "{\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"),
+            CancellationToken.None);
+
+        Assert.Equal(0, result!["detached"]!.GetValue<int>());
+        Assert.Equal("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", result!["run_id"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Session_create_returns_the_session_id()
     {
         List<string> seen = [];

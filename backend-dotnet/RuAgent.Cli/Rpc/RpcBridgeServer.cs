@@ -16,8 +16,13 @@ public sealed class RpcBridgeServer
     private readonly TextWriter _log;
     private readonly RpcDispatcher _dispatcher;
     private readonly Channel<JsonObject> _outbound;
-    private readonly Action<int> _terminate;
     private bool _backpressured;
+
+    // Cancels the read loop when backpressure ends the session, so RunAsync's own
+    // shutdown path can drain the queue, deliver bridge.shutdown in order, and
+    // report exit code 3. The pump thread must never kill the process itself:
+    // Environment.Exit there dropped every queued frame and the reason it carried.
+    private readonly CancellationTokenSource _shutdown = new();
 
     // Written by the reader thread when the channel is closing (RunAsync's finally)
     // and read by the SSE pump thread in TryPublish; volatile so a pump thread
@@ -30,15 +35,13 @@ public sealed class RpcBridgeServer
         TextWriter log,
         RpcDispatcher dispatcher,
         IRunBridge runBridge,
-        int outboundCapacity = RpcProtocol.MaxOutboundMessages,
-        Action<int>? terminate = null)
+        int outboundCapacity = RpcProtocol.MaxOutboundMessages)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _output = output ?? throw new ArgumentNullException(nameof(output));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _ = runBridge ?? throw new ArgumentNullException(nameof(runBridge));
-        _terminate = terminate ?? Environment.Exit;
         _outbound = Channel.CreateBounded<JsonObject>(new BoundedChannelOptions(outboundCapacity)
         {
             SingleReader = true,
@@ -47,7 +50,11 @@ public sealed class RpcBridgeServer
         });
     }
 
-    /// <summary>Backpressure hook for RpcRunBridge: never blocks the SSE pump.</summary>
+    /// <summary>
+    /// Backpressure hook for RpcRunBridge: never blocks the SSE pump. A
+    /// notification that cannot enter the bounded queue is fail-closed: the
+    /// session ends with exit code 3 instead of dropping a durable event.
+    /// </summary>
     public bool TryPublish(JsonObject notification)
     {
         if (_backpressured || _writerCompleted)
@@ -61,25 +68,29 @@ public sealed class RpcBridgeServer
         }
 
         // Fail closed: a full queue means a durable notification cannot be
-        // delivered, so the bridge stops instead of dropping it. The writer may
-        // even be gone, hence the best-effort shutdown frame.
+        // delivered. Stopping the session lets RunAsync drain what is already
+        // queued and flush the shutdown frame before the process exits, so the
+        // client learns the reason instead of seeing frames vanish.
         _backpressured = true;
-        _outbound.Writer.TryWrite(RpcMessage.Notification("bridge.shutdown", new JsonObject { ["reason"] = "backpressure" }));
-        _outbound.Writer.TryComplete();
-        _terminate(3);
+        _shutdown.Cancel();
         return false;
     }
 
     public async Task<int> RunAsync(CancellationToken cancellationToken)
     {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _shutdown.Token);
+        var token = linked.Token;
         var reason = "stdin_closed";
         var exitCode = 0;
-        var writerTask = WriterLoopAsync(cancellationToken);
+        var writerTask = WriterLoopAsync(token);
+        var frameReader = new RpcFrameReader(_input, RpcProtocol.MaxFrameBytes);
         try
         {
             while (true)
             {
-                var frame = await RpcFrameCodec.ReadFrameAsync(_input, RpcProtocol.MaxFrameBytes, cancellationToken).ConfigureAwait(false);
+                var frame = await frameReader.ReadFrameAsync(token).ConfigureAwait(false);
                 if (frame.Status == RpcFrameStatus.EndOfInput)
                 {
                     break;
@@ -89,7 +100,7 @@ public sealed class RpcBridgeServer
                 {
                     await _outbound.Writer.WriteAsync(
                         RpcMessage.ErrorResponse(null, RpcProtocol.InvalidRequest, "request_too_large: frame exceeds 1 MiB."),
-                        cancellationToken).ConfigureAwait(false);
+                        token).ConfigureAwait(false);
                     continue;
                 }
 
@@ -101,7 +112,7 @@ public sealed class RpcBridgeServer
                 var request = RpcMessage.TryParseRequest(frame.Line, out var parseError);
                 if (request is null)
                 {
-                    await _outbound.Writer.WriteAsync(parseError!, cancellationToken).ConfigureAwait(false);
+                    await _outbound.Writer.WriteAsync(parseError!, token).ConfigureAwait(false);
                     continue;
                 }
 
@@ -113,12 +124,12 @@ public sealed class RpcBridgeServer
 
                 try
                 {
-                    var result = await _dispatcher.DispatchAsync(request, cancellationToken).ConfigureAwait(false);
+                    var result = await _dispatcher.DispatchAsync(request, token).ConfigureAwait(false);
                     if (!request.IsNotification)
                     {
                         await _outbound.Writer.WriteAsync(
                             RpcMessage.SuccessResponse(request.Id, result),
-                            cancellationToken).ConfigureAwait(false);
+                            token).ConfigureAwait(false);
                     }
                 }
                 catch (RpcDispatchException ex)
@@ -127,7 +138,7 @@ public sealed class RpcBridgeServer
                     {
                         await _outbound.Writer.WriteAsync(
                             RpcMessage.ErrorResponse(request.Id, ex.RpcErrorCode, ex.Message, ex.RuCode, ex.HttpStatus),
-                            cancellationToken).ConfigureAwait(false);
+                            token).ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException)
@@ -141,15 +152,15 @@ public sealed class RpcBridgeServer
                     {
                         await _outbound.Writer.WriteAsync(
                             RpcMessage.ErrorResponse(request.Id, RpcProtocol.InternalError, "internal_error: the bridge failed to complete the request."),
-                            cancellationToken).ConfigureAwait(false);
+                            token).ConfigureAwait(false);
                     }
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            reason = "cancelled";
-            exitCode = 130;
+            reason = _backpressured ? "backpressure" : "cancelled";
+            exitCode = _backpressured ? 3 : 130;
         }
         finally
         {
@@ -162,7 +173,7 @@ public sealed class RpcBridgeServer
             // A pump that ends during shutdown must not be mistaken for a full
             // queue: the channel is closing, so there is nothing left to fail.
             _writerCompleted = true;
-            _outbound.Writer.TryWrite(RpcMessage.Notification("bridge.shutdown", new JsonObject { ["reason"] = reason }));
+            await TryWriteShutdownAsync(reason).ConfigureAwait(false);
             _outbound.Writer.TryComplete();
         }
 
@@ -178,6 +189,27 @@ public sealed class RpcBridgeServer
         }
 
         return exitCode;
+    }
+
+    /// <summary>
+    /// Queues the shutdown frame, waiting briefly for room when the queue is
+    /// full: the writer is draining concurrently, so the wait is normally
+    /// instantaneous, and a client that is gone only means the exit code is
+    /// what reports the reason.
+    /// </summary>
+    private async Task TryWriteShutdownAsync(string reason)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await _outbound.Writer.WriteAsync(
+                RpcMessage.Notification("bridge.shutdown", new JsonObject { ["reason"] = reason }),
+                timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort by contract; the exit code still carries the reason.
+        }
     }
 
     private async Task WriterLoopAsync(CancellationToken cancellationToken)

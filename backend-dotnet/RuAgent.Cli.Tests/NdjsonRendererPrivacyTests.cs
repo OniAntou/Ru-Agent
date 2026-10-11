@@ -27,6 +27,22 @@ public sealed class NdjsonRendererPrivacyTests
     }
 
     [Fact]
+    public void Forbidden_check_is_structural_not_substring()
+    {
+        // Prose that merely quotes a word is not a raw-content field.
+        Assert.False(NdjsonEventRenderer.ContainsForbidden("{\"safe_summary\":\"read \\u0022output\\u0022 ok\"}"));
+
+        // A property name is.
+        Assert.True(NdjsonEventRenderer.ContainsForbidden("{\"output\":\"raw\"}"));
+
+        // Raw content smuggled as an embedded JSON document is.
+        Assert.True(NdjsonEventRenderer.ContainsForbidden("{\"safe_summary\":\"{\\\"stdout\\\":\\\"raw\\\"}\"}"));
+
+        // A document that cannot be vouched for is treated as forbidden.
+        Assert.True(NdjsonEventRenderer.ContainsForbidden("not json"));
+    }
+
+    [Fact]
     public void Ndjson_IsVersioned()
     {
         var env = MakeEnvelope();
@@ -164,14 +180,16 @@ public sealed class NdjsonRendererPrivacyTests
     }
 
     /// <summary>
-    /// A durable frame the privacy guard rejects is skipped with an error line
-    /// instead of throwing: the cursor has already advanced past it, and an
-    /// exception would kill the rest of the stream (terminal snapshot included).
+    /// A durable frame whose text merely quotes a filtered word is rendered as an
+    /// event. A frame that actually carries raw content as an embedded document
+    /// is still skipped with an error line instead of throwing: the cursor has
+    /// already advanced past it, and an exception would kill the rest of the
+    /// stream (terminal snapshot included).
     /// </summary>
     [Fact]
-    public void Ndjson_RenderFrame_SkipsAForbiddenFrameInsteadOfThrowing()
+    public void Ndjson_RenderFrame_FiltersEmbeddedPayloads_NotQuotedProse()
     {
-        var data = JsonSerializer.Serialize(new HarnessSafeEventEnvelope(
+        HarnessSafeEventEnvelope Envelope(string summary) => new(
             1,
             "evt_" + new string('a', 32),
             "run_" + new string('a', 32),
@@ -180,15 +198,24 @@ public sealed class NdjsonRendererPrivacyTests
             "run.state_changed",
             "2026",
             "running",
-            "the \"output\" field",
-            null));
-        var frame = new SseFrame(3, "message", data, false, null);
+            summary,
+            null);
 
-        var sw = new StringWriter();
-        NdjsonEventRenderer.RenderFrame(frame, sw);
+        var prose = new StringWriter();
+        NdjsonEventRenderer.RenderFrame(
+            new SseFrame(3, "message", JsonSerializer.Serialize(Envelope("the \"output\" field")), false, null),
+            prose);
 
-        var doc = JsonDocument.Parse(sw.ToString().Trim());
-        Assert.Equal("error", doc.RootElement.GetProperty("type").GetString());
+        var proseDoc = JsonDocument.Parse(prose.ToString().Trim());
+        Assert.Equal("event", proseDoc.RootElement.GetProperty("type").GetString());
+
+        var embedded = new StringWriter();
+        NdjsonEventRenderer.RenderFrame(
+            new SseFrame(3, "message", JsonSerializer.Serialize(Envelope("{\"stdout\":\"raw\"}")), false, null),
+            embedded);
+
+        var embeddedDoc = JsonDocument.Parse(embedded.ToString().Trim());
+        Assert.Equal("error", embeddedDoc.RootElement.GetProperty("type").GetString());
     }
 
     [Fact]

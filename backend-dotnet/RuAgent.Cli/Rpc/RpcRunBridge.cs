@@ -17,6 +17,7 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
     private const int MaxStreamResumes = 3;
     internal const string DetachReasonStreamInterrupted = "stream_interrupted";
     internal const string DetachReasonSubscriptionEnded = "subscription_ended";
+    internal const string DetachReasonEventFiltered = "event_filtered";
     private static readonly TimeSpan StreamResumeDelay = TimeSpan.FromMilliseconds(500);
     private static readonly JsonSerializerOptions EnvelopeOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -69,6 +70,28 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
 
         subscription.Cancel();
         return true;
+    }
+
+    /// <summary>
+    /// Cancels every subscription for one run and returns how many were stopped.
+    /// The bounded cleanup for a client whose attach response never arrived: the
+    /// subscription exists, but its id never reached the caller.
+    /// </summary>
+    public int DetachRun(string runId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        var stopped = 0;
+        foreach (var pair in _subscriptions.ToArray())
+        {
+            if (string.Equals(pair.Value.RunId, runId, StringComparison.Ordinal)
+                && _subscriptions.TryRemove(pair.Key, out var subscription))
+            {
+                subscription.Cancel();
+                stopped++;
+            }
+        }
+
+        return stopped;
     }
 
     /// <summary>Waits until every active subscription pump has finished (tests and shutdown).</summary>
@@ -217,14 +240,20 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
         {
             envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data, EnvelopeOptions);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return true;
+            // A durable frame that cannot be read could be the terminal event a
+            // consumer waits on: end the subscription loudly instead of skipping.
+            _log($"rpc run event could not be parsed: {ex.Message}");
+            PublishDetached(subscription, DetachReasonSubscriptionEnded);
+            return false;
         }
 
         if (envelope is null || envelope.ProtocolVersion != HarnessSafeEventEnvelope.CurrentProtocolVersion)
         {
-            return true;
+            _log("rpc run event carried an unsupported envelope version");
+            PublishDetached(subscription, DetachReasonSubscriptionEnded);
+            return false;
         }
 
         var parameters = new JsonObject
@@ -246,7 +275,11 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
         };
         if (NdjsonEventRenderer.ContainsForbidden(parameters.ToJsonString()))
         {
-            return true;
+            // The privacy guard matched: this frame cannot reach the client.
+            // Skipping it silently could suppress a terminal event, so the
+            // subscription ends with a named reason the consumer can surface.
+            PublishDetached(subscription, DetachReasonEventFiltered);
+            return false;
         }
 
         return _publish(RpcMessage.Notification("run.event", parameters));

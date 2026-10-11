@@ -85,7 +85,7 @@ truncating it.
 | `session.rewind` | `sessionId`, `index` | rewind payload (passthrough) | `POST /sessions/{sessionId}/rewind` |
 | `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`? | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
 | `run.attach` | `runId`, `afterSequence`?, `includeTransient`? | `{ "subscription_id", "run_id", "include_transient" }` | `GET /agent/v1/runs/{runId}/events` (SSE) |
-| `run.detach` | `subscriptionId` | `{ "detached": "<subscriptionId>" }` | internal |
+| `run.detach` | `subscriptionId` (or `runId` for cleanup) | `{ "detached": "<subscriptionId>" }` or `{ "detached": <count>, "run_id": "<runId>" }` | internal |
 | `run.trust` | `runId`, `approve`? | `{ "run_id", "status" }` | `POST /agent/v1/runs/{runId}/trust` |
 | `run.approve` | `runId`, `approvalId`, `decision` | approval payload (passthrough) | `POST /agent/v1/runs/{runId}/approvals/{approvalId}` |
 | `run.cancel` | `runId` | `{ "cancelled": "<runId>" }` | `POST /agent/v1/runs/{runId}/cancel` |
@@ -109,7 +109,10 @@ Details that are easy to get wrong:
   example below still reports the creation state.
 - `run.attach` — `afterSequence` defaults to `0` and must be a non-negative integer;
   `includeTransient` defaults to `false`. Each call returns a fresh
-  `subscription_id`; `run.detach` takes that id, not the run id.
+  `subscription_id`; `run.detach` takes that id, not the run id. A client whose attach
+  response never arrived may call `run.detach` with `runId` instead: every
+  subscription for that run is cancelled and the answer reports how many
+  (`detached: 0` is a valid no-op, not an error).
 - `run.trust` — `approve` defaults to `false`, which sends `deny`.
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
@@ -164,7 +167,10 @@ Details that are easy to get wrong:
 - **`run.detached`** — the subscription pump ended before the run reached a terminal
   state. Params: `subscription_id`, `reason` (`stream_interrupted` when transport reads
   failed past the retry budget or the SSE client failed, `subscription_ended` when the
-  stream ended cleanly and the run was not confirmed terminal). A client that called
+  stream ended cleanly and the run was not confirmed terminal or a durable frame
+  could not be read, `event_filtered` when the privacy guard rejected a durable
+  frame — the frame cannot be delivered, and skipping it silently could suppress the
+  terminal event a consumer waits on). A client that called
   `run.detach`, or a bridge that is shutting down, cancels the pump instead and gets no
   notification. A full outbound queue skips it too: that path already fails closed with
   `bridge.shutdown`. The reason set is bounded so clients can branch on it.

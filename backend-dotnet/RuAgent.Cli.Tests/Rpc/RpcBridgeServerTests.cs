@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Cli.Rpc;
@@ -11,12 +12,21 @@ public sealed class RpcBridgeServerTests
     private static (RpcBridgeServer Server, StringWriter Out) CreateServer(
         string input,
         Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
-        int outboundCapacity = RpcProtocol.MaxOutboundMessages,
-        Action<int>? terminate = null)
+        int outboundCapacity = RpcProtocol.MaxOutboundMessages)
+    {
+        var outWriter = new StringWriter();
+        var server = CreateServerOn(new StringReader(input), outWriter, handler, outboundCapacity);
+        return (server, outWriter);
+    }
+
+    private static RpcBridgeServer CreateServerOn(
+        TextReader input,
+        TextWriter output,
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
+        int outboundCapacity = RpcProtocol.MaxOutboundMessages)
     {
         var session = RpcTestHost.CreateSession();
         var http = RpcTestHost.CreateClient(handler);
-        var outWriter = new StringWriter();
         var runBridge = new RpcRunBridge(
             new AgentSseClient(session, http),
             new AgentApiClient(session, http),
@@ -30,8 +40,7 @@ public sealed class RpcBridgeServerTests
             runBridge,
             log: TextWriter.Null,
             httpClient: http);
-        var server = new RpcBridgeServer(new StringReader(input), outWriter, TextWriter.Null, dispatcher, runBridge, outboundCapacity, terminate);
-        return (server, outWriter);
+        return new RpcBridgeServer(input, output, TextWriter.Null, dispatcher, runBridge, outboundCapacity);
     }
 
     [Fact]
@@ -91,14 +100,12 @@ public sealed class RpcBridgeServerTests
     }
 
     [Fact]
-    public void Backpressure_fails_closed()
+    public void Backpressure_stops_accepting_publishes()
     {
-        var terminated = new List<int>();
         var (server, _) = CreateServer(
             string.Empty,
             _ => Task.FromResult(RpcTestHost.Json("{}")),
-            outboundCapacity: 1,
-            terminate: code => terminated.Add(code));
+            outboundCapacity: 1);
         var notification = new JsonObject
         {
             ["jsonrpc"] = "2.0",
@@ -108,18 +115,49 @@ public sealed class RpcBridgeServerTests
 
         Assert.True(server.TryPublish(notification));
         Assert.False(server.TryPublish(notification));
-        Assert.Equal(3, Assert.Single(terminated));
         Assert.False(server.TryPublish(notification));
+    }
+
+    [Fact]
+    public async Task Backpressure_ends_the_session_with_exit_three_and_a_shutdown_frame()
+    {
+        var releaseWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = new BlockingWriter(releaseWriter.Task);
+        var reader = new BlockingAfterFirstFrameReader(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1}}");
+        var server = CreateServerOn(
+            reader,
+            writer,
+            _ => Task.FromResult(RpcTestHost.Json("{}")),
+            outboundCapacity: 1);
+        var run = server.RunAsync(CancellationToken.None);
+
+        // The read loop parked after dispatching the first frame; the writer is
+        // still holding that response, so slot one is free.
+        await reader.Entered;
+        var notification = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["method"] = "run.event",
+            ["params"] = new JsonObject { ["sequence"] = 1 },
+        };
+        Assert.True(server.TryPublish(notification));
+        Assert.False(server.TryPublish(notification));
+
+        // Releasing the writer lets the queue drain and the shutdown frame out.
+        releaseWriter.SetResult();
+        var exit = await run;
+
+        Assert.Equal(3, exit);
+        Assert.Contains("\"reason\":\"backpressure\"", writer.ToString());
     }
 
     [Fact]
     public async Task Publishing_after_the_writer_completed_does_not_terminate()
     {
-        var terminated = new List<int>();
         var (server, _) = CreateServer(
             string.Empty,
-            _ => Task.FromResult(RpcTestHost.Json("{}")),
-            terminate: code => terminated.Add(code));
+            _ => Task.FromResult(RpcTestHost.Json("{}")));
         var exit = await server.RunAsync(CancellationToken.None);
         Assert.Equal(0, exit);
         var late = new JsonObject
@@ -129,7 +167,6 @@ public sealed class RpcBridgeServerTests
             ["params"] = new JsonObject { ["subscription_id"] = "sub_1" },
         };
         Assert.False(server.TryPublish(late));
-        Assert.Empty(terminated);
     }
 
     [Fact]
@@ -142,5 +179,57 @@ public sealed class RpcBridgeServerTests
         Assert.Equal(130, exit);
         Assert.Contains("bridge.shutdown", output.ToString());
         Assert.Contains("\"reason\":\"cancelled\"", output.ToString());
+    }
+
+    /// <summary>A writer that holds every write until the release task completes.</summary>
+    private sealed class BlockingWriter(Task release) : TextWriter
+    {
+        private readonly StringBuilder _buffer = new();
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override async Task WriteLineAsync(string? value)
+        {
+            await release.ConfigureAwait(false);
+            _buffer.AppendLine(value);
+        }
+
+        public override async Task FlushAsync()
+        {
+            await release.ConfigureAwait(false);
+        }
+
+        public override string ToString() => _buffer.ToString();
+    }
+
+    /// <summary>Serves one line, then blocks until the caller's token cancels.</summary>
+    private sealed class BlockingAfterFirstFrameReader : TextReader
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly string _firstFrame;
+        private int _served;
+
+        public BlockingAfterFirstFrameReader(string firstLine) => _firstFrame = firstLine + "\n";
+
+        public Task Entered => _entered.Task;
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<char> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (_served < _firstFrame.Length)
+            {
+                var count = Math.Min(buffer.Length, _firstFrame.Length - _served);
+                _firstFrame.AsSpan(_served, count).CopyTo(buffer.Span);
+                _served += count;
+                return count;
+            }
+
+            _entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        public override int Read(char[] buffer, int index, int count) => throw new NotSupportedException();
     }
 }

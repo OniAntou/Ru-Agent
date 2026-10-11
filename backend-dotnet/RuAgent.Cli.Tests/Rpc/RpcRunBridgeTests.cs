@@ -10,11 +10,15 @@ public sealed class RpcRunBridgeTests
 {
     private const string RunId = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    private static string Envelope(long sequence, string eventType, string status) =>
-        "{\"protocol_version\":1,\"event_id\":\"evt_" + sequence + "\",\"run_id\":\"" + RunId +
-        "\",\"session_id\":\"s1\",\"sequence\":" + sequence + ",\"event_type\":\"" + eventType +
-        "\",\"occurred_at\":\"2026-09-29T00:00:00Z\",\"status\":\"" + status +
-        "\",\"safe_summary\":\"step\",\"payload_ref\":null}";
+    private static string Envelope(long sequence, string eventType, string status, string summary = "step")
+    {
+        var safeSummary = summary.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
+        return "{\"protocol_version\":1,\"event_id\":\"evt_" + sequence + "\",\"run_id\":\"" + RunId +
+            "\",\"session_id\":\"s1\",\"sequence\":" + sequence + ",\"event_type\":\"" + eventType +
+            "\",\"occurred_at\":\"2026-09-29T00:00:00Z\",\"status\":\"" + status +
+            "\",\"safe_summary\":\"" + safeSummary + "\",\"payload_ref\":null}";
+    }
 
     private static HttpClient Sse(string body) =>
         RpcTestHost.CreateClient(_ => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
@@ -88,6 +92,54 @@ public sealed class RpcRunBridgeTests
         var parameters = detached["params"]!.AsObject();
         Assert.Equal(subscriptionId, parameters["subscription_id"]!.GetValue<string>());
         Assert.Equal("stream_interrupted", parameters["reason"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_summary_that_quotes_a_word_is_delivered_not_filtered()
+    {
+        // Structural privacy filter: prose that merely quotes a word like
+        // "output" is not a raw-content field, and dropping such an event could
+        // suppress the terminal frame a consumer waits on.
+        var published = new List<JsonObject>();
+        var body = "id: 1\nevent: durable\ndata: "
+            + Envelope(1, "run.started", "running", "read \"output\" ok") + "\n\n";
+        using var bridge = new RpcRunBridge(
+            new AgentSseClient(RpcTestHost.CreateSession(), Sse(body)),
+            new AgentApiClient(RpcTestHost.CreateSession(), TerminalRun()),
+            publish: notification =>
+            {
+                published.Add(notification);
+                return true;
+            });
+
+        bridge.Attach(RunId, 0, includeTransient: false);
+        await bridge.WaitForSubscriptionsAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Contains(published, p => p["method"]!.GetValue<string>() == "run.event");
+        Assert.DoesNotContain(published, p => p["method"]!.GetValue<string>() == "run.detached");
+    }
+
+    [Fact]
+    public async Task An_embedded_payload_in_a_summary_ends_the_subscription_loudly()
+    {
+        var published = new List<JsonObject>();
+        var body = "id: 1\nevent: durable\ndata: "
+            + Envelope(1, "run.started", "running", "{\"stdout\":\"raw\"}") + "\n\n";
+        using var bridge = new RpcRunBridge(
+            new AgentSseClient(RpcTestHost.CreateSession(), Sse(body)),
+            new AgentApiClient(RpcTestHost.CreateSession(), TerminalRun()),
+            publish: notification =>
+            {
+                published.Add(notification);
+                return true;
+            });
+
+        bridge.Attach(RunId, 0, includeTransient: false);
+        await bridge.WaitForSubscriptionsAsync(TimeSpan.FromSeconds(5));
+
+        Assert.DoesNotContain(published, p => p["method"]!.GetValue<string>() == "run.event");
+        var detached = Assert.Single(published, p => p["method"]!.GetValue<string>() == "run.detached");
+        Assert.Equal("event_filtered", detached["params"]!["reason"]!.GetValue<string>());
     }
 
     [Fact]

@@ -25,6 +25,13 @@ public interface IRunBridge
 {
     string Attach(string runId, long afterSequence, bool includeTransient);
     bool Detach(string subscriptionId);
+
+    /// <summary>
+    /// Cancels every subscription for one run and returns how many were stopped.
+    /// The bounded cleanup for a client whose attach response never arrived: the
+    /// subscription may exist server-side without its id ever reaching the caller.
+    /// </summary>
+    int DetachRun(string runId);
 }
 
 public sealed class RpcDispatcher
@@ -279,13 +286,23 @@ public sealed class RpcDispatcher
 
     private JsonNode RunDetach(RpcRequest request)
     {
-        var subscriptionId = RequireString(request, "subscriptionId", 64);
-        if (_runBridge is null || !_runBridge.Detach(subscriptionId))
+        // The id path is the normal one. The run path is the bounded cleanup for
+        // a client whose attach response never arrived: it may own a server-side
+        // subscription whose id it never saw, so it asks by run. Zero matches is
+        // a valid no-op -- the request promises cleanup, not a known id.
+        if (OptionalString(request, "subscriptionId", 64) is { } subscriptionId)
         {
-            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown subscriptionId.");
+            if (_runBridge is null || !_runBridge.Detach(subscriptionId))
+            {
+                throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown subscriptionId.");
+            }
+
+            return new JsonObject { ["detached"] = subscriptionId };
         }
 
-        return new JsonObject { ["detached"] = subscriptionId };
+        var runId = RequireString(request, "runId", 36);
+        var detached = _runBridge?.DetachRun(runId) ?? 0;
+        return new JsonObject { ["detached"] = detached, ["run_id"] = runId };
     }
 
     private async Task<JsonNode> RunTrustAsync(RpcRequest request, CancellationToken ct)

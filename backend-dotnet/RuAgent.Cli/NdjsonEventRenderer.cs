@@ -109,28 +109,77 @@ public static class NdjsonEventRenderer
     }
 
     /// <summary>
-    /// Rejects a serialized line that names a forbidden field.
+    /// True when the document carries a forbidden raw-content field.
     /// </summary>
     /// <remarks>
-    /// The check has to survive JSON escaping. <c>System.Text.Json</c> writes a
-    /// content double quote as <c>\u0022</c>, so a forbidden name embedded in a
-    /// string value never appears as the literal <c>"output"</c> this used to
-    /// look for — the guard could not fire on serializer output at all, while the
-    /// tests that exercised it passed only because they fed it unescaped literals.
-    /// Both spellings are therefore normalized before matching.
+    /// The check is structural: a forbidden name is a JSON property NAME, or a
+    /// property name inside a JSON document embedded as a string value (raw
+    /// content smuggled as text). Matching the quoted word anywhere in the
+    /// serialized document dropped legitimate events whose summary merely
+    /// quoted a word like "output", and a dropped terminal event left stream
+    /// consumers waiting forever. Embedded documents are checked to a bounded
+    /// depth; anything deeper fails closed. A document that does not parse
+    /// cannot be vouched for and is treated as forbidden.
     /// </remarks>
     public static bool ContainsForbidden(string json)
     {
-        var lower = json
-            .ToLowerInvariant()
-            .Replace("\\u0022", "\"", StringComparison.Ordinal);
-        // Forbidden fields that must never appear in NDJSON tracer output
-        string[] forbidden = ["\"prompt\"", "\"command\"", "\"output\"", "\"secret\"", "\"argv\"", "\"diff\"", "\"stdout\"", "\"stderr\"", "\"environment\"", "\"exception\""];
-        foreach (var f in forbidden)
+        try
         {
-            if (lower.Contains(f))
-                return true;
+            using var document = JsonDocument.Parse(json);
+            return ContainsForbidden(document.RootElement, depth: 0);
         }
-        return false;
+        catch (JsonException)
+        {
+            return true;
+        }
     }
+
+    private static bool ContainsForbidden(JsonElement element, int depth) => element.ValueKind switch
+    {
+        JsonValueKind.Object => element.EnumerateObject().Any(property =>
+            ForbiddenFields.Contains(property.Name)
+            || ContainsForbidden(property.Value, depth)),
+        JsonValueKind.Array => element.EnumerateArray().Any(item => ContainsForbidden(item, depth)),
+        JsonValueKind.String => ContainsForbiddenString(element.GetString(), depth),
+        _ => false,
+    };
+
+    private static bool ContainsForbiddenString(string? value, int depth)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.AsSpan().TrimStart();
+        if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '['))
+        {
+            // Ordinary text: prose that happens to quote a field name is not a
+            // smuggled payload.
+            return false;
+        }
+
+        // A string that *is* a JSON document is raw content smuggled as text:
+        // check its structure too. The depth bound stops a nest built only to
+        // exhaust the stack; beyond it the document fails closed.
+        const int MaximumEmbeddedDepth = 4;
+        if (depth >= MaximumEmbeddedDepth)
+        {
+            return true;
+        }
+
+        try
+        {
+            using var inner = JsonDocument.Parse(value);
+            return ContainsForbidden(inner.RootElement, depth + 1);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static readonly HashSet<string> ForbiddenFields = new(
+        ["prompt", "command", "output", "secret", "argv", "diff", "stdout", "stderr", "environment", "exception"],
+        StringComparer.OrdinalIgnoreCase);
 }

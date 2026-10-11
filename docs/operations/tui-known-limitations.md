@@ -180,8 +180,8 @@ Antigravity) and points opencode users at
 ### RPC subscriptions can end without a terminal event
 
 `ru agent rpc` publishes `run.detached` when a subscription pump ends before the
-run is terminal. The reason is bounded to `stream_interrupted` or
-`subscription_ended`, and the SDK throws a bounded `BridgeTransportError` for it
+run is terminal. The reason is bounded to `stream_interrupted`, `subscription_ended`
+or `event_filtered`, and the SDK throws a bounded `BridgeTransportError` for it
 instead of waiting forever; `subscription_ended` does not distinguish "not
 terminal" from "could not confirm terminal", so a client that needs certainty
 must call `run.status`. A full outbound queue does not publish `run.detached` at

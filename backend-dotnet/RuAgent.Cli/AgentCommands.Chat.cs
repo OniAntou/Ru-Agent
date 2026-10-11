@@ -735,12 +735,21 @@ public sealed partial class AgentCommands
             void OnConfirmed(string value) => decision.TrySetResult(value);
             void OnCancelled() => decision.TrySetResult(Tui.ApprovalPrompt.Deny);
 
-            tgApp!.Invoke(() =>
+            try
             {
-                tgWindow!.PanelConfirmed += OnConfirmed;
-                tgWindow.PanelCancelled += OnCancelled;
-                show();
-            });
+                tgApp!.Invoke(() =>
+                {
+                    tgWindow!.PanelConfirmed += OnConfirmed;
+                    tgWindow.PanelCancelled += OnCancelled;
+                    show();
+                });
+            }
+            catch (NotInitializedException)
+            {
+                // The session wound down before the panel could open: the answer
+                // is a cancel, never a silent grant.
+                return Tui.ApprovalPrompt.Deny;
+            }
 
             using var registration = panelToken.Register(() => decision.TrySetCanceled(panelToken));
             try

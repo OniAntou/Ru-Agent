@@ -78,20 +78,33 @@ public sealed class TuiStatusLine
         _tools = 0;
     }
 
+    /// <summary>
+    /// Serializes the live-row check and the paint against <see cref="Clear"/>:
+    /// a ticker that read <see cref="IsLive"/> just before a stop must not paint
+    /// over the row the stop cleared.
+    /// </summary>
+    private readonly object _liveGate = new();
+
     public void Render(int width)
     {
-        if (!IsLive || InFooter)
+        lock (_liveGate)
         {
-            return;
-        }
+            if (!IsLive || InFooter)
+            {
+                return;
+            }
 
-        _surface.RepaintSingleLine(Compose(width), width);
+            _surface.RepaintSingleLine(Compose(width), width);
+        }
     }
 
     public void Clear(int width)
     {
-        IsLive = false;
-        _surface.ClearSingleLine(width);
+        lock (_liveGate)
+        {
+            IsLive = false;
+            _surface.ClearSingleLine(width);
+        }
     }
 
     /// <summary>The composed row to repaint after a transcript block, or null when the row is idle.</summary>

@@ -78,8 +78,13 @@ public sealed partial class AgentCommands
                 await _agentClient.CancelAsync(outcome.RunId, CancellationToken.None).ConfigureAwait(false);
                 await (cmd.Json ? _err : _out).WriteLineAsync("cancelled").ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                // The operator must know the run may still hold its workspace: a
+                // swallowed failure here would resurface later as workspace_busy
+                // with no explanation.
+                await _err.WriteLineAsync($"run_cancel_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"run {outcome.RunId} may still be running; release it with 'ru agent cancel {outcome.RunId}'.").ConfigureAwait(false);
             }
             return 130;
         }
@@ -120,7 +125,17 @@ public sealed partial class AgentCommands
                 return 1;
             }
 
-            try { await _agentClient.CancelAsync(cmd.RunId, CancellationToken.None).ConfigureAwait(false); } catch { }
+            try
+            {
+                await _agentClient.CancelAsync(cmd.RunId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Same contract as 'ru agent run': a cancel that failed is
+                // reported instead of leaving the run silently alive.
+                await _err.WriteLineAsync($"run_cancel_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"run {cmd.RunId} may still be running; release it with 'ru agent cancel {cmd.RunId}'.").ConfigureAwait(false);
+            }
             return 130;
         }
         catch (AgentApiException ex)

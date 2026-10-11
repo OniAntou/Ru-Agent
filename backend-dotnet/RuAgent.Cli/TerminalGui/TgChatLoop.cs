@@ -58,6 +58,13 @@ public sealed class TgChatLoop
     private volatile bool _stopped;
     private bool _queuePaused;
 
+    /// <summary>
+    /// A cancel that arrived while no turn source was live (between a settled
+    /// turn and the next queued one): <see cref="StartTurn"/> consumes it so the
+    /// Escape cannot be lost, and it is cleared whenever the loop goes idle.
+    /// </summary>
+    private bool _cancelRequested;
+
     public TgChatLoop(TgChatWindow window, CancellationToken cancellationToken = default)
     {
         _window = window;
@@ -286,7 +293,19 @@ public sealed class TgChatLoop
         // late Escape (or the handover's Cancel) can never hit a disposed source.
         lock (_queueGate)
         {
-            _turn?.Cancel();
+            if (_turn is { } turn)
+            {
+                turn.Cancel();
+                return;
+            }
+
+            if (_busy)
+            {
+                // Between a settled turn and the next queued one the source is
+                // momentarily null; remembering the request keeps the Escape
+                // from being swallowed, and StartTurn applies it immediately.
+                _cancelRequested = true;
+            }
         }
     }
 
@@ -298,15 +317,30 @@ public sealed class TgChatLoop
     public void Stop()
     {
         Task turnDone;
+        var discarded = 0;
         lock (_queueGate)
         {
             _stopped = true;
+            // A wind-down must cancel the in-flight turn: the runtime keeps
+            // executing the run server-side until the run itself is cancelled,
+            // and the caller exits the process right after this returns.
+            _turn?.Cancel();
             while (_queued.TryDequeue(out var submission))
             {
                 _queuedSubmissionBytes -= submission.OwnedBytes;
                 _submissionDiscarded?.Invoke(submission);
+                discarded++;
             }
+
             turnDone = _turnDone?.Task ?? Task.CompletedTask;
+        }
+
+        if (discarded > 0)
+        {
+            var message = discarded == 1
+                ? " discarded 1 queued prompt on exit"
+                : $" discarded {discarded} queued prompts on exit";
+            Dispatch(() => _window.Transcript.Append(message, TranscriptStyle.Meta));
         }
 
         _ = ReleaseCompletionWhenIdleAsync(turnDone);
@@ -368,6 +402,14 @@ public sealed class TgChatLoop
             // Link the session's token: a shutdown outside the window (or a handover) must
             // stop the in-flight turn too, not only the local Escape path.
             _turn = CancellationTokenSource.CreateLinkedTokenSource(_outerToken);
+            if (_cancelRequested)
+            {
+                // An Escape that arrived between turns cancels this one now
+                // instead of being lost.
+                _cancelRequested = false;
+                _turn.Cancel();
+            }
+
             turnDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _turnDone = turnDone;
         }
@@ -415,6 +457,9 @@ public sealed class TgChatLoop
                 if (next is null)
                 {
                     _busy = false;
+                    // Nothing is left to cancel between turns: a latch kept past
+                    // the idle transition would cancel an unrelated later turn.
+                    _cancelRequested = false;
                 }
             }
 

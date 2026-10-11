@@ -47,11 +47,20 @@ public static class TgPanelRequests
         var closed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnClosed() => closed.TrySetResult(true);
 
-        window.App!.Invoke(() =>
+        try
         {
-            window.DocumentClosed += OnClosed;
-            window.ShowDocument(title, body);
-        });
+            window.App!.Invoke(() =>
+            {
+                window.DocumentClosed += OnClosed;
+                window.ShowDocument(title, body);
+            });
+        }
+        catch (NotInitializedException)
+        {
+            // The session wound down before the window could open; there is
+            // nothing to show and nothing left to close.
+            return;
+        }
 
         using var registration = cancellationToken.Register(() => closed.TrySetResult(true));
         try
@@ -85,12 +94,21 @@ public static class TgPanelRequests
         void OnConfirmed(string value) => decision.TrySetResult(value);
         void OnCancelled() => decision.TrySetResult(null);
 
-        window.App!.Invoke(() =>
+        try
         {
-            window.PanelConfirmed += OnConfirmed;
-            window.PanelCancelled += OnCancelled;
-            show();
-        });
+            window.App!.Invoke(() =>
+            {
+                window.PanelConfirmed += OnConfirmed;
+                window.PanelCancelled += OnCancelled;
+                show();
+            });
+        }
+        catch (NotInitializedException)
+        {
+            // The session wound down before the panel could open: the answer is
+            // a cancel, never a silent confirmation.
+            return null;
+        }
 
         using var registration = cancellationToken.Register(() => decision.TrySetResult(null));
         try

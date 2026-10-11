@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Redesigned the inline question panel: an icon chip header with a "reply to resume" hint, a semibold question hero, full-width option rows with chevrons (long options wrap instead of clipping at a fixed height), a taller answer row, and a floating-card shadow matching the composer. Behavior, bounds, automation ids, and keyboard handling are unchanged; option buttons now expose their own text as the accessible name.
+
 - **fix(gui)**: Sidebar section headings use their own non-selectable hover surface. Recents spacing sits outside its row hit area, so hovering the heading no longer fills the gap above it; session and workspace rows retain their usual hover feedback.
 
 - **feat(gui)**: Add Recents below Workspaces for app-root and unassigned sessions, with separated sections and spaced header actions. Drag sessions between sections/folders or reorder them, with native previews, destination/insertion feedback, delayed group expansion, edge scrolling and Windows-aware motion. More actions → Move to offers keyboard grouping and up/down ordering. Sidebar placement persists across polling/restarts independently of the execution workspace; tooltips show the actual working directory.

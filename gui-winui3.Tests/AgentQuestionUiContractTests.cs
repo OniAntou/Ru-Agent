@@ -77,6 +77,25 @@ public sealed class AgentQuestionUiContractTests
     }
 
     [Fact]
+    public void Each_option_names_itself_for_screen_readers()
+    {
+        // A repeated "Answer with this option" tells a screen reader nothing;
+        // the button's accessible name is the option it submits.
+        var document = GuiSource.Xml("Controls", "AgentQuestionPanelControl.xaml");
+        var optionButton = document.Descendants().FirstOrDefault(element =>
+            element.Name.LocalName == "Button"
+            && string.Equals(
+                element.Attributes().FirstOrDefault(a => a.Name.LocalName == "Click")?.Value,
+                "OnOptionClick",
+                StringComparison.Ordinal));
+
+        Assert.NotNull(optionButton);
+        Assert.Equal(
+            "{Binding}",
+            GuiSource.AttributeValue(optionButton!, "Name"));
+    }
+
+    [Fact]
     public void The_question_text_announces_updates_politely()
     {
         // The question is what changes when input is requested; a polite live region

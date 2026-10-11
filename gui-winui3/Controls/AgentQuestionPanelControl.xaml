@@ -13,60 +13,99 @@
             BorderBrush="{StaticResource RuLineBrush}"
             BorderThickness="1"
             CornerRadius="{StaticResource AppCardCornerRadius}"
-            Padding="14,12"
+            Padding="16,14"
             Margin="0,0,0,4"
+            Translation="0,0,8"
+            Shadow="{StaticResource RuRestShadow}"
             KeyDown="OnPanelKeyDown"
             AutomationProperties.AutomationId="AgentQuestionPanel">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE897;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="QUESTION"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="10.5"
-                           FontWeight="SemiBold"
-                           CharacterSpacing="100"
-                           Foreground="{StaticResource RuAccentBrush}"
-                           VerticalAlignment="Center" />
-            </StackPanel>
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <Border Grid.Column="0"
+                        Width="28"
+                        Height="28"
+                        CornerRadius="8"
+                        Background="{StaticResource RuAccentSoftBrush}">
+                    <FontIcon Glyph="&#xE897;"
+                              FontSize="14"
+                              Foreground="{StaticResource RuAccentBrush}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="NEEDS YOUR ANSWER"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="10.5"
+                               FontWeight="SemiBold"
+                               CharacterSpacing="100"
+                               Foreground="{StaticResource RuAccentBrush}" />
+                    <TextBlock Text="Reply to resume the run"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="11"
+                               Foreground="{StaticResource RuMutedBrush}" />
+                </StackPanel>
+            </Grid>
             <TextBlock x:Name="QuestionText"
                        Grid.Row="1"
                        TextWrapping="Wrap"
                        FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="13"
-                       LineHeight="18"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       LineHeight="20"
                        Foreground="{StaticResource RuInkBrush}"
                        AutomationProperties.AutomationId="AgentQuestionText"
                        AutomationProperties.LiveSetting="Polite" />
-            <ItemsControl x:Name="OptionsList"
-                          Grid.Row="2"
-                          Visibility="Collapsed"
-                          AutomationProperties.AutomationId="AgentQuestionOptions">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <ItemsWrapGrid Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Click="OnOptionClick"
-                                Content="{Binding}"
-                                Margin="0,0,8,0"
-                                AutomationProperties.Name="Answer with this option"
-                                Background="Transparent"
-                                Foreground="{StaticResource RuInkBrush}"
-                                BorderBrush="{StaticResource RuLineBrush}"
-                                BorderThickness="1"
-                                CornerRadius="{StaticResource AppControlCornerRadius}"
-                                Padding="14,6"
-                                Height="32" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <ScrollViewer Grid.Row="2"
+                          MaxHeight="200"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="OptionsList"
+                              Visibility="Collapsed"
+                              AutomationProperties.AutomationId="AgentQuestionOptions">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="6" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Click="OnOptionClick"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    MinHeight="38"
+                                    Padding="0"
+                                    AutomationProperties.Name="{Binding}"
+                                    Background="{StaticResource RuCanvasBrush}"
+                                    Foreground="{StaticResource RuInkBrush}"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}">
+                                <Grid ColumnDefinitions="*,Auto" Padding="12,6">
+                                    <TextBlock Text="{Binding}"
+                                               TextWrapping="Wrap"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="13"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                    <FontIcon Grid.Column="1"
+                                              Glyph="&#xE76C;"
+                                              FontSize="12"
+                                              Foreground="{StaticResource RuMutedBrush}"
+                                              VerticalAlignment="Center"
+                                              Margin="8,0,0,0" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
             <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                 <TextBox x:Name="AnswerTextBox"
                          Grid.Column="0"
                          PlaceholderText="Type your answer"
                          MaxHeight="120"
+                         MinHeight="36"
+                         VerticalContentAlignment="Center"
                          TextWrapping="Wrap"
                          AcceptsReturn="False"
                          KeyDown="OnAnswerKeyDown"
@@ -84,8 +123,9 @@
                         Foreground="{StaticResource RuSurfaceBrush}"
                         BorderThickness="0"
                         CornerRadius="{StaticResource AppControlCornerRadius}"
-                        Padding="14,6"
-                        Height="32">
+                        Padding="16,6"
+                        Height="36"
+                        VerticalAlignment="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{StaticResource RuSurfaceBrush}" />
                         <TextBlock Text="Submit"

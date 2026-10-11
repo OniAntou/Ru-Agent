@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Sidebar section headings use their own non-selectable hover surface. Recents spacing sits outside its row hit area, so hovering the heading no longer fills the gap above it; session and workspace rows retain their usual hover feedback.
+
+- **feat(gui)**: Add Recents below Workspaces for app-root and unassigned sessions, with separated sections and spaced header actions. Drag sessions between sections/folders or reorder them, with native previews, destination/insertion feedback, delayed group expansion, edge scrolling and Windows-aware motion. More actions → Move to offers keyboard grouping and up/down ordering. Sidebar placement persists across polling/restarts independently of the execution workspace; tooltips show the actual working directory.
+
+- **fix(gui)**: Workspace `+` and New Chat immediately open a visible `New Session` in the selected workspace. Empty polling results keep the active draft; the first accepted chat reuses its ID and replaces the placeholder title. Leaving without sending hides the draft, and delayed create responses cannot take over a newer session selection.
+
 - **fix(gui,host)**: Keep run discovery and outbox polling responsive while model/tool workers are busy, with four worker slots and owned cancellation/shutdown. Drop stale run callbacks and history reloads after session/turn switches; serialize Files refreshes while retaining the newest workspace; validate edited keys against the pinned provider instead of the shared picker catalog. Close live SSE when its run is deleted without inventing a terminal outcome, and preserve the latest run's workspace in session exports.
 
 - **fix(gui)**: Transcript follow rejects inconsistent layout extents even when follow mode is active. Opening a session realizes its latest message after flushing layout; a bulk reload restores the visible message and its screen position for readers parked in history, with a bounded pixel fallback. Deferred scrolling is discarded after another session, transcript reset or reader scroll input. The virtualized panel keeps its scroll offset, and active following settles again when realized rows change the measured extent. Layout changes preserve the reader's follow intent instead of treating a temporary empty panel as a request to follow. Scroll handling now lives in its own view partial.

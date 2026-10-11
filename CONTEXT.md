@@ -60,6 +60,14 @@ The conversation and history record owned by the Public Host in the shared
 `DELETE /sessions/{sessionId}` route removes the session and its owned Harness
 artifacts only when the application envelope returns `status: "ok"`; an HTTP
 success status alone is not deletion proof.
+The WinUI workspace `+` creates and opens this record immediately. Its empty
+row is a UI draft named `New Session`, visible only while open. Leaving without
+sending hides the row; the first accepted chat keeps the same session ID and
+shows a prompt-derived title until durable history supplies the server title.
+Hiding an empty draft does not delete the Host record.
+Sidebar placement is separate UI state: app-root sessions default to Recents;
+manual grouping/reordering survives refresh and restart but never changes the
+Conversation Session's actual working directory or execution permissions.
 _Avoid_: treating an HTTP 200 response as a successful delete
 
 **Session Work State**:

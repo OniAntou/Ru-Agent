@@ -65,9 +65,12 @@ public static class WorkspaceSessionProjection
         }
 
         return merged;
-    }    public static WorkspaceProjection Project(
+    }
+
+    public static WorkspaceProjection Project(
         IReadOnlyList<Models.SessionInfo> sessions,
-        string? search)
+        string? search,
+        Func<Models.SessionInfo, WorkspaceGroupIdentity>? groupFor = null)
     {
         var groups = new List<WorkspaceGroup>();
         var byKey = new Dictionary<string, List<Models.SessionInfo>>(StringComparer.Ordinal);
@@ -75,13 +78,14 @@ public static class WorkspaceSessionProjection
 
         foreach (var session in sessions)
         {
-            var key = KeyFor(session);
-            var label = string.IsNullOrEmpty(session.WorkspaceLabel) ? "Ungrouped" : session.WorkspaceLabel;
+            var identity = groupFor?.Invoke(session);
+            var key = identity?.Key ?? KeyFor(session);
+            var label = identity?.Label ?? (string.IsNullOrEmpty(session.WorkspaceLabel) ? "Ungrouped" : session.WorkspaceLabel);
             if (!byKey.TryGetValue(key, out var list))
             {
                 list = new List<Models.SessionInfo>();
                 byKey[key] = list;
-                meta[key] = (label, session.WorkspacePath);
+                meta[key] = (label, identity is null ? session.WorkspacePath : identity.Path);
             }
 
             if (Matches(session, label, search))
@@ -123,6 +127,16 @@ public sealed record WorkspaceGroup(
     IReadOnlyList<Models.SessionInfo> Sessions);
 
 public sealed record WorkspaceProjection(IReadOnlyList<WorkspaceGroup> Groups);
+
+public sealed record WorkspaceGroupIdentity(string Key, string Label, string? Path);
+
+public sealed record SidebarSectionRow(string Key, string Label, bool IsExpanded = true, bool FilterActive = false)
+{
+    public bool IsRecents => Key == SidebarSessionOrganization.RecentsKey;
+    public string ChevronGlyph => IsExpanded ? "\uE70D" : "\uE70E";
+}
+
+public sealed record SidebarEmptyRow(string Key, string Label);
 
 /// <summary>Sidebar row for a workspace header; chevron follows expand state.</summary>
 public sealed record WorkspaceGroupRow(WorkspaceGroup Group, bool IsExpanded)

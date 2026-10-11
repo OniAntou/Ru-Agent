@@ -230,6 +230,9 @@ namespace RuApp
                 return;
             }
 
+            _sidebarAppRoot = projectRoot;
+            InitializeSidebarMotion();
+
             BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
             if (backendSession != null)
             {
@@ -271,6 +274,7 @@ namespace RuApp
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
+                _chatView.SessionStarted += OnChatSessionStarted;
                 _chatView.SessionPresetAdopted += OnChatSessionPresetAdopted;
                 // A failure message that offers to open provider settings needs the
                 // window: the settings surface belongs to it, not to the transcript.
@@ -446,6 +450,7 @@ namespace RuApp
 
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
         {
+            ActivateSessionDrafts(e.SessionId);
             SyncSidebarSelection(e.SessionId);
         }
 
@@ -585,6 +590,7 @@ namespace RuApp
                 SetActiveNav(btn);
 
                 var destination = Services.ShellRoutePolicy.Resolve(tag);
+                if (destination != Services.ShellDestination.Chat) LeaveChatSession();
                 ContentFrame.Content = ViewFor(destination);
                 if (Services.ShellRoutePolicy.KeepsCatalogPolling(tag))
                 {
@@ -624,6 +630,7 @@ namespace RuApp
             _groupedCatalogs?.SetPollingActive(false);
             _providerCatalogTimer?.Stop();
 
+            if (Services.ShellRoutePolicy.Resolve(tag) != Services.ShellDestination.Chat) LeaveChatSession();
             ContentFrame.Content = ViewFor(Services.ShellRoutePolicy.Resolve(tag));
             _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
             _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
@@ -631,6 +638,7 @@ namespace RuApp
 
         public void NavigateToDiagnostics(string? correlationId = null)
         {
+            LeaveChatSession();
             ContentFrame.Content = _diagnosticsView;
             _diagnosticsView?.SetActive(true);
             _logView?.SetActive(false);
@@ -688,6 +696,7 @@ namespace RuApp
 
         private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
         {
+            _sidebarAppRoot = projectRoot;
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
             StatusDot.Fill = successBrush;
@@ -838,7 +847,9 @@ namespace RuApp
         {
             if (_chatView != null)
             {
+                ResetSidebarDrag();
                 _chatView.SessionOpened -= OnChatSessionOpened;
+                _chatView.SessionStarted -= OnChatSessionStarted;
                 _chatView.SessionPresetAdopted -= OnChatSessionPresetAdopted;
                 DisposeSafely("chat view", _chatView.Dispose);
             }
@@ -946,14 +957,14 @@ namespace RuApp
             var before = Services.SidebarRowFingerprint.ForSessions(Sessions);
             var seen = new HashSet<string>();
             int insertAt = 0;
-            foreach (var incoming in result.Sessions)
+            foreach (var incoming in _sessionDrafts.Project(result.Sessions))
             {
-                if (incoming.MessageCount <= 0) continue;
                 seen.Add(incoming.Id);
                 var existing = Sessions.FirstOrDefault(s => s.Id == incoming.Id);
                 if (existing != null)
                 {
                     existing.Title = incoming.Title;
+                    existing.MessageCount = incoming.MessageCount;
                     existing.CreatedAt = incoming.CreatedAt;
                     existing.UpdatedAt = incoming.UpdatedAt;
                     existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
@@ -1077,40 +1088,9 @@ namespace RuApp
             if (_apiService == null || _chatView == null) return;
             try
             {
-                var session = await _apiService.CreateSessionAsync();
-                if (session is null)
-                {
-                    // A dead button with no explanation is indistinguishable from a
-                    // broken one: say the session could not be created.
-                    StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                    StatusText.Text = "Could not create a new chat session";
-                    return;
-                }
-
-                await LoadSessionsAsync();
-
-                var selectedPath = _selectedWorkspaceKey is null
-                    ? null
-                    : ResolveWorkspacePath(_selectedWorkspaceKey);
-                if (selectedPath is not null)
-                {
-                    _sessionWorkspaces.Set(session.Id, selectedPath);
-                }
-
-                _chatView.SetRequestedWorkspace(selectedPath);
-
                 var target = _selectedWorkspaceKey ?? ResolveNewChatWorkspace();
-                if (target is not null)
-                {
-                    _workspaceGroups.SetExpanded(target, true);
-                    RenderWorkspaceSidebar();
-                }
-
-                // Select Chat tab if not selected
-                OnNavClick(NavChat, new RoutedEventArgs());
-
-                // Tell ChatView to switch to this new session
-                await _chatView.OpenSessionAsync(session.Id, session.Title);
+                var path = target is null ? null : ResolveWorkspacePath(target);
+                await CreateDraftSessionAsync(target, path);
             }
             catch (Exception ex)
             {
@@ -1123,16 +1103,7 @@ namespace RuApp
 
         private string? ResolveNewChatWorkspace()
         {
-            var active = _activeSessionId is null
-                ? null
-                : Sessions.FirstOrDefault(s => s.Id == _activeSessionId);
-            if (active is not null)
-            {
-                return WorkspaceSessionProjection.KeyFor(active);
-            }
-
-            var newest = Sessions.FirstOrDefault();
-            return newest is null ? null : WorkspaceSessionProjection.KeyFor(newest);
+            return SidebarSessionOrganization.RecentsKey;
         }
 
         private async void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1159,7 +1130,8 @@ namespace RuApp
 
             if (SidebarSessionList.SelectedItem is SessionInfo selected && _chatView != null)
             {
-                _activeSessionId = selected.Id;
+                ++_sessionNavigationGeneration;
+                ActivateSessionDrafts(selected.Id);
 
                 if (!string.IsNullOrWhiteSpace(_workspaceSearchText))
                 {
@@ -1167,7 +1139,8 @@ namespace RuApp
                     RenderWorkspaceSidebar();
                 }
 
-                var key = WorkspaceSessionProjection.KeyFor(selected);
+                var key = SidebarGroupFor(selected).Key;
+                _selectedWorkspaceKey = key;
                 if (!_workspaceGroups.IsExpanded(key, defaultExpanded: true))
                 {
                     _workspaceGroups.SetExpanded(key, true);

@@ -223,8 +223,32 @@ remains a user-run acceptance check.
 
 The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
-baseline, a sidebar grouped by workspace (`WORKSPACES` with collapsible folder
-groups, search, and relative timestamps), and a centered document-style reading column.
+baseline, a sidebar with `WORKSPACES` above `RECENTS`, collapsible folder
+groups, search, and relative timestamps, and a centered document-style reading column.
+Section headings have separate container styling; their spacing sits outside
+the hit area and does not inherit session-row hover or selection fills.
+Sessions whose working directory is the app's default root, or has not yet
+been assigned, appear under Recents rather than a folder named after the app
+root. Pinned root directories do not create a duplicate workspace group.
+Sessions can be dragged into Recents or a workspace, or before/after a sibling;
+the More actions → Move to menu provides the same grouping and up/down ordering
+without dragging. These moves change sidebar organization only: the session's
+working directory, history, run metadata and permissions stay unchanged. The row
+tooltip shows its actual working directory. Local placement/order preferences
+are stored atomically in `%LOCALAPPDATA%\Ru\sidebar-organization.json` and survive
+polling and app restarts; a failed save leaves the existing order intact.
+Native drag previews, destination outlines, an insertion marker and short row
+transitions provide feedback. Hovering a collapsed group opens it after 450 ms;
+dragging near the list's top/bottom scrolls it. Cancellation clears the preview
+state, and custom motion follows Windows' animation setting. Keyboard navigation,
+visual drag feedback and smoothness remain native UI acceptance checks.
+Workspace `+` and New Chat create and open a session immediately. The sidebar
+shows `New Session` in the chosen workspace even before any messages exist;
+session polling preserves this temporary row. The first accepted chat uses the
+same ID and replaces the placeholder with its first prompt, then adopts the
+durable server title. Switching sessions or leaving Chat before sending hides
+the empty draft, as does restarting the app. This is a UI visibility rule:
+empty Host records are retained, and unrelated empty sessions stay hidden.
 Log, Diagnostics, and Settings retain their existing layout
 in this phase while inheriting the active shared Light or Dark token set.
 The application keeps Light as its fallback and MainWindow can request the

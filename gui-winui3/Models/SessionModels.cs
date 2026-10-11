@@ -1,24 +1,29 @@
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 
 namespace RuApp.Models
 {
-    public class SessionInfo
+    public class SessionInfo : INotifyPropertyChanged
     {
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
 
+        private string _title = string.Empty;
         [JsonPropertyName("title")]
-        public string Title { get; set; } = string.Empty;
+        public string Title { get => _title; set => SetField(ref _title, value); }
 
         [JsonPropertyName("created_at")]
         public string CreatedAt { get; set; } = string.Empty;
 
+        private string _updatedAt = string.Empty;
         [JsonPropertyName("updated_at")]
-        public string UpdatedAt { get; set; } = string.Empty;
+        public string UpdatedAt { get => _updatedAt; set => SetField(ref _updatedAt, value); }
 
+        private string? _lastAgentActivityAt;
         [JsonPropertyName("last_agent_activity_at")]
-        public string? LastAgentActivityAt { get; set; }
+        public string? LastAgentActivityAt { get => _lastAgentActivityAt; set => SetField(ref _lastAgentActivityAt, value); }
 
         [JsonPropertyName("message_count")]
         public int MessageCount { get; set; }
@@ -35,8 +40,9 @@ namespace RuApp.Models
         [JsonPropertyName("workspace_label")]
         public string? WorkspaceLabel { get; set; }
 
+        private string? _workspacePath;
         [JsonPropertyName("workspace_path")]
-        public string? WorkspacePath { get; set; }
+        public string? WorkspacePath { get => _workspacePath; set => SetField(ref _workspacePath, value); }
 
         [JsonIgnore]
         public bool IsForked => !string.IsNullOrEmpty(ParentSessionId);
@@ -48,7 +54,14 @@ namespace RuApp.Models
         public Microsoft.UI.Xaml.Thickness ItemMargin => IsForked ? new Microsoft.UI.Xaml.Thickness(12, 0, 0, 0) : new Microsoft.UI.Xaml.Thickness(0, 0, 0, 0);
 
         [JsonIgnore]
-        public string TooltipText => IsForked ? $"{Title} (Branch)" : Title;
+        public string TooltipText
+        {
+            get
+            {
+                var title = IsForked ? $"{Title} (Branch)" : Title;
+                return string.IsNullOrEmpty(WorkspacePath) ? title : $"{title}\nWorking directory: {WorkspacePath}";
+            }
+        }
 
         [JsonIgnore]
         public string DisplayTime => string.IsNullOrEmpty(LastAgentActivityAt) ? UpdatedAt : LastAgentActivityAt;
@@ -66,6 +79,23 @@ namespace RuApp.Models
         /// </remarks>
         [JsonIgnore]
         public string DisplayTimeText => Services.SessionTimeFormatter.Format(DisplayTime, DateTimeOffset.UtcNow);
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void SetField<T>(ref T storage, T value, [CallerMemberName] string? property = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(storage, value)) return;
+            storage = value;
+            PropertyChanged?.Invoke(this, new(property));
+            if (property is nameof(Title) or nameof(WorkspacePath))
+                PropertyChanged?.Invoke(this, new(nameof(TooltipText)));
+            if (property is nameof(UpdatedAt) or nameof(LastAgentActivityAt))
+            {
+                PropertyChanged?.Invoke(this, new(nameof(DisplayTime)));
+                PropertyChanged?.Invoke(this, new(nameof(DisplayTimeText)));
+            }
+        }
+
     }
 
     public class SessionListResponse

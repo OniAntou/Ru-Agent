@@ -325,8 +325,8 @@ public sealed class AgentSessionUiSourceContractTests
         var sessionTemplate = document.Descendants()
             .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceSessionTemplate");
         Assert.Equal("10,4", GuiSource.AttributeValue(sessionTemplate.Elements().First(), "Padding"));
-        var containerStyle = GuiSource.Require(document, "SidebarSessionList").Descendants()
-            .First(element => element.Name.LocalName == "Style");
+        var containerStyle = document.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SidebarSessionContainerStyle");
         var paddingSetter = containerStyle.Descendants()
             .First(element => element.Name.LocalName == "Setter"
                 && GuiSource.AttributeValue(element, "Property") == "Padding");
@@ -380,8 +380,12 @@ public sealed class AgentSessionUiSourceContractTests
             GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
             StringComparison.Ordinal);
         Assert.Contains(
-            "CreateSessionAsync",
+            "CreateDraftSessionAsync",
             GuiSource.MethodBody(code, "AddSessionToWorkspaceGroupAsync"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CreateSessionAsync",
+            GuiSource.MethodBody(code, "CreateDraftSessionAsync"),
             StringComparison.Ordinal);
         Assert.Contains(
             "Unpin",

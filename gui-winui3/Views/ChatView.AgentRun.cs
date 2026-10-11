@@ -1221,6 +1221,11 @@ namespace RuApp.Views
                         ? new ObservableCollection<ImageAttachmentItem>(attachments)
                         : new ObservableCollection<ImageAttachmentItem>()
                 });
+                if (!string.IsNullOrEmpty(_activeSessionId))
+                {
+                    SessionStarted?.Invoke(this, new SessionStartedEventArgs(
+                        _activeSessionId, !string.IsNullOrEmpty(displayUserText) ? displayUserText : text));
+                }
             }
 
             _activeAgentAssistantMessage = new ChatMessageItem

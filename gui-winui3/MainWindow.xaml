@@ -140,13 +140,13 @@
             <Border Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
                 <Border.Resources>
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
-            <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneTime}"
+            <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneWay}"
                   PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent" Padding="10,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
+                <TextBlock Grid.Column="0" Text="{x:Bind Title, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            TextTrimming="CharacterEllipsis" 
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <!-- The clock owns the right edge. The row's … control shares the
@@ -158,7 +158,7 @@
                      cell's edge. -->
                 <Grid Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="SessionTimeText" HorizontalAlignment="Right"
-                               Text="{x:Bind DisplayTimeText, Mode=OneTime}"
+                               Text="{x:Bind DisplayTimeText, Mode=OneWay}"
                                FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
                                VerticalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -175,7 +175,9 @@
                             <TextBlock Text="…" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
                                        Foreground="{StaticResource RuInkBrush}" Margin="0,-6,0,0" />
                             <Button.Flyout>
-                                <MenuFlyout>
+                                <MenuFlyout Opening="OnSessionMenuOpening">
+                                    <MenuFlyoutSubItem Text="Move to" Tag="{x:Bind Id}"/>
+                                    <MenuFlyoutSeparator/>
                                     <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
                                                     Text="Export as Claude Code"
                                                     Click="OnExportSessionMenuClick"
@@ -312,7 +314,81 @@
                 <TextBlock Text="{x:Bind DisplayText}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuAccentBrush}"/>
             </Button>
         </DataTemplate>
+        <DataTemplate x:Key="SidebarRecentsTemplate" x:DataType="services:SidebarSectionRow">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="6,0">
+                <Button Click="OnRecentsToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle Recents">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock x:Name="RecentsHeader" Text="RECENTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        <FontIcon Grid.Column="1" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Button>
+                <Button Grid.Column="1" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Key}" Width="28" Height="28" Style="{StaticResource WorkspaceAddButtonStyle}" AutomationProperties.Name="New recent session" ToolTipService.ToolTip="New session"/>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="SidebarWorkspacesTemplate" x:DataType="services:SidebarSectionRow">
+            <Grid Margin="6,0">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
+                                <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                <Button x:Name="WorkspaceSearchButton" Grid.Column="1" Click="OnWorkspaceSearchClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Search sessions" AutomationProperties.Name="Search sessions">
+                                    <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </Button>
+                                <ToggleButton x:Name="WorkspaceFilterButton" IsChecked="{x:Bind FilterActive}" Grid.Column="2" Click="OnWorkspaceFilterClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Show only the current workspace" AutomationProperties.Name="Filter to current workspace">
+                                    <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </ToggleButton>
+                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Add workspace" AutomationProperties.Name="Add workspace">
+                                    <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </Button>
+                            </Grid>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="SidebarEmptyTemplate" x:DataType="services:SidebarEmptyRow">
+            <TextBlock Text="{x:Bind Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="10,4"/>
+        </DataTemplate>
+        <Style x:Key="SidebarSessionContainerStyle" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+            <Setter Property="Margin" Value="0,1" />
+        </Style>
+        <Style x:Key="SidebarHeadingContainerStyle" TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,8,0,2"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border Background="Transparent" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource AppControlCornerRadius}">
+                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SidebarRecentsContainerStyle" TargetType="ListViewItem" BasedOn="{StaticResource SidebarHeadingContainerStyle}">
+            <Setter Property="Margin" Value="0,28,0,6"/>
+        </Style>
+        <Style x:Key="SidebarEmptyContainerStyle" TargetType="ListViewItem" BasedOn="{StaticResource SidebarHeadingContainerStyle}">
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+        <views:SidebarRowContainerStyleSelector x:Key="SidebarContainerSelector"
+                                              SessionStyle="{StaticResource SidebarSessionContainerStyle}"
+                                              HeadingStyle="{StaticResource SidebarHeadingContainerStyle}"
+                                              RecentsStyle="{StaticResource SidebarRecentsContainerStyle}"
+                                              EmptyStyle="{StaticResource SidebarEmptyContainerStyle}"/>
         <views:SidebarRowTemplateSelector x:Key="SidebarRowSelector"
+                                          RecentsTemplate="{StaticResource SidebarRecentsTemplate}"
+                                          WorkspacesTemplate="{StaticResource SidebarWorkspacesTemplate}"
+                                          EmptyTemplate="{StaticResource SidebarEmptyTemplate}"
                                           GroupTemplate="{StaticResource WorkspaceGroupTemplate}"
                                           SessionTemplate="{StaticResource WorkspaceSessionTemplate}"
                                           ShowMoreTemplate="{StaticResource WorkspaceShowMoreTemplate}" />
@@ -359,29 +435,13 @@
 
                         
                         <!-- Workspaces Header -->
-                        <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,20,14,6">
+                        <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,0,14,0">
                             <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
-                                <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                                <Button x:Name="WorkspaceSearchButton" Grid.Column="1" Click="OnWorkspaceSearchClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Search sessions" AutomationProperties.Name="Search sessions">
-                                    <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
-                                </Button>
-                                <Button x:Name="WorkspaceFilterButton" Grid.Column="2" Click="OnWorkspaceFilterClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Show only the current workspace" AutomationProperties.Name="Filter to current workspace">
-                                    <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
-                                </Button>
-                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Add workspace" AutomationProperties.Name="Add workspace">
-                                    <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
-                                </Button>
-                            </Grid>
                             <TextBox x:Name="WorkspaceSearchBox" Grid.Row="1" Margin="0,6,0,0" PlaceholderText="Search sessions"
                                      AutomationProperties.Name="Search sessions"
                                      Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
@@ -394,20 +454,20 @@
                         </Grid>
 
                         <!-- Sessions List -->
-                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single"
+                        <Grid x:Name="SidebarListOverlay" Grid.Row="2">
+                        <ListView x:Name="SidebarSessionList" SelectionMode="Single"
+                                  CanDragItems="True" AllowDrop="True" CanReorderItems="False"
+                                  DragItemsStarting="OnSidebarDragItemsStarting" DragItemsCompleted="OnSidebarDragItemsCompleted"
+                                  DragOver="OnSidebarDragOver" DragLeave="OnSidebarDragLeave" Drop="OnSidebarDrop"
                                   AutomationProperties.AutomationId="SessionList"
                                   SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16"
-                                  Background="Transparent" BorderThickness="0" ItemTemplateSelector="{StaticResource SidebarRowSelector}">
-                            <ListView.ItemContainerStyle>
-                                <Style TargetType="ListViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="MinHeight" Value="34" />
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
-                                    <Setter Property="Margin" Value="0,1" />
-                                </Style>
-                            </ListView.ItemContainerStyle>
+                                  Background="Transparent" BorderThickness="0" ItemTemplateSelector="{StaticResource SidebarRowSelector}"
+                                  ItemContainerStyleSelector="{StaticResource SidebarContainerSelector}">
+
                         </ListView>
+                        <Border x:Name="SidebarDropIndicator" Height="2" VerticalAlignment="Top" Margin="8,0,8,0"
+                                Background="{StaticResource RuAccentBrush}" Opacity="0" IsHitTestVisible="False"/>
+                        </Grid>
                     </Grid>
 
                     <!-- Status and settings -->

@@ -40,6 +40,12 @@ namespace RuApp.Views
         public string Title { get; }
     }
 
+    public sealed class SessionStartedEventArgs(string sessionId, string prompt) : EventArgs
+    {
+        public string SessionId { get; } = sessionId;
+        public string Prompt { get; } = prompt;
+    }
+
     /// <summary>
     /// Raised when opening a session adopts its stored permission preset, so
     /// the host can reflect the durable choice in its own preset surfaces.
@@ -331,6 +337,8 @@ namespace RuApp.Views
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
+
+        public event EventHandler<SessionStartedEventArgs>? SessionStarted;
 
         public event EventHandler<SessionPresetAdoptedEventArgs>? SessionPresetAdopted;
 

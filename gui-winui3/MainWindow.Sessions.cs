@@ -38,20 +38,20 @@ namespace RuApp
 
         private void RenderWorkspaceSidebar()
         {
-            var sessions = Sessions.ToList();
+            var sessions = SidebarSessionOrganization.Order(Sessions.ToList(), _sidebarOrganization.Current).ToList();
             var activeKey = ActiveWorkspaceKey();
             if (_workspaceFilterActive && activeKey is not null)
             {
                 sessions = sessions
-                    .Where(session => WorkspaceSessionProjection.KeyFor(session) == activeKey)
+                    .Where(session => SidebarGroupFor(session).Key == activeKey)
                     .ToList();
             }
 
-            var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText);
+            var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText, SidebarGroupFor);
             var searching = !string.IsNullOrWhiteSpace(_workspaceSearchText);
             var groups = WorkspaceSessionProjection.MergePinned(
                 projection.Groups,
-                _workspacePins.PinnedPaths);
+                _workspacePins.PinnedPaths.Where(path => !SidebarSessionOrganization.SamePath(path, _sidebarAppRoot)).ToArray());
             if (searching)
             {
                 groups = groups.Where(group => group.Sessions.Count > 0).ToList();
@@ -60,45 +60,28 @@ namespace RuApp
             _suppressSidebarSelection = true;
             try
             {
-                _sidebarRows.Clear();
                 _lastWorkspaceGroups.Clear();
                 _lastWorkspaceGroups.AddRange(groups);
+                var rows = new List<object>();
+                var recents = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.RecentsKey)
+                    ?? new WorkspaceGroup(SidebarSessionOrganization.RecentsKey, "Recents", null, []);
+                var recentExpanded = searching || _workspaceGroups.IsExpanded(recents.Key, defaultExpanded: true);
+                rows.Add(new SidebarSectionRow(SidebarSessionOrganization.WorkspacesKey, "WORKSPACES", FilterActive: _workspaceFilterActive));
                 var first = true;
-                foreach (var group in groups)
+                foreach (var group in groups.Where(group => group.Key != SidebarSessionOrganization.RecentsKey))
                 {
                     var expanded = searching
-                        || _workspaceGroups.IsExpanded(
-                            group.Key,
+                        || _workspaceGroups.IsExpanded(group.Key,
                             defaultExpanded: activeKey is null ? first : group.Key == activeKey)
                         || (!string.IsNullOrEmpty(group.Path)
                             && _workspaceGroups.IsExpanded(PathStateKey(group.Path), defaultExpanded: false));
                     first = false;
-                    _sidebarRows.Add(new WorkspaceGroupRow(group, expanded));
-                    if (!expanded)
-                    {
-                        continue;
-                    }
-
-                    if (group.Sessions.Count > WorkspaceGroupPageSize
-                        && !_groupShowAll.Contains(group.Key))
-                    {
-                        foreach (var session in group.Sessions.Take(WorkspaceGroupPageSize))
-                        {
-                            _sidebarRows.Add(session);
-                        }
-
-                        _sidebarRows.Add(new WorkspaceShowMoreRow(
-                            group.Key,
-                            $"Show {group.Sessions.Count - WorkspaceGroupPageSize} more"));
-                    }
-                    else
-                    {
-                        foreach (var session in group.Sessions)
-                        {
-                            _sidebarRows.Add(session);
-                        }
-                    }
+                    rows.Add(new WorkspaceGroupRow(group, expanded));
+                    AppendSidebarSessions(rows, group, expanded);
                 }
+                rows.Add(new SidebarSectionRow(recents.Key, "RECENTS", recentExpanded));
+                AppendSidebarSessions(rows, recents, recentExpanded);
+                ReconcileSidebarRows(rows);
 
                 if (_activeSessionId is not null)
                 {
@@ -125,7 +108,7 @@ namespace RuApp
             }
 
             var active = Sessions.FirstOrDefault(session => session.Id == _activeSessionId);
-            return active is null ? null : WorkspaceSessionProjection.KeyFor(active);
+            return active is null ? null : SidebarGroupFor(active).Key;
         }
 
         private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
@@ -182,9 +165,6 @@ namespace RuApp
         private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e)
         {
             _workspaceFilterActive = !_workspaceFilterActive;
-            WorkspaceFilterButton.Background = _workspaceFilterActive
-                ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
-                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             RenderWorkspaceSidebar();
         }
 
@@ -253,21 +233,9 @@ namespace RuApp
             if (_apiService == null || _chatView == null) return;
             if (sender is not Button button || button.Tag is not string key) return;
             var path = ResolveWorkspacePath(key);
-            if (path is null) return;
+            if (path is null && key != SidebarSessionOrganization.RecentsKey) return;
 
-            var session = await _apiService.CreateSessionAsync();
-            if (session is null) return;
-            _sessionWorkspaces.Set(session.Id, path);
-            _chatView.SetRequestedWorkspace(path);
-            await LoadSessionsAsync();
-
-            _activeSessionId = session.Id;
-            _selectedWorkspaceKey = key;
-            _workspaceGroups.SetExpanded(key, true);
-            RenderWorkspaceSidebar();
-
-            OnNavClick(NavChat, new RoutedEventArgs());
-            await _chatView.OpenSessionAsync(session.Id, session.Title);
+            await CreateDraftSessionAsync(key, path);
         }
 
         private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
@@ -317,6 +285,7 @@ namespace RuApp
 
         private string? ResolveWorkspacePath(string key)
         {
+            if (key == SidebarSessionOrganization.RecentsKey) return _sidebarAppRoot;
             foreach (var group in _lastWorkspaceGroups)
             {
                 if (group.Key == key)

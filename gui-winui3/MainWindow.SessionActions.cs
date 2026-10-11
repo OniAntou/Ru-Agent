@@ -271,6 +271,11 @@ namespace RuApp
 
                 bool wasActive = string.Equals(_chatView?.CurrentSessionId, sessionId, StringComparison.OrdinalIgnoreCase);
 
+                if (outcome.Deleted)
+                {
+                    _sessionDrafts.Remove(sessionId);
+                    _sidebarOrganization.Remove(sessionId);
+                }
                 _chatView?.ForgetSidePanelState(sessionId);
 
                 await LoadSessionsAsync();

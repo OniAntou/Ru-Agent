@@ -344,6 +344,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         "rate_limit_exceeded" or "rate_limited" => new("rate_limited", true),
         _ when code.Contains("rate_limit") => new("rate_limited", true),
         "server_error" or "overloaded" or "overloaded_error" => new("server_error", true),
+        "402" or "payment_required" => new("provider_payment_required", false),
         _ => new("http_error", false),
     };
 
@@ -399,6 +400,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         // Gateways answer 404 both for unknown models and for models with no
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new("model_unavailable", false),
+        HttpStatusCode.PaymentRequired => new("provider_payment_required", false),
         >= HttpStatusCode.InternalServerError => new("server_error", true),
         _ => new("http_error", false),
     };

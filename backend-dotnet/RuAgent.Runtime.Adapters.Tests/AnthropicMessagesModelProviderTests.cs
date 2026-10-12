@@ -537,6 +537,7 @@ public sealed class AnthropicMessagesModelProviderTests
     [InlineData(HttpStatusCode.Forbidden, "forbidden", false)]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", true)]
     [InlineData(HttpStatusCode.NotFound, "model_unavailable", false)]
+    [InlineData(HttpStatusCode.PaymentRequired, "provider_payment_required", false)]
     [InlineData((HttpStatusCode)529, "server_error", true)]
     [InlineData(HttpStatusCode.InternalServerError, "server_error", true)]
     public async Task GenerateAsync_maps_http_failures(HttpStatusCode status, string code, bool retryable)

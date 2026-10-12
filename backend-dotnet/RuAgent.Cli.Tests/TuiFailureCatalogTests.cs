@@ -65,6 +65,7 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [InlineData("transport_error")]
     [InlineData("server_error")]
     [InlineData("http_error")]
+    [InlineData("provider_payment_required")]
     [InlineData("response_too_large")]
     [InlineData("vision_unsupported")]
     [InlineData("image_limit_exceeded")]

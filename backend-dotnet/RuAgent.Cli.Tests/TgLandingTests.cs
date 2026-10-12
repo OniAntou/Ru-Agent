@@ -36,10 +36,15 @@ public sealed class TgLandingTests
         });
         app.Run(window);
 
-        Assert.Contains("█▀▀█", captures[0]);
-        Assert.Contains("▀  ▀ ▀▀▀▀", captures[0]);
-        Assert.DoesNotContain("█▀▀█", captures[1]);
+        Assert.Contains("█▀▀█ █  █ █▀▀█", captures[0]);
+
+        // The feet row is gone, and U now closes its own bowl so the letter still reads as a U
+        // rather than as two bare stems.
+        Assert.DoesNotContain("▀  ▀ ▀▀▀▀", captures[0]);
+        Assert.Contains("█  █ █▄▄█", captures[0]);
+
+        Assert.DoesNotContain("█▀▀█ █  █ █▀▀█", captures[1]);
         Assert.Contains("xin chào", captures[1]);
-        Assert.Contains("█▀▀█", captures[2]);
+        Assert.Contains("█▀▀█ █  █ █▀▀█", captures[2]);
     }
 }

@@ -444,6 +444,7 @@ public sealed class OpenAiCompatibleModelProviderTests
     [InlineData(HttpStatusCode.Forbidden, "forbidden", false)]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", true)]
     [InlineData(HttpStatusCode.NotFound, "model_unavailable", false)]
+    [InlineData(HttpStatusCode.PaymentRequired, "provider_payment_required", false)]
     [InlineData(HttpStatusCode.InternalServerError, "server_error", true)]
     public async Task GenerateAsync_maps_http_failures_to_bounded_codes(HttpStatusCode status, string code, bool retryable)
     {

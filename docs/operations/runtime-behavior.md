@@ -573,3 +573,13 @@ lifecycle. They cannot establish the effect of an arbitrary terminal command
 on a live external application or device, provider quality, or
 natural bilingual dialogue. Those
 remain explicit user-run checks and must be reported as pending until performed.
+
+## Provider payment failures
+
+Generation providers classify HTTP 402 as `provider_payment_required`, non-retryable.
+Responses stream errors with code `402` or `payment_required` use the same outcome.
+Client copy directs the user to billing/credit; it does not claim that every 402
+means an empty balance or promise that another model cannot work. No automatic
+provider/model switch is introduced. Diagnostic category inference no longer
+maps any category containing `runtime` to `worker.unavailable`; explicit event
+codes retain precedence and genuinely worker-named categories keep compatibility.

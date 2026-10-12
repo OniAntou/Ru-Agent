@@ -6,13 +6,43 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **12-project** Debug coverage: **5,970 passed / 0 failed / 0 skipped** (2026-10-12, workspace terminal policy v2). Broker 910; Backend 1,050; GUI 1,385; Harness Core 486; CLI 1,289. Full runner log: `artifacts/terminal-redesign-dotnet.log`; its one stale GUI copy assertion was corrected and the complete GUI project passed in `artifacts/terminal-redesign-gui-final.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, workspace terminal policy v2), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/terminal-redesign-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, TUI engine simplification). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tui-simplify-release.log`. |
+| .NET tests | Full **12-project** Debug matrix: **5,952 passed / 0 failed / 0 skipped** (2026-10-12, selective meteor branch integration). Broker 910; CLI 1,261; Client 214; Core 486; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,055; GUI 1,385. Log: `artifacts/meteor-port-dotnet.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, selective meteor branch integration), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/meteor-port-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, selective meteor branch integration). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/meteor-port-release.log`. |
 | Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Selective meteor branch integration (2026-10-12)
+
+Selected changes from `feat/cli-meteor-braille-landing` at `5b738997` were
+adapted onto dev `a7504f00`, rather than resolving by replacing current TUI
+files. Landing/header/resize, payment-error mapping and narrower diagnostic
+classification are included. Dev's single Terminal.Gui engine, keyboard owner,
+bounded transcript, immutable queue submissions and profile-v2 policy remain.
+Scroll/wheel navigation extends that owner; follow-tail notifications keep hints
+consistent during busy rendering and clear. Workspace-busy hints clear only
+after Host acceptance or a successful session change, never on ordinary typing.
+
+The isolated feature review reproduced three new hint/banner regressions; its
+three duration-locale failures were inherited from the old base and already
+fixed on dev. The port initially failed compilation before the busy-banner
+interface existed (`artifacts/meteor-port-red.log`). All six integration/banner
+regressions then passed (`artifacts/meteor-port-regressions.log`); 35 focused TUI
+cases passed (`artifacts/meteor-port-focused.log`). Resize tests now assert that
+the test driver actually reaches the requested dimensions; all 24 chrome cases
+passed (`artifacts/meteor-port-resize.log`). Provider tests additionally cover
+Responses streamed payment errors as non-retryable.
+
+The full Debug matrix passed **5,952 tests across 12 projects**, with no failures
+or skips (`artifacts/meteor-port-dotnet.log`). The Python suite passed **214 tests,
+1 skipped** (`artifacts/meteor-port-python.log`, POSIX-only skip on Windows).
+`build.bat` passed **11/11 Release stages** (`artifacts/meteor-port-release.log`).
+Documentation guards passed 19 tests and `git diff --check` passed.
+No real-provider coding benchmark or native terminal resize/IME acceptance was
+performed. Headless Terminal.Gui drawing is separate evidence from a real
+Windows Terminal session.
 
 ## TUI engine simplification (2026-10-12)
 
@@ -39,8 +69,7 @@ The final complete CLI suite passed **1,232 tests / 0 failed / 0 skipped**
 `git diff --check` passed. `build.bat` completed all **11/11 Release stages**
 (`artifacts/tui-simplify-release.log`) and refreshed the flattened distributable.
 No application was launched. The full 12-project matrix and Python suite were
-not rerun for this CLI-only change; the table's full-matrix count above records
-the earlier terminal-policy snapshot. This is deterministic coverage; native
+not rerun at that CLI-only step; later full runs are recorded in the table above. This is deterministic coverage; native
 terminal resize/IME and a live-provider coding task are unmeasured.
 
 ## Workspace terminal redesign (2026-10-12)

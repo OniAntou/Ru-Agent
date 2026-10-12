@@ -502,6 +502,11 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         // Gateways answer 404 both for unknown models and for models with no
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new ModelProviderException("model_unavailable", retryable: false),
+
+        // The provider answered, and the answer was "the account cannot pay". Folding this into
+        // the generic 4xx bucket told the reader to check the model and the key, neither of which
+        // is wrong, so an empty balance looked like a configuration mistake.
+        HttpStatusCode.PaymentRequired => new ModelProviderException("provider_payment_required", retryable: false),
         >= HttpStatusCode.InternalServerError => new ModelProviderException("server_error", retryable: true),
         _ => new ModelProviderException("http_error", retryable: false),
     };

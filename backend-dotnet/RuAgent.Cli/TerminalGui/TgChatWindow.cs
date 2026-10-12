@@ -53,6 +53,7 @@ public sealed class TgChatWindow : Window
         Transcript.FirstContentAppended += HideLanding;
         Transcript.ContentCleared += ShowLanding;
         Transcript.UnseenOutputChanged += hasUnseenOutput => Hints.SetTranscriptUnread(hasUnseenOutput);
+        Transcript.FollowingTailChanged += followingTail => Hints.SetTranscriptFollowing(followingTail);
 
         // The dropdown is driven from the composer text itself: every edit (typed, history,
         // programmatic) refreshes it, and accepting writes the command back through the same
@@ -134,8 +135,8 @@ public sealed class TgChatWindow : Window
     }
 
     /// <summary>
-    /// Set once the live terminal has settled below the 80x24 floor: the window stops the app
-    /// and the run loop continues the same session on the classic sequential path. One-way
+    /// Set once the live terminal has settled below the drawable 20x12 floor: the window stops the app
+    /// and the run loop continues the same session on the append-only text path. One-way
     /// for the life of the window; the TG frame never reopens.
     /// </summary>
     public bool HandOverToSequential { get; private set; }
@@ -146,7 +147,21 @@ public sealed class TgChatWindow : Window
     /// be undone, so reacting to the first blip costs the operator the whole Terminal.Gui
     /// surface over a stray pixel of drag.
     /// </summary>
-    private const int HandoverDebounceMs = 250;
+    private const int HandoverDebounceMs = 400;
+
+    /// <summary>
+    /// The size below which the layout genuinely cannot be drawn, which is a very different
+    /// question from the 80x24 floor that picks the engine at startup. That floor asks "which
+    /// surface suits this screen"; this one asks "can this surface still be laid out", and the
+    /// honest answer stays yes far below it. Width barely matters: the wordmark falls back to
+    /// a caption under <see cref="TuiHeader.MinWordmarkWidth"/> and the composer clamps at ten
+    /// columns. Height is the real constraint, because the header, transcript and the pinned
+    /// composer stack are what stop fitting.
+    /// </summary>
+    private const int HandoverMinWidth = 20;
+
+    /// <summary>Header, transcript, the six composer rows and the hint row cannot share fewer.</summary>
+    private const int HandoverMinHeight = 12;
 
     private bool _handoverScheduled;
 
@@ -450,17 +465,35 @@ public sealed class TgChatWindow : Window
             // Not a handover yet: keep the frame and relayout so it stays usable while the
             // terminal decides whether it really is too small.
             ScheduleHandover();
-            SetNeedsLayout();
-            SetNeedsDraw();
+            Relayout();
             return;
         }
 
-        SetNeedsLayout();
+        Relayout();
+    }
+
+    /// <summary>
+    /// Lays out synchronously rather than only asking for a layout pass. Scheduling one leaves
+    /// a window in which the driver paints before the relayout runs, and every view that centres
+    /// itself from its viewport paints that frame with the old width: the landing wordmark lands
+    /// off to the right and runs off the edge. Laying out here costs a pass on a resize and
+    /// removes the stale frame entirely.
+    /// </summary>
+    private void Relayout()
+    {
+        Layout();
         SetNeedsDraw();
     }
 
-    private static bool IsBelowFloor(Rectangle size) =>
-        size.Width < TuiViewport.MinAltBufferWidth || size.Height < TuiViewport.MinAltBufferHeight;
+    private static bool IsBelowFloor(Rectangle size) => IsTooSmallToDraw(size.Width, size.Height);
+
+    /// <summary>
+    /// Whether a terminal of this size cannot host the layout at all. Separate from the 80x24
+    /// floor that picks the engine at startup on purpose, and separate from any driver, so the
+    /// rule can be pinned directly instead of through a screen the test driver may refuse.
+    /// </summary>
+    internal static bool IsTooSmallToDraw(int width, int height) =>
+        width < HandoverMinWidth || height < HandoverMinHeight;
 
     /// <summary>
     /// Arms the one-way handover, and disarms it again if the terminal is back above the floor

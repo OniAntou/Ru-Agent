@@ -1,6 +1,7 @@
 using System.Text;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.ViewBase;
+using Terminal.Gui.Input;
 
 namespace RuAgent.Cli.TerminalGui;
 
@@ -47,6 +48,7 @@ public sealed class TgTranscriptView : View
     public int RetainedRowCount => _lines.Count + (_collapsedBlock?.Hidden.Count ?? 0);
     public int RetainedCharacterCount => _retainedCharacters;
     public bool IsFollowingTail => _followingTail;
+    public bool CanScroll => _wrapped.Count > Math.Max(1, Viewport.Height);
     public bool HasUnseenOutput { get; private set; }
     public int ScrollPosition => _followingTail ? Math.Max(0, _wrapped.Count - Viewport.Height) : _scrollTop;
 
@@ -57,6 +59,7 @@ public sealed class TgTranscriptView : View
     public event Action? ContentCleared;
 
     public event Action<bool>? UnseenOutputChanged;
+    public event Action<bool>? FollowingTailChanged;
 
     /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
     internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
@@ -79,7 +82,7 @@ public sealed class TgTranscriptView : View
         _tailRows = 1;
         _historyTruncated = false;
         _scrollTop = 0;
-        _followingTail = true;
+        SetFollowingTail(true);
         _retainedCharacters = 0;
         SetHasUnseenOutput(false);
         ContentCleared?.Invoke();
@@ -232,16 +235,33 @@ public sealed class TgTranscriptView : View
 
     public void ScrollToTop()
     {
-        _followingTail = false;
+        SetFollowingTail(false);
         _scrollTop = 0;
         SetNeedsDraw();
     }
 
     public void ScrollToTail()
     {
-        _followingTail = true;
+        SetFollowingTail(true);
         SetHasUnseenOutput(false);
         SetNeedsDraw();
+    }
+
+    private void SetFollowingTail(bool followingTail)
+    {
+        if (_followingTail == followingTail) return;
+        _followingTail = followingTail;
+        FollowingTailChanged?.Invoke(followingTail);
+    }
+
+    protected override bool OnMouseEvent(Mouse mouseEvent)
+    {
+        if (!mouseEvent.IsWheel || _wrapped.Count <= Viewport.Height) return false;
+        if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledUp)) ScrollRows(-3);
+        else if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledDown)) ScrollRows(3);
+        else return false;
+        mouseEvent.Handled = true;
+        return true;
     }
 
     private void MarkOutputUnseen()
@@ -318,7 +338,7 @@ public sealed class TgTranscriptView : View
         if (_followingTail)
         {
             _scrollTop = Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height));
-            _followingTail = false;
+            SetFollowingTail(false);
         }
 
         _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));

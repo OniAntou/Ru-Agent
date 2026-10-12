@@ -1953,6 +1953,7 @@ public sealed partial class AgentCommands
                 RunOnTgUi(() =>
                 {
                     tgWindow!.ResetTranscript();
+                    tgWindow.Hints.ClearWorkspaceBusy();
                     tgWindow.Header.SetTitle(sessionTitle ?? "");
                     tgWindow.Composer.SetMeta(cmd.Preset, activeModel, backendName ?? "(provider unknown)");
                 });
@@ -2122,6 +2123,7 @@ public sealed partial class AgentCommands
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, runSession.Token).ConfigureAwait(false);
                 hostAccepted = true;
+                if (tgMode) RunOnTgUi(() => tgWindow!.Hints.ClearWorkspaceBusy());
                 submissions.Accept();
                 tgLoop?.ResumeQueuedSubmissions();
                 runSession.AcceptCreatedRun(resp.RunId);
@@ -2266,7 +2268,9 @@ public sealed partial class AgentCommands
                     return;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await WriteBusyConflictAsync(ex, WriteDiagnosticLineAsync).ConfigureAwait(false);
+                await WriteBusyConflictAsync(ex, WriteDiagnosticLineAsync,
+                    tgMode ? (runId, status) => RunOnTgUi(() => tgWindow!.Hints.SetWorkspaceBusy(runId, status)) : null)
+                    .ConfigureAwait(false);
             }
             catch (AgentApiException ex)
             {
@@ -2753,7 +2757,8 @@ public sealed partial class AgentCommands
     /// </summary>
     private async Task WriteBusyConflictAsync(
         AgentApiException error,
-        Func<TextWriter, string, Task> writeLineAsync)
+        Func<TextWriter, string, Task> writeLineAsync,
+        Action<string, string>? markBusy = null)
     {
         ArgumentNullException.ThrowIfNull(writeLineAsync);
         var blockingRunId = error.BlockingRunId;
@@ -2766,6 +2771,7 @@ public sealed partial class AgentCommands
         }
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
+        markBusy?.Invoke(blockingRunId, status);
         await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
         var hint = IsParkedRunStatus(status)
             ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."

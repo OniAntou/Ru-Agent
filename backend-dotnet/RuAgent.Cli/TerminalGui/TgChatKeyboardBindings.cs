@@ -163,6 +163,8 @@ internal sealed class TgChatKeyboardBindings
             return true;
         }
 
+        if (!_window.Transcript.CanScroll) return false;
+
         if (key == Key.Home.WithCtrl)
         {
             _window.Transcript.ScrollToTop();
@@ -172,6 +174,12 @@ internal sealed class TgChatKeyboardBindings
         if (key == Key.End.WithCtrl)
         {
             _window.Transcript.ScrollToTail();
+            return true;
+        }
+
+        if (key == Key.CursorUp.WithCtrl || key == Key.CursorDown.WithCtrl)
+        {
+            _window.Transcript.ScrollRows(key == Key.CursorUp.WithCtrl ? -1 : 1);
             return true;
         }
 
@@ -288,6 +296,8 @@ internal sealed class TgChatKeyboardBindings
         key == Key.P.WithCtrl
         || key == Key.Home.WithCtrl
         || key == Key.End.WithCtrl
+        || key == Key.CursorUp.WithCtrl
+        || key == Key.CursorDown.WithCtrl
         || key.KeyCode is KeyCode.PageUp or KeyCode.PageDown;
 
     private static bool IsSubmitKey(Key key) => key.KeyCode == KeyCode.Enter || key.AsRune.Value is 13 or 10;

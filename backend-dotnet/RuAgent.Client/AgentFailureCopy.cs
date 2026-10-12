@@ -59,6 +59,10 @@ public static class AgentFailureCopy
             "Provider refused the request",
             "the model name or key may be wrong",
             "provider refused the request · check the model name and key, then retry");
+        Add(table, ["provider_payment_required"],
+            "Provider payment required",
+            "the provider requires payment or account credit",
+            "check provider billing and credit, then retry");
         Add(table, ["http_error"],
             "Provider rejected the request",
             "the provider answered 4xx: unknown model, no access, or bad parameters",

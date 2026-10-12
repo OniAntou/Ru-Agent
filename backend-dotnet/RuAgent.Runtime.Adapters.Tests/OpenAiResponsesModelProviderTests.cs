@@ -448,6 +448,24 @@ public sealed class OpenAiResponsesModelProviderTests
         Assert.Equal("rate_limited", ex.Code);
     }
 
+    [Theory]
+    [InlineData("402")]
+    [InlineData("payment_required")]
+    public async Task GenerateAsync_classifies_streamed_payment_errors_without_retry(string code)
+    {
+        var body = new JsonObject { ["type"] = "error", ["error"] = new JsonObject { ["code"] = code } };
+        var sse = SseEvent("error", body);
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None)));
+        Assert.Equal("provider_payment_required", error.Code);
+        Assert.False(error.Retryable);
+    }
+
     [Fact]
     public async Task GenerateAsync_throws_on_malformed_json()
     {
@@ -561,6 +579,7 @@ public sealed class OpenAiResponsesModelProviderTests
     [InlineData(HttpStatusCode.Forbidden, "forbidden", false)]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", true)]
     [InlineData(HttpStatusCode.NotFound, "model_unavailable", false)]
+    [InlineData(HttpStatusCode.PaymentRequired, "provider_payment_required", false)]
     [InlineData(HttpStatusCode.InternalServerError, "server_error", true)]
     public async Task GenerateAsync_maps_http_failures(HttpStatusCode status, string code, bool retryable)
     {

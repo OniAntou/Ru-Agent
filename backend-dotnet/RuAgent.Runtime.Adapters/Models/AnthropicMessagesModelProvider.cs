@@ -404,6 +404,11 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         // Gateways answer 404 both for unknown models and for models with no
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new("model_unavailable", false),
+
+        // The provider answered, and the answer was "the account cannot pay". Kept out of the
+        // generic 4xx bucket, whose copy sends the reader to /model and /key instead of to a
+        // top-up.
+        HttpStatusCode.PaymentRequired => new("provider_payment_required", false),
         (HttpStatusCode)529 => new("server_error", true),
         >= HttpStatusCode.InternalServerError => new("server_error", true),
         _ => new("http_error", false),

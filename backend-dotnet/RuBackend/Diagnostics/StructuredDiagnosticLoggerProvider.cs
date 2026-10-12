@@ -134,6 +134,14 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
             _ => "info",
         };
 
+        /// <summary>
+        /// Best-effort code for a log line that carries none of its own. Deliberately narrow:
+        /// a catch-all over "runtime" stamped the agent's main loop service — provider 4xx,
+        /// drive failures, anything — as <c>worker.unavailable</c>, which sent the reader after a
+        /// worker outage that cannot happen, since <c>WorkerUnavailableException</c> is historical
+        /// now the worker runs in process. A line with no explicit code is better reported as
+        /// unclassified than confidently mislabelled.
+        /// </summary>
         private static string InferEventCode(string categoryName)
         {
             var category = categoryName.ToLowerInvariant();
@@ -147,8 +155,7 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 return DiagnosticCodes.TurnFailed;
             }
 
-            if (category.Contains(".worker", StringComparison.Ordinal) ||
-                category.Contains("runtime", StringComparison.Ordinal))
+            if (category.Contains(".worker", StringComparison.Ordinal))
             {
                 return DiagnosticCodes.WorkerUnavailable;
             }

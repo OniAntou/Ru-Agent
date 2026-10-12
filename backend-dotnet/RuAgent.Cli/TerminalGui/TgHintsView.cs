@@ -15,6 +15,9 @@ public sealed class TgHintsView : View
     private string? _spinnerFrame;
     private string? _busyHint;
     private bool _hasUnseenTranscript;
+    private bool _scrolledBack;
+    private string? _busyRunId;
+    private string? _busyStatus;
 
     public TgHintsView()
     {
@@ -50,9 +53,38 @@ public sealed class TgHintsView : View
         SetNeedsDraw();
     }
 
+    public void SetWorkspaceBusy(string runId, string status)
+    {
+        var safeRunId = ChatDisplayText.Sanitize(runId, 64);
+        var safeStatus = ChatDisplayText.Sanitize(status, 24);
+        if (_busyRunId == safeRunId && _busyStatus == safeStatus) return;
+        _busyRunId = safeRunId;
+        _busyStatus = safeStatus;
+        SetNeedsDraw();
+    }
+
+    public void ClearWorkspaceBusy()
+    {
+        if (_busyRunId is null) return;
+        _busyRunId = null;
+        _busyStatus = null;
+        SetNeedsDraw();
+    }
+
+    public void SetTranscriptFollowing(bool followingTail)
+    {
+        _scrolledBack = !followingTail;
+        SetNeedsDraw();
+    }
+
     protected override bool OnDrawingContent(DrawContext? context)
     {
         var width = Viewport.Width;
+        if (_busyRunId is not null)
+        {
+            Draw(0, [($"blocked ({_busyStatus}) · ru agent cancel {_busyRunId}", TuiToken.Warn)], width);
+            return true;
+        }
         var rightHints = GetRightHints(width);
         var rightWidth = TuiText.VisibleWidth(rightHints);
         // Classic truncates the workspace first so the key hints always survive; the
@@ -63,18 +95,24 @@ public sealed class TgHintsView : View
             : _busyHint is null
                 ? $"{_spinnerFrame} esc interrupt"
                 : $"{_spinnerFrame} {_busyHint}";
+        if (_scrolledBack) leftText = "↑ scrolled back · " + leftText;
         var shownLeft = TuiText.Truncate(leftText, leftBudget);
         var leftWidth = TuiText.VisibleWidth(shownLeft);
         var gap = Math.Max(1, width - leftWidth - rightWidth);
 
-        DrawLeft(leftWidth);
+        DrawLeft(leftWidth, shownLeft);
         DrawRight(leftWidth + gap, Math.Max(0, width - leftWidth - gap));
         return true;
     }
 
     /// <summary>Idle workspace is meta; busy paints the spinner and <c>esc</c> bright.</summary>
-    private void DrawLeft(int maxWidth)
+    private void DrawLeft(int maxWidth, string shownText)
     {
+        if (_scrolledBack)
+        {
+            Draw(0, [(shownText, TuiToken.Meta)], maxWidth);
+            return;
+        }
         IReadOnlyList<(string Text, TuiToken Token)> segments = _spinnerFrame is null
             ?
             [

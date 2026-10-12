@@ -99,7 +99,7 @@ public static class TuiHeader
     public const int ComposerReserveRows = 1 + ComposerBox.StackHeight + 1;
 
     /// <summary>Rows of the block wordmark.</summary>
-    public const int WordmarkRows = 4;
+    public const int WordmarkRows = 3;
 
     /// <summary>Narrowest terminal that fits the aurora block wordmark.</summary>
     public const int MinWordmarkWidth = 35;
@@ -535,20 +535,34 @@ public static class TuiHeader
         return text.ToString();
     }
 
+    /// <summary>
+    /// The "ru" half, three block rows. The wordmark used to carry a fourth row of feet drawn as
+    /// top-half blocks, which made every letter seven half-cells tall with an empty strip under
+    /// it. Dropping that row is only safe because U now closes its own bowl in the last row: with
+    /// two bare stems it read as a pair of bars.
+    /// </summary>
     private static readonly string[] RuWord =
     [
         "█▀▀█ █  █",
         "█▀▀▄ █  █",
-        "█  █ █  █",
-        "▀  ▀ ▀▀▀▀",
+        "█  █ █▄▄█",
     ];
 
+    /// <summary>
+    /// The "agent" half, three block rows. G carries its crossbar on the lower half of the middle
+    /// row rather than the upper one: with the crossbar up top and a solid base the letter read
+    /// as a C with a bar through it, and a filled base on its own made it an O. Putting the
+    /// crossbar low and closing only the two feet is what makes the letter a G, and it keeps G
+    /// the same six half-cells tall as every other letter. E mirrors that logic on all three of its
+    /// bars: the top and middle bars ride the upper half (<c>▀</c>) while the base rides the lower
+    /// half (<c>▄</c>), so each bar sits on the inner edge of the row instead of floating or
+    /// straddling it.
+    /// </summary>
     private static readonly string[] AgentWord =
     [
         "█▀▀█ █▀▀▀ █▀▀▀ █  █ ▀█▀",
-        "█▀▀█ █ ▀▀ █▀▀  █▄ █  █ ",
-        "█  █ █  █ █    █ ▀█  █ ",
-        "▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀  ▀ ",
+        "█▀▀█ █ ▄▄ █▀▀  █▄ █  █ ",
+        "█  █ █▄▄█ █▄▄▄ █ ▀█  █ ",
     ];
 
     /// <summary>The "ru" half of the aurora block wordmark, one string per row.</summary>

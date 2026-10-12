@@ -8,6 +8,13 @@ namespace RuAgent.Cli.TerminalGui;
 /// <summary>One-line header: <c># title</c> flush left, usage cluster flush right.</summary>
 public sealed class TgHeaderView : View
 {
+    /// <summary>
+    /// Heading before the host has named the session. The classic header substitutes "session"
+    /// for a blank title, so a bare "#" here would read as a stray character on the first row
+    /// rather than as a heading.
+    /// </summary>
+    private const string DefaultHeading = "session";
+
     private readonly Label _title;
     private readonly Label _usage;
 
@@ -15,13 +22,26 @@ public sealed class TgHeaderView : View
     {
         Height = 1;
         SetScheme(TgPalette.Scheme(TuiToken.Meta));
-        _title = new Label { X = 0, Y = 0, Text = "#" };
+        _title = new Label { X = 0, Y = 0, Text = Caption(string.Empty) };
         _title.SetScheme(TgPalette.Scheme(TuiToken.Bright));
         _usage = new Label { X = 0, Y = 0 };
         Add(_title, _usage);
     }
 
-    public void SetTitle(string title) => _title.Text = "# " + title;
+    /// <summary>
+    /// Names the session. The title arrives asynchronously from a background probe, so this
+    /// asks for the repaint itself: without it the header keeps the old caption on screen until
+    /// something unrelated redraws the window.
+    /// </summary>
+    public void SetTitle(string title)
+    {
+        _title.Text = Caption(title);
+        SetNeedsDraw();
+    }
+
+    /// <summary><c># session</c> until the session is named, then <c># &lt;title&gt;</c>.</summary>
+    private static string Caption(string title) =>
+        "# " + (string.IsNullOrWhiteSpace(title) ? DefaultHeading : title.Trim());
 
     public void UpdateUsage(long totalTokens, int? percent, decimal? cost)
     {

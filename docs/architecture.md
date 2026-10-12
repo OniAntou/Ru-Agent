@@ -304,8 +304,12 @@ reconciliation surfaces from Phase 3:
   no cursor key loop and no screen/resize reconstruction. Shared command
   metadata belongs to `ChatCommandCatalog`, not the line reader. Minimal
   credential input remains separate and never echoes the secret; Terminal.Gui
-  retains its own masked panels. A tiny-viewport handover disposes the frame
-  before using plain output and preserves the session/run state.
+  retains its own masked panels. Startup selection uses 80×24; an active frame
+  hands over only below 20×12 after 400 ms. Handover disposes the frame before
+  using plain output and preserves the session/run state. `TgTranscriptView`
+  remains the single bounded scroll owner and emits follow-tail state changes
+  for busy/idle hints, including clear. Workspace-busy hints persist until Host
+  acceptance or a successful session switch, independent of composer keystrokes.
 
 - CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
 - CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.

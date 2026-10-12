@@ -10,7 +10,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-6%2C024%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-6%2C046%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-43%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -28,7 +28,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
 | **Public surface** | **43 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 6,024 passing across 12 projects |
+| **Tests** | 6,046 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -104,7 +104,15 @@ your user: anything that can read `%LOCALAPPDATA%\Ru\runtime_descriptor.json`
 can set that header. The actual boundary is the bearer token in an owner-only
 descriptor. Every preset change is recorded in the activity log.
 
-Approvals remain exact-intent and single-use. Current reasons include
+Approvals are single-use and bound to the exact call. `allow_once` remembers
+the reviewed intent for the session; `allow_always` remembers a bounded
+pattern as a durable project rule — a terminal command prefix (resolved
+executable plus at most two leading non-flag argv tokens, in the exact launch
+directory), or an approved external folder as a path pattern covering its
+subtree, which survives restarts and later sessions of the same workspace.
+Flag-first invocations and shell-mode scripts are remembered exactly instead
+of as a prefix, and `rule_asks` / `terminal_protected_path_requires_approval`
+never become a reusable rule. Current reasons include
 `external_directory_required`, `terminal_external_cwd_requires_approval`,
 `terminal_timeout_requires_approval`, `rule_asks`, and
 `terminal_protected_path_requires_approval` (never reusable as `allow_always`).
@@ -203,7 +211,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 6,024 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 6,046 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

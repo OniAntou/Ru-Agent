@@ -6,13 +6,39 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,024 passed / 0 failed / 0 skipped** (2026-10-12, selective park-reason integration). Broker 910; CLI 1,320; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/cli-park-reason-matrix.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, selective park-reason integration), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/cli-park-reason-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| .NET tests | Full **12-project** Debug matrix: **6,046 passed / 0 failed / 0 skipped** (2026-10-13, remembered approval patterns and durable folder grants). Broker 918; CLI 1,322; Client 215; Core 488; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,069; GUI 1,393. Log: `artifacts/approval-patterns-matrix.log`. |
+| Python suite | **216 passed, 1 skipped** (2026-10-13, remembered approval patterns), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/approval-patterns-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, balanced default Dark). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-dark-balanced-release-build.log`, `artifacts/gui-dark-balanced-release-deploy.log`. |
 | Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-dark-balanced-release-smoke.log`. Interactive native UI remains manual acceptance. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Remembered approval patterns and durable folder grants (2026-10-13)
+
+[ADR 0018](../adr/0018-approval-patterns-and-durable-folder-grants.md) landed:
+`allow_always` now remembers a bounded pattern as a durable project-scope allow
+rule — a terminal command prefix (resolved executable plus at most two leading
+non-flag argv tokens with the exact launch directory), or an approved external
+folder as a `<folder>\**` path pattern the evaluator honors for external
+targets (`external_directory_rule_allow`) — while flag-first invocations and
+shell-mode scripts stay exact and `rule_asks` /
+`terminal_protected_path_requires_approval` are refused server-side
+(degrading to `allow_once` with `rule_saved=false`). Deny/ask precedence, the
+plan read-only gate, structured protected paths, and single-use tokens are
+unchanged. Both interactive surfaces offer the session folder and the project
+remember; the CLI's plain fallback mirrors the offered choices.
+
+Focused evidence first: Broker policy tests (a project allow grants the matched
+external path, another path still asks, folder patterns cover other structured
+tools), Host tests for the pattern derivations, and an end-to-end run proving
+`allow_always` on an external ask saves one project rule and a later session
+reads a different file in the same folder without a new approval. Then the full
+12-project Debug matrix passed **6,046 / 0 failed / 0 skipped**
+(`artifacts/approval-patterns-matrix.log`) and the Python suite passed
+**216, 1 skipped** (`artifacts/approval-patterns-python.log`). These are
+deterministic tests, not native UI or live-provider acceptance; the Release
+package from the previous run is unchanged and was not re-published.
 
 ## Selective CLI park-reason integration (2026-10-12)
 

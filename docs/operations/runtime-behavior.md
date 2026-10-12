@@ -380,7 +380,10 @@ Repository cleanliness never changes the decision.
 
 Standard structured-file access outside the trusted root may create a
 session-scoped canonical folder grant; it is not shared with a new
-session, lost on restart, and never authorizes terminal. Full Access uses an
+session and is lost on restart. Remembering the folder with `allow_always`
+saves a durable project-scope path pattern instead, which survives restarts
+and is reused within the same workspace identity. Neither authorizes
+terminal. Full Access uses an
 ephemeral structured root per external call. Terminal children in `standard`
 and `full_access` run as the current Windows user without OS filesystem or
 network confinement, including outside the workspace (ADR-0015). Standard

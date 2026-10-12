@@ -292,7 +292,11 @@ def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> No
     assert stale == [], stale
 
 
-def test_current_docs_do_not_claim_durable_external_grants_or_full_access_authority() -> None:
+def test_current_docs_do_not_claim_stale_grant_scope_or_full_access_authority() -> None:
+    # Durable project-scope rules are real (ADR 0018): allow_always may claim a
+    # remembered pattern. What stays banned is the older, wrong vocabulary —
+    # run/once grant durability from allow_once, the retired scope syntax, and
+    # full-access authority over malformed calls.
     banned = (
         "durable run/project rule",
         "durable run or project rule",

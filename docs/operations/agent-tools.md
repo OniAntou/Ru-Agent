@@ -30,7 +30,8 @@ not advertised Agent tools.
 >   snapshots, `FileRecoveryStore`, approval ordering
 >   `consume one-time approval → execute under N → receipt → N+1` with a
 >   reusable project rule persisted only for the explicit `allow_always`
->   decision; every other approval is `allow_once`,
+>   decision (a bounded pattern: a terminal command prefix, or an approved
+>   external folder as a path pattern); every other approval is `allow_once`,
 >   `allow_session_directory` (external folders only), or `deny`) and a thin
 >   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
 >   payload auto-fetch, `policy list`/`import --global FILE`/`remove`,
@@ -256,10 +257,15 @@ cleanup remain. API keys stay in credential storage. See
 [ADR 0017](../adr/0017-workspace-terminal-policy.md).
 
 An explicit absolute structured-file path outside the trusted root asks for
-`external_directory_required` under `standard`. Approval records a
-session-scoped `CanonicalDirectoryIdentity` for structured descendants; it is
-not shared with another session, lost on restart, and never authorizes
-terminal intent. Full Access instead selects an ephemeral nearest external
+`external_directory_required` under `standard`. Approving for the session
+records a session-scoped `CanonicalDirectoryIdentity` for structured
+descendants; approving with `allow_always` additionally saves the folder as a
+durable project-scope path pattern (`<folder>\**`) that covers the same
+structured tools and survives restarts and later sessions of the same
+workspace identity. The evaluator honors a matched allow rule for external
+targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
+the plan read-only gate still applies, and no grant ever authorizes terminal
+intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
 Structured protected paths (harness key/database files and runtime descriptors,
 plus user-added `RU_PROTECTED_PATHS` entries) remain denied in every preset,
@@ -435,7 +441,8 @@ The managed Git commit workflow retains temporary-index isolation, path rollback
 attribution, and refusal when the real index already contains staged user
 changes. A zero exit is `succeeded`; non-zero exit and start failure are
 `failed`; timeout is `timed_out`. Standard structured-file tools use the trusted
-root or a session-scoped canonical folder grant; Full Access uses an ephemeral
+root, a session-scoped canonical folder grant, or a remembered project folder
+pattern; Full Access uses an ephemeral
 per-call external root. Every structured mutation binds a Broker-captured
 preimage and fails with `workspace_changed` on mismatch without writing.
 Existing targets are held against competing writes and rename-over; hash
@@ -590,7 +597,10 @@ reason code:
   session-scoped directory grant in the Broker; the same session
   re-uses the grant on subsequent calls, and new sessions ask again.
 - `terminal_external_cwd_requires_approval` — Lệnh sẽ chạy ở thư mục ngoài
-  workspace. Approval authorizes this exact launch, not a folder grant.
+  workspace. Approval authorizes this launch; choosing always additionally
+  remembers the bounded command pattern (resolved executable plus at most two
+  leading non-flag argv tokens) with the exact launch directory — không phải
+  một folder grant cho terminal.
 - `rule_asks` — Rule của người dùng yêu cầu duyệt lời gọi này.
 - Older delete/unknown/network command-classification reason codes remain
   readable in stored activity; profile v2 no longer emits them as fallback asks.
@@ -601,7 +611,8 @@ reason code:
   hiện tại, đúng như `README.md` đã ghi — nên reason này **không** nâng quyền
   lên deny; nó chỉ để người duyệt thấy đúng câu hỏi thay vì một thư mục "ngoài"
   trung tính. Approval này **không thể nhớ vĩnh viễn**: GUI và CLI đều không hiện
-  lựa chọn `allow_always` cho reason này, nên một lần duyệt không biến thành
+  lựa chọn `allow_always` cho reason này, và Host cũng từ chối lưu rule (trả
+  `rule_saved=false`, degrade thành `allow_once`), nên một lần duyệt không biến thành
   rule dự án; đúng như mọi allow khác, intent chính xác chỉ được nhớ cho session
   (mất khi đóng session hoặc restart Host).
 - `terminal_timeout_requires_approval` — the standard-window gate: a terminal
@@ -710,15 +721,23 @@ the model can adjust; only a repeated identical deny terminates the current
 run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
 fields and expired or moved-workspace replays return `approval_stale`. The
-Broker reply carries the exact matcher preview plus one `authorization_token`
+Broker reply carries the matcher preview plus one `authorization_token`
 (60s); a durable project rule is produced only for the explicit
-`allow_always` decision. Any allow additionally remembers the exact intent in
-the Host's in-process session ledger, and the runtime loop materializes those
+`allow_always` decision, and it carries the bounded pattern that decision
+remembered: a terminal run call stores the resolved executable plus at most two
+leading non-flag argv tokens with the exact launch directory (flag-first and
+shell-mode calls stay exact), an external-directory ask stores the approved
+folder as a path pattern, and `rule_asks` / `terminal_protected_path_requires_approval`
+never become a reusable rule. Any allow additionally remembers the approved
+intent in
+the Host's in-process session ledger (the durable pattern when one was saved,
+the exact intent otherwise), and the runtime loop materializes those
 entries as run-scope allow rules when it builds the next policy snapshot for
-the session, so a later identical call — including later in the same run —
+the session, so a later matching call — including later in the same run —
 evaluates as allowed without another prompt. The ledger never widens the
 approval: protected-path denials still apply, the Broker still decides every
-call, external-directory approvals keep the session directory grant only, each
+call, external-directory approvals keep the session directory grant (plus the
+durable rule) and write no entry, each
 entry expires after 30 minutes under a per-session cap, and the memory dies
 with the session or a host restart. Ordering is
 `consume one-time approval under snapshot N

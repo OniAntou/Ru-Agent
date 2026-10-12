@@ -101,18 +101,24 @@ the GUI gate or CLI `--confirm-full-access`.
 
 Standard external structured access can create a session-scoped canonical
 folder grant for read/list/glob/grep/write/edit; terminal intent never consumes
-that grant. Full Access uses an ephemeral per-call external structured root and
-does not persist a reusable folder grant. Canonical/symlink/junction/hard-link
-checks and structured protected-path denial remain active.
+that grant. An external-directory approval can also be remembered with
+`allow_always`: the Host saves the approved folder as a durable project-scope
+path pattern (`<folder>\**`) that covers the same structured tools and survives
+restarts and later sessions of the same workspace, and the evaluator honors a
+matched allow rule for external targets (deny and ask rules keep precedence).
+`allow_always` on a terminal ask remembers a bounded command pattern — the
+resolved executable plus at most two leading non-flag argv tokens with the
+exact launch directory — while flag-first invocations and shell-mode scripts
+stay exact. `rule_asks` and `terminal_protected_path_requires_approval` never
+become a reusable rule. Full Access uses an ephemeral per-call external
+structured root and does not persist a reusable folder grant.
+Canonical/symlink/junction/hard-link checks and structured protected-path
+denial remain active.
 
-Full-access terminal runs as the current Windows user, can read or change data
-outside the workspace, and can open sockets. It is not an OS-enforced
-filesystem/network sandbox. `standard` terminal and managed-git children are
-confined in a per-session Windows AppContainer: workspace and session temp
-writes only, network off unless an authorized `network_intent` command,
-session directory grants as ACL grants, and a `sandbox: "off"` escape that asks
-`terminal_sandbox_escape_requires_approval` one time. A sandbox setup failure
-fails the call closed as `sandbox_setup_failed`. Hard timeout, output cap,
+Both terminal modes run as the current Windows user, can read or change data
+outside the workspace, and can open sockets. There is no OS-enforced
+filesystem/network sandbox (ADR 0015); Standard authorizes the canonical
+launch directory (ADR 0017). Hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup still apply. Web is automatic in all canonical
 profiles; `web_approval_required` remains available only to an explicit ask
 rule. `files.apply_patch` is not advertised or model-usable. The managed Git

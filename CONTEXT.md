@@ -191,7 +191,10 @@ are denied outright (no per-change asks), and external structured files ask like
 Standard. Profile version 2 defines `standard` by the canonical launch directory:
 workspace reads, Web, structured workspace mutations, and executable/shell launches
 from a workspace cwd are automatic. External structured files and terminal launch
-directories outside the workspace ask. There is no language, command-form,
+directories outside the workspace ask; an approved external folder can be
+remembered as a durable project-scope path pattern (or kept as a session-scoped
+Broker grant), and remembered ask decisions store a bounded reviewed pattern
+(see Approval Token). There is no language, command-form,
 argv-path, network-declaration or executable-install-location approval list.
 Both terminal modes run as the Windows user and can affect outside files and the
 network; workspace launch permission is not an OS confinement boundary.
@@ -291,26 +294,35 @@ auto-recovery never applies to approval decisions or reconciliation: those
 paths keep their exact fail-closed rules and no recovery note can soften them.
 A repeated `policy_denied` tool receipt is not an approval decision: it follows
 the Recovery Note bound above, and when that bound is spent the run terminates
-with the denial code. Any allow decision remembers the exact approved intent for
-the Agent session — the intent is materialized into the session's later policy
-snapshots, so a later call with the same canonical intent authorizes without a
+with the denial code. Any allow decision remembers the approved intent for
+the Agent session — materialized into the session's later policy
+snapshots, so a later matching call authorizes without a
 new prompt; the memory is in-process and dies with the session or a host
 restart, and a session allow still passes every protected-path denial and
 Broker evaluation. The explicit `allow_always` decision additionally remembers
-the exact intent as a durable project-scope allow rule; `allow_once` and session
-directory grants create no durable rule.
+a bounded pattern as a durable project-scope allow rule: a terminal run call
+stores its resolved executable plus at most two leading non-flag argv tokens
+with the exact launch directory, while flag-first invocations and shell-mode
+scripts stay exact; an external-directory ask stores the approved folder as a
+path pattern that covers its subtree and survives restarts and later sessions
+of the workspace. `rule_asks` and `terminal_protected_path_requires_approval`
+never become a durable rule (the Host refuses the save and degrades to
+`allow_once`); `allow_once` and session directory grants create no durable rule.
 _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Session Approval Memory**:
-The Host-side, in-process ledger that remembers the exact canonical intent of
-every allow decision for the lifetime of one Agent Session. The runtime loop
+The Host-side, in-process ledger that remembers the approved intent of
+every allow decision for the lifetime of one Agent Session — the bounded
+pattern when `allow_always` saved one, the exact canonical intent otherwise.
+The runtime loop
 materializes its entries as run-scope allow rules on top of each run's durable
-`PolicySnapshot`, so a later call with the same intent evaluates as allowed
+`PolicySnapshot`, so a later matching call evaluates as allowed
 without a new prompt; protected-path denials and Broker evaluation still decide
 every call. It creates no durable rule, never outlives its session or a host
 restart, is bounded by a 30-minute entry lifetime and a per-session cap, and is
 cleared when the session is deleted. External-directory approvals keep the
-Broker session directory grant only and write no entry.
+Broker session directory grant (plus the durable project rule when
+`allow_always` saved one) and write no entry.
 _Avoid_: global approval cache, persisted permission
 
 **Run Provider Selection**:

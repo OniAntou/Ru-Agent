@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(policy)**: Remember bounded approval patterns: `allow_always` on a terminal ask now stores the resolved executable plus at most two leading non-flag argv tokens with the exact launch directory (`git status ...` covers later `git status --short`), while flag-first invocations and `mode=shell` scripts stay exact. External-directory asks can also be remembered with `allow_always`: the Host saves the approved folder as a durable project-scope path pattern (`<folder>\**`) that the evaluator honors for structured targets (`external_directory_rule_allow`), so the grant survives restarts and later sessions of the same workspace while deny/ask precedence, the plan read-only gate, protected paths, and single-use tokens are unchanged. `rule_asks` and `terminal_protected_path_requires_approval` never become a reusable rule; the Host now refuses the save itself (degrading to `allow_once` with `rule_saved=false`) instead of relying on clients to hide the choice. See ADR 0018.
+
+- **feat(cli,gui)**: External-directory asks expose both folder decisions on every interactive surface: the GUI shows the session folder button next to a remember-for-project button (which flips its label to "Remember folder for project"), and the CLI TUI lists `3 · folder` and `4 · always` (the folder choice was previously unreachable because the interactive caller never offered it). The plain fallback prompt mirrors the offered choices instead of hardcoding once/deny.
+
+- **fix(docs)**: Correct stale `backend-dotnet/README.md` guidance that still described an AppContainer terminal sandbox and `sandbox: "off"` escape; both terminal modes run as the current Windows user without OS confinement (ADR 0015/0017).
+
 - **fix(settings)**: Report saved Models.dev reasoning effort correctly in settings/TUI startup metadata using the local provider cache. Missing selection identity is reported as unknown (`null`), and reading settings never fetches a catalog or changes a run's pinned selection.
 
 - **fix(benchmark)**: Keep event/usage completeness unknown for cancelled timeout or intervention trials whose last observed cursor belonged to a nonterminal run, instead of claiming complete evidence from that older cursor.

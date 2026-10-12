@@ -53,6 +53,7 @@ in the checkout indefinitely.
 - [In-process execution (terminal sandbox portion superseded)](adr/0014-in-process-execution-and-terminal-sandbox.md)
 - [Retire terminal OS sandbox](adr/0015-retire-terminal-os-sandbox.md)
 - [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
+- [Approval patterns and durable folder grants](adr/0018-approval-patterns-and-durable-folder-grants.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 
@@ -70,8 +71,14 @@ include `external_directory_required`, `terminal_external_cwd_requires_approval`
 `terminal_timeout_requires_approval`, `rule_asks`, and
 `terminal_protected_path_requires_approval` (never reusable as `allow_always`).
 Legacy command-classification reasons are retained for recorded activity.
-Folder grants remain session-scoped, while workspace trust follows the canonical
-identity. Terminal children in both `standard` and `full_access` run as the
+`allow_always` remembers a bounded pattern as a durable project rule: a
+terminal command prefix (resolved executable plus at most two leading non-flag
+argv tokens, with the exact launch directory), or an approved external folder
+as a path pattern covering its subtree ([ADR 0018](adr/0018-approval-patterns-and-durable-folder-grants.md)).
+Flag-first invocations and shell-mode scripts stay exact, and `rule_asks` /
+`terminal_protected_path_requires_approval` never become a reusable rule.
+A folder grant can stay session-scoped (the Broker grant) or be remembered for
+the project; workspace trust follows the canonical identity. Terminal children in both `standard` and `full_access` run as the
 current Windows user without OS filesystem or network confinement. Standard authorizes workspace launch directories under
 [ADR 0017](adr/0017-workspace-terminal-policy.md); structured protections remain. Hard timeout,
 output cap, cancellation, process-tree cleanup, credential storage and

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(settings)**: Report saved Models.dev reasoning effort correctly in settings/TUI startup metadata using the local provider cache. Missing selection identity is reported as unknown (`null`), and reading settings never fetches a catalog or changes a run's pinned selection.
+
+- **fix(benchmark)**: Keep event/usage completeness unknown for cancelled timeout or intervention trials whose last observed cursor belonged to a nonterminal run, instead of claiming complete evidence from that older cursor.
+
+- **refactor(agent)**: Guide focused coding work toward the named files and relevant tests, reserve todo bookkeeping for substantial work, and give explicit shell/direct-launch JSON examples for the Windows terminal tool. Execution policy, tool schemas and provider selection are unchanged.
+
 - **fix(cli)**: Show the actual reason a run paused, with wait guidance for transient provider failures. Recover the exact committed reason through bounded finite SSE replay when the state frame ends the live subscription, preserve resumability without cancelling the server run, and reset reason deduplication across turns/runs. Session adoption no longer labels `waiting_user` as a cause.
 
 - **style(gui)**: Reduce default Dark brightness to a balanced charcoal canvas (`#1A1A1A`), with matching sidebar, surface and interaction tones. Light, Meteor and Starry Night palettes are unchanged.

@@ -267,6 +267,8 @@ def run_ru(
 
     if bridge is not None and subscription_id:
         _consume_notifications(bridge, subscription_id, state)
+    # A cursor sampled before cancellation is not the run's terminal cursor.
+    completeness = _sequence_complete(state) if run_status in TERMINAL_STATUSES else None
     result = {
         "status": status,
         "run_status": run_status,
@@ -283,8 +285,8 @@ def run_ru(
         "events_truncated": state["events_truncated"],
         "last_sequence_seen": state["last_sequence_seen"],
         "expected_sequence": state["expected_sequence"],
-        "events_complete": _sequence_complete(state),
-        "usage_complete": _sequence_complete(state),
+        "events_complete": completeness,
+        "usage_complete": completeness,
         "token_usage": state["token_usage"],
     }
     if cancel_error is not None:

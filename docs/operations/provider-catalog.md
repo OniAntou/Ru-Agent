@@ -169,6 +169,12 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   a parameter instead of deriving it from settings. Deriving it threw
   `Unknown models.dev provider` for every models.dev provider, so no effort could
   be stored for any of them.
+- `GET /settings` projects that saved effort using the local Models.dev provider
+  cache, including a stale cache, without fetching the network catalog. If the
+  selection's base URL cannot be resolved locally, `reasoning_effort` is `null`
+  (unknown), rather than an invented `default`. The model catalog's
+  `selected_effort` remains the selection-bound value used by the picker; run
+  pins remain immutable.
 - The desktop picker never erases a stored effort because a catalog has not loaded
   yet. `ProviderReasoningOptions.Clamp` only falls back to `default` once the
   catalog for the selected backend has actually arrived and is not stale.
@@ -177,7 +183,7 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   children behind polling and a fan-out fetch, so it is empty at startup; worse,
   the save identity was read from it, and an empty lookup fell back to sending
   the backend string, which the endpoint rejects because the identity must be
-  the credential hash. The single controller is pointed at the selected backend
+  the catalog snapshot identity. The single controller is pointed at the selected backend
   and refreshed on load and on every model switch, so it is preferred, the
   grouped entry is the fallback, and the view re-syncs on the single
   controller's `StateChanged`.

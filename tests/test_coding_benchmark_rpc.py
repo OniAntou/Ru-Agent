@@ -189,12 +189,18 @@ def test_intervention_is_cancelled_over_rpc_without_approval_or_continue(tmp_pat
         tmp_path / "trial",
         trust_workspace=True,
         bridge_factory=make_bridge_factory(
-            statuses=[{"run_id": RUN_ID, "status": run_status}], seen=bridges
+            statuses=[{"run_id": RUN_ID, "status": run_status, "last_sequence": 7}],
+            notifications=[{"method": "run.event", "params": {
+                "subscription_id": "sub-1", "sequence": 7, "event_type": "run.progress",
+            }}], seen=bridges
         ),
     )
 
     assert result["status"] == "intervention_required"
     assert result["run_status"] == run_status
+    assert result["last_sequence_seen"] == result["expected_sequence"] == 7
+    assert result["events_complete"] is None
+    assert result["usage_complete"] is None
     rpc = bridges[0]
     methods = [method for method, _ in rpc.calls]
     assert methods.index("run.cancel") < methods.index("run.detach")
@@ -221,11 +227,17 @@ def test_timeout_cancels_run_before_bridge_close(tmp_path, monkeypatch, run_stat
         trust_workspace=True,
         timeout_seconds=2,
         bridge_factory=make_bridge_factory(
-            statuses=[{"run_id": RUN_ID, "status": run_status}] * 4, seen=bridges
+            statuses=[{"run_id": RUN_ID, "status": run_status, "last_sequence": 7}] * 4,
+            notifications=[{"method": "run.event", "params": {
+                "subscription_id": "sub-1", "sequence": 7, "event_type": "run.progress",
+            }}], seen=bridges
         ),
     )
 
     assert result["status"] == "timed_out"
+    assert result["last_sequence_seen"] == result["expected_sequence"] == 7
+    assert result["events_complete"] is None
+    assert result["usage_complete"] is None
     rpc = bridges[0]
     methods = [method for method, _ in rpc.calls]
     assert methods.index("run.cancel") < methods.index("run.detach")

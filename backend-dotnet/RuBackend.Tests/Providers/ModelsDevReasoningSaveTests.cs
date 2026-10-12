@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
+using RuBackend.Providers;
 using RuBackend.Tests;
 using Xunit;
 
@@ -67,6 +68,7 @@ public sealed class ModelsDevReasoningSaveTests : IDisposable
 
         Assert.Equal("success", body["status"]?.GetValue<string>());
         Assert.Equal("high", JsonNode.Parse(await client.GetStringAsync("/models"))?["selected_effort"]?.GetValue<string>());
+        Assert.Equal("high", JsonNode.Parse(await client.GetStringAsync("/settings"))?["reasoning_effort"]?.GetValue<string>());
     }
 
     [Fact]
@@ -96,6 +98,45 @@ public sealed class ModelsDevReasoningSaveTests : IDisposable
 
         Assert.Equal("error", JsonNode.Parse(await saved.Content.ReadAsStringAsync())?["status"]?.GetValue<string>());
         Assert.Equal("default", JsonNode.Parse(await client.GetStringAsync("/models"))?["selected_effort"]?.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Settings_reads_cached_effort_without_network_and_leaves_missing_identity_unknown(int cacheState)
+    {
+        if (cacheState > 0) await WriteModelsDevCatalogAsync();
+        if (cacheState == 2)
+        {
+            var path = Path.Combine(_root, "models-dev.json");
+            await File.WriteAllTextAsync(path, (await File.ReadAllTextAsync(path)).Replace("2099-01-01", "2000-01-01", StringComparison.Ordinal));
+        }
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: DataPaths.Resolve(_root, _root, _root, _root, Path.Combine(_root, "logs")),
+            credentialStore: new OpenRouterCredential());
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(
+            services => services.AddHttpClient("ProviderCatalog")
+                .ConfigurePrimaryHttpMessageHandler(() => new NoNetworkHandler())));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+        var store = configured.Services.GetRequiredService<ISettingsStore>();
+        var settings = (await store.ReadAsync(default)) with { Backend = Backend, Model = "vendor/model-a" };
+        var selection = ProviderSelection.From(settings,
+            [new ModelsDevProvider("openrouter", "OpenRouter", OpenRouterApi, ["vendor/model-a"])]);
+        await store.SaveAsync(ProviderReasoningPreferences.Save(settings, "high", selection), default);
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/settings"))!;
+
+        Assert.Equal("ok", body["status"]?.GetValue<string>());
+        Assert.Equal(cacheState > 0 ? "high" : null, body["reasoning_effort"]?.GetValue<string>());
+        Assert.False(body.AsObject().ContainsKey("reasoning_preferences"));
+    }
+
+    private sealed class NoNetworkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Settings projection must not fetch a catalog.");
     }
 
     /// <summary>

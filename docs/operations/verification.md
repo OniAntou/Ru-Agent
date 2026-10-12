@@ -916,6 +916,10 @@ real-provider benchmark, so the latest measured resolution remains 0/3 below.
 
 ## Post-terminal-fix SWE rerun (2026-10-11)
 
+For the subsequent ten-task Standard baseline and its matched follow-up probes,
+see [single-agent readiness (2026-10-13)](single-agent-readiness-2026-10-13.md).
+The runtime, preset and difficulty mix differ from this older three-task run.
+
 The three custom SWE tasks were rerun on committed `96f658c2`, using the
 rebuilt Release Host/CLI, Kilo `stepfun/step-5-preview-free`, `chat_completions`,
 confirmed `full_access`, one fresh workspace/session per task and one attempt

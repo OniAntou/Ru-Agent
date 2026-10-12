@@ -119,6 +119,23 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         return ProviderSelection.From(settings);
     }
 
+    /// <summary>Projects the saved choice without fetching a provider catalog.</summary>
+    public string? ReadSavedReasoningEffort(SettingsSnapshot settings)
+    {
+        if (ProviderSelection.NormalizeModelsDevBackend(settings.Backend) is not { } generic)
+            return ProviderReasoningPreferences.Read(settings);
+        if (!TryReadModelsDevCache(out var providers, out _)) return null;
+        try
+        {
+            var selection = ProviderSelection.From(settings with { Backend = generic }, providers);
+            return ProviderReasoningPreferences.Read(settings, selection);
+        }
+        catch (Exception error) when (error is ArgumentException or UnknownProviderAliasException)
+        {
+            return null;
+        }
+    }
+
     private async Task<ProviderSelection> ResolveGenericAsync(SettingsSnapshot settings, string genericBackend, CancellationToken ct)
     {
         var catalog = await GetModelsDevAsync(ct).ConfigureAwait(false);

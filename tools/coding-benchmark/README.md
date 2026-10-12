@@ -133,6 +133,9 @@ a coincidentally correct final workspace.
 with the terminal run's authoritative cursor: true means it caught up, false
 means partial evidence, and null means the cursor was unavailable. Available
 token totals must not be presented as exact final usage when incomplete.
+Timeouts and intervention outcomes leave completeness unknown when only a
+pre-cancellation, nonterminal cursor was observed; catching up to that older
+cursor does not establish complete terminal evidence.
 
 The dated [Step 5 Preview Free pilot](../../docs/operations/verification.md#step-5-preview-free-coding-pilot-2026-10-09)
 records actual runtime fingerprints and separates candidate correctness,
@@ -150,6 +153,11 @@ Step 5 model, preset and 300-second deadlines. All three timed out, resolving
 not establish a causal effect of the fixes.
 
 ## Environment and comparison limits
+
+The [single-agent readiness diagnostic](../../docs/operations/single-agent-readiness-2026-10-13.md)
+records a ten-task Standard baseline, separates candidate correctness from
+unattended completion, and documents repairs to effort metadata and cancelled
+trial completeness.
 
 Terminal tasks follow Harbor's `instruction.md`, `task.toml`, `environment/`,
 `tests/test.sh`, `solution/solve.sh` layout. Docker build contexts contain only

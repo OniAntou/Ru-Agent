@@ -36,6 +36,7 @@ public static class BusinessEndpoints
     private static async Task<IResult> GetSettingsAsync(
         ISettingsStore settings,
         ICredentialStore credentials,
+        ProviderCatalogService catalog,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -58,7 +59,8 @@ public static class BusinessEndpoints
                 snapshot,
                 hasCustom,
                 hasOpenAi,
-                hasAnthropic));
+                hasAnthropic,
+                catalog.ReadSavedReasoningEffort(snapshot)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -442,11 +444,12 @@ public static class BusinessEndpoints
         SettingsSnapshot value,
         bool hasCustom,
         bool hasOpenAi,
-        bool hasAnthropic)
+        bool hasAnthropic,
+        string? reasoningEffort)
     {
         var result = value.Raw.DeepClone().AsObject();
         result.Remove("reasoning_preferences");
-        result["reasoning_effort"] = RuBackend.Providers.ProviderReasoningPreferences.Read(value);
+        result["reasoning_effort"] = reasoningEffort;
         foreach (var key in new[]
                  {
                      "api_key",

@@ -139,11 +139,12 @@ public sealed class PolicySnapshotEvaluator
 
         // The ordered rules are resolved before the external-directory gate so a
         // user-authored deny wins on every target, including one outside the
-        // workspace. Only the deny verdict is taken from them here: an allow or
-        // ask rule still cannot grant the external access the profile asks for.
-        // Precedence is deny, then ask, then allow regardless of creation
-        // order, matching Claude-style rule semantics: a remembered allow can
-        // never override an explicit ask or deny.
+        // workspace. Precedence is deny, then ask, then allow regardless of
+        // creation order, matching Claude-style rule semantics: a remembered
+        // allow can never override an explicit ask or deny. An allow still
+        // cannot widen pre-rule invariants (plan gate, protected paths,
+        // timeouts); outside the workspace it is honored as a bounded
+        // folder grant whose matcher must carry the path pattern.
         string? matchedDecision = null;
         string? matchedRuleId = null;
         foreach (var rule in snapshot.OrderedRules)
@@ -188,6 +189,17 @@ public sealed class PolicySnapshotEvaluator
 
         if (structuredTarget is { IsOutsideWorkspace: true })
         {
+            // A matched allow rule grants external structured access: this is how
+            // a durable project rule saved by allow_always (or a remembered
+            // session pattern) turns an approved folder into standing access
+            // bounded by the rule's own matcher. Deny rules and ask rules were
+            // resolved above, the plan read-only gate still applied, and the
+            // approval flow is still the only way such a rule can exist.
+            if (string.Equals(matchedDecision, "allow", StringComparison.Ordinal))
+            {
+                return new PolicyEvaluation("allow", "external_directory_rule_allow", matchedRuleId);
+            }
+
             var external = ProfileDecision(
                 snapshot,
                 AgentPolicySubject.ExternalStructuredFile,

@@ -677,10 +677,13 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Explicit_allow_rule_does_not_bypass_the_external_directory_ask()
+    public void Allow_rule_grants_the_external_path_it_matches()
     {
-        // The counterweight to the two tests above: hoisting the rule loop must not
-        // let an allow rule grant external access the profile would have asked for.
+        // A durable project rule (saved by allow_always on an external-directory
+        // ask) or a user-authored allow is the folder grant: an allow rule that
+        // matches the external path permits it. Deny rules still win (the tests
+        // around this one), and the profile ask only applies when nothing
+        // matched.
         var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.Rule(
                 "r-allow-reads",
@@ -692,8 +695,58 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
 
+        Assert.Equal("allow", evaluation.Decision);
+        Assert.Equal("external_directory_rule_allow", evaluation.ReasonCode);
+        Assert.Equal("r-allow-reads", evaluation.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Allow_rule_for_another_path_does_not_grant_the_external_path()
+    {
+        // The grant is bounded by the rule's own path pattern: an allow saved
+        // for one folder never reaches a different one.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-allow-other",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\OtherFolder\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\ClientSecrets\layout.docx" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
         Assert.Equal("ask", evaluation.Decision);
         Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Folder_allow_rule_without_a_tool_binding_grants_any_structured_tool()
+    {
+        // allow_always on an external-directory ask saves the folder as a
+        // path-only pattern (the same coverage the session folder grant has),
+        // so a later write inside the approved folder is allowed too.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-allow-folder",
+                "allow",
+                PolicyEvalSnapshots.Matcher(pathPattern: @"C:\SharedWork\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create(
+                "write",
+                "1.0.0",
+                new JsonObject
+                {
+                    ["op"] = "write",
+                    ["path"] = @"C:\SharedWork\notes.txt",
+                    ["content"] = "x",
+                }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", evaluation.Decision);
+        Assert.Equal("external_directory_rule_allow", evaluation.ReasonCode);
     }
 
     [Fact]

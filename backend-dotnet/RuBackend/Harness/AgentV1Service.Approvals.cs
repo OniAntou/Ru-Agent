@@ -37,6 +37,11 @@ public sealed partial class AgentV1Service
     private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
     private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
 
+    // The remembered terminal pattern keeps at most this many leading non-flag
+    // argv tokens: the subcommand shape ("git status", "npm run build"), never
+    // the full argument list the call happened to carry.
+    private const int MaxRememberedArgvTokens = 2;
+
     internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
 
     private static void PruneHostApprovalLedger(DateTimeOffset now)
@@ -282,19 +287,23 @@ public sealed partial class AgentV1Service
                 "Approval requires the execution authority, which is not configured.");
         }
 
-        // allow_always remembers the exact intent as a project-scope allow
-        // rule so the next identical call authorizes without asking. A rule
-        // save never widens the current authorization: the Broker token is
-        // still single-use and bound to this intent, protected paths still
-        // deny before rules, and a save failure degrades to allow_once.
-        // External-directory approvals keep the session grant only: an allow
-        // rule cannot grant outside access by evaluator design.
+        // allow_always remembers a bounded pattern as a project-scope allow
+        // rule so a later matching call authorizes without asking. The pattern
+        // is derived from the reviewed intent, never widened past it: a rule
+        // save never widens the current authorization (the Broker token is
+        // still single-use and bound to this exact intent), protected paths
+        // still deny before rules, and a save failure or a one-time-only
+        // reason degrades to allow_once.
+        var durableMatcher = BuildAllowAlwaysMatcher(
+            approvalBinding,
+            pendingApprovalEvent?.SafeCode,
+            externalDirectoryRequested);
         string? savedRuleId = null;
         var ruleSaved = false;
-        if (isAllowAlways && !externalDirectoryRequested)
+        if (isAllowAlways && durableMatcher is not null)
         {
             (ruleSaved, savedRuleId) = await TrySaveAllowAlwaysRuleAsync(
-                run, approvalBinding, cancellationToken).ConfigureAwait(false);
+                run, durableMatcher, cancellationToken).ConfigureAwait(false);
         }
 
         // Pi-style: an allow is a decision about this call. The durable
@@ -328,18 +337,21 @@ public sealed partial class AgentV1Service
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 
-        // One allow is remembered for the session: the exact approved intent
-        // is materialized into later policy snapshots for this Agent session,
-        // so a later call with the same intent evaluates as allowed without
-        // another prompt. The decision is durable at this point, and the
-        // memory still only ever allows the exact intent through the Broker.
-        // External-directory approvals keep the Broker session grant only.
-        // Memory is in-process; restarting the Host or deleting the session clears it.
+        // One allow is remembered for the session: the approved pattern (when
+        // allow_always saved one) or the exact intent is materialized into
+        // later policy snapshots for this Agent session, so a later matching
+        // call evaluates as allowed without another prompt. The decision is
+        // durable at this point, and the memory still only ever allows what
+        // the Broker can match. External-directory approvals keep the Broker
+        // folder grant: the durable rule already covers later runs, so no
+        // session entry is added for them.
         if (!externalDirectoryRequested)
         {
             SessionApprovalLedger.Remember(
                 run.SessionId.Value,
-                BuildApprovalMatcher(approvalBinding),
+                isAllowAlways && ruleSaved && durableMatcher is not null
+                    ? durableMatcher
+                    : BuildApprovalMatcher(approvalBinding),
                 _time.UtcNow);
         }
 
@@ -377,18 +389,23 @@ public sealed partial class AgentV1Service
         }
 
         // The Broker grant or one-time token authorizes this call; the Host
-        // additionally remembers the exact intent for the session (and, for
-        // allow_always, as the durable project record above).
+        // additionally remembers the approved pattern for the session (and, for
+        // allow_always, as the durable project record above). The preview shows
+        // the matcher the rule actually carries, so a client can tell the user
+        // what "always" remembered.
+        var previewMatcher = ruleSaved && durableMatcher is not null
+            ? durableMatcher
+            : BuildApprovalMatcher(approvalBinding);
         var matcherPreview = new
         {
-            tool_id = approvalBinding.ToolId,
-            tool_version = approvalBinding.ToolVersion,
-            canonical_path = approvalBinding.CanonicalPath,
-            resolved_executable = approvalBinding.ResolvedExecutable,
-            argv_pattern = approvalBinding.Argv,
-            cwd_pattern = approvalBinding.Cwd,
-            operation_class = approvalBinding.OperationClass,
-            network_intent = approvalBinding.NetworkIntent,
+            tool_id = previewMatcher.ToolId,
+            tool_version = previewMatcher.ToolVersion,
+            canonical_path = previewMatcher.CanonicalPathPattern,
+            resolved_executable = previewMatcher.ResolvedExecutable,
+            argv_pattern = previewMatcher.ArgvPattern,
+            cwd_pattern = previewMatcher.CwdPattern,
+            operation_class = previewMatcher.OperationClass,
+            network_intent = previewMatcher.NetworkIntent,
             scope = ruleSaved ? "project" : "once"
         };
 
@@ -411,9 +428,10 @@ public sealed partial class AgentV1Service
 
     private async Task<(bool Saved, string? RuleId)> TrySaveAllowAlwaysRuleAsync(
         AgentRun run,
-        ToolApprovalBinding approvalBinding,
+        PolicyMatcher matcher,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(matcher);
         try
         {
             var wsId = new WorkspaceId(run.WorkspaceId.Value);
@@ -427,7 +445,6 @@ public sealed partial class AgentV1Service
             var existing = await store.ListProjectAsync(wsId, cancellationToken).ConfigureAwait(false);
             var creationOrder = existing.Count == 0 ? 0 : existing.Max(r => r.CreationOrder) + 1;
 
-            var matcher = BuildApprovalMatcher(approvalBinding);
             var rule = new PolicyRule(
                 _ids.NewPolicyRuleId(),
                 PolicyRuleScope.Project,
@@ -445,6 +462,149 @@ public sealed partial class AgentV1Service
             or IOException)
         {
             return (false, null);
+        }
+    }
+
+    /// <summary>
+    /// Builds the bounded pattern an allow_always decision remembers as a
+    /// project-scope allow rule, or null when the ask must stay one-time.
+    /// Terminal run calls remember the resolved executable plus at most two
+    /// leading non-flag argv tokens in the exact launch directory (the
+    /// Claude-style command prefix: "git status", "npm run build"); shell-mode
+    /// scripts and flag-first invocations stay exact because a prefix of them
+    /// would remember more than the user reviewed. An external-directory ask
+    /// remembers the approved folder as a path pattern covering its subtree.
+    /// Protected-path and explicit-ask reasons never become a reusable rule:
+    /// remembering the first grants standing access to a credential directory,
+    /// and an explicit ask outranks any allow rule anyway.
+    /// </summary>
+    internal static PolicyMatcher? BuildAllowAlwaysMatcher(
+        ToolApprovalBinding approvalBinding,
+        string? askSafeCode,
+        bool externalDirectoryRequested)
+    {
+        ArgumentNullException.ThrowIfNull(approvalBinding);
+        if (!externalDirectoryRequested
+            && askSafeCode is "terminal_protected_path_requires_approval" or "rule_asks")
+        {
+            return null;
+        }
+
+        if (externalDirectoryRequested)
+        {
+            var pattern = BuildExternalDirectoryPattern(approvalBinding.CanonicalPath);
+            return pattern is null
+                ? null
+                : new PolicyMatcher(CanonicalPathPattern: pattern);
+        }
+
+        return new PolicyMatcher(
+            approvalBinding.ToolId,
+            approvalBinding.ToolVersion,
+            approvalBinding.CanonicalPath,
+            approvalBinding.ResolvedExecutable,
+            GeneralizeTerminalArgv(approvalBinding),
+            approvalBinding.Cwd,
+            approvalBinding.OperationClass,
+            approvalBinding.NetworkIntent);
+    }
+
+    /// <summary>
+    /// A bounded command prefix for a remembered terminal run: keep at most the
+    /// first two argv tokens that do not start with '-', which is the
+    /// subcommand shape. Nothing usable to keep returns the exact argv.
+    /// </summary>
+    private static IReadOnlyList<string> GeneralizeTerminalArgv(ToolApprovalBinding approvalBinding)
+    {
+        var argv = approvalBinding.Argv;
+        if (!string.Equals(approvalBinding.ToolId, "bash", StringComparison.Ordinal)
+            || IsShellModeInvocation(approvalBinding.ResolvedExecutable, argv))
+        {
+            return argv;
+        }
+
+        var take = 0;
+        while (take < argv.Count
+            && take < MaxRememberedArgvTokens
+            && !argv[take].StartsWith('-'))
+        {
+            take++;
+        }
+
+        return take == 0 ? argv : argv.Take(take).ToArray();
+    }
+
+    /// <summary>
+    /// Shell mode is persisted as a known shell wrapper around one script
+    /// string. Recognizing the shape keeps the remembered rule exact: a prefix
+    /// of arbitrary shell text is not a safe pattern.
+    /// </summary>
+    private static bool IsShellModeInvocation(string? executable, IReadOnlyList<string> argv)
+    {
+        if (executable is null || argv.Count < 4)
+        {
+            return false;
+        }
+
+        var name = Path.GetFileName(executable);
+        var isShell = string.Equals(name, "powershell", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "powershell.exe", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "pwsh", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "pwsh.exe", StringComparison.OrdinalIgnoreCase);
+        return isShell
+            && string.Equals(argv[0], "-NoProfile", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(argv[1], "-NonInteractive", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(argv[2], "-Command", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The approved external path as a bounded directory pattern: the nearest
+    /// existing ancestor directory (a file target grants its parent), resolved
+    /// to its canonical final path so the pattern matches the canonical
+    /// candidate the Broker evaluates, plus a subtree suffix. Null when nothing
+    /// usable or representable exists: the save then degrades to allow_once.
+    /// </summary>
+    internal static string? BuildExternalDirectoryPattern(string? approvedPath)
+    {
+        if (string.IsNullOrWhiteSpace(approvedPath) || approvedPath.Length > ApprovalPathMaxLength)
+        {
+            return null;
+        }
+
+        try
+        {
+            var full = Path.GetFullPath(approvedPath);
+            var directory = Directory.Exists(full) ? full : Path.GetDirectoryName(full);
+            while (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                directory = Path.GetDirectoryName(directory);
+            }
+
+            if (string.IsNullOrEmpty(directory))
+            {
+                return null;
+            }
+
+            // Same canonicalization the terminal cwd binding uses, so the
+            // pattern matches the final-path candidate and cannot be
+            // retargeted by an intermediate link.
+            var canonical = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(directory);
+            // 4096 is the matcher's path-pattern cap; the "\**" suffix must fit.
+            if (string.IsNullOrWhiteSpace(canonical) || canonical.Length + 3 > 4096)
+            {
+                return null;
+            }
+
+            canonical = canonical.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return canonical.Length == 0 ? null : canonical + "\\**";
+        }
+        catch (Exception error) when (error is ArgumentException
+            or NotSupportedException
+            or PathTooLongException
+            or IOException
+            or System.Security.SecurityException)
+        {
+            return null;
         }
     }
 

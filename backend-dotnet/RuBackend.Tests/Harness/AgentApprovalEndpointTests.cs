@@ -897,6 +897,89 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
+    [Fact]
+    public async Task External_allow_always_saves_the_folder_pattern_and_a_new_session_skips_approval()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        var dataRoot = Path.GetDirectoryName(wsPath)!;
+        var externalPath = Path.Combine(dataRoot, "external-always");
+        Directory.CreateDirectory(externalPath);
+        var firstFile = Path.Combine(externalPath, "note.txt");
+        var secondFile = Path.Combine(externalPath, "later-note.txt");
+        File.WriteAllText(firstFile, "external content");
+        File.WriteAllText(secondFile, "later content");
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("files.read", JsonSerializer.Serialize(new { path = firstFile })),
+                FinalStep("done"),
+                ToolCall("files.read", JsonSerializer.Serialize(new { path = secondFile })),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external always");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var workspaceId = created.GetProperty("workspace_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_always" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            var approvalJson = await approvalResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("authorized", approvalJson.GetProperty("status").GetString());
+            Assert.True(approvalJson.GetProperty("rule_saved").GetBoolean());
+            Assert.Equal("project", approvalJson.GetProperty("matcher_preview").GetProperty("scope").GetString());
+            var pattern = approvalJson.GetProperty("matcher_preview").GetProperty("canonical_path").GetString();
+            Assert.NotNull(pattern);
+            Assert.EndsWith("\\**", pattern, StringComparison.Ordinal);
+
+            // The folder grant is durable: one project rule for the workspace.
+            using (var policies = await client.GetAsync($"/agent/v1/policies?scope=project&workspace_id={Uri.EscapeDataString(workspaceId)}"))
+            {
+                policies.EnsureSuccessStatusCode();
+                Assert.Equal(1, (await policies.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("items").GetArrayLength());
+            }
+
+            // The grant lives in the durable rule, not the in-process ledger.
+            Assert.Empty(SessionApprovalLedger.Entries(sessionId, DateTimeOffset.UtcNow));
+
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "external allow_always run did not finish");
+
+            // A different file in the same folder must not ask again, even in a
+            // new session: the remembered folder survives the session boundary.
+            var otherSessionId = await CreateSessionAsync(client);
+            var created2 = await CreateRunAndTrustAsync(client, otherSessionId, wsPath, "external always");
+            var runId2 = created2.GetProperty("run_id").GetString()!;
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId2,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "second run did not finish");
+            var events2 = await ReadEventsAsync(client, runId2);
+            Assert.DoesNotContain(events2, e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested");
+            Assert.Equal(1, events2.Count(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "tool.execution_completed"));
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
     private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(string wsPath, RuBackend.Business.DataPaths dataPaths)
     {
         var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));

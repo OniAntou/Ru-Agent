@@ -39,9 +39,17 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         {
             app.Invoke(() =>
             {
-                if (_projectedRow) transcript.ReplaceTail(clean, Classify(clean ?? string.Empty));
+                var style = Classify(clean ?? string.Empty);
+                if (style == TranscriptStyle.Tool)
+                {
+                    // A settled tool row replaces the live activity row, including the
+                    // single-line path that never reaches Emit.
+                    transcript.ClearLive();
+                }
+
+                if (_projectedRow) transcript.ReplaceTail(clean, style);
                 else if (clean is { Length: > 0 } || (complete && clean is not null))
-                    transcript.Append(clean!, Classify(clean!));
+                    transcript.Append(clean!, style);
                 _projectedRow = !complete && clean is { Length: > 0 };
             });
         }
@@ -186,7 +194,13 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
     {
         try
         {
-            app.Invoke(() => transcript.AppendCollapsed(summary, hidden, style));
+            app.Invoke(() =>
+            {
+                // A collapsed tool/diff block is the settle of a running activity: the
+                // live row must leave before the permanent rows land in its place.
+                transcript.ClearLive();
+                transcript.AppendCollapsed(summary, hidden, style);
+            });
         }
         catch (NotInitializedException)
         {
@@ -204,6 +218,13 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         {
             app.Invoke(() =>
             {
+                if (style == TranscriptStyle.Tool)
+                {
+                    // A settled tool row replaces the live activity row: the block was
+                    // the running form of exactly this row.
+                    transcript.ClearLive();
+                }
+
                 if (append)
                 {
                     transcript.AppendChunk(clean);

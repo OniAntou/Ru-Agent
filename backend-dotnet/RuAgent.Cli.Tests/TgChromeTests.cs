@@ -12,26 +12,38 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgChromeTests
 {
     [Fact]
-    public void HeaderActivityUpdatesStayAboveTheFeedAndClearThePreviousLabel()
+    public void LiveActivityRowSitsAtTheTailAndClearsWhenSettled()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         window.Hints.SetIdle("D:\\LLM");
-        window.Header.SetActivity("Reading a-long-file-name.cs");
         window.Transcript.Append("answer content", TranscriptStyle.Prose);
+        window.Transcript.UpdateLive(new TuiActivityPresentation(
+            "◐", "Reading", "a-long-file-name.cs", "1.2s", TuiToken.Brand));
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            Assert.Contains("Reading a-long-file-name.cs", TgSnapshot.Capture(app)[2]);
-            window.Header.SetActivity("idle");
+            var rows = TgSnapshot.Capture(app);
+            var liveRow = rows[window.Transcript.Frame.Y + 1];
+            Assert.Contains("Reading", liveRow);
+            Assert.Contains("a-long-file-name.cs", liveRow);
+            Assert.Contains("1.2s", liveRow);
+            // The live row is the running form of the settled row: its glyph carries the
+            // activity tone, and the metrics flush right like every tool row. Cell
+            // coordinates are window-relative, so the view's own X offset applies.
+            var liveRowIndex = window.Transcript.Frame.Y + 1;
+            var glyph = TgSnapshot.CellAttribute(app, liveRowIndex, window.Transcript.Frame.X).Foreground;
+            Assert.True(
+                TgPalette.ToColor(TuiToken.Brand) == glyph,
+                $"glyph foreground: expected {TgPalette.ToColor(TuiToken.Brand)} actual {glyph}");
+            Assert.EndsWith("1.2s", liveRow.TrimEnd());
+            window.Transcript.ClearLive();
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
             var rows = TgSnapshot.Capture(app);
-            Assert.Contains("D:\\LLM", rows[1]);
-            Assert.StartsWith("  idle", rows[2]);
-            Assert.DoesNotContain("a-long-file-name.cs", rows[2]);
+            Assert.DoesNotContain("a-long-file-name.cs", string.Join('\n', rows));
             Assert.Contains("answer content", rows[window.Transcript.Frame.Y]);
             app.RequestStop();
             return false;
@@ -188,6 +200,97 @@ public sealed class TgChromeTests
     }
 
     [Fact]
+    public void SettledToolRowReplacesTheLiveActivityRow()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var writer = new TgTranscriptWriter(app, window.Transcript);
+            window.Transcript.UpdateLive(new TuiActivityPresentation(
+                "◐", "Reading", "lock.cs", "1s", TuiToken.Brand));
+            Assert.NotNull(window.Transcript.Live);
+
+            writer.CommitLine(new[] { "✓ Read lock.cs  0.2s" });
+
+            Assert.Null(window.Transcript.Live);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            // The committed row is drawn on the next loop iteration, like every append.
+            Assert.Contains("✓ Read lock.cs", string.Join('\n', TgSnapshot.Capture(app)));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
+    public void UserBlock_FillsThreeRowsAndPaintsThePromptChevron()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.Append(string.Empty, TranscriptStyle.User);
+        window.Transcript.Append("  ❯ sửa lỗi busy lock", TranscriptStyle.User);
+        window.Transcript.Append(string.Empty, TranscriptStyle.User);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            var top = window.Transcript.Frame.Y;
+            var right = window.Transcript.Frame.Right - 1;
+            var fill = TgPalette.ToColor(TuiPalette.ElementRgb());
+            var padTop = TgSnapshot.CellAttribute(app, top, right).Background;
+            var textBg = TgSnapshot.CellAttribute(app, top + 1, right).Background;
+            var padBottom = TgSnapshot.CellAttribute(app, top + 2, right).Background;
+            Assert.True(fill == padTop, $"pad top background: expected {fill} actual {padTop}");
+            Assert.True(fill == textBg, $"text background: expected {fill} actual {textBg}");
+            Assert.True(fill == padBottom, $"pad bottom background: expected {fill} actual {padBottom}");
+            var chevron = TgSnapshot.CellAttribute(app, top + 1, window.Transcript.Frame.X + 2).Foreground;
+            Assert.True(
+                TgPalette.ToColor(TuiToken.Brand2) == chevron,
+                $"chevron foreground: expected {TgPalette.ToColor(TuiToken.Brand2)} actual {chevron}");
+            Assert.Contains("sửa lỗi busy lock", rows[top + 1]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
+    public void HintsSpinnerFrame_AdvancesWhileBusyOnly()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Hints.SetIdle("D:\\LLM");
+        window.Transcript.Append("answer content", TranscriptStyle.Prose);
+        window.Hints.SetBusy("⠋");
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.Hints.SetSpinnerFrame("⠹");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            Assert.Contains("⠹ esc interrupt", TgSnapshot.Capture(app)[^1]);
+            window.Hints.SetIdle("D:\\LLM");
+            window.Hints.SetSpinnerFrame("⠼");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            // Idle hints keep the workspace: the frame belongs to the busy state.
+            Assert.Contains("D:\\LLM", TgSnapshot.Capture(app)[^1]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
     public void Header_ShowsTitleAndUsageCluster()
     {
         using IApplication app = Application.Create();
@@ -203,7 +306,7 @@ public sealed class TgChromeTests
             // Classic TuiHeader starts the heading at column 0: "# title", no leading pad.
             Assert.StartsWith("# Fix the busy lock", row);
             Assert.Contains("39,413", row);
-            Assert.Contains("20%", row);
+            Assert.Contains("20.00%", row);
             Assert.Contains("$0.29", row);
             var hash = row.IndexOf('#');
             Assert.Equal(TgPalette.ToColor(TuiToken.Brand), TgSnapshot.CellAttribute(app, 0, hash).Foreground);
@@ -219,17 +322,39 @@ public sealed class TgChromeTests
     }
 
     /// <summary>
-    /// Task 5's parity minors: the tally emits a part only when TuiHeader.Compose would —
-    /// tokens when positive, the percent when known, the cost when priced.
+    /// The context meter is cells, not glyphs: the fill run carries the fill
+    /// tone on its own background and the rest of the track keeps the dark
+    /// surface behind it.
     /// </summary>
     [Fact]
-    public void ComposeUsage_OmitsTokensWhenNotPositive_AndPercentWhenNull()
+    public void Header_MeterPaintsFillAndTrackCells()
     {
-        Assert.Equal("39,413  20%  ($0.29)", TgHeaderView.ComposeUsage(39413, 20, 0.29m));
-        Assert.Equal("20%", TgHeaderView.ComposeUsage(0, 20, null));
-        Assert.Equal("39,413", TgHeaderView.ComposeUsage(39413, null, null));
-        Assert.Equal(string.Empty, TgHeaderView.ComposeUsage(0, null, null));
-        Assert.Equal(string.Empty, TgHeaderView.ComposeUsage(-1, null, null));
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var header = new TgHeaderView { X = 0, Y = 0, Width = Dim.Fill() };
+        header.UpdateUsage(totalTokens: 39413, percent: 20, cost: 0.29m);
+        window.Add(header);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var row = TgSnapshot.Capture(app)[0];
+            Assert.Contains("20.00%", row);
+
+            // "39,413" · 2 · meter 8 · 1 · "20.00%" · 2 · "($0.29)" flush right.
+            var last = app.Driver!.Cols - 1;
+            var meterStart = last + 1 - "($0.29)".Length - 2 - "20.00%".Length - 1 - TuiUsageMeter.BarWidth;
+            Assert.Equal(" ", app.Driver.Contents![0, meterStart].Grapheme);
+
+            // 20% lights two of the eight cells in cream; the rest stays track.
+            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, meterStart).Background);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, meterStart + 1).Background);
+            Assert.Equal(
+                TgPalette.ToColor(TuiPalette.ElementRgb()),
+                TgSnapshot.CellAttribute(app, 0, meterStart + 2).Background);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
     }
 
     [Fact]

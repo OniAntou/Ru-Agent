@@ -2665,14 +2665,31 @@ public sealed partial class AgentCommands
                     tgWindow.FocusComposer();
                     return false;
                 });
+            var uiClock = System.Diagnostics.Stopwatch.StartNew();
             tgApp.AddTimeout(
                 TimeSpan.FromMilliseconds(TuiHeader.MeteorFrameMilliseconds),
                 () =>
                 {
                     tgWindow.Landing.Tick();
                     sessionRenderer.Width = ChatRenderWidth();
-                    if (tgWindow.Header.Visible)
-                        tgWindow.Header.SetActivity(sessionRenderer.PresentActivity(tgWindow.Header.Viewport.Width));
+                    var transcriptWidth = tgWindow.Transcript.Viewport.Width;
+                    if (transcriptWidth > 0)
+                    {
+                        var state = sessionRenderer.Status.State;
+                        if (state is Tui.TuiRunState.Idle or Tui.TuiRunState.Failed)
+                        {
+                            tgWindow.Transcript.ClearLive();
+                        }
+                        else
+                        {
+                            // The live row is the running form of the settled tool row that
+                            // will replace it: the timer owns its phase, the writer clears
+                            // it the moment the permanent row lands.
+                            tgWindow.Transcript.UpdateLive(sessionRenderer.PresentActivity(transcriptWidth));
+                        }
+                    }
+
+                    tgWindow.Hints.SetSpinnerFrame(Tui.TuiSpinner.FrameAt(uiClock.Elapsed.TotalSeconds));
                     return true;
                 });
             tgApp.Run(tgWindow);

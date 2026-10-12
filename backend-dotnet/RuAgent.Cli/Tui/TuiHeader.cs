@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace RuAgent.Cli.Tui;
@@ -12,14 +11,16 @@ public static class TuiHeader
 {
     /// <summary>
     /// One header row: "# &lt;title&gt;" at the left edge and the usage cluster (grouped token
-    /// count, context percentage, session cost) at the right edge. The title is shortened
-    /// first; the cluster is only dropped when the row can no longer fit both.
+    /// count, context meter with its percentage, session cost) at the right edge. The title is
+    /// shortened first; the cluster is only dropped when the row can no longer fit both. The
+    /// meter's cells stay blank in this string form; the Terminal.Gui view paints fill and
+    /// track.
     /// </summary>
     public static string Compose(
         int width,
         string? title,
         long? tokens,
-        int? contextPercent = null,
+        double? contextPercent = null,
         double? costUsd = null)
     {
         if (width <= 0)
@@ -27,25 +28,10 @@ public static class TuiHeader
             return string.Empty;
         }
 
-        var parts = new List<string>(3);
-        if (tokens is > 0)
-        {
-            parts.Add(tokens.Value.ToString("N0", CultureInfo.InvariantCulture));
-        }
-
-        if (contextPercent is { } percent)
-        {
-            parts.Add($"{percent}%");
-        }
-
-        if (costUsd is { } cost)
-        {
-            parts.Add($"(${cost.ToString("0.00", CultureInfo.InvariantCulture)})");
-        }
-
-        var tally = parts.Count == 0
-            ? string.Empty
-            : TuiPalette.Paint(string.Join("  ", parts), TuiToken.Meta);
+        var tally = ComposeTally(TuiUsageMeter.Compose(
+            tokens,
+            contextPercent,
+            costUsd is { } cost ? (decimal)cost : null));
         var tallyWidth = TuiText.VisibleWidth(tally);
         var titleBudget = tallyWidth > 0 ? width - tallyWidth - 2 : width;
         var heading = string.IsNullOrWhiteSpace(title) ? "session" : title.Trim();
@@ -58,6 +44,28 @@ public static class TuiHeader
         return tallyWidth > 0 && titleBudget >= 2
             ? TwoColumn(left, tally, width)
             : TuiText.Pad(TuiText.Truncate(left, width), width);
+    }
+
+    /// <summary>The usage cluster as one styled run; the meter renders as blank cells.</summary>
+    private static string ComposeTally(IReadOnlyList<TuiUsagePart> parts)
+    {
+        if (parts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        for (var i = 0; i < parts.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(' ', TuiUsageMeter.SeparatorAfter(parts[i - 1]));
+            }
+
+            builder.Append(parts[i].IsMeter ? new string(' ', TuiUsageMeter.BarWidth) : parts[i].Text);
+        }
+
+        return TuiPalette.Paint(builder.ToString(), TuiToken.Meta);
     }
 
     /// <summary>
@@ -73,7 +81,7 @@ public static class TuiHeader
         string? title,
         long? tokens,
         int height,
-        int? contextPercent = null,
+        double? contextPercent = null,
         double? costUsd = null)
     {
         ArgumentNullException.ThrowIfNull(surface);

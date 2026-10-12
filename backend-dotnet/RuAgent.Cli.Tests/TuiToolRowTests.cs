@@ -6,12 +6,12 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiToolRowTests
 {
     [Fact]
-    public void Compose_CompletedRow_ShowsIconDisplayTargetAndMeta()
+    public void Compose_CompletedRow_ShowsCheckDisplayTargetAndMeta()
     {
         var row = TuiToolRow.Compose(ToolLineStatus.Ok, "Search", "\"homepage\"", "(18 matches)", 80);
 
         var text = TuiText.Strip(row);
-        Assert.StartsWith("✱ Search  \"homepage\"", text, StringComparison.Ordinal);
+        Assert.StartsWith("✓ Search  \"homepage\"", text, StringComparison.Ordinal);
         Assert.EndsWith("(18 matches)", text, StringComparison.Ordinal);
     }
 
@@ -45,13 +45,13 @@ public sealed class TuiToolRowTests
     }
 
     [Fact]
-    public void Compose_CompletedRow_PaintsTheMutedTone()
+    public void Compose_CompletedRow_PaintsTheOkTone()
     {
         using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             var row = TuiToolRow.Compose(ToolLineStatus.Ok, "Search", "query", "(2 matches)", 60);
 
-            Assert.Contains(TuiPalette.Code(TuiToken.Meta), row);
+            Assert.Contains(TuiPalette.Code(TuiToken.Ok), row);
             Assert.DoesNotContain(TuiPalette.Code(TuiToken.Err), row);
         }
     }

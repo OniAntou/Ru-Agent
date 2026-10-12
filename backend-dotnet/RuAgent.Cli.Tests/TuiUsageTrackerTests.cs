@@ -11,13 +11,23 @@ public sealed class TuiUsageTrackerTests
         var tracker = new TuiUsageTracker { ContextLimit = 1000 };
 
         tracker.Apply(inputTokens: 400, outputTokens: 100);
-        Assert.Equal(40, tracker.ContextPercent);
+        Assert.Equal(40d, tracker.ContextPercent);
 
         // The second step's envelope is cumulative: 700 total input, 300 total output.
         // Its input is 300, so context occupancy stays at 40%; output tokens affect
         // cost but do not represent retained prompt occupancy.
         tracker.Apply(inputTokens: 700, outputTokens: 300);
-        Assert.Equal(40, tracker.ContextPercent);
+        Assert.Equal(40d, tracker.ContextPercent);
+    }
+
+    [Fact]
+    public void Context_percent_keeps_the_fractional_precision_of_the_window()
+    {
+        var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
+
+        tracker.Apply(432, 0);
+
+        Assert.Equal(4.32, tracker.ContextPercent);
     }
 
     [Fact]
@@ -33,14 +43,14 @@ public sealed class TuiUsageTrackerTests
         tracker.Apply(1000, 500);
         var costAfterFirstTurn = tracker.SessionCost;
         Assert.True(costAfterFirstTurn > 0);
-        Assert.Equal(10, tracker.ContextPercent);
+        Assert.Equal(10d, tracker.ContextPercent);
 
         tracker.BeginTurn();
         Assert.Null(tracker.ContextPercent);
 
         // A new run restarts its counters; the reset baseline must not read as negative.
         tracker.Apply(100, 50);
-        Assert.Equal(1, tracker.ContextPercent);
+        Assert.Equal(1d, tracker.ContextPercent);
         Assert.True(tracker.SessionCost > costAfterFirstTurn);
     }
 
@@ -83,12 +93,12 @@ public sealed class TuiUsageTrackerTests
     {
         var tracker = new TuiUsageTracker { ContextLimit = 1000 };
         tracker.Apply(500, 800);
-        Assert.Equal(50, tracker.ContextPercent);
+        Assert.Equal(50d, tracker.ContextPercent);
 
         tracker.ResetContextReading();
         Assert.Null(tracker.ContextPercent);
         tracker.Apply(700, 900);
-        Assert.Equal(20, tracker.ContextPercent);
+        Assert.Equal(20d, tracker.ContextPercent);
     }
 
     [Fact]

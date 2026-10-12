@@ -28,12 +28,21 @@ public sealed class TuiMarkdownTests
     }
 
     [Fact]
-    public void AFenceContributesNoRowOfItsOwn()
+    public void FenceOpeners_ShowALanguageLabel_AndBareFencesStayInvisible()
     {
         using var _ = Level();
         var markdown = new TuiMarkdown();
 
-        Assert.Empty(markdown.RenderLine("```csharp", 80));
+        // A bare fence opens and closes invisibly, exactly as before.
+        Assert.Empty(markdown.RenderLine("```", 80));
+        Assert.True(markdown.InFence);
+        Assert.Empty(markdown.RenderLine("```", 80));
+        Assert.False(markdown.InFence);
+
+        // A named fence opens with a dim language label row instead of a bare ``` line.
+        var label = Assert.Single(markdown.RenderLine("```csharp", 80));
+        Assert.Contains("csharp", TuiText.Strip(label), StringComparison.Ordinal);
+        Assert.Contains("─", TuiText.Strip(label), StringComparison.Ordinal);
         Assert.True(markdown.InFence);
 
         var code = Assert.Single(markdown.RenderLine("var x = 1;", 80));

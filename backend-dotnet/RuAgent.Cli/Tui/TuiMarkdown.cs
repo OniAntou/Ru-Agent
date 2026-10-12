@@ -63,6 +63,28 @@ public sealed class TuiMarkdown
     }
 
     /// <summary>
+    /// The opening fence becomes a dim language label (<c>── csharp ────</c>) when it names
+    /// a language; a bare fence stays invisible so it contributes no row of its own.
+    /// </summary>
+    private static IReadOnlyList<string> FenceLabelRow(string line, int width)
+    {
+        var info = line.Trim().TrimStart('`').Trim();
+        if (info.Length == 0 || width <= 4)
+        {
+            return [];
+        }
+
+        var language = ChatDisplayText.Sanitize(info, 32);
+        var head = "  ── " + language + " ";
+        var tail = Math.Max(0, width - TuiText.VisibleWidth(head));
+        return
+        [
+            TuiPalette.Paint(head, TuiToken.Meta)
+                + TuiPalette.Paint(new string('─', tail), TuiToken.Line),
+        ];
+    }
+
+    /// <summary>
     /// Renders one complete line (no trailing newline) into zero or more display rows.
     /// A fence opener and closer produce no row of their own.
     /// </summary>
@@ -90,7 +112,7 @@ public sealed class TuiMarkdown
         {
             _fence = FenceChars;
             _codeLine = 0;
-            return [];
+            return FenceLabelRow(line, width);
         }
 
         if (line.Length == 0)

@@ -81,7 +81,6 @@ public sealed class TuiSessionRenderer
     {
         if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
         {
-            _status.Tick();
             _status.SetElapsed(_transcript.ElapsedSeconds);
         }
         return _status.Compose(width);
@@ -91,7 +90,6 @@ public sealed class TuiSessionRenderer
     {
         if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
         {
-            _status.Tick();
             _status.SetElapsed(_transcript.ElapsedSeconds);
         }
         return _status.Presentation(width);
@@ -227,7 +225,6 @@ public sealed class TuiSessionRenderer
             {
                 while (!token.IsCancellationRequested)
                 {
-                    _status.Tick();
                     _status.SetElapsed(watch.Elapsed.TotalSeconds);
                     if (LiveRowRepaintHook is { } hook)
                     {

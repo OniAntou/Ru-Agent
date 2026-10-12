@@ -17,8 +17,9 @@ public enum TranscriptStyle
 
 /// <summary>
 /// Append-only transcript with a tail pin and hard wrap — the Terminal.Gui analogue of the
-/// classic renderer's sticky transcript region. Drawing stays custom so the OpenCode look
-/// (user block, inline tool rows, diff indentation) survives the migration.
+/// classic renderer's sticky transcript region — plus one live activity row pinned after the
+/// last committed row. Drawing stays custom so the OpenCode look (user block, inline tool
+/// rows, diff indentation) survives the migration.
 /// </summary>
 public sealed class TgTranscriptView : View
 {
@@ -38,6 +39,7 @@ public sealed class TgTranscriptView : View
     private int _scrollTop;
     private bool _followingTail = true;
     private int _retainedCharacters;
+    private TuiActivityPresentation? _live;
 
     /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
     public bool IsExpanded => _expanded;
@@ -49,9 +51,54 @@ public sealed class TgTranscriptView : View
     public int RetainedRowCount => _lines.Count + (_collapsedBlock?.Hidden.Count ?? 0);
     public int RetainedCharacterCount => _retainedCharacters;
     public bool IsFollowingTail => _followingTail;
-    public bool CanScroll { get { EnsureWrapped(); return _wrapped.Count > Math.Max(1, Viewport.Height); } }
+    public bool CanScroll { get { EnsureWrapped(); return _wrapped.Count + LiveRows > Math.Max(1, Viewport.Height); } }
     public bool HasUnseenOutput { get; private set; }
-    public int ScrollPosition { get { EnsureWrapped(); return _followingTail ? Math.Max(0, _wrapped.Count - Viewport.Height) : _scrollTop; } }
+    public int ScrollPosition { get { EnsureWrapped(); return _followingTail ? Math.Max(0, _wrapped.Count + LiveRows - Viewport.Height) : _scrollTop; } }
+
+    /// <summary>Rows the live activity row occupies (one, or zero when idle).</summary>
+    private int LiveRows => _live is null ? 0 : 1;
+
+    /// <summary>Test seam: the current live activity row, null when none is shown.</summary>
+    internal TuiActivityPresentation? Live => _live;
+
+    /// <summary>Raised on the none-to-live and live-to-none transitions.</summary>
+    public event Action<bool>? LiveActivityChanged;
+
+    /// <summary>
+    /// Sets or replaces the single live activity row pinned after the last committed row.
+    /// The view draws it from the presentation's own spans; the caller owns the phase
+    /// (spinner frame, tool glyph, elapsed) and clears it when the activity settles.
+    /// </summary>
+    public void UpdateLive(TuiActivityPresentation presentation)
+    {
+        ArgumentNullException.ThrowIfNull(presentation);
+        if (_live == presentation)
+        {
+            return;
+        }
+
+        var hadLive = _live is not null;
+        _live = presentation;
+        if (!hadLive)
+        {
+            LiveActivityChanged?.Invoke(true);
+        }
+
+        SetNeedsDraw();
+    }
+
+    /// <summary>Drops the live activity row; a no-op when none is shown.</summary>
+    public void ClearLive()
+    {
+        if (_live is null)
+        {
+            return;
+        }
+
+        _live = null;
+        LiveActivityChanged?.Invoke(false);
+        SetNeedsDraw();
+    }
 
     /// <summary>Raised on the 0-to-1 transition, so the window can hide its landing overlay.</summary>
     public event Action? FirstContentAppended;
@@ -86,6 +133,7 @@ public sealed class TgTranscriptView : View
         _scrollTop = 0;
         SetFollowingTail(true);
         _retainedCharacters = 0;
+        _live = null;
         SetHasUnseenOutput(false);
         ContentCleared?.Invoke();
         SetNeedsDraw();
@@ -321,34 +369,89 @@ public sealed class TgTranscriptView : View
 
         EnsureWrapped();
 
-        var maxTop = Math.Max(0, _wrapped.Count - height);
+        var maxTop = Math.Max(0, _wrapped.Count + LiveRows - height);
         var offset = _followingTail ? maxTop : Math.Clamp(_scrollTop, 0, maxTop);
         _scrollTop = offset;
         for (var i = 0; i < height && offset + i < _wrapped.Count; i++)
         {
             var (text, style) = _wrapped[offset + i];
-            SetAttribute(StyleAttribute(style));
-            Move(0, i);
-            if (style == TranscriptStyle.User)
+            DrawRow(i, text, style, width);
+        }
+
+        // The live activity row is pinned after the last committed row: while the tail is
+        // followed it stays visible at the bottom; scrolled up it sits below the viewport.
+        if (_live is { } live)
+        {
+            var liveTop = _wrapped.Count - offset;
+            if (liveTop >= 0 && liveTop < height)
             {
-                AddStr(new string(' ', width));
-                Move(0, i);
+                Move(0, liveTop);
+                foreach (var span in live.Fit(width))
+                {
+                    SetAttribute(TgPalette.Attr(span.Tone));
+                    AddStr(span.Text);
+                }
             }
-            if (style == TranscriptStyle.Tool && text.Length > 2 && text[1] == ' ')
-            {
-                var labelEnd = text.IndexOf(' ', 2);
-                if (labelEnd < 0) labelEnd = text.Length;
-                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Brand));
-                AddStr(text[..1]);
-                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Bright));
-                AddStr(text[1..labelEnd]);
-                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Meta));
-                AddStr(text[labelEnd..]);
-            }
-            else AddStr(text);
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// One committed row. The user block fills its row and paints the prompt chevron,
+    /// tool rows split into glyph/label/rest with the outcome tone, everything else
+    /// draws as one run in its style attribute.
+    /// </summary>
+    private void DrawRow(int row, string text, TranscriptStyle style, int width)
+    {
+        SetAttribute(StyleAttribute(style));
+        Move(0, row);
+        if (style == TranscriptStyle.User)
+        {
+            AddStr(new string(' ', width));
+            Move(0, row);
+            if (text.Length > 0)
+            {
+                var prompt = text.IndexOf('❯');
+                if (prompt >= 0)
+                {
+                    SetAttribute(TgPalette.Attr(TuiToken.Ink, TuiPalette.ElementRgb()));
+                    AddStr(text[..prompt]);
+                    SetAttribute(TgPalette.Attr(TuiToken.Brand2, TuiPalette.ElementRgb()));
+                    AddStr("❯");
+                    SetAttribute(TgPalette.Attr(TuiToken.Bright, TuiPalette.ElementRgb()));
+                    AddStr(text[(prompt + 1)..]);
+                }
+                else
+                {
+                    SetAttribute(TgPalette.Attr(TuiToken.Bright, TuiPalette.ElementRgb()));
+                    AddStr(text);
+                }
+            }
+
+            return;
+        }
+
+        if (style == TranscriptStyle.Tool && text.Length > 2 && text[1] == ' ')
+        {
+            var tone = text[0] switch
+            {
+                '✗' => TuiToken.Err,
+                '✓' => TuiToken.Ok,
+                _ => TuiToken.Brand,
+            };
+            var labelEnd = text.IndexOf(' ', 2);
+            if (labelEnd < 0) labelEnd = text.Length;
+            SetAttribute(TgPalette.Attr(tone));
+            AddStr(text[..1]);
+            SetAttribute(TgPalette.Attr(tone == TuiToken.Err ? TuiToken.Err : TuiToken.Bright));
+            AddStr(text[1..labelEnd]);
+            SetAttribute(TgPalette.Attr(TuiToken.Meta));
+            AddStr(text[labelEnd..]);
+            return;
+        }
+
+        AddStr(text);
     }
 
     private void RebuildWrapped(int width)
@@ -391,11 +494,11 @@ public sealed class TgTranscriptView : View
         EnsureWrapped();
         if (_followingTail)
         {
-            _scrollTop = Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height));
+            _scrollTop = Math.Max(0, _wrapped.Count + LiveRows - Math.Max(1, Viewport.Height));
             SetFollowingTail(false);
         }
 
-        _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
+        _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count + LiveRows - Math.Max(1, Viewport.Height)));
         SetNeedsDraw();
     }
 
@@ -582,7 +685,7 @@ public sealed class TgTranscriptView : View
 
     private static Terminal.Gui.Drawing.Attribute StyleAttribute(TranscriptStyle style) => style switch
     {
-        TranscriptStyle.User => TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()),
+        TranscriptStyle.User => TgPalette.Attr(TuiToken.Ink, TuiPalette.ElementRgb()),
         TranscriptStyle.Tool => TgPalette.Attr(TuiToken.Meta),
         TranscriptStyle.Meta => TgPalette.Attr(TuiToken.Meta),
         TranscriptStyle.Error => TgPalette.Attr(TuiToken.Err),

@@ -12,15 +12,13 @@ public enum TuiRunState
 }
 
 /// <summary>
-/// The one mutable row above the composer. It owns the spinner, the current activity and the
-/// counters, so no other component needs to repaint in place or clear its own leftovers.
+/// Owns the run state, the time-based spinner phase, the current activity and the counters
+/// for both engines: the plain path paints it as its live row, and the Terminal.Gui path
+/// projects <see cref="Presentation"/> into the transcript's pinned live row.
 /// </summary>
 public sealed class TuiStatusLine
 {
-    private static readonly string[] Frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
     private readonly TuiSurface _surface;
-    private int _frame;
     private TuiRunState _state = TuiRunState.Idle;
     private string? _activity;
     private string? _activityAction;
@@ -38,8 +36,12 @@ public sealed class TuiStatusLine
 
     public TuiRunState State => _state;
 
-    /// <summary>Current braille spinner frame, reused by the composer hint row.</summary>
-    public string SpinnerFrame => Frames[_frame];
+    /// <summary>
+    /// Current braille spinner frame, reused by the composer hint row. Derived from
+    /// elapsed time, not from the number of repaint calls, so any ticker cadence
+    /// yields the same rotation.
+    /// </summary>
+    public string SpinnerFrame => TuiSpinner.FrameAt(_elapsedSeconds);
 
     /// <summary>Elapsed seconds of the turn in progress.</summary>
     public double ElapsedSeconds => _elapsedSeconds;
@@ -80,7 +82,7 @@ public sealed class TuiStatusLine
         var (glyph, label, tone) = _state switch
         {
             TuiRunState.Thinking => (SpinnerFrame, _responding ? "Writing response" : "Thinking", TuiToken.Brand),
-            TuiRunState.Tool => (SpinnerFrame, string.IsNullOrWhiteSpace(_activityAction) ? "Running tool" : _activityAction, TuiToken.Brand),
+            TuiRunState.Tool => (TuiSpinner.ToolGlyphAt(_elapsedSeconds), string.IsNullOrWhiteSpace(_activityAction) ? "Running tool" : _activityAction, TuiToken.Brand),
             TuiRunState.WaitingApproval => ("?", "Approval needed", TuiToken.Warn),
             TuiRunState.WaitingTrust => ("?", "Workspace needs trust", TuiToken.Warn),
             TuiRunState.Paused => ("Ⅱ", "Paused", TuiToken.Warn),
@@ -110,8 +112,6 @@ public sealed class TuiStatusLine
     }
 
     public void AddTool() => _tools++;
-
-    public void Tick() => _frame = (_frame + 1) % Frames.Length;
 
     public void Reset()
     {
@@ -191,17 +191,16 @@ public sealed class TuiStatusLine
 
     private string ComposeLeft()
     {
-        var frame = Frames[_frame];
         switch (_state)
         {
             case TuiRunState.Thinking:
-                return TuiPalette.Paint(frame, TuiToken.Brand)
+                return TuiPalette.Paint(SpinnerFrame, TuiToken.Brand)
                     + " "
                     + TuiPalette.Paint("Thinking", TuiToken.Meta)
                     + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);
             case TuiRunState.Tool:
                 var label = string.IsNullOrWhiteSpace(_activity) ? "Running tool" : _activity;
-                return TuiPalette.Paint(frame, TuiToken.Brand)
+                return TuiPalette.Paint(TuiSpinner.ToolGlyphAt(_elapsedSeconds), TuiToken.Brand)
                     + " "
                     + label
                     + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);

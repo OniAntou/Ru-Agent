@@ -66,6 +66,19 @@ $env:RU_TUI_COLOR=truecolor   # truecolor | 256 | 16 | none
 
 ## Open limitations
 
+### The live row and the animation clock
+
+The transcript's live activity row (thinking / running tool / writing) is drawn
+from a pure time-based clock (`TuiSpinner`), so its spinner advances at
+100 ms per frame whatever the ticker cadence; the running-tool glyph rotates its
+half-circle on the same clock. The row clears when the activity settles (the
+writer clears it as the permanent tool row lands), when the turn ends, or on
+`/clear`. A parked run keeps the row static (no rotation) with its reason;
+scrolled back, the live row sits below the viewport and the hints-row spinner is
+the only running indicator. The 18 ms frame timer still runs for the landing
+meteors while the frame is live; when idle its callback only clears the live row
+and refreshes the hint frame, so measure before claiming an idle-CPU change.
+
 ### Earlier free-tier observations (not rerun for the current build)
 
 This started as "a free model can chat but never calls a tool": across 31 runs read

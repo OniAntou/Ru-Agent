@@ -94,7 +94,7 @@ public sealed class TgOpenCodeLayoutTests
             Assert.Contains("39,413", text, StringComparison.Ordinal);
             Assert.True(w.Transcript.Frame.X >= 2);
             Assert.Equal(app.Driver!.Cols - 2, w.Composer.Frame.Right);
-            Assert.Equal(4, w.Transcript.Frame.Y);
+            Assert.Equal(3, w.Transcript.Frame.Y);
         });
     }
 
@@ -155,7 +155,8 @@ public sealed class TgOpenCodeLayoutTests
         {
             Assert.Contains("Giữ nguyên câu đang gõ", rows[w.Composer.Frame.Y + 1]);
             Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
-            Assert.Equal(TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+            // The user block shares the composer's input-surface fill.
+            Assert.Equal(TgPalette.ToColor(TuiPalette.ElementRgb()),
                 TgSnapshot.CellAttribute(app, w.Transcript.Frame.Y + 1, w.Transcript.Frame.Right - 1).Background);
         });
     }

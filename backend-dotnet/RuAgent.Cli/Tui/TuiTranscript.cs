@@ -931,9 +931,18 @@ public sealed class TuiTranscript
 
         WriteLines(TuiToolRow.Compose(status, display, target, meta, Width));
 
-        foreach (var line in diffLines)
+        if (diffLines.Count > 0)
         {
-            _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
+            // The expanded diff keeps its tinted rows between two dim rules, so the
+            // block reads as one framed unit instead of loose lines.
+            var rule = "    " + TuiPalette.Paint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);
+            _retained.Add(rule);
+            foreach (var line in diffLines)
+            {
+                _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
+            }
+
+            _retained.Add(rule);
         }
 
         TrimRetained();

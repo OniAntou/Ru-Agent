@@ -12,7 +12,7 @@ internal static class TgChatLayout
         window.Header.Visible = !home;
         window.Header.X = 2;
         window.Header.Width = Dim.Fill(2);
-        window.Header.Height = rows >= 20 ? 3 : 1;
+        window.Header.Height = rows >= 20 ? 2 : 1;
         window.Transcript.X = 2;
         window.Transcript.Y = Pos.Bottom(window.Header) + 1;
         window.Transcript.Width = Dim.Fill(2);

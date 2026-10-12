@@ -100,6 +100,9 @@ public sealed class TgCopyParityTests
 
         Assert.Equal(classic, row);
         Assert.Contains("# Fix the busy lock", row, StringComparison.Ordinal);
-        Assert.Contains("39,413  20%  ($0.29)", row, StringComparison.Ordinal);
+        Assert.Contains(
+            "39,413" + new string(' ', 2 + TuiUsageMeter.BarWidth + 1) + "20.00%  ($0.29)",
+            row,
+            StringComparison.Ordinal);
     }
 }

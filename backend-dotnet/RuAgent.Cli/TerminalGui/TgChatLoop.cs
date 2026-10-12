@@ -414,7 +414,14 @@ public sealed class TgChatLoop
             _turnDone = turnDone;
         }
 
-        Dispatch(() => _window.Transcript.Append(" ▌ " + submission.Prompt, TranscriptStyle.User));
+        // The Grok-style user block: a filled three-row card with the prompt chevron on
+        // its middle row. Pad rows carry the fill only; the text row carries the prompt.
+        Dispatch(() =>
+        {
+            _window.Transcript.Append(string.Empty, TranscriptStyle.User);
+            _window.Transcript.Append("  ❯ " + submission.Prompt, TranscriptStyle.User);
+            _window.Transcript.Append(string.Empty, TranscriptStyle.User);
+        });
         var stream = new TranscriptStream(_window.Transcript, Dispatch);
         _ = RunTurnAsync(submission, stream, _turn.Token, turnDone);
     }
@@ -469,7 +476,12 @@ public sealed class TgChatLoop
             }
             else
             {
-                Dispatch(() => _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace));
+                Dispatch(() =>
+                {
+                    // The turn is over: the live activity row must not outlive it.
+                    _window.Transcript.ClearLive();
+                    _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace);
+                });
             }
 
             turnDone.TrySetResult();

@@ -2,7 +2,7 @@ namespace RuAgent.Cli.Tui;
 
 public sealed record TuiActivitySpan(string Text, TuiToken Tone);
 
-/// <summary>Semantic activity parts shared by the header and the live state owner.</summary>
+/// <summary>Semantic activity parts shared by the status line and the transcript's live row.</summary>
 public sealed record TuiActivityPresentation(
     string Glyph, string Action, string? Target, string Metrics, TuiToken Tone)
 {

@@ -50,6 +50,21 @@ public sealed class TgHintsView : View
         SetNeedsDraw();
     }
 
+    /// <summary>
+    /// Advances the busy spinner frame from the shared animation clock. A no-op while
+    /// the row is idle: the frame belongs to the busy state the loop already set.
+    /// </summary>
+    public void SetSpinnerFrame(string frame)
+    {
+        if (_spinnerFrame is null || _spinnerFrame == frame)
+        {
+            return;
+        }
+
+        _spinnerFrame = frame;
+        SetNeedsDraw();
+    }
+
     public void SetTranscriptUnread(bool hasUnseenTranscript)
     {
         _hasUnseenTranscript = hasUnseenTranscript;

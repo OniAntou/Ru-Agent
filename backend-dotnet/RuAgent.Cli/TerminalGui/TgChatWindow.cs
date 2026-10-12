@@ -51,6 +51,21 @@ public sealed class TgChatWindow : Window
         // first row (or /clear) toggles it exactly like the classic landing screen.
         Transcript.FirstContentAppended += HideLanding;
         Transcript.ContentCleared += ShowLanding;
+        Transcript.LiveActivityChanged += hasLive =>
+        {
+            // A turn's live row (thinking/tool/writing) is content the operator asked for:
+            // the wordmark must not sit on top of it while the first rows are still landing.
+            if (hasLive)
+            {
+                HideLanding();
+            }
+            else if (!Transcript.HasContent)
+            {
+                // A turn that produced no rows (e.g. /continue on an empty transcript)
+                // returns to the wordmark when its live row clears.
+                ShowLanding();
+            }
+        };
         Transcript.UnseenOutputChanged += hasUnseenOutput => Hints.SetTranscriptUnread(hasUnseenOutput);
         Transcript.FollowingTailChanged += followingTail => Hints.SetTranscriptFollowing(followingTail);
 

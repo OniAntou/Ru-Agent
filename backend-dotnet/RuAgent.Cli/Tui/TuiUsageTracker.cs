@@ -26,7 +26,8 @@ public sealed class TuiUsageTracker
     public bool CostKnown { get; private set; }
 
     /// <summary>Context window usage of the largest step seen this turn, or null.</summary>
-    public int? ContextPercent { get; private set; }
+    /// <remarks>Keeps fractional precision: the header renders two decimals.</remarks>
+    public double? ContextPercent { get; private set; }
 
     public void BeginTurn()
     {
@@ -63,7 +64,7 @@ public sealed class TuiUsageTracker
         }
 
         ContextPercent = ContextLimit is { } limit and > 0 && _maxStepInputTokens > 0
-            ? (int)Math.Clamp(Math.Round(100.0 * _maxStepInputTokens / limit), 0, 999)
+            ? Math.Clamp(100.0 * _maxStepInputTokens / limit, 0, 999)
             : null;
     }
 }

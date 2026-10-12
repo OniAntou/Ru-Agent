@@ -319,13 +319,21 @@ reconciliation surfaces from Phase 3:
   for busy/idle hints, including clear. Workspace-busy hints persist until Host
   acceptance or a successful session switch, independent of composer keystrokes.
   `TgChatLayout` owns responsive positioning: centred landing and a padded session
-  column below a three-row header: title/usage, workspace, then semantic activity.
-  The activity projection separates glyph/action, target and right-aligned metrics;
+  column below a two-row header: title/usage, then workspace. The live activity
+  moved out of the header into the transcript: `TgTranscriptView` keeps one live
+  row pinned after the last committed row (opencode-style), drawn from the shared
+  activity presentation, and a settled tool row replaces it in place. The activity
+  projection separates glyph/action, target and right-aligned metrics;
   response deltas show writing, parked states stay still, and queued tools retain
   their own action after another tool settles. Settled rows preserve outcome text
   and metrics when shortening targets. Frames below
   20 rows keep a single heading row. The header projects existing session data;
-  it adds no API calls. Streaming reflows a dirty tail at draw/scroll boundaries.
+  it adds no API calls. Every animation phase (braille spinner, running-tool
+  glyph rotation, elapsed clock) is a pure function of elapsed seconds in
+  `TuiSpinner`, so the 18 ms meteor ticker and any slower cadence yield the same
+  motion; the ticker runs only while the frame is live, and the live row's
+  spinner pauses on parked states. Streaming reflows a dirty tail at draw/scroll
+  boundaries.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Command overlays follow the composer and remain bounded within the frame.

@@ -22,7 +22,7 @@ public sealed class TgChromeTests
         window.Transcript.Append("answer content", TranscriptStyle.Prose);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            Assert.Contains("Reading a-long-file-name.cs", TgSnapshot.Capture(app)[1]);
+            Assert.Contains("Reading a-long-file-name.cs", TgSnapshot.Capture(app)[2]);
             window.Header.SetActivity("idle");
             return false;
         });
@@ -30,9 +30,8 @@ public sealed class TgChromeTests
         {
             var rows = TgSnapshot.Capture(app);
             Assert.Contains("D:\\LLM", rows[1]);
-            Assert.EndsWith("idle", rows[1]);
-            Assert.DoesNotContain("a-long-file-name.cs", rows[1]);
-            Assert.Contains("───", rows[2]);
+            Assert.StartsWith("  idle", rows[2]);
+            Assert.DoesNotContain("a-long-file-name.cs", rows[2]);
             Assert.Contains("answer content", rows[window.Transcript.Frame.Y]);
             app.RequestStop();
             return false;

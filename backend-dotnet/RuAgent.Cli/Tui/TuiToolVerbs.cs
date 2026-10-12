@@ -14,6 +14,10 @@ public static class TuiToolVerbs
     private static readonly Dictionary<string, (string Present, string Past)> ByName = new(StringComparer.Ordinal)
     {
         ["read"] = ("reading", "read"),
+        ["read_file"] = ("reading", "read"),
+        ["write_file"] = ("writing", "wrote"),
+        ["edit_file"] = ("editing", "edited"),
+        ["apply_patch"] = ("editing", "edited"),
         ["view"] = ("reading", "read"),
         ["cat"] = ("reading", "read"),
         ["open"] = ("reading", "read"),

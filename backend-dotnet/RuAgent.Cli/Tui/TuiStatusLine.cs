@@ -23,10 +23,13 @@ public sealed class TuiStatusLine
     private int _frame;
     private TuiRunState _state = TuiRunState.Idle;
     private string? _activity;
+    private string? _activityAction;
+    private string? _activityTarget;
     private string? _detail;
     private double _elapsedSeconds;
     private long? _tokens;
     private int _tools;
+    private bool _responding;
 
     public TuiStatusLine(TuiSurface surface)
     {
@@ -50,9 +53,51 @@ public sealed class TuiStatusLine
     /// </summary>
     public bool InFooter { get; set; }
 
-    public void SetState(TuiRunState state) => _state = state;
+    public void SetState(TuiRunState state)
+    {
+        _state = state;
+        _responding = false;
+    }
 
-    public void SetActivity(string? activity) => _activity = activity;
+    public void SetResponding() => _responding = true;
+
+    public void SetActivity(string? activity)
+    {
+        _activity = activity;
+        _activityAction = activity;
+        _activityTarget = null;
+    }
+
+    public void SetActivity(string action, string? target)
+    {
+        _activityAction = action;
+        _activityTarget = target;
+        _activity = string.IsNullOrWhiteSpace(target) ? action : action + " " + target;
+    }
+
+    public TuiActivityPresentation Presentation(int width)
+    {
+        var (glyph, label, tone) = _state switch
+        {
+            TuiRunState.Thinking => (SpinnerFrame, _responding ? "Writing response" : "Thinking", TuiToken.Brand),
+            TuiRunState.Tool => (SpinnerFrame, string.IsNullOrWhiteSpace(_activityAction) ? "Running tool" : _activityAction, TuiToken.Brand),
+            TuiRunState.WaitingApproval => ("?", "Approval needed", TuiToken.Warn),
+            TuiRunState.WaitingTrust => ("?", "Workspace needs trust", TuiToken.Warn),
+            TuiRunState.Paused => ("Ⅱ", "Paused", TuiToken.Warn),
+            TuiRunState.Failed => ("✗", "Run failed", TuiToken.Err),
+            _ => ("·", "Ready", TuiToken.Meta),
+        };
+        label = char.ToUpperInvariant(label[0]) + label[1..];
+        var metrics = new List<string>();
+        if (_state is TuiRunState.Thinking or TuiRunState.Tool || _elapsedSeconds > 0)
+            metrics.Add(FormatElapsed(_elapsedSeconds));
+        if (_tools > 0 && width >= 64) metrics.Add(_tools == 1 ? "1 tool" : $"{_tools} tools");
+        var target = _state == TuiRunState.Tool ? _activityTarget
+            : _state is TuiRunState.WaitingTrust or TuiRunState.Paused or TuiRunState.Idle ? _detail : null;
+        if (_state is TuiRunState.WaitingApproval or TuiRunState.WaitingTrust or TuiRunState.Paused)
+            metrics.Clear();
+        return new(glyph, label, target, string.Join(" · ", metrics), tone);
+    }
 
     public void SetDetail(string? detail) => _detail = detail;
 
@@ -72,10 +117,13 @@ public sealed class TuiStatusLine
     {
         _state = TuiRunState.Idle;
         _activity = null;
+        _activityAction = null;
+        _activityTarget = null;
         _detail = null;
         _elapsedSeconds = 0;
         _tokens = null;
         _tools = 0;
+        _responding = false;
     }
 
     /// <summary>

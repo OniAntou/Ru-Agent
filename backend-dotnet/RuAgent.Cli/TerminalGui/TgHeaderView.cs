@@ -13,6 +13,7 @@ public sealed class TgHeaderView : View
     public decimal? SessionCost { get; private set; }
     private string _workspace = string.Empty;
     private string _activity = string.Empty;
+    private TuiActivityPresentation? _activityPresentation;
 
     public TgHeaderView()
     {
@@ -45,8 +46,16 @@ public sealed class TgHeaderView : View
     public void SetActivity(string activity)
     {
         var safe = ChatDisplayText.Sanitize(TuiText.Strip(activity).Trim(), 512);
-        if (_activity == safe) return;
+        if (_activity == safe && _activityPresentation is null) return;
         _activity = safe;
+        _activityPresentation = null;
+        SetNeedsDraw();
+    }
+
+    public void SetActivity(TuiActivityPresentation activity)
+    {
+        if (_activityPresentation == activity) return;
+        _activityPresentation = activity;
         SetNeedsDraw();
     }
 
@@ -73,20 +82,15 @@ public sealed class TgHeaderView : View
         {
             SetAttribute(TgPalette.Attr(TuiToken.Meta));
             Move(0, 1);
-            var activity = TuiText.Truncate(_activity, Math.Max(0, width / 2));
-            var activityWidth = TuiText.VisibleWidth(activity);
-            var workspaceWidth = Math.Max(0, width - activityWidth - (activityWidth > 0 ? 3 : 0));
-            AddStr(TuiText.Truncate(_workspace, workspaceWidth));
-            if (activityWidth > 0)
-            {
-                var idle = _activity.Contains("idle", StringComparison.OrdinalIgnoreCase);
-                SetAttribute(TgPalette.Attr(idle ? TuiToken.Meta : TuiToken.Brand));
-                Move(width - activityWidth, 1);
-                AddStr(activity);
-            }
-            SetAttribute(TgPalette.Attr(TuiToken.Line));
+            AddStr(TuiText.Truncate(_workspace, width));
             Move(0, 2);
-            AddStr(new string('─', width));
+            var spans = _activityPresentation?.Fit(width)
+                ?? new[] { new TuiActivitySpan(TuiText.Truncate(_activity, width), TuiToken.Meta) };
+            foreach (var span in spans)
+            {
+                SetAttribute(TgPalette.Attr(span.Tone));
+                AddStr(span.Text);
+            }
         }
         return true;
     }

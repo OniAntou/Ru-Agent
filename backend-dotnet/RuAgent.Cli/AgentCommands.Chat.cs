@@ -2650,7 +2650,7 @@ public sealed partial class AgentCommands
                     tgWindow.Landing.Tick();
                     sessionRenderer.Width = ChatRenderWidth();
                     if (tgWindow.Header.Visible)
-                        tgWindow.Header.SetActivity(sessionRenderer.ComposeActivity(tgWindow.Header.Viewport.Width));
+                        tgWindow.Header.SetActivity(sessionRenderer.PresentActivity(tgWindow.Header.Viewport.Width));
                     return true;
                 });
             tgApp.Run(tgWindow);

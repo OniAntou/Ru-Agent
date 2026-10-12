@@ -26,7 +26,7 @@ public sealed class TuiIdleComposerTests
             "@@ -1 +1 @@\n- old line\n+ new line", 2));
 
         var text = writer.ToString();
-        Assert.Contains("← Edit app.cs", TuiText.Strip(text), StringComparison.Ordinal);
+        Assert.Contains("← Edit  app.cs", TuiText.Strip(text), StringComparison.Ordinal);
         Assert.Contains("ctrl+o", text, StringComparison.Ordinal);
         Assert.DoesNotContain("╭─", text, StringComparison.Ordinal);
         Assert.DoesNotContain("- old line", text, StringComparison.Ordinal);

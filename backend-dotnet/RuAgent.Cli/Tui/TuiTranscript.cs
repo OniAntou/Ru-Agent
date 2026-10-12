@@ -185,6 +185,7 @@ public sealed class TuiTranscript
         string ActivityId,
         AgentActivityState State,
         string Verb,
+        string LiveVerb,
         string? Display,
         string? Target,
         int? Count,
@@ -230,6 +231,7 @@ public sealed class TuiTranscript
         {
             return;
         }
+        if (_status.State == TuiRunState.Thinking) _status.SetResponding();
 
         if (_assistantBlockStartRow < 0)
         {
@@ -280,6 +282,7 @@ public sealed class TuiTranscript
     /// </summary>
     public void ResetAssistant()
     {
+        if (_status.State == TuiRunState.Thinking) _status.SetState(TuiRunState.Thinking);
         // A superseded attempt's answer is replaced by the retry: drop its pending
         // render buffer, and its raw text from gap tracking, so the retry -- not the
         // stale head it replaced -- is what gets compared against the durable payload.
@@ -568,6 +571,7 @@ public sealed class TuiTranscript
                     activity.ActivityId,
                     activity.State,
                     verb,
+                    TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay),
                     activity.ToolDisplay,
                     BuildTarget(activity),
                     activity.Count,
@@ -576,7 +580,7 @@ public sealed class TuiTranscript
                     activity.DurationMs));
                 TrimPending();
                 _status.SetState(TuiRunState.Tool);
-                _status.SetActivity(BuildActivityLabel(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), activity));
+                _status.SetActivity(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), BuildTarget(activity));
                 return;
 
             case AgentActivityState.Completed:
@@ -600,6 +604,7 @@ public sealed class TuiTranscript
                         activity.ActivityId,
                         activity.State,
                         verb,
+                        TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay),
                         activity.ToolDisplay,
                         BuildTarget(activity),
                         activity.Count,
@@ -622,12 +627,6 @@ public sealed class TuiTranscript
         {
             _pendingTools.RemoveAt(0);
         }
-    }
-
-    private static string BuildActivityLabel(string verb, AgentActivityModel activity)
-    {
-        var target = BuildTarget(activity);
-        return string.IsNullOrWhiteSpace(target) ? verb : verb + " " + target;
     }
 
     private static string? BuildTarget(AgentActivityModel activity)
@@ -876,7 +875,8 @@ public sealed class TuiTranscript
         _toolsSettled++;
         _status.AddTool();
         var pending = _pendingTools.FirstOrDefault(tool => tool.State is AgentActivityState.Started or AgentActivityState.Waiting);
-        _status.SetActivity(pending is null ? null : $"Running {pending.Display ?? "tool"} {pending.Target}".TrimEnd());
+        if (pending is null) _status.SetActivity(null);
+        else _status.SetActivity(pending.LiveVerb, pending.Target);
         _status.SetState(pending is null ? TuiRunState.Thinking : TuiRunState.Tool);
     }
 
@@ -892,6 +892,9 @@ public sealed class TuiTranscript
             ? TitleCase(detail?.Verb ?? "tool")
             : detail!.Display!;
         var meta = ComposeToolRowMeta(detail?.Count, detail?.Added, detail?.Removed);
+        if (detail?.DurationMs is > 0)
+            meta = string.IsNullOrWhiteSpace(meta) ? FormatDuration(detail.DurationMs.Value)
+                : meta + " · " + FormatDuration(detail.DurationMs.Value);
 
         // The count-derived target ("3 results") would duplicate the "(3 matches)" meta.
         if (detail?.Count is not null

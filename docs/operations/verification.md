@@ -14,6 +14,28 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## TUI Agent Activity presentation (2026-10-12)
+
+Activity occupies the third header row beneath the workspace, retaining the
+three-row height. Semantic glyph/action, target and elapsed/tool count have
+separate tones; response deltas distinguish writing from thinking, and parked
+states have no spinner or running clock. Settled rows emphasize the operation,
+mute the target and reserve outcome/metrics space, including explicit failure.
+
+CLI suite: **1,302 passed / 0 failed / 0 skipped**
+(`artifacts/tui-activity-tests-final.log`). The initial run had **1,289 passed /
+3 failed** because it pinned raw `web_fetch`/`todo` labels and single-space tool
+formatting; updated assertions pin Fetch/Plan and the new grouping while retaining
+feed ordering, target and expansion checks (`artifacts/tui-activity-tests.log`).
+Headless Terminal.Gui buffer previews at requested 100×32 and 50×26 cover active
+and approval states, tool outcomes and narrow wrapping
+(`artifacts/tui-activity-wide.png`, `artifacts/tui-activity-narrow.png`). These are
+synthetic content rendered by actual controls, not native terminal acceptance.
+After the last color/label refinement, **54 focused tests** passed
+(`artifacts/tui-activity-polish-verified.log`) and **15 documentation guards**
+passed (`artifacts/tui-activity-docs.log`).
+The previous full Release matrix remains the release evidence below.
+
 ## GUI/TUI review (2026-10-12)
 
 Release follow-up: the full 12-project Debug matrix passed **5,987/5,987**

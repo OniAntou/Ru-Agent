@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Give Agent Activity its own header row with a colored status glyph, readable action, muted target and right-aligned elapsed/tool count. Distinguish thinking from writing a response; parked states stay still without a running clock. Refine tool rows with clearer labels, target spacing, preserved outcome/metrics and explicit failure text. Pending activities retain their own action when another tool settles.
+
 - **fix(gui)**: Discard stale Tasks responses when session/run ownership changes, bind terminal output/exit callbacks to their originating shell and prevent delayed startup after shutdown. Serialize/coalesce model selection saves so the last choice wins in both settings and UI.
 
 - **fix(tui)**: Parse streamed Markdown from complete raw lines, preview unfinished lines in place at frame cadence, and drop provisional text on retry. Preserve complete fenced code lines for viewport wrapping and resize; plain log output commits on newline or Flush.

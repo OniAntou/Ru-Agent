@@ -87,6 +87,16 @@ public sealed class TuiSessionRenderer
         return _status.Compose(width);
     }
 
+    public TuiActivityPresentation PresentActivity(int width)
+    {
+        if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
+        {
+            _status.Tick();
+            _status.SetElapsed(_transcript.ElapsedSeconds);
+        }
+        return _status.Presentation(width);
+    }
+
     public void ToggleExpand() => _transcript.ToggleExpand();
 
     /// <summary>Prints an operator-facing one-liner into the transcript.</summary>

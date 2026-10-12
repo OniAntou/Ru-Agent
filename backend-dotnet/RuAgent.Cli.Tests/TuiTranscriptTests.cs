@@ -9,6 +9,23 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiTranscriptTests
 {
     [Fact]
+    public void NextPendingToolKeepsItsVerbAndTargetAfterAnotherToolSettles()
+    {
+        var surface = new TuiSurface(new StringWriter());
+        var status = new TuiStatusLine(surface);
+        var transcript = new TuiTranscript(surface, status);
+        var a = Activity(AgentActivityKind.Explore, AgentActivityState.Started, fileName: "a.cs") with { ActivityId = "act_a" };
+        var b = Activity(AgentActivityKind.Search, AgentActivityState.Started, fileName: "b.cs") with { ActivityId = "act_b" };
+        transcript.ApplyActivity(a);
+        transcript.ApplyActivity(b);
+        transcript.ApplyActivity(a with { State = AgentActivityState.Completed, DurableSequence = 10 });
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 10));
+        var presentation = status.Presentation(80);
+        Assert.Equal("Searching", presentation.Action);
+        Assert.Equal("b.cs", presentation.Target);
+    }
+
+    [Fact]
     public void ParallelActivitiesKeepCompletionMetadataWithTheirOwnTool()
     {
         var (transcript, output) = Create();
@@ -61,9 +78,9 @@ public sealed class TuiTranscriptTests
     }
 
     [Theory]
-    [InlineData(AgentActivityKind.Status, "web_fetch")]
-    [InlineData(AgentActivityKind.Todo, "todo")]
-    public void OtherToolKindsKeepTheirPlaceInTheResultFeed(AgentActivityKind kind, string display)
+    [InlineData(AgentActivityKind.Status, "web_fetch", "Fetch")]
+    [InlineData(AgentActivityKind.Todo, "todo", "Plan")]
+    public void OtherToolKindsKeepTheirPlaceInTheResultFeed(AgentActivityKind kind, string display, string visibleLabel)
     {
         var (transcript, output) = Create();
         transcript.FullScreenCards = true;
@@ -73,7 +90,7 @@ public sealed class TuiTranscriptTests
         transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 11));
         var rows = Rows(output);
         Assert.Equal(2, rows.Count);
-        Assert.Contains(display, rows[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(visibleLabel, rows[0], StringComparison.Ordinal);
         Assert.DoesNotContain("b.cs", rows[0]);
         Assert.Contains("b.cs", rows[1]);
     }

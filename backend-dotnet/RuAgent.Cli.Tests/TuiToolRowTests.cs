@@ -11,7 +11,8 @@ public sealed class TuiToolRowTests
         var row = TuiToolRow.Compose(ToolLineStatus.Ok, "Search", "\"homepage\"", "(18 matches)", 80);
 
         var text = TuiText.Strip(row);
-        Assert.StartsWith("✱ Search \"homepage\" (18 matches)", text, StringComparison.Ordinal);
+        Assert.StartsWith("✱ Search  \"homepage\"", text, StringComparison.Ordinal);
+        Assert.EndsWith("(18 matches)", text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -38,7 +39,8 @@ public sealed class TuiToolRowTests
             var row = TuiToolRow.Compose(ToolLineStatus.Failed, "Edit", "app.cs", null, 60);
 
             Assert.Contains(TuiPalette.Code(TuiToken.Err), row);
-            Assert.Contains("← Edit app.cs", TuiText.Strip(row), StringComparison.Ordinal);
+            Assert.Contains("✗ Edit  app.cs", TuiText.Strip(row), StringComparison.Ordinal);
+            Assert.EndsWith("failed", TuiText.Strip(row), StringComparison.Ordinal);
         }
     }
 

@@ -20,8 +20,12 @@ input. The five-row composer shows “Ask anything…” when empty, with one bl
 row between input and model metadata and one below the metadata. Its input uses
 a steady block cursor. The empty-chat footer only shows `ctrl+p commands`;
 active sessions retain the navigation/expansion hints. The header puts session
-title/known usage on the first row and workspace/current activity on the second,
-with a dim separator below; idle activity uses the secondary colour. Frames
+title/known usage on the first row, workspace on the second and a dedicated
+activity row on the third. A colored glyph precedes the readable action; targets
+are muted and elapsed/tool count align right. Ready is quiet, response deltas
+show “Writing response”, and parked states have no spinner or running clock.
+Tool rows distinguish action, target and metrics; failure remains explicit even
+when a long command is shortened. Frames
 shorter than 20 rows use a single heading row. The feed
 uses the available width without a side panel. Command overlays follow the
 prompt's width and shrink with the available space above it.

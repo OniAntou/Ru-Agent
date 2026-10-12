@@ -330,7 +330,18 @@ public sealed class TgTranscriptView : View
                 AddStr(new string(' ', width));
                 Move(0, i);
             }
-            AddStr(text);
+            if (style == TranscriptStyle.Tool && text.Length > 2 && text[1] == ' ')
+            {
+                var labelEnd = text.IndexOf(' ', 2);
+                if (labelEnd < 0) labelEnd = text.Length;
+                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Brand));
+                AddStr(text[..1]);
+                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Bright));
+                AddStr(text[1..labelEnd]);
+                SetAttribute(TgPalette.Attr(text[0] == '✗' ? TuiToken.Err : TuiToken.Meta));
+                AddStr(text[labelEnd..]);
+            }
+            else AddStr(text);
         }
 
         return true;

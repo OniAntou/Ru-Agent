@@ -319,7 +319,11 @@ reconciliation surfaces from Phase 3:
   for busy/idle hints, including clear. Workspace-busy hints persist until Host
   acceptance or a successful session switch, independent of composer keystrokes.
   `TgChatLayout` owns responsive positioning: centred landing and a padded session
-  column below a compact title/usage, workspace and activity header. Frames below
+  column below a three-row header: title/usage, workspace, then semantic activity.
+  The activity projection separates glyph/action, target and right-aligned metrics;
+  response deltas show writing, parked states stay still, and queued tools retain
+  their own action after another tool settles. Settled rows preserve outcome text
+  and metrics when shortening targets. Frames below
   20 rows keep a single heading row. The header projects existing session data;
   it adds no API calls. Streaming reflows a dirty tail at draw/scroll boundaries.
   Tool activity metadata is updated by ID and consumed in durable proposal order;

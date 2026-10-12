@@ -60,6 +60,7 @@ public sealed class TuiTranscript
     private bool _sawCompletion;
     private bool _paused;
     private string? _pausedRunId;
+    private string? _lastParkReason;
     private bool _fullScreenCards;
 
     /// <summary>
@@ -207,6 +208,7 @@ public sealed class TuiTranscript
         _sawCompletion = false;
         _paused = false;
         _pausedRunId = null;
+        _lastParkReason = null;
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _retained.Clear();
@@ -778,9 +780,20 @@ public sealed class TuiTranscript
     /// </summary>
     public static string FormatParkedNotice(string runId, string? summary = null)
     {
-        var code = string.IsNullOrWhiteSpace(summary) ? "waiting_user" : summary;
-        return $"run parked · {code} · resume with /continue (or 'ru agent continue {runId}')";
+        var reason = ParkReasonCode(summary);
+        return reason is null
+            ? $"run parked · resume with /continue (or 'ru agent continue {runId}')"
+            : $"run parked · {reason} · {ParkAction(runId, reason)}";
     }
+
+    private static string? ParkReasonCode(string? code) =>
+        string.IsNullOrWhiteSpace(code) || code is "waiting_user" or "reconciliation_required"
+            ? null : code.Trim();
+
+    private static string ParkAction(string runId, string reason) =>
+        reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
+            ? "provider temporarily unavailable · wait before /continue"
+            : $"resume with /continue (or 'ru agent continue {runId}')";
 
     /// <summary>
     /// The one line for a run this session already has in flight: the operator can
@@ -797,22 +810,24 @@ public sealed class TuiTranscript
     /// </summary>
     private void ParkRun(HarnessSafeEventEnvelope envelope)
     {
-        var summary = Escape(envelope.SafeSummary);
-        if (string.IsNullOrWhiteSpace(summary))
-        {
-            summary = "waiting_user";
-        }
-
-        _status.SetState(TuiRunState.Paused);
-        _status.SetDetail(summary + " · /continue");
-        if (_paused && string.Equals(_pausedRunId, envelope.RunId, StringComparison.Ordinal))
-        {
-            return;
-        }
-
+        var reason = ParkReasonCode(Escape(envelope.SafeSummary));
+        var newPark = !_paused || _pausedRunId != envelope.RunId;
+        if (newPark) _lastParkReason = null;
         _paused = true;
         _pausedRunId = envelope.RunId;
-        Notice(FormatParkedNotice(envelope.RunId, summary), TuiToken.Warn);
+        if (newPark)
+        {
+            _lastParkReason = reason;
+            Notice(FormatParkedNotice(envelope.RunId, reason), TuiToken.Warn);
+        }
+        else if (reason is not null && reason != _lastParkReason)
+        {
+            _lastParkReason = reason;
+            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason)}", TuiToken.Warn);
+        }
+        _status.SetState(TuiRunState.Paused);
+        _status.SetDetail(_lastParkReason is null ? "waiting to continue"
+            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason));
     }
 
     private void ClearPaused()
@@ -824,6 +839,7 @@ public sealed class TuiTranscript
 
         _paused = false;
         _pausedRunId = null;
+        _lastParkReason = null;
         _status.SetDetail(null);
         _status.SetState(TuiRunState.Thinking);
     }

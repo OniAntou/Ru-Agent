@@ -6,13 +6,36 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,011 passed / 0 failed / 0 skipped** (2026-10-12, balanced default Dark release). Broker 910; CLI 1,307; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/gui-dark-balanced-release-matrix.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, balanced default Dark release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-dark-balanced-release-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| .NET tests | Full **12-project** Debug matrix: **6,024 passed / 0 failed / 0 skipped** (2026-10-12, selective park-reason integration). Broker 910; CLI 1,320; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/cli-park-reason-matrix.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, selective park-reason integration), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/cli-park-reason-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, balanced default Dark). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-dark-balanced-release-build.log`, `artifacts/gui-dark-balanced-release-deploy.log`. |
 | Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-dark-balanced-release-smoke.log`. Interactive native UI remains manual acceptance. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Selective CLI park-reason integration (2026-10-12)
+
+Ported the useful park-reason behavior from `fix/cli-run-park-reason` onto current
+dev, preserving existing scrolling, billing classification, diagnostics and UI.
+The original branch's two defects are corrected: the state-first live park now
+recovers the exact next committed reason through bounded finite replay, and reason
+deduplication resets across turns/runs. Status names are not invented causes.
+The three-argument SSE client method remains available for binary compatibility;
+the new overload requests `live=0` without changing default subscriptions.
+
+Four new renderer cases initially failed on the old code
+(`artifacts/cli-park-reason-red.log`). After correction, CLI 1,313 and Client 215
+passed (`artifacts/cli-park-reason-tests.log`); additional recovery guards brought
+the final full matrix to **6,024 / 0 failed / 0 skipped**
+(`artifacts/cli-park-reason-matrix.log`). New `ChatAsync` tests use the actual SSE
+client/parser and run-follow code against fake HTTP, covering state-first order,
+missing replay and no server cancellation. Additional tests cover exact cursor/run
+binding, timeout and propagation of parent cancellation. These are deterministic
+tests, not native terminal or live-provider acceptance. No new Release package was
+published for this integration; the previous release remains in the table above.
+Python passed **214**, with **1** POSIX test skipped on Windows
+(`artifacts/cli-park-reason-python.log`).
 
 ## Balanced default Dark brightness (2026-10-12)
 

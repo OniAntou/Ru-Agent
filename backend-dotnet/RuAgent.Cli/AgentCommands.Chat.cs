@@ -1110,6 +1110,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task FollowRunAsync(string runId, long afterSequence, CancellationToken ct)
         {
+            SseFrame? parkedTransition = null;
             async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1120,6 +1121,7 @@ public sealed partial class AgentCommands
                 // pause, not a user interruption, so no cancel is posted.
                 if (TryReadParkedTransition(frame, out var parkedRun))
                 {
+                    parkedTransition = frame;
                     runSession.ParkActiveRun(parkedRun!);
                 }
 
@@ -1366,6 +1368,15 @@ public sealed partial class AgentCommands
             catch (OperationCanceledException) when (ct.IsCancellationRequested
                 && string.Equals(runSession.ParkedRunId, runId, StringComparison.Ordinal))
             {
+                // The state frame precedes the reason in the same commit. Recover only
+                // its exact companion through finite replay before returning to the composer.
+                if (parkedTransition is { DurableSequence: { } parkSequence }
+                    && ChatParkReasonRecovery.NeedsReplay(parkedTransition))
+                {
+                    var reason = await ChatParkReasonRecovery.ReadAsync(
+                        _sseClient, runId, parkSequence, cancellationToken).ConfigureAwait(false);
+                    if (reason is not null) await OnFrameAsync(reason, cancellationToken).ConfigureAwait(false);
+                }
                 // Parking deliberately cancels the subscription. Preserve the
                 // durable-text recovery leg before the caller winds down the turn.
                 sessionRenderer.Flush();
@@ -1603,7 +1614,7 @@ public sealed partial class AgentCommands
                     {
                         await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
                         runSession.RememberParked(candidateRunId);
-                        var notice = Tui.TuiTranscript.FormatParkedNotice(candidateRunId, run.Status);
+                        var notice = Tui.TuiTranscript.FormatParkedNotice(candidateRunId);
                         if (cmd.Json)
                         {
                             await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);

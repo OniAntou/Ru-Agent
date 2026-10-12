@@ -45,16 +45,21 @@ public sealed class AgentSseClient : IDisposable
         }
     }
 
+    public IAsyncEnumerable<SseFrame> ReadEventsAsync(
+        string runId, long afterSequence = 0, CancellationToken cancellationToken = default) =>
+        ReadEventsAsync(runId, afterSequence, cancellationToken, live: true);
+
     public async IAsyncEnumerable<SseFrame> ReadEventsAsync(
         string runId,
-        long afterSequence = 0,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        long afterSequence,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+        bool live)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ValidateRunId(runId);
         if (afterSequence < 0) throw new AgentApiException("invalid_cursor", "after_sequence must be non-negative");
 
-        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/events?after_sequence={afterSequence}");
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/events?after_sequence={afterSequence}" + (live ? string.Empty : "&live=0"));
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: Show the actual reason a run paused, with wait guidance for transient provider failures. Recover the exact committed reason through bounded finite SSE replay when the state frame ends the live subscription, preserve resumability without cancelling the server run, and reset reason deduplication across turns/runs. Session adoption no longer labels `waiting_user` as a cause.
+
 - **style(gui)**: Reduce default Dark brightness to a balanced charcoal canvas (`#1A1A1A`), with matching sidebar, surface and interaction tones. Light, Meteor and Starry Night palettes are unchanged.
 
 - **feat(gui,cli)**: Add a collapsible CLI Session sidebar section below Workspaces and Recents, increase section spacing, and persist the creating client so CLI/TUI sessions stay grouped across restarts without changing their execution directory. Legacy sessions without a source retain existing grouping.

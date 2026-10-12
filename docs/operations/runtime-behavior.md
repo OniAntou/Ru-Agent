@@ -422,6 +422,15 @@ An exhausted provider-transient failure
 `provider_transport_error`) is not failed either: it parks the run in
 `waiting_user` with a `ContinueRequested` that preserves the provider's code,
 and an explicit Continue retries the same provider in a fresh budget window.
+
+CLI parking cancels its live subscription, not the server run. When the first
+`run.state_changed` frame contains only `waiting_user`, it reads the next committed
+frame once through finite `live=0` replay, limited to two seconds and four frames.
+Only the exact next sequence, same run, and parked `continue.requested` event can
+supply the reason. Missing/unavailable replay keeps generic Continue guidance;
+parent cancellation still propagates. Provider-transient reasons advise waiting
+before Continue. Reason deduplication is scoped to the park and reset on new turns
+or resumed state; session adoption does not invent a reason from run status.
 A provider stream that goes silent is the case behind `provider_timeout`: the
 SSE reader resets a 120-second idle watchdog on every received chunk and
 cancels a stream that sends nothing, so a provider that accepts the connection

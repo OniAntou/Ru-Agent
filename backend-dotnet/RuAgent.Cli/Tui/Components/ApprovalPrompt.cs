@@ -81,13 +81,16 @@ public sealed class ApprovalPrompt
     public TaskCompletionSource<string> Decision { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
-    /// The two-way prompt used by the interactive surface. A directory grant is
-    /// only offered for external-directory asks: the server fails any other
+    /// The two-way prompt used by the interactive surface. A directory decision
+    /// is only offered for external-directory asks: the server fails any other
     /// allow_session_directory with invalid_approval_command, so offering it
     /// elsewhere turns a silent escalation into an ordinary approval error.
-    /// A remember-me choice is offered for known non-external asks instead;
-    /// the server persists it as a project rule. Callers pass the wire
-    /// SafeCode (the ask reason); anything else denies the folder choice.
+    /// The external ask offers both halves of a folder approval: the
+    /// session-scoped grant and the durable project-scope remember (registered
+    /// as a bounded folder pattern). A remember-me choice is offered for known
+    /// non-external asks instead; the server persists it as a project rule.
+    /// Callers pass the wire SafeCode (the ask reason); anything else denies
+    /// the folder choices.
     /// </summary>
     public static ApprovalPrompt For(string safeSummary, bool offerDirectory = false)
     {
@@ -106,6 +109,7 @@ public sealed class ApprovalPrompt
         if (offerDirectory && directoryAllowed)
         {
             choices.Add(new("3 · folder", "allow this folder for the session", AllowDirectory));
+            choices.Add(new("4 · always", "allow and remember this folder for this project", AllowAlways));
         }
         else if (!directoryAllowed && RememberableAskReasons.Contains(reason))
         {

@@ -72,7 +72,7 @@ public static class AgentApprovalSummaryPresentation
         return trimmed switch
         {
             ExternalDirectoryRequired =>
-                "Ru needs to access a directory outside the project in this chat until the app closes.",
+                "Ru needs to access files in a folder outside the project workspace.",
             TerminalDeleteRequiresApproval =>
                 "This terminal command will delete files.",
             TerminalExternalMutationRequiresApproval =>

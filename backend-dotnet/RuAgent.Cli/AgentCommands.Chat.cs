@@ -593,13 +593,24 @@ public sealed partial class AgentCommands
                 return await RequestApprovalInTgAsync(prompt, approvalToken).ConfigureAwait(false);
             }
 
-            await _out.WriteAsync(Tui.TuiPalette.BoldPaint("\n  ❯ Approve? [1: once / 2: deny] (default: 2): ")).ConfigureAwait(false);
+            // The numbered line mirrors the prompt's own choices so a folder or
+            // remember answer exists in the plain layout too; anything the line
+            // does not list still answers deny.
+            var optionsText = string.Join(
+                " / ",
+                prompt.Choices.Select(choice => choice.Label));
+            await _out.WriteAsync(Tui.TuiPalette.BoldPaint($"\n  ❯ Approve? [{optionsText}] (default: 2): ")).ConfigureAwait(false);
             await _out.FlushAsync().ConfigureAwait(false);
             var answer = await _in.ReadLineAsync(approvalToken).ConfigureAwait(false);
             var normalized = string.IsNullOrWhiteSpace(answer) ? "2" : answer.Trim().ToLowerInvariant();
-            return normalized is "1" or "once" or "yes" or "y"
-                ? Tui.ApprovalPrompt.AllowOnce
-                : Tui.ApprovalPrompt.Deny;
+            if (normalized is "once" or "yes" or "y")
+            {
+                return Tui.ApprovalPrompt.AllowOnce;
+            }
+
+            var selected = prompt.Choices.FirstOrDefault(
+                choice => choice.Label.StartsWith(normalized + " ", StringComparison.Ordinal));
+            return selected?.Decision ?? Tui.ApprovalPrompt.Deny;
         }
 
         /// <summary>
@@ -1212,7 +1223,7 @@ public sealed partial class AgentCommands
                             if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                             {
                                 var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : runId;
-                                var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
+                                var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary, offerDirectory: true), frameCt).ConfigureAwait(false);
 
                                 if (decision == Tui.ApprovalPrompt.Deny)
                                 {
@@ -1859,7 +1870,7 @@ public sealed partial class AgentCommands
                 if (pendingApproval is not null)
                 {
                     var decision = await RequestApprovalAsync(
-                        Tui.ApprovalPrompt.For(pendingApproval.SafeSummary),
+                        Tui.ApprovalPrompt.For(pendingApproval.SafeSummary, offerDirectory: true),
                         runSession.Token).ConfigureAwait(false);
                     var latest = await _agentClient.GetRunAsync(targetRunId, runSession.Token).ConfigureAwait(false);
                     if (!ChatRunWorkflow.SameSnapshot(run, latest)

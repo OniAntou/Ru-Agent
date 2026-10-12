@@ -9,14 +9,15 @@ public sealed class ApprovalPromptTests
         ApprovalPrompt.For("external_directory_required", offerDirectory);
 
     [Fact]
-    public void For_OffersTheThreeWayChoiceWithDenySelected()
+    public void For_OffersTheFolderChoicesWithDenySelected()
     {
         var prompt = Create(offerDirectory: true);
 
-        Assert.Equal(3, prompt.Choices.Count);
+        Assert.Equal(4, prompt.Choices.Count);
         Assert.Equal(ApprovalPrompt.AllowOnce, prompt.Choices[0].Decision);
         Assert.Equal(ApprovalPrompt.Deny, prompt.Choices[1].Decision);
         Assert.Equal(ApprovalPrompt.AllowDirectory, prompt.Choices[2].Decision);
+        Assert.Equal(ApprovalPrompt.AllowAlways, prompt.Choices[3].Decision);
         Assert.Equal(ApprovalPrompt.Deny, prompt.Current.Decision);
     }
 
@@ -50,10 +51,22 @@ public sealed class ApprovalPromptTests
     }
 
     [Fact]
-    public void For_ExternalAsk_NeverOffersAlwaysChoice()
+    public void For_ExternalAsk_OffersTheSessionFolderAndTheProjectRemember()
     {
         var prompt = ApprovalPrompt.For("external_directory_required", offerDirectory: true);
 
+        Assert.Equal(4, prompt.Choices.Count);
+        Assert.Equal(ApprovalPrompt.AllowDirectory, prompt.Choices[2].Decision);
+        Assert.Equal(ApprovalPrompt.AllowAlways, prompt.Choices[3].Decision);
+    }
+
+    [Fact]
+    public void For_ExternalAsk_WithoutDirectorySupport_StaysOnceOrDeny()
+    {
+        var prompt = ApprovalPrompt.For("external_directory_required");
+
+        Assert.Equal(2, prompt.Choices.Count);
+        Assert.DoesNotContain(prompt.Choices, c => c.Decision == ApprovalPrompt.AllowDirectory);
         Assert.DoesNotContain(prompt.Choices, c => c.Decision == ApprovalPrompt.AllowAlways);
     }
 
@@ -110,7 +123,7 @@ public sealed class ApprovalPromptTests
         Assert.Equal(ApprovalPrompt.AllowOnce, prompt.Current.Decision);
 
         prompt.Move(-1);
-        Assert.Equal(ApprovalPrompt.AllowDirectory, prompt.Current.Decision);
+        Assert.Equal(ApprovalPrompt.AllowAlways, prompt.Current.Decision);
 
         prompt.Move(1);
         Assert.Equal(ApprovalPrompt.AllowOnce, prompt.Current.Decision);
@@ -120,6 +133,7 @@ public sealed class ApprovalPromptTests
     [InlineData('1', ApprovalPrompt.AllowOnce)]
     [InlineData('2', ApprovalPrompt.Deny)]
     [InlineData('3', ApprovalPrompt.AllowDirectory)]
+    [InlineData('4', ApprovalPrompt.AllowAlways)]
     public void TrySelectDigit_PicksTheMatchingChoice(char digit, string expected)
     {
         var prompt = Create(offerDirectory: true);
@@ -164,7 +178,7 @@ public sealed class ApprovalPromptTests
 
         var lines = prompt.Render(width);
 
-        Assert.Equal(5, lines.Count);
+        Assert.Equal(6, lines.Count);
         Assert.All(lines, line => Assert.Equal(width, TuiText.VisibleWidth(line)));
     }
 
@@ -179,6 +193,7 @@ public sealed class ApprovalPromptTests
         Assert.Contains("1 · once", text, StringComparison.Ordinal);
         Assert.Contains("2 · deny", text, StringComparison.Ordinal);
         Assert.Contains("3 · folder", text, StringComparison.Ordinal);
+        Assert.Contains("4 · always", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -214,12 +229,12 @@ public sealed class ApprovalPromptTests
     }
 
     [Fact]
-    public void For_OnlyExternalDirectoryAsksOfferTheFolderChoice()
+    public void For_OnlyExternalDirectoryAsksOfferTheFolderChoices()
     {
         Assert.Equal(3, ApprovalPrompt.For("terminal_delete_requires_approval", offerDirectory: true).Choices.Count);
         Assert.Equal(3, ApprovalPrompt.For("web_approval_required", offerDirectory: true).Choices.Count);
         Assert.Equal(2, ApprovalPrompt.For("approval_required").Choices.Count);
-        Assert.Equal(3, ApprovalPrompt.For("external_directory_required", offerDirectory: true).Choices.Count);
+        Assert.Equal(4, ApprovalPrompt.For("external_directory_required", offerDirectory: true).Choices.Count);
     }
 
     [Fact]

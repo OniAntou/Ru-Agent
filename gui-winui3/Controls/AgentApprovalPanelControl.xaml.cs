@@ -56,12 +56,12 @@ namespace RuApp.Controls
         /// a non-terminal approval does not show an empty code box. The plain approve
         /// label follows the Host's session approval ledger: remembered for the
         /// session on every ask whose memory the evaluator honours, single-use on an
-        /// external-directory ask (whose session grant is the separate session
-        /// button) and an explicit rule ask, which outranks remembered allows. The
-        /// session affordance appears only for external-directory asks
-        /// because the server fails that command for every other reason; the Always
-        /// allow affordance appears for every other known ask reason and saves a
-        /// project rule.
+        /// external-directory ask (whose folder decisions are the separate buttons)
+        /// and an explicit rule ask, which outranks remembered allows. The folder
+        /// affordance appears only for external-directory asks because the server
+        /// fails that command for every other reason; the remember affordance
+        /// appears for every known ask reason that may become a project rule,
+        /// including an external-directory ask (which remembers the folder).
         /// </summary>
         public void Show(
             string summary,
@@ -96,15 +96,29 @@ namespace RuApp.Controls
                         : "Allow this call once");
 
             AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
-            RememberButton.Visibility = !allowSessionDirectory && allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;
-            if (allowSessionDirectory)
+            RememberButton.Visibility = allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;
+            RememberButtonLabel.Text = allowSessionDirectory
+                ? "Remember folder for project"
+                : "Always allow";
+            AutomationProperties.SetName(
+                RememberButton,
+                allowSessionDirectory
+                    ? "Remember this folder as a project rule"
+                    : "Always allow and remember this action as a project rule");
+
+            if (allowSessionDirectory && allowRememberAlways)
+            {
+                SessionScopeHint.Text = "This folder can stay open for this chat session, or be remembered for this project.";
+                SessionScopeHint.Visibility = Visibility.Visible;
+            }
+            else if (allowSessionDirectory)
             {
                 SessionScopeHint.Text = "This folder stays open for this chat session only.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else if (allowRememberAlways)
             {
-                SessionScopeHint.Text = "Always allow remembers this exact action for this project.";
+                SessionScopeHint.Text = "Always allow remembers this action pattern for this project.";
                 SessionScopeHint.Visibility = Visibility.Visible;
             }
             else

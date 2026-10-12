@@ -80,9 +80,9 @@ public sealed class TgPanelsTests
         app.Run(window);
     }
 
-    /// <summary>Task 12's parked finding: the directory grant must survive the TG path.</summary>
+    /// <summary>Task 12's parked finding: the directory decisions must survive the TG path.</summary>
     [Fact]
-    public void ApprovalPanel_ShowsFolderChoice_WhenThePromptOffersTheDirectory()
+    public void ApprovalPanel_ShowsFolderAndRememberChoices_WhenThePromptOffersTheDirectory()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -92,7 +92,7 @@ public sealed class TgPanelsTests
         {
             var text = string.Join('\n', TgSnapshot.Capture(app));
             Assert.Contains("3 · folder", text);
-            Assert.DoesNotContain("3 · always", text);
+            Assert.Contains("4 · always", text);
             app.RequestStop();
             return false;
         });

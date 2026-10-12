@@ -15,7 +15,7 @@ public static class AgentApprovalPresentation
     /// <summary>
     /// Whether the pending approval may be granted for the whole chat session.
     /// The server only honours allow_session_directory for external-directory
-    /// asks, so the Always affordance must stay hidden for every other reason.
+    /// asks, so the folder affordance must stay hidden for every other reason.
     /// </summary>
     public static bool CanAllowSessionDirectory(string? askReason) =>
         string.Equals(
@@ -27,6 +27,8 @@ public static class AgentApprovalPresentation
     /// Ask reasons that are shown with dedicated copy but must never become a
     /// reusable project rule. A protected path stays one-time: remembering it
     /// would turn one approval into standing access to a credential directory.
+    /// An explicit ask rule stays one-time because an allow can never outrank
+    /// it, so a remembered rule would be dead weight that reads as an override.
     /// </summary>
     private static readonly IReadOnlyList<string> OneTimeOnlyReasons =
     [
@@ -51,15 +53,15 @@ public static class AgentApprovalPresentation
 
     /// <summary>
     /// Whether the pending approval may be remembered as a project rule. The
-    /// server only honours allow_always for known ask reasons that are not
-    /// external-directory asks (those keep the session grant instead); unknown
-    /// reasons and one-time-only reasons stay one-time.
+    /// server honours allow_always for known ask reasons that are not
+    /// one-time-only: an external-directory ask saves the approved folder as a
+    /// bounded path pattern, every other reason saves the reviewed action
+    /// pattern. Unknown reasons and one-time-only reasons stay one-time.
     /// </summary>
     public static bool CanRememberAllowAlways(string? askReason)
     {
         var trimmed = askReason?.Trim();
         return !string.IsNullOrWhiteSpace(trimmed)
-            && !CanAllowSessionDirectory(trimmed)
             && !OneTimeOnlyReasons.Contains(trimmed, StringComparer.Ordinal)
             && AgentApprovalSummaryPresentation.MappedReasonCodes.Contains(trimmed, StringComparer.Ordinal);
     }

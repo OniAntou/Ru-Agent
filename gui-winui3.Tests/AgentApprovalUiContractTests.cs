@@ -120,12 +120,14 @@ public sealed class AgentApprovalUiContractTests
         var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
 
         // One panel, its summary, the command block, the session-scope hint, and
-        // the four decisions (Always only appears for external folders,
-        // Remember for every other known ask reason).
+        // the four decisions (Always only appears for external folders, Remember
+        // for every known ask reason that may become a project rule — including
+        // an external folder, which remembers the folder itself).
         foreach (var required in new[]
                  {
                      "Panel", "SummaryText", "CommandContainer", "CommandText",
-                     "ApproveButton", "AlwaysButton", "RememberButton", "DenyButton", "SessionScopeHint",
+                     "ApproveButton", "AlwaysButton", "RememberButton", "RememberButtonLabel",
+                     "DenyButton", "SessionScopeHint",
                  })
         {
             Assert.True(named.ContainsKey(required), $"{required} must exist.");
@@ -171,6 +173,11 @@ public sealed class AgentApprovalUiContractTests
         Assert.True(sessionMemory >= 0, "The label must key off the session-memory predicate.");
         Assert.True(folderOnce > predicate, "The one-time label must follow the predicates.");
         Assert.True(sessionRemembered > folderOnce, "The session-remembered label must be the fallback.");
+
+        // The remember button flips its label for an external folder: it then
+        // remembers the folder for the project, not one action pattern.
+        Assert.Contains("RememberButtonLabel.Text", show, StringComparison.Ordinal);
+        Assert.Contains("\"Remember folder for project\"", show, StringComparison.Ordinal);
 
         string chat = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
         Assert.Contains("ApprovalPanel.Show(", chat, StringComparison.Ordinal);
@@ -224,7 +231,7 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void Remember_scope_is_offered_for_known_non_external_reasons_only()
+    public void Remember_scope_is_offered_for_known_reasons_including_external_folders()
     {
         Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.TerminalDeleteRequiresApproval));
@@ -234,7 +241,7 @@ public sealed class AgentApprovalUiContractTests
             AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval));
         Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.TerminalNetworkRequiresApproval));
-        Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
+        Assert.True(AgentApprovalPresentation.CanRememberAllowAlways(
             AgentApprovalSummaryPresentation.ExternalDirectoryRequired));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(null));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways("future_reason_code"));
@@ -254,17 +261,18 @@ public sealed class AgentApprovalUiContractTests
     [InlineData(AgentApprovalSummaryPresentation.GitConfigMutationRequiresApproval, true)]
     [InlineData(AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval, false)]
     [InlineData(AgentApprovalSummaryPresentation.RuleAsks, false)]
-    [InlineData(AgentApprovalSummaryPresentation.ExternalDirectoryRequired, false)]
+    [InlineData(AgentApprovalSummaryPresentation.ExternalDirectoryRequired, true)]
     [InlineData("future_reason_code", false)]
     public void Tui_and_gui_offer_the_same_remember_choice(string reason, bool expected)
     {
         // The remember rule exists twice: the TUI prompt's reason set and the GUI
         // presentation predicate. Nothing but this test stops one from drifting,
-        // and a drift would offer "always" on one surface only.
+        // and a drift would offer "always" on one surface only. The interactive
+        // surfaces offer the directory decisions, mirroring offerDirectory: true.
         Assert.Equal(expected, AgentApprovalPresentation.CanRememberAllowAlways(reason));
         Assert.Equal(
             expected,
-            RuAgent.Cli.Tui.ApprovalPrompt.For(reason).Choices
+            RuAgent.Cli.Tui.ApprovalPrompt.For(reason, offerDirectory: true).Choices
                 .Any(choice => choice.Decision == RuAgent.Cli.Tui.ApprovalPrompt.AllowAlways));
     }
 

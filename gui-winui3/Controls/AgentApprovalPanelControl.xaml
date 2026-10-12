@@ -117,7 +117,7 @@
                          Click="OnRememberClick"
                          Visibility="Collapsed"
                          AutomationProperties.AutomationId="AgentRememberButton"
-                         AutomationProperties.Name="Always allow and remember this action"
+                         AutomationProperties.Name="Always allow and remember this action as a project rule"
                          Background="Transparent"
                          Foreground="{StaticResource RuInkBrush}"
                          BorderBrush="{StaticResource RuLineBrush}"
@@ -127,7 +127,8 @@
                          Height="32">
                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                          <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
-                         <TextBlock Text="Always allow"
+                         <TextBlock x:Name="RememberButtonLabel"
+                                    Text="Always allow"
                                     FontFamily="{StaticResource RuUiFontFamily}"
                                     FontSize="12"
                                     FontWeight="Medium"

@@ -11,6 +11,35 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgChromeTests
 {
+    [Fact]
+    public void HeaderActivityUpdatesStayAboveTheFeedAndClearThePreviousLabel()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Hints.SetIdle("D:\\LLM");
+        window.Header.SetActivity("Reading a-long-file-name.cs");
+        window.Transcript.Append("answer content", TranscriptStyle.Prose);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            Assert.Contains("Reading a-long-file-name.cs", TgSnapshot.Capture(app)[1]);
+            window.Header.SetActivity("idle");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            Assert.Contains("D:\\LLM", rows[1]);
+            Assert.EndsWith("idle", rows[1]);
+            Assert.DoesNotContain("a-long-file-name.cs", rows[1]);
+            Assert.Contains("───", rows[2]);
+            Assert.Contains("answer content", rows[window.Transcript.Frame.Y]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
     /// <summary>
     /// Drives the screen to a size and only continues once the driver reports it. The test
     /// driver silently refuses a <c>SetScreenSize</c> it has not settled on yet, and a resize
@@ -178,7 +207,7 @@ public sealed class TgChromeTests
             Assert.Contains("20%", row);
             Assert.Contains("$0.29", row);
             var hash = row.IndexOf('#');
-            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, hash).Foreground);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Brand), TgSnapshot.CellAttribute(app, 0, hash).Foreground);
             var tally = row.IndexOf("39,413", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, tally).Foreground);
             // Flush right like TuiHeader's TwoColumn: the cluster ends on the last column.
@@ -210,6 +239,7 @@ public sealed class TgChromeTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
+        window.Transcript.Append("Active session", TranscriptStyle.Prose);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             app.Driver!.SetScreenSize(100, 30);
@@ -218,7 +248,7 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
             var rows = TgSnapshot.Capture(app);
-            Assert.Contains("┌", rows[^7]);
+            Assert.Contains("┃", rows[window.Composer.Frame.Y]);
             Assert.Contains("/ commands", rows[^1]);
             app.RequestStop();
             return false;
@@ -261,6 +291,7 @@ public sealed class TgChromeTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
+        window.Transcript.Append("Active session", TranscriptStyle.Prose);
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
         {
             window.FocusComposer();
@@ -275,7 +306,7 @@ public sealed class TgChromeTests
                     Assert.False(window.HandOverToSequential);
                     // The composer is still the last region on screen: the frame never went away.
                     var rows = TgSnapshot.Capture(app);
-                    Assert.Contains("┌", rows[^7]);
+                    Assert.Contains("┃", rows[window.Composer.Frame.Y]);
                     Assert.Contains("/ commands", rows[^1]);
                     app.RequestStop();
                 }));
@@ -301,6 +332,7 @@ public sealed class TgChromeTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
+        window.Transcript.Append("Active session", TranscriptStyle.Prose);
         app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
         {
             window.FocusComposer();
@@ -314,7 +346,7 @@ public sealed class TgChromeTests
                 Assert.Equal(height, app.Driver.Rows);
                 Assert.False(window.HandOverToSequential);
                 var rows = TgSnapshot.Capture(app);
-                Assert.Contains("┌", rows[^7]);
+                Assert.Contains("┃", rows[window.Composer.Frame.Y]);
                 Assert.Contains("/ commands", rows[^1]);
                 app.RequestStop();
             });
@@ -371,7 +403,8 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
             var text = string.Join('\n', TgSnapshot.Capture(app));
-            Assert.Contains("Fix the busy lock", text);
+            Assert.Equal("Fix the busy lock", window.Header.SessionTitle);
+            Assert.False(window.Header.Visible);
             Assert.DoesNotContain("hello", text);
             Assert.DoesNotContain("39,413", text);
             Assert.DoesNotContain("$0.29", text);

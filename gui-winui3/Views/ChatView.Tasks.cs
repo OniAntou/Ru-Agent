@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Threading;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -19,6 +20,8 @@ public sealed partial class ChatView
     private const int MaxRenderedAgentTasks = 16;
 
     private bool? _sidePanelRunRunning;
+    private readonly UiRequestLifetime _taskRefreshRequests = new();
+    private CancellationTokenSource? _taskRefreshCancellation;
 
     /// <summary>
     /// Keeps the surface fresh from run-state updates: the title and edit
@@ -59,12 +62,23 @@ public sealed partial class ChatView
 
     private async Task RefreshAgentTasksAsync()
     {
+        var version = _taskRefreshRequests.Replace();
+        _taskRefreshCancellation?.Cancel();
+        _taskRefreshCancellation?.Dispose();
+        _taskRefreshCancellation = null;
         if (SidePanel is null)
         {
             return;
         }
 
         var runId = _agentController?.CurrentRun?.RunId ?? _activeAgentRunId;
+        var controller = _agentController;
+        var sessionGeneration = _sessionOpenGeneration;
+        bool OwnsRefresh() => !_scrollingDisposed
+            && _taskRefreshRequests.Owns(version)
+            && sessionGeneration == _sessionOpenGeneration
+            && ReferenceEquals(controller, _agentController)
+            && string.Equals(runId, _agentController?.CurrentRun?.RunId ?? _activeAgentRunId, StringComparison.Ordinal);
         if (string.IsNullOrWhiteSpace(runId) || _agentController is null)
         {
             SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active run in this session.");
@@ -73,9 +87,11 @@ public sealed partial class ChatView
 
         try
         {
-            var response = await _agentController
-                .DispatchCommandAsync(runId, "/tasks")
+            _taskRefreshCancellation = new CancellationTokenSource();
+            var response = await controller!
+                .DispatchCommandAsync(runId, "/tasks", _taskRefreshCancellation.Token)
                 .ConfigureAwait(true);
+            if (!OwnsRefresh()) return;
             if (!string.Equals(response.Status, "succeeded", StringComparison.Ordinal))
             {
                 SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), $"Tasks unavailable ({response.Code}).");
@@ -86,6 +102,7 @@ public sealed partial class ChatView
         }
         catch (Exception)
         {
+            if (!OwnsRefresh()) return;
             SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "Tasks unavailable; the host did not answer.");
         }
     }

@@ -188,6 +188,9 @@ public sealed partial class AgentCommands
             }
         }
 
+        int ChatRenderWidth() => tgMode && tgWindow!.Transcript.Viewport.Width > 0
+            ? tgWindow.Transcript.Viewport.Width : Tui.TuiViewport.Width();
+
         var sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
         if (tgWriter is not null)
         {
@@ -201,12 +204,7 @@ public sealed partial class AgentCommands
         if (!cmd.Json && !tgMode)
             await humanOut.WriteLineAsync($"Ru Agent · {ChatDisplayText.Sanitize(workspaceLabel, 64)}").ConfigureAwait(false);
 
-        static Tui.TuiSessionRenderer CreateSessionRenderer(TextWriter writer)
-        {
-            var renderer = new Tui.TuiSessionRenderer(writer);
-            renderer.Surface.SuppressRepaints = true;
-            return renderer;
-        }
+
 
         // Header state for the Terminal.Gui header. The title is read from the
         // session document (bounded probes) and the tally repaints as usage frames arrive.
@@ -1491,7 +1489,7 @@ public sealed partial class AgentCommands
             await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
 
             runSession.BeginContinue(targetRunId, cancellationToken);
-            sessionRenderer.Width = Tui.TuiViewport.Width();
+            sessionRenderer.Width = ChatRenderWidth();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
 
@@ -1841,7 +1839,7 @@ public sealed partial class AgentCommands
             await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
 
             runSession.BeginFollow(targetRunId, cancellationToken);
-            sessionRenderer.Width = Tui.TuiViewport.Width();
+            sessionRenderer.Width = ChatRenderWidth();
             sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
             sessionRenderer.BeginTurn();
 
@@ -1947,7 +1945,7 @@ public sealed partial class AgentCommands
             RefreshAttachmentLabels();
 
             sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
-            sessionRenderer.Width = Tui.TuiViewport.Width();
+            sessionRenderer.Width = ChatRenderWidth();
             if (tgMode)
             {
                 RunOnTgUi(() =>
@@ -2112,7 +2110,7 @@ public sealed partial class AgentCommands
                 runSession.BeginNewTurn(ct);
                 // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
                 // guard can never POST a cancel against a park left over from a prior turn.
-                sessionRenderer.Width = Tui.TuiViewport.Width();
+                sessionRenderer.Width = ChatRenderWidth();
                 sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                 if (!cmd.Json && !tgMode)
                 {
@@ -2650,6 +2648,9 @@ public sealed partial class AgentCommands
                 () =>
                 {
                     tgWindow.Landing.Tick();
+                    sessionRenderer.Width = ChatRenderWidth();
+                    if (tgWindow.Header.Visible)
+                        tgWindow.Header.SetActivity(sessionRenderer.ComposeActivity(tgWindow.Header.Viewport.Width));
                     return true;
                 });
             tgApp.Run(tgWindow);
@@ -2747,6 +2748,13 @@ public sealed partial class AgentCommands
     /// disposed the app (or no bridge exists) the plain writer must take over, or every
     /// line after the handover disappears into a stopped bridge.
     /// </summary>
+    internal static Tui.TuiSessionRenderer CreateSessionRenderer(TextWriter writer)
+    {
+        var renderer = new Tui.TuiSessionRenderer(writer);
+        renderer.Surface.SuppressRepaints = true;
+        renderer.Transcript.FullScreenCards = writer is TgTranscriptWriter;
+        return renderer;
+    }
     public static TextWriter ResolveDiagnosticWriter(bool tgMode, TextWriter? tgWriter, TextWriter fallback) =>
         tgMode && tgWriter is not null ? tgWriter : fallback;
 

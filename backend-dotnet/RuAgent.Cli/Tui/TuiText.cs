@@ -348,22 +348,12 @@ public static class TuiText
                     current = string.Empty;
                 }
 
-                var remaining = word;
-                while (VisibleWidth(remaining) > width)
+                var chunks = HardWrapLine(word, width);
+                for (var i = 0; i < chunks.Count - 1; i++)
                 {
-                    var take = TakeWidth(remaining, width);
-                    if (take.Length == 0)
-                    {
-                        var idx = 0;
-                        ReadCodePoint(remaining, ref idx);
-                        take = remaining[..idx];
-                    }
-
-                    lines.Add(take);
-                    remaining = remaining[take.Length..];
+                    lines.Add(chunks[i]);
                 }
-
-                current = remaining;
+                current = chunks[^1];
             }
 
             if (current.Length > 0)

@@ -10,6 +10,43 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgTranscriptTests
 {
+    [Fact]
+    public void StreamingBurstReflowsOnceWithoutAllocatingGigabytes()
+    {
+        using var transcript = new TgTranscriptView { Frame = new System.Drawing.Rectangle(0, 0, 80, 10) };
+        transcript.Append("", TranscriptStyle.Prose);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 4000; i++) transcript.AppendChunk("word");
+        Assert.True(transcript.CanScroll);
+        Assert.Equal(16000, transcript.RetainedCharacterCount);
+        Assert.Equal(string.Concat(Enumerable.Repeat("word", 4000)), Assert.Single(transcript.Lines).Text);
+        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 96L * 1024 * 1024);
+    }
+
+    [Fact]
+    public void ProseWrapsOnWordsWhileAlignedRowsRetainTheirSpaces()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var transcript = new TgTranscriptView { Width = 16, Height = Dim.Fill() };
+        window.Add(transcript);
+        transcript.Append("alpha beta gamma delta epsilon", TranscriptStyle.Prose);
+        transcript.Append("  a    b", TranscriptStyle.Prose);
+        transcript.Append("Name    Value", TranscriptStyle.Prose);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            Assert.Equal("alpha beta gamma", rows[0]);
+            Assert.Equal("delta epsilon", rows[1]);
+            Assert.Equal("  a    b", rows[2]);
+            Assert.Equal("Name    Value", rows[3]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
     private static string[] Render(int rows, Action<TgTranscriptView> act)
     {
         using IApplication app = Application.Create();

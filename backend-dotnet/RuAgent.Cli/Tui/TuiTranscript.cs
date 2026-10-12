@@ -29,6 +29,7 @@ public sealed class TuiTranscript
     private const int MaxDiffLines = 12;
     private const int MaxRetainedLines = 200;
     private const int VerbColumn = 8;
+    private const int ProsePreviewIntervalMilliseconds = 33;
     private const string ToolCallOpen = "<tool_call>";
     private const string ToolCallClose = "</tool_call>";
 
@@ -42,15 +43,17 @@ public sealed class TuiTranscript
     private readonly TuiStatusLine _status;
     private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
+    private readonly Queue<string> _settledActivityIds = new();
     private readonly List<string> _retained = [];
     private readonly StringBuilder _streamedAssistant = new();
     private readonly Stopwatch _turnWatch = new();
 
     private bool _hasStreamedDelta;
     private string _lineBuffer = string.Empty;
+    private readonly StringBuilder _proseLine = new();
+    private long _lastProsePreview;
     private bool _inToolBlock;
     private bool _atLineStart = true;
-    private bool _proseContinuesWord;
     private int _toolsSettled;
     private string? _terminalCode;
     private string? _summaryDetail;
@@ -169,6 +172,7 @@ public sealed class TuiTranscript
 
     /// <summary>Tool rows settled in the turn in progress (or the last completed turn).</summary>
     public int ToolsSettled => _toolsSettled;
+    public double ElapsedSeconds => _turnWatch.Elapsed.TotalSeconds;
 
     /// <summary>
     /// Writes finished lines and repaints the live row in the same lock acquisition, so the
@@ -178,29 +182,32 @@ public sealed class TuiTranscript
         _surface.WriteBlock(lines, _status.LiveRow(Width));
 
     private sealed record ToolDetail(
+        string ActivityId,
+        AgentActivityState State,
         string Verb,
         string? Display,
         string? Target,
         int? Count,
         int? Added,
         int? Removed,
-        int? DurationMs,
-        bool Failed);
+        int? DurationMs);
 
     public void BeginTurn()
     {
         _toolsSettled = 0;
         _hasStreamedDelta = false;
         _lineBuffer = string.Empty;
+        _proseLine.Clear();
+        _lastProsePreview = 0;
         _inToolBlock = false;
         _atLineStart = true;
-        _proseContinuesWord = false;
         _terminalCode = null;
         _summaryDetail = null;
         _sawCompletion = false;
         _paused = false;
         _pausedRunId = null;
         _pendingTools.Clear();
+        _settledActivityIds.Clear();
         _retained.Clear();
         _markdown.Reset();
         _turnWatch.Restart();
@@ -280,21 +287,22 @@ public sealed class TuiTranscript
         // The turn's block marker is intentionally kept so a later repaint can still
         // target the whole turn, and the header is not reprinted.
         _lineBuffer = string.Empty;
+        _proseLine.Clear();
+        _lastProsePreview = 0;
+        _surface.PreviewLine(string.Empty);
         _streamedAssistant.Clear();
         _markdown.Reset();
-        _proseContinuesWord = false;
     }
 
     public void Flush()
     {
-        if (_lineBuffer.Length == 0)
+        if (_lineBuffer.Length > 0)
         {
-            return;
+            var rest = _lineBuffer;
+            _lineBuffer = string.Empty;
+            RenderStyled(rest);
         }
-
-        var rest = _lineBuffer;
-        _lineBuffer = string.Empty;
-        RenderStyled(rest);
+        FlushProseLine();
         _surface.Flush();
     }
 
@@ -346,14 +354,14 @@ public sealed class TuiTranscript
 
             if (!_atLineStart)
             {
-                _surface.Line();
+                FlushProseLine();
+                if (_inToolBlock) _surface.Line();
                 _atLineStart = true;
             }
 
             // Prose on both sides of a tool block is independent text: a fence open when the
             // tool call started cannot survive it.
             _markdown.Reset();
-            _proseContinuesWord = false;
             _inToolBlock = isOpen;
             rest = rest[(markerIndex + (isOpen ? ToolCallOpen.Length : ToolCallClose.Length))..];
         }
@@ -406,8 +414,8 @@ public sealed class TuiTranscript
     /// <summary>
     /// Prose leaves the surface through the markdown renderer. A completed line goes
     /// through <see cref="TuiMarkdown.RenderLine"/> so block forms (fence, bullet, heading)
-    /// are decided; the unfinished tail of a line is rendered inline, which is what keeps
-    /// a streamed answer visible while its last line is still arriving.
+    /// are decided from the complete raw line. A screen previews the unfinished tail
+    /// in place without changing parser state; plain output waits for newline/Flush.
     /// </summary>
     private void WriteProse(string text)
     {
@@ -419,14 +427,24 @@ public sealed class TuiTranscript
             {
                 if (start < text.Length)
                 {
-                    WriteInlineFragment(text[start..]);
+                    _proseLine.Append(text.AsSpan(start));
+                    // Parse the growing tail at frame cadence, not for every token.
+                    // The first fragment and completed line are always published.
+                    if (_surface.HasLineProjection && (_proseLine.Length == text.Length - start
+                        || Stopwatch.GetElapsedTime(_lastProsePreview).TotalMilliseconds >= ProsePreviewIntervalMilliseconds))
+                    {
+                        _surface.PreviewLine(_markdown.PreviewLine(_proseLine.ToString(), Width));
+                        _lastProsePreview = Stopwatch.GetTimestamp();
+                    }
                     _atLineStart = false;
                 }
 
                 return;
             }
 
-            WriteCompleteLine(text[start..newline]);
+            _proseLine.Append(text.AsSpan(start, newline - start));
+            WriteCompleteLine(_proseLine.ToString());
+            _proseLine.Clear();
             start = newline + 1;
             if (start >= text.Length)
             {
@@ -436,33 +454,21 @@ public sealed class TuiTranscript
         }
     }
 
-    private void WriteInlineFragment(string fragment)
-    {
-        var rendered = TuiMarkdown.RenderInline(fragment, Width, _proseContinuesWord);
-        _proseContinuesWord = EndsWithWordCharacter(rendered);
-        _surface.Write(rendered);
-    }
-
     private void WriteCompleteLine(string line)
     {
-        foreach (var row in _markdown.RenderLine(line, Width))
-        {
-            _surface.Write(row);
-            _surface.Line();
-        }
+        var rows = _surface.HasLineProjection
+            ? _markdown.RenderLogicalLine(line, Width)
+            : _markdown.RenderLine(line, Width);
+        _surface.CommitProjectedLine(rows);
 
-        if (_markdown.InFence)
-        {
-            return;
-        }
-
-        _proseContinuesWord = false;
     }
 
-    private static bool EndsWithWordCharacter(string rendered)
+    private void FlushProseLine()
     {
-        var last = rendered.Length == 0 ? '\0' : rendered[^1];
-        return char.IsLetterOrDigit(last);
+        if (_proseLine.Length == 0) return;
+        WriteCompleteLine(_proseLine.ToString());
+        _proseLine.Clear();
+        _atLineStart = true;
     }
 
     // ------------------------------------------------------------------
@@ -488,6 +494,11 @@ public sealed class TuiTranscript
                 return;
 
             case AgentActivityKind.Compaction:
+                if (activity.State is AgentActivityState.Started or AgentActivityState.Waiting)
+                {
+                    _status.SetState(TuiRunState.Thinking);
+                    return;
+                }
                 if (activity.State == AgentActivityState.Failed)
                 {
                     Notice($"compaction failed ({activity.SafeCode})", TuiToken.Err);
@@ -515,11 +526,20 @@ public sealed class TuiTranscript
                 return;
 
             case AgentActivityKind.Status:
+                if (!string.IsNullOrWhiteSpace(activity.ToolDisplay))
+                {
+                    ApplyToolActivity(activity);
+                    return;
+                }
                 if (activity.SafeCode != "frames_dropped")
                 {
                     Notice(activity.SafeCode, TuiToken.Line);
                 }
 
+                return;
+
+            case AgentActivityKind.Todo:
+                if (!string.IsNullOrWhiteSpace(activity.ToolDisplay)) ApplyToolActivity(activity);
                 return;
 
             case AgentActivityKind.Explore:
@@ -538,19 +558,22 @@ public sealed class TuiTranscript
     private void ApplyToolActivity(AgentActivityModel activity)
     {
         var verb = TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay);
+        if (_settledActivityIds.Contains(activity.ActivityId)) return;
+        var index = _pendingTools.FindIndex(tool => tool.ActivityId == activity.ActivityId);
 
         switch (activity.State)
         {
             case AgentActivityState.Started:
-                _pendingTools.Add(new ToolDetail(
+                if (index < 0) _pendingTools.Add(new ToolDetail(
+                    activity.ActivityId,
+                    activity.State,
                     verb,
                     activity.ToolDisplay,
                     BuildTarget(activity),
                     activity.Count,
                     activity.Added,
                     activity.Removed,
-                    activity.DurationMs,
-                    Failed: false));
+                    activity.DurationMs));
                 TrimPending();
                 _status.SetState(TuiRunState.Tool);
                 _status.SetActivity(BuildActivityLabel(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), activity));
@@ -558,29 +581,32 @@ public sealed class TuiTranscript
 
             case AgentActivityState.Completed:
             case AgentActivityState.Failed:
-                if (_pendingTools.Count > 0)
+                if (index >= 0)
                 {
-                    var last = _pendingTools[^1];
-                    _pendingTools[^1] = last with
+                    var last = _pendingTools[index];
+                    _pendingTools[index] = last with
                     {
+                        State = activity.State,
+                        Target = BuildTarget(activity) ?? last.Target,
                         Count = activity.Count ?? last.Count,
                         Added = activity.Added ?? last.Added,
                         Removed = activity.Removed ?? last.Removed,
                         DurationMs = activity.DurationMs ?? last.DurationMs,
-                        Failed = activity.State == AgentActivityState.Failed,
                     };
                 }
                 else
                 {
                     _pendingTools.Add(new ToolDetail(
+                        activity.ActivityId,
+                        activity.State,
                         verb,
                         activity.ToolDisplay,
                         BuildTarget(activity),
                         activity.Count,
                         activity.Added,
                         activity.Removed,
-                        activity.DurationMs,
-                        activity.State == AgentActivityState.Failed));
+                        activity.DurationMs));
+                    TrimPending();
                 }
 
                 return;
@@ -606,6 +632,8 @@ public sealed class TuiTranscript
 
     private static string? BuildTarget(AgentActivityModel activity)
     {
+        if (activity.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(activity.Detail))
+            return TuiText.Truncate(Escape(activity.Detail), 160);
         if (!string.IsNullOrWhiteSpace(activity.FileName))
         {
             return activity.LineStart is { } start && activity.LineEnd is { } end && end >= start
@@ -802,15 +830,18 @@ public sealed class TuiTranscript
     private void SettleTool(HarnessSafeEventEnvelope envelope)
     {
         ToolDetail? detail = null;
+        // Durable results keep proposal order; completion metadata updates that
+        // proposal by activity ID, even when transient completions arrive out of order.
         if (_pendingTools.Count > 0)
         {
             detail = _pendingTools[0];
             _pendingTools.RemoveAt(0);
+            _settledActivityIds.Enqueue(detail.ActivityId);
+            while (_settledActivityIds.Count > 64) _settledActivityIds.Dequeue();
         }
 
         var failed = !string.Equals(envelope.Status, "succeeded", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(envelope.Status, "completed", StringComparison.OrdinalIgnoreCase);
-        failed |= detail?.Failed == true;
 
         var meta = ComposeToolMeta(detail?.Added, detail?.Removed, detail?.DurationMs);
         var target = detail?.Target;
@@ -844,8 +875,9 @@ public sealed class TuiTranscript
 
         _toolsSettled++;
         _status.AddTool();
-        _status.SetActivity(null);
-        _status.SetState(TuiRunState.Thinking);
+        var pending = _pendingTools.FirstOrDefault(tool => tool.State is AgentActivityState.Started or AgentActivityState.Waiting);
+        _status.SetActivity(pending is null ? null : $"Running {pending.Display ?? "tool"} {pending.Target}".TrimEnd());
+        _status.SetState(pending is null ? TuiRunState.Thinking : TuiRunState.Tool);
     }
 
     /// <summary>

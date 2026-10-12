@@ -18,8 +18,8 @@ public static class TuiCodeHighlight
 
     /// <summary>
     /// Renders one code line for <paramref name="width"/> cells as a single row: the
-    /// <c>{number,3} │ </c> gutter then the tinted body, clipped with an ellipsis when the
-    /// line is too long. Colour degrades with <paramref name="level"/>; the palette level
+    /// <c>{number,3} │ </c> gutter then the complete tinted body. The surface wraps it
+    /// for its viewport without discarding source text. Colour degrades with <paramref name="level"/>; the palette level
     /// is restored before returning and <see cref="TuiColorLevel.None"/> emits no escapes.
     /// </summary>
     public static IReadOnlyList<string> RenderLine(string line, int lineNumber, int width, TuiColorLevel level)
@@ -28,7 +28,7 @@ public static class TuiCodeHighlight
         using var scope = TuiPalette.PinLevel(level);
 
         var gutter = $"{lineNumber,3} │ ";
-        var body = TuiText.Truncate(Highlight(line), Math.Max(10, width - gutter.Length));
+        var body = Highlight(line);
         return [TuiPalette.DimPaint(gutter) + body];
     }
 

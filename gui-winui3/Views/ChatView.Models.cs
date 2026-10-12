@@ -132,6 +132,7 @@ namespace RuApp.Views
         private DispatcherQueueTimer? _groupedPublishCoalesceTimer;
         private GroupedProviderCatalogState? _pendingGroupedState;
         private bool _modelPickerDirty = true;
+        private readonly ModelSelectionSaveQueue _modelSelectionSaves = new();
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
@@ -285,7 +286,10 @@ namespace RuApp.Views
                     return;
                 }
 
-                if (await _apiService.SaveProviderModelSelectionAsync(backend, model))
+                var result = await _modelSelectionSaves.SaveAsync(
+                    () => _apiService.SaveProviderModelSelectionAsync(backend, model));
+                if (result == ModelSelectionSaveResult.Superseded || _scrollingDisposed) return;
+                if (result == ModelSelectionSaveResult.Saved)
                 {
                     _selectedModel = model;
                     _selectedBackend = backend;

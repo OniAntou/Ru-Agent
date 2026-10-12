@@ -8,6 +8,76 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TuiTranscriptTests
 {
+    [Fact]
+    public void ParallelActivitiesKeepCompletionMetadataWithTheirOwnTool()
+    {
+        var (transcript, output) = Create();
+        transcript.FullScreenCards = true;
+        transcript.ApplyActivity(Activity(AgentActivityKind.Search, AgentActivityState.Started, fileName: "a.cs") with { ActivityId = "act_a" });
+        transcript.ApplyActivity(Activity(AgentActivityKind.Search, AgentActivityState.Started, fileName: "b.cs") with { ActivityId = "act_b" });
+        transcript.ApplyActivity(Activity(AgentActivityKind.Search, AgentActivityState.Completed, fileName: "a.cs", count: 3) with { ActivityId = "act_a", DurableSequence = 10 });
+        transcript.ApplyActivity(Activity(AgentActivityKind.Search, AgentActivityState.Completed, fileName: "b.cs", count: 7) with { ActivityId = "act_b", DurableSequence = 11 });
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 10));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 11));
+        var rows = Rows(output);
+        Assert.Contains(rows, row => row.Contains("a.cs") && row.Contains("3 matches"));
+        Assert.Contains(rows, row => row.Contains("b.cs") && row.Contains("7 matches"));
+    }
+
+    [Fact]
+    public void StartingCompactionDoesNotClaimItAlreadyCompleted()
+    {
+        var (transcript, output) = Create();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Compaction, AgentActivityState.Started));
+        Assert.DoesNotContain("context compacted", output.ToString());
+    }
+
+    [Theory]
+    [InlineData("succeeded", false)]
+    [InlineData("failed", true)]
+    public void DurableResultDeterminesOutcomeEvenWhenTransientActivitySaysFailed(string outcome, bool failed)
+    {
+        var (transcript, output) = Create();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, toolDisplay: "bash"));
+        transcript.ApplyDurable(Durable("tool.execution_completed", outcome, outcome));
+        Assert.Equal(failed, output.ToString().Contains('✗'));
+        Assert.Equal(!failed, output.ToString().Contains('✓'));
+    }
+
+    [Fact]
+    public void LateCompletionCannotBecomeTheFollowingToolsMetadata()
+    {
+        var (transcript, output) = Create();
+        transcript.FullScreenCards = true;
+        var a = Activity(AgentActivityKind.Search, AgentActivityState.Started, fileName: "a.cs") with { ActivityId = "act_a" };
+        transcript.ApplyActivity(a);
+        transcript.ApplyActivity(a); // Duplicate start is one activity.
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 10));
+        transcript.ApplyActivity(a with { State = AgentActivityState.Completed, Count = 99 });
+        transcript.ApplyActivity(a with { ActivityId = "act_b", FileName = "b.cs" });
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 11));
+        Assert.Contains(Rows(output), row => row.Contains("b.cs") && !row.Contains("99"));
+        Assert.Equal(2, transcript.ToolsSettled);
+    }
+
+    [Theory]
+    [InlineData(AgentActivityKind.Status, "web_fetch")]
+    [InlineData(AgentActivityKind.Todo, "todo")]
+    public void OtherToolKindsKeepTheirPlaceInTheResultFeed(AgentActivityKind kind, string display)
+    {
+        var (transcript, output) = Create();
+        transcript.FullScreenCards = true;
+        transcript.ApplyActivity(Activity(kind, AgentActivityState.Started, toolDisplay: display) with { ActivityId = "act_other" });
+        transcript.ApplyActivity(Activity(AgentActivityKind.Search, AgentActivityState.Started, fileName: "b.cs") with { ActivityId = "act_b" });
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 10));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", 11));
+        var rows = Rows(output);
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(display, rows[0], StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("b.cs", rows[0]);
+        Assert.Contains("b.cs", rows[1]);
+    }
+
     private static readonly string[] Empty = [];
 
     private static (TuiTranscript Transcript, StringBuilder Output) Create()
@@ -197,12 +267,13 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void FirstDelta_PrintsProseWithoutAHeader()
+    public void CompletedPlainOutput_PrintsProseWithoutAHeader()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
         transcript.AppendAssistant("hello ");
         transcript.AppendAssistant("world");
+        transcript.Flush();
 
         var text = output.ToString();
         Assert.DoesNotContain("◆", text, StringComparison.Ordinal);
@@ -248,7 +319,7 @@ public sealed class TuiTranscriptTests
 
         Assert.Equal(string.Empty, transcript.StreamedAssistantText);
         var text = TuiText.Strip(output.ToString());
-        Assert.Contains("Hi!", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hi!", text, StringComparison.Ordinal);
         Assert.DoesNotContain("**", text, StringComparison.Ordinal);
 
         transcript.AppendAssistant("fresh retry");
@@ -641,10 +712,11 @@ public sealed class TuiTranscriptTests
             transcript.AppendAssistant("** and more");
             transcript.Flush();
 
-            // Emphasis is best effort across a delta boundary, but the characters are not:
-            // whatever the model said reaches the surface exactly once, in order.
+            // Completed Markdown is parsed from the complete raw line regardless of
+            // marker splits; delimiters are presentation syntax, not visible prose.
             var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
-            Assert.Contains("see **x** and more", text, StringComparison.Ordinal);
+            Assert.Contains("see x and more", text, StringComparison.Ordinal);
+            Assert.Equal(1, text.Split("see x and more", StringSplitOptions.None).Length - 1);
         }
     }
 

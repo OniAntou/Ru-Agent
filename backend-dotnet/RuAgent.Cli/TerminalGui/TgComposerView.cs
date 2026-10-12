@@ -1,54 +1,34 @@
 using RuAgent.Cli.Tui;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.Drivers;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>
-/// The prompt frame, cloned from the classic ComposerBox stack: square border, two gray
-/// padding rows, the input row with a ghost placeholder, and the meta row.
-/// </summary>
+/// <summary>Filled prompt surface with a Ru accent rail and bounded metadata.</summary>
 public sealed class TgComposerView : View
 {
+    public const int RowCount = 5;
+    public const int MetadataRow = 3;
+    private const int Inset = 3;
     private readonly Label _ghost;
-    private readonly Label _preset;
-    private readonly Label _model;
-    private readonly Label _provider;
+    public string Preset { get; private set; } = string.Empty;
+    public string Model { get; private set; } = string.Empty;
+    public string Provider { get; private set; } = string.Empty;
 
     public TgComposerView()
     {
-        BorderStyle = LineStyle.Single;
-        // The frame is the accent: a green border on the terminal default background, no
-        // filled interior — the classic gray band is gone per the operator's request.
-        SetScheme(TgPalette.Scheme(TuiToken.Ok));
+        BorderStyle = LineStyle.None;
+        SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.SurfaceRgb()));
         CanFocus = true;
-
-        _ghost = new Label
-        {
-            X = 1,
-            Y = 1,
-        };
-        _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta));
-
-        Input = new TextField
-        {
-            X = 1,
-            Y = 1,
-            Width = Dim.Fill(2),
-            Text = string.Empty,
-        };
-        Input.SetScheme(TgPalette.Scheme(TuiToken.Ink));
-        Input.TextChanged += (_, _) => UpdateGhost();
-
-        _preset = new Label { X = 1, Y = 3 };
-        _preset.SetScheme(TgPalette.Scheme(TuiToken.Brand));
-        _model = new Label { X = Pos.Right(_preset) + 2, Y = 3 };
-        _model.SetScheme(TgPalette.Scheme(TuiToken.Ink));
-        _provider = new Label { X = Pos.Right(_model) + 1, Y = 3 };
-        _provider.SetScheme(TgPalette.Scheme(TuiToken.Meta));
-
-        Add(Input, _ghost, _preset, _model, _provider);
+        Input = new TextField { X = Inset, Y = 1, Width = Dim.Fill(Inset), Text = string.Empty };
+        Input.Cursor = new Cursor { Style = CursorStyle.SteadyBlock };
+        Input.SetScheme(TgPalette.Scheme(TuiToken.Ink, TuiPalette.SurfaceRgb()));
+        _ghost = new Label { X = Inset, Y = 1, Width = Dim.Fill(Inset), Height = 1, Text = "Ask anything…" };
+        _ghost.SetScheme(TgPalette.Scheme(TuiToken.Meta, TuiPalette.SurfaceRgb()));
+        Input.TextChanged += (_, _) => _ghost.Visible = string.IsNullOrEmpty(Input.Text);
+        Add(Input, _ghost);
     }
 
     public TextField Input { get; }
@@ -56,24 +36,50 @@ public sealed class TgComposerView : View
     public void SetPlaceholder(string placeholder)
     {
         _ghost.Text = placeholder;
-        UpdateGhost();
+        _ghost.Visible = string.IsNullOrEmpty(Input.Text);
     }
 
     public void SetMeta(string preset, string model, string provider)
     {
-        _preset.Text = preset;
-        _model.Text = model;
-        _provider.Text = ShortenProvider(provider);
+        Preset = ChatDisplayText.Sanitize(preset, 32);
+        Model = ChatDisplayText.Sanitize(model, 256);
+        const string prefix = "models.dev:";
+        Provider = ChatDisplayText.Sanitize(provider.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? provider[prefix.Length..] : provider, 128);
+        SetNeedsDraw();
     }
 
-    private void UpdateGhost() => _ghost.Visible = string.IsNullOrEmpty(Input.Text);
-
-    /// <summary><c>models.dev:kilo</c> reads as <c>kilo</c>; other ids pass through.</summary>
-    private static string ShortenProvider(string provider)
+    protected override bool OnDrawingContent(DrawContext? context)
     {
-        const string prefix = "models.dev:";
-        return provider.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            ? provider[prefix.Length..]
-            : provider;
+        var width = Viewport.Width;
+        if (width <= 0 || Viewport.Height <= 0) return true;
+        for (var row = 0; row < Viewport.Height; row++)
+        {
+            SetAttribute(TgPalette.Attr(TuiToken.Ok, TuiPalette.SurfaceRgb()));
+            Move(0, row);
+            AddStr(row == Viewport.Height - 1 ? "╹" : "┃");
+        }
+        if (Viewport.Height > MetadataRow)
+        {
+            var available = Math.Max(0, width - Inset * 2);
+            var preset = TuiText.Truncate(Preset, Math.Min(12, available));
+            DrawMeta(Inset, preset, TuiToken.Brand);
+            var column = Inset + TuiText.VisibleWidth(preset) + 2;
+            var remaining = Math.Max(0, width - Inset - column);
+            var providerWidth = remaining >= 28 ? Math.Min(18, remaining / 3) : 0;
+            var model = TuiText.MiddleTruncate(Model, Math.Max(0, remaining - providerWidth - (providerWidth > 0 ? 2 : 0)));
+            DrawMeta(column, model, TuiToken.Ink);
+            if (providerWidth > 0)
+                DrawMeta(column + TuiText.VisibleWidth(model) + 2, TuiText.Truncate(Provider, providerWidth), TuiToken.Meta);
+        }
+        return true;
+    }
+
+    private void DrawMeta(int column, string text, TuiToken token)
+    {
+        if (text.Length == 0 || column >= Viewport.Width) return;
+        SetAttribute(TgPalette.Attr(token, TuiPalette.SurfaceRgb()));
+        Move(column, MetadataRow);
+        AddStr(TuiText.Truncate(text, Viewport.Width - column));
     }
 }

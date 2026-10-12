@@ -27,7 +27,7 @@ public sealed class TgChatWindowTests
             Assert.Contains("Fix the busy lock", rows[0]);
             Assert.Contains("sửa lỗi busy lock", string.Join('\n', rows));
             Assert.Contains("Search", string.Join('\n', rows));
-            Assert.Contains("┌", rows[^7]);
+            Assert.Contains("┃", rows[window.Composer.Frame.Y]);
             Assert.Contains("/ commands", rows[^1]);
             app.RequestStop();
             return false;

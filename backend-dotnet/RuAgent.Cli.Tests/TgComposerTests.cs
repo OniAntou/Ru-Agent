@@ -16,7 +16,7 @@ public sealed class TgComposerTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
         composer.SetMeta("Standard", "stealth/space-bunny-alpha", "kilo");
         composer.SetPlaceholder("Ask anything, / for commands, /key for sign-in…");
         window.Add(composer);
@@ -24,7 +24,7 @@ public sealed class TgComposerTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            Assert.Contains("┌", rowsText[rowsText.Length - 7]);
+            Assert.Contains("┃", rowsText[rowsText.Length - 6]);
             Assert.Contains("Standard", rowsText[rowsText.Length - 3]);
             Assert.Contains("kilo", rowsText[rowsText.Length - 3]);
             app.RequestStop();
@@ -35,7 +35,7 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Idle_ShowsSquareFramePlaceholderAndMeta()
+    public void Idle_ShowsFilledPromptPlaceholderAndMeta()
     {
         var rows = Render(100, 30, _ => { });
         Assert.Contains("Ask anything", rows[rows.Length - 5]);
@@ -44,18 +44,18 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Interior_HasNoFill_JustTheTerminalBackground()
+    public void Interior_UsesTheExistingRuPanelSurface()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
         window.Add(composer);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            var black = new Terminal.Gui.Drawing.Color(0, 0, 0, 255);
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
+            var surface = TgPalette.ToColor(TuiPalette.SurfaceRgb());
+            Assert.Equal(surface, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
             app.RequestStop();
             return false;
         });
@@ -63,27 +63,27 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Frame_IsGreenOnTheTerminalBackground()
+    public void AccentRail_IsGreenOnTheRuPanelSurface()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
         window.Add(composer);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            var black = new Terminal.Gui.Drawing.Color(0, 0, 0, 255);
+            var surface = TgPalette.ToColor(TuiPalette.SurfaceRgb());
             var green = TgPalette.ToColor(TuiToken.Ok);
-            var top = rowsText.Length - 7;
+            var top = rowsText.Length - 6;
 
-            // Every border cell is green on the terminal default; the interior has no fill.
+            // The accent rail stays green; the entire prompt interior uses the panel surface.
             Assert.Equal(green, TgSnapshot.CellAttribute(app, top, 0).Foreground);
-            Assert.Equal(green, TgSnapshot.CellAttribute(app, top, 40).Foreground);
-            Assert.Equal(green, TgSnapshot.CellAttribute(app, top + 5, 0).Foreground);
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, top, 40).Background);
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 1, 1).Background);
-            Assert.Equal(black, TgSnapshot.CellAttribute(app, top + 4, 40).Background);
+            Assert.Equal(surface, TgSnapshot.CellAttribute(app, top, 40).Background);
+            Assert.Equal(green, TgSnapshot.CellAttribute(app, top + 4, 0).Foreground);
+            Assert.Equal(surface, TgSnapshot.CellAttribute(app, top, 40).Background);
+            Assert.Equal(surface, TgSnapshot.CellAttribute(app, top + 1, 1).Background);
+            Assert.Equal(surface, TgSnapshot.CellAttribute(app, top + 2, 40).Background);
             app.RequestStop();
             return false;
         });

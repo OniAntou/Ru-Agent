@@ -6,13 +6,180 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **5,952 passed / 0 failed / 0 skipped** (2026-10-12, selective meteor branch integration). Broker 910; CLI 1,261; Client 214; Core 486; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,055; GUI 1,385. Log: `artifacts/meteor-port-dotnet.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, selective meteor branch integration), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/meteor-port-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, selective meteor branch integration). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/meteor-port-release.log`. |
-| Managed runtime smoke | **PASS** (2026-10-11) for the isolated scripted CLI RPC session/run/attach/event workflow (`artifacts/remove-sandbox-rpc-smoke.log`). Authenticated Release Host startup and shutdown also completed in the live C# diagnostic. Prior publish/flat smoke logs remain historical; interactive native UI remains unmeasured. |
+| .NET tests | Full **12-project** Debug matrix: **5,987 passed / 0 failed / 0 skipped** (2026-10-12, GUI/TUI review fixes). Broker 910; CLI 1,292; Client 214; Core 486; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,055; GUI 1,389. Log: `artifacts/gui-tui-release-matrix.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, GUI/TUI release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-tui-release-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, GUI/TUI review fixes). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-tui-release-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: isolated authenticated status/shutdown, actual `ru` launcher session listing and redirected default startup/exit. Log: `artifacts/gui-tui-release-smoke.log`. Earlier scripted RPC evidence remains historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## GUI/TUI review (2026-10-12)
+
+Release follow-up: the full 12-project Debug matrix passed **5,987/5,987**
+(`artifacts/gui-tui-release-matrix.log`); Python passed **214**, with **1** POSIX
+test skipped on Windows (`artifacts/gui-tui-release-python.log`). `build.bat`
+completed **11/11 stages** (`artifacts/gui-tui-release-build.log`). The refreshed
+self-contained flat package passed complete CLI/backend file inventory and
+published-host authenticated status/shutdown plus actual `ru` launcher session
+listing and redirected startup/exit (`artifacts/gui-tui-release-inventory.log`,
+`artifacts/gui-tui-release-smoke.log`). Smoke data and bearer were isolated and
+synthetic. Native WinUI interaction and physical-terminal rendering remain manual.
+
+The [current-checkout review](../reviews/2026-10-12-gui-tui-review.md) records
+five P2 findings. Sequential Debug checks passed **1,284 CLI tests** and
+**1,385 GUI tests**, with no failures or skips. A direct `TuiTranscript` probe
+reproduced chunk-dependent Markdown rendering and irreversible display clipping
+of long fenced code. The GUI findings are source-confirmed asynchronous ownership
+races; native WinUI interaction and physical-terminal acceptance were not run.
+Logs: `artifacts/gui-tui-review-cli.log`, `artifacts/gui-tui-review-gui.log`;
+probe: `artifacts/gui-tui-review-probe/results.json`. These results are scoped,
+not a new full matrix. The initial findings are followed by their fixes in the
+linked report.
+
+The follow-up suites passed **1,292/1,292 CLI** and **1,389/1,389 GUI** with no
+failures or skips, sequentially (`artifacts/gui-tui-fix-cli-verified2.log`,
+`artifacts/gui-tui-fix-gui-verified.log`). The renderer probe now produces
+identical final rows across chunk partitions and retains the long code tail
+(`artifacts/gui-tui-review-probe/fixed-results.json`). The complete renderer/bridge
+CPU probe, including final reflow of 4,000 fragments with 1,000 history rows,
+measured **7.8 ms / 1,427,032 allocated bytes**
+(`artifacts/gui-tui-stream-perf/result.txt`); this is synthetic CPU evidence,
+not native terminal FPS. Test adaptations and earlier failures are recorded in
+the report.
+
+## Compact TUI chrome and block cursor (2026-10-12)
+
+Latest refinement: the five-row composer now has its real default placeholder
+(`Ask anything…`), metadata on row index 3 and bottom padding. The empty-chat
+footer shows only `ctrl+p commands`; active-session scroll/expansion hints remain.
+All 48 focused composer/chrome/scroll tests passed
+(`artifacts/tui-composer-clean-tests.log`). Release CLI publish/deployment checked
+every publish file's presence; the actual `ru` launcher started and exited zero
+with redirected `/exit` (`artifacts/tui-composer-clean-startup.log`). The layout
+capture is `artifacts/tui-composer-clean-home.png`; earlier offsets below are
+history of the previous iterations.
+
+Metadata alignment follow-up: preset/model/provider moved down exactly one
+terminal row (row index 4) within the five-row composer. All 16 focused layout,
+composer and copy checks passed (`artifacts/tui-meta-offset-tests.log`).
+Release CLI was rebuilt and deployed to the default desktop publish directory;
+all five CLI file hashes matched the new publish output
+(`artifacts/tui-latest-cli-build.log`). The running backend was retained.
+Subsequent launcher testing found that the destination package was missing CLI
+dependencies, including Client and SessionInterchange. Copying only the five CLI
+files had not established package completeness. The full CLI publish was checked
+against the destination and 156 missing dependency/resource files were restored;
+no publish file remained missing. `ru agent session list --json` then exited zero
+from `C:\Users\USER` (`artifacts/tui-launcher-session-list.log`). An initial
+`ru --help` probe returned the parser's expected unknown-command/usage response,
+not an assembly-load exception; the parser does not support that flag.
+The actual no-argument `ru` launcher also started and exited zero with redirected
+`/exit` input (`artifacts/tui-launcher-chat-startup.log`), without creating a model
+run. This verifies chat startup, not native terminal painting.
+
+Follow-up: the four-row composer felt too tight, so it now uses five rows,
+with one blank row between input and model metadata. All 16 focused composer,
+layout and copy checks passed (`artifacts/tui-five-focused.log`). The CLI is
+published separately without cleaning the running backend's package
+(`artifacts/tui-five-publish.log`); the buffer preview is `artifacts/tui-five-session.png`.
+The four-row evidence below records the preceding iteration.
+
+The composer shrinks from six to four rows; metadata moves up one row and the
+transcript/panels reserve the corresponding smaller footer. Header title/usage
+and workspace/activity occupy two rows above a dim separator. Idle activity
+uses the secondary Ru colour. The composer input explicitly uses `SteadyBlock`;
+the focused/edited TextField retains that style in the headless driver.
+
+The first focused run failed nine old row/colour assertions; a subsequent
+compile check found that TextField's documented `UpdateCursor` is not public.
+The test now exercises the public insertion-point property after real focus.
+All **41 targeted chrome/layout/copy/cursor checks passed**
+(`artifacts/tui-compact-focused-final.log`). The full matrix was not rerun for
+this visual refinement. Hardware cursor appearance and native IME remain
+terminal-dependent acceptance, separate from the buffer captures.
+
+Documentation guards passed **19 tests** (`artifacts/tui-compact-docs.log`).
+The default `build.bat` stopped during clean because the running Release backend
+held publish files; some unheld files had already been removed
+(`artifacts/tui-compact-release.log`). Isolated self-contained CLI, backend and
+GUI publishes then succeeded (`artifacts/tui-compact-publish-{cli,backend,gui}.log`).
+The combined package is under `artifacts/tui-compact-publish/flat`; 618 missing
+files were restored to the default publish directory without replacing existing
+files or stopping the backend. The default CLI DLL hash matches the new package.
+Headless session/home captures are `artifacts/tui-compact-{session,narrow,home}.*`.
+
+## TUI header, streaming and activity repair (2026-10-12)
+
+The uncommitted context sidebar was removed in favour of a compact header:
+title/usage, workspace and live activity above a full-width conversation. Frames
+below 20 rows retain the single heading row. The screen timer reads existing
+renderer status and the renderer uses the transcript's actual viewport width.
+Terminal.Gui now enables its tool/diff card path; sequential output does not.
+
+Two failing regressions reproduced completion metadata being attached to the
+last started tool instead of its activity ID, and starting compaction being
+labelled completed (`artifacts/tui-feed-red.log`). A further regression reproduced
+transient failure overriding durable success (`artifacts/tui-outcome-red.log`).
+Tool metadata now updates by activity ID, with bounded settled-ID retention for
+late/duplicate frames; web/todo tool activities participate in proposal order.
+The durable result owns outcome. An SSE durable-sequence anchor is not used as
+a tool identity. Three scripted snapshot failures used the same activity ID for
+different tools; the fixture now assigns distinct IDs and retains its ordering,
+detail and one-row-per-result assertions (`artifacts/tui-feed-snapshot.log`).
+
+The streaming probe appends 4,000 four-character fragments after 1,000 history
+rows into the actual headless transcript. Before repair this took 10,931.9 ms
+and allocated 2,960,974,208 bytes (`artifacts/tui-perf-before.txt`). Dirty-tail
+reflow now occurs at draw/scroll boundaries, and long words split in one pass.
+The repaired probe, including deferred reflow, took 14.5 ms and allocated
+65,501,504 bytes (`artifacts/tui-perf-after-final.txt`). This is a synthetic CPU
+workload, not a native terminal frame-rate measurement. The regression includes
+deferred reflow and a 96 MiB allocation budget.
+Cell-buffer tests check that scrolling from long user rows to short prose clears
+old text/background, and shortening activity labels leaves no old header text.
+
+The first broad focused run hung and its own testhost was stopped. A detailed
+run with a 30-second per-test hang guard passed all 285 cases without producing
+a hang sequence (`artifacts/tui-header-diagnosis.log`); the initial hang was not
+reproduced. Native Windows Terminal rendering/IME acceptance remains separate
+from these headless checks.
+
+Final scoped CLI verification passed **1,282 tests / 0 failed / 0 skipped**
+(`artifacts/tui-responsive-cli-final.log`). `build.bat` passed **11/11 stages**
+(`artifacts/tui-responsive-release.log`). Documentation guards passed 19 tests (`artifacts/tui-responsive-docs.log`). Session captures at 80×24, 120×30 and
+160×40 use synthetic data in `artifacts/tui-header-{narrow,session,wide}.*`.
+The preceding 5,962-test full matrix below belongs to the earlier layout snapshot;
+it was not rerun for these CLI-only changes.
+
+## Earlier OpenCode-inspired TUI layout (2026-10-12)
+
+Ru's palette and landing animation are retained. The empty screen centres the
+wordmark/prompt; active sessions use conversation gutters, a filled prompt and
+a read-only context sidebar at 120×26 or larger. Below that size the session
+stays in one column. This earlier sidebar design was subsequently replaced by
+the header described above. The captured figures below belong to that snapshot.
+
+The initial layout tests reproduced the old box/full-width arrangement. The
+first CLI run passed 1,254 tests and failed 13: twelve old visual assertions and
+one RPC backpressure fixture race. The fixture now waits for the writer to
+consume the response before filling its bounded queue; its assertions remain.
+Subsequent runs found an obsolete box assertion, a Terminal.Gui callback
+signature mismatch during compilation, and a long placeholder overlapping
+metadata at 20×12. These were corrected rather than dropped from coverage.
+Ten focused layout/wrapping checks then passed (`artifacts/tui-opencode-edge.log`).
+
+The final Debug matrix passed **5,962 tests across 12 projects**, including
+1,271 CLI tests, with no failures or skips
+(`artifacts/tui-opencode-matrix-final.log`). The first Python run passed 213,
+skipped one and failed the README badge guard: the badge's URL-encoded count had
+not been updated alongside the visible count. The badge was corrected; the final Python run passed 214 and skipped the existing POSIX-only test on Windows (`artifacts/tui-opencode-python-final.log`).
+
+Headless ANSI-driver captures use synthetic session data: 80×24, 120×30 and
+160×40 sessions plus a 120×30 landing screen. The PNGs are rendered from the
+actual cell/colour buffers, with corresponding TXT/JSON files under
+`artifacts/tui-opencode-{narrow,session,wide,home}.*`. They are layout evidence,
+not a real-provider run or native Windows Terminal/IME acceptance.
 
 ## Selective meteor branch integration (2026-10-12)
 

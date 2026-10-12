@@ -39,6 +39,21 @@ public sealed class TuiMarkdown
     /// </summary>
     public bool HighlightCode { get; set; }
 
+    public IReadOnlyList<string> RenderLogicalLine(string line, int width) =>
+        RenderLine(line, TryRule(line, out _) ? width : Math.Max(width, line.Length + 16));
+
+    public string PreviewLine(string line, int width)
+    {
+        // Delimiters may still be arriving. Preview using a copy so a partial line
+        // cannot change fence state or consume a code line number.
+        var trimmed = line.TrimStart();
+        if (!InFence && trimmed.Length > 0
+            && (FenceChars.StartsWith(trimmed, StringComparison.Ordinal)
+                || trimmed.StartsWith(FenceChars, StringComparison.Ordinal))) return string.Empty;
+        var copy = new TuiMarkdown { HighlightCode = HighlightCode, _fence = _fence, _codeLine = _codeLine };
+        return string.Join("\n", copy.RenderLogicalLine(line, width));
+    }
+
     /// <summary>Forgets the fence state; used when a tool block interrupts the prose.</summary>
     public void Reset()
     {

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Discard stale Tasks responses when session/run ownership changes, bind terminal output/exit callbacks to their originating shell and prevent delayed startup after shutdown. Serialize/coalesce model selection saves so the last choice wins in both settings and UI.
+
+- **fix(tui)**: Parse streamed Markdown from complete raw lines, preview unfinished lines in place at frame cadence, and drop provisional text on retry. Preserve complete fenced code lines for viewport wrapping and resize; plain log output commits on newline or Flush.
+
+- **fix(tui)**: Supply the empty composer's default placeholder in the real startup path. Leave padding above/below the model metadata within the five-row surface and reduce landing-screen hints to `ctrl+p commands`; active-session hints remain available.
+
+- **style(tui)**: Compact the composer from six to five rows, with a blank row between input and model metadata and a bottom padding row, and use a steady block cursor for its input. Refine the header into a title/usage row and a workspace/activity row above a dim separator, with a blue title marker and quieter idle status. Keep command and approval panels aligned with the smaller composer.
+
+- **feat(tui)**: Adopt an OpenCode-inspired layout while retaining Ru's palette and animated wordmark. Centre the empty-chat prompt, add conversation gutters and a filled composer with a green left rail. Session title/usage, workspace and live activity occupy a compact header above a full-width feed; frames below 20 rows keep one heading row. Bound command overlays above the composer, fill user-message rows and wrap natural prose at word boundaries while preserving code columns.
+
+- **fix(tui)**: Reflow streamed tails at draw/scroll boundaries and split long words in one pass, avoiding repeated work for every delta. Associate completion metadata with its activity ID, ignore duplicate/late updates to settled activities and keep web/todo tool activities in result order. Do not label starting compaction as complete. Enable Terminal.Gui tool/diff cards and use the transcript's actual width for rendering.
+
 - **feat(cli)**: Integrate the landing/header and resize improvements: the wordmark uses three block rows, blank session headings show `# session`, and an active Terminal.Gui frame only hands over below 20×12 after 400 ms (startup selection remains 80×24). Extend the existing bounded transcript with wheel/Ctrl+arrow navigation and a scrollback hint that survives busy rendering and resets with the transcript. Keep workspace-busy guidance until a run is accepted or the session changes. Classify HTTP 402 and Responses streamed payment errors as non-retryable `provider_payment_required`; avoid labelling every runtime log as `worker.unavailable`.
 
 - **refactor(tui)**: Use Terminal.Gui as the only interactive screen engine. Remove the classic ANSI composer/key loop and resize rebuild; retain `--classic` as append-only line output, also used for redirected stdin/stdout and small/dumb terminals. Separate shared command metadata, plain input/history and no-echo credential input, reusing the existing clipboard reader. Plain `/clear` no longer erases terminal scrollback, history is capped at 100 submissions, and ordinary prompt quotes are preserved. Run, approval, queue and JSON contracts remain unchanged.

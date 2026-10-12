@@ -33,6 +33,10 @@ namespace RuApp.Controls
         private bool _isWebInitialized;
         private bool _isWebReady;
         private bool _isStarting;
+        private bool _shutdown;
+        private readonly UiRequestLifetime _callbacks = new();
+        private Action<byte[]>? _outputHandler;
+        private Action? _exitHandler;
 
         public InteractiveTerminalControl()
         {
@@ -46,6 +50,7 @@ namespace RuApp.Controls
         /// </summary>
         public void EnsureStarted(string? workingDirectory)
         {
+            _shutdown = false;
             string directory = ResolveWorkingDirectory(workingDirectory);
             bool directoryChanged = _workingDirectory is not null
                 && !string.Equals(_workingDirectory, directory, StringComparison.OrdinalIgnoreCase);
@@ -60,7 +65,11 @@ namespace RuApp.Controls
         }
 
         /// <summary>Ends the shell; called when the app closes.</summary>
-        public void Shutdown() => StopSession();
+        public void Shutdown()
+        {
+            _shutdown = true;
+            StopSession();
+        }
 
         private async Task EnsureWebAndSessionAsync()
         {
@@ -140,7 +149,7 @@ namespace RuApp.Controls
 
         private void StartSession()
         {
-            if (_session is not null || _workingDirectory is null)
+            if (_shutdown || _session is not null || _workingDirectory is null)
             {
                 return;
             }
@@ -148,8 +157,15 @@ namespace RuApp.Controls
             try
             {
                 _session = ConPtyTerminalSession.Start(_workingDirectory, ShellCommandLine, DefaultColumns, DefaultRows);
-                _session.OutputReceived += OnSessionOutput;
-                _session.Exited += OnSessionExited;
+                var version = _callbacks.Replace();
+                _outputHandler = chunk => EnqueueOwned(version, () => PostData(chunk));
+                _exitHandler = () => EnqueueOwned(version, () =>
+                {
+                    PostData(Encoding.UTF8.GetBytes("\r\n[shell exited]\r\n"));
+                    StopSession();
+                });
+                _session.OutputReceived += _outputHandler;
+                _session.Exited += _exitHandler;
             }
             catch (Exception)
             {
@@ -157,22 +173,15 @@ namespace RuApp.Controls
             }
         }
 
-        private void OnSessionOutput(byte[] chunk)
+        private void EnqueueOwned(long version, Action apply)
         {
-            DispatcherQueue.TryEnqueue(() => PostData(chunk));
-        }
-
-        private void OnSessionExited()
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                PostData(Encoding.UTF8.GetBytes("\r\n[shell exited]\r\n"));
-                StopSession();
-            });
+            var owned = _callbacks.Bind(version, apply);
+            DispatcherQueue.TryEnqueue(() => owned());
         }
 
         private void StopSession()
         {
+            _callbacks.Replace();
             var session = _session;
             _session = null;
             if (session is null)
@@ -180,8 +189,10 @@ namespace RuApp.Controls
                 return;
             }
 
-            session.OutputReceived -= OnSessionOutput;
-            session.Exited -= OnSessionExited;
+            session.OutputReceived -= _outputHandler;
+            session.Exited -= _exitHandler;
+            _outputHandler = null;
+            _exitHandler = null;
             session.Dispose();
         }
 

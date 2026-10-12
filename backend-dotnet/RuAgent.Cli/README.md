@@ -12,6 +12,31 @@ completion. Enter selects a command into the composer; arguments can be complete
 before submission. Escape closes the palette and restores the draft. While a
 turn is busy, the palette can be browsed but selection is refused visibly.
 
+The layout follows OpenCode's conversation/prompt arrangement while retaining
+Ru's palette and animated wordmark. An empty chat centres the logo and a prompt
+surface capped at 80 columns. Active sessions use a padded transcript and a
+bottom prompt with a green left rail; preset, model and provider sit below the
+input. The five-row composer shows “Ask anything…” when empty, with one blank
+row between input and model metadata and one below the metadata. Its input uses
+a steady block cursor. The empty-chat footer only shows `ctrl+p commands`;
+active sessions retain the navigation/expansion hints. The header puts session
+title/known usage on the first row and workspace/current activity on the second,
+with a dim separator below; idle activity uses the secondary colour. Frames
+shorter than 20 rows use a single heading row. The feed
+uses the available width without a side panel. Command overlays follow the
+prompt's width and shrink with the available space above it.
+
+Streaming defers reflow to drawing/scrolling rather than rebuilding a growing
+line for every fragment. Completed tool metadata updates its activity by ID;
+duplicate/late updates cannot turn into the next tool's result. Tool/diff cards
+are enabled for Terminal.Gui; plain output keeps the sequential tool rows.
+
+Markdown block state advances only on complete raw lines. Terminal.Gui replaces
+the unfinished line preview at up to 30 updates per second, then commits its
+final formatting; retry removes provisional text. Fenced code retains its full
+source line and wraps to the viewport instead of permanently clipping its tail.
+Plain line output waits for newline or Flush before committing Markdown.
+
 PageUp/PageDown scroll the transcript. Ctrl+Home reads the oldest retained output;
 Ctrl+End returns to following new output. Streaming preserves a detached scroll
 position and marks new output until Ctrl+End returns to the tail. Ctrl+O expands

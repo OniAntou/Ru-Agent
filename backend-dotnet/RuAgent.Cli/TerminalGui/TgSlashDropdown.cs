@@ -91,7 +91,7 @@ public sealed class TgSlashDropdown : View
             "commands",
             items,
             _selected,
-            MaxVisible,
+            Math.Max(1, Math.Min(MaxVisible, Viewport.Height - 2)),
             "↑↓ select · tab apply · esc close");
         for (var i = 0; i < lines.Count && i < Viewport.Height; i++)
         {

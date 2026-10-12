@@ -135,6 +135,7 @@ public sealed class RpcBridgeServerTests
         // The read loop parked after dispatching the first frame; the writer is
         // still holding that response, so slot one is free.
         await reader.Entered;
+        await writer.Entered.WaitAsync(TimeSpan.FromSeconds(5));
         var notification = new JsonObject
         {
             ["jsonrpc"] = "2.0",
@@ -185,11 +186,14 @@ public sealed class RpcBridgeServerTests
     private sealed class BlockingWriter(Task release) : TextWriter
     {
         private readonly StringBuilder _buffer = new();
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Entered => _entered.Task;
 
         public override Encoding Encoding => Encoding.UTF8;
 
         public override async Task WriteLineAsync(string? value)
         {
+            _entered.TrySetResult();
             await release.ConfigureAwait(false);
             _buffer.AppendLine(value);
         }

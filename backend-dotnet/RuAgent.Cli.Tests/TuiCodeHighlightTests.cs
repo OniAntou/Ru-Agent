@@ -134,13 +134,13 @@ public sealed class TuiCodeHighlightTests
     }
 
     [Fact]
-    public void RenderLine_LongLine_TruncatesWithinTheRequestedWidth()
+    public void RenderLine_LongLine_RetainsSourceForViewportWrapping()
     {
         var rows = TuiCodeHighlight.RenderLine(new string('a', 120), 1, 40, TuiColorLevel.None);
         var row = Assert.Single(rows);
 
-        Assert.True(TuiText.VisibleWidth(row) <= 40);
-        Assert.Contains("…", row);
+        Assert.EndsWith(new string('a', 120), row);
+        Assert.DoesNotContain("…", row);
     }
 
     [Fact]

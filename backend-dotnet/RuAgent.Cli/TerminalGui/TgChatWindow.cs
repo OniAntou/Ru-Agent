@@ -10,8 +10,8 @@ using Terminal.Gui.Views;
 namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
-/// The three-region window: pinned header, scrolling transcript, pinned composer stack and
-/// hint row. State changes go through this facade so the run loop never touches views.
+/// Responsive landing/session window with a scrolling transcript, composer and session header.
+/// State changes go through this facade so the run loop never touches views.
 /// Slash suggestions and approval/trust/picker/secret panels float over the transcript.
 /// </summary>
 public sealed class TgChatWindow : Window
@@ -38,12 +38,11 @@ public sealed class TgChatWindow : Window
         SetScheme(TgPalette.Scheme(TuiToken.Ink));
 
         Header = new TgHeaderView { X = 0, Y = 0, Width = Dim.Fill() };
-        Transcript = new TgTranscriptView { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(8) };
-        // The classic footer is seven rows: six for the composer stack (top border at L-7,
-        // bottom border at L-2) and one for the hint row (L-1).
-        Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(7), Width = Dim.Fill(), Height = 6 };
+        Transcript = new TgTranscriptView { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
+        Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView();
+        Hints.WorkspaceChanged += () => Header.SetWorkspace(Hints.Workspace);
 
         Add(Header, Transcript, Landing, Composer, Hints);
         CanFocus = true;
@@ -72,12 +71,14 @@ public sealed class TgChatWindow : Window
     private void HideLanding()
     {
         Landing.Visible = false;
+        Relayout();
         Landing.SetNeedsDraw();
     }
 
     private void ShowLanding()
     {
         Landing.Visible = true;
+        Relayout();
         Landing.SetNeedsDraw();
     }
 
@@ -105,7 +106,7 @@ public sealed class TgChatWindow : Window
         HidePanel();
         if (_document is null)
         {
-            _document = new TgDocumentPanel { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(8) };
+            _document = new TgDocumentPanel { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
             _document.Closed += HideDocument;
         }
 
@@ -201,7 +202,11 @@ public sealed class TgChatWindow : Window
 
         if (_slashDropdown is null)
         {
-            _slashDropdown = new TgSlashDropdown { X = 0, Width = Dim.Fill() };
+            _slashDropdown = new TgSlashDropdown
+            {
+                X = Pos.Left(Composer),
+                Width = Dim.Width(Composer)
+            };
             _slashDropdown.CommandAccepted += command =>
             {
                 Composer.Input.Text = command + " ";
@@ -212,8 +217,8 @@ public sealed class TgChatWindow : Window
         }
 
         _slashDropdown.SetMatches(matches);
-        _slashDropdown.Height = _slashDropdown.PanelHeight;
-        _slashDropdown.Y = Pos.AnchorEnd(7 + _slashDropdown.PanelHeight);
+        _slashDropdown.Height = Dim.Func(_ => Math.Min(_slashDropdown.PanelHeight, Math.Max(3, Composer.Frame.Y)));
+        _slashDropdown.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - _slashDropdown.Frame.Height));
         if (_slashDropdown.SuperView is null)
         {
             Add(_slashDropdown);
@@ -247,13 +252,11 @@ public sealed class TgChatWindow : Window
         _commandPaletteDraft = Composer.Input.Text?.ToString() ?? string.Empty;
         _commandPalette.Reset();
         _commandPaletteView ??= new TgCommandPaletteView(_commandPalette);
-        _commandPaletteView.X = 0;
-        _commandPaletteView.Width = Dim.Fill();
-        var paletteHeight = Math.Min(
-            TgCommandPalette.MaxVisibleCommands + 2,
-            Math.Max(3, Transcript.Viewport.Height));
-        _commandPaletteView.Height = paletteHeight;
-        _commandPaletteView.Y = Pos.AnchorEnd(7 + paletteHeight);
+        _commandPaletteView.X = Pos.Left(Composer);
+        _commandPaletteView.Width = Dim.Width(Composer);
+        _commandPaletteView.Height = Dim.Func(_ => Math.Min(
+            TgCommandPalette.MaxVisibleCommands + 2, Math.Max(3, Composer.Frame.Y)));
+        _commandPaletteView.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - _commandPaletteView.Frame.Height));
         Add(_commandPaletteView);
         Composer.Input.SetFocus();
         SetNeedsDraw();
@@ -449,6 +452,7 @@ public sealed class TgChatWindow : Window
             if (_resizeApp is not null)
             {
                 _resizeApp.ScreenChanged += OnScreenChanged;
+                Relayout();
             }
         }
         else if (_resizeApp is not null)
@@ -481,6 +485,8 @@ public sealed class TgChatWindow : Window
     /// </summary>
     private void Relayout()
     {
+        var driver = _resizeApp?.Driver ?? App?.Driver;
+        TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
         Layout();
         SetNeedsDraw();
     }
@@ -529,7 +535,7 @@ public sealed class TgChatWindow : Window
         HideSlashDropdown();
         if (_panel is null)
         {
-            _panel = new TgPanelHost { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(8) };
+            _panel = new TgPanelHost { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
             _panel.PanelKey += OnPanelKey;
         }
 

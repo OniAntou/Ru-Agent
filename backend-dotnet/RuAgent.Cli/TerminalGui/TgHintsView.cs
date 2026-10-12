@@ -26,10 +26,13 @@ public sealed class TgHintsView : View
     }
 
     public string Workspace { get; private set; } = string.Empty;
+    public bool Compact { get; set; }
+    public event Action? WorkspaceChanged;
 
     public void SetIdle(string workspace)
     {
         Workspace = workspace;
+        WorkspaceChanged?.Invoke();
         _left = workspace;
         _spinnerFrame = null;
         _busyHint = null;
@@ -138,6 +141,11 @@ public sealed class TgHintsView : View
     /// <summary>Bright key caps with meta words, matching ComposerBox.ComposeHints.</summary>
     private void DrawRight(int column, int maxWidth)
     {
+        if (Compact)
+        {
+            Draw(column, [("ctrl+p", TuiToken.Bright), (" commands", TuiToken.Meta)], maxWidth);
+            return;
+        }
         var baseHints = _hasUnseenTranscript
             ? new List<(string Text, TuiToken Token)>
             {
@@ -172,6 +180,7 @@ public sealed class TgHintsView : View
 
     private string GetRightHints(int width)
     {
+        if (Compact) return "ctrl+p commands";
         if (_hasUnseenTranscript)
         {
             return ShouldShowExtendedHints(width)

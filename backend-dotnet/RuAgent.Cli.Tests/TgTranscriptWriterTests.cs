@@ -13,6 +13,68 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgTranscriptWriterTests
 {
     [Fact]
+    public void MarkdownPreviewIsLiveAndCompletedRowsMatchWholeLines()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 40 };
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            transcript.AppendAssistant("Hello **bold");
+            surface.Flush();
+            Assert.Contains(window.Transcript.Lines, row => row.Text.Contains("Hello"));
+            transcript.AppendAssistant("**.\n```csharp");
+            transcript.AppendAssistant("\nvar s = \"" + new string('x', 90));
+            transcript.AppendAssistant("TAIL_SENTINEL\";\n```\nAfter.");
+            transcript.Flush();
+            var rows = window.Transcript.Lines.Select(row => row.Text).ToArray();
+            Assert.Contains("Hello bold.", rows);
+            Assert.Contains(rows, row => row.StartsWith("  1 │ ") && row.Contains("TAIL_SENTINEL"));
+            Assert.Equal("After.", rows[^1]);
+            Assert.DoesNotContain(rows, row => row.Contains("```"));
+            transcript.AppendAssistant("\n---\n");
+            transcript.Flush();
+            Assert.All(window.Transcript.Lines.TakeLast(2), row => Assert.True(row.Text.Length <= 40));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
+    public void ResetDropsTheProvisionalReplyBeforeRetry()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var renderer = AgentCommands.CreateSessionRenderer(new TgTranscriptWriter(app, window.Transcript));
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            renderer.Transcript.AppendAssistant("superseded reply");
+            Assert.Contains(window.Transcript.Lines, row => row.Text.Contains("superseded"));
+            renderer.Transcript.ResetAssistant();
+            renderer.Transcript.AppendAssistant("fresh reply");
+            renderer.Flush();
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("superseded"));
+            Assert.Contains(window.Transcript.Lines, row => row.Text == "fresh reply");
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+    [Fact]
+    public void ChatFactorySelectsScreenCardsOnlyForTheTerminalGuiBridge()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        Assert.True(AgentCommands.CreateSessionRenderer(new TgTranscriptWriter(app, window.Transcript)).Transcript.FullScreenCards);
+        Assert.False(AgentCommands.CreateSessionRenderer(new StringWriter()).Transcript.FullScreenCards);
+    }
+    [Fact]
     public void WriteLine_StripsPaletteEscapes()
     {
         using IApplication app = Application.Create();
@@ -193,7 +255,9 @@ public sealed class TgTranscriptWriterTests
             var decision = AssistantTextReconciler.Decide(streamed, full);
             Assert.Equal(AssistantTextRecovery.AppendSuffix, decision);
             transcript.AppendAssistant(AssistantTextReconciler.SuffixFor(decision, streamed, full));
-            surface.Flush();
+            // Match RecoverMissingAssistantTextAsync: finish the renderer's raw
+            // Markdown tail, not just the downstream writer's byte buffer.
+            transcript.Flush();
 
             Assert.Contains(
                 window.Transcript.Lines,

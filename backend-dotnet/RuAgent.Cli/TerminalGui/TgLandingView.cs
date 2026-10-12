@@ -12,6 +12,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public sealed class TgLandingView : View
 {
+    public int? WordmarkRow { get; set; }
     private int _meteorTick;
     private bool _meteorTicked;
     private bool _meteorWasVisible;
@@ -20,9 +21,9 @@ public sealed class TgLandingView : View
     public TgLandingView()
     {
         X = 0;
-        Y = 1;
+        Y = 0;
         Width = Dim.Fill();
-        Height = Dim.Fill(8);
+        Height = Dim.Fill();
         SetScheme(TgPalette.Scheme(TuiToken.Meta));
     }
 
@@ -71,7 +72,7 @@ public sealed class TgLandingView : View
         {
             const string fallback = "Ru Agent";
             SetAttribute(TgPalette.Attr(TuiToken.Aurora));
-            Move(Math.Max(0, (width - fallback.Length) / 2), Math.Max(0, height / 2));
+            Move(Math.Max(0, (width - fallback.Length) / 2), WordmarkRow ?? Math.Max(0, height / 2));
             AddStr(fallback);
             return true;
         }
@@ -85,7 +86,7 @@ public sealed class TgLandingView : View
         }
 
         var left = Math.Max(0, (width - blockWidth) / 2);
-        var top = Math.Max(0, (height - ru.Count) / 2);
+        var top = WordmarkRow ?? Math.Max(0, (height - ru.Count) / 2);
         TuiToken? current = null;
         for (var r = 0; r < height; r++)
         {

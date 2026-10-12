@@ -65,7 +65,8 @@ public sealed class TuiTurnSnapshotTests
     {
         var payload = new Dictionary<string, object>
         {
-            ["activity_id"] = "act_" + new string('b', 32),
+            // A tool keeps its identity across start/completion, independently of others.
+            ["activity_id"] = "act_" + kind,
             ["kind"] = kind,
             ["state"] = state,
             ["safe_code"] = safeCode,

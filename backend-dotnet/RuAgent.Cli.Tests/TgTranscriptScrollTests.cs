@@ -16,6 +16,30 @@ namespace RuAgent.Cli.Tests;
 /// </summary>
 public sealed class TgTranscriptScrollTests
 {
+    [Fact]
+    public void ScrollingFromLongUserRowsToShortProseClearsOldTextAndBackground()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        window.Transcript.Append(new string('X', 100), TranscriptStyle.User);
+        for (var i = 0; i < 60; i++) window.Transcript.Append($"short-{i}", TranscriptStyle.Prose);
+        Run(app, window,
+        [
+            (100, w => w.Transcript.ScrollToTop()),
+            (100, w => Assert.Contains("XXXXX", TgSnapshot.Capture(app)[w.Transcript.Frame.Y])),
+            (100, w => w.Transcript.ScrollRows(1)),
+            (100, w =>
+            {
+                var y = w.Transcript.Frame.Y;
+                Assert.Contains("short-0", TgSnapshot.Capture(app)[y]);
+                Assert.DoesNotContain("X", TgSnapshot.Capture(app)[y]);
+                Assert.Equal(TgPalette.Attr(RuAgent.Cli.Tui.TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, y, w.Transcript.Frame.X + 40).Background);
+            })
+        ]);
+        app.Run(window);
+    }
+
     private static List<string> Rows(string prefix, int count) =>
         Enumerable.Range(1, count).Select(i => $"{prefix}-{i:D3}").ToList();
 

@@ -72,6 +72,14 @@ Live transcript activity insertion renders preceding pending deltas before
 activities are drained before later text is accepted. Frozen slices settle
 Markdown once; only the next tail remains live. No line/word heuristic moves
 sentence suffixes across activity rows.
+GUI Tasks refreshes bind completion to session generation, current run and newest
+request. Interactive-terminal output/exit callbacks carry shell lifetime versions;
+workspace replacement and shutdown invalidate queued callbacks. Model selection
+settings saves are serialized, skipping superseded queued choices and publishing
+only the newest result. These UI ownership guards do not change execution policy.
+The TUI keeps raw Markdown lines until completion and uses a replaceable live tail
+projection on Terminal.Gui. Preview parsing runs at frame cadence; completed code
+lines remain intact for viewport reflow. Plain output commits at newline or Flush.
 Host single-instance claims bind the physical identity of both data and log
 directories, including aliases. Directory handles retain those roots for the
 claim lifetime. Each mutex has a dedicated owner thread until disposal, so
@@ -310,6 +318,13 @@ reconciliation surfaces from Phase 3:
   remains the single bounded scroll owner and emits follow-tail state changes
   for busy/idle hints, including clear. Workspace-busy hints persist until Host
   acceptance or a successful session switch, independent of composer keystrokes.
+  `TgChatLayout` owns responsive positioning: centred landing and a padded session
+  column below a compact title/usage, workspace and activity header. Frames below
+  20 rows keep a single heading row. The header projects existing session data;
+  it adds no API calls. Streaming reflows a dirty tail at draw/scroll boundaries.
+  Tool activity metadata is updated by ID and consumed in durable proposal order;
+  the transient durable sequence is a stream anchor, not a tool identity.
+  Command overlays follow the composer and remain bounded within the frame.
 
 - CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
 - CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.

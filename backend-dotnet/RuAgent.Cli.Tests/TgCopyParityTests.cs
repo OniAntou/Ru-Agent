@@ -49,32 +49,27 @@ public sealed class TgCopyParityTests
     private static string Visible(string styledRow) => TuiText.Strip(styledRow).TrimEnd();
 
     [Fact]
-    public void Composer_ReproducesTheClassicInputAndMetaRows()
+    public void Composer_PreservesInputAndMetadataInTheNewFilledLayout()
     {
-        var classicTyped = ComposerBox.ComposeStack(
-            Width, ComposerState.Idle, "fix the busy lock", string.Empty, Preset, Model, Provider);
-        var classicGhost = ComposerBox.ComposeStack(
-            Width, ComposerState.Idle, string.Empty, "Ask anything…", Preset, Model, Provider);
-
-        var typed = new TgComposerView { X = 0, Y = 0, Width = Dim.Fill(), Height = 6 };
+        var typed = new TgComposerView { X = 0, Y = 0, Width = Dim.Fill(), Height = 5 };
         typed.SetMeta(Preset, Model, Provider);
         typed.Input.Text = "fix the busy lock";
 
-        var ghost = new TgComposerView { X = 0, Y = 6, Width = Dim.Fill(), Height = 6 };
+        var ghost = new TgComposerView { X = 0, Y = 5, Width = Dim.Fill(), Height = 5 };
         ghost.SetMeta(Preset, Model, Provider);
         ghost.SetPlaceholder("Ask anything…");
 
         var rows = Render(typed, ghost);
 
-        Assert.Equal(Visible(classicTyped[2]), rows[2]);
-        Assert.Equal(Visible(classicTyped[4]), rows[4]);
-        Assert.Equal(Visible(classicGhost[2]), rows[8]);
-        Assert.Equal(Visible(classicGhost[4]), rows[10]);
+        Assert.Contains("fix the busy lock", rows[1], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[3], StringComparison.Ordinal);
+        Assert.Contains(Model, rows[3], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[3], StringComparison.Ordinal);
+        Assert.Contains("Ask anything…", rows[6], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[8], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[8], StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev", rows[3], StringComparison.Ordinal);
 
-        Assert.Contains("Ask anything…", rows[8], StringComparison.Ordinal);
-        Assert.Contains("Standard", rows[4], StringComparison.Ordinal);
-        Assert.Contains("kilo", rows[4], StringComparison.Ordinal);
-        Assert.DoesNotContain("models.dev", rows[4], StringComparison.Ordinal);
     }
 
     [Fact]

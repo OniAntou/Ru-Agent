@@ -1159,6 +1159,10 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            _modelSelectionSaves.Invalidate();
+            _taskRefreshCancellation?.Cancel();
+            _taskRefreshCancellation?.Dispose();
+            _taskRefreshCancellation = null;
             DisposeChatScrolling();
             SidePanel?.ShutdownTerminal();
             _sessionPresentation.Dispose();

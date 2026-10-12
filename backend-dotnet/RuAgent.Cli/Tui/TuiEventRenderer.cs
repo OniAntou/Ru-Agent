@@ -76,6 +76,17 @@ public sealed class TuiSessionRenderer
 
     public void Flush() => _transcript.Flush();
 
+    /// <summary>Composes activity for a screen-owned timer without console repaints.</summary>
+    public string ComposeActivity(int width)
+    {
+        if (_status.State is TuiRunState.Thinking or TuiRunState.Tool)
+        {
+            _status.Tick();
+            _status.SetElapsed(_transcript.ElapsedSeconds);
+        }
+        return _status.Compose(width);
+    }
+
     public void ToggleExpand() => _transcript.ToggleExpand();
 
     /// <summary>Prints an operator-facing one-liner into the transcript.</summary>

@@ -33,6 +33,7 @@ public sealed class TgTranscriptView : View
     private bool _expanded;
     private int _wrapWidth = -1;
     private int _tailRows = 1;
+    private bool _tailDirty;
     private bool _historyTruncated;
     private int _scrollTop;
     private bool _followingTail = true;
@@ -48,9 +49,9 @@ public sealed class TgTranscriptView : View
     public int RetainedRowCount => _lines.Count + (_collapsedBlock?.Hidden.Count ?? 0);
     public int RetainedCharacterCount => _retainedCharacters;
     public bool IsFollowingTail => _followingTail;
-    public bool CanScroll => _wrapped.Count > Math.Max(1, Viewport.Height);
+    public bool CanScroll { get { EnsureWrapped(); return _wrapped.Count > Math.Max(1, Viewport.Height); } }
     public bool HasUnseenOutput { get; private set; }
-    public int ScrollPosition => _followingTail ? Math.Max(0, _wrapped.Count - Viewport.Height) : _scrollTop;
+    public int ScrollPosition { get { EnsureWrapped(); return _followingTail ? Math.Max(0, _wrapped.Count - Viewport.Height) : _scrollTop; } }
 
     /// <summary>Raised on the 0-to-1 transition, so the window can hide its landing overlay.</summary>
     public event Action? FirstContentAppended;
@@ -80,6 +81,7 @@ public sealed class TgTranscriptView : View
         _expanded = false;
         _wrapWidth = -1;
         _tailRows = 1;
+        _tailDirty = false;
         _historyTruncated = false;
         _scrollTop = 0;
         SetFollowingTail(true);
@@ -91,6 +93,7 @@ public sealed class TgTranscriptView : View
 
     public void Append(string text, TranscriptStyle style)
     {
+        EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
         var bounded = BoundLine(text);
         _lines.Add((bounded, style));
@@ -212,7 +215,9 @@ public sealed class TgTranscriptView : View
         var last = _lines[^1];
         var grown = BoundLineParts(last.Text, text);
         _lines[^1] = (grown, last.Style);
-        _retainedCharacters += CharacterCount(grown) - CharacterCount(last.Text);
+        _retainedCharacters += last.Text.Length + (long)text.Length <= MaxRetainedLineCharacters
+            ? CharacterCount(text)
+            : CharacterCount(grown) - CharacterCount(last.Text);
         MarkOutputUnseen();
         if (_expanded)
         {
@@ -220,11 +225,29 @@ public sealed class TgTranscriptView : View
         }
         else if (_wrapWidth > 0)
         {
-            // Re-wrap only the tail: its old rows are the last _tailRows of the cache.
-            _wrapped.RemoveRange(_wrapped.Count - _tailRows, _tailRows);
-            _tailRows = AppendWrapped(grown, last.Style, _wrapWidth);
+            // Many deltas can arrive before the next frame. Reflow once when drawn/scrolled.
+            _tailDirty = true;
         }
 
+        EnforceRetention();
+        SetNeedsDraw();
+    }
+
+    internal void ReplaceTail(string? text, TranscriptStyle style)
+    {
+        if (_lines.Count == 0) return;
+        var previous = _lines[^1];
+        _retainedCharacters -= CharacterCount(previous.Text);
+        if (text is null) _lines.RemoveAt(_lines.Count - 1);
+        else
+        {
+            var bounded = BoundLineParts(string.Empty, text);
+            _lines[^1] = (bounded, style);
+            _retainedCharacters += CharacterCount(bounded);
+        }
+        if (text is null || _expanded) _wrapWidth = -1;
+        else if (_wrapWidth > 0) _tailDirty = true;
+        MarkOutputUnseen();
         EnforceRetention();
         SetNeedsDraw();
     }
@@ -256,7 +279,7 @@ public sealed class TgTranscriptView : View
 
     protected override bool OnMouseEvent(Mouse mouseEvent)
     {
-        if (!mouseEvent.IsWheel || _wrapped.Count <= Viewport.Height) return false;
+        if (!mouseEvent.IsWheel || !CanScroll) return false;
         if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledUp)) ScrollRows(-3);
         else if (mouseEvent.Flags.HasFlag(MouseFlags.WheeledDown)) ScrollRows(3);
         else return false;
@@ -292,10 +315,7 @@ public sealed class TgTranscriptView : View
             return true;
         }
 
-        if (width != _wrapWidth)
-        {
-            RebuildWrapped(width);
-        }
+        EnsureWrapped();
 
         var maxTop = Math.Max(0, _wrapped.Count - height);
         var offset = _followingTail ? maxTop : Math.Clamp(_scrollTop, 0, maxTop);
@@ -305,6 +325,11 @@ public sealed class TgTranscriptView : View
             var (text, style) = _wrapped[offset + i];
             SetAttribute(StyleAttribute(style));
             Move(0, i);
+            if (style == TranscriptStyle.User)
+            {
+                AddStr(new string(' ', width));
+                Move(0, i);
+            }
             AddStr(text);
         }
 
@@ -330,11 +355,13 @@ public sealed class TgTranscriptView : View
         }
 
         _wrapWidth = width;
+        _tailDirty = false;
         _scrollTop = Math.Clamp(oldTop, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
     }
 
     private void MoveViewport(int delta)
     {
+        EnsureWrapped();
         if (_followingTail)
         {
             _scrollTop = Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height));
@@ -343,6 +370,22 @@ public sealed class TgTranscriptView : View
 
         _scrollTop = Math.Clamp(_scrollTop + delta, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
         SetNeedsDraw();
+    }
+
+    private void EnsureWrapped()
+    {
+        var width = Viewport.Width;
+        if (width <= 0) return;
+        if (width != _wrapWidth)
+        {
+            RebuildWrapped(width);
+        }
+        else if (_tailDirty && _lines.Count > 0)
+        {
+            _wrapped.RemoveRange(_wrapped.Count - _tailRows, _tailRows);
+            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, width);
+            _tailDirty = false;
+        }
     }
 
     private void EnforceRetention()
@@ -389,7 +432,7 @@ public sealed class TgTranscriptView : View
     {
         if (!_followingTail && _wrapWidth > 0)
         {
-            _scrollTop = Math.Max(0, _scrollTop - TuiText.HardWrapLine(_lines[index].Text, _wrapWidth).Count);
+            _scrollTop = Math.Max(0, _scrollTop - WrapLine(_lines[index].Text, _lines[index].Style, _wrapWidth).Count);
         }
 
         _retainedCharacters -= CharacterCount(_lines[index].Text);
@@ -492,13 +535,22 @@ public sealed class TgTranscriptView : View
 
     private int AppendWrapped(string text, TranscriptStyle style, int width)
     {
-        var rows = TuiText.HardWrapLine(text, width);
+        var rows = WrapLine(text, style, width);
         foreach (var row in rows)
         {
             _wrapped.Add((row, style));
         }
 
         return rows.Count;
+    }
+
+    private static IReadOnlyList<string> WrapLine(string text, TranscriptStyle style, int width)
+    {
+        // Reflow prose on words, but retain exact columns in indented/code-gutter rows.
+        return style == TranscriptStyle.Prose && text.Length > 0
+            && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal)
+                ? TuiText.Wrap(text, width)
+                : TuiText.HardWrapLine(text, width);
     }
 
     private static Terminal.Gui.Drawing.Attribute StyleAttribute(TranscriptStyle style) => style switch

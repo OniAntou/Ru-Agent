@@ -46,6 +46,32 @@ public sealed class TuiSurface
 
     public TextWriter Writer { get; }
 
+    public bool HasLineProjection => Writer is ITranscriptLineWriter;
+
+    public void PreviewLine(string text)
+    {
+        lock (Gate)
+        {
+            if (Writer is ITranscriptLineWriter projection) projection.PreviewLine(text);
+        }
+    }
+
+    public void CommitProjectedLine(IReadOnlyList<string> rows)
+    {
+        lock (Gate)
+        {
+            if (Writer is ITranscriptLineWriter projection)
+            {
+                projection.CommitLine(rows);
+                foreach (var row in rows) CompleteLine(row);
+            }
+            else
+            {
+                foreach (var row in rows) { Write(row); Line(); }
+            }
+        }
+    }
+
     /// <summary>Wrap mutable repaints in synchronized output. Enabled whenever colour is on.</summary>
     public bool SynchronizedOutput { get; set; }
 

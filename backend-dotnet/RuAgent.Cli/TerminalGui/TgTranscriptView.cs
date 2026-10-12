@@ -104,7 +104,7 @@ public sealed class TgTranscriptView : View
             FirstContentAppended?.Invoke();
         }
 
-        if (_expanded)
+        if (_expanded || bounded.Contains('|'))
         {
             // The revealed rows trail the wrap cache; rebuild it on the next draw.
             _wrapWidth = -1;
@@ -135,7 +135,11 @@ public sealed class TgTranscriptView : View
         {
             FirstContentAppended?.Invoke();
         }
+        SetCollapsedDetails(hidden, style);
+    }
 
+    internal void SetCollapsedDetails(IReadOnlyList<string> hidden, TranscriptStyle style)
+    {
         if (_collapsedBlock is { } previousBlock)
         {
             _retainedCharacters -= previousBlock.Hidden.Sum(row => CharacterCount(row.Text));
@@ -245,7 +249,7 @@ public sealed class TgTranscriptView : View
             _lines[^1] = (bounded, style);
             _retainedCharacters += CharacterCount(bounded);
         }
-        if (text is null || _expanded) _wrapWidth = -1;
+        if (text is null || _expanded || text.Contains('|')) _wrapWidth = -1;
         else if (_wrapWidth > 0) _tailDirty = true;
         MarkOutputUnseen();
         EnforceRetention();
@@ -351,9 +355,21 @@ public sealed class TgTranscriptView : View
     {
         var oldTop = _followingTail ? Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)) : _scrollTop;
         _wrapped.Clear();
+        var rawRows = _lines.Select(row => row.Style == TranscriptStyle.Prose ? row.Text : string.Empty).ToArray();
         for (var i = 0; i < _lines.Count; i++)
         {
             var (text, style) = _lines[i];
+            if (style == TranscriptStyle.Prose
+                && TuiMarkdownTable.TryRender(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
+            {
+                _wrapped.AddRange(table.Select(row => (row, TranscriptStyle.Prose)));
+                i += consumed - 1;
+                _tailRows = 0;
+                if (_expanded && _collapsedBlock is { } tableBlock && tableBlock.AfterLine == i + 1)
+                    foreach (var (hiddenText, hiddenStyle) in tableBlock.Hidden)
+                        _tailRows = AppendWrapped(hiddenText, hiddenStyle, width);
+                continue;
+            }
             _tailRows = AppendWrapped(text, style, width);
 
             if (_expanded && _collapsedBlock is { } block && block.AfterLine == i + 1)
@@ -560,7 +576,7 @@ public sealed class TgTranscriptView : View
         // Reflow prose on words, but retain exact columns in indented/code-gutter rows.
         return style == TranscriptStyle.Prose && text.Length > 0
             && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal)
-                ? TuiText.Wrap(text, width)
+                ? TuiText.Wrap(text, Math.Min(width, 100))
                 : TuiText.HardWrapLine(text, width);
     }
 

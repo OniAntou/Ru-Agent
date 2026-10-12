@@ -40,7 +40,8 @@ public sealed class TuiMarkdown
     public bool HighlightCode { get; set; }
 
     public IReadOnlyList<string> RenderLogicalLine(string line, int width) =>
-        RenderLine(line, TryRule(line, out _) ? width : Math.Max(width, line.Length + 16));
+        !InFence && line.Contains('|') ? [line]
+            : RenderLine(line, TryRule(line, out _) ? width : Math.Max(width, line.Length + 16));
 
     public string PreviewLine(string line, int width)
     {

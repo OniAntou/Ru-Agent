@@ -631,6 +631,8 @@ public sealed class TuiTranscript
 
     private static string? BuildTarget(AgentActivityModel activity)
     {
+        if (activity.ToolDisplay is "Search" or "Fetch" && !string.IsNullOrWhiteSpace(activity.Detail))
+            return ChatDisplayText.Sanitize(activity.Detail, 160);
         if (activity.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(activity.Detail))
             return TuiText.Truncate(Escape(activity.Detail), 160);
         if (!string.IsNullOrWhiteSpace(activity.FileName))
@@ -1030,7 +1032,12 @@ public sealed class TuiTranscript
         }
 
         TrimRetained();
-        Notice("Thought · ctrl+o", TuiToken.Warn);
+        if (_fullScreenCards && _surface.Writer is ITranscriptLineWriter screen)
+        {
+            Flush();
+            screen.RetainDetails(_retained.ToArray());
+        }
+        else Notice("Thought · ctrl+o", TuiToken.Meta);
     }
 
     private void Notice(string text, TuiToken token)

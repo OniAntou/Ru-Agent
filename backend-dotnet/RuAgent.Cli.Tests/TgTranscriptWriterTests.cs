@@ -13,6 +13,31 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgTranscriptWriterTests
 {
     [Fact]
+    public void ReasoningStaysExpandableWithoutAddingThoughtRowsToTheFeed()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var renderer = AgentCommands.CreateSessionRenderer(writer);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.Transcript.Append("question", TranscriptStyle.User);
+            for (int i = 0; i < 3; i++) renderer.Transcript.ApplyActivity(new RuAgent.Client.AgentActivityModel(
+                "act_reason" + i, RuAgent.Protocol.Harness.AgentActivityKind.Thinking,
+                RuAgent.Protocol.Harness.AgentActivityState.Completed,
+                null, null, null, null, null, null, null, 100, "succeeded", null, null, null,
+                Detail: "reasoning " + i));
+            Assert.Single(window.Transcript.Lines);
+            Assert.Contains(window.Transcript.CollapsedRows, row => row.Text.Contains("reasoning 2"));
+            window.Transcript.ToggleExpanded();
+            Assert.True(window.Transcript.IsExpanded);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+    [Fact]
     public void MarkdownPreviewIsLiveAndCompletedRowsMatchWholeLines()
     {
         using IApplication app = Application.Create();

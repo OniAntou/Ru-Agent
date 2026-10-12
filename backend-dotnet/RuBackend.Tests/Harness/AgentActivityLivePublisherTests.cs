@@ -8,6 +8,20 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class AgentActivityLivePublisherTests
 {
+    [Fact]
+    public async Task Web_search_context_uses_the_existing_detail_secret_redaction()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub,
+            new RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor(["sk-synthetic-secret-123"]));
+        publisher.Publish(Run, new AgentActivity("act_dddddddddddddddddddddddddddddddd",
+            AgentActivityKind.Search, AgentActivityState.Started,
+            SafeCode: "in_progress", ToolDisplay: "Search", Detail: "giá vàng sk-synthetic-secret-123"));
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+        Assert.DoesNotContain("sk-synthetic-secret-123", frame.Data);
+        Assert.Contains(RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Replacement, frame.Data);
+    }
     private static readonly RunId Run = new("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     private const string ToolCallId = "call_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
     private const string ExecutionId = "exec_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";

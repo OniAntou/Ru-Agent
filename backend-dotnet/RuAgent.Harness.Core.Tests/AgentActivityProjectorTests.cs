@@ -7,6 +7,18 @@ namespace RuAgent.Harness.Core.Tests;
 
 public sealed class AgentActivityProjectorTests
 {
+    [Fact]
+    public void WebActivitiesRetainReadableContextWithoutUrlCredentialsOrQuery()
+    {
+        var search = AgentActivityProjector.ProjectTool(
+            Proposal("web_search", "{\"query\":\"giá vàng hôm nay\"}"), AgentActivityState.Started);
+        Assert.Equal("giá vàng hôm nay", search.Detail);
+        var fetch = AgentActivityProjector.ProjectTool(
+            Proposal("web_fetch", "{\"url\":\"https://user:password@example.com/path?token=secret#fragment\"}"), AgentActivityState.Completed);
+        Assert.Equal("example.com", fetch.Detail);
+        Assert.Null(AgentActivityProjector.ProjectTool(
+            Proposal("web_fetch", "{\"url\":\"file:///private\"}"), AgentActivityState.Started).Detail);
+    }
     private static readonly RunId Run = new("run_11111111111111111111111111111111");
     private static readonly ModelStepId Step = new("step_22222222222222222222222222222222");
 
@@ -272,7 +284,7 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Fact]
-    public void Web_search_projects_query_symbol_without_url()
+    public void Web_search_query_uses_redacted_detail_instead_of_symbol_metadata()
     {
         var proposal = Proposal(
             "web_search",
@@ -284,11 +296,12 @@ public sealed class AgentActivityProjectorTests
 
         Assert.Equal(AgentActivityKind.Search, activity.Kind);
         Assert.Equal("Search", activity.ToolDisplay);
-        Assert.Equal("latest_release", activity.Symbol);
+        Assert.Null(activity.Symbol);
+        Assert.Equal("latest_release", activity.Detail);
     }
 
     [Fact]
-    public void Web_fetch_stays_generic_without_url_metadata()
+    public void Web_fetch_exposes_only_the_host_without_private_url_metadata()
     {
         var proposal = Proposal(
             "web_fetch",
@@ -302,7 +315,8 @@ public sealed class AgentActivityProjectorTests
         Assert.Equal("Fetch", activity.ToolDisplay);
         Assert.Null(activity.Symbol);
         Assert.Null(activity.FileName);
-        Assert.DoesNotContain("example.com", activity.ToString(), StringComparison.Ordinal);
+        Assert.Equal("example.com", activity.Detail);
+        Assert.DoesNotContain("/secret", activity.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

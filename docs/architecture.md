@@ -329,6 +329,12 @@ reconciliation surfaces from Phase 3:
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Command overlays follow the composer and remain bounded within the frame.
+  Prose measure is capped at 100 cells; verified Markdown table blocks reflow
+  from raw rows and preserve values on narrow screens. Reasoning uses the same
+  bounded collapsed-detail owner without repeated feed summaries. Web tool detail
+  includes queries up to 160 characters or fetched host names. Detail passes the
+  existing known-secret redactor before the public activity sink; URL credentials,
+  path, query and fragment do not enter the fetched-host label.
 
 - CLI submission ownership: `ChatSubmissionState` owns pending attachments, snapshot admission, held retry identity and accepted attachment transfers in both terminal paths. A declined trust gate returns the transfer to pending state once; cancellation and failure release its temporary images. `ChatSubmissionSnapshot` retains immutable intent and the original idempotency key. Rendering and run orchestration remain in the existing dispatcher.
 - CLI turn ownership: `ChatRunSession` owns turn cancellation, active/parked/followable run identities and unique assistant payload references. A failed Continue retains the parked identity; parking cancels following without requesting server cancellation. Interrupting another active run still targets that run. The dispatcher renders and performs the HTTP operations through this state owner.

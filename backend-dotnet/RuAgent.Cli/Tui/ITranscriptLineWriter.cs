@@ -5,4 +5,5 @@ public interface ITranscriptLineWriter
 {
     void PreviewLine(string text);
     void CommitLine(IReadOnlyList<string> rows);
+    void RetainDetails(IReadOnlyList<string> rows);
 }

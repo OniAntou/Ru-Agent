@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Keep web search queries and fetched host names in redacted activity detail, render complete Markdown tables with aligned columns (or stacked values on narrow screens), cap prose measure at 100 cells, and keep reasoning available through Ctrl+O without repeated Thought rows in the feed.
+
 - **style(tui)**: Give Agent Activity its own header row with a colored status glyph, readable action, muted target and right-aligned elapsed/tool count. Distinguish thinking from writing a response; parked states stay still without a running clock. Refine tool rows with clearer labels, target spacing, preserved outcome/metrics and explicit failure text. Pending activities retain their own action when another tool settles.
 
 - **fix(gui)**: Discard stale Tasks responses when session/run ownership changes, bind terminal output/exit callbacks to their originating shell and prevent delayed startup after shutdown. Serialize/coalesce model selection saves so the last choice wins in both settings and UI.

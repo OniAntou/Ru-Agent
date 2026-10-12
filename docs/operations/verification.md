@@ -6,13 +6,47 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **5,987 passed / 0 failed / 0 skipped** (2026-10-12, GUI/TUI review fixes). Broker 910; CLI 1,292; Client 214; Core 486; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,055; GUI 1,389. Log: `artifacts/gui-tui-release-matrix.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, GUI/TUI release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-tui-release-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-12, GUI/TUI review fixes). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/gui-tui-release-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: isolated authenticated status/shutdown, actual `ru` launcher session listing and redirected default startup/exit. Log: `artifacts/gui-tui-release-smoke.log`. Earlier scripted RPC evidence remains historical; interactive native UI remains unmeasured. |
+| .NET tests | Full **12-project** Debug matrix: **6,004 passed / 0 failed / 0 skipped** (2026-10-12, readable Activity/feed). Broker 910; CLI 1,307; Client 214; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,056; GUI 1,389. Log: `artifacts/tui-readable-feed-matrix-final.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, GUI/TUI release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-readable-feed-python-final.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, readable Activity/feed). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tui-readable-feed-release.log`. |
+| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: isolated authenticated status/shutdown, actual `ru` launcher session listing and redirected default startup/exit. Log: `artifacts/tui-readable-feed-smoke.log`. Earlier scripted RPC evidence remains historical; interactive native UI remains unmeasured. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Readable TUI feed and web activity (2026-10-12)
+
+The screenshot-driven follow-up adds readable web queries/fetched hosts to
+redacted activity detail, aligns verified Markdown table blocks from raw rows,
+uses labeled values on very narrow frames, caps prose at 100 cells and retains
+reasoning behind Ctrl+O without repeating Thought summaries in the visible feed.
+Web queries no longer use the unredacted symbol field; oversize queries are
+omitted rather than split before redaction. Fetch labels contain only the host.
+
+Full matrix: **6,004 passed / 0 failed / 0 skipped**, including CLI 1,307,
+Core 487 and Backend 1,056 (`artifacts/tui-readable-feed-matrix-final.log`).
+Python: **214 passed, 1 skipped** (`artifacts/tui-readable-feed-python-final.log`).
+The isolated 11-stage Release pipeline derived from `build.bat` completed
+(`artifacts/tui-readable-feed-release.log`), then the verified flat package
+replaced the canonical GUI/backend/CLI publish directory with the previous
+package retained in ignored artifacts. Complete dependency inventory and actual
+`ru` startup/session-list plus authenticated published-host status/shutdown
+passed (`artifacts/tui-readable-feed-inventory.log`,
+`artifacts/tui-readable-feed-smoke.log`). Headless control previews use sample
+data (`artifacts/tui-readable-feed-wide.png`, `artifacts/tui-readable-feed-narrow.png`);
+physical terminal acceptance remains manual.
+
+Earlier failures were retained: a missing required inline-render parameter
+(`artifacts/tui-readable-feed-cli.log`), a narrow-table value split corrected by
+stacked rendering (`artifacts/tui-readable-feed-cli2.log`), and the deliberate
+fetch-host metadata change requiring a revised privacy assertion
+(`artifacts/tui-readable-feed-matrix.log`). The existing table test file was
+accidentally overwritten during test creation, restored unchanged from HEAD,
+and new tests moved to a separate layout-test file before final verification.
+The first Python run also caught a stale README badge/table total after the
+previous release; README and this record now agree on 6,004
+(`artifacts/tui-readable-feed-python.log`). No assertions about URL credentials,
+query parameters, redaction or retained values were removed.
 
 ## TUI Agent Activity presentation (2026-10-12)
 

@@ -85,6 +85,8 @@ public static class AgentActivityProjector
         // row printed twice — the command is the only thing telling them apart.
         var detail = kind == AgentActivityKind.Terminal
             ? ExtractTerminalCommand(proposal)
+            : proposal.ToolId is "web_search" or "web_fetch"
+                ? ExtractWebTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -104,6 +106,25 @@ public static class AgentActivityProjector
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay,
             Detail: detail);
+    }
+
+    private static string? ExtractWebTarget(ToolProposal proposal)
+    {
+        var property = proposal.ToolId == "web_search" ? "query" : "url";
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object
+            || !proposal.Arguments.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.String) return null;
+        var text = value.GetString();
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (proposal.ToolId == "web_fetch")
+            return Uri.TryCreate(text, UriKind.Absolute, out var uri)
+                && uri.Scheme is "https" or "http" ? uri.IdnHost : null;
+        // Detail is redacted by AgentActivityLivePublisher before crossing the sink.
+        // Reject an oversized query rather than cutting a possible credential in
+        // half before the publisher's exact secret matcher can redact it.
+        if (text.Length > 160) return null;
+        var clean = new string(text.Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
+        return clean.Length > 0 ? clean : null;
     }
 
     private static string? ExtractTerminalCommand(ToolProposal proposal)
@@ -552,7 +573,7 @@ public static class AgentActivityProjector
                     ? ReadSafeFileName(arguments, "path")
                     : null;
                 var (lineStart, lineEnd) = ReadLineRange(arguments);
-                var symbol = (proposal.ToolId, op) is ("grep", _) or ("web_search", _)
+                var symbol = (proposal.ToolId, op) is ("grep", _)
                     ? ReadSafeSymbol(arguments, "query")
                     : null;
                 var count = ReadReceiptInt(receipt, "count");

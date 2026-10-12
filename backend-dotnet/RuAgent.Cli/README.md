@@ -40,6 +40,11 @@ the unfinished line preview at up to 30 updates per second, then commits its
 final formatting; retry removes provisional text. Fenced code retains its full
 source line and wraps to the viewport instead of permanently clipping its tail.
 Plain line output waits for newline or Flush before committing Markdown.
+Prose wraps at at most 100 cells on wide terminals. Markdown tables are grouped
+from retained raw header/separator/body rows, align their columns and switch to
+labeled values below 40 cells. Reasoning remains behind Ctrl+O without adding a
+Thought row for every model step. Web activity targets use redacted query detail
+and host names; URLs do not expose credentials, query parameters or fragments.
 
 PageUp/PageDown scroll the transcript. Ctrl+Home reads the oldest retained output;
 Ctrl+End returns to following new output. Streaming preserves a detached scroll

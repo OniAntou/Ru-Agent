@@ -19,6 +19,13 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
 
     public void PreviewLine(string text) => ProjectLine(text.Length == 0 ? null : text, complete: false);
 
+    public void RetainDetails(IReadOnlyList<string> rows)
+    {
+        var clean = rows.Select(TuiText.Strip).ToArray();
+        try { app.Invoke(() => transcript.SetCollapsedDetails(clean, TranscriptStyle.Meta)); }
+        catch (NotInitializedException) { }
+    }
+
     public void CommitLine(IReadOnlyList<string> rows)
     {
         ProjectLine(rows.Count == 0 ? null : rows[0], complete: true);

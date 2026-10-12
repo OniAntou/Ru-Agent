@@ -9,6 +9,21 @@ namespace RuBackend.Tests.Business;
 public sealed class SessionStoreTests
 {
     [Fact]
+    public async Task Client_source_survives_append_and_reopening_without_reclassifying_legacy_sessions()
+    {
+        var (store, paths) = CreateStore();
+        foreach (var source in new string?[] { null, "gui", "cli" })
+        {
+            var id = (await store.CreateForClientAsync(source, CancellationToken.None))!;
+            Assert.True(await store.AppendAsync(id, [new("user", "Hello")], CancellationToken.None));
+            var reopened = new SessionStore(paths);
+            Assert.Equal(source, (await reopened.GetAsync(id, CancellationToken.None))!.ClientSource);
+            Assert.Equal(source, (await reopened.ListAsync(CancellationToken.None)).Single(row => row.Id == id).ClientSource);
+        }
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateForClientAsync("invalid", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Create_writes_a_valid_default_session_document()
     {
         var (store, _) = CreateStore();

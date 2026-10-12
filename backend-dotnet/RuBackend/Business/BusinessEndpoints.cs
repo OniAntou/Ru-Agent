@@ -245,6 +245,7 @@ public static class BusinessEndpoints
                         workspace_id = value.WorkspaceId,
                         workspace_label = value.WorkspaceLabel,
                         workspace_path = value.WorkspacePath,
+                        client_source = value.ClientSource,
                     };
                 }).ToArray(),
             });
@@ -261,13 +262,18 @@ public static class BusinessEndpoints
     }
 
     private static async Task<IResult> CreateSessionAsync(
+        HttpRequest request,
         ISessionStore sessions,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
         try
         {
-            var sessionId = await sessions.CreateAsync(cancellationToken).ConfigureAwait(false);
+            string? clientSource = request.Headers["X-Ru-Client-Source"].ToString();
+            if (clientSource.Length == 0) clientSource = null;
+            if (clientSource is not (null or "gui" or "cli"))
+                return Results.BadRequest(new { status = "error", code = "invalid_client_source" });
+            var sessionId = await sessions.CreateForClientAsync(clientSource, cancellationToken).ConfigureAwait(false);
             if (sessionId is null)
             {
                 return Results.Ok(new { status = "error", message = "Không tạo được session." });

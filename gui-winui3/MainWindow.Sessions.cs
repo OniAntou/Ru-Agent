@@ -68,7 +68,7 @@ namespace RuApp
                 var recentExpanded = searching || _workspaceGroups.IsExpanded(recents.Key, defaultExpanded: true);
                 rows.Add(new SidebarSectionRow(SidebarSessionOrganization.WorkspacesKey, "WORKSPACES", FilterActive: _workspaceFilterActive));
                 var first = true;
-                foreach (var group in groups.Where(group => group.Key != SidebarSessionOrganization.RecentsKey))
+                foreach (var group in groups.Where(group => group.Path is not null))
                 {
                     var expanded = searching
                         || _workspaceGroups.IsExpanded(group.Key,
@@ -81,6 +81,11 @@ namespace RuApp
                 }
                 rows.Add(new SidebarSectionRow(recents.Key, "RECENTS", recentExpanded));
                 AppendSidebarSessions(rows, recents, recentExpanded);
+                var cli = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.CliKey)
+                    ?? new WorkspaceGroup(SidebarSessionOrganization.CliKey, "CLI Session", null, []);
+                var cliExpanded = searching || _workspaceGroups.IsExpanded(cli.Key, defaultExpanded: true);
+                rows.Add(new SidebarSectionRow(cli.Key, "CLI SESSION", cliExpanded));
+                AppendSidebarSessions(rows, cli, cliExpanded);
                 ReconcileSidebarRows(rows);
 
                 if (_activeSessionId is not null)

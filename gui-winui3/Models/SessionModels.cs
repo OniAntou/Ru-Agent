@@ -25,6 +25,9 @@ namespace RuApp.Models
         [JsonPropertyName("last_agent_activity_at")]
         public string? LastAgentActivityAt { get => _lastAgentActivityAt; set => SetField(ref _lastAgentActivityAt, value); }
 
+        [JsonPropertyName("client_source")]
+        public string? ClientSource { get; set; }
+
         [JsonPropertyName("message_count")]
         public int MessageCount { get; set; }
 

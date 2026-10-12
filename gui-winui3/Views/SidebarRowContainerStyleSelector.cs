@@ -14,7 +14,7 @@ public sealed class SidebarRowContainerStyleSelector : StyleSelector
 
     protected override Style? SelectStyleCore(object item, DependencyObject container) => item switch
     {
-        SidebarSectionRow section => section.IsRecents ? RecentsStyle : HeadingStyle,
+        SidebarSectionRow section => section.IsRecents || section.IsCli ? RecentsStyle : HeadingStyle,
         SidebarEmptyRow => EmptyStyle,
         _ => SessionStyle,
     };

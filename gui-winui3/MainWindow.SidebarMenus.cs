@@ -17,15 +17,19 @@ public sealed partial class MainWindow
         {
             if (subMenu.Tag is not string id || !Sessions.Any(row => row.Id == id)) continue;
             subMenu.Items.Clear();
-            AddSidebarMoveMenuItem(subMenu, "Recents", new(id, SidebarSessionOrganization.RecentsKey, null));
-            foreach (var group in _lastWorkspaceGroups.Where(group => group.Key != SidebarSessionOrganization.RecentsKey))
-                AddSidebarMoveMenuItem(subMenu, group.Label, new(id, group.Key, group.Path));
             var row = Sessions.First(session => session.Id == id);
+            if (row.ClientSource != "cli")
+            {
+                AddSidebarMoveMenuItem(subMenu, "Recents", new(id, SidebarSessionOrganization.RecentsKey, null));
+                foreach (var group in _lastWorkspaceGroups.Where(group => group.Path is not null))
+                    AddSidebarMoveMenuItem(subMenu, group.Label, new(id, group.Key, group.Path));
+            }
             var identity = SidebarGroupFor(row);
             var siblings = _lastWorkspaceGroups.FirstOrDefault(group => group.Key == identity.Key)?.Sessions.ToList();
             var index = siblings?.FindIndex(session => session.Id == id) ?? -1;
             if (siblings is null || index < 0) continue;
-            subMenu.Items.Add(new MenuFlyoutSeparator());
+            subMenu.IsEnabled = subMenu.Items.Count > 0 || siblings.Count > 1;
+            if (subMenu.Items.Count > 0 && siblings.Count > 1) subMenu.Items.Add(new MenuFlyoutSeparator());
             if (index > 0) AddSidebarMoveMenuItem(subMenu, "Move up", new(id, identity.Key, identity.Path, siblings[index - 1].Id));
             if (index < siblings.Count - 1) AddSidebarMoveMenuItem(subMenu, "Move down", new(id, identity.Key, identity.Path,
                 index + 2 < siblings.Count ? siblings[index + 2].Id : null));

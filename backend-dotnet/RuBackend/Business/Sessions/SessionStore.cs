@@ -55,8 +55,13 @@ public sealed partial class SessionStore : ISessionStore
         }
     }
 
-    public async Task<string?> CreateAsync(CancellationToken cancellationToken)
+    public Task<string?> CreateAsync(CancellationToken cancellationToken) =>
+        CreateForClientAsync(null, cancellationToken);
+
+    public async Task<string?> CreateForClientAsync(string? clientSource, CancellationToken cancellationToken)
     {
+        if (clientSource is not (null or "gui" or "cli"))
+            throw new ArgumentException("Unknown session client source.", nameof(clientSource));
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -69,7 +74,7 @@ public sealed partial class SessionStore : ISessionStore
                 DefaultTitle,
                 now,
                 now,
-                []);
+                [], ClientSource: clientSource);
             await WriteUnlockedAsync(document, connection, transaction, cancellationToken).ConfigureAwait(false);
             transaction.Commit();
             return sessionId;
@@ -343,6 +348,7 @@ public sealed partial class SessionStore : ISessionStore
 
             var parentSessionId = ReadNullableString(root, "parent_session_id");
             var forkedFromMessageId = ReadNullableString(root, "forked_from_message_id");
+            var clientSource = ReadNullableString(root, "client_source");
 
             return new SessionDocument(
                 storedId,
@@ -353,7 +359,8 @@ public sealed partial class SessionStore : ISessionStore
                 ledger.Count == 0 ? null : ledger,
                 parentSessionId,
                 forkedFromMessageId,
-                TryReadTimestamp(root, "last_agent_activity_at"));
+                TryReadTimestamp(root, "last_agent_activity_at"),
+                clientSource is "gui" or "cli" ? clientSource : null);
         }
         catch (JsonException) { return null; }
         catch (InvalidDataException) { return null; }

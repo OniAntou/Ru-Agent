@@ -53,14 +53,15 @@ public sealed partial class MainWindow
         rows.AddRange(showAll ? group.Sessions : group.Sessions.Take(WorkspaceGroupPageSize));
         if (!showAll && group.Sessions.Count > WorkspaceGroupPageSize)
             rows.Add(new WorkspaceShowMoreRow(group.Key, $"Show {group.Sessions.Count - WorkspaceGroupPageSize} more"));
-        if (group.Sessions.Count == 0 && group.Key == SidebarSessionOrganization.RecentsKey)
-            rows.Add(new SidebarEmptyRow(group.Key, "No recent sessions"));
+        if (group.Sessions.Count == 0 && group.Path is null)
+            rows.Add(new SidebarEmptyRow(group.Key, group.Key == SidebarSessionOrganization.CliKey ? "No CLI sessions" : "No recent sessions"));
     }
 
-    private void OnRecentsToggleClick(object sender, RoutedEventArgs e)
+    private void OnSidebarSectionToggleClick(object sender, RoutedEventArgs e)
     {
-        var current = _sidebarRows.OfType<SidebarSectionRow>().FirstOrDefault(row => row.IsRecents);
-        _workspaceGroups.SetExpanded(SidebarSessionOrganization.RecentsKey, !(current?.IsExpanded ?? true));
+        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string key }) return;
+        var current = _sidebarRows.OfType<SidebarSectionRow>().FirstOrDefault(row => row.Key == key);
+        _workspaceGroups.SetExpanded(key, !(current?.IsExpanded ?? true));
         RenderWorkspaceSidebar();
     }
 }

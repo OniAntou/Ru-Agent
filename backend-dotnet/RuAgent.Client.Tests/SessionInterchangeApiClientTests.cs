@@ -85,10 +85,11 @@ public sealed class SessionInterchangeApiClientTests
         var handler = new StubHandler(
             HttpStatusCode.OK,
             """{"status":"ok","harness":"codex","session":{"id":"s9","title":"Imported","messages":4},"dropped_entries":3}""");
-        var client = new SessionInterchangeApiClient(Session(), new HttpClient(handler));
+        var client = new SessionInterchangeApiClient(Session(), new HttpClient(handler), clientSource: "cli");
 
         var result = await client.ImportAsync("codex", "{\"line\":1}");
 
+        Assert.Equal("cli", handler.LastClientSource);
         Assert.Equal("s9", result.SessionId);
         Assert.Equal("Imported", result.Title);
         Assert.Equal(4, result.Messages);
@@ -153,11 +154,13 @@ public sealed class SessionInterchangeApiClientTests
         public Uri? LastRequestUri { get; private set; }
 
         public string? LastRequestBody { get; private set; }
+        public string? LastClientSource { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            LastClientSource = request.Headers.TryGetValues("X-Ru-Client-Source", out var sources) ? sources.Single() : null;
             LastRequestUri = request.RequestUri;
             LastRequestBody = request.Content is null
                 ? null

@@ -17,6 +17,45 @@ namespace RuBackend.Tests.Business;
 public sealed class BusinessEndpointTests
 {
     [Fact]
+    public async Task Session_create_accepts_optional_source_and_lists_it_durably()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+        foreach (var source in new string?[] { null, "gui", "cli" })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/sessions/new");
+            if (source is not null) request.Headers.Add("X-Ru-Client-Source", source);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var id = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session_id").GetString();
+            using var listing = await client.GetAsync("/sessions");
+            var row = (await listing.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("sessions")
+                .EnumerateArray().Single(row => row.GetProperty("id").GetString() == id);
+            Assert.Equal(source, row.GetProperty("client_source").GetString());
+        }
+        using var exportSession = await client.PostAsync("/sessions/new", null);
+        var exportId = (await exportSession.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session_id").GetString()!;
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+        Assert.True(await store.AppendAsync(exportId, [new("user", "Imported CLI prompt")], CancellationToken.None));
+        var exported = await client.GetFromJsonAsync<JsonElement>($"/sessions/{exportId}/export?harness=claude-code");
+        using var importRequest = new HttpRequestMessage(HttpMethod.Post, "/sessions/import")
+        {
+            Content = JsonContent.Create(new { harness = "claude-code", content = exported.GetProperty("files")[0].GetProperty("content").GetString() }),
+        };
+        importRequest.Headers.Add("X-Ru-Client-Source", "cli");
+        using var imported = await client.SendAsync(importRequest);
+        var importedId = (await imported.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("session").GetProperty("id").GetString()!;
+        Assert.Equal("cli", (await store.GetAsync(importedId, CancellationToken.None))!.ClientSource);
+        using var invalid = new HttpRequestMessage(HttpMethod.Post, "/sessions/new");
+        invalid.Headers.Add("X-Ru-Client-Source", "unknown");
+        using var denied = await client.SendAsync(invalid);
+        Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
+        using var final = await client.GetAsync("/sessions");
+        Assert.Equal(5, (await final.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("sessions").GetArrayLength());
+    }
+
+    [Fact]
     public async Task GetSettings_returns_aliases_and_only_credential_presence()
     {
         using var data = TemporaryBusinessData.Create();

@@ -8,6 +8,7 @@ namespace RuApp.Views;
 /// <summary> Picks the workspace-group, show-more, or session template for sidebar rows.</summary>
 public sealed class SidebarRowTemplateSelector : DataTemplateSelector
 {
+    public DataTemplate? CliTemplate { get; set; }
     public DataTemplate? RecentsTemplate { get; set; }
     public DataTemplate? WorkspacesTemplate { get; set; }
     public DataTemplate? EmptyTemplate { get; set; }
@@ -20,7 +21,7 @@ public sealed class SidebarRowTemplateSelector : DataTemplateSelector
 
     protected override DataTemplate? SelectTemplateCore(object item) => item switch
     {
-        SidebarSectionRow section => section.IsRecents ? RecentsTemplate : WorkspacesTemplate,
+        SidebarSectionRow section => section.IsCli ? CliTemplate : section.IsRecents ? RecentsTemplate : WorkspacesTemplate,
         SidebarEmptyRow => EmptyTemplate,
         WorkspaceGroupRow => GroupTemplate,
         WorkspaceShowMoreRow => ShowMoreTemplate,

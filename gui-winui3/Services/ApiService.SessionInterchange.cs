@@ -145,9 +145,12 @@ public partial class ApiService
     {
         try
         {
-            using var response = await _httpClient
-                .PostAsJsonAsync($"{_baseUrl}/sessions/import", new { harness, content }, cancellationToken)
-                .ConfigureAwait(false);
+            using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"{_baseUrl}/sessions/import")
+            {
+                Content = JsonContent.Create(new { harness, content }),
+            };
+            request.Headers.Add("X-Ru-Client-Source", "gui");
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return new SessionImportOutcome(

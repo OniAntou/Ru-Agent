@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui,cli)**: Add a collapsible CLI Session sidebar section below Workspaces and Recents, increase section spacing, and persist the creating client so CLI/TUI sessions stay grouped across restarts without changing their execution directory. Legacy sessions without a source retain existing grouping.
+
+- **style(gui)**: Refine default Dark into slightly brighter neutral charcoal surfaces with quieter borders. Soften default Light with gray/off-white backgrounds instead of pure white, retaining readable text and Ru accent/status colors. Keep startup XAML and runtime theme switching palettes aligned; Dark Meteor Shower and Starry Night retain their existing palettes.
+
 - **fix(tui)**: Keep web search queries and fetched host names in redacted activity detail, render complete Markdown tables with aligned columns (or stacked values on narrow screens), cap prose measure at 100 cells, and keep reasoning available through Ctrl+O without repeated Thought rows in the feed.
 
 - **style(tui)**: Give Agent Activity its own header row with a colored status glyph, readable action, muted target and right-aligned elapsed/tool count. Distinguish thinking from writing a response; parked states stay still without a running clock. Refine tool rows with clearer labels, target spacing, preserved outcome/metrics and explicit failure text. Pending activities retain their own action when another tool settles.

@@ -132,6 +132,7 @@ public sealed record WorkspaceGroupIdentity(string Key, string Label, string? Pa
 
 public sealed record SidebarSectionRow(string Key, string Label, bool IsExpanded = true, bool FilterActive = false)
 {
+    public bool IsCli => Key == SidebarSessionOrganization.CliKey;
     public bool IsRecents => Key == SidebarSessionOrganization.RecentsKey;
     public string ChevronGlyph => IsExpanded ? "\uE70D" : "\uE70E";
 }

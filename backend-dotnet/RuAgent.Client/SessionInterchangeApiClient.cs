@@ -38,9 +38,13 @@ public sealed class SessionInterchangeApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly PublicHostSession _session;
+    private readonly string? _clientSource;
 
-    public SessionInterchangeApiClient(PublicHostSession session, HttpClient? httpClient = null)
+    public SessionInterchangeApiClient(PublicHostSession session, HttpClient? httpClient = null, string? clientSource = null)
     {
+        if (clientSource is not (null or "gui" or "cli"))
+            throw new ArgumentException("Unknown session client source.", nameof(clientSource));
+        _clientSource = clientSource;
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _httpClient = httpClient ?? new HttpClient();
     }
@@ -112,6 +116,7 @@ public sealed class SessionInterchangeApiClient
                 Encoding.UTF8,
                 "application/json"),
         };
+        if (_clientSource is not null) request.Headers.Add("X-Ru-Client-Source", _clientSource);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);

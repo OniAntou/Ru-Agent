@@ -40,9 +40,9 @@ public static class RuThemePalettes
         Windows.UI.Color.FromArgb(255, r, g, b);
 
     public static readonly ThemePalette StudioLight = new(
-        C(0xF4, 0xF5, 0xF7), C(0xEA, 0xEC, 0xEF), C(0xFF, 0xFF, 0xFF),
-        C(0x0F, 0x17, 0x2A), C(0x5B, 0x6B, 0x82), C(0xCB, 0xD5, 0xE1),
-        C(0x1E, 0x29, 0x3B), C(0xE2, 0xE8, 0xF0), C(0x33, 0x41, 0x55), C(0x0B, 0x12, 0x20),
+        C(0xEC, 0xEC, 0xEC), C(0xE2, 0xE2, 0xE2), C(0xF5, 0xF5, 0xF5),
+        C(0x0F, 0x17, 0x2A), C(0x58, 0x65, 0x79), C(0xCC, 0xCC, 0xCC),
+        C(0x1E, 0x29, 0x3B), C(0xDE, 0xDE, 0xDE), C(0x33, 0x41, 0x55), C(0x0B, 0x12, 0x20),
         C(0x04, 0x78, 0x57), C(0xF5, 0x9E, 0x0B), C(0xB9, 0x1C, 0x1C),
         C(0x07, 0x59, 0x85), C(0x7E, 0x22, 0xCE), C(0xBE, 0x12, 0x3C),
         C(0x1E, 0x29, 0x3B), C(0x33, 0x41, 0x55), C(0x47, 0x55, 0x69),
@@ -50,6 +50,17 @@ public static class RuThemePalettes
         C(0x1E, 0x29, 0x3B), C(0x33, 0x41, 0x55));
 
     public static readonly ThemePalette StudioDark = new(
+        C(0x1E, 0x1E, 0x1E), C(0x18, 0x18, 0x18), C(0x28, 0x28, 0x28),
+        C(0xEE, 0xEE, 0xEE), C(0xAA, 0xAA, 0xAA), C(0x40, 0x40, 0x40),
+        C(0xE2, 0xE8, 0xF0), C(0x32, 0x32, 0x32), C(0xF1, 0xF5, 0xF9), C(0xCB, 0xD5, 0xE1),
+        C(0x34, 0xD3, 0x99), C(0xFB, 0xBF, 0x24), C(0xF8, 0x71, 0x71),
+        C(0x38, 0xBD, 0xF8), C(0xC0, 0x84, 0xFC), C(0xF4, 0x72, 0xB6),
+        C(0xE2, 0xE8, 0xF0), C(0xF8, 0xFA, 0xFC), C(0xFF, 0xFF, 0xFF),
+        C(0xE2, 0xE8, 0xF0), C(0xF8, 0xFA, 0xFC),
+        C(0xE2, 0xE8, 0xF0), C(0xF8, 0xFA, 0xFC));
+
+    // Meteor retains its original slate palette independently of default Dark.
+    private static readonly ThemePalette MeteorDark = new(
         C(0x16, 0x18, 0x1D), C(0x11, 0x13, 0x17), C(0x20, 0x23, 0x2A),
         C(0xF1, 0xF5, 0xF9), C(0x94, 0xA3, 0xB8), C(0x33, 0x41, 0x55),
         C(0xE2, 0xE8, 0xF0), C(0x28, 0x2D, 0x37), C(0xF1, 0xF5, 0xF9), C(0xCB, 0xD5, 0xE1),
@@ -81,7 +92,8 @@ public static class RuThemePalettes
 
     public static ThemePalette PaletteFor(UiTheme theme) => theme switch
     {
-        UiTheme.Dark or UiTheme.DarkMeteorShower => StudioDark,
+        UiTheme.Dark => StudioDark,
+        UiTheme.DarkMeteorShower => MeteorDark,
         UiTheme.StarryNight => StarryNight,
         _ => StudioLight,
     };
@@ -105,6 +117,7 @@ public static class RuThemePalettes
         }
 
         var p = PaletteFor(theme);
+        var hover = theme == UiTheme.Dark ? p.Surface : p.Canvas;
         SetColor(dict, "RuCanvasColor", p.Canvas);
         SetColor(dict, "RuSidebarColor", p.Sidebar);
         SetColor(dict, "RuSurfaceColor", p.Surface);
@@ -134,15 +147,15 @@ public static class RuThemePalettes
         SetBrush(dict, "SliderThumbBackgroundPointerOver", p.SliderThumbOver);
         SetBrush(dict, "ComboBoxItemPillFillBrush", p.Accent);
 
-        SetBrush(dict, "ButtonBackgroundPointerOver", p.Canvas);
+        SetBrush(dict, "ButtonBackgroundPointerOver", hover);
         SetBrush(dict, "ButtonBackgroundPressed", p.AccentSoft);
         SetBrush(dict, "ButtonForegroundPointerOver", p.Ink);
         SetBrush(dict, "ButtonForegroundPressed", p.Ink);
 
-        SetBrush(dict, "SubtleFillColorSecondary", p.Canvas);
+        SetBrush(dict, "SubtleFillColorSecondary", hover);
         SetBrush(dict, "SubtleFillColorTertiary", p.AccentSoft);
 
-        SetBrush(dict, "ListViewItemBackgroundPointerOver", p.Canvas);
+        SetBrush(dict, "ListViewItemBackgroundPointerOver", hover);
         SetBrush(dict, "ListViewItemBackgroundPressed", p.AccentSoft);
         SetBrush(dict, "ListViewItemBackgroundSelected", p.AccentSoft);
         SetBrush(dict, "ListViewItemBackgroundSelectedPointerOver", p.Line);
@@ -186,7 +199,7 @@ public static class RuThemePalettes
         SetBrush(dict, "ComboBoxItemForegroundSelected", p.Ink);
         SetBrush(dict, "ComboBoxItemForegroundSelectedPointerOver", p.Ink);
         SetBrush(dict, "ComboBoxItemForegroundDisabled", p.Muted);
-        SetBrush(dict, "ComboBoxItemBackgroundPointerOver", p.Canvas);
+        SetBrush(dict, "ComboBoxItemBackgroundPointerOver", hover);
         SetBrush(dict, "ComboBoxItemBackgroundPressed", p.AccentSoft);
         SetBrush(dict, "ComboBoxItemBackgroundSelected", p.AccentSoft);
         SetBrush(dict, "ComboBoxItemBackgroundSelectedUnfocused", p.AccentSoft);

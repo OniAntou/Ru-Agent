@@ -32,7 +32,8 @@ public sealed record SessionDocument(
     [property: JsonPropertyName("forked_from_message_id")]
     string? ForkedFromMessageId = null,
     [property: JsonPropertyName("last_agent_activity_at")]
-    DateTimeOffset? LastAgentActivityAt = null);
+    DateTimeOffset? LastAgentActivityAt = null,
+    [property: JsonPropertyName("client_source")] string? ClientSource = null);
 
 public sealed record SessionSummary(
     string Id,
@@ -45,7 +46,8 @@ public sealed record SessionSummary(
     string? WorkspaceId = null,
     string? WorkspaceLabel = null,
     string? WorkspacePath = null,
-    DateTimeOffset? LastAgentActivityAt = null);
+    DateTimeOffset? LastAgentActivityAt = null,
+    string? ClientSource = null);
 
 public sealed record SessionListResult(
     IReadOnlyList<SessionSummary> Sessions,
@@ -66,6 +68,9 @@ public interface ISessionStore
     Task<SessionDocument?> GetAsync(string sessionId, CancellationToken cancellationToken);
 
     Task<string?> CreateAsync(CancellationToken cancellationToken);
+
+    Task<string?> CreateForClientAsync(string? clientSource, CancellationToken cancellationToken) =>
+        CreateAsync(cancellationToken);
 
     Task<bool> DeleteAsync(string sessionId, CancellationToken cancellationToken);
 

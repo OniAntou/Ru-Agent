@@ -185,7 +185,11 @@ public static class SessionInterchangeEndpoints
                 return Results.Ok(new { status = "error", message = "File session này không có lượt nào để import." });
             }
 
-            var sessionId = await sessions.CreateAsync(cancellationToken).ConfigureAwait(false);
+            string? clientSource = context.Request.Headers["X-Ru-Client-Source"].ToString();
+            if (clientSource.Length == 0) clientSource = null;
+            if (clientSource is not (null or "gui" or "cli"))
+                return Results.BadRequest(new { status = "error", code = "invalid_client_source" });
+            var sessionId = await sessions.CreateForClientAsync(clientSource, cancellationToken).ConfigureAwait(false);
             if (sessionId is null)
             {
                 return Results.Ok(new { status = "error", message = "Không tạo được session để import." });

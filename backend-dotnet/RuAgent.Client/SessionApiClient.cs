@@ -8,9 +8,13 @@ public sealed class SessionApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly PublicHostSession _session;
+    private readonly string? _clientSource;
 
-    public SessionApiClient(PublicHostSession session, HttpClient? httpClient = null)
+    public SessionApiClient(PublicHostSession session, HttpClient? httpClient = null, string? clientSource = null)
     {
+        if (clientSource is not (null or "gui" or "cli"))
+            throw new ArgumentException("Unknown session client source.", nameof(clientSource));
+        _clientSource = clientSource;
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _httpClient = httpClient ?? new HttpClient();
         // The bearer is attached per request; a default header on a shared client
@@ -22,6 +26,7 @@ public sealed class SessionApiClient
         var url = new Uri(_session.BaseUri, "sessions/new");
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        if (_clientSource is not null) request.Headers.Add("X-Ru-Client-Source", _clientSource);
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)

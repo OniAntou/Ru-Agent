@@ -6,13 +6,84 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,004 passed / 0 failed / 0 skipped** (2026-10-12, readable Activity/feed). Broker 910; CLI 1,307; Client 214; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,056; GUI 1,389. Log: `artifacts/tui-readable-feed-matrix-final.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, GUI/TUI release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-readable-feed-python-final.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, readable Activity/feed). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with .NET and Windows App Runtime. Log: `artifacts/tui-readable-feed-release.log`. |
-| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: isolated authenticated status/shutdown, actual `ru` launcher session listing and redirected default startup/exit. Log: `artifacts/tui-readable-feed-smoke.log`. Earlier scripted RPC evidence remains historical; interactive native UI remains unmeasured. |
+| .NET tests | Full **12-project** Debug matrix: **6,011 passed / 0 failed / 0 skipped** (2026-10-12, CLI Session sidebar). Broker 910; CLI 1,307; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/gui-cli-section-matrix-final.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, CLI Session sidebar), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-cli-section-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, CLI Session sidebar/default theme refinement). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-cli-section-release.log`, `artifacts/gui-cli-section-deploy.log`. |
+| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-cli-section-release-smoke.log`. Interactive native UI remains manual acceptance. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## CLI Session sidebar section (2026-10-12)
+
+Sidebar order is Workspaces, Recents, CLI Session. Subsequent sections have
+36 px top separation (previously 28 px); the first heading also gains a small
+spacing adjustment. All headings retain non-hovering outer spacing.
+The CLI section folds, searches, pages and reorders sessions using the existing
+sidebar mechanisms. Source grouping does not change execution cwd, permissions,
+or the source when a CLI session is resumed in the GUI.
+
+GUI and CLI creation/import requests send `X-Ru-Client-Source`. The Host validates
+`gui|cli`, stores it in existing SQLite session document/summary JSON, and returns
+`client_source` in session listings. Legacy/null-source sessions keep existing
+workspace/Recents grouping; their creating client cannot be inferred from cwd.
+
+The final full Debug matrix passed **6,011 / 0 failed / 0 skipped**, including
+persistence reopen, optional/invalid source HTTP behavior, import labeling,
+source-based projection, polling fingerprints and existing sidebar/theme checks
+(`artifacts/gui-cli-section-matrix-final.log`). The first full matrix also passed
+before import-source support was added (`artifacts/gui-cli-section-matrix.log`).
+Python passed **214**, with **1** POSIX process-group test skipped on Windows
+(`artifacts/gui-cli-section-python.log`). The isolated 11-stage Release pipeline
+completed (`artifacts/gui-cli-section-release.log`), then the complete flat package
+replaced the canonical publish directory with the old package retained in ignored
+artifacts. All 749 files matched hashes and CLI/backend file inventory was complete
+(`artifacts/gui-cli-section-deploy.log`). Actual launcher startup/session listing,
+authenticated Host status/shutdown and published CLI RPC creation/listed source
+passed (`artifacts/gui-cli-section-release-smoke.log`). Native desktop interaction
+and visual acceptance remain manual.
+
+## GUI default theme brightness follow-up (2026-10-12)
+
+Default Dark now uses sidebar `#181818`, canvas `#1E1E1E`, surface/hover
+`#282828`, selection `#323232` and line/selected-hover `#404040`.
+Default Light uses sidebar `#E2E2E2`, canvas `#ECECEC`, surface `#F5F5F5`,
+selection `#DEDEDE`, line `#CCCCCC` and muted text `#586579`.
+Accent and semantic status colors are unchanged. Meteor's 23 palette values
+still match the original slate palette and Starry Night remains unchanged.
+Startup/runtime parity now covers both default packs.
+
+Scoped Debug GUI build/tests passed **1,391 / 0 failed / 0 skipped**, including
+existing AA contrast checks (`artifacts/gui-theme-softened-tests-final.log`).
+The initial test build failed with CS0136 after extending the parity test;
+renaming the inner locals corrected it (`artifacts/gui-theme-softened-tests.log`).
+The later CLI Session release above includes this palette refinement. Native
+WinUI visual acceptance remains manual; the section below records the earlier
+palette publication.
+
+## GUI neutral charcoal dark theme (2026-10-12)
+
+Studio Dark uses sidebar `#121212`, canvas `#181818`, surface/hover `#222222`,
+selection `#2C2C2C`, line/selected-hover `#383838`, ink `#EEEEEE` and muted
+`#AAAAAA`. Accent and semantic status colors retain their existing values.
+Only default Dark uses this base. Dark Meteor Shower retains its original slate
+palette; Light and Starry Night packs retain theirs.
+Startup resources and runtime palette application are aligned, with added
+parity/neutral-hierarchy and theme-isolation guards. Meteor has an independent
+palette: all 23 colors match the previous default Dark palette; Light and Starry
+Night palette literals are unchanged (`artifacts/gui-dark-default-isolation.log`).
+The full Debug matrix passed **6,006 tests / 0 failed / 0 skipped**, including
+**1,391 GUI tests** (`artifacts/gui-dark-default-matrix.log`). Python passed
+**214 tests**, with **1** POSIX test skipped on Windows
+(`artifacts/gui-dark-default-python.log`).
+
+The isolated 11-stage Release pipeline completed
+(`artifacts/gui-dark-default-release.log`). Twenty GUI-owned artifacts were
+backed up, deployed to the canonical flat publish directory and hash-verified;
+backend/CLI files were retained (`artifacts/gui-dark-default-deploy.log`).
+Actual launcher startup/session listing and isolated authenticated published-host
+status/shutdown passed (`artifacts/gui-dark-default-smoke.log`). Native GUI
+appearance and interaction remain manual acceptance; no user desktop was driven.
 
 ## Readable TUI feed and web activity (2026-10-12)
 

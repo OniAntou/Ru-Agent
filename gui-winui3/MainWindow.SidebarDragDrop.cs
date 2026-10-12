@@ -59,7 +59,7 @@ public sealed partial class MainWindow
         if (target is not null)
         {
             e.DragUIOverride.Caption = "Move to " + (target.Key == SidebarSessionOrganization.RecentsKey
-                ? "Recents" : WorkspaceSessionProjection.LabelForPath(target.Path!)) + " · sidebar only";
+                ? "Recents" : target.Key == SidebarSessionOrganization.CliKey ? "CLI Session" : WorkspaceSessionProjection.LabelForPath(target.Path!)) + " · sidebar only";
             e.DragUIOverride.IsCaptionVisible = true;
         }
         ShowSidebarDropTarget(target);
@@ -75,12 +75,13 @@ public sealed partial class MainWindow
         {
             SessionInfo session => SidebarGroupFor(session),
             WorkspaceGroupRow folder => new(folder.Group.Key, folder.Group.Label, folder.Group.Path),
-            SidebarSectionRow section when section.IsRecents => new(section.Key, "Recents", null),
-            SidebarEmptyRow empty when empty.Key == SidebarSessionOrganization.RecentsKey => new(empty.Key, "Recents", null),
+            SidebarSectionRow section when section.IsRecents || section.IsCli => new(section.Key, section.Label, null),
+            SidebarEmptyRow empty when empty.Key is SidebarSessionOrganization.RecentsKey or SidebarSessionOrganization.CliKey => new(empty.Key, empty.Label, null),
             WorkspaceShowMoreRow more => IdentityForSidebarGroup(more.GroupKey),
             _ => null,
         };
-        if (group is null) return null;
+        if (group is null || Sessions.FirstOrDefault(session => session.Id == _dragSessionId) is not { } dragged
+            || !SidebarSessionOrganization.CanMoveTo(dragged, group.Key)) return null;
         var local = ShellRoot.TransformToVisual(container).TransformPoint(point);
         var above = local.Y < container.ActualHeight / 2;
         string? before = null;
@@ -148,8 +149,9 @@ public sealed partial class MainWindow
 
     private bool MoveSidebarSession(string sessionId, string key, string? path, string? beforeId)
     {
-        if (!Sessions.Any(session => session.Id == sessionId)) return false;
-        var ordered = SidebarSessionOrganization.Order(Sessions.ToList(), _sidebarOrganization.Current).Select(session => session.Id).ToArray();
+        var session = Sessions.FirstOrDefault(row => row.Id == sessionId);
+        if (session is null || !SidebarSessionOrganization.CanMoveTo(session, key)) return false;
+        var ordered = SidebarSessionOrganization.Order(Sessions.ToList(), _sidebarOrganization.Current).Select(row => row.Id).ToArray();
         if (!_sidebarOrganization.Move(sessionId, path, beforeId, ordered))
         {
             SetSessionActionError("Could not save the sidebar order. Try again.");
@@ -186,8 +188,8 @@ public sealed partial class MainWindow
         }
         if (_hoverGroupKey is { } key && DateTimeOffset.UtcNow - _hoverGroupSince > TimeSpan.FromMilliseconds(450))
         {
-            var collapsed = key == SidebarSessionOrganization.RecentsKey
-                ? _sidebarRows.OfType<SidebarSectionRow>().Any(row => row.IsRecents && !row.IsExpanded)
+            var collapsed = key is SidebarSessionOrganization.RecentsKey or SidebarSessionOrganization.CliKey
+                ? _sidebarRows.OfType<SidebarSectionRow>().Any(row => row.Key == key && !row.IsExpanded)
                 : _sidebarRows.OfType<WorkspaceGroupRow>().Any(row => row.Group.Key == key && !row.IsExpanded);
             if (collapsed) { _workspaceGroups.SetExpanded(key, true); RenderWorkspaceSidebar(); }
         }

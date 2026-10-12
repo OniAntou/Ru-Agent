@@ -6,6 +6,7 @@ namespace RuApp.Services;
 internal static class SidebarSessionOrganization
 {
     internal const string RecentsKey = "recents";
+    internal const string CliKey = "cli";
     internal const string WorkspacesKey = "workspaces";
 
     internal static bool SamePath(string? first, string? second) =>
@@ -17,10 +18,14 @@ internal static class SidebarSessionOrganization
 
     internal static WorkspaceGroupIdentity GroupFor(SessionInfo session, string? appRoot, SidebarOrganizationPreferences preferences)
     {
+        if (session.ClientSource == "cli") return new(CliKey, "CLI Session", null);
         var path = preferences.Groups.TryGetValue(session.Id, out var placement) ? placement : session.WorkspacePath;
         if (string.IsNullOrEmpty(path) || SamePath(path, appRoot)) return new(RecentsKey, "Recents", null);
         return new(PathKey(path), WorkspaceSessionProjection.LabelForPath(path), path);
     }
+
+    internal static bool CanMoveTo(SessionInfo session, string key) =>
+        (session.ClientSource == "cli") == (key == CliKey);
 
     internal static IReadOnlyList<SessionInfo> Order(IReadOnlyList<SessionInfo> sessions, SidebarOrganizationPreferences preferences)
     {

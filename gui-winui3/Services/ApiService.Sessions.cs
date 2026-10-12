@@ -32,7 +32,9 @@ namespace RuApp.Services
         {
             try
             {
-                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/new", null);
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/sessions/new");
+                request.Headers.Add("X-Ru-Client-Source", "gui");
+                using var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
                 {
                     return null;
@@ -50,7 +52,7 @@ namespace RuApp.Services
                     var title = sessionObj.TryGetProperty("title", out var titleProp)
                         ? titleProp.GetString() ?? string.Empty
                         : string.Empty;
-                    return new SessionInfo { Id = id, Title = title };
+                    return new SessionInfo { Id = id, Title = title, ClientSource = "gui" };
                 }
 
                 if (json.TryGetProperty("session_id", out var sessionIdProp))

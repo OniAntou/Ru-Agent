@@ -55,7 +55,7 @@ public sealed partial class AgentCommands
     {
         try
         {
-            var interchange = new SessionInterchangeApiClient(_session, _httpClient);
+            var interchange = new SessionInterchangeApiClient(_session, _httpClient, clientSource: "cli");
             var result = await interchange.ExportAsync(cmd.SessionId, cmd.Harness, cancellationToken).ConfigureAwait(false);
 
             IReadOnlyList<RuAgent.SessionInterchange.SessionFileTarget> targets;
@@ -215,7 +215,7 @@ public sealed partial class AgentCommands
                     return 1;
                 }
             }
-            var interchange = new SessionInterchangeApiClient(_session, _httpClient);
+            var interchange = new SessionInterchangeApiClient(_session, _httpClient, clientSource: "cli");
             var result = await interchange.ImportAsync(harness, content, cancellationToken).ConfigureAwait(false);
 
             if (cmd.Json)

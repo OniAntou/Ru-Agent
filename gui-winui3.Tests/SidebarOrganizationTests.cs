@@ -10,6 +10,34 @@ public sealed class SidebarOrganizationTests : IDisposable
     private string FilePath => Path.Combine(_directory, "layout.json");
 
     [Fact]
+    public void Cli_sessions_stay_in_cli_section_independently_of_cwd_and_manual_placement()
+    {
+        var preferences = new SidebarOrganizationPreferences();
+        preferences.Groups["cli"] = @"C:\organized";
+        foreach (var cwd in new[] { null, @"D:\LLM", @"C:\project" })
+        {
+            var session = new SessionInfo { Id = "cli", ClientSource = "cli", WorkspacePath = cwd };
+            var group = SidebarSessionOrganization.GroupFor(session, @"D:\LLM", preferences);
+            Assert.Equal(SidebarSessionOrganization.CliKey, group.Key);
+            Assert.True(SidebarSessionOrganization.CanMoveTo(session, group.Key));
+            Assert.False(SidebarSessionOrganization.CanMoveTo(session, SidebarSessionOrganization.RecentsKey));
+            Assert.Equal(cwd, session.WorkspacePath);
+            Assert.Single(WorkspaceSessionProjection.Project([session], "CLI Session",
+                row => SidebarSessionOrganization.GroupFor(row, @"D:\LLM", preferences)).Groups);
+        }
+        Assert.False(SidebarSessionOrganization.CanMoveTo(new() { ClientSource = "gui" }, SidebarSessionOrganization.CliKey));
+    }
+
+    [Fact]
+    public void Source_change_invalidates_sidebar_poll_fingerprint()
+    {
+        var session = new SessionInfo { Id = "s", MessageCount = 2 };
+        var before = SidebarRowFingerprint.ForSessions([session]);
+        session.ClientSource = "cli";
+        Assert.NotEqual(before, SidebarRowFingerprint.ForSessions([session]));
+    }
+
+    [Fact]
     public void Root_sessions_go_to_recents_but_nested_projects_keep_their_workspace()
     {
         var preferences = new SidebarOrganizationPreferences();
@@ -77,6 +105,10 @@ public sealed class SidebarOrganizationTests : IDisposable
     {
         var document = GuiSource.Xml("MainWindow.xaml");
         Assert.Equal("RECENTS", GuiSource.AttributeValue(GuiSource.Require(document, "RecentsHeader"), "Text"));
+        Assert.Contains(document.Descendants(), element => GuiSource.AttributeValue(element, "AutomationProperties.Name") == "Toggle CLI Session");
+        var rendering = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "RenderWorkspaceSidebar");
+        Assert.True(rendering.IndexOf("\"WORKSPACES\"", StringComparison.Ordinal) < rendering.IndexOf("\"RECENTS\"", StringComparison.Ordinal));
+        Assert.True(rendering.IndexOf("\"RECENTS\"", StringComparison.Ordinal) < rendering.IndexOf("\"CLI SESSION\"", StringComparison.Ordinal));
         var list = GuiSource.Require(document, "SidebarSessionList");
         Assert.Equal("True", GuiSource.AttributeValue(list, "CanDragItems"));
         Assert.Equal("OnSidebarDrop", GuiSource.AttributeValue(list, "Drop"));
@@ -116,7 +148,7 @@ public sealed class SidebarOrganizationTests : IDisposable
         Assert.DoesNotContain(heading.Descendants(), element => element.Name.LocalName is "ListViewItemPresenter" or "VisualState");
         var recents = document.Descendants().First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SidebarRecentsContainerStyle");
         Assert.Contains(recents.Elements(), element => GuiSource.AttributeValue(element, "Property") == "Margin"
-            && GuiSource.AttributeValue(element, "Value") == "0,28,0,6");
+            && GuiSource.AttributeValue(element, "Value") == "0,36,0,6");
         var template = document.Descendants().First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SidebarRecentsTemplate");
         Assert.Equal("6,0", GuiSource.AttributeValue(template.Elements().Single(), "Margin"));
     }

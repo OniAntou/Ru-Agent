@@ -16,6 +16,21 @@ public sealed class SessionApiClientTests
     }
 
     [Fact]
+    public async Task Cli_client_marks_session_creation_requests()
+    {
+        var handler = new FakeHandler(request =>
+        {
+            Assert.Equal("cli", Assert.Single(request.Headers.GetValues("X-Ru-Client-Source")));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"test_cli\"}", Encoding.UTF8, "application/json"),
+            };
+        });
+        var client = new SessionApiClient(CreateSession(), new HttpClient(handler), clientSource: "cli");
+        Assert.Equal("test_cli", await client.CreateAsync());
+    }
+
+    [Fact]
     public async Task CreateAsyncSucceedsWithValidSessionId()
     {
         var bearer = new string('b', 64);

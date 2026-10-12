@@ -37,7 +37,7 @@ public sealed partial class AgentCommands : IDisposable
         _out = outWriter ?? throw new ArgumentNullException(nameof(outWriter));
         _err = errWriter ?? throw new ArgumentNullException(nameof(errWriter));
         _in = inReader ?? Console.In;
-        _sessionClient = new SessionApiClient(session, httpClient);
+        _sessionClient = new SessionApiClient(session, httpClient, clientSource: "cli");
         _agentClient = new AgentApiClient(session, httpClient);
         _settingsClient = new SettingsApiClient(session, httpClient);
         _runStarter = new RunStarter(_sessionClient, _agentClient, _out, _err, _settingsClient);

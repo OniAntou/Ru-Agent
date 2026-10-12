@@ -572,6 +572,17 @@ last one.
 (null when the session has no runs or the workspace identity changed), so WinUI
 can group the sidebar by workspace without a second round trip.
 
+Session creation and import accept optional `X-Ru-Client-Source: gui|cli`; unknown values
+return HTTP 400. The source is durable session metadata in the existing SQLite
+document/summary JSON and is returned as `client_source` by `/sessions`.
+It is a presentation label, never execution authority. GUI and CLI creation
+paths label their own sessions; resuming a session does not change its source.
+Older sessions and callers omitting the header retain a null source.
+The GUI renders Workspaces, Recents and CLI Session in that order, with CLI
+sessions grouped by source independently of their working directory. CLI rows
+can be reordered within their section; GUI rows keep existing workspace/Recents
+placement. Sidebar organization never changes execution cwd or session source.
+
 Listing queries indexed metadata across all stored sessions, returning the
 newest 500 summaries ordered by UTC update time with session ID as the tie
 breaker. `sessions_truncated` reports additional stored sessions. It does not

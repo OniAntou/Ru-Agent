@@ -316,13 +316,23 @@
         </DataTemplate>
         <DataTemplate x:Key="SidebarRecentsTemplate" x:DataType="services:SidebarSectionRow">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="6,0">
-                <Button Click="OnRecentsToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle Recents">
+                <Button Click="OnSidebarSectionToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle Recents">
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock x:Name="RecentsHeader" Text="RECENTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                         <FontIcon Grid.Column="1" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                     </Grid>
                 </Button>
                 <Button Grid.Column="1" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Key}" Width="28" Height="28" Style="{StaticResource WorkspaceAddButtonStyle}" AutomationProperties.Name="New recent session" ToolTipService.ToolTip="New session"/>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="SidebarCliTemplate" x:DataType="services:SidebarSectionRow">
+            <Grid Margin="6,0">
+                <Button Click="OnSidebarSectionToggleClick" Tag="{x:Bind Key}" Padding="0" Style="{StaticResource WorkspaceRowButtonStyle}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Toggle CLI Session">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <TextBlock Text="{x:Bind Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                        <FontIcon Grid.Column="1" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                </Button>
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="SidebarWorkspacesTemplate" x:DataType="services:SidebarSectionRow">
@@ -335,7 +345,7 @@
                                     <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
                                 </Button>
                                 <ToggleButton x:Name="WorkspaceFilterButton" IsChecked="{x:Bind FilterActive}" Grid.Column="2" Click="OnWorkspaceFilterClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Show only the current workspace" AutomationProperties.Name="Filter to current workspace">
+                                        ToolTipService.ToolTip="Show only the current session group" AutomationProperties.Name="Filter to current session group">
                                     <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
                                 </ToggleButton>
                                 <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
@@ -360,7 +370,7 @@
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="0,8,0,2"/>
+            <Setter Property="Margin" Value="0,12,0,6"/>
             <Setter Property="IsTabStop" Value="False"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -374,7 +384,7 @@
             </Setter>
         </Style>
         <Style x:Key="SidebarRecentsContainerStyle" TargetType="ListViewItem" BasedOn="{StaticResource SidebarHeadingContainerStyle}">
-            <Setter Property="Margin" Value="0,28,0,6"/>
+            <Setter Property="Margin" Value="0,36,0,6"/>
         </Style>
         <Style x:Key="SidebarEmptyContainerStyle" TargetType="ListViewItem" BasedOn="{StaticResource SidebarHeadingContainerStyle}">
             <Setter Property="Margin" Value="0,1"/>
@@ -386,6 +396,7 @@
                                               RecentsStyle="{StaticResource SidebarRecentsContainerStyle}"
                                               EmptyStyle="{StaticResource SidebarEmptyContainerStyle}"/>
         <views:SidebarRowTemplateSelector x:Key="SidebarRowSelector"
+                                          CliTemplate="{StaticResource SidebarCliTemplate}"
                                           RecentsTemplate="{StaticResource SidebarRecentsTemplate}"
                                           WorkspacesTemplate="{StaticResource SidebarWorkspacesTemplate}"
                                           EmptyTemplate="{StaticResource SidebarEmptyTemplate}"

@@ -6,13 +6,34 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,011 passed / 0 failed / 0 skipped** (2026-10-12, CLI Session sidebar). Broker 910; CLI 1,307; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/gui-cli-section-matrix-final.log`. |
-| Python suite | **214 passed, 1 skipped** (2026-10-12, CLI Session sidebar), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-cli-section-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, CLI Session sidebar/default theme refinement). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-cli-section-release.log`, `artifacts/gui-cli-section-deploy.log`. |
-| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-cli-section-release-smoke.log`. Interactive native UI remains manual acceptance. |
+| .NET tests | Full **12-project** Debug matrix: **6,011 passed / 0 failed / 0 skipped** (2026-10-12, balanced default Dark release). Broker 910; CLI 1,307; Client 215; Core 487; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,058; GUI 1,393. Log: `artifacts/gui-dark-balanced-release-matrix.log`. |
+| Python suite | **214 passed, 1 skipped** (2026-10-12, balanced default Dark release), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/gui-dark-balanced-release-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, balanced default Dark). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-dark-balanced-release-build.log`, `artifacts/gui-dark-balanced-release-deploy.log`. |
+| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-dark-balanced-release-smoke.log`. Interactive native UI remains manual acceptance. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Balanced default Dark brightness (2026-10-12)
+
+After feedback that the brighter palette was excessive, default Dark uses
+sidebar `#141414`, canvas `#1A1A1A`, surface/hover `#242424`, selection `#2E2E2E`
+and line/selected-hover `#3C3C3C`. Foregrounds, accent and status colors retain
+their values. Light, Meteor and Starry Night palette definitions are unchanged
+from the preceding release. Startup XAML and runtime application match.
+
+Scoped Debug GUI build/tests passed **1,393 / 0 failed / 0 skipped**, including
+palette parity and existing AA contrast checks (`artifacts/gui-dark-balanced-tests.log`).
+Publication follow-up: the full 12-project matrix passed **6,011** with no failures
+or skips (`artifacts/gui-dark-balanced-release-matrix.log`); Python passed **214**,
+with **1** POSIX test skipped (`artifacts/gui-dark-balanced-release-python.log`).
+The isolated 11-stage Release pipeline passed, then the complete canonical package
+was replaced with the previous package retained and all 749 file hashes verified
+(`artifacts/gui-dark-balanced-release-build.log`,
+`artifacts/gui-dark-balanced-release-deploy.log`). Actual launcher startup/listing,
+published CLI RPC creation/source labeling and authenticated Host status/shutdown
+passed (`artifacts/gui-dark-balanced-release-smoke.log`). Native appearance remains
+manual acceptance.
 
 ## CLI Session sidebar section (2026-10-12)
 

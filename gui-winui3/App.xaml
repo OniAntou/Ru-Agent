@@ -114,14 +114,14 @@
                     <CornerRadius x:Key="ComboBoxItemCornerRadius">6</CornerRadius>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <Color x:Key="RuCanvasColor">#1E1E1E</Color>
-                    <Color x:Key="RuSidebarColor">#181818</Color>
-                    <Color x:Key="RuSurfaceColor">#282828</Color>
+                    <Color x:Key="RuCanvasColor">#1A1A1A</Color>
+                    <Color x:Key="RuSidebarColor">#141414</Color>
+                    <Color x:Key="RuSurfaceColor">#242424</Color>
                     <Color x:Key="RuInkColor">#EEEEEE</Color>
                     <Color x:Key="RuMutedColor">#AAAAAA</Color>
-                    <Color x:Key="RuLineColor">#404040</Color>
+                    <Color x:Key="RuLineColor">#3C3C3C</Color>
                     <Color x:Key="RuAccentColor">#E2E8F0</Color>
-                    <Color x:Key="RuAccentSoftColor">#323232</Color>
+                    <Color x:Key="RuAccentSoftColor">#2E2E2E</Color>
                     <Color x:Key="RuAccentHoverColor">#F1F5F9</Color>
                     <Color x:Key="RuAccentPressedColor">#CBD5E1</Color>
                     <Color x:Key="RuSuccessColor">#34D399</Color>
@@ -143,51 +143,51 @@
                     <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#F8FAFC" />
 
                     <!-- Universal Button & Control Hover/Pressed Theme Resources (Clean & Flicker-free) -->
-                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#282828" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#323232" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#242424" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#2E2E2E" />
                     <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
                     <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
 
-                    <SolidColorBrush x:Key="SubtleFillColorSecondary" Color="#282828" />
-                    <SolidColorBrush x:Key="SubtleFillColorTertiary" Color="#323232" />
+                    <SolidColorBrush x:Key="SubtleFillColorSecondary" Color="#242424" />
+                    <SolidColorBrush x:Key="SubtleFillColorTertiary" Color="#2E2E2E" />
 
                     <!-- ListViewItem Hover & Selected -->
-                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#282828" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#323232" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#323232" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#404040" />
-                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#404040" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#242424" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#3C3C3C" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ListViewItemForegroundPointerOver" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="#EEEEEE" />
 
                     <!-- ComboBox (Ru theme: Canvas input-well on Surface cards) -->
-                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#1E1E1E" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#323232" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#404040" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#1E1E1E" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#1E1E1E" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#1E1E1E" />
+                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#1A1A1A" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#3C3C3C" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#1A1A1A" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#1A1A1A" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#1A1A1A" />
                     <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushFocused" Color="#EEEEEE" />
-                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushUnfocused" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushUnfocused" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ComboBoxForeground" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxForegroundFocusedPressed" Color="#EEEEEE" />
-                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#E2E8F0" />
-                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#EEEEEE" />
-                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#282828" />
-                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#242424" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ComboBoxPlaceHolderForeground" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPointerOver" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPressed" Color="#EEEEEE" />
@@ -200,17 +200,17 @@
                     <SolidColorBrush x:Key="ComboBoxItemForegroundSelectedPointerOver" Color="#EEEEEE" />
                     <SolidColorBrush x:Key="ComboBoxItemForegroundDisabled" Color="#AAAAAA" />
                     <SolidColorBrush x:Key="ComboBoxItemBackground" Color="Transparent" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#282828" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="#323232" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#323232" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedUnfocused" Color="#323232" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#404040" />
-                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#242424" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedUnfocused" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#3C3C3C" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#3C3C3C" />
                     <SolidColorBrush x:Key="ComboBoxItemBackgroundDisabled" Color="Transparent" />
                     <!-- Pill + popup hover: unmistakably Ru (not default blue accent) -->
                     <SolidColorBrush x:Key="ComboBoxItemPillFillBrush" Color="#E2E8F0" />
-                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#323232" />
-                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#404040" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#2E2E2E" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#3C3C3C" />
                     <CornerRadius x:Key="ComboBoxHighlightBorderCornerRadius">6</CornerRadius>
                     <CornerRadius x:Key="ComboBoxDropDownButtonBackgroundCornerRadius">6</CornerRadius>
                     <CornerRadius x:Key="ComboBoxItemCornerRadius">6</CornerRadius>

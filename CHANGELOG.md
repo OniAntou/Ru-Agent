@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(gui)**: Reduce default Dark brightness to a balanced charcoal canvas (`#1A1A1A`), with matching sidebar, surface and interaction tones. Light, Meteor and Starry Night palettes are unchanged.
+
 - **feat(gui,cli)**: Add a collapsible CLI Session sidebar section below Workspaces and Recents, increase section spacing, and persist the creating client so CLI/TUI sessions stay grouped across restarts without changing their execution directory. Legacy sessions without a source retain existing grouping.
 
 - **style(gui)**: Refine default Dark into slightly brighter neutral charcoal surfaces with quieter borders. Soften default Light with gray/off-white backgrounds instead of pure white, retaining readable text and Ru accent/status colors. Keep startup XAML and runtime theme switching palettes aligned; Dark Meteor Shower and Starry Night retain their existing palettes.

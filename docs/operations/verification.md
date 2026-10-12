@@ -8,8 +8,8 @@
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
 | .NET tests | Full **12-project** Debug matrix: **6,079 passed / 0 failed / 0 skipped** (2026-10-13, TUI chat-flow redesign). Broker 918; CLI 1,355; Client 215; Core 488; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,069; GUI 1,393. Log: `artifacts/tui-chat-flow-matrix-rerun.log`. |
 | Python suite | **216 passed, 1 skipped** (2026-10-13, TUI chat-flow redesign), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-chat-flow-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-12, balanced default Dark). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; previous package retained, all 749 files hash-verified and CLI/backend inventory checked. Logs: `artifacts/gui-dark-balanced-release-build.log`, `artifacts/gui-dark-balanced-release-deploy.log`. |
-| Managed runtime smoke | **PASS** (2026-10-12) on the actual flat Release package: authenticated status/shutdown, actual `ru` launcher session listing/default startup/exit, and published CLI RPC session creation with durable `client_source=cli`. Log: `artifacts/gui-dark-balanced-release-smoke.log`. Interactive native UI remains manual acceptance. |
+| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-13, TUI chat-flow redesign). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-chat-flow-release-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13) on the actual flat Release package: published `RuBackend.exe` booted managed, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-chat-flow-flat-smoke.log`. Interactive launcher startup, session listing, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Latest custom SWE rerun: **0/3 resolved**, all three timed out at 300 s/task, Kilo `stepfun/step-5-preview-free`, confirmed `full_access`, Release at `96f658c2`. C# passed 6/7 groups; Python 2/6 and TypeScript 2/7 with empty patches. Report: `artifacts/quality-swe-20261011-run3/report.json`. Earlier trials remain below; these are not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
@@ -31,8 +31,9 @@ label). Then the full 12-project Debug matrix recorded **6,079 passed / 0 failed
 failed once at
 `AgentReconcileEndpointTests.Applied_resolution_returns_the_run_to_running`;
 the test passed in isolation and the whole project reran green (**1,069 / 0**),
-so the rerun is the recorded result. Native terminal appearance remains manual
-acceptance; the Release package was not re-published.
+so the rerun is the recorded result. The Release package was re-published and
+passed the flat-package smoke (see the table); native terminal appearance
+remains manual acceptance.
 
 ## Remembered approval patterns and durable folder grants (2026-10-13)
 

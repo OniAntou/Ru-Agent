@@ -17,7 +17,8 @@ a filled prompt surface in the panel tone — the opencode-style block, with no
 frame outline and no accent rail. An empty chat centres the logo above the same
 block. The empty prompt is capped at 80 columns. Active sessions use a padded
 transcript and a full-width bottom prompt with the same side margins as chat; the
-preset, model and provider sit on the meta row inside the block. The composer
+preset, model and provider sit on the meta row inside the block, the preset in
+the same green as the user block's prompt chevron. The composer
 grows from one to six visible input rows, leaving room for
 the transcript on short screens. It shows “Ask anything…” when empty and uses
 a steady block cursor. Enter sends; Ctrl+J, Shift+Enter where the terminal
@@ -29,7 +30,9 @@ refused visibly with the draft unchanged. The empty-chat footer shows
 `ctrl+p commands` and pending attachment context; active-session hints adapt to
 available width. The footer normally shows only Ctrl+P; while running it keeps
 Esc visible. The busy colour wave uses five medium block cells (`▬▬▬▬▬`)
-to keep the indicator present without reading as a slab. Other shortcuts remain available through help.
+whose colours sweep aurora green, mint, brand blue, brand2 violet and warn
+amber once every 0.8 s, so the row carries more than two hues at any phase
+without reading as a slab. Other shortcuts remain available through help.
 The header puts the session title (without a product-name prefix)
 title/known usage on the first row and workspace on the second. Live activity
 occupies a row at the end of the transcript. A colored glyph precedes the readable action; targets

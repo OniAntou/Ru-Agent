@@ -53,9 +53,9 @@ public sealed class TuiSpinnerTests
     {
         Assert.Equal(0, TuiSpinner.WaveBucketAt(0));
         Assert.Equal(0, TuiSpinner.WaveBucketAt(-1));
-        Assert.Equal(0, TuiSpinner.WaveBucketAt(0.089));
-        Assert.Equal(1, TuiSpinner.WaveBucketAt(0.09));
-        Assert.Equal(11, TuiSpinner.WaveBucketAt(1.0));
+        Assert.Equal(0, TuiSpinner.WaveBucketAt(0.059));
+        Assert.Equal(1, TuiSpinner.WaveBucketAt(0.06));
+        Assert.Equal(16, TuiSpinner.WaveBucketAt(1.0));
     }
 
     [Fact]
@@ -82,6 +82,21 @@ public sealed class TuiSpinnerTests
             Assert.InRange(rgb.G, 0, 255);
             Assert.InRange(rgb.B, 0, 255);
         });
+    }
+
+    [Fact]
+    public void WaveRamp_SweepsMoreThanTwoHues()
+    {
+        // One cycle visits every anchor: aurora pushes green, brand pushes blue and the
+        // amber stop makes red outweigh green somewhere in the sweep. The old three-stop
+        // ramp never reached red dominance, so this pins the wider palette.
+        var samples = Enumerable.Range(0, 40)
+            .Select(step => TuiSpinner.WaveRgbAt(0, TuiSpinner.WaveCycleSeconds * step / 40.0))
+            .ToArray();
+
+        Assert.True(samples.Max(sample => sample.G - sample.R) >= 40, "aurora green dominates somewhere in the cycle");
+        Assert.True(samples.Max(sample => sample.B - sample.R) >= 60, "brand blue dominates somewhere in the cycle");
+        Assert.True(samples.Max(sample => sample.R - sample.G) >= 40, "warn amber dominates somewhere in the cycle");
     }
 
     [Fact]

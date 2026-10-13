@@ -30,10 +30,10 @@ public static class TuiSpinner
     public static readonly string WaveText = string.Concat(Enumerable.Repeat(WaveGlyph, WaveCells));
 
     /// <summary>Milliseconds each wave phase bucket stays on screen.</summary>
-    public const int WaveStepMilliseconds = 90;
+    public const int WaveStepMilliseconds = 60;
 
     /// <summary>Seconds for one full traversal of the colour ramp.</summary>
-    public const double WaveCycleSeconds = 1.4;
+    public const double WaveCycleSeconds = 0.8;
 
     /// <summary>Phase offset between neighbouring cells, as a fraction of the ramp.</summary>
     public const double WaveCellSpacing = 0.1;
@@ -74,24 +74,29 @@ public static class TuiSpinner
             (int)Math.Round(b * brightness));
     }
 
-    /// <summary>Aurora → brand → brand2 → aurora: the cycle has no visible seam.</summary>
+    /// <summary>
+    /// The wave's colour anchors — aurora green, mint, brand blue, brand2 violet and warn
+    /// amber. Five stops keep more than two hues in the row at any phase, every stop is a
+    /// palette token, and the wrap segment interpolates amber back to green so the cycle
+    /// has no visible seam.
+    /// </summary>
+    private static readonly (int R, int G, int B)[] WaveRamp =
+    [
+        TuiPalette.Rgb(TuiToken.Aurora),
+        TuiPalette.Rgb(TuiToken.Ok),
+        TuiPalette.Rgb(TuiToken.Brand),
+        TuiPalette.Rgb(TuiToken.Brand2),
+        TuiPalette.Rgb(TuiToken.Warn),
+    ];
+
+    /// <summary>Interpolates the cyclic ramp at a normalised position.</summary>
     private static (int R, int G, int B) RampAt(double p)
     {
-        var scaled = p * 3;
-        var index = Math.Clamp((int)scaled, 0, 2);
+        var scaled = p * WaveRamp.Length;
+        var index = Math.Clamp((int)scaled, 0, WaveRamp.Length - 1);
         var t = scaled - index;
-        var (r1, g1, b1) = TuiPalette.Rgb(index switch
-        {
-            0 => TuiToken.Aurora,
-            1 => TuiToken.Brand,
-            _ => TuiToken.Brand2,
-        });
-        var (r2, g2, b2) = TuiPalette.Rgb(index switch
-        {
-            0 => TuiToken.Brand,
-            1 => TuiToken.Brand2,
-            _ => TuiToken.Aurora,
-        });
+        var (r1, g1, b1) = WaveRamp[index];
+        var (r2, g2, b2) = WaveRamp[(index + 1) % WaveRamp.Length];
         return (Lerp(r1, r2, t), Lerp(g1, g2, t), Lerp(b1, b2, t));
     }
 

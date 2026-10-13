@@ -103,7 +103,7 @@ public sealed class TgComposerView : View
         if (row >= Viewport.Height) return true;
         var available = Math.Max(0, width - Inset * 2);
         var preset = TuiText.Truncate(Preset, Math.Min(12, available));
-        DrawMeta(Inset, preset, TuiToken.Brand, row);
+        DrawMeta(Inset, preset, TuiToken.Ok, row);
         var column = Inset + TuiText.VisibleWidth(preset) + 2;
         var remaining = Math.Max(0, width - Inset - column);
         var providerWidth = remaining >= 28 ? Math.Min(18, remaining / 3) : 0;

@@ -15,6 +15,34 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Faster multi-hue busy wave and green preset (2026-10-14)
+
+The operator asked for the wave to move faster and carry more colours, and for
+the composer's `Standard` label to go green. One cycle is now 0.8 s (was 1.4 s)
+on a 60 ms phase bucket (~17 repaints a second on the 18 ms ticker), and the
+ramp gained two palette anchors — mint (`Ok`) and amber (`Warn`) beside aurora,
+brand and brand2 — so five hues sweep the row and the wrap segment passes
+through amber back to green. The preset label takes the green accent (`Ok`, the
+tone the user block's prompt chevron already carries) instead of brand blue.
+Glyph, cell count, spacing and the classic `TuiSpinner.WaveText` parity
+reference are unchanged.
+
+- Full CLI Debug suite: **1,422 passed / 0 failed / 0 skipped**
+  (`artifacts/tui-audit/wave-fast-cli.log`). New guards: one cycle must reach
+  green-, blue- and red-dominant samples (the old three-stop ramp never reached
+  red, so the wider palette is pinned) and the preset cell's foreground must be
+  the green accent.
+- Python suite: **212 passed / 1 skipped**
+  (`artifacts/tui-audit/wave-fast-python.log`).
+- Release build: `build.bat` **11/11** (`artifacts/tui-audit/wave-fast-build.log`);
+  launcher smoke passes with the distributable CLI hash matching the publish and
+  the parser failing bounded with exit 1
+  (`artifacts/tui-audit/wave-fast-launcher-smoke.log`).
+- The full 12-project matrix was not rerun for this CLI-only tweak; the last
+  full matrix is the composer-wave run above. A rendered filmstrip of the new
+  cycle and the green meta row lives in `artifacts/tui-audit/wave-preview.png`
+  (reconstructed cells, not a native terminal capture).
+
 ## Filled composer and balanced busy wave (2026-10-14)
 
 Operator request: bring the prompt back to the opencode-style filled block

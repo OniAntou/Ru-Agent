@@ -82,6 +82,30 @@ public sealed class TgComposerTests
     }
 
     [Fact]
+    public void Preset_CarriesTheGreenAccentOnTheMetaRow()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = TgComposerView.RowCount };
+        composer.SetMeta("Standard", "model", "provider");
+        window.Add(composer);
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            var metaRow = composer.Frame.Y + TgComposerView.MetadataRow;
+            var column = rows[metaRow].IndexOf("Standard", StringComparison.Ordinal);
+            Assert.True(column >= 0);
+            Assert.Equal(
+                TgPalette.Attr(TuiToken.Ok, TuiPalette.SurfaceRgb()).Foreground,
+                TgSnapshot.CellAttribute(app, metaRow, column).Foreground);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
     public void Interior_UsesTheExistingRuPanelSurface()
     {
         using IApplication app = Application.Create();

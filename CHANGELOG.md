@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Speed up the busy colour wave and widen its ramp: one cycle takes 0.8 s (was 1.4 s) on a 60 ms phase bucket, and the five cells sweep five palette anchors — aurora green, mint, brand blue, brand2 violet and warn amber — so more than two hues are in the row at any phase instead of one green-to-violet stretch. The bar glyph, cell count and the classic parity reference are unchanged.
+
+- **style(tui)**: Paint the composer's preset label in the green accent (`Ok`, the tone the user block's prompt chevron already carries) instead of brand blue, so `Standard` reads as an accent inside the filled block.
+
 - **style(tui)**: Return the prompt to the opencode-style filled block. The composer is one panel-toned surface again — no frame outline, no accent rail and no interior prompt glyph — that grows from one to six input rows, with the preset, model and provider on the meta row inside the block rather than on its edges, and the empty chat centres the wordmark above the same block. The busy colour wave narrows from five half-height cells to five medium block cells (`▬▬▬▬▬`), so the footer keeps a travelling indicator instead of a slab.
 
 - **fix(docs)**: Restore the README's `# Ru Agent` heading. The user-facing rewrite carried only the wordmark banner, so the Broker's bundled help catalog rejected the overview document (`missing_h1`) and the `help` tool had no catalog at all. The heading sits under the hero banner and gives the document back to the help index.

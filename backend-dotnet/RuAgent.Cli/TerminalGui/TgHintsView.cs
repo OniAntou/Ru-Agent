@@ -136,7 +136,7 @@ public sealed class TgHintsView : View
     /// <summary>
     /// Advances the busy wave from the shared animation clock; the phase is a pure
     /// function of elapsed seconds. A no-op while the row is idle or while the phase
-    /// bucket has not moved, so an 18 ms ticker repaints about eleven times a second.
+    /// bucket has not moved, so an 18 ms ticker repaints about sixteen times a second.
     /// </summary>
     public void SetWaveClock(double elapsedSeconds)
     {

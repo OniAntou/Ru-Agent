@@ -174,7 +174,7 @@ namespace RuApp.Controls
                 // leave the reply invisible.
                 visual.Opacity = 0f;
                 visual.StartAnimation("Opacity", fade);
-                visual.StartAnimation("Translation", rise);
+                visual.StartAnimation("Offset", rise);
             }
             catch (Exception error)
             {

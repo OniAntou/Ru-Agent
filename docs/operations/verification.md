@@ -15,6 +15,39 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Shell motion (2026-10-14)
+
+GUI motion slice 3, built on a new shared module `UiMotion` (fade-and-lift
+entrance, fade-and-drop exit whose completion is deferred past the animation,
+dip-faded content swap, show-once panel entrance; every path returns to the
+plain state change when `UiTiming.AnimationsEnabled` is false).
+
+- The side surface fades out before it collapses. The reserved column space
+  follows the last painted mode (`AgentSidePanelControl.CurrentMode`) while the
+  fade is in flight, so the chat cannot jump under a panel that is still
+  visible; the collapse and the reserve release happen in the completion, which
+  re-checks the policy so a re-show during the fade wins. The re-show slides
+  the surface back in explicitly, because a hide leaves the mode untouched and
+  the mode-change entrance compares equal.
+- The settings and session-usage overlays fade out with the collapse and the
+  focus hand-back deferred to the completion; a reopen during the fade wins.
+- Screen switches dip-fade through `UiMotion.SwapContent` with a generation
+  guard, so the newest click owns the content frame (`OnNavClick`,
+  `OnToolsMenuItemClick`, `NavigateToDiagnostics`).
+- The composer's small panels (task list, queued turns, inline status) enter
+  once through `UiMotion.SetVisible` and collapse immediately, because the
+  content around them reflows anyway and a delayed collapse would race the next
+  show.
+- GUI suite: **1,404 passed / 0 failed**, with four new source contracts
+  (`artifacts/tui-audit/shell-motion-gui.log`).
+- The slice-2 arrival animation is corrected here: a composition `Visual` has no
+  `Translation` property (that name is XAML-only), so animating it threw, the
+  guard restored full opacity and the reply arrived without its lift. The
+  entrance now animates `Offset` — the composition property behind a
+  translation — in both `UiMotion` and `MarkdownBlock.PlayArrival`.
+- The slide, the fade and the swap are visual behaviour: they need the
+  operator's eye on the running app, since no headless check renders WinUI.
+
 ## Streaming chat motion (2026-10-14)
 
 GUI motion slice 2. The streaming reply now parses as Markdown from the first

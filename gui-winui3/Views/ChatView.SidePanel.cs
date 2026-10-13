@@ -61,6 +61,10 @@ public sealed partial class ChatView
     private bool CanShowSidePanel() =>
         RootGrid is not null && Messages.Count > 0 && RootGrid.ActualWidth >= SidePanelMinRootWidth;
 
+    /// <summary>The state the policy wants right now, re-checked after a fade-out.</summary>
+    private bool IsSidePanelDesiredVisible() =>
+        CanShowSidePanel() && _sidePanelPolicy.GetMode(_activeSessionId) != AgentSidePanelMode.Hidden;
+
     private void ApplySidePanelState()
     {
         double previousReserve = _sidePanelReserveWidth;
@@ -87,18 +91,46 @@ public sealed partial class ChatView
         }
 
         bool isVisible = canShow && mode != AgentSidePanelMode.Hidden;
-        SidePanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        bool wasVisible = SidePanel.Visibility == Visibility.Visible;
         if (isVisible)
         {
+            SidePanel.Visibility = Visibility.Visible;
             SidePanel.ApplyState(
                 mode,
                 _sidePanelPolicy.GetOpenTabs(_activeSessionId),
                 _sidePanelPolicy.GetActiveTab(_activeSessionId),
                 _sidePanelPolicy.IsFullscreen(_activeSessionId),
                 _sidePanelWidth);
+            if (!wasVisible)
+            {
+                // The control's own entrance only covers a mode *change*, and a
+                // re-show after a hide repeats the same mode.
+                SidePanel.PlayVisibilityEntrance();
+            }
+        }
+        else if (wasVisible)
+        {
+            // The fade runs over the space the panel still reserves; the collapse
+            // and the column's shift follow it, unless the surface was asked back
+            // while it left.
+            SidePanel.PlayVisibilityExit(() =>
+            {
+                if (IsSidePanelDesiredVisible())
+                {
+                    return;
+                }
+
+                SidePanel.Visibility = Visibility.Collapsed;
+                ApplySidePanelState();
+            });
         }
 
-        _sidePanelReserveWidth = !isVisible ? 0 : ReserveFor(mode);
+        // While the fade is in flight the reserve has to stay: the panel is still
+        // painted there, so releasing the space early would jump the column under
+        // it. The policy already reads Hidden, so the last rendered mode decides.
+        _sidePanelReserveWidth = isVisible
+            ? ReserveFor(mode)
+            : wasVisible ? ReserveFor(SidePanel.CurrentMode) : 0;
         if (ApprovalHostGrid is not null)
         {
             ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);

@@ -508,6 +508,7 @@ namespace RuApp
         {
             _isSettingsModalOpen = true;
             SettingsModalOverlay.Visibility = Visibility.Visible;
+            Services.UiMotion.Enter(SettingsModalOverlay);
             if (SettingsModalOverlay.ActualWidth > 0 && SettingsModalOverlay.ActualHeight > 0)
             {
                 SettingsModalCard.Width = Math.Min(880, Math.Max(400, SettingsModalOverlay.ActualWidth - 48));
@@ -541,7 +542,6 @@ namespace RuApp
             if (!_isSettingsModalOpen) return;
 
             _isSettingsModalOpen = false;
-            SettingsModalOverlay.Visibility = Visibility.Collapsed;
 
             if (_activeNavButton != NavSettings)
             {
@@ -549,12 +549,23 @@ namespace RuApp
                 NavSettings.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
             }
 
-            if (_settingsModalPreviousFocus is Control previousFocus)
+            // The overlay leaves with a fade; the collapse and the focus hand-back
+            // follow it, unless the modal was reopened while it faded.
+            Services.UiMotion.Exit(SettingsModalOverlay, () =>
             {
-                previousFocus.Focus(FocusState.Programmatic);
-            }
+                if (_isSettingsModalOpen)
+                {
+                    return;
+                }
 
-            _settingsModalPreviousFocus = null;
+                SettingsModalOverlay.Visibility = Visibility.Collapsed;
+                if (_settingsModalPreviousFocus is Control previousFocus)
+                {
+                    previousFocus.Focus(FocusState.Programmatic);
+                }
+
+                _settingsModalPreviousFocus = null;
+            });
         }
 
         private void OnSettingsBackdropPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -594,7 +605,7 @@ namespace RuApp
 
                 var destination = Services.ShellRoutePolicy.Resolve(tag);
                 if (destination != Services.ShellDestination.Chat) LeaveChatSession();
-                ContentFrame.Content = ViewFor(destination);
+                SwapNavContent(destination);
                 if (Services.ShellRoutePolicy.KeepsCatalogPolling(tag))
                 {
                     _ = _chatView?.LoadChatModelsAsync();
@@ -622,6 +633,33 @@ namespace RuApp
             _ => _chatView,
         };
 
+        private long _navSwapGeneration;
+
+        /// <summary>
+        /// Shows the destination view with a dip-fade, so switching screens reads as
+        /// a change instead of a flash. A newer click during the fade wins: the
+        /// superseded swap stands down and the newest click owns the content frame.
+        /// </summary>
+        private void SwapNavContent(Services.ShellDestination destination)
+        {
+            var content = ViewFor(destination);
+            if (ReferenceEquals(ContentFrame.Content, content))
+            {
+                return;
+            }
+
+            long generation = ++_navSwapGeneration;
+            Services.UiMotion.SwapContent(ContentFrame, () =>
+            {
+                if (generation != _navSwapGeneration)
+                {
+                    return;
+                }
+
+                ContentFrame.Content = content;
+            });
+        }
+
         private void OnToolsMenuItemClick(object sender, RoutedEventArgs e)
         {
             if (sender is not MenuFlyoutItem item || item.Tag is not string tag)
@@ -634,7 +672,7 @@ namespace RuApp
             _providerCatalogTimer?.Stop();
 
             if (Services.ShellRoutePolicy.Resolve(tag) != Services.ShellDestination.Chat) LeaveChatSession();
-            ContentFrame.Content = ViewFor(Services.ShellRoutePolicy.Resolve(tag));
+            SwapNavContent(Services.ShellRoutePolicy.Resolve(tag));
             _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
             _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
         }
@@ -642,7 +680,7 @@ namespace RuApp
         public void NavigateToDiagnostics(string? correlationId = null)
         {
             LeaveChatSession();
-            ContentFrame.Content = _diagnosticsView;
+            SwapNavContent(Services.ShellDestination.Diagnostics);
             _diagnosticsView?.SetActive(true);
             _logView?.SetActive(false);
             if (!string.IsNullOrWhiteSpace(correlationId))

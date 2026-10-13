@@ -481,6 +481,7 @@ namespace RuApp
 
             _isSessionUsageOpen = true;
             SessionUsageOverlay.Visibility = Visibility.Visible;
+            Services.UiMotion.Enter(SessionUsageOverlay);
             ApplySessionUsageCardSize();
             _sessionUsagePreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSessionUsageButton?.Focus(FocusState.Programmatic);
@@ -505,14 +506,24 @@ namespace RuApp
             }
 
             _isSessionUsageOpen = false;
-            SessionUsageOverlay.Visibility = Visibility.Collapsed;
 
-            if (_sessionUsagePreviousFocus is Control previousFocus)
+            // The overlay leaves with a fade; the collapse and the focus hand-back
+            // follow it, unless the panel was reopened while it faded.
+            Services.UiMotion.Exit(SessionUsageOverlay, () =>
             {
-                previousFocus.Focus(FocusState.Programmatic);
-            }
+                if (_isSessionUsageOpen)
+                {
+                    return;
+                }
 
-            _sessionUsagePreviousFocus = null;
+                SessionUsageOverlay.Visibility = Visibility.Collapsed;
+                if (_sessionUsagePreviousFocus is Control previousFocus)
+                {
+                    previousFocus.Focus(FocusState.Programmatic);
+                }
+
+                _sessionUsagePreviousFocus = null;
+            });
         }
 
         private void OnSessionUsageOverlaySizeChanged(object sender, SizeChangedEventArgs e)

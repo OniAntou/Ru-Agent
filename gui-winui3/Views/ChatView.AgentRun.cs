@@ -243,9 +243,9 @@ namespace RuApp.Views
                 ShowWorkspaceTrustDialogAsync();
             }
 
-            AgentInlinePanel.Visibility = state.ShowInlinePanel || _localComposerStatus.Length > 0
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            Services.UiMotion.SetVisible(
+                AgentInlinePanel,
+                state.ShowInlinePanel || _localComposerStatus.Length > 0);
 
             // A composer-local message outlives the refresh that would otherwise
             // blank it: the panel policy only knows about runs.
@@ -566,7 +566,7 @@ namespace RuApp.Views
             AbandonActiveAgentReply();
 
             UpdateAgentComposerVisuals();
-            AgentInlinePanel.Visibility = Visibility.Collapsed;
+            Services.UiMotion.SetVisible(AgentInlinePanel, false);
             ApprovalPanel.Hide();
             QuestionPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
@@ -1024,7 +1024,7 @@ namespace RuApp.Views
             }
 
             int count = _queuedTurns.Items.Count;
-            QueuedTurnsPanel.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            Services.UiMotion.SetVisible(QueuedTurnsPanel, count > 0);
             QueuedTurnsHeader.Text = count == 1 ? "1 message queued" : $"{count} messages queued";
 
             // While a run is in hand the queue drains on its own, so offering to send

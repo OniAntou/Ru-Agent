@@ -934,7 +934,7 @@ namespace RuApp.Views
 
             if (todos is not { Count: > 0 })
             {
-                TodoPanel.Visibility = Visibility.Collapsed;
+                Services.UiMotion.SetVisible(TodoPanel, false);
                 RestoreInputBorder();
                 return;
             }
@@ -981,7 +981,7 @@ namespace RuApp.Views
                     _todoPanelExpanded ? "Collapse task list" : "Expand task list");
             }
 
-            TodoPanel.Visibility = Visibility.Visible;
+            Services.UiMotion.SetVisible(TodoPanel, true);
             FuseInputBorder();
 
             if (_todoPanelExpanded)
@@ -1006,7 +1006,7 @@ namespace RuApp.Views
 
             if (TodoPanel is not null)
             {
-                TodoPanel.Visibility = Visibility.Collapsed;
+                Services.UiMotion.SetVisible(TodoPanel, false);
             }
 
             RestoreInputBorder();

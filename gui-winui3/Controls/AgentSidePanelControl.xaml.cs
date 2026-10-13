@@ -47,6 +47,13 @@ namespace RuApp.Controls
         public event EventHandler<double>? WidthCommitted;
 
         private AgentSidePanelMode _mode = AgentSidePanelMode.Hidden;
+
+        /// <summary>
+        /// The mode the surface was last rendered with. The policy can already read
+        /// Hidden while the fade-out is still on screen, so the host's view logic
+        /// needs the last painted mode to keep the reserved space stable.
+        /// </summary>
+        public AgentSidePanelMode CurrentMode => _mode;
         private IReadOnlyList<SidePanelTabKind> _openTabs = Array.Empty<SidePanelTabKind>();
         private SidePanelTabKind _activeTab = SidePanelTabKind.Changes;
         private bool _changesChipHovered;
@@ -168,10 +175,69 @@ namespace RuApp.Controls
             ToolTipService.SetToolTip(FullscreenButton, fullscreenName);
             AutomationProperties.SetName(FullscreenButton, fullscreenName);
 
-            if (mode != previous && mode != AgentSidePanelMode.Hidden)
+            bool wasHidden = previous == AgentSidePanelMode.Hidden;
+            if (mode != previous && mode != AgentSidePanelMode.Hidden && !wasHidden)
             {
                 PlayEntrance(showPanel ? PanelHost : CardHost, showPanel ? PanelSlide : CardSlide);
             }
+        }
+
+        /// <summary>
+        /// Animates the visible surface back in after a hide. The mode-change
+        /// entrance cannot cover this case: hiding keeps the last mode, so showing
+        /// the same mode again compares equal and would appear instantly.
+        /// </summary>
+        public void PlayVisibilityEntrance()
+        {
+            bool showPanel = _mode == AgentSidePanelMode.Panel;
+            PlayEntrance(showPanel ? PanelHost : CardHost, showPanel ? PanelSlide : CardSlide);
+        }
+
+        /// <summary>
+        /// Fades the surface out and calls back once it has left the screen. The
+        /// caller collapses the host in the callback and re-checks its own desired
+        /// state there, because the surface can be asked back before it has gone.
+        /// </summary>
+        public void PlayVisibilityExit(Action completed)
+        {
+            ArgumentNullException.ThrowIfNull(completed);
+            bool showPanel = _mode == AgentSidePanelMode.Panel;
+            FrameworkElement host = showPanel ? PanelHost : CardHost;
+            var slide = showPanel ? PanelSlide : CardSlide;
+            if (!UiTiming.AnimationsEnabled)
+            {
+                host.Opacity = 1;
+                slide.X = 0;
+                completed();
+                return;
+            }
+
+            host.Opacity = 1;
+            slide.X = 0;
+
+            var fade = new DoubleAnimation
+            {
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn },
+            };
+            Storyboard.SetTarget(fade, host);
+            Storyboard.SetTargetProperty(fade, "Opacity");
+
+            var glide = new DoubleAnimation
+            {
+                To = 16,
+                Duration = TimeSpan.FromMilliseconds(140),
+                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn },
+            };
+            Storyboard.SetTarget(glide, slide);
+            Storyboard.SetTargetProperty(glide, "X");
+
+            var storyboard = new Storyboard();
+            storyboard.Children.Add(fade);
+            storyboard.Children.Add(glide);
+            storyboard.Completed += (_, _) => completed();
+            storyboard.Begin();
         }
 
         private void RefreshChip(Border chip, TextBlock labelText, SidePanelTabKind kind)

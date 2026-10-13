@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Remove the composer's green left rail; the user block's prompt chevron takes the green tone instead.
+
 - **docs**: License the repository under the Functional Source License 1.1, ALv2 Future License (FSL-1.1-ALv2): use, modification and redistribution are permitted for any purpose including internal company use; offering the software or a substantially similar product as a competing commercial product or service is not. Each release becomes Apache 2.0 on its second anniversary; the SDK package metadata carries the same SPDX identifier.
 
 - **fix(provider)**: Bound model requests through response headers to 120 seconds while preserving long active SSE streams. Reject automatic HTTP redirects as `redirect_rejected` without forwarding credentials or prompts to a new endpoint.

@@ -417,7 +417,8 @@ public sealed class TgTranscriptView : View
                 {
                     SetAttribute(TgPalette.Attr(TuiToken.Ink, TuiPalette.ElementRgb()));
                     AddStr(text[..prompt]);
-                    SetAttribute(TgPalette.Attr(TuiToken.Brand2, TuiPalette.ElementRgb()));
+                    // The green prompt chevron carries the accent the composer rail used to.
+                    SetAttribute(TgPalette.Attr(TuiToken.Ok, TuiPalette.ElementRgb()));
                     AddStr("❯");
                     SetAttribute(TgPalette.Attr(TuiToken.Bright, TuiPalette.ElementRgb()));
                     AddStr(text[(prompt + 1)..]);

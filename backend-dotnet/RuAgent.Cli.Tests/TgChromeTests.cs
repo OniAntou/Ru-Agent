@@ -250,8 +250,8 @@ public sealed class TgChromeTests
             Assert.True(fill == padBottom, $"pad bottom background: expected {fill} actual {padBottom}");
             var chevron = TgSnapshot.CellAttribute(app, top + 1, window.Transcript.Frame.X + 2).Foreground;
             Assert.True(
-                TgPalette.ToColor(TuiToken.Brand2) == chevron,
-                $"chevron foreground: expected {TgPalette.ToColor(TuiToken.Brand2)} actual {chevron}");
+                TgPalette.ToColor(TuiToken.Ok) == chevron,
+                $"chevron foreground: expected {TgPalette.ToColor(TuiToken.Ok)} actual {chevron}");
             Assert.Contains("sửa lỗi busy lock", rows[top + 1]);
             app.RequestStop();
             return false;
@@ -372,7 +372,9 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
             var rows = TgSnapshot.Capture(app);
-            Assert.Contains("┃", rows[window.Composer.Frame.Y]);
+            Assert.Equal(
+                TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
             Assert.Contains("/ commands", rows[^1]);
             app.RequestStop();
             return false;
@@ -430,7 +432,9 @@ public sealed class TgChromeTests
                     Assert.False(window.HandOverToSequential);
                     // The composer is still the last region on screen: the frame never went away.
                     var rows = TgSnapshot.Capture(app);
-                    Assert.Contains("┃", rows[window.Composer.Frame.Y]);
+                    Assert.Equal(
+                        TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                        TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
                     Assert.Contains("/ commands", rows[^1]);
                     app.RequestStop();
                 }));
@@ -470,7 +474,9 @@ public sealed class TgChromeTests
                 Assert.Equal(height, app.Driver.Rows);
                 Assert.False(window.HandOverToSequential);
                 var rows = TgSnapshot.Capture(app);
-                Assert.Contains("┃", rows[window.Composer.Frame.Y]);
+                Assert.Equal(
+                    TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                    TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
                 Assert.Contains("/ commands", rows[^1]);
                 app.RequestStop();
             });

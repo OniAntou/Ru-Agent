@@ -6,7 +6,7 @@ using Terminal.Gui.Views;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>Filled prompt surface with a Ru accent rail and bounded metadata.</summary>
+/// <summary>Filled prompt surface with bounded metadata.</summary>
 public sealed class TgComposerView : View
 {
     public const int RowCount = 5;
@@ -53,12 +53,6 @@ public sealed class TgComposerView : View
     {
         var width = Viewport.Width;
         if (width <= 0 || Viewport.Height <= 0) return true;
-        for (var row = 0; row < Viewport.Height; row++)
-        {
-            SetAttribute(TgPalette.Attr(TuiToken.Ok, TuiPalette.SurfaceRgb()));
-            Move(0, row);
-            AddStr(row == Viewport.Height - 1 ? "╹" : "┃");
-        }
         if (Viewport.Height > MetadataRow)
         {
             var available = Math.Max(0, width - Inset * 2);

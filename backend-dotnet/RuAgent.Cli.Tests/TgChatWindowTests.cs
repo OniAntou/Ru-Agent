@@ -1,4 +1,5 @@
 using RuAgent.Cli.TerminalGui;
+using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Xunit;
@@ -27,7 +28,9 @@ public sealed class TgChatWindowTests
             Assert.Contains("Fix the busy lock", rows[0]);
             Assert.Contains("sửa lỗi busy lock", string.Join('\n', rows));
             Assert.Contains("Search", string.Join('\n', rows));
-            Assert.Contains("┃", rows[window.Composer.Frame.Y]);
+            Assert.Equal(
+                TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
             Assert.Contains("/ commands", rows[^1]);
             app.RequestStop();
             return false;

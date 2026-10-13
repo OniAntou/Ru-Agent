@@ -59,7 +59,7 @@ public sealed class TgOpenCodeLayoutTests
     }
 
     [Fact]
-    public void ComposerUsesFilledSurfaceAndRuAccentWithoutABoxOutline()
+    public void ComposerUsesFilledSurfaceWithoutABoxOutlineOrRail()
     {
         Render(120, 30, true, _ => {}, (app, w, rows) =>
         {
@@ -67,7 +67,9 @@ public sealed class TgOpenCodeLayoutTests
             var left = w.Composer.Frame.X;
             Assert.DoesNotContain("┌", rows[top], StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiPalette.SurfaceRgb()), TgSnapshot.CellAttribute(app, top + 1, left + 20).Background);
-            Assert.Equal(TgPalette.ToColor(TuiToken.Ok), TgSnapshot.CellAttribute(app, top + 1, left).Foreground);
+            // No rail: the left column is blank surface, not a green glyph.
+            Assert.Equal(" ", app.Driver!.Contents![top + 1, left].Grapheme);
+            Assert.Equal(TgPalette.ToColor(TuiPalette.SurfaceRgb()), TgSnapshot.CellAttribute(app, top + 1, left).Background);
             Assert.Contains("Standard", rows[top + TgComposerView.MetadataRow], StringComparison.Ordinal);
         });
     }
@@ -135,10 +137,12 @@ public sealed class TgOpenCodeLayoutTests
         {
             if (slash) w.Composer.Input.Text = "/";
             else w.OpenCommandPalette();
-        }, (_, w, rows) =>
+        }, (app, w, rows) =>
         {
             Assert.Contains("commands", string.Join('\n', rows), StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("┃", rows[w.Composer.Frame.Y]);
+            Assert.Equal(
+                TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                TgSnapshot.CellAttribute(app, w.Composer.Frame.Y, w.Composer.Frame.X + 1).Background);
             Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
         });
     }

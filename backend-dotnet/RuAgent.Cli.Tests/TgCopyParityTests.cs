@@ -62,13 +62,13 @@ public sealed class TgCopyParityTests
         var rows = Render(typed, ghost);
 
         Assert.Contains("fix the busy lock", rows[1], StringComparison.Ordinal);
-        Assert.Contains("Standard", rows[0], StringComparison.Ordinal);
-        Assert.Contains(Model, rows[4], StringComparison.Ordinal);
-        Assert.Contains("kilo", rows[4], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[3], StringComparison.Ordinal);
+        Assert.Contains(Model, rows[3], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[3], StringComparison.Ordinal);
         Assert.Contains("Ask anything…", rows[6], StringComparison.Ordinal);
-        Assert.Contains("Standard", rows[5], StringComparison.Ordinal);
-        Assert.Contains("kilo", rows[9], StringComparison.Ordinal);
-        Assert.DoesNotContain("models.dev", rows[4], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[8], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[8], StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev", rows[3], StringComparison.Ordinal);
 
     }
 
@@ -84,7 +84,7 @@ public sealed class TgCopyParityTests
 
         Assert.Contains("Ready", rows[0], StringComparison.Ordinal);
         Assert.Contains("ctrl+p commands", rows[0], StringComparison.Ordinal);
-        Assert.Contains("▄▄▄▄▄ Working", rows[1], StringComparison.Ordinal);
+        Assert.Contains("▬▬▬▬▬ Working", rows[1], StringComparison.Ordinal);
     }
 
     [Fact]

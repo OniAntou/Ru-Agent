@@ -54,7 +54,7 @@ public sealed class TgPromptInteractionTests
                 Assert.True(window.Transcript.Frame.Bottom < window.Composer.Frame.Y);
                 var screen = TgSnapshot.Capture(app);
                 Assert.Contains("────", screen[window.HeaderDivider.Frame.Y]);
-                Assert.Contains("┌", screen[window.Composer.Frame.Y]);
+                Assert.DoesNotContain("┌", screen[window.Composer.Frame.Y]);
                 Assert.DoesNotContain(" ru ", screen[window.Composer.Frame.Y]);
                 Assert.DoesNotContain("ctrl+j", screen[window.Hints.Frame.Y]);
             });

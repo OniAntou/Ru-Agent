@@ -29,7 +29,7 @@ public sealed class TgChatWindowTests
             Assert.Contains("sửa lỗi busy lock", string.Join('\n', rows));
             Assert.Contains("Search", string.Join('\n', rows));
             Assert.Equal(
-                TgPalette.Attr(TuiToken.Ink).Background,
+                TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                 TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
             Assert.Contains("ctrl+p commands", rows[^1]);
             app.RequestStop();

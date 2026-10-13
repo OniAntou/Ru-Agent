@@ -13,11 +13,12 @@ before submission. Escape closes the palette and restores the draft. While a
 turn is busy, the palette can be browsed but selection is refused visibly.
 
 Ru's terminal chrome uses a mint-accented signature, a quiet session divider and
-a thin square prompt frame. An empty chat centres the logo and a prompt
-frame whose border, input, placeholder and metadata all share the terminal background.
-The empty prompt is capped at 80 columns. Active sessions use a padded transcript and a
-full-width bottom prompt with the same side margins as chat; preset sits in the top edge and
-model/provider sit in the bottom edge. The composer grows from one to six visible input rows, leaving room for
+a filled prompt surface in the panel tone — the opencode-style block, with no
+frame outline and no accent rail. An empty chat centres the logo above the same
+block. The empty prompt is capped at 80 columns. Active sessions use a padded
+transcript and a full-width bottom prompt with the same side margins as chat; the
+preset, model and provider sit on the meta row inside the block. The composer
+grows from one to six visible input rows, leaving room for
 the transcript on short screens. It shows “Ask anything…” when empty and uses
 a steady block cursor. Enter sends; Ctrl+J, Shift+Enter where the terminal
 distinguishes it, or a trailing backslash followed by Enter inserts a newline.
@@ -27,8 +28,8 @@ inserts at the cursor. A paste exceeding the 16,000-character draft budget is
 refused visibly with the draft unchanged. The empty-chat footer shows
 `ctrl+p commands` and pending attachment context; active-session hints adapt to
 available width. The footer normally shows only Ctrl+P; while running it keeps
-Esc visible. The busy colour wave uses five half-height block cells (`▄▄▄▄▄`)
-to make the indicator thicker while keeping it short. Other shortcuts remain available through help.
+Esc visible. The busy colour wave uses five medium block cells (`▬▬▬▬▬`)
+to keep the indicator present without reading as a slab. Other shortcuts remain available through help.
 The header puts the session title (without a product-name prefix)
 title/known usage on the first row and workspace on the second. Live activity
 occupies a row at the end of the transcript. A colored glyph precedes the readable action; targets

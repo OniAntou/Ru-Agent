@@ -20,13 +20,13 @@ public static class TuiSpinner
     /// <summary>Milliseconds each tool glyph stays on screen.</summary>
     public const int ToolGlyphMilliseconds = 250;
 
-    /// <summary>The fixed line the busy hint row waves colour through.</summary>
-    public const string WaveGlyph = "━";
+    /// <summary>The fixed bar the busy hint row waves colour through.</summary>
+    public const string WaveGlyph = "▬";
 
-    /// <summary>Cells in the busy hint wave line.</summary>
+    /// <summary>Cells in the busy hint wave bar.</summary>
     public const int WaveCells = 5;
 
-    /// <summary>The wave's visible text: <see cref="WaveCells"/> joined line cells.</summary>
+    /// <summary>The wave's visible text: <see cref="WaveCells"/> joined bar cells.</summary>
     public static readonly string WaveText = string.Concat(Enumerable.Repeat(WaveGlyph, WaveCells));
 
     /// <summary>Milliseconds each wave phase bucket stays on screen.</summary>

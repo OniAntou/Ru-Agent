@@ -6,14 +6,51 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,213 passed / 0 failed / 0 skipped** (2026-10-13, TUI prompt frame, input and popups). Broker 930; CLI 1,420; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-audit/final-matrix.log`. |
-| Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| .NET tests | Full **12-project** Debug matrix: **6,213 passed / 0 failed / 0 skipped** (2026-10-14, filled composer and medium busy wave). Broker 930; CLI 1,420; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-audit/composer-wave-matrix.log`. |
+| Python suite | **212 passed, 1 skipped** (2026-10-14, filled composer and medium busy wave), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-audit/composer-wave-python.log`. The skip is the POSIX process-group kill test on Windows; the total dropped from 216 with the deleted README count guard and the README entries removed from the matrix/reason lists. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI prompt frame, input and popups). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-audit/uniform-release-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13, TUI prompt frame, input and popups) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`) with its assembly hash matching the Release publish. Logs: `artifacts/tui-audit/final-publish-smoke.log`, `artifacts/tui-audit/final-launcher-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-14, filled composer and medium busy wave). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-audit/composer-wave-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-14, filled composer and medium busy wave) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`, exit 1) with its assembly hash matching the Release publish. Logs: `artifacts/tui-audit/composer-wave-publish-smoke.log`, `artifacts/tui-audit/composer-wave-launcher-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Filled composer and balanced busy wave (2026-10-14)
+
+Operator request: bring the prompt back to the opencode-style filled block
+without the accent rail it once had, and rebalance the busy wave, which read as
+too heavy after the thicker pass. The reference is the pre-batch composer at
+`d09a4c66`: one panel-toned surface (`SurfaceRgb`) with no frame outline, no
+rail and no interior prompt glyph, while keeping the multiline editor and the
+growing height, and moving the preset/model/provider row back inside the block
+(`MetadataRow = 3` at one input row; the meta row follows the draft). The wave
+glyph changed from `▄` to `▬` (five cells) in the Terminal.Gui footer and in
+the classic `TuiSpinner.WaveText` reference, so copy parity holds.
+
+- Full 12-project Debug matrix: **6,213 / 0 / 0**
+  (`artifacts/tui-audit/composer-wave-matrix.log`)
+- Python suite: **212 passed / 1 skipped**
+  (`artifacts/tui-audit/composer-wave-python.log`)
+- Release build: `build.bat` **11/11**, 0 warnings
+  (`artifacts/tui-audit/composer-wave-build.log`)
+- Publish smoke: **PASS** (`artifacts/tui-audit/composer-wave-publish-smoke.log`)
+- Launcher smoke: `bin\ru.cmd --nonsense` fails at the parser with exit 1 and
+  the distributable CLI assembly hash matches the Release publish
+  (`artifacts/tui-audit/composer-wave-launcher-smoke.log`)
+- The first matrix run failed on `RuAgent.Broker.Tests.HelpDocsTests`: the
+  user-facing README rewrite had dropped the `# Ru Agent` heading, so
+  `BundledHelpDocsCatalog` refused the embedded overview (`missing_h1`) and
+  every help-docs test failed. The heading is restored under the hero banner
+  (Broker reruns **930 / 0**); this regression predates the composer change.
+- Rendered checks were updated with the shape rather than weakened: composer
+  cells assert the panel tone across the whole block while empty and while
+  editing, frame and rail glyphs are asserted absent, the meta row is read
+  through `TgComposerView.MetadataRow`, and the 20×12 command-overlay test
+  records that the palette strip owns the frame there while the slash dropdown
+  leaves the new fill visible.
+- Documentation follows the change: the CLI README describes the filled prompt
+  surface and the medium block wave, and `docs/architecture.md` no longer says
+  the metadata sits on a square frame.
 
 ## Composer background correction (2026-10-13)
 

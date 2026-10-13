@@ -223,7 +223,7 @@ public sealed class ComposerBoxTests : IDisposable
         Assert.Equal(100, TuiText.VisibleWidth(idle));
 
         var busy = TuiText.Strip(ComposerBox.ComposeHints(100, busy: true, "D:/LLM"));
-        Assert.Contains("━━━━━ esc interrupt", busy, StringComparison.Ordinal);
+        Assert.Contains("▬▬▬▬▬ esc interrupt", busy, StringComparison.Ordinal);
         Assert.DoesNotContain("D:/LLM", busy, StringComparison.Ordinal);
     }
 }

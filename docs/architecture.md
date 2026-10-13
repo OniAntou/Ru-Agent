@@ -344,11 +344,12 @@ reconciliation surfaces from Phase 3:
   column with a multiline `TgPromptEditor`. Composer height grows within the
   screen budget and uses the chat column's full width in active sessions (80 at home).
   `TgRuleView` separates session context from chat without consuming another row.
-  Preset/model labels sit on the square frame's top/bottom edges.
-  Frame, input, placeholder and metadata cells share the terminal background.
+  The prompt is the opencode-style filled block in the panel tone: no frame
+  outline and no accent rail, with the preset, model and provider on the meta row
+  inside the block.
   Slash suggestions match composer width; modal picker, approval, secret,
   report and command-palette surfaces centre on the whole terminal.
-  The footer exposes one contextual shortcut and a short five-cell half-height block wave,
+  The footer exposes one contextual shortcut and a short five-cell medium block wave,
   leaving space for feedback and the queue status.
   Transcript and slash-suggestion bounds follow the composer frame. Modal
   dismissal restores source-text cursor position and draft focus. `TgHintsView`

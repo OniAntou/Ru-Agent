@@ -110,7 +110,7 @@ public sealed class TgHintsViewTests
             Assert.Contains("Paused", row, StringComparison.Ordinal);
             Assert.Contains("3 queued", row, StringComparison.Ordinal);
             Assert.Contains("ctrl+p commands", row, StringComparison.Ordinal);
-            Assert.DoesNotContain("▄", row, StringComparison.Ordinal);
+            Assert.DoesNotContain("▬", row, StringComparison.Ordinal);
             app.RequestStop();
             return false;
         });

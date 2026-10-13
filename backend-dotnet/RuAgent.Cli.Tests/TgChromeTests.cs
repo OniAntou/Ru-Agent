@@ -275,7 +275,7 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
-            Assert.Contains("▄▄▄▄▄ Working", TgSnapshot.Capture(app)[^1]);
+            Assert.Contains("▬▬▬▬▬ Working", TgSnapshot.Capture(app)[^1]);
             window.Hints.SetIdle("D:\\LLM");
             window.Hints.SetWaveClock(1.0);
             return false;
@@ -371,7 +371,7 @@ public sealed class TgChromeTests
         {
             var rows = TgSnapshot.Capture(app);
             Assert.Equal(
-                TgPalette.Attr(TuiToken.Ink).Background,
+                TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                 TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
             Assert.Contains("ctrl+p commands", rows[^1]);
             app.RequestStop();
@@ -431,7 +431,7 @@ public sealed class TgChromeTests
                     // The composer is still the last region on screen: the frame never went away.
                     var rows = TgSnapshot.Capture(app);
                     Assert.Equal(
-                        TgPalette.Attr(TuiToken.Ink).Background,
+                        TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                         TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
                     Assert.Contains("ctrl+p commands", rows[^1]);
                     app.RequestStop();
@@ -473,7 +473,7 @@ public sealed class TgChromeTests
                 Assert.False(window.HandOverToSequential);
                 var rows = TgSnapshot.Capture(app);
                 Assert.Equal(
-                    TgPalette.Attr(TuiToken.Ink).Background,
+                    TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background,
                     TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
                 Assert.Contains("ctrl+p commands", rows[^1]);
                 app.RequestStop();
@@ -555,10 +555,10 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("▄▄▄▄▄ Working", row);
+            Assert.Contains("▬▬▬▬▬ Working", row);
             // Each cell carries its own ramp colour: the wave is a line of distinct
             // cells, not one glyph with one tone.
-            var first = row.IndexOf('▄');
+            var first = row.IndexOf('▬');
             var cells = Enumerable.Range(0, TuiSpinner.WaveCells)
                 .Select(cell => TgSnapshot.CellAttribute(app, 0, first + cell).Foreground)
                 .ToArray();

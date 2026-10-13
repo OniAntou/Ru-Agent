@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Return the prompt to the opencode-style filled block. The composer is one panel-toned surface again — no frame outline, no accent rail and no interior prompt glyph — that grows from one to six input rows, with the preset, model and provider on the meta row inside the block rather than on its edges, and the empty chat centres the wordmark above the same block. The busy colour wave narrows from five half-height cells to five medium block cells (`▬▬▬▬▬`), so the footer keeps a travelling indicator instead of a slab.
+
+- **fix(docs)**: Restore the README's `# Ru Agent` heading. The user-facing rewrite carried only the wordmark banner, so the Broker's bundled help catalog rejected the overview document (`missing_h1`) and the `help` tool had no catalog at all. The heading sits under the hero banner and gives the document back to the help index.
+
 - **docs**: Prune the documentation folder: the two review snapshots, the single-agent readiness diagnostic, the everyday-coding evaluation and the September image-verification record leave the working tree (their content stays in git history), along with the stray root `logo1.png`. The documentation index gains the missing ADR 0016 entry, says dated records live in git history, and every reference to a removed record is rewritten in `verification.md` and the coding-benchmark README.
 
 - **docs**: Rewrite the public README for users rather than developers: it keeps what the agent does, a plain-language control summary (three presets, workspace trust, approvals) and the first-run steps, and drops the architecture, build/test and count sections — those live in CONTEXT.md, docs/architecture.md and CONTRIBUTING.md, which the README links to. The header carries the lowercase `ru agent` block wordmark on a transparent background — aurora green for `ru`, muted grey for `agent`, drawn from rectangles so it renders identically everywhere and reads on either GitHub theme. The repository guards that pinned README counts moved with the content (the README now states no counts).

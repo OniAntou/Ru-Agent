@@ -11,10 +11,12 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgComposerTests
 {
+    private static Color Surface => TgPalette.Attr(TuiToken.Ink, TuiPalette.SurfaceRgb()).Background;
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ComposerBackgroundMatchesTerminalWhenEmptyAndWhenEditing(bool typed)
+    public void ComposerIsOneFilledSurfaceWhenEmptyAndWhenEditing(bool typed)
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -29,10 +31,14 @@ public sealed class TgComposerTests
         app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
         {
             var frame = window.Composer.Frame;
-            var background = TgPalette.Attr(TuiToken.Ink).Background;
             for (var row = frame.Top; row < frame.Bottom; row++)
+            {
                 for (var column = frame.Left; column < frame.Right; column++)
-                    Assert.Equal(background, TgSnapshot.CellAttribute(app, row, column).Background);
+                {
+                    Assert.Equal(Surface, TgSnapshot.CellAttribute(app, row, column).Background);
+                }
+            }
+
             app.RequestStop();
             return false;
         });
@@ -44,7 +50,7 @@ public sealed class TgComposerTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         composer.SetMeta("Standard", "stealth/space-bunny-alpha", "kilo");
         composer.SetPlaceholder("Ask anything, / for commands, /key for sign-in…");
         window.Add(composer);
@@ -52,11 +58,9 @@ public sealed class TgComposerTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            Assert.Equal(
-                TgPalette.Attr(TuiToken.Ink).Background,
-                TgSnapshot.CellAttribute(app, rowsText.Length - 6, 40).Background);
-            Assert.Contains("Standard", rowsText[composer.Frame.Y]);
-            Assert.Contains("kilo", rowsText[composer.Frame.Bottom - 1]);
+            Assert.Equal(Surface, TgSnapshot.CellAttribute(app, rowsText.Length - 6, 40).Background);
+            Assert.Contains("Standard", rowsText[composer.Frame.Y + TgComposerView.MetadataRow]);
+            Assert.Contains("kilo", rowsText[composer.Frame.Y + TgComposerView.MetadataRow]);
             app.RequestStop();
             return false;
         });
@@ -68,9 +72,13 @@ public sealed class TgComposerTests
     public void Idle_ShowsFilledPromptPlaceholderAndMeta()
     {
         var rows = Render(100, 30, _ => { });
+        var text = string.Join('\n', rows);
         Assert.Contains("Ask anything", rows[rows.Length - 5]);
-        Assert.Contains("┌", string.Join('\n', rows));
-        Assert.DoesNotContain("models.dev", string.Join('\n', rows));
+        // The block is the shape: no frame glyphs and no accent rail.
+        Assert.DoesNotContain("┌", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("└", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("┃", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,13 +87,12 @@ public sealed class TgComposerTests
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         window.Add(composer);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            var surface = TgPalette.Attr(TuiToken.Ink).Background;
-            Assert.Equal(surface, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
+            Assert.Equal(Surface, TgSnapshot.CellAttribute(app, rowsText.Length - 5, 40).Background);
             app.RequestStop();
             return false;
         });
@@ -93,26 +100,28 @@ public sealed class TgComposerTests
     }
 
     [Fact]
-    public void Composer_HasNoAccentRailAndKeepsThePanelSurface()
+    public void Composer_HasNoFrameRailOrOutline()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
-        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = 5 };
+        var composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(6), Width = Dim.Fill(), Height = TgComposerView.RowCount };
+        composer.SetMeta("Standard", "model", "provider");
         window.Add(composer);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var rowsText = TgSnapshot.Capture(app);
-            var surface = TgPalette.Attr(TuiToken.Ink).Background;
             var top = rowsText.Length - 6;
+            var text = string.Join('\n', rowsText);
 
-            // The rounded frame retains the same neutral surface as the editor.
-            Assert.Equal("┌", app.Driver!.Contents![top, 0].Grapheme);
-            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, top, 0).Background);
-            Assert.Equal("└", app.Driver!.Contents![top + 4, 0].Grapheme);
-            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, top + 4, 0).Background);
-            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, top, 40).Background);
-            Assert.Equal(surface, TgSnapshot.CellAttribute(app, top + 2, 40).Background);
+            // No border and no rail: the left edge is the fill itself.
+            Assert.DoesNotContain("┌", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("─", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("│", text, StringComparison.Ordinal);
+            Assert.NotEqual("│", app.Driver!.Contents![top + 1, 0].Grapheme);
+            Assert.Equal(Surface, TgSnapshot.CellAttribute(app, top, 0).Background);
+            Assert.Equal(Surface, TgSnapshot.CellAttribute(app, top + 4, 0).Background);
+            Assert.Equal(Surface, TgSnapshot.CellAttribute(app, top + 2, 40).Background);
             app.RequestStop();
             return false;
         });

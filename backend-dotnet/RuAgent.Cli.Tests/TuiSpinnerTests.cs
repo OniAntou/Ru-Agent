@@ -59,9 +59,9 @@ public sealed class TuiSpinnerTests
     }
 
     [Fact]
-    public void WaveText_IsOneHorizontalLine()
+    public void WaveText_IsOneHorizontalBar()
     {
-        Assert.Equal(new string('━', TuiSpinner.WaveCells), TuiSpinner.WaveText);
+        Assert.Equal(new string('▬', TuiSpinner.WaveCells), TuiSpinner.WaveText);
         Assert.Equal(TuiSpinner.WaveCells, TuiText.VisibleWidth(TuiSpinner.WaveText));
     }
 

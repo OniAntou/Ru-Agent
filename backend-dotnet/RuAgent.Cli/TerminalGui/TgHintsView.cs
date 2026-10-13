@@ -12,7 +12,7 @@ public sealed class TgHintsView : View
     private long _waveBucket;
     private double _waveSeconds;
     private const int BusyBarCells = 5;
-    private const string BusyBarGlyph = "▄";
+    private const string BusyBarGlyph = "▬";
     private string _idleLabel = "Ready";
     private string? _busyHint;
     private string? _feedbackMessage;

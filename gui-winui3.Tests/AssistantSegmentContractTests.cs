@@ -110,18 +110,23 @@ public sealed class AssistantSegmentContractTests
     }
 
     [Fact]
-    public void Live_text_renders_plain_and_settled_text_parses_markdown()
+    public void Live_surfaces_parse_markdown_and_flag_streaming_for_the_arrival_fade()
     {
-        // Streaming re-parses partial Markdown every delta: unclosed bold,
-        // fences and lists flip the parse tree frame to frame and the whole
-        // reply reflows mid-turn. Live surfaces therefore render literal text;
-        // the settled turn parses once and stands still.
+        // Streaming text parses as Markdown from the first token: ChatView throttles
+        // how often the growing reply is handed over (UiTiming.StreamTextRefresh), so
+        // partial constructs cannot reflow per delta. The live flag now decides only
+        // whether the first text plays the arrival fade, so a reopened transcript
+        // stays still.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
+
+        Assert.DoesNotContain(
+            document.Descendants().Attributes(),
+            attribute => attribute.Name.LocalName == "PlainTextMode");
 
         var replyBlock = GuiSource.Require(document, "AgentReplyTextBlock");
         Assert.Equal(
             "{x:Bind IsStreaming, Mode=OneWay}",
-            GuiSource.AttributeValue(replyBlock, "PlainTextMode"));
+            GuiSource.AttributeValue(replyBlock, "IsStreaming"));
 
         var segmentTemplate = document.Descendants()
             .FirstOrDefault(element =>
@@ -135,7 +140,7 @@ public sealed class AssistantSegmentContractTests
         Assert.NotNull(segmentBlock);
         Assert.Equal(
             "{x:Bind IsLive, Mode=OneWay}",
-            GuiSource.AttributeValue(segmentBlock!, "PlainTextMode"));
+            GuiSource.AttributeValue(segmentBlock!, "IsStreaming"));
     }
 
     [Fact]

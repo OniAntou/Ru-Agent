@@ -15,6 +15,33 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Streaming chat motion (2026-10-14)
+
+GUI motion slice 2. The streaming reply now parses as Markdown from the first
+token: `ChatView` hands the growing text to the block on a 100 ms cadence
+(`UiTiming.StreamTextRefresh`), the deferred render is scheduled through a
+one-shot timer that re-checks message identity and liveness, and the
+plain-text streaming mode is gone (`MarkdownBlock.PlainTextMode` and its two
+bindings no longer exist) — so the end-of-turn settle no longer reshapes the
+whole reply in one jump. A reply's first text fades and lifts into place
+(140 ms, `MarkdownBlock.IsStreaming`, skipped when animations are off or a
+transcript is reopened from history). Three pulsing dots wait in the bubble for
+the first token, driven by the previously unused `ShowTypingDots` and holding a
+static opacity with animations off (`TypingDotsControl`, Composition keyframes,
+no timer). The follow scroll glides with the growing reply unless the reader
+has animations off; session opens and the new-messages pill stay instant.
+
+- GUI suite: **1,400 passed / 0 failed**, including four new source contracts —
+  the streaming cadence and the deferred render's identity/liveness guards, the
+  short gated arrival, the gated pulsing dots driven by `ShowTypingDots`, and
+  the follow-scroll gate with the deliberate jump left instant
+  (`artifacts/tui-audit/streaming-motion-gui.log`).
+- `build.bat` **11/11** (`artifacts/tui-audit/streaming-motion-build.log`).
+- The pulse, the arrival fade and the scroll glide are visual behaviour: they
+  need the operator's eye on the running app, because no headless check renders
+  WinUI. Reduced-motion behaviour is contract-checked (every animation consults
+  `UiTiming.AnimationsEnabled`) but its look stays operator-verified too.
+
 ## App icon from the wordmark (2026-10-14)
 
 The operator asked for the wordmark's block `r` as the app logo in the bare

@@ -54,6 +54,10 @@ namespace RuApp.Views
 
         private readonly List<PendingRunActivity> _pendingAgentActivities = new();
         private DispatcherQueueTimer? _activityFlushTimer;
+        private DispatcherQueueTimer? _replyTextApplyTimer;
+        private ChatMessageItem? _pendingReplyMessage;
+        private string? _pendingReplyText;
+        private long _lastReplyTextApplyTick;
 
         private void OnAgentActivityReceived(object? sender, AgentRunActivityEventArgs activity)
         {
@@ -598,23 +602,98 @@ namespace RuApp.Views
                 Messages.Add(_activeAgentAssistantMessage);
             }
 
+            _activeAgentAssistantMessage.IsStreaming = true;
+
             // Non-text deltas still schedule a render: skip the layout + scroll
             // pass when the text did not actually grow.
             if (!string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
             {
-                _activeAgentAssistantMessage.Content = snapshot.Text;
-                UpdateLiveTailText(_activeAgentAssistantMessage);
-                ScrollChatToBottom();
+                // Every text render re-parses the whole reply and rebuilds its runs,
+                // so a delta burst renders on a cadence instead of per delta. The
+                // newest text is deferred, never dropped: the scheduled render lands
+                // it within one interval, including after the final delta.
+                long elapsed = Environment.TickCount64 - _lastReplyTextApplyTick;
+                long cadence = (long)Services.UiTiming.StreamTextRefresh.TotalMilliseconds;
+                if (elapsed >= cadence)
+                {
+                    ApplyReplyText(_activeAgentAssistantMessage, snapshot.Text);
+                }
+                else
+                {
+                    _pendingReplyMessage = _activeAgentAssistantMessage;
+                    _pendingReplyText = snapshot.Text;
+                    SchedulePendingReplyText(cadence - elapsed);
+                }
             }
 
-            _activeAgentAssistantMessage.IsStreaming = true;
             UpdateContextUsage();
+        }
+
+        /// <summary>
+        /// Applies one streaming text render: the model content, the live tail
+        /// slice and the follow scroll move together so the cadence never splits
+        /// them.
+        /// </summary>
+        private void ApplyReplyText(ChatMessageItem message, string text)
+        {
+            _pendingReplyMessage = null;
+            _pendingReplyText = null;
+            _lastReplyTextApplyTick = Environment.TickCount64;
+            message.Content = text;
+            UpdateLiveTailText(message);
+            ScrollChatToBottom();
+        }
+
+        private void SchedulePendingReplyText(long delayMilliseconds)
+        {
+            if (_replyTextApplyTimer is null)
+            {
+                _replyTextApplyTimer = DispatcherQueue.CreateTimer();
+                _replyTextApplyTimer.IsRepeating = false;
+                _replyTextApplyTimer.Tick += OnReplyTextApplyTick;
+            }
+
+            _replyTextApplyTimer.Stop();
+            _replyTextApplyTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, delayMilliseconds));
+            _replyTextApplyTimer.Start();
+        }
+
+        private void OnReplyTextApplyTick(DispatcherQueueTimer sender, object args)
+        {
+            sender.Stop();
+            var message = _pendingReplyMessage;
+            var text = _pendingReplyText;
+            _pendingReplyMessage = null;
+            _pendingReplyText = null;
+            if (message is null || text is null
+                || !ReferenceEquals(message, _activeAgentAssistantMessage))
+            {
+                return;
+            }
+
+            // The turn settled between the delta and this tick: the settle path
+            // already wrote the final text (and may have written more than this
+            // snapshot), so a stale deferred render must not overwrite it.
+            if (!message.IsStreaming)
+            {
+                return;
+            }
+
+            if (string.Equals(message.Content, text, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ApplyReplyText(message, text);
         }
 
         private void ClearAgentActivities()
         {
             StopAllTextSweeps();
             _activityFlushTimer?.Stop();
+            _replyTextApplyTimer?.Stop();
+            _pendingReplyMessage = null;
+            _pendingReplyText = null;
             _pendingAgentActivities.Clear();
             _agentActivityById.Clear();
             _activitySplitOffsetById.Clear();

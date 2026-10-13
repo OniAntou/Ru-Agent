@@ -34,24 +34,24 @@ namespace RuApp.Controls
             set => SetValue(MarkdownTextProperty, value);
         }
 
-        public static readonly DependencyProperty PlainTextModeProperty =
+        public static readonly DependencyProperty IsStreamingProperty =
             DependencyProperty.Register(
-                nameof(PlainTextMode),
+                nameof(IsStreaming),
                 typeof(bool),
                 typeof(MarkdownBlock),
-                new PropertyMetadata(false, OnPlainTextModeChanged));
+                new PropertyMetadata(false));
 
         /// <summary>
-        /// When true, the source renders as literal text with no Markdown
-        /// parsing. A streaming turn sets it: re-parsing partial Markdown
-        /// every delta flips unclosed constructs (bold, fences, lists) and
-        /// reflows the whole reply mid-turn. The settled turn clears it and
-        /// parses once, so the final layout stands still.
+        /// True while this block is the live surface of a streaming reply. The
+        /// source always parses as Markdown — the streaming caller throttles how
+        /// often it hands over the growing text — and this flag only decides
+        /// whether the first text plays the arrival fade, so a transcript reopened
+        /// from history never animates.
         /// </summary>
-        public bool PlainTextMode
+        public bool IsStreaming
         {
-            get => (bool)GetValue(PlainTextModeProperty);
-            set => SetValue(PlainTextModeProperty, value);
+            get => (bool)GetValue(IsStreamingProperty);
+            set => SetValue(IsStreamingProperty, value);
         }
 
         public FontWeight FontWeightProperties => FontWeights.Normal;
@@ -79,14 +79,8 @@ namespace RuApp.Controls
             ((MarkdownBlock)d).RenderMarkdown();
         }
 
-        private static void OnPlainTextModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            ((MarkdownBlock)d).RenderMarkdown();
-        }
-
         private string? _lastRenderedText;
         private double _lastRenderedSize;
-        private bool _lastRenderedPlain;
 
         /// <summary>
         /// One line-height rule for parsed and literal paragraphs alike, so the
@@ -98,39 +92,22 @@ namespace RuApp.Controls
         {
             string source = (MarkdownText ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
             double bodySize = FontSize > 0 ? FontSize : 14;
-            bool plain = PlainTextMode;
 
             if (string.Equals(source, _lastRenderedText, StringComparison.Ordinal)
-                && Math.Abs(bodySize - _lastRenderedSize) < 0.01
-                && plain == _lastRenderedPlain)
+                && Math.Abs(bodySize - _lastRenderedSize) < 0.01)
             {
                 return;
             }
+
+            // The arrival fade belongs to the first text this block ever shows:
+            // later streaming renders only grow the block and must stand still.
+            bool wasEmpty = string.IsNullOrEmpty(_lastRenderedText);
             _lastRenderedText = source;
             _lastRenderedSize = bodySize;
-            _lastRenderedPlain = plain;
 
             _richTextBlock.Blocks.Clear();
             _richTextBlock.FontFamily = UiFont;
             _richTextBlock.FontSize = bodySize;
-
-            if (plain)
-            {
-                // Literal text: no recovery splitting and no parsing, so a
-                // growing stream only ever appends instead of reflowing.
-                if (source.Length > 0)
-                {
-                    var paragraph = new Paragraph
-                    {
-                        Margin = new Thickness(0, 0, 0, 12),
-                        LineHeight = LineHeightFor(bodySize),
-                    };
-                    paragraph.Inlines.Add(new Run { Text = source, FontFamily = UiFont, FontSize = bodySize });
-                    _richTextBlock.Blocks.Add(paragraph);
-                }
-
-                return;
-            }
 
             // Collapsed pre-fix walls arrive as single overlong lines; recover
             // their section breaks first so the parser below sees real blocks.
@@ -153,6 +130,62 @@ namespace RuApp.Controls
                 foreach (var paragraph in renderer.BuildBlocks(block, indent: 0))
                 {
                     _richTextBlock.Blocks.Add(paragraph);
+                }
+            }
+
+            if (wasEmpty && source.Length > 0 && IsStreaming)
+            {
+                PlayArrival();
+            }
+        }
+
+        /// <summary>
+        /// Fades and lifts the block when a streaming reply shows its first text,
+        /// so the reply arrives instead of appearing. Skipped when the reader has
+        /// animations off, and when a transcript is reopened from history
+        /// (<see cref="IsStreaming"/> stays false there), because neither should
+        /// animate settled content.
+        /// </summary>
+        private void PlayArrival()
+        {
+            if (!Services.UiTiming.AnimationsEnabled)
+            {
+                return;
+            }
+
+            try
+            {
+                var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(_richTextBlock);
+                var compositor = visual.Compositor;
+                var duration = TimeSpan.FromMilliseconds(Services.UiTiming.ReplyTextArrivalMilliseconds);
+
+                var fade = compositor.CreateScalarKeyFrameAnimation();
+                fade.InsertKeyFrame(0f, 0f);
+                fade.InsertKeyFrame(1f, 1f);
+                fade.Duration = duration;
+
+                var rise = compositor.CreateVector3KeyFrameAnimation();
+                rise.InsertKeyFrame(0f, new System.Numerics.Vector3(0f, 4f, 0f));
+                rise.InsertKeyFrame(1f, System.Numerics.Vector3.Zero);
+                rise.Duration = duration;
+
+                // The base opacity hides the first frame before the animation
+                // starts; the catch below restores it so a failure can never
+                // leave the reply invisible.
+                visual.Opacity = 0f;
+                visual.StartAnimation("Opacity", fade);
+                visual.StartAnimation("Translation", rise);
+            }
+            catch (Exception error)
+            {
+                Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Arrival animation failed: {error.Message}");
+                try
+                {
+                    Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(_richTextBlock).Opacity = 1f;
+                }
+                catch (Exception restoreError)
+                {
+                    Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Arrival restore failed: {restoreError.Message}");
                 }
             }
         }

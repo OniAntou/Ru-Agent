@@ -116,7 +116,11 @@ namespace RuApp.Views
                     if (now - _lastScrollChangeTick >= ScrollChangeMinIntervalMs)
                     {
                         _lastScrollChangeTick = now;
-                        scroller.ChangeView(null, maximum, null, disableAnimation: true);
+                        // The follow scroll glides with the growing reply instead of
+                        // snapping each batch; a reader with animations off keeps the
+                        // instant jump, and every deliberate jump elsewhere still
+                        // disables animation explicitly.
+                        scroller.ChangeView(null, maximum, null, disableAnimation: !UiTiming.AnimationsEnabled);
                     }
                     else
                     {
@@ -169,7 +173,7 @@ namespace RuApp.Views
                 if (ChatScrollPolicy.CanFollow(offset, maximum, _followOutput))
                 {
                     _lastScrollChangeTick = Environment.TickCount64;
-                    scroller.ChangeView(null, maximum, null, disableAnimation: true);
+                    scroller.ChangeView(null, maximum, null, disableAnimation: !UiTiming.AnimationsEnabled);
                 }
                 else
                 {

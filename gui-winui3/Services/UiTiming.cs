@@ -68,6 +68,17 @@ public static class UiTiming
     public const double ActivityWavePeriodSeconds = 0.65;
     public const double ChatFollowThresholdPx = 100.0;
 
+    /// <summary>
+    /// Minimum interval between streaming text renders. Every render re-parses the
+    /// growing reply and rebuilds its runs, so a burst of deltas renders at most
+    /// this often; the newest text always lands within one interval, including
+    /// after the final delta, because the deferred render is scheduled, not dropped.
+    /// </summary>
+    public static readonly TimeSpan StreamTextRefresh = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>Fade-and-rise played when a reply block renders its first text.</summary>
+    public const double ReplyTextArrivalMilliseconds = 140;
+
     public const double ResizerActiveOpacity = 0.85;
 
     /// <summary>

@@ -66,6 +66,16 @@ $env:RU_TUI_COLOR=truecolor   # truecolor | 256 | 16 | none
 
 ## Open limitations
 
+### Native terminal acceptance
+
+The multiline composer, adaptive picker/approval cards, queued-state footer and
+retained tool-block navigation have headless ANSI regression coverage. Command
+Prompt rendering, Vietnamese IME input, physical resize and Windows clipboard
+copy/paste still require manual acceptance. Ctrl+J and backslash/Enter are the
+portable newline paths; Shift+Enter depends on terminal key reporting. Explicit
+copy returns retained text, including any code gutters, rather than original
+tool payloads. See the [CLI controls](../../backend-dotnet/RuAgent.Cli/README.md).
+
 ### The live row and the animation clock
 
 The transcript's live activity row (thinking / running tool / writing) is drawn
@@ -126,12 +136,13 @@ distinguishable from a failed fetch.
 
 ### Interrupting a chat turn now cancels server-side — but best-effort
 
-Escape with an empty draft and `Ctrl+C` no longer only detach the local stream:
+In Terminal.Gui, Escape during an active turn interrupts it after any open
+command or modal panel handles the key. The append-only reader uses its own
+line-input cancellation path. Interrupts no longer only detach the local stream:
 both `POST` `/agent/v1/runs/{runId}/cancel` so the run releases its workspace
 lock. The POST is best-effort — on failure the TUI prints `run_cancel_failed`
 plus the manual `ru agent cancel <run-id>` fallback, and until that is run the
-server may still own the run. A first Escape with a non-empty draft only clears
-the draft; the next Escape cancels. A run that parked itself
+server may still own the run. A run that parked itself
 (`waiting_user`, `reconciliation_required`) is never cancelled by an interrupt:
 there is nothing to cancel and its notice already points at `/continue`.
 
@@ -211,8 +222,10 @@ To run the TUI reliably while iterating:
 - `bin/ru.cmd` (and `ruagent.cmd`) resolve to the shared publish output under
   `gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/`, so a
   rebuilt `RuAgent.Cli.exe` has to be published **and** copied there.
-- **Kill `RuAgent.Cli` and `RuBackend` first.**
-  Windows locks the running image, so the copy silently fails otherwise.
+- Close running Ru applications before rebuilding the shared publish package.
+  Windows locks running images; the build reports a failure when stale publish
+  output cannot be removed. Avoid stopping a shared Host while another client
+  has an active run.
 - Launch it in its own console window. Started from a parent with no console
   the process runs but has nowhere to draw, and nothing appears.
 

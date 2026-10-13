@@ -10,7 +10,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-6%2C134%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-6%2C213%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-43%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -211,7 +211,7 @@ for limits and remaining gaps.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 6,134 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 6,213 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

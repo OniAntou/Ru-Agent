@@ -66,7 +66,7 @@ public static class TgCard
 /// </summary>
 public sealed class TgPanelHost : View
 {
-    private Func<int, IReadOnlyList<CardLine>> _card = _ => [];
+    private Func<int, int, IReadOnlyList<CardLine>> _card = (_, _) => [];
 
     public TgPanelHost()
     {
@@ -78,8 +78,8 @@ public sealed class TgPanelHost : View
     /// <summary>Raised for every mapped key while the panel owns the keyboard.</summary>
     public event Action<TgPanelKey>? PanelKey;
 
-    /// <summary>The card content for a viewport width, composed by the classic renderer.</summary>
-    public void SetCard(Func<int, IReadOnlyList<CardLine>> card)
+    /// <summary>The card content for the live viewport size, composed by the classic renderer.</summary>
+    public void SetCard(Func<int, int, IReadOnlyList<CardLine>> card)
     {
         ArgumentNullException.ThrowIfNull(card);
         _card = card;
@@ -93,7 +93,7 @@ public sealed class TgPanelHost : View
             return true;
         }
 
-        DrawCard(_card(Viewport.Width));
+        DrawCard(_card(Viewport.Width, Viewport.Height));
         return true;
     }
 
@@ -120,6 +120,9 @@ public sealed class TgPanelHost : View
         var mapped = Map(key);
         if (mapped is null)
         {
+            // The panel owns focus for its entire lifetime. Even keys that have no meaning to
+            // this modal must not bubble into the composer or its global editing bindings.
+            key.Handled = true;
             return;
         }
 

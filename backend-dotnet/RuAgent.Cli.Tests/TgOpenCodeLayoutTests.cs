@@ -20,8 +20,8 @@ public sealed class TgOpenCodeLayoutTests
             var rows = TgSnapshot.Capture(app);
             var top = window.Composer.Frame.Y;
             Assert.Contains("Ask anything…", rows[top + 1]);
-            Assert.Contains("Standard", rows[top + 3]);
-            Assert.DoesNotContain("Standard", rows[top + 4]);
+            Assert.Contains("Standard", rows[top]);
+            Assert.DoesNotContain("Standard", rows[top + TgComposerView.RowCount - 1]);
             Assert.EndsWith("ctrl+p commands", rows[window.Hints.Frame.Y]);
             Assert.DoesNotContain("tab complete", rows[window.Hints.Frame.Y]);
             app.RequestStop();
@@ -65,12 +65,12 @@ public sealed class TgOpenCodeLayoutTests
         {
             var top = w.Composer.Frame.Y;
             var left = w.Composer.Frame.X;
-            Assert.DoesNotContain("┌", rows[top], StringComparison.Ordinal);
-            Assert.Equal(TgPalette.ToColor(TuiPalette.SurfaceRgb()), TgSnapshot.CellAttribute(app, top + 1, left + 20).Background);
-            // No rail: the left column is blank surface, not a green glyph.
-            Assert.Equal(" ", app.Driver!.Contents![top + 1, left].Grapheme);
-            Assert.Equal(TgPalette.ToColor(TuiPalette.SurfaceRgb()), TgSnapshot.CellAttribute(app, top + 1, left).Background);
-            Assert.Contains("Standard", rows[top + TgComposerView.MetadataRow], StringComparison.Ordinal);
+            Assert.Contains("┌─ Standard ", rows[top], StringComparison.Ordinal);
+            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, top + 1, left + 20).Background);
+            // The boundary is a quiet frame, with the input accent inset from it.
+            Assert.Equal("│", app.Driver!.Contents![top + 1, left].Grapheme);
+            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background, TgSnapshot.CellAttribute(app, top + 1, left).Background);
+            Assert.Contains("Standard", rows[top], StringComparison.Ordinal);
         });
     }
 
@@ -81,7 +81,7 @@ public sealed class TgOpenCodeLayoutTests
         {
             w.Composer.Input.InsertionPoint = 2;
             Assert.Equal(CursorStyle.SteadyBlock, w.Composer.Input.Cursor.Style);
-            Assert.Equal(5, w.Composer.Frame.Height);
+            Assert.Equal(TgComposerView.RowCount, w.Composer.Frame.Height);
         });
     }
 
@@ -95,9 +95,47 @@ public sealed class TgOpenCodeLayoutTests
             Assert.DoesNotContain("Context", text, StringComparison.Ordinal);
             Assert.Contains("39,413", text, StringComparison.Ordinal);
             Assert.True(w.Transcript.Frame.X >= 2);
-            Assert.Equal(app.Driver!.Cols - 2, w.Composer.Frame.Right);
+            Assert.Equal(app.Driver!.Cols - 4, w.Composer.Frame.Width);
+            Assert.InRange(Math.Abs(w.Composer.Frame.X - (app.Driver!.Cols - w.Composer.Frame.Right)), 0, 1);
             Assert.Equal(3, w.Transcript.Frame.Y);
         });
+    }
+
+    [Fact]
+    public void SlashPanelSharesTheFullComposerWidthAndBorderUsesTerminalBackground()
+    {
+        Render(180, 30, true, w => w.Composer.Input.Text = "/", (app, w, rows) =>
+        {
+            Assert.Equal(176, w.Composer.Frame.Width);
+            var title = Array.FindIndex(rows, row => row.Contains("commands", StringComparison.Ordinal)
+                && row.Contains("esc", StringComparison.Ordinal));
+            Assert.True(title >= 0);
+            Assert.Equal(TgPalette.ToColor(TgPalette.CardBgRgb()),
+                TgSnapshot.CellAttribute(app, title, w.Composer.Frame.X).Background);
+            Assert.Equal(TgPalette.ToColor(TgPalette.CardBgRgb()),
+                TgSnapshot.CellAttribute(app, title, w.Composer.Frame.Right - 1).Background);
+            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background,
+                TgSnapshot.CellAttribute(app, w.Composer.Frame.Y, w.Composer.Frame.X).Background);
+            Assert.Equal(TgPalette.Attr(TuiToken.Ink).Background,
+                TgSnapshot.CellAttribute(app, w.Composer.Frame.Y + 1, w.Composer.Frame.X + 10).Background);
+            Assert.DoesNotContain("ru ·", rows[0]);
+        });
+    }
+
+    [Fact]
+    public void ModelPickerIsCentredOnTheWholeTerminal()
+    {
+        Render(180, 30, true,
+            w => w.ShowPicker("models", [new RuAgent.Cli.Tui.ChoiceItem("model A", "details", "a")]),
+            (app, _, rows) =>
+            {
+                var occupied = Enumerable.Range(0, app.Driver!.Rows)
+                    .Where(row => Enumerable.Range(0, app.Driver.Cols).Any(column =>
+                        TgSnapshot.CellAttribute(app, row, column).Background == TgPalette.ToColor(TgPalette.CardBgRgb())))
+                    .ToArray();
+                Assert.NotEmpty(occupied);
+                Assert.InRange(Math.Abs(occupied[0] + occupied[^1] + 1 - app.Driver.Rows), 0, 1);
+            });
     }
 
     [Fact]
@@ -131,7 +169,7 @@ public sealed class TgOpenCodeLayoutTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void CommandOverlaysFitAboveTheComposerOnTheSmallestActiveFrame(bool slash)
+    public void CommandOverlaysFitTheSmallestActiveFrame(bool slash)
     {
         Render(20, 12, false, w =>
         {
@@ -141,9 +179,10 @@ public sealed class TgOpenCodeLayoutTests
         {
             Assert.Contains("commands", string.Join('\n', rows), StringComparison.OrdinalIgnoreCase);
             Assert.Equal(
-                TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                TgPalette.Attr(TuiToken.Ink).Background,
                 TgSnapshot.CellAttribute(app, w.Composer.Frame.Y, w.Composer.Frame.X + 1).Background);
-            Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
+            if (slash) Assert.Contains("Standard", rows[w.Composer.Frame.Y]);
+            else Assert.Equal("Standard", w.Composer.Preset);
         });
     }
 
@@ -158,7 +197,8 @@ public sealed class TgOpenCodeLayoutTests
         }, (app, w, rows) =>
         {
             Assert.Contains("Giữ nguyên câu đang gõ", rows[w.Composer.Frame.Y + 1]);
-            Assert.Contains("Standard", rows[w.Composer.Frame.Y + TgComposerView.MetadataRow]);
+            Assert.Contains("Standard", rows[w.Composer.Frame.Y]);
+            Assert.EndsWith("┘", rows[w.Composer.Frame.Bottom - 1].TrimEnd());
             // The user block shares the composer's input-surface fill.
             Assert.Equal(TgPalette.ToColor(TuiPalette.ElementRgb()),
                 TgSnapshot.CellAttribute(app, w.Transcript.Frame.Y + 1, w.Transcript.Frame.Right - 1).Background);

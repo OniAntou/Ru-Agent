@@ -493,7 +493,7 @@ public sealed partial class AgentCommands
         }
 
         /// <summary>
-        /// Appends pasted text to the TG composer on the UI loop; the composer itself never
+        /// Inserts pasted text at the TG cursor on the UI loop; the composer itself never
         /// sees the Ctrl+V (the clipboard read runs here), so the two cannot double-paste.
         /// </summary>
         void InsertIntoComposer(string text)
@@ -503,14 +503,8 @@ public sealed partial class AgentCommands
                 tgApp!.Invoke(() =>
                 {
                     var input = tgWindow!.Composer.Input;
-                    var current = input.Text?.ToString() ?? string.Empty;
-                    var room = 4096 - current.Length;
-                    if (room <= 0)
-                    {
-                        return;
-                    }
-
-                    input.Text = current + (text.Length > room ? text[..room] : text);
+                    if (!input.TryInsertDraft(text))
+                        tgWindow.Hints.ShowFeedback("paste too large · draft unchanged · limit 16000 characters", true);
                 });
             }
             catch (NotInitializedException)
@@ -531,12 +525,8 @@ public sealed partial class AgentCommands
                     var text = Images.CliClipboard.TryReadText();
                     if (!string.IsNullOrWhiteSpace(text))
                     {
-                        var flat = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
-                        if (flat.Length > 0)
-                        {
-                            InsertIntoComposer(flat);
-                            return;
-                        }
+                        InsertIntoComposer(text);
+                        return;
                     }
                 }
 
@@ -2691,6 +2681,7 @@ public sealed partial class AgentCommands
             loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
             loop.SetAttachmentCountProvider(() => submissions.Count);
             loop.SetPasteHandler(ClipboardAttachAsync);
+            loop.SetCopyHandler(Images.CliClipboardTextWriter.TryWriteAsync);
             loop.SetDropHandler(line =>
             {
                 // Same shape as the classic idle loop: a quoted/rooted path that exists

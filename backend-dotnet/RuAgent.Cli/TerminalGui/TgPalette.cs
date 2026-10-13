@@ -20,14 +20,12 @@ public static class TgPalette
     public static Color ToColor((int R, int G, int B) rgb) => new(rgb.R, rgb.G, rgb.B, 255);
 
     /// <summary>
-    /// The floating card's own fill. Lighter than <see cref="Tui.TuiPalette.SurfaceRgb"/>
-    /// (20,20,20) on purpose: that value is the terminal background, so a card painted in it
-    /// would have no edge at all.
+    /// The floating card's cool neutral fill separates it from the prompt surface.
     /// </summary>
-    public static (int R, int G, int B) CardBgRgb() => (38, 38, 38);
+    public static (int R, int G, int B) CardBgRgb() => (25, 32, 32);
 
     /// <summary>The filled bar behind the chosen card entry, with dark text on top of it.</summary>
-    public static (int R, int G, int B) CardSelectionRgb() => (245, 167, 66);
+    public static (int R, int G, int B) CardSelectionRgb() => (154, 199, 177);
 
     /// <summary>Foreground used on top of <see cref="CardSelectionRgb"/>.</summary>
     public static (int R, int G, int B) CardOnSelectionRgb() => (16, 16, 16);

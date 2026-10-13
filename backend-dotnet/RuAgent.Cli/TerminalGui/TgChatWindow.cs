@@ -16,6 +16,8 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public sealed class TgChatWindow : Window
 {
+    private sealed record ModalInputState(string Text, int InsertionPoint);
+
     /// <summary>Masked secret input is bounded like the sequential reader's secret prompt.</summary>
     private const int MaxSecretChars = 4096;
 
@@ -23,15 +25,19 @@ public sealed class TgChatWindow : Window
     private readonly TgCommandPalette _commandPalette = new();
     private TgCommandPaletteView? _commandPaletteView;
     private string? _commandPaletteDraft;
+    private int _commandPaletteDraftCursor;
     private TgPanelHost? _panel;
     private TgDocumentPanel? _document;
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
     private bool _choicesAllowDelete;
+    private bool _approvalWaiting;
     private bool _secretPanel;
     private readonly StringBuilder _secret = new();
     private string _secretProvider = string.Empty;
     private IApplication? _resizeApp;
+    private ModalInputState? _modalInputState;
+    private bool _relayoutInProgress;
 
     private TgChatWindow()
     {
@@ -39,13 +45,14 @@ public sealed class TgChatWindow : Window
         SetScheme(TgPalette.Scheme(TuiToken.Ink));
 
         Header = new TgHeaderView { X = 0, Y = 0, Width = Dim.Fill() };
+        HeaderDivider = new TgRuleView();
         Transcript = new TgTranscriptView { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
         Composer = new TgComposerView { X = 0, Y = Pos.AnchorEnd(TgComposerView.RowCount + 1), Width = Dim.Fill(), Height = TgComposerView.RowCount };
         Hints = new TgHintsView { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
         Landing = new TgLandingView();
         Hints.WorkspaceChanged += () => Header.SetWorkspace(Hints.Workspace);
 
-        Add(Header, Transcript, Landing, Composer, Hints);
+        Add(Header, HeaderDivider, Transcript, Landing, Composer, Hints);
         CanFocus = true;
 
         // The pre-chat wordmark owns the transcript region only while it is empty; the
@@ -73,10 +80,12 @@ public sealed class TgChatWindow : Window
         // The dropdown is driven from the composer text itself: every edit (typed, history,
         // programmatic) refreshes it, and accepting writes the command back through the same
         // channel so the two can never disagree.
-        Composer.Input.TextChanged += (_, _) => RefreshSlashDropdown();
+        Composer.Input.ContentsChanged += (_, _) => RefreshSlashDropdown();
+        Composer.LayoutChanged += (_, _) => Relayout();
     }
 
     public TgHeaderView Header { get; }
+    public TgRuleView HeaderDivider { get; }
     public TgTranscriptView Transcript { get; }
     public TgComposerView Composer { get; }
     public TgHintsView Hints { get; }
@@ -122,8 +131,9 @@ public sealed class TgChatWindow : Window
         HidePanel();
         if (_document is null)
         {
-            _document = new TgDocumentPanel { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
+            _document = new TgDocumentPanel();
             _document.Closed += HideDocument;
+            TgModalLayout.Apply(_document, this);
         }
 
         _document.SetContent(title, body);
@@ -232,6 +242,7 @@ public sealed class TgChatWindow : Window
             _slashDropdown.CommandAccepted += command =>
             {
                 Composer.Input.Text = command + " ";
+                Composer.Input.InsertionPoint = Composer.Input.Text.Length;
                 HideSlashDropdown();
                 Composer.Input.SetFocus();
             };
@@ -272,13 +283,10 @@ public sealed class TgChatWindow : Window
 
         HideSlashDropdown();
         _commandPaletteDraft = Composer.Input.Text?.ToString() ?? string.Empty;
+        _commandPaletteDraftCursor = Composer.Input.InsertionPoint;
         _commandPalette.Reset();
         _commandPaletteView ??= new TgCommandPaletteView(_commandPalette);
-        _commandPaletteView.X = Pos.Left(Composer);
-        _commandPaletteView.Width = Dim.Width(Composer);
-        _commandPaletteView.Height = Dim.Func(_ => Math.Min(
-            TgCommandPalette.MaxVisibleCommands + 2, Math.Max(3, Composer.Frame.Y)));
-        _commandPaletteView.Y = Pos.Func(_ => Math.Max(0, Composer.Frame.Y - _commandPaletteView.Frame.Height));
+        TgModalLayout.Apply(_commandPaletteView, this, TgCommandPalette.MaxVisibleCommands + 2);
         Add(_commandPaletteView);
         Composer.Input.SetFocus();
         SetNeedsDraw();
@@ -316,6 +324,7 @@ public sealed class TgChatWindow : Window
         }
 
         Composer.Input.Text = command + " ";
+        Composer.Input.InsertionPoint = Composer.Input.Text.Length;
         CloseCommandPalette(restoreDraft: false);
     }
 
@@ -325,7 +334,7 @@ public sealed class TgChatWindow : Window
     {
         _commandPalette.SetStatusMessage("active turn in progress · apply command after it finishes");
         _commandPaletteView?.SetNeedsDraw();
-        Hints.SetBusy("finish turn before applying command");
+        Hints.ShowFeedback("finish turn before applying command", true);
     }
 
     private void CloseCommandPalette(bool restoreDraft)
@@ -338,6 +347,7 @@ public sealed class TgChatWindow : Window
         if (restoreDraft && _commandPaletteDraft is not null)
         {
             Composer.Input.Text = _commandPaletteDraft;
+            Composer.Input.InsertionPoint = _commandPaletteDraftCursor;
         }
 
         _commandPaletteDraft = null;
@@ -373,11 +383,13 @@ public sealed class TgChatWindow : Window
 
     private void ShowApprovalPanel(ApprovalPrompt prompt)
     {
+        SetApprovalWaiting(true);
         _approval = prompt;
         _choices = null;
         _secretPanel = false;
-        ShowPanel(width => TuiCard.Compose(
+        ShowPanel((width, height) => TuiCard.ComposeFitting(
             TuiCard.ComputeWidth(width),
+            height,
             prompt.Title,
             "esc",
             prompt.CardBody(),
@@ -392,26 +404,24 @@ public sealed class TgChatWindow : Window
         string? footer = null,
         bool allowDelete = false)
     {
+        SetApprovalWaiting(false);
         var list = new ChoiceList(title, items, selected, footer);
         _approval = null;
         _choices = list;
         _choicesAllowDelete = allowDelete;
         _secretPanel = false;
-        ShowPanel(width => TuiCard.ComposeList(
+        ShowPanel((width, height) => TuiCard.ComposeListFitting(
             TuiCard.ComputeWidth(width),
+            height,
             title,
             "esc",
             CardItems(list),
             list.Selected,
-            PickerVisibleRows,
             PickerFooter(list),
             list.Filter.Length == 0 ? SearchHint : $"{SearchHint} {list.Filter}"));
     }
 
     private const string SearchHint = "Search";
-
-    /// <summary>Rows a picker spends on entries; the card frame takes the rest.</summary>
-    private const int PickerVisibleRows = 8;
 
     private static IReadOnlyList<CardItem> CardItems(ChoiceList list) =>
         list.Items
@@ -429,13 +439,15 @@ public sealed class TgChatWindow : Window
     /// </summary>
     public void ShowSecret(string providerDisplay)
     {
+        SetApprovalWaiting(false);
         _approval = null;
         _choices = null;
         _secretPanel = true;
         _secret.Clear();
         _secretProvider = string.IsNullOrWhiteSpace(providerDisplay) ? "api key" : providerDisplay.Trim();
-        ShowPanel(width => TuiCard.Compose(
+        ShowPanel((width, height) => TuiCard.ComposeFitting(
             TuiCard.ComputeWidth(width),
+            height,
             KeyInputPanel.CardTitle(_secretProvider),
             "esc",
             KeyInputPanel.CardBody(_secret.Length),
@@ -454,6 +466,9 @@ public sealed class TgChatWindow : Window
 
     public void HidePanel()
     {
+        SetApprovalWaiting(false);
+        var inputState = _modalInputState;
+        _modalInputState = null;
         if (_panel?.SuperView is not null)
         {
             Remove(_panel);
@@ -466,10 +481,30 @@ public sealed class TgChatWindow : Window
         _secret.Clear();
         if (App is not null)
         {
+            if (inputState is not null)
+            {
+                Composer.Input.Text = inputState.Text;
+                Composer.Input.InsertionPoint = Math.Clamp(
+                    inputState.InsertionPoint,
+                    0,
+                    Composer.Input.Text?.Length ?? 0);
+            }
+
             FocusComposer();
         }
 
         SetNeedsDraw();
+    }
+
+    private void SetApprovalWaiting(bool waiting)
+    {
+        if (_approvalWaiting == waiting)
+        {
+            return;
+        }
+
+        _approvalWaiting = waiting;
+        Hints.SetWaitingForApproval(waiting);
     }
 
     public static TgChatWindow Build() => new();
@@ -521,10 +556,23 @@ public sealed class TgChatWindow : Window
     /// </summary>
     private void Relayout()
     {
-        var driver = _resizeApp?.Driver ?? App?.Driver;
-        TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
-        Layout();
-        SetNeedsDraw();
+        if (_relayoutInProgress)
+        {
+            return;
+        }
+
+        _relayoutInProgress = true;
+        try
+        {
+            var driver = _resizeApp?.Driver ?? App?.Driver;
+            TgChatLayout.Apply(this, driver?.Cols ?? Viewport.Width, driver?.Rows ?? Viewport.Height);
+            Layout();
+            SetNeedsDraw();
+        }
+        finally
+        {
+            _relayoutInProgress = false;
+        }
     }
 
     private static bool IsBelowFloor(Rectangle size) => IsTooSmallToDraw(size.Width, size.Height);
@@ -565,14 +613,18 @@ public sealed class TgChatWindow : Window
         });
     }
 
-    private void ShowPanel(Func<int, IReadOnlyList<CardLine>> card)
+    private void ShowPanel(Func<int, int, IReadOnlyList<CardLine>> card)
     {
         // A modal panel takes the keyboard; the suggestion list must not linger behind it.
         HideSlashDropdown();
+        _modalInputState ??= new ModalInputState(
+            Composer.Input.Text?.ToString() ?? string.Empty,
+            Composer.Input.InsertionPoint);
         if (_panel is null)
         {
-            _panel = new TgPanelHost { X = 0, Y = 1, Width = Dim.Fill(), Height = Dim.Fill(TgComposerView.RowCount + 2) };
+            _panel = new TgPanelHost();
             _panel.PanelKey += OnPanelKey;
+            TgModalLayout.Apply(_panel, this, 14);
         }
 
         _panel.SetCard(card);

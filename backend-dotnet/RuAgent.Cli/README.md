@@ -12,23 +12,38 @@ completion. Enter selects a command into the composer; arguments can be complete
 before submission. Escape closes the palette and restores the draft. While a
 turn is busy, the palette can be browsed but selection is refused visibly.
 
-The layout follows OpenCode's conversation/prompt arrangement while retaining
-Ru's palette and animated wordmark. An empty chat centres the logo and a prompt
-surface capped at 80 columns. Active sessions use a padded transcript and a
-bottom prompt with a green left rail; preset, model and provider sit below the
-input. The five-row composer shows “Ask anything…” when empty, with one blank
-row between input and model metadata and one below the metadata. Its input uses
-a steady block cursor. The empty-chat footer only shows `ctrl+p commands`;
-active sessions retain the navigation/expansion hints. The header puts session
-title/known usage on the first row, workspace on the second and a dedicated
-activity row on the third. A colored glyph precedes the readable action; targets
+Ru's terminal chrome uses a mint-accented signature, a quiet session divider and
+a thin square prompt frame. An empty chat centres the logo and a prompt
+frame whose border, input, placeholder and metadata all share the terminal background.
+The empty prompt is capped at 80 columns. Active sessions use a padded transcript and a
+full-width bottom prompt with the same side margins as chat; preset sits in the top edge and
+model/provider sit in the bottom edge. The composer grows from one to six visible input rows, leaving room for
+the transcript on short screens. It shows “Ask anything…” when empty and uses
+a steady block cursor. Enter sends; Ctrl+J, Shift+Enter where the terminal
+distinguishes it, or a trailing backslash followed by Enter inserts a newline.
+Up/Down move within a multiline draft before navigating history at its edges.
+Text paste preserves line breaks and indentation and replaces selected text or
+inserts at the cursor. A paste exceeding the 16,000-character draft budget is
+refused visibly with the draft unchanged. The empty-chat footer shows
+`ctrl+p commands` and pending attachment context; active-session hints adapt to
+available width. The footer normally shows only Ctrl+P; while running it keeps
+Esc visible. The busy colour wave uses five half-height block cells (`▄▄▄▄▄`)
+to make the indicator thicker while keeping it short. Other shortcuts remain available through help.
+The header puts the session title (without a product-name prefix)
+title/known usage on the first row and workspace on the second. Live activity
+occupies a row at the end of the transcript. A colored glyph precedes the readable action; targets
 are muted and elapsed/tool count align right. Ready is quiet, response deltas
 show “Writing response”, and parked states have no spinner or running clock.
 Tool rows distinguish action, target and metrics; failure remains explicit even
 when a long command is shortened. Frames
 shorter than 20 rows use a single heading row. The feed
-uses the available width without a side panel. Command overlays follow the
-prompt's width and shrink with the available space above it.
+uses the available width without a side panel. Picker cards page their entries
+to fit the current height while keeping the selection and footer visible.
+Slash suggestions span the composer width, with descriptions aligned in a
+stable column above it. Model/session, approval, secret and report panels
+centre on the terminal; the command palette uses the same centred placement.
+Approval cards preserve choices and action hints on short screens. Closing a
+modal restores the draft, cursor and composer focus.
 
 Streaming defers reflow to drawing/scrolling rather than rebuilding a growing
 line for every fragment. Completed tool metadata updates its activity by ID;
@@ -40,7 +55,7 @@ the unfinished line preview at up to 30 updates per second, then commits its
 final formatting; retry removes provisional text. Fenced code retains its full
 source line and wraps to the viewport instead of permanently clipping its tail.
 Plain line output waits for newline or Flush before committing Markdown.
-Prose wraps at at most 100 cells on wide terminals. Markdown tables are grouped
+Terminal.Gui prose wraps at the transcript width. Markdown tables are grouped
 from retained raw header/separator/body rows, align their columns and switch to
 labeled values below 40 cells. Reasoning remains behind Ctrl+O without adding a
 Thought row for every model step. Web activity targets use redacted query detail
@@ -48,8 +63,14 @@ and host names; URLs do not expose credentials, query parameters or fragments.
 
 PageUp/PageDown scroll the transcript. Ctrl+Home reads the oldest retained output;
 Ctrl+End returns to following new output. Streaming preserves a detached scroll
-position and marks new output until Ctrl+End returns to the tail. Ctrl+O expands
-the last collapsed tool/diff block. The visible history
+position and marks new output until Ctrl+End returns to the tail. Ctrl+O toggles
+the selected tool/diff or reasoning block, defaulting to the newest retained block.
+Ctrl+Alt+Up/Down select and reveal earlier/later blocks. Ctrl+Shift+C copies the
+selected block's retained detail text, or the latest contiguous assistant text
+when no block is selected; copied content includes any retained formatting or
+code gutters. Ctrl+End clears block selection and resumes following output.
+Running, waiting for approval and paused states show the queued prompt count;
+submission refusals are feedback and do not start a running indicator. The visible history
 retains at most 2,000 rows and 200,000 Unicode characters, with 16,000 UTF-16 units
 per line, including collapsed content; a notice marks discarded history. These are
 rendering limits and do not alter durable model context.

@@ -184,7 +184,7 @@ public sealed class TgCardTests
 
             Assert.Single(card);
             Assert.Contains("Search", screen, StringComparison.Ordinal);
-            Assert.DoesNotContain("╭", screen, StringComparison.Ordinal);
+            Assert.DoesNotContain("╭", string.Join('\n', rows.TakeWhile(row => !row.Contains("┌", StringComparison.Ordinal))), StringComparison.Ordinal);
             Assert.DoesNotContain("│", card[0], StringComparison.Ordinal);
         });
     }

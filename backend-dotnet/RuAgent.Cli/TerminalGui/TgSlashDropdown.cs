@@ -6,8 +6,8 @@ namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
 /// The slash-command suggestion list, anchored just above the composer. It draws through the
-/// shared <see cref="TuiCard"/> frame, so a suggestion reads exactly like every other picker;
-/// this view only positions, colours and drives the selection.
+/// shared <see cref="TuiCard"/> row grammar at the full composer width, with command and
+/// description columns aligned. This view drives the selection and its rendering.
 /// The composer keeps focus the whole time the list is open, because typing must keep
 /// filtering it. This view is therefore not focusable and takes no keys: the run loop routes
 /// Up/Down, Enter/Tab and Escape here while every other character stays in the composer.
@@ -83,12 +83,10 @@ public sealed class TgSlashDropdown : View
             return true;
         }
 
-        var width = TuiCard.ComputeWidth(Viewport.Width);
+        var width = Viewport.Width;
         var visible = Math.Max(1, Math.Min(MaxVisible, Viewport.Height - TuiCard.TuiCardFrameRows));
         var items = _matches
-            .Select(match => new CardItem(
-                match.Command,
-                string.IsNullOrWhiteSpace(match.Syntax) ? match.Description : match.Description + " " + match.Syntax))
+            .Select(match => new CardItem(TuiText.Pad(match.Command, 16) + match.Description))
             .ToList();
         var lines = TuiCard.ComposeList(
             width,
@@ -97,7 +95,8 @@ public sealed class TgSlashDropdown : View
             items,
             _selected,
             visible,
-            "↑↓ select · tab apply · esc close");
+            "↑↓ select · tab apply · esc close",
+            fillWidth: true);
         var left = Math.Max(0, (Viewport.Width - width) / 2);
         for (var i = 0; i < lines.Count && i < Viewport.Height; i++)
         {

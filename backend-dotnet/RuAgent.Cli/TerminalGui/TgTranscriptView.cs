@@ -21,7 +21,7 @@ public enum TranscriptStyle
 /// last committed row. Drawing stays custom so the OpenCode look (user block, inline tool
 /// rows, diff indentation) survives the migration.
 /// </summary>
-public sealed class TgTranscriptView : View
+public sealed partial class TgTranscriptView : View
 {
     public const int MaxRetainedRows = 2000;
     public const int MaxRetainedCharacters = 200_000;
@@ -30,8 +30,6 @@ public sealed class TgTranscriptView : View
 
     private readonly List<(string Text, TranscriptStyle Style)> _lines = [];
     private readonly List<(string Text, TranscriptStyle Style)> _wrapped = [];
-    private (int AfterLine, List<(string Text, TranscriptStyle Style)> Hidden)? _collapsedBlock;
-    private bool _expanded;
     private int _wrapWidth = -1;
     private int _tailRows = 1;
     private bool _tailDirty;
@@ -41,14 +39,11 @@ public sealed class TgTranscriptView : View
     private int _retainedCharacters;
     private TuiActivityPresentation? _live;
 
-    /// <summary>True while the last collapsed block is revealed by <see cref="ToggleExpanded"/>.</summary>
-    public bool IsExpanded => _expanded;
-
     /// <summary>True once at least one row exists; the landing overlay hides while this is true.</summary>
     public bool HasContent => _lines.Count > 0;
 
     public bool IsHistoryTruncated => _historyTruncated;
-    public int RetainedRowCount => _lines.Count + (_collapsedBlock?.Hidden.Count ?? 0);
+    public int RetainedRowCount => _lines.Count + _collapsedBlocks.Sum(block => block.Hidden.Count);
     public int RetainedCharacterCount => _retainedCharacters;
     public bool IsFollowingTail => _followingTail;
     public bool CanScroll { get { EnsureWrapped(); return _wrapped.Count + LiveRows > Math.Max(1, Viewport.Height); } }
@@ -136,10 +131,7 @@ public sealed class TgTranscriptView : View
         }
 
         _lines.RemoveRange(mark, _lines.Count - mark);
-        if (_collapsedBlock is { } block && block.AfterLine > mark)
-        {
-            _collapsedBlock = RemoveCollapsedBlock();
-        }
+        RemoveBlocksAfter(mark);
 
         if (_historyTruncated && mark == 0)
         {
@@ -158,10 +150,6 @@ public sealed class TgTranscriptView : View
         SetNeedsDraw();
     }
 
-    /// <summary>Test seam: the hidden rows of the last collapsed block, expanded or not.</summary>
-    internal IReadOnlyList<(string Text, TranscriptStyle Style)> CollapsedRows =>
-        _collapsedBlock?.Hidden ?? [];
-
     /// <summary>
     /// Drops every row, wrap cache and collapsed block. `/clear` uses this so the TG
     /// transcript resets in place instead of accumulating the previous session's rows.
@@ -170,8 +158,7 @@ public sealed class TgTranscriptView : View
     {
         _lines.Clear();
         _wrapped.Clear();
-        _collapsedBlock = null;
-        _expanded = false;
+        ClearCollapsedBlocks();
         _wrapWidth = -1;
         _tailRows = 1;
         _tailDirty = false;
@@ -198,7 +185,7 @@ public sealed class TgTranscriptView : View
             FirstContentAppended?.Invoke();
         }
 
-        if (_expanded || bounded.Contains('|'))
+        if (HasExpandedBlocks || bounded.Contains('|'))
         {
             // The revealed rows trail the wrap cache; rebuild it on the next draw.
             _wrapWidth = -1;
@@ -211,88 +198,6 @@ public sealed class TgTranscriptView : View
         MarkOutputUnseen();
         EnforceRetention();
 
-        SetNeedsDraw();
-    }
-
-    /// <summary>
-    /// Appends a collapsed block: the summary row stays visible, the hidden rows join the
-    /// transcript only while the view is expanded. The previous block is replaced; only the
-    /// last collapsed tool/diff block answers <see cref="ToggleExpanded"/>.
-    /// </summary>
-    public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
-    {
-        var wasEmpty = _lines.Count == 0;
-        var boundedSummary = BoundLine(summary);
-        _lines.Add((boundedSummary, style));
-        _retainedCharacters += CharacterCount(boundedSummary);
-        if (wasEmpty)
-        {
-            FirstContentAppended?.Invoke();
-        }
-        SetCollapsedDetails(hidden, style);
-    }
-
-    internal void SetCollapsedDetails(IReadOnlyList<string> hidden, TranscriptStyle style)
-    {
-        if (_collapsedBlock is { } previousBlock)
-        {
-            _retainedCharacters -= previousBlock.Hidden.Sum(row => CharacterCount(row.Text));
-        }
-
-        var boundedHidden = new List<(string Text, TranscriptStyle Style)>();
-        var usedCharacters = RetainedCharacterCount;
-        var didDropRows = false;
-        foreach (var line in hidden)
-        {
-            var remainingRows = MaxRetainedRows - _lines.Count - boundedHidden.Count;
-            var remainingCharacters = MaxRetainedCharacters - usedCharacters;
-            if (remainingRows <= 0 || remainingCharacters <= 0)
-            {
-                didDropRows = true;
-                break;
-            }
-
-            var bounded = BoundLineParts(line);
-            var characterCount = CharacterCount(bounded);
-            if (characterCount > remainingCharacters)
-            {
-                bounded = BoundText(bounded, remainingCharacters);
-                characterCount = CharacterCount(bounded);
-                didDropRows = true;
-            }
-
-            boundedHidden.Add((bounded, style));
-            usedCharacters += characterCount;
-            _retainedCharacters += characterCount;
-            if (didDropRows)
-            {
-                break;
-            }
-        }
-
-        _collapsedBlock = (_lines.Count, boundedHidden);
-        _expanded = false;
-        _wrapWidth = -1;
-        MarkOutputUnseen();
-        if (didDropRows)
-        {
-            MarkHistoryTruncated();
-        }
-
-        EnforceRetention();
-        SetNeedsDraw();
-    }
-
-    /// <summary>Flips the last collapsed block; the next draw reveals or hides its rows.</summary>
-    public void ToggleExpanded()
-    {
-        if (_collapsedBlock is null)
-        {
-            return;
-        }
-
-        _expanded = !_expanded;
-        _wrapWidth = -1;
         SetNeedsDraw();
     }
 
@@ -317,7 +222,7 @@ public sealed class TgTranscriptView : View
             ? CharacterCount(text)
             : CharacterCount(grown) - CharacterCount(last.Text);
         MarkOutputUnseen();
-        if (_expanded)
+        if (HasExpandedBlocks)
         {
             _wrapWidth = -1;
         }
@@ -343,7 +248,7 @@ public sealed class TgTranscriptView : View
             _lines[^1] = (bounded, style);
             _retainedCharacters += CharacterCount(bounded);
         }
-        if (text is null || _expanded || text.Contains('|')) _wrapWidth = -1;
+        if (text is null || HasExpandedBlocks || text.Contains('|')) _wrapWidth = -1;
         else if (_wrapWidth > 0) _tailDirty = true;
         MarkOutputUnseen();
         EnforceRetention();
@@ -356,6 +261,7 @@ public sealed class TgTranscriptView : View
 
     public void ScrollToTop()
     {
+        _selectedBlock = null;
         SetFollowingTail(false);
         _scrollTop = 0;
         SetNeedsDraw();
@@ -363,6 +269,7 @@ public sealed class TgTranscriptView : View
 
     public void ScrollToTail()
     {
+        _selectedBlock = null;
         SetFollowingTail(true);
         SetHasUnseenOutput(false);
         SetNeedsDraw();
@@ -515,29 +422,25 @@ public sealed class TgTranscriptView : View
                 _wrapped.AddRange(table.Select(row => (row, TranscriptStyle.Prose)));
                 i += consumed - 1;
                 _tailRows = 0;
-                if (_expanded && _collapsedBlock is { } tableBlock && tableBlock.AfterLine == i + 1)
-                    foreach (var (hiddenText, hiddenStyle) in tableBlock.Hidden)
-                        _tailRows = AppendWrapped(hiddenText, hiddenStyle, width);
+                AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);
                 continue;
             }
+            var summaryTop = _wrapped.Count;
             _tailRows = AppendWrapped(text, style, width);
-
-            if (_expanded && _collapsedBlock is { } block && block.AfterLine == i + 1)
-            {
-                foreach (var (hiddenText, hiddenStyle) in block.Hidden)
-                {
-                    _tailRows = AppendWrapped(hiddenText, hiddenStyle, width);
-                }
-            }
+            AppendCollapsedBlocksAfter(i + 1, summaryTop, width);
         }
 
         _wrapWidth = width;
         _tailDirty = false;
-        _scrollTop = Math.Clamp(oldTop, 0, Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height)));
+        var maxTop = Math.Max(0, _wrapped.Count - Math.Max(1, Viewport.Height));
+        _scrollTop = _selectedBlock is { } selected
+            ? Math.Clamp(selected.WrappedTop, 0, maxTop)
+            : Math.Clamp(oldTop, 0, maxTop);
     }
 
     private void MoveViewport(int delta)
     {
+        _selectedBlock = null;
         EnsureWrapped();
         if (_followingTail)
         {
@@ -580,11 +483,14 @@ public sealed class TgTranscriptView : View
             {
                 RemoveLine(1);
             }
-            else if (_collapsedBlock is { Hidden.Count: > 0 } block)
+            else if (_collapsedBlocks.LastOrDefault(block => block.Hidden.Count > 0) is { } block)
             {
                 _retainedCharacters -= CharacterCount(block.Hidden[^1].Text);
                 block.Hidden.RemoveAt(block.Hidden.Count - 1);
-                _collapsedBlock = block;
+                if (block.Hidden.Count == 0)
+                {
+                    RemoveCollapsedBlock(block);
+                }
             }
             else if (_lines.Count > 1)
             {
@@ -596,9 +502,7 @@ public sealed class TgTranscriptView : View
             }
         }
 
-        _collapsedBlock = _collapsedBlock is { } current && current.AfterLine > _lines.Count
-            ? RemoveCollapsedBlock()
-            : _collapsedBlock;
+        RemoveBlocksAfter(_lines.Count);
         if (didTrim)
         {
             _wrapWidth = -1;
@@ -609,15 +513,18 @@ public sealed class TgTranscriptView : View
     {
         if (!_followingTail && _wrapWidth > 0)
         {
-            _scrollTop = Math.Max(0, _scrollTop - WrapLine(_lines[index].Text, _lines[index].Style, _wrapWidth).Count);
+            var removedRows = WrapLine(_lines[index].Text, _lines[index].Style, _wrapWidth).Count;
+            foreach (var block in _collapsedBlocks.Where(block => block.AfterLine == index + 1 && block.Expanded))
+            {
+                removedRows += block.Hidden.Sum(row => WrapLine(row.Text, row.Style, _wrapWidth).Count);
+            }
+
+            _scrollTop = Math.Max(0, _scrollTop - removedRows);
         }
 
         _retainedCharacters -= CharacterCount(_lines[index].Text);
         _lines.RemoveAt(index);
-        if (_collapsedBlock is { } block && index < block.AfterLine)
-        {
-            _collapsedBlock = (block.AfterLine - 1, block.Hidden);
-        }
+        AdjustCollapsedBlocksForRemovedLine(index);
     }
 
     private void MarkHistoryTruncated()
@@ -634,20 +541,10 @@ public sealed class TgTranscriptView : View
         {
             _scrollTop += TuiText.HardWrapLine(HistoryTruncatedText, _wrapWidth).Count;
         }
-        if (_collapsedBlock is { } block)
+        foreach (var block in _collapsedBlocks)
         {
-            _collapsedBlock = (block.AfterLine + 1, block.Hidden);
+            block.AfterLine++;
         }
-    }
-
-    private (int AfterLine, List<(string Text, TranscriptStyle Style)> Hidden)? RemoveCollapsedBlock()
-    {
-        if (_collapsedBlock is { } block)
-        {
-            _retainedCharacters -= block.Hidden.Sum(row => CharacterCount(row.Text));
-        }
-
-        return null;
     }
 
     private static string BoundLine(string text) => BoundLineParts(text);

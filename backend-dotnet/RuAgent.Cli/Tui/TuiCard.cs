@@ -75,9 +75,10 @@ public static class TuiCard
         string hint,
         IReadOnlyList<CardRow> body,
         string? footer,
-        string? footerRight = null)
+        string? footerRight = null,
+        bool fillWidth = false)
     {
-        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var w = fillWidth ? Math.Max(1, width) : Math.Clamp(width, MinWidth, MaxWidth);
         return Frame(title, hint, body, footer, footerRight).Select(row => Row(w, row)).ToList();
     }
 
@@ -90,7 +91,8 @@ public static class TuiCard
         int selected,
         int maxVisible,
         string? footer,
-        string? search = null) =>
+        string? search = null,
+        bool fillWidth = false) =>
         Compose(
             width,
             title,
@@ -98,7 +100,78 @@ public static class TuiCard
             ListRows(items, selected, maxVisible, search),
             footer,
             // A clipped list says where the cursor sits; a short one needs no ratio.
-            items.Count > maxVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null);
+            items.Count > maxVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null,
+            fillWidth);
+
+    /// <summary>
+    /// Composes a list within the rows available above the composer. On a short screen it
+    /// removes optional frame rows before sacrificing the selected entry or the action footer.
+    /// </summary>
+    public static IReadOnlyList<CardLine> ComposeListFitting(
+        int width,
+        int maxRows,
+        string title,
+        string hint,
+        IReadOnlyList<CardItem> items,
+        int selected,
+        string? footer,
+        string? search = null)
+    {
+        var standardVisible = Math.Max(1, maxRows - TuiCardFrameRows);
+        var standard = ComposeList(width, title, hint, items, selected, standardVisible, footer, search);
+        if (standard.Count <= maxRows)
+        {
+            return standard;
+        }
+
+        // The compact frame keeps the title and footer while dropping spacer/rule rows.
+        var searchRows = search is null ? 0 : 1;
+        var compactVisible = Math.Max(1, maxRows - 2 - searchRows);
+        var body = ListRows(items, selected, compactVisible, search);
+        var rows = new List<CardRow>(body.Count + 2)
+        {
+            new(CardRowKind.Title, title, hint),
+        };
+        rows.AddRange(body);
+        rows.Add(new CardRow(
+            CardRowKind.Footer,
+            footer ?? string.Empty,
+            items.Count > compactVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null));
+        return rows.Select(row => Row(Math.Clamp(width, MinWidth, MaxWidth), row)).ToList();
+    }
+
+    /// <summary>
+    /// Composes a modal card within the rows available above the composer. Optional frame
+    /// whitespace is removed first so every approval choice and its action footer stay visible.
+    /// </summary>
+    public static IReadOnlyList<CardLine> ComposeFitting(
+        int width,
+        int maxRows,
+        string title,
+        string hint,
+        IReadOnlyList<CardRow> body,
+        string? footer)
+    {
+        var standard = Compose(width, title, hint, body, footer);
+        if (standard.Count <= maxRows)
+        {
+            return standard;
+        }
+
+        var compact = new List<CardRow>(body.Count + 3)
+        {
+            new(CardRowKind.Title, title, hint),
+            new(CardRowKind.Rule, string.Empty),
+        };
+        compact.AddRange(body);
+        compact.Add(new CardRow(CardRowKind.Footer, footer ?? string.Empty));
+        if (compact.Count > maxRows)
+        {
+            compact.RemoveAt(1);
+        }
+
+        return compact.Select(row => Row(Math.Clamp(width, MinWidth, MaxWidth), row)).ToList();
+    }
 
     private static CardLine Row(int width, CardRow row)
     {

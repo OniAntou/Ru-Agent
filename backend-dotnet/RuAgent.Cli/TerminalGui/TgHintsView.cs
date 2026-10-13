@@ -3,24 +3,20 @@ using Terminal.Gui.ViewBase;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>Hint row: idle workspace left, key hints right; busy swaps in the spinner.</summary>
+/// <summary>One-line run status and responsive keyboard hints for the chat footer.</summary>
 public sealed class TgHintsView : View
 {
-    private static readonly string KeysRight = string.Concat(ComposerBox.HintKeySegments.Select(segment => segment.Text));
-    private static readonly string ExtendedKeysRight = KeysRight + "  ctrl+p palette  pgup/dn scroll  ctrl+end tail";
-    private static readonly string DetachedKeysRight = "↓ new output  ctrl+end tail  " + KeysRight;
-    private static readonly string ExtendedDetachedKeysRight = DetachedKeysRight + "  ctrl+p palette  pgup/dn scroll";
-    private const int ExtendedHintsMinimumWidth = 128;
-
-    /// <summary>The busy indicator's visible text: the wave dots, then the interrupt copy.</summary>
-    private static readonly string WaveText = TuiSpinner.WaveText;
-    private static readonly string BusyText = WaveText + " esc interrupt";
-
-    private string _left = string.Empty;
-    private bool _busy;
+    private TgHintsState _activeState;
+    private TgHintsState _stateBeforeApproval;
+    private int _queuedCount;
     private long _waveBucket;
     private double _waveSeconds;
+    private const int BusyBarCells = 5;
+    private const string BusyBarGlyph = "▄";
+    private string _idleLabel = "Ready";
     private string? _busyHint;
+    private string? _feedbackMessage;
+    private bool _feedbackIsError;
     private bool _hasUnseenTranscript;
     private bool _scrolledBack;
     private string? _busyRunId;
@@ -34,16 +30,30 @@ public sealed class TgHintsView : View
 
     public string Workspace { get; private set; } = string.Empty;
     public bool Compact { get; set; }
+    public TgHintsState ActiveState => _activeState;
+    public int QueuedCount => _queuedCount;
+    public bool IsRunning => _activeState == TgHintsState.Running;
+    public string? FeedbackMessage => _feedbackMessage;
+    public bool FeedbackIsError => _feedbackIsError;
+    public string StatusText => TgStatusPresentation.StatusText(
+        _activeState,
+        _queuedCount,
+        _feedbackMessage,
+        _feedbackIsError,
+        _busyHint,
+        _idleLabel);
     public event Action? WorkspaceChanged;
 
     public void SetIdle(string workspace)
     {
-        Workspace = workspace;
+        Workspace = ChatDisplayText.Sanitize(workspace, 200);
+        _idleLabel = TgStatusPresentation.IdleLabel(Workspace);
         WorkspaceChanged?.Invoke();
-        _left = workspace;
-        _busy = false;
+        _activeState = TgHintsState.Idle;
+        _queuedCount = 0;
         _waveBucket = 0;
         _busyHint = null;
+        ClearFeedback();
         SetNeedsDraw();
     }
 
@@ -54,8 +64,72 @@ public sealed class TgHintsView : View
     /// </summary>
     public void SetBusy(string? hint = null)
     {
-        _busy = true;
+        _activeState = TgHintsState.Running;
         _busyHint = hint;
+        ClearFeedback();
+        SetNeedsDraw();
+    }
+
+    public void SetRunning(int queuedCount)
+    {
+        _activeState = TgHintsState.Running;
+        _queuedCount = Math.Max(0, queuedCount);
+        _busyHint = null;
+        ClearFeedback();
+        SetNeedsDraw();
+    }
+
+    public void SetPaused(int queuedCount)
+    {
+        _activeState = TgHintsState.Paused;
+        _queuedCount = Math.Max(0, queuedCount);
+        _busyHint = null;
+        ClearFeedback();
+        SetNeedsDraw();
+    }
+
+    public void SetWaitingForApproval(bool waiting)
+    {
+        if (waiting)
+        {
+            if (_activeState != TgHintsState.WaitingForApproval)
+            {
+                _stateBeforeApproval = _activeState;
+                _activeState = TgHintsState.WaitingForApproval;
+            }
+        }
+        else if (_activeState == TgHintsState.WaitingForApproval)
+        {
+            // Approval pauses the current run; resolving it restores that state and keeps
+            // the queue count until the loop reports its next explicit state.
+            _activeState = _stateBeforeApproval;
+        }
+        else return;
+
+        _busyHint = null;
+        ClearFeedback();
+        SetNeedsDraw();
+    }
+
+    public void SetQueueCount(int queuedCount)
+    {
+        _queuedCount = Math.Max(0, queuedCount);
+        SetNeedsDraw();
+    }
+
+    public void ShowFeedback(string message, bool isError = false)
+    {
+        _feedbackMessage = string.IsNullOrWhiteSpace(message)
+            ? null
+            : ChatDisplayText.Sanitize(message, 200);
+        _feedbackIsError = _feedbackMessage is not null && isError;
+        SetNeedsDraw();
+    }
+
+    public void ClearFeedback()
+    {
+        _feedbackMessage = null;
+        _feedbackIsError = false;
         SetNeedsDraw();
     }
 
@@ -66,7 +140,7 @@ public sealed class TgHintsView : View
     /// </summary>
     public void SetWaveClock(double elapsedSeconds)
     {
-        if (!_busy)
+        if (!IsRunning)
         {
             return;
         }
@@ -122,26 +196,23 @@ public sealed class TgHintsView : View
         }
         var rightHints = GetRightHints(width);
         var rightWidth = TuiText.VisibleWidth(rightHints);
-        // Classic truncates the workspace first so the key hints always survive; the
-        // remaining columns are split between the two sides.
+        // Preserve room for the right-side key hints, then give the rest to status text.
         var leftBudget = Math.Max(0, width - rightWidth - 2);
-        var leftText = !_busy
-            ? _left
-            : _busyHint is null
-                ? BusyText
-                : $"{WaveText} {_busyHint}";
+        var wavePrefixWidth = IsRunning
+            ? BusyBarCells + 1
+            : 0;
+        var leftText = StatusText;
         if (_scrolledBack) leftText = "↑ scrolled back · " + leftText;
-        var shownLeft = TuiText.Truncate(leftText, leftBudget);
-        var leftWidth = TuiText.VisibleWidth(shownLeft);
+        var shownLeft = TuiText.Truncate(leftText, Math.Max(0, leftBudget - wavePrefixWidth));
+        var leftWidth = Math.Min(leftBudget, TuiText.VisibleWidth(shownLeft) + wavePrefixWidth);
         var gap = Math.Max(1, width - leftWidth - rightWidth);
 
-        DrawLeft(leftWidth, shownLeft);
+        DrawStatus(leftWidth, shownLeft);
         DrawRight(leftWidth + gap, Math.Max(0, width - leftWidth - gap));
         return true;
     }
 
-    /// <summary>Idle workspace is meta; busy paints the colour wave and <c>esc</c> bright.</summary>
-    private void DrawLeft(int maxWidth, string shownText)
+    private void DrawStatus(int maxWidth, string shownText)
     {
         if (_scrolledBack)
         {
@@ -149,25 +220,43 @@ public sealed class TgHintsView : View
             return;
         }
 
-        if (!_busy)
+        if (_feedbackMessage is not null)
         {
-            Draw(0, [(TuiText.Truncate(_left, maxWidth), TuiToken.Meta)], maxWidth);
+            var token = _feedbackIsError ? TuiToken.Err : TuiToken.Meta;
+            if (IsRunning)
+            {
+                var feedbackColumn = DrawWave(0, maxWidth);
+                Draw(feedbackColumn, [(" ", TuiToken.Line)], maxWidth - feedbackColumn);
+                feedbackColumn++;
+                Draw(feedbackColumn, [(shownText, token)], maxWidth - feedbackColumn);
+            }
+            else
+            {
+                Draw(0, [(shownText, token)], maxWidth);
+            }
             return;
         }
 
-        // The wave dots carry their own per-cell ramp colours; the copy after them keeps
-        // the bright "esc" and meta " interrupt" split.
+        if (!IsRunning)
+        {
+            var token = _activeState is TgHintsState.WaitingForApproval or TgHintsState.Paused
+                ? TuiToken.Warn
+                : _queuedCount > 0 ? TuiToken.Brand : TuiToken.Meta;
+            Draw(0, [(shownText, token)], maxWidth);
+            return;
+        }
+
         var column = DrawWave(0, maxWidth);
-        var rest = shownText.Length > WaveText.Length ? shownText[WaveText.Length..] : string.Empty;
+        var rest = shownText;
         if (rest.Length == 0)
         {
             return;
         }
 
-        IReadOnlyList<(string Text, TuiToken Token)> segments = _busyHint is null
-            ? rest.Length > 4
-                ? [(rest[..4], TuiToken.Bright), (rest[4..], TuiToken.Meta)]
-                : [(rest, TuiToken.Bright)]
+        Draw(column, [(" ", TuiToken.Line)], maxWidth - column);
+        column++;
+        IReadOnlyList<(string Text, TuiToken Token)> segments = _busyHint == "esc interrupt"
+            ? [("esc", TuiToken.Bright), (rest.Length > 3 ? rest[3..] : string.Empty, TuiToken.Meta)]
             : [(rest, TuiToken.Meta)];
         Draw(column, segments, maxWidth - column);
     }
@@ -175,18 +264,20 @@ public sealed class TgHintsView : View
     /// <summary>Draws the wave dots with their per-cell ramp colours; returns the column after them.</summary>
     private int DrawWave(int column, int maxWidth)
     {
-        for (var cell = 0; cell < TuiSpinner.WaveCells; cell++)
+        for (var cell = 0; cell < BusyBarCells; cell++)
         {
             if (maxWidth <= 0 || column >= Viewport.Width)
             {
                 break;
             }
 
-            SetAttribute(TgPalette.Attr(TuiSpinner.WaveRgbAt(cell, _waveSeconds)));
+            var phase = _waveSeconds + TuiSpinner.WaveCycleSeconds
+                - cell * TuiSpinner.WaveCycleSeconds / BusyBarCells;
+            SetAttribute(TgPalette.Attr(TuiSpinner.WaveRgbAt(0, phase)));
             Move(column, 0);
-            AddStr(TuiSpinner.WaveGlyph);
-            column += TuiText.VisibleWidth(TuiSpinner.WaveGlyph);
-            maxWidth -= TuiText.VisibleWidth(TuiSpinner.WaveGlyph);
+            AddStr(BusyBarGlyph);
+            column++;
+            maxWidth--;
         }
 
         return column;
@@ -195,62 +286,56 @@ public sealed class TgHintsView : View
     /// <summary>Bright key caps with meta words, matching ComposerBox.ComposeHints.</summary>
     private void DrawRight(int column, int maxWidth)
     {
-        if (Compact)
-        {
-            Draw(column, [("ctrl+p", TuiToken.Bright), (" commands", TuiToken.Meta)], maxWidth);
-            return;
-        }
-        var baseHints = _hasUnseenTranscript
-            ? new List<(string Text, TuiToken Token)>
-            {
-                ("↓ new output", TuiToken.Brand),
-                ("  ctrl+end", TuiToken.Bright),
-                (" tail  ", TuiToken.Meta),
-            }
-            : new List<(string Text, TuiToken Token)>();
-        baseHints.AddRange(ComposerBox.HintKeySegments.Select(segment =>
-            (segment.Text, segment.Token ?? TuiToken.Meta)));
-
-        var width = Viewport.Width;
-        if (ShouldShowExtendedHints(width))
-        {
-            baseHints.AddRange(
-            [
-                ("  ctrl+p", TuiToken.Bright),
-                (" palette", TuiToken.Meta),
-                ("  pgup/dn", TuiToken.Bright),
-                (" scroll", TuiToken.Meta),
-            ]);
-            if (!_hasUnseenTranscript)
-            {
-                baseHints.Add(("  ctrl+end", TuiToken.Bright));
-                baseHints.Add((" tail", TuiToken.Meta));
-            }
-        }
-
-        IReadOnlyList<(string Text, TuiToken Token)> segments = baseHints;
-        Draw(column, segments, maxWidth);
+        Draw(column, GetRightHintSegments(Viewport.Width), maxWidth);
     }
 
     private string GetRightHints(int width)
     {
-        if (Compact) return "ctrl+p commands";
-        if (_hasUnseenTranscript)
-        {
-            return ShouldShowExtendedHints(width)
-                ? ExtendedDetachedKeysRight
-                : DetachedKeysRight;
-        }
-
-        return ShouldShowExtendedHints(width)
-            ? ExtendedKeysRight
-            : KeysRight;
+        var keys = string.Join("  ", VisibleKeyHints(width));
+        return _hasUnseenTranscript && !Compact && width >= 80
+            ? "↓ new output  ctrl+end tail  " + keys
+            : keys;
     }
 
-    private bool ShouldShowExtendedHints(int width) =>
-        width >= Math.Max(
-            ExtendedHintsMinimumWidth,
-            TuiText.VisibleWidth(_hasUnseenTranscript ? ExtendedDetachedKeysRight : ExtendedKeysRight) + 12);
+    private IReadOnlyList<(string Text, TuiToken Token)> GetRightHintSegments(int width)
+    {
+        var segments = new List<(string Text, TuiToken Token)>();
+        if (_hasUnseenTranscript && !Compact && width >= 80)
+        {
+            segments.Add(("↓ new output", TuiToken.Brand));
+            segments.Add(("  ctrl+end", TuiToken.Bright));
+            segments.Add((" tail", TuiToken.Meta));
+        }
+
+        foreach (var hint in VisibleKeyHints(width))
+        {
+            if (segments.Count > 0)
+            {
+                segments.Add(("  ", TuiToken.Line));
+            }
+
+            var separator = hint.IndexOf(' ');
+            if (separator <= 0)
+            {
+                segments.Add((hint, TuiToken.Bright));
+                continue;
+            }
+
+            segments.Add((hint[..separator], TuiToken.Bright));
+            segments.Add((hint[separator..], TuiToken.Meta));
+        }
+
+        return segments;
+    }
+
+    private IReadOnlyList<string> VisibleKeyHints(int width) =>
+        IsRunning
+            ? ["esc interrupt"]
+            : Compact
+                ? TgStatusPresentation.KeyHints(width, compact: true)
+                : width < 128 && _hasUnseenTranscript
+                    ? ["ctrl+p commands"]
+                    : TgStatusPresentation.KeyHints(width, compact: false);
 
     private void Draw(int column, IReadOnlyList<(string Text, TuiToken Token)> segments, int maxWidth)
     {

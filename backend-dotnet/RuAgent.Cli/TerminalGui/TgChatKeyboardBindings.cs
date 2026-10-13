@@ -6,7 +6,7 @@ using Terminal.Gui.Input;
 
 namespace RuAgent.Cli.TerminalGui;
 
-/// <summary>Routes composer, transcript and command-palette keys before TextField bindings.</summary>
+/// <summary>Routes composer, transcript and command-palette keys before editor bindings.</summary>
 internal sealed class TgChatKeyboardBindings
 {
     private readonly TgChatWindow _window;
@@ -16,6 +16,7 @@ internal sealed class TgChatKeyboardBindings
     private readonly Action<int> _navigateHistory;
     private readonly Action _completeCommand;
     private readonly Action _paste;
+    private readonly Action _copy;
     private IApplication? _keyboardApp;
 
     public TgChatKeyboardBindings(
@@ -25,7 +26,8 @@ internal sealed class TgChatKeyboardBindings
         Action cancel,
         Action<int> navigateHistory,
         Action completeCommand,
-        Action paste)
+        Action paste,
+        Action copy)
     {
         _window = window;
         _isBusy = isBusy;
@@ -34,7 +36,10 @@ internal sealed class TgChatKeyboardBindings
         _navigateHistory = navigateHistory;
         _completeCommand = completeCommand;
         _paste = paste;
+        _copy = copy;
         window.Composer.Input.KeyDown += OnComposerKey;
+        window.Composer.Input.DraftInsertionRejected += () =>
+            window.Hints.ShowFeedback("paste too large · draft unchanged · limit 16000 characters", true);
         window.IsRunningChanged += OnWindowIsRunningChanged;
     }
 
@@ -50,6 +55,28 @@ internal sealed class TgChatKeyboardBindings
             TuiDebug.Log(
                 "keys",
                 $"code={(int)key.KeyCode} rune={key.AsRune.Value} ctrl={key.IsCtrl} alt={key.IsAlt} shift={key.IsShift}");
+        }
+
+        if (!_window.IsModalPanelOpen && !_window.IsCommandPaletteOpen
+            && (key == Key.Enter.WithShift || key == Key.J.WithCtrl))
+        {
+            _window.Composer.Input.TryInsertDraft("\n");
+            key.Handled = true;
+            return;
+        }
+
+        if (!_window.IsModalPanelOpen && !_window.IsCommandPaletteOpen && IsSubmitKey(key))
+        {
+            var input = _window.Composer.Input;
+            var cursor = input.InsertionPoint;
+            if (cursor > 0 && input.Text[cursor - 1] == '\\')
+            {
+                input.Text = input.Text.Remove(cursor - 1, 1);
+                input.InsertionPoint = cursor - 1;
+                input.TryInsertDraft("\n");
+                key.Handled = true;
+                return;
+            }
         }
 
         if (TryHandleDropdownKey(key))
@@ -85,12 +112,12 @@ internal sealed class TgChatKeyboardBindings
             _cancel();
             key.Handled = true;
         }
-        else if (key == Key.CursorUp)
+        else if (key == Key.CursorUp && _window.Composer.Input.IsAtFirstVisualRow)
         {
             _navigateHistory(-1);
             key.Handled = true;
         }
-        else if (key == Key.CursorDown)
+        else if (key == Key.CursorDown && _window.Composer.Input.IsAtLastVisualRow)
         {
             _navigateHistory(1);
             key.Handled = true;
@@ -108,6 +135,11 @@ internal sealed class TgChatKeyboardBindings
         else if (key == Key.O.WithCtrl)
         {
             _window.Transcript.ToggleExpanded();
+            key.Handled = true;
+        }
+        else if (key == Key.C.WithCtrl.WithShift)
+        {
+            _copy();
             key.Handled = true;
         }
     }
@@ -157,6 +189,11 @@ internal sealed class TgChatKeyboardBindings
 
     private bool TryHandleTranscriptNavigationKey(Key key)
     {
+        if (key == Key.CursorUp.WithCtrl.WithAlt || key == Key.CursorDown.WithCtrl.WithAlt)
+        {
+            _window.Transcript.MoveBlockSelection(key == Key.CursorUp.WithCtrl.WithAlt ? -1 : 1);
+            return true;
+        }
         if (key == Key.P.WithCtrl)
         {
             _window.OpenCommandPalette();
@@ -298,9 +335,12 @@ internal sealed class TgChatKeyboardBindings
         || key == Key.End.WithCtrl
         || key == Key.CursorUp.WithCtrl
         || key == Key.CursorDown.WithCtrl
+        || key == Key.CursorUp.WithCtrl.WithAlt
+        || key == Key.CursorDown.WithCtrl.WithAlt
         || key.KeyCode is KeyCode.PageUp or KeyCode.PageDown;
 
-    private static bool IsSubmitKey(Key key) => key.KeyCode == KeyCode.Enter || key.AsRune.Value is 13 or 10;
+    private static bool IsSubmitKey(Key key) => !key.IsCtrl && !key.IsAlt && !key.IsShift
+        && (key.KeyCode == KeyCode.Enter || key.AsRune.Value is 13 or 10);
 
     private static string RemoveLastRune(string value)
     {

@@ -175,7 +175,7 @@ public sealed class TgChromeTests
         window.Add(header);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            Assert.StartsWith("# session", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
+            Assert.StartsWith("session", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
 
             // A named session replaces the placeholder rather than appending to it. The
             // repaint lands on the next loop turn, so the capture has to wait for it.
@@ -184,7 +184,7 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
-            Assert.StartsWith("# Fix the busy lock", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
+            Assert.StartsWith("Fix the busy lock", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
 
             // A blank title falls back rather than leaving a lone "#".
             header.SetTitle("   ");
@@ -192,7 +192,7 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
         {
-            Assert.StartsWith("# session", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
+            Assert.StartsWith("session", TgSnapshot.Capture(app)[0], StringComparison.Ordinal);
             app.RequestStop();
             return false;
         });
@@ -275,15 +275,14 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
-            Assert.Contains("━━━━━ esc interrupt", TgSnapshot.Capture(app)[^1]);
+            Assert.Contains("▄▄▄▄▄ Working", TgSnapshot.Capture(app)[^1]);
             window.Hints.SetIdle("D:\\LLM");
             window.Hints.SetWaveClock(1.0);
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
         {
-            // Idle hints keep the workspace: the wave belongs to the busy state.
-            Assert.Contains("D:\\LLM", TgSnapshot.Capture(app)[^1]);
+            Assert.Contains("Ready", TgSnapshot.Capture(app)[^1]);
             app.RequestStop();
             return false;
         });
@@ -304,12 +303,11 @@ public sealed class TgChromeTests
         {
             var row = TgSnapshot.Capture(app)[0];
             // Classic TuiHeader starts the heading at column 0: "# title", no leading pad.
-            Assert.StartsWith("# Fix the busy lock", row);
+            Assert.StartsWith("Fix the busy lock", row);
             Assert.Contains("39,413", row);
             Assert.Contains("20.00%", row);
             Assert.Contains("$0.29", row);
-            var hash = row.IndexOf('#');
-            Assert.Equal(TgPalette.ToColor(TuiToken.Brand), TgSnapshot.CellAttribute(app, 0, hash).Foreground);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, 0).Foreground);
             var tally = row.IndexOf("39,413", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, tally).Foreground);
             // Flush right like TuiHeader's TwoColumn: the cluster ends on the last column.
@@ -373,9 +371,9 @@ public sealed class TgChromeTests
         {
             var rows = TgSnapshot.Capture(app);
             Assert.Equal(
-                TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                TgPalette.Attr(TuiToken.Ink).Background,
                 TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
-            Assert.Contains("/ commands", rows[^1]);
+            Assert.Contains("ctrl+p commands", rows[^1]);
             app.RequestStop();
             return false;
         });
@@ -433,9 +431,9 @@ public sealed class TgChromeTests
                     // The composer is still the last region on screen: the frame never went away.
                     var rows = TgSnapshot.Capture(app);
                     Assert.Equal(
-                        TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                        TgPalette.Attr(TuiToken.Ink).Background,
                         TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
-                    Assert.Contains("/ commands", rows[^1]);
+                    Assert.Contains("ctrl+p commands", rows[^1]);
                     app.RequestStop();
                 }));
             return false;
@@ -475,9 +473,9 @@ public sealed class TgChromeTests
                 Assert.False(window.HandOverToSequential);
                 var rows = TgSnapshot.Capture(app);
                 Assert.Equal(
-                    TgPalette.ToColor(TuiPalette.SurfaceRgb()),
+                    TgPalette.Attr(TuiToken.Ink).Background,
                     TgSnapshot.CellAttribute(app, window.Composer.Frame.Y, window.Composer.Frame.X + 1).Background);
-                Assert.Contains("/ commands", rows[^1]);
+                Assert.Contains("ctrl+p commands", rows[^1]);
                 app.RequestStop();
             });
             return false;
@@ -487,7 +485,7 @@ public sealed class TgChromeTests
     }
 
     [Fact]
-    public void Hints_IdleShowsWorkspaceAndKeys_BusyShowsSpinner()
+    public void Hints_IdleShowsReadyAndKeys_BusyShowsSpinner()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -498,13 +496,14 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("C:/Users/USER", row);
-            Assert.Contains("/ commands", row);
-            Assert.Contains("ctrl+o", row);
-            var words = row.IndexOf("/ commands", StringComparison.Ordinal);
-            Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, words + 2).Foreground);
-            var tab = row.IndexOf("tab", StringComparison.Ordinal);
-            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, tab).Foreground);
+            Assert.Equal("C:/Users/USER", hints.Workspace);
+            Assert.Contains("Ready", row);
+            Assert.Contains("ctrl+p commands", row);
+            var words = row.IndexOf("ctrl+p commands", StringComparison.Ordinal);
+            Assert.Equal(
+                TgPalette.ToColor(TuiToken.Meta),
+                TgSnapshot.CellAttribute(app, 0, words + "ctrl+p ".Length + 2).Foreground);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, words).Foreground);
             app.RequestStop();
             return false;
         });
@@ -556,16 +555,16 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("━━━━━ esc interrupt", row);
+            Assert.Contains("▄▄▄▄▄ Working", row);
             // Each cell carries its own ramp colour: the wave is a line of distinct
             // cells, not one glyph with one tone.
-            var first = row.IndexOf('━');
+            var first = row.IndexOf('▄');
             var cells = Enumerable.Range(0, TuiSpinner.WaveCells)
                 .Select(cell => TgSnapshot.CellAttribute(app, 0, first + cell).Foreground)
                 .ToArray();
             for (var cell = 0; cell < cells.Length; cell++)
             {
-                Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(cell, 0)), cells[cell]);
+                Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(0, TuiSpinner.WaveCycleSeconds - cell * TuiSpinner.WaveCycleSeconds / 5)), cells[cell]);
             }
 
             Assert.NotEqual(cells[0], cells[1]);

@@ -62,18 +62,18 @@ public sealed class TgCopyParityTests
         var rows = Render(typed, ghost);
 
         Assert.Contains("fix the busy lock", rows[1], StringComparison.Ordinal);
-        Assert.Contains("Standard", rows[3], StringComparison.Ordinal);
-        Assert.Contains(Model, rows[3], StringComparison.Ordinal);
-        Assert.Contains("kilo", rows[3], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[0], StringComparison.Ordinal);
+        Assert.Contains(Model, rows[4], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[4], StringComparison.Ordinal);
         Assert.Contains("Ask anything…", rows[6], StringComparison.Ordinal);
-        Assert.Contains("Standard", rows[8], StringComparison.Ordinal);
-        Assert.Contains("kilo", rows[8], StringComparison.Ordinal);
-        Assert.DoesNotContain("models.dev", rows[3], StringComparison.Ordinal);
+        Assert.Contains("Standard", rows[5], StringComparison.Ordinal);
+        Assert.Contains("kilo", rows[9], StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev", rows[4], StringComparison.Ordinal);
 
     }
 
     [Fact]
-    public void Hints_ReproduceTheClassicIdleAndBusyRows()
+    public void Hints_ShowTheNewIdleAndBusyStatusRows()
     {
         var idle = new TgHintsView { X = 0, Y = 0, Width = Dim.Fill() };
         idle.SetIdle("D:/LLM");
@@ -82,10 +82,9 @@ public sealed class TgCopyParityTests
 
         var rows = Render(idle, busy);
 
-        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: false, "D:/LLM")), rows[0]);
-        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: true, "D:/LLM")), rows[1]);
-        Assert.Contains("/ commands  tab complete  ctrl+o expand", rows[0], StringComparison.Ordinal);
-        Assert.Contains("━━━━━ esc interrupt", rows[1], StringComparison.Ordinal);
+        Assert.Contains("Ready", rows[0], StringComparison.Ordinal);
+        Assert.Contains("ctrl+p commands", rows[0], StringComparison.Ordinal);
+        Assert.Contains("▄▄▄▄▄ Working", rows[1], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,8 +97,8 @@ public sealed class TgCopyParityTests
 
         var row = Render(header)[0];
 
-        Assert.Equal(classic, row);
-        Assert.Contains("# Fix the busy lock", row, StringComparison.Ordinal);
+        Assert.Equal(Width, TuiText.VisibleWidth(row));
+        Assert.Contains("Fix the busy lock", row, StringComparison.Ordinal);
         Assert.Contains(
             "39,413" + new string(' ', 2 + TuiUsageMeter.BarWidth + 1) + "20.00%  ($0.29)",
             row,

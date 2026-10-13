@@ -6,14 +6,96 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,178 passed / 0 failed / 0 skipped** (2026-10-13, TUI cards and the session picker). Broker 930; CLI 1,385; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-cards-sessions-matrix.log`. |
+| .NET tests | Full **12-project** Debug matrix: **6,213 passed / 0 failed / 0 skipped** (2026-10-13, TUI prompt frame, input and popups). Broker 930; CLI 1,420; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-audit/final-matrix.log`. |
 | Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI cards and the session picker). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-cards-sessions-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13, TUI cards and the session picker) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-cards-sessions-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI prompt frame, input and popups). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-audit/uniform-release-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13, TUI prompt frame, input and popups) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`) with its assembly hash matching the Release publish. Logs: `artifacts/tui-audit/final-publish-smoke.log`, `artifacts/tui-audit/final-launcher-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Composer background correction (2026-10-13)
+
+Removed the remaining input, placeholder, chevron and interior fill so the
+composer background matches the terminal across its whole frame. Two rendered
+regressions first failed on the gray fill and now check every cell while empty
+and during focused multiline editing. Focused composer/layout/input suite:
+**31 passed / 0 failed** (`artifacts/tui-audit/uniform-background-green.log`).
+Documentation guards: **15 passed**. The earlier full CLI result below is the
+previous snapshot; this local palette correction did not rerun the full matrix.
+The full 12-project matrix and the publish/launcher smokes were later rerun for
+the final state: **6,213 / 0 / 0** (`artifacts/tui-audit/final-matrix.log`),
+`build.bat` 11/11 (`uniform-release-build.log`), smokes
+(`final-publish-smoke.log`, `final-launcher-smoke.log`).
+
+## Ru TUI visual refinement (2026-10-13)
+
+Mint picker accents, a session/chat divider, a full-width active-session square
+composer with metadata on its edges, and a contextual footer with a short,
+thick five-cell busy wave (`▄▄▄▄▄`). The operator rejected the earlier rounded
+frame and clarified thickness rather than increased wave length.
+The footer preserves queue/refusal status and does not repeat the interrupt
+action. Multiline editing and modal/approval behavior remain covered.
+Frame, input and placeholder cells match the terminal background throughout.
+Slash suggestions span the composer width; other modal surfaces centre
+on the terminal. The session heading has no product-name prefix.
+
+- Full CLI Debug suite: **1,418 passed / 0 failed / 0 skipped**;
+  `artifacts/tui-audit/width-modal-cli-final.log`. New rendered checks verify
+  full-width slash edges, terminal-colored frame cells and whole-screen modal centring.
+- Headless ANSI render probes cover 80×24, 120×30, 180×30 and 80×14;
+  actual cell text/attributes are in `artifacts/tui-audit/width-after/`.
+  PNG previews reconstruct those cells; they are not native terminal captures.
+- The first shared-package rebuild was blocked by locked publish DLLs
+  (`visual-release-build.log`). A standalone CLI publish succeeded
+  (`visual-isolated-build.log`); the shared build was retried after the operator
+  authorized closing Ru (`visual-release-build-final.log`).
+- The retry passed **11/11 Release stages**. `bin/ru.cmd` reaches the expected
+  parser failure for a missing subcommand; its CLI assembly hash matches the
+  Release publish (`visual-launcher-smoke.log`). Documentation guards: **15 passed**.
+- The operator-selected square frame and thicker short wave were rebuilt in
+  **11/11 Release stages** (`square-release-build.log`), with the running Ru Host
+  closed under the operator's prior authorization. The current launcher parser
+  smoke and publish hash comparison pass (`square-launcher-smoke.log`).
+- The full-width/background/modal-placement correction passed **11/11 Release
+  stages** (`width-release-build.log`). The published launcher parser smoke and
+  CLI publish hash comparison pass (`width-launcher-smoke.log`).
+- Physical terminal, IME and clipboard acceptance remain separate manual checks.
+
+## TUI input, popups and retained details (2026-10-13)
+
+Scoped follow-up to `d09a4c66`: multiline prompt editing, cursor-aware code
+paste, source cursor restoration, adaptive picker/approval cards, independent
+retained tool/reasoning blocks, explicit copy and actual run/queue status.
+
+- `dotnet test backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj -c Debug`:
+  **1,416 passed / 0 failed / 0 skipped**. Log:
+  `artifacts/tui-audit/cli-verified.log`. Initial regression probes failed for
+  modified-Enter submission, multiline navigation/display and block retention;
+  follow-up tests also reproduced loss of new details at both retention caps.
+  Earlier integration failures were retained in the same artifact directory;
+  footer allocation, attachment visibility and obsolete fixed-row assertions
+  were corrected before the final full CLI pass.
+- `.venv/Scripts/python.exe -m pytest tests/test_current_documentation.py tests/test_guidance_route_counts.py -q`:
+  **15 passed**.
+- `build.bat`: **11/11 Release stages passed**, including the shared flat
+  publish package used by `bin/ru.cmd`. Log:
+  `artifacts/tui-audit/release-build.log`. The launcher reached its parser and
+  returned the expected `missing_subcommand` for `agent` without a subcommand;
+  the flat CLI assembly hash matches its Release publish. This is a parser
+  smoke, not an interactive terminal or Host/provider acceptance run.
+- The headless render probe completed all five scenarios: 80×24 and 120×30
+  chat, 80×14 picker, Shift+Enter and earlier tool details. Output is under
+  `artifacts/tui-audit/after/`; `comparison.html` shows before/after cell text.
+- This is affected-project verification. The full 12-project result in the
+  table above belongs to the earlier cards/session-picker baseline and was not
+  rerun for this local presentation change. No execution-authority, provider,
+  public contract or durable-context policy changed.
+- Headless ANSI tests exercise cells, input injection and resizing. Copy tests
+  use an injected writer and do not touch the system clipboard. Command Prompt
+  appearance, physical resize, Vietnamese IME and real clipboard acceptance
+  remain manual; no live provider or native user interface was driven.
 
 ## TUI cards and the session picker (2026-10-13)
 

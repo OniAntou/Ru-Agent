@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(tui)**: Add a header/chat divider and a full-width square prompt with preset/model metadata on its edges, sharing the terminal background throughout. Slash suggestions span the prompt width; other popups centre on the terminal. Make the busy colour wave thicker with five half-height block cells and simplify footer shortcuts to commands or interrupt, preserving room for feedback and queued prompts.
+
+- **fix(tui)**: Make the prompt a growing multiline editor with Ctrl+J, supported Shift+Enter and backslash/Enter newlines; preserve pasted code, cursor position and rejected oversized drafts. Resize picker/approval cards to their available height and restore draft focus after dismissal. Keep independently expandable tool/reasoning history, add block navigation and explicit clipboard copy, and distinguish run/approval/paused states from submission feedback while showing queued prompts.
+
 - **feat(cli)**: Switch and delete sessions from the Terminal.Gui session card. `/sessions` (and bare `/resume`) opens a card picker showing each session's title, message count and workspace with the current one marked; typing filters, Enter switches, and Delete (or Ctrl+D) asks for confirmation before removing the row under the cursor. A delete reloads the card, deleting the open session moves to the newest remaining one or starts a fresh one (desktop-client parity), a partial cleanup reads as deleted with the host's retry hint, and switching or deleting is refused while a run is live.
 
 - **style(tui)**: Unify the Terminal.Gui popups on the flat card: a dim header rule under the title, a scroll position in the footer when a list is clipped, and the approval, workspace-trust, secret-key, document and slash-suggestion surfaces now render through the same card frame instead of bordered boxes (the suggestion list follows the shared selection bar). The bordered floating-panel renderer and the framed secret composition are gone with their callers.

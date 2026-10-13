@@ -5,7 +5,7 @@ namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
 /// Session heading and workspace above the conversation. The live activity moved to the
-/// transcript's live row (opencode-style), so the header stays two rows: title with the
+/// transcript's live row, so the header stays two rows: title with the
 /// usage cluster, then the workspace.
 /// </summary>
 public sealed class TgHeaderView : View
@@ -61,13 +61,10 @@ public sealed class TgHeaderView : View
         }
 
         var usageWidth = parts is not null ? TuiUsageMeter.VisibleWidth(parts) : TuiText.VisibleWidth(tokensOnly);
-        var heading = TuiText.Truncate("# " + SessionTitle, Math.Max(0, width - usageWidth - (usageWidth > 0 ? 2 : 0)));
+        var heading = TuiText.Truncate(SessionTitle, Math.Max(0, width - usageWidth - (usageWidth > 0 ? 2 : 0)));
         SetAttribute(TgPalette.Attr(TuiToken.Bright));
         Move(0, 0);
         AddStr(heading);
-        SetAttribute(TgPalette.Attr(TuiToken.Brand));
-        Move(0, 0);
-        AddStr("#");
         if (parts is not null)
         {
             DrawUsageParts(parts, Math.Max(0, width - usageWidth));

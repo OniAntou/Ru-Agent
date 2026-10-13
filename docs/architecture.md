@@ -341,7 +341,21 @@ reconciliation surfaces from Phase 3:
   for busy/idle hints, including clear. Workspace-busy hints persist until Host
   acceptance or a successful session switch, independent of composer keystrokes.
   `TgChatLayout` owns responsive positioning: centred landing and a padded session
-  column below a two-row header: title/usage, then workspace. The live activity
+  column with a multiline `TgPromptEditor`. Composer height grows within the
+  screen budget and uses the chat column's full width in active sessions (80 at home).
+  `TgRuleView` separates session context from chat without consuming another row.
+  Preset/model labels sit on the square frame's top/bottom edges.
+  Frame, input, placeholder and metadata cells share the terminal background.
+  Slash suggestions match composer width; modal picker, approval, secret,
+  report and command-palette surfaces centre on the whole terminal.
+  The footer exposes one contextual shortcut and a short five-cell half-height block wave,
+  leaving space for feedback and the queue status.
+  Transcript and slash-suggestion bounds follow the composer frame. Modal
+  dismissal restores source-text cursor position and draft focus. `TgHintsView`
+  presents running, approval and paused states independently of feedback and
+  queue count. Retained tool/reasoning blocks share the transcript's row/character
+  bounds; selection, expansion and explicit copy remain presentation operations.
+  The session column sits below a two-row header: title/usage, then workspace. The live activity
   moved out of the header into the transcript: `TgTranscriptView` keeps one live
   row pinned after the last committed row (opencode-style), drawn from the shared
   activity presentation, and a settled tool row replaces it in place. The activity

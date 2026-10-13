@@ -17,7 +17,6 @@ public sealed class TgChatLoop
     /// <summary>Prompts typed while a turn streams wait here; a full queue refuses the new prompt.</summary>
     public const int MaxQueueDepth = 8;
 
-    private const string QueueHint = "enter queues · esc cancels";
     private const string QueueFullHint = "queue full · enter retries";
     private const string SubmissionTooLargeHint = "submission too large · shorten or detach files";
     private const string SubmissionUnavailableHint = "cannot queue this command with pending attachments";
@@ -48,11 +47,13 @@ public sealed class TgChatLoop
     private Func<string>? _attachmentLabelProvider;
     private Func<int>? _attachmentCountProvider;
     private Func<Task>? _pasteHandler;
+    private Func<string, Task<bool>>? _copyHandler;
     private Func<string, bool>? _dropHandler;
     private CancellationTokenSource? _turn;
     private TaskCompletionSource? _turnDone;
     private int _historyIndex;
     private string _draft = string.Empty;
+    private int _draftCursor;
     private volatile bool _busy;
     private volatile bool _stopped;
     private bool _queuePaused;
@@ -75,7 +76,8 @@ public sealed class TgChatLoop
             Cancel,
             NavigateHistory,
             CompleteCommand,
-            Paste);
+            Paste,
+            Copy);
         // Stop() is the explicit signal, but the window can also wind down on its own
         // (app stop/close); the runnable leaving its running state must release waiters.
         window.IsRunningChanged += (_, args) =>
@@ -122,6 +124,7 @@ public sealed class TgChatLoop
         {
             _queuePaused = true;
         }
+        Dispatch(RefreshRunStatus);
     }
 
     internal void ResumeQueuedSubmissions()
@@ -141,6 +144,7 @@ public sealed class TgChatLoop
         {
             StartTurn(next);
         }
+        else Dispatch(RefreshRunStatus);
     }
 
     internal void SetSubmissionHandler(Func<ChatSubmissionSnapshot, TranscriptStream, CancellationToken, Task> handler) =>
@@ -162,6 +166,7 @@ public sealed class TgChatLoop
 
     /// <summary>Ctrl+V handler (clipboard image/text); a null handler leaves the key to the input.</summary>
     public void SetPasteHandler(Func<Task> handler) => _pasteHandler = handler;
+    public void SetCopyHandler(Func<string, Task<bool>> handler) => _copyHandler = handler;
 
     /// <summary>
     /// A dropped path in the composer text: returns true when the line was consumed as an
@@ -178,7 +183,7 @@ public sealed class TgChatLoop
                 return;
             }
 
-            _window.Hints.SetIdle(_attachmentLabelProvider());
+            RefreshRunStatus();
         });
 
     public void Submit()
@@ -212,7 +217,7 @@ public sealed class TgChatLoop
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)
             {
-                _window.Hints.SetBusy(StateChangeBusyHint);
+                _window.Hints.ShowFeedback(StateChangeBusyHint, true);
                 return;
             }
         }
@@ -220,7 +225,7 @@ public sealed class TgChatLoop
         var submission = _snapshotFactory?.Invoke(line);
         if (_snapshotFactory is not null && submission is null)
         {
-            _window.Hints.SetBusy(SubmissionUnavailableHint);
+            _window.Hints.ShowFeedback(SubmissionUnavailableHint, true);
             return;
         }
 
@@ -229,7 +234,7 @@ public sealed class TgChatLoop
             || submission.OwnedBytes > MaxQueuedSubmissionBytes)
         {
             TuiDebug.Log("submit", "refused: submission exceeds the bounded prompt or attachment cap");
-            _window.Hints.SetBusy(SubmissionTooLargeHint);
+            _window.Hints.ShowFeedback(SubmissionTooLargeHint, true);
             return;
         }
 
@@ -265,7 +270,7 @@ public sealed class TgChatLoop
         if (refused)
         {
             TuiDebug.Log("submit", "refused: queue full");
-            _window.Hints.SetBusy(QueueFullHint);
+            _window.Hints.ShowFeedback(QueueFullHint, true);
             return;
         }
 
@@ -278,7 +283,8 @@ public sealed class TgChatLoop
         if (queued)
         {
             TuiDebug.Log("submit", $"queued ({_queued.Count})");
-            _window.Hints.SetBusy(QueueHint);
+            _window.Hints.SetQueueCount(QueuedCount);
+            _window.Hints.ShowFeedback("prompt queued");
             return;
         }
 
@@ -370,17 +376,6 @@ public sealed class TgChatLoop
         }
     }
 
-    private bool HasQueued
-    {
-        get
-        {
-            lock (_queueGate)
-            {
-                return _queued.Count > 0;
-            }
-        }
-    }
-
     private static bool IsRetryCommand(string line) =>
         line.Trim().Equals("/retry", StringComparison.OrdinalIgnoreCase);
 
@@ -431,9 +426,10 @@ public sealed class TgChatLoop
         CancellationToken ct,
         TaskCompletionSource turnDone)
     {
+        string? failure = null;
         try
         {
-            Dispatch(() => _window.Hints.SetBusy(HasQueued ? QueueHint : null));
+            Dispatch(() => _window.Hints.SetRunning(QueuedCount));
             await _submissionHandler(submission, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -443,6 +439,7 @@ public sealed class TgChatLoop
         }
         catch (Exception ex)
         {
+            failure = ex.Message;
             _submissionDiscarded?.Invoke(submission);
             stream.Append(" " + ex.Message, TranscriptStyle.Error);
         }
@@ -479,12 +476,31 @@ public sealed class TgChatLoop
                 {
                     // The turn is over: the live activity row must not outlive it.
                     _window.Transcript.ClearLive();
-                    _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace);
+                    RefreshRunStatus();
+                    if (failure is not null) _window.Hints.ShowFeedback(failure, true);
                 });
             }
 
             turnDone.TrySetResult();
         }
+    }
+
+    private int QueuedCount
+    {
+        get { lock (_queueGate) return _queued.Count; }
+    }
+
+    private void RefreshRunStatus()
+    {
+        bool paused;
+        int queued;
+        lock (_queueGate) { paused = _queuePaused; queued = _queued.Count; }
+        if (_busy)
+            _window.Hints.SetQueueCount(queued);
+        else if (paused)
+            _window.Hints.SetPaused(queued);
+        else
+            _window.Hints.SetIdle(_attachmentLabelProvider?.Invoke() ?? _window.Hints.Workspace);
     }
 
     /// <summary>
@@ -542,6 +558,22 @@ public sealed class TgChatLoop
         _ = RunHandlerAsync(handler);
     }
 
+    private void Copy()
+    {
+        var text = _window.Transcript.CopyText();
+        var handler = _copyHandler;
+        if (handler is null || string.IsNullOrEmpty(text))
+        {
+            _window.Hints.ShowFeedback("nothing to copy");
+            return;
+        }
+        _ = RunHandlerAsync(async () =>
+        {
+            var copied = await handler(text).ConfigureAwait(false);
+            Dispatch(() => _window.Hints.ShowFeedback(copied ? "copied to clipboard" : "clipboard unavailable", !copied));
+        });
+    }
+
     /// <summary>Runs a fire-and-forget composer handler, landing failures on the transcript.</summary>
     private async Task RunHandlerAsync(Func<Task> handler)
     {
@@ -583,10 +615,12 @@ public sealed class TgChatLoop
             if (_historyIndex == _history.Count)
             {
                 _draft = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+                _draftCursor = _window.Composer.Input.InsertionPoint;
             }
 
             _historyIndex--;
             _window.Composer.Input.Text = _history[_historyIndex];
+            _window.Composer.Input.InsertionPoint = _window.Composer.Input.Text.Length;
             return;
         }
 
@@ -597,6 +631,7 @@ public sealed class TgChatLoop
 
         _historyIndex++;
         _window.Composer.Input.Text = _historyIndex == _history.Count ? _draft : _history[_historyIndex];
+        _window.Composer.Input.InsertionPoint = _historyIndex == _history.Count ? _draftCursor : _window.Composer.Input.Text.Length;
     }
 
     /// <summary>Tab completes a unique known command through the classic matcher.</summary>
@@ -612,6 +647,7 @@ public sealed class TgChatLoop
         }
 
         _window.Composer.Input.Text = completion + " ";
+        _window.Composer.Input.InsertionPoint = _window.Composer.Input.Text.Length;
     }
 }
 

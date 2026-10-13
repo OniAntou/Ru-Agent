@@ -20,13 +20,13 @@ public static class TuiSpinner
     /// <summary>Milliseconds each tool glyph stays on screen.</summary>
     public const int ToolGlyphMilliseconds = 250;
 
-    /// <summary>The fixed dot the busy hint row waves colour through.</summary>
-    public const string WaveGlyph = "●";
+    /// <summary>The fixed line the busy hint row waves colour through.</summary>
+    public const string WaveGlyph = "━";
 
-    /// <summary>Dots in the busy hint wave.</summary>
-    public const int WaveCells = 3;
+    /// <summary>Cells in the busy hint wave line.</summary>
+    public const int WaveCells = 5;
 
-    /// <summary>The wave's visible text: <see cref="WaveCells"/> dots.</summary>
+    /// <summary>The wave's visible text: <see cref="WaveCells"/> joined line cells.</summary>
     public static readonly string WaveText = string.Concat(Enumerable.Repeat(WaveGlyph, WaveCells));
 
     /// <summary>Milliseconds each wave phase bucket stays on screen.</summary>
@@ -36,7 +36,7 @@ public static class TuiSpinner
     public const double WaveCycleSeconds = 1.4;
 
     /// <summary>Phase offset between neighbouring cells, as a fraction of the ramp.</summary>
-    public const double WaveCellSpacing = 0.16;
+    public const double WaveCellSpacing = 0.1;
 
     /// <summary>Brightness floor of a cell, so the trailing dots stay visible.</summary>
     private const double WaveFloor = 0.45;

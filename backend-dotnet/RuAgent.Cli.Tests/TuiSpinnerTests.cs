@@ -59,17 +59,24 @@ public sealed class TuiSpinnerTests
     }
 
     [Fact]
-    public void WaveRgb_IsDeterministicAndKeepsTheDotsDistinct()
+    public void WaveText_IsOneHorizontalLine()
     {
-        // Three cells, three ramp positions: the row reads as a wave, not one tone.
-        var first = TuiSpinner.WaveRgbAt(0, 0.35);
-        var second = TuiSpinner.WaveRgbAt(1, 0.35);
-        var third = TuiSpinner.WaveRgbAt(2, 0.35);
+        Assert.Equal(new string('━', TuiSpinner.WaveCells), TuiSpinner.WaveText);
+        Assert.Equal(TuiSpinner.WaveCells, TuiText.VisibleWidth(TuiSpinner.WaveText));
+    }
 
-        Assert.Equal(first, TuiSpinner.WaveRgbAt(0, 0.35));
-        Assert.NotEqual(first, second);
-        Assert.NotEqual(second, third);
-        Assert.All([first, second, third], rgb =>
+    [Fact]
+    public void WaveRgb_IsDeterministicAndKeepsTheCellsDistinct()
+    {
+        // Every cell sits at its own ramp position: the row reads as one line with a
+        // travelling gradient, not one tone.
+        var cells = Enumerable.Range(0, TuiSpinner.WaveCells)
+            .Select(cell => TuiSpinner.WaveRgbAt(cell, 0.35))
+            .ToArray();
+
+        Assert.Equal(cells[0], TuiSpinner.WaveRgbAt(0, 0.35));
+        Assert.Equal(TuiSpinner.WaveCells, cells.Distinct().Count());
+        Assert.All(cells, rgb =>
         {
             Assert.InRange(rgb.R, 0, 255);
             Assert.InRange(rgb.G, 0, 255);

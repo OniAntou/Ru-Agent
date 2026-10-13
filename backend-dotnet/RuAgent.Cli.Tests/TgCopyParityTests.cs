@@ -85,7 +85,7 @@ public sealed class TgCopyParityTests
         Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: false, "D:/LLM")), rows[0]);
         Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: true, "D:/LLM")), rows[1]);
         Assert.Contains("/ commands  tab complete  ctrl+o expand", rows[0], StringComparison.Ordinal);
-        Assert.Contains("●●● esc interrupt", rows[1], StringComparison.Ordinal);
+        Assert.Contains("━━━━━ esc interrupt", rows[1], StringComparison.Ordinal);
     }
 
     [Fact]

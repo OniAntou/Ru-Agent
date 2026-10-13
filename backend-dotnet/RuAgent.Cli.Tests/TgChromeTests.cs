@@ -275,7 +275,7 @@ public sealed class TgChromeTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
-            Assert.Contains("●●● esc interrupt", TgSnapshot.Capture(app)[^1]);
+            Assert.Contains("━━━━━ esc interrupt", TgSnapshot.Capture(app)[^1]);
             window.Hints.SetIdle("D:\\LLM");
             window.Hints.SetWaveClock(1.0);
             return false;
@@ -556,17 +556,19 @@ public sealed class TgChromeTests
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("●●● esc interrupt", row);
-            // Each dot carries its own ramp colour: the wave is three distinct cells,
-            // not one glyph with one tone.
-            var first = row.IndexOf('●');
-            var cell0 = TgSnapshot.CellAttribute(app, 0, first).Foreground;
-            var cell1 = TgSnapshot.CellAttribute(app, 0, first + 1).Foreground;
-            var cell2 = TgSnapshot.CellAttribute(app, 0, first + 2).Foreground;
-            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(0, 0)), cell0);
-            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(1, 0)), cell1);
-            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(2, 0)), cell2);
-            Assert.NotEqual(cell0, cell1);
+            Assert.Contains("━━━━━ esc interrupt", row);
+            // Each cell carries its own ramp colour: the wave is a line of distinct
+            // cells, not one glyph with one tone.
+            var first = row.IndexOf('━');
+            var cells = Enumerable.Range(0, TuiSpinner.WaveCells)
+                .Select(cell => TgSnapshot.CellAttribute(app, 0, first + cell).Foreground)
+                .ToArray();
+            for (var cell = 0; cell < cells.Length; cell++)
+            {
+                Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(cell, 0)), cells[cell]);
+            }
+
+            Assert.NotEqual(cells[0], cells[1]);
             var esc = row.IndexOf("esc", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, esc).Foreground);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, esc + 4).Foreground);

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **style(tui)**: Replace the busy hint row's braille spinner with a colour wave: three fixed dots whose colours travel the aurora → brand → brand2 ramp on the shared animation clock (a pure function of elapsed seconds, ~1.4 s per cycle, repainted on a 90 ms phase bucket), so the row glows and drifts instead of rotating. The interrupt copy, queue hints, scrolled-back prefix and idle workspace label are unchanged, and the classic hint composition stays in step with the Terminal.Gui row.
+- **style(tui)**: Replace the busy hint row's braille spinner with a colour wave: one five-cell horizontal line (`━━━━━`) whose colours travel the aurora → brand → brand2 ramp on the shared animation clock (a pure function of elapsed seconds, ~1.4 s per cycle, repainted on a 90 ms phase bucket), so the row glows and drifts instead of rotating. The interrupt copy, queue hints, scrolled-back prefix and idle workspace label are unchanged, and the classic hint composition stays in step with the Terminal.Gui row.
 
 - **fix(cli)**: Drop a superseded reply's rows from the Terminal.Gui transcript. A model step the host suppresses for recovery (a tool failed and the reply was unverified, or the output was truncated) and a retried attempt both streamed prose that the answer replacing them must not duplicate: the transcript drops exactly the rows each superseded step painted, the held-back tail cannot leak into the next answer, and the turn-end gap check stands down for a turn that carried a suppressed reply instead of reporting truncation or reprinting text the user must never see. The suppressed payload reference is no longer chased by the recovery either.
 

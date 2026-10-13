@@ -11,7 +11,7 @@
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
 | Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI prompt frame, input and popups). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-audit/uniform-release-build.log`. |
 | Managed runtime smoke | **PASS** (2026-10-13, TUI prompt frame, input and popups) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`) with its assembly hash matching the Release publish. Logs: `artifacts/tui-audit/final-publish-smoke.log`, `artifacts/tui-audit/final-launcher-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
-| Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
+| Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
@@ -541,8 +541,7 @@ listing and redirected startup/exit (`artifacts/gui-tui-release-inventory.log`,
 `artifacts/gui-tui-release-smoke.log`). Smoke data and bearer were isolated and
 synthetic. Native WinUI interaction and physical-terminal rendering remain manual.
 
-The [current-checkout review](../reviews/2026-10-12-gui-tui-review.md) records
-five P2 findings. Sequential Debug checks passed **1,284 CLI tests** and
+A current-checkout review recorded five P2 findings. Sequential Debug checks passed **1,284 CLI tests** and
 **1,385 GUI tests**, with no failures or skips. A direct `TuiTranscript` probe
 reproduced chunk-dependent Markdown rendering and irreversible display clipping
 of long fenced code. The GUI findings are source-confirmed asynchronous ownership
@@ -889,7 +888,7 @@ Release publish and the full Python suite were not rerun in this change.
 
 ## GUI/backend review fixes (2026-10-11)
 
-All seven findings in [the review](../reviews/2026-10-11-gui-backend-review.md)
+All seven findings in that review
 have implementation changes and regression coverage: owned run workers, stale
 stream/history settlement, deleted-run SSE cleanup, provider key probes, latest
 Files refresh and export workspace resolution. That full Debug matrix passed
@@ -1261,7 +1260,7 @@ real-provider benchmark, so the latest measured resolution remains 0/3 below.
 ## Post-terminal-fix SWE rerun (2026-10-11)
 
 For the subsequent ten-task Standard baseline and its matched follow-up probes,
-see [single-agent readiness (2026-10-13)](single-agent-readiness-2026-10-13.md).
+see the single-agent readiness diagnostic (2026-10-13, retained in git history).
 The runtime, preset and difficulty mix differ from this older three-task run.
 
 The three custom SWE tasks were rerun on committed `96f658c2`, using the
@@ -2358,7 +2357,7 @@ is documented in [architecture](../architecture.md).
 - `POST /agent/v1/runs` body cap bumped to 1 MB for runs with `image_attachments`. Strict validation enforces max 4 images, max 4 MB decoded per image, max 20 MB total decoded, allowed MIME types (`image/png`, `image/jpeg`, `image/webp`), strict base64 encoding, and model vision capability. Non-vision models fail closed with `vision_unsupported`.
 - Worker v2 wire protocol supports `"images"` in start payload; `LoopbackModelStepRunner.LoadRunImagesAsync` feeds decrypted payload data URLs into `ModelRequest.Images`.
 - Client-side `ImageAttachmentResizer` downscales images exceeding 2048px on max dimension and compresses them to JPEG (0.85 quality) or PNG before sending. Chat bubbles render thumbnails up to 240px and provide click-to-zoom in a `ContentDialog`.
-- All 13 test projects passed (2,438 tests, 0 failed, 0 skipped). Both Debug and Release builds succeeded with 0 warnings and 0 errors. See [2026-09-03-image-multimodal-verification.md](../verification/2026-09-03-image-multimodal-verification.md).
+- All 13 test projects passed (2,438 tests, 0 failed, 0 skipped). Both Debug and Release builds succeeded with 0 warnings and 0 errors. The detailed record is retained in git history.
 
 ### Cross-system hardening evidence (2026-09-02)
 

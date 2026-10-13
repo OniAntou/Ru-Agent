@@ -5,10 +5,10 @@ architecture decisions. Completed implementation plans and design drafts are
 kept in Git history instead of the working tree.
 
 A plan may sit in the working tree only while it is still open, and it must say
-so with a `status: pending` or `status: in-progress` marker. `test_completed_implementation_archives_are_
-not_kept_in_the_checkout` enforces that for `docs/superpowers/plans/`,
-`docs/superpowers/specs/` and `docs/plans/`, so an unlabelled draft cannot sit
-in the checkout indefinitely.
+so with a `status: pending` or `status: in-progress` marker.
+`test_completed_implementation_archives_are_not_kept_in_the_checkout` enforces
+that for `docs/superpowers/plans/`, `docs/superpowers/specs/` and `docs/plans/`,
+so an unlabelled draft cannot sit in the checkout indefinitely.
 
 ## Current system
 
@@ -29,7 +29,6 @@ in the checkout indefinitely.
 - [Shared workspace coordination](operations/shared-workspace-coordination.md)
 - [Driving Ru without a provider](operations/scripted-model.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
-- [Dated verification records](verification/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Contributing](../CONTRIBUTING.md)
 - [Agent guidance](../AGENTS.md)
@@ -52,10 +51,12 @@ in the checkout indefinitely.
 - [SQLite business persistence](adr/0013-consolidate-business-persistence-in-sqlite.md)
 - [In-process execution (terminal sandbox portion superseded)](adr/0014-in-process-execution-and-terminal-sandbox.md)
 - [Retire terminal OS sandbox](adr/0015-retire-terminal-os-sandbox.md)
+- [Standard workspace Python files](adr/0016-standard-workspace-python-files.md)
 - [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
 - [Approval patterns and durable folder grants](adr/0018-approval-patterns-and-durable-folder-grants.md)
 
-Git history is the recovery source for removed dated plans and specifications.
+Git history is the recovery source for removed dated plans, specifications,
+reviews and verification records.
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles defined in [`../CONTEXT.md`](../CONTEXT.md) — that file

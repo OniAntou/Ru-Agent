@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **docs**: Prune the documentation folder: the two review snapshots, the single-agent readiness diagnostic, the everyday-coding evaluation and the September image-verification record leave the working tree (their content stays in git history), along with the stray root `logo1.png`. The documentation index gains the missing ADR 0016 entry, says dated records live in git history, and every reference to a removed record is rewritten in `verification.md` and the coding-benchmark README.
+
 - **docs**: Rewrite the public README for users rather than developers: it keeps what the agent does, a plain-language control summary (three presets, workspace trust, approvals) and the first-run steps, and drops the architecture, build/test and count sections — those live in CONTEXT.md, docs/architecture.md and CONTRIBUTING.md, which the README links to. The header carries the lowercase `ru agent` block wordmark on a transparent background — aurora green for `ru`, muted grey for `agent`, drawn from rectangles so it renders identically everywhere and reads on either GitHub theme. The repository guards that pinned README counts moved with the content (the README now states no counts).
 
 - **docs**: Relicense the repository under the MIT License, superseding the Functional Source License: use, modification, redistribution and commercial use are permitted with no restriction beyond keeping the copyright notice. The SDK package metadata carries the `MIT` SPDX identifier, and the README's license section and badge state the new terms.

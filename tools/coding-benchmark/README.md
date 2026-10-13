@@ -168,11 +168,11 @@ not establish a causal effect of the fixes.
 
 ## Environment and comparison limits
 
-The [single-agent readiness diagnostic](../../docs/operations/single-agent-readiness-2026-10-13.md)
+The single-agent readiness diagnostic (2026-10-13, retained in git history)
 records a ten-task Standard baseline, separates candidate correctness from
 unattended completion, and documents repairs to effort metadata and cancelled
 trial completeness.
-The [Everyday evaluation](../../docs/operations/everyday-coding-2026-10-13.md)
+The Everyday evaluation (2026-10-13, retained in git history)
 uses three fresh attempts per focused task with the current model, separately
 records infrastructure interruptions and keeps matched runtime conditions.
 

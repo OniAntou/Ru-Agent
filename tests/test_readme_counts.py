@@ -4,17 +4,18 @@ These numbers drifted before -- the README claimed 38 routes, 12 test projects a
 10 tools while the code held 40, 13 and 11 -- because nothing compared them. Each
 count here has exactly one source of truth in the tree, so the comparison is cheap
 and it fails the moment the two disagree.
+
+The README no longer publishes route or test totals; the counts it does carry
+(tools, test projects) stay pinned here.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
-ROUTE_CONTRACT = ROOT / "backend-dotnet" / "public-route-contract.json"
 TOOL_CATALOG = (
     ROOT / "backend-dotnet" / "RuAgent.Protocol" / "AgentToolDefinitionCatalog.cs"
 )
@@ -22,27 +23,6 @@ TOOL_CATALOG = (
 
 def _readme() -> str:
     return README.read_text(encoding="utf-8")
-
-
-def test_readme_route_count_matches_the_contract() -> None:
-    routes = json.loads(ROUTE_CONTRACT.read_text(encoding="utf-8"))
-    agent = [entry for entry in routes if "/agent/v1" in entry["path"]]
-    non_agent = len(routes) - len(agent)
-
-    text = _readme()
-    # The badge is the number a reader sees first.
-    assert f"routes-{len(routes)}%20HTTP" in text, (
-        f"README routes badge does not say {len(routes)} HTTP"
-    )
-    assert f"**{len(routes)} HTTP routes**" in text, (
-        f"README body does not say {len(routes)} HTTP routes"
-    )
-    assert f"{non_agent}\nnon-Agent" in text or f"({non_agent} " in text, (
-        f"README does not break the routes down as {non_agent} non-Agent"
-    )
-    assert f"{len(agent)} under `/agent/v1/*`" in text, (
-        f"README does not name {len(agent)} agent routes under /agent/v1/*"
-    )
 
 
 def test_readme_tool_count_matches_the_catalog() -> None:
@@ -73,25 +53,4 @@ def test_readme_test_project_count_matches_the_matrix_roots() -> None:
     )
     assert f"runs the {roots} test projects" in text, (
         f"README CI note does not say {roots} test projects"
-    )
-
-
-def test_readme_test_count_matches_the_recorded_full_run() -> None:
-    """The badge claimed 3,730 passing while the recorded run said 3,664; nothing
-    compared them. The README number must equal the run recorded in
-    verification.md, so the badge cannot say whatever it likes."""
-    verification = (ROOT / "docs" / "operations" / "verification.md").read_text(
-        encoding="utf-8"
-    )
-    recorded = re.search(r"\*\*([\d,]+) passed / 0 failed / 0 skipped\*\*", verification)
-    assert recorded is not None, "verification.md must record the last full run"
-    expected = recorded.group(1)
-    badge = expected.replace(",", "%2C")
-
-    text = _readme()
-    assert f"tests-{badge}%20passing" in text, (
-        f"README test badge does not say {expected} passing"
-    )
-    assert f"projects, {expected} tests" in text, (
-        f"README testing line does not say {expected} tests"
     )

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **docs**: Rework the public README: it no longer publishes test or HTTP-route totals (the tool and test-project counts stay pinned by the repository guards), the long sections are tightened, and the header wordmark returns to the lowercase `ru agent` mark drawn smooth — a monospace system stack in aurora and muted tones with a transparent background, so it reads on either GitHub theme.
+
 - **docs**: Relicense the repository under the MIT License, superseding the Functional Source License: use, modification, redistribution and commercial use are permitted with no restriction beyond keeping the copyright notice. The SDK package metadata carries the `MIT` SPDX identifier, and the README's license section and badge state the new terms.
 
 - **style(tui)**: Add a header/chat divider and a full-width square prompt with preset/model metadata on its edges, sharing the terminal background throughout. Slash suggestions span the prompt width; other popups centre on the terminal. Make the busy colour wave thicker with five half-height block cells and simplify footer shortcuts to commands or interrupt, preserving room for feedback and queued prompts.

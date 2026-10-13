@@ -1,0 +1,8 @@
+id = "ts-emitter-lifecycle"
+language = "typescript"
+difficulty = "everyday"
+editable_globs = ["src/**/*.ts"]
+fail_to_pass = ["double_unsubscribe", "remove_during_emit", "add_during_emit", "duplicate_registrations"]
+pass_to_pass = ["order_and_payload", "exception_propagation"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

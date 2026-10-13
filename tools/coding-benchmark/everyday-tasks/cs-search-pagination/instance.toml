@@ -1,0 +1,8 @@
+id = "cs-search-pagination"
+language = "csharp"
+difficulty = "everyday"
+editable_globs = ["src/**/*.cs"]
+fail_to_pass = ["second_page", "filter_before_page"]
+pass_to_pass = ["case_insensitive", "empty_and_bounds", "invalid_arguments", "preserve_input"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

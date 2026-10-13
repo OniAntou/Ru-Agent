@@ -22,7 +22,7 @@ in the checkout indefinitely.
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
 - [Coding-agent capability and acceptance map](operations/coding-agent-capabilities.md)
-- [Custom Terminal/SWE coding benchmark](../tools/coding-benchmark/README.md)
+- [Custom Terminal/SWE/Everyday coding benchmark](../tools/coding-benchmark/README.md)
 - [Logging and diagnostics](operations/logging.md)
 - [Python dependency ownership](operations/python-dependency-ownership.md)
 - [Python runtime boundary](operations/python-runtime-boundary.md)

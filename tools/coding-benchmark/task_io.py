@@ -97,7 +97,7 @@ def load_task(path, suite):
         "\n\nFinal workspace constraints:\n"
         "Only source files matching " + ", ".join(globs) + " may be changed or added. "
         "All other existing files must remain unchanged, including project files and public smoke tests. "
-        "Remove scratch files before finishing; use a temporary directory outside the workspace for scratch checks.\n"
+        "Remove scratch files before finishing; run scratch checks inside the workspace and remove their files afterwards.\n"
     )
     required = ["tests/test.sh", "environment/Dockerfile", "solution/solve.sh"] if is_terminal else []
     grader = "tests/Grader.csproj" if language == "csharp" else f"tests/grade.{extension}"

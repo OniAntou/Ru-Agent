@@ -1,0 +1,8 @@
+id = "cs-todo-summary"
+language = "csharp"
+difficulty = "everyday"
+editable_globs = ["src/**/*.cs"]
+fail_to_pass = ["pending_counts", "normalized_owners", "ordinal_order", "empty_and_done_only", "snapshot_independence"]
+pass_to_pass = ["existing_operations"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

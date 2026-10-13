@@ -1,0 +1,8 @@
+id = "py-config-isolation"
+language = "python"
+difficulty = "everyday"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["defaults_unchanged", "independent_calls", "missing_file_copy"]
+pass_to_pass = ["overlay_values", "invalid_documents", "empty_and_shallow"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

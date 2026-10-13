@@ -22,14 +22,22 @@ def test_task_registry_has_separate_multilingual_terminal_and_swe_suites():
     assert all(task.fail_to_pass and task.pass_to_pass for task in swe)
 
 
+def test_everyday_suite_has_two_focused_tasks_per_language():
+    from collections import Counter
+    everyday = benchmark.tasks("everyday")
+    assert Counter(task.language for task in everyday) == {"csharp": 2, "python": 2, "typescript": 2}
+    assert all(task.fail_to_pass and task.pass_to_pass for task in everyday)
+
+
 def test_agent_instruction_discloses_final_workspace_constraints():
-    for suite in ("terminal", "swe"):
+    for suite in ("terminal", "swe", "everyday"):
         for task in benchmark.tasks(suite):
             original = (task.path / ("instruction.md" if suite == "terminal" else "issue.md")).read_text(encoding="utf-8")
             assert task.instruction.startswith(original)
             assert all(pattern in task.instruction for pattern in task.editable_globs)
             assert "All other existing files must remain unchanged" in task.instruction
             assert "Remove scratch files" in task.instruction
+            assert "scratch checks inside the workspace" in task.instruction
 
 
 def test_prepare_hides_verifier_and_reference_and_records_git_base(tmp_path):
@@ -109,6 +117,18 @@ def test_swe_patch_round_trip_ignores_staged_interpreter_cache(tmp_path):
     result = benchmark.grade_patch(task, patch, tmp_path / "evaluate")
     assert result["status"] == "passed"
     assert "__pycache__" not in patch.read_text(encoding="utf-8")
+
+
+def test_everyday_patch_round_trip_uses_the_same_integrity_checks(tmp_path):
+    task = benchmark.find_task("everyday", "py-stable-dedupe")
+    trial = benchmark.prepare(task, tmp_path / "author")
+    workspace = Path(trial["workspace"])
+    benchmark.apply_reference(task, workspace)
+    patch = tmp_path / "feature.patch"
+    benchmark.export_patch(task, workspace, patch)
+    result = benchmark.grade_patch(task, patch, tmp_path / "evaluate")
+    assert result["reward"] == 1
+    assert all(result["FAIL_TO_PASS"].values()) and all(result["PASS_TO_PASS"].values())
 
 
 def test_swe_export_has_real_git_base_and_optional_reference_patch(tmp_path):

@@ -8,6 +8,23 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class SystemPromptComposerTests
 {
     [Fact]
+    public void Native_listing_is_brief_while_text_selection_keeps_full_tool_guidance()
+    {
+        const string description = "Read src/App.cs. Continue paging with the returned cursor.";
+        var capability = new PromptCapability("read", "1.0.0", description, "workspace.read",
+            "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), null, "enabled");
+        var context = PromptFixtures.ValidContext(capabilities: [capability]);
+        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
+        var text = SystemPromptComposer.Compose(context);
+
+        Assert.Contains("read@1.0.0: Read src/App.cs.", native.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Continue paging with the returned cursor.", native.Text, StringComparison.Ordinal);
+        Assert.Contains(description, text.Text, StringComparison.Ordinal);
+        Assert.Equal(description, context.Capabilities.Single().Description);
+        native.Receipt.ValidateAgainst(context, native.Text);
+    }
+
+    [Fact]
     public void Compose_uses_the_canonical_seven_layer_order_and_text_receipt()
     {
         var context = PromptFixtures.ValidContext();

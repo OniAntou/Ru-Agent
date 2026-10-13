@@ -22,9 +22,10 @@ GIT_ENV = {
 
 
 def tasks(suite):
-    if suite not in {"terminal", "swe"}:
+    directories = {"terminal": "tasks", "swe": "swe-tasks", "everyday": "everyday-tasks"}
+    if suite not in directories:
         raise ValueError("unknown suite")
-    directory = ROOT / ("tasks" if suite == "terminal" else "swe-tasks")
+    directory = ROOT / directories[suite]
     return [load_task(path, suite) for path in sorted(directory.iterdir()) if path.is_dir()]
 
 
@@ -81,7 +82,7 @@ def self_test(selected, attempts):
                 apply_reference(task, workspace)
                 oracle = grade(task, workspace)
                 valid_seed = baseline["status"] == "failed" and any(not g["passed"] for g in baseline["groups"])
-                if task.suite == "swe":
+                if task.suite != "terminal":
                     valid_seed = valid_seed and all(not value for value in baseline.get("FAIL_TO_PASS", {}).values())
                     valid_seed = valid_seed and all(baseline.get("PASS_TO_PASS", {}).values())
                 results.append({"task_id": task.id, "attempt": attempt + 1, "baseline": baseline, "oracle": oracle,
@@ -107,8 +108,8 @@ def export_patch(task, workspace, output):
 
 
 def grade_patch(task, patch, destination):
-    if task.suite != "swe":
-        raise ValueError("patch grading requires SWE suite")
+    if task.suite not in {"swe", "everyday"}:
+        raise ValueError("patch grading requires SWE or Everyday suite")
     if patch.stat().st_size > 512 * 1024:
         raise ValueError("patch size limit")
     trial = prepare(task, destination)
@@ -199,7 +200,7 @@ def run_live(selected, destination, executable, allow_live, attempts, trust_work
 def main():
     parser = argparse.ArgumentParser(description="Ru custom Terminal-Bench / SWE-bench-style tooling")
     parser.add_argument("command", choices=["list", "validate", "prepare", "grade", "self-test", "grade-patch", "export-patch", "export-swe", "run-live"])
-    parser.add_argument("--suite", choices=["terminal", "swe", "all"], default="all")
+    parser.add_argument("--suite", choices=["terminal", "swe", "everyday", "all"], default="all")
     parser.add_argument("--task")
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--workspace", type=Path)
@@ -212,7 +213,7 @@ def main():
     parser.add_argument("--ru-executable", type=Path)
     args = parser.parse_args()
     try:
-        selected = tasks("terminal") + tasks("swe") if args.suite == "all" else tasks(args.suite)
+        selected = tasks("terminal") + tasks("swe") + tasks("everyday") if args.suite == "all" else tasks(args.suite)
         if args.task:
             selected = [task for task in selected if task.id == args.task]
             if not selected:

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(agent)**: Keep native-tool system listings to the first sentence while retaining complete descriptions and schemas in native declarations. Add field guidance for terminal mode/argv/script/cwd and intentional file overwrite; accept string `description` schema annotations without changing argument constraints or execution permissions.
+
 - **feat(cli)**: Redesign the TUI chat flow (opencode-style). The live activity moved from the header into the transcript as one pinned live row — braille spinner + action + target + elapsed while thinking/writing, a rotating half-circle while a tool runs — that settles in place into a `✓`/`✗` tool row carrying its duration; the header drops to two rows (title/usage + workspace). Every animation phase is now a pure function of elapsed time (`TuiSpinner`), which fixes the TG spinner that advanced at the 18 ms meteor cadence, and the hints-row spinner animates from the same clock. The user message is a filled three-row block with a `❯` prompt chevron on the composer's input-surface tone, fenced code opens with a dim language label instead of a bare fence, and an expanded diff sits between two dim rules.
 
 - **feat(cli)**: Redesign the context-window meter in the Terminal.Gui header: an 8-cell fill/track bar (cream fill shifting to warn at 70% and error at 90%) followed by a two-decimal percentage (`4.32%`), with the token count and session cost unchanged around it. The tracker keeps fractional percentages instead of rounding to whole numbers, and the classic row builder shares one cluster composition with the Terminal.Gui view so copy parity still holds.
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(cli,gui)**: External-directory asks expose both folder decisions on every interactive surface: the GUI shows the session folder button next to a remember-for-project button (which flips its label to "Remember folder for project"), and the CLI TUI lists `3 · folder` and `4 · always` (the folder choice was previously unreachable because the interactive caller never offered it). The plain fallback prompt mirrors the offered choices instead of hardcoding once/deny.
 
 - **fix(docs)**: Correct stale `backend-dotnet/README.md` guidance that still described an AppContainer terminal sandbox and `sandbox: "off"` escape; both terminal modes run as the current Windows user without OS confinement (ADR 0015/0017).
+
+- **feat(benchmark)**: Add six focused Everyday coding tasks across C#, Python and TypeScript, using fresh workspaces, public smoke tests and external behavioral graders. Scratch-check guidance now keeps temporary files inside the workspace and requires cleanup instead of directing Standard trials outside their workspace.
 
 - **fix(settings)**: Report saved Models.dev reasoning effort correctly in settings/TUI startup metadata using the local provider cache. Missing selection identity is reported as unknown (`null`), and reading settings never fetches a catalog or changes a run's pinned selection.
 

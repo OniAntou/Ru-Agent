@@ -97,7 +97,9 @@ public static class SystemPromptComposer
         // every step costs tokens without changing what the model may call.
         foreach (var item in capabilities)
         {
-            lines.Add($" - {item.Id}@{item.Version}: {item.Description}");
+            var sentenceEnd = nativeToolCalling ? item.Description.IndexOf(". ", StringComparison.Ordinal) : -1;
+            var purpose = sentenceEnd < 0 ? item.Description : item.Description[..(sentenceEnd + 1)];
+            lines.Add($" - {item.Id}@{item.Version}: {purpose}");
         }
 
         if (nativeToolCalling)

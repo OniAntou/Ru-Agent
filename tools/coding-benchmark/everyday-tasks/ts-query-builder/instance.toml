@@ -1,0 +1,8 @@
+id = "ts-query-builder"
+language = "typescript"
+difficulty = "everyday"
+editable_globs = ["src/**/*.ts"]
+fail_to_pass = ["sorted_keys", "falsy_and_missing", "encoding", "empty_and_own_keys", "preserve_input"]
+pass_to_pass = ["existing_join"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

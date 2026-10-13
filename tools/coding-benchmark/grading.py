@@ -68,7 +68,7 @@ def grade(task, workspace):
         result["groups"] = groups
         is_success = execution["exit_code"] == 0 and all(group["passed"] for group in groups)
         result["reward"], result["status"] = int(is_success), "passed" if is_success else "failed"
-        if task.suite == "swe":
+        if task.suite != "terminal":
             by_name = {group["name"]: group["passed"] for group in groups}
             result["FAIL_TO_PASS"] = {name: by_name[name] for name in task.fail_to_pass}
             result["PASS_TO_PASS"] = {name: by_name[name] for name in task.pass_to_pass}

@@ -1,6 +1,6 @@
 # Ru coding benchmark
 
-Two custom suites evaluate source changes in C#, Python and TypeScript. They
+Three custom suites evaluate source changes in C#, Python and TypeScript. They
 use Terminal-Bench and SWE-bench evaluation patterns; they are not official
 datasets or leaderboard scores. The corpus is public, so runs can be
 contaminated by prior exposure to its reference solutions.
@@ -18,9 +18,17 @@ contaminated by prior exposure to its reference solutions.
 | SWE | `cs-lease-renewal` | Repair versioned lease renewal, expiry, stale ownership and concurrent mutations |
 | SWE | `py-migration-rollback` | Repair SQLite schema/version rollback and migration transaction ownership |
 | SWE | `ts-session-replay` | Repair duplicate deliveries, gaps, conflicting replay and generation replacement |
+| Everyday | `cs-search-pagination` | Repair filtering/paging order while preserving validation |
+| Everyday | `cs-todo-summary` | Add pending counts by normalized owner with independent snapshots |
+| Everyday | `py-config-isolation` | Repair configuration leakage between calls |
+| Everyday | `py-stable-dedupe` | Add stable record deduplication and preserve missing/falsy IDs |
+| Everyday | `ts-emitter-lifecycle` | Repair unsubscribe idempotence and mutation during dispatch |
+| Everyday | `ts-query-builder` | Add deterministic query encoding without losing falsy values |
 
-These are compact, dependency-free repositories with difficult correctness
-constraints. The small corpus measures those constraints, not arbitrary
+These are compact, dependency-free repositories. Terminal/SWE tasks have
+difficult correctness constraints; Everyday tasks are focused bug repairs and
+small features with explicit requirements and runnable public regression checks.
+The small corpus measures those constraints, not arbitrary
 large-repository maintenance or a statistically established difficulty level.
 Each task supplies a public smoke program. External graders test additional
 cases, using fixed random seeds, explicit gates and manual clocks where needed.
@@ -35,6 +43,7 @@ uses Node's type stripping and checks runtime behavior; it does not run `tsc`.
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py list
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py validate
 .venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --attempts 3 --report artifacts/coding-oracle.json
+.venv\Scripts\python.exe tools/coding-benchmark/benchmark.py self-test --suite everyday --report artifacts/everyday-oracle.json
 ```
 
 `self-test` prepares a fresh Git repository, grades its starter, overlays the
@@ -158,6 +167,9 @@ The [single-agent readiness diagnostic](../../docs/operations/single-agent-readi
 records a ten-task Standard baseline, separates candidate correctness from
 unattended completion, and documents repairs to effort metadata and cancelled
 trial completeness.
+The [Everyday evaluation](../../docs/operations/everyday-coding-2026-10-13.md)
+uses three fresh attempts per focused task with the current model, separately
+records infrastructure interruptions and keeps matched runtime conditions.
 
 Terminal tasks follow Harbor's `instruction.md`, `task.toml`, `environment/`,
 `tests/test.sh`, `solution/solve.sh` layout. Docker build contexts contain only

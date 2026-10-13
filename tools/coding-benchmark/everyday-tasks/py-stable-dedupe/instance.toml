@@ -1,0 +1,8 @@
+id = "py-stable-dedupe"
+language = "python"
+difficulty = "everyday"
+editable_globs = ["src/**/*.py"]
+fail_to_pass = ["stable_first", "missing_and_none", "falsy_ids", "iterable_and_empty", "shallow_copies"]
+pass_to_pass = ["existing_ids"]
+agent_timeout_sec = 300
+verifier_timeout_sec = 120

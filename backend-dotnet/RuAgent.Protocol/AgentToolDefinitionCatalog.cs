@@ -167,16 +167,17 @@ public static class AgentToolDefinitionCatalog
     private static (string Name, JsonObject Schema)[] WriteSchemaProperties() =>
     [
         ("op", EnumSchema(["write", "delete", "restore"])),
-        ("path", StringSchema()), ("content", StringSchema()), ("overwrite", BooleanSchema()),
+        ("path", StringSchema()), ("content", StringSchema()),
+        ("overwrite", WithDescription(BooleanSchema(), "Set true when intentionally replacing an existing file with op=write; omitted means false. Use edit for partial changes.")),
         ("recovery_id", StringSchema(maxLength: 256)),
     ];
     private static (string Name, JsonObject Schema)[] BashSchemaProperties() =>
     [
-        ("mode", EnumSchema(["run", "shell", "read_output", "kill"])),
-        ("executable", StringSchema(TerminalLimits.MaxExecutableChars)),
-        ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)),
-        ("script", StringSchema(TerminalLimits.MaxScriptChars)),
-        ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)),
+        ("mode", WithDescription(EnumSchema(["run", "shell", "read_output", "kill"]), "Use shell for command text in script; use run only with executable and literal arguments. read_output and kill require an existing execution_id. Never pair run with script.")),
+        ("executable", WithDescription(StringSchema(TerminalLimits.MaxExecutableChars), "Required for mode=run: program name or path only, without command arguments. For command text use mode=shell and script instead.")),
+        ("arguments", WithDescription(ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars), "mode=run only: literal argv array, without the executable; no shell expansion, pipes or command text.")),
+        ("script", WithDescription(StringSchema(TerminalLimits.MaxScriptChars), "mode=shell only: command text, using Windows PowerShell syntax by default. Example: dotnet test. Do not send script with mode=run.")),
+        ("working_directory", WithDescription(StringSchema(TerminalLimits.MaxWorkingDirectoryChars), "Optional: omit to use the current workspace. Relative paths resolve against that workspace. Do not invent an absolute path from the workspace label.")),
         // The schema carries the background ceiling; the evaluator enforces the
         // tighter foreground hard max when background is not set.
         ("timeout_ms", IntegerSchema(1, TerminalLimits.BackgroundMaxLifetimeMs)),
@@ -244,6 +245,12 @@ public static class AgentToolDefinitionCatalog
         var schema = new JsonObject { ["type"] = "string" };
         if (maxLength is not null) schema["maxLength"] = maxLength.Value;
         if (minLength is not null) schema["minLength"] = minLength.Value;
+        return schema;
+    }
+
+    private static JsonObject WithDescription(JsonObject schema, string description)
+    {
+        schema["description"] = description;
         return schema;
     }
 

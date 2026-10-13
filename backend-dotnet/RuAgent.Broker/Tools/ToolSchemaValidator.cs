@@ -14,7 +14,7 @@ public static class ToolSchemaValidator
     private static readonly IReadOnlySet<string> SupportedKeywords = new HashSet<string>(
     [
         "required", "additionalProperties", "properties", "type", "enum", "const", "minimum", "maximum",
-        "items", "maxItems", "minItems", "maxLength", "minLength",
+        "items", "maxItems", "minItems", "maxLength", "minLength", "description",
     ],
     StringComparer.Ordinal);
 
@@ -32,6 +32,13 @@ public static class ToolSchemaValidator
     private static void ValidateSchema(JsonObject schema, JsonNode? value, string invalidCode)
     {
         if (schema.Any(item => !SupportedKeywords.Contains(item.Key)))
+        {
+            throw new ToolSchemaException("unsupported_tool_schema");
+        }
+
+        // Standard schema annotation: model guidance, never a validation rule.
+        if (schema.TryGetPropertyValue("description", out var description)
+            && (description is not JsonValue text || !text.TryGetValue<string>(out _)))
         {
             throw new ToolSchemaException("unsupported_tool_schema");
         }

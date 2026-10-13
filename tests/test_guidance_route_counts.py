@@ -1,10 +1,10 @@
 """Agent guidance states counts the repository already knows: they must agree.
 
-The README badge already has this guard (test_readme_counts.py), but the prose
-in AGENTS.md, CONTEXT.md and CONTRIBUTING.md did not: adding or removing a route
-kept the suite green while the guidance agents actually read went stale. Each
-count here has exactly one source of truth -- public-route-contract.json -- so
-the comparison is cheap and it fails the moment the two disagree.
+The public README is written for users and states no counts at all, but the prose
+in AGENTS.md, CONTEXT.md and CONTRIBUTING.md did not have this guard: adding or
+removing a route kept the suite green while the guidance agents actually read went
+stale. Each count here has exactly one source of truth -- public-route-contract.json
+-- so the comparison is cheap and it fails the moment the two disagree.
 """
 
 from __future__ import annotations

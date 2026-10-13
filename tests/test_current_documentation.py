@@ -32,7 +32,6 @@ CURRENT_RULE_DOCS = [
 # held by the ban-list tests below, which is where drift in a passing
 # reference actually shows up.
 CURRENT_MATRIX_OWNING_DOCS = [
-    ROOT / "README.md",
     ROOT / "CONTEXT.md",
     ROOT / "docs/architecture.md",
     ROOT / "docs/operations/agent-tools.md",
@@ -43,7 +42,6 @@ CURRENT_MATRIX_OWNING_DOCS = [
 ]
 CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
 CURRENT_REASON_DOCS = [
-    ROOT / "README.md",
     ROOT / "docs/README.md",
     ROOT / "docs/architecture.md",
     ROOT / "docs/operations/agent-tools.md",

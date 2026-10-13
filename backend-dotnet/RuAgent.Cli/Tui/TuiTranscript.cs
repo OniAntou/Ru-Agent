@@ -282,7 +282,18 @@ public sealed class TuiTranscript
     /// the new attempt's text. Text already flushed to the surface cannot be
     /// un-written in a terminal; it is superseded by the retry's output.
     /// </summary>
-    public void ResetAssistant()
+    public void ResetAssistant() => ResetAssistantCore(clearRawText: true);
+
+    /// <summary>
+    /// Drops the pending render state of the current answer while keeping its raw text
+    /// in gap tracking. A host-suppressed step is superseded before its unfinished tail
+    /// ever completed: the held buffer must not leak into the answer that replaces it,
+    /// but the raw text stays, because dropping it would make the whole durable answer
+    /// look missing and the turn-end recovery would reprint it.
+    /// </summary>
+    public void DiscardAssistantTail() => ResetAssistantCore(clearRawText: false);
+
+    private void ResetAssistantCore(bool clearRawText)
     {
         if (_status.State == TuiRunState.Thinking) _status.SetState(TuiRunState.Thinking);
         // A superseded attempt's answer is replaced by the retry: drop its pending
@@ -295,7 +306,11 @@ public sealed class TuiTranscript
         _proseLine.Clear();
         _lastProsePreview = 0;
         _surface.PreviewLine(string.Empty);
-        _streamedAssistant.Clear();
+        if (clearRawText)
+        {
+            _streamedAssistant.Clear();
+        }
+
         _markdown.Reset();
     }
 
@@ -710,6 +725,19 @@ public sealed class TuiTranscript
                 ClearPaused();
             }
 
+            return;
+        }
+
+        if (type == "model.step_completed"
+            && envelope.SafeSummary?.EndsWith("_advised", StringComparison.Ordinal) == true)
+        {
+            // The host suppressed this step's reply: a recovery note replaced it in the
+            // model context and the run takes another step. The deltas already painted
+            // it, but suppressed prose is audit-only by design — the rows this step
+            // streamed leave the screen so the model's re-answer cannot read as the same
+            // answer printed twice.
+            _surface.RewindAssistantStep();
+            DiscardAssistantTail();
             return;
         }
 

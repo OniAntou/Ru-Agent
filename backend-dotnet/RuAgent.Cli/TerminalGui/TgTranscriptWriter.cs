@@ -11,13 +11,70 @@ namespace RuAgent.Cli.TerminalGui;
 /// appends are marshalled onto the UI loop so a background turn can never mutate the
 /// view while the driver draws it.
 /// </summary>
-public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter
+public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
     private bool _projectedRow;
+    private string? _assistantStepId;
+    private int _assistantStepMark = -1;
 
     public void PreviewLine(string text) => ProjectLine(text.Length == 0 ? null : text, complete: false);
+
+    /// <summary>
+    /// Names the model step the next streamed prose belongs to. The first fragment of a
+    /// step records where that step's rows begin, so a superseded step can leave the
+    /// screen instead of stacking a duplicate answer under the one that replaced it.
+    /// </summary>
+    public void BeginAssistantStep(string modelStepId)
+    {
+        if (string.Equals(_assistantStepId, modelStepId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _assistantStepId = modelStepId;
+        try
+        {
+            app.Invoke(() => _assistantStepMark = transcript.CommittedRowCount);
+        }
+        catch (NotInitializedException)
+        {
+            _assistantStepMark = -1;
+        }
+    }
+
+    /// <summary>
+    /// Drops the rows painted since the named step began, when it is the step still
+    /// current. A null name means the current step: the durable suppression event
+    /// carries no step identity, and it always follows the step that just streamed.
+    /// </summary>
+    public void RewindAssistantStep(string? modelStepId = null)
+    {
+        if (_assistantStepMark < 0
+            || (modelStepId is not null && !string.Equals(_assistantStepId, modelStepId, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var mark = _assistantStepMark;
+        _assistantStepId = null;
+        _assistantStepMark = -1;
+        try
+        {
+            app.Invoke(() =>
+            {
+                transcript.DropRowsSince(mark);
+                // Whatever was mid-flight belonged to the rows that just left.
+                _pending.Clear();
+                _rowOpen = false;
+                _projectedRow = false;
+            });
+        }
+        catch (NotInitializedException)
+        {
+        }
+    }
 
     public void RetainDetails(IReadOnlyList<string> rows)
     {

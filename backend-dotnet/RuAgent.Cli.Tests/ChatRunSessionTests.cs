@@ -21,6 +21,24 @@ public sealed class ChatRunSessionTests
     }
 
     [Fact]
+    public void A_suppressed_reply_is_remembered_for_the_turn_and_cleared_by_the_next_one()
+    {
+        using var session = new ChatRunSession();
+        session.BeginNewTurn(CancellationToken.None);
+        Assert.False(session.HasSuppressedReply);
+
+        session.NoteSuppressedReply();
+        session.RecordAssistantPayload("payload_kept");
+        Assert.True(session.HasSuppressedReply);
+
+        session.EndTurn();
+        session.BeginNewTurn(CancellationToken.None);
+
+        Assert.False(session.HasSuppressedReply);
+        Assert.Empty(session.AssistantPayloads);
+    }
+
+    [Fact]
     public void Continuing_another_run_does_not_forget_the_original_park()
     {
         using var session = new ChatRunSession();

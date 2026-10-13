@@ -139,10 +139,15 @@ public sealed class TuiSessionRenderer
         {
             if (delta.IsReset)
             {
+                // A retried attempt supersedes the text this step already streamed: the
+                // rows it painted leave the screen before the retry lands (a row-marking
+                // writer only — a raw console cannot unprint).
+                _surface.RewindAssistantStep(delta.ModelStepId);
                 _transcript.ResetAssistant();
                 return;
             }
 
+            _surface.BeginAssistantStep(delta.ModelStepId);
             _transcript.AppendAssistant(delta.Text);
             return;
         }

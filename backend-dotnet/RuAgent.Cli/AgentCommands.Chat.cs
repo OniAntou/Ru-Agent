@@ -838,6 +838,16 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            if (runSession.HasSuppressedReply)
+            {
+                // The turn streamed prose the host suppressed for recovery, so the
+                // streamed text and the durable answer no longer align: the gap check
+                // cannot tell a lost tail from a superseded reply. Stand down rather
+                // than report truncation or reprint text the user must never see.
+                Tui.TuiDebug.Log("recover", "skipped: the turn carried a host-suppressed reply");
+                return;
+            }
+
             var expected = new StringBuilder();
             try
             {
@@ -1304,10 +1314,20 @@ public sealed partial class AgentCommands
                         try
                         {
                             var stepEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
-                            if (stepEnvelope is { EventType: "model.step_completed" }
-                                && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
+                            if (stepEnvelope is { EventType: "model.step_completed" })
                             {
-                                runSession.RecordAssistantPayload(stepEnvelope.PayloadRef);
+                                // A suppressed reply (`*_advised`) is audit-only and stays
+                                // server-side: recording its ref would make the turn-end
+                                // recovery chase text the user must never see, and its
+                                // streamed prose is not part of the durable answer.
+                                if (stepEnvelope.SafeSummary?.EndsWith("_advised", StringComparison.Ordinal) == true)
+                                {
+                                    runSession.NoteSuppressedReply();
+                                }
+                                else if (!string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
+                                {
+                                    runSession.RecordAssistantPayload(stepEnvelope.PayloadRef);
+                                }
                             }
                         }
                         catch (System.Text.Json.JsonException)

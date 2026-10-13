@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using RuAgent.Cli.Tui;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
@@ -338,6 +339,89 @@ public sealed class TuiTranscriptTests
         transcript.EndTurn();
 
         Assert.Equal(afterFirstStop, output.ToString());
+    }
+
+    [Fact]
+    public void An_advised_step_completion_rewinds_the_suppressed_stream()
+    {
+        // The host suppresses a dead-end reply and asks the model again; the deltas had
+        // already painted it. The rows must leave the screen, while the raw text stays in
+        // gap tracking — dropping it would make the durable answer look missing and the
+        // turn-end recovery would reprint the whole reply.
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new RewindRecordingWriter();
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
+        transcript.BeginTurn();
+        transcript.AppendAssistant("dead-end answer");
+
+        transcript.ApplyDurable(Durable(
+            "model.step_completed",
+            "running",
+            "unverified_after_tool_failure_advised",
+            sequence: 7));
+
+        Assert.Equal(["rewind:*"], writer.Events);
+        Assert.Equal("dead-end answer", transcript.StreamedAssistantText);
+    }
+
+    [Fact]
+    public void An_advised_step_completion_drops_the_pending_tail_so_it_cannot_leak()
+    {
+        // The suppressed reply ends on a held-back marker run: it must not attach itself
+        // to the answer that replaces it.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("suppressed text with a held **");
+
+        transcript.ApplyDurable(Durable(
+            "model.step_completed",
+            "running",
+            "empty_model_reply_advised",
+            sequence: 7));
+
+        transcript.AppendAssistant("clean answer");
+        transcript.Flush();
+        var text = TuiText.Strip(output.ToString());
+        Assert.DoesNotContain("**clean", text, StringComparison.Ordinal);
+        Assert.Contains("clean answer", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Assistant_deltas_mark_the_step_and_a_reset_rewinds_it()
+    {
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new RewindRecordingWriter();
+        var renderer = new TuiSessionRenderer(writer) { Width = 80 };
+        var stepId = "step_" + new string('a', 32);
+        renderer.BeginTurn();
+
+        renderer.RenderFrame(AssistantDelta("first attempt", stepId, sequence: 1));
+        renderer.RenderFrame(AssistantDelta(string.Empty, stepId, sequence: 2, reset: true));
+
+        Assert.Equal([$"begin:{stepId}", $"rewind:{stepId}"], writer.Events);
+    }
+
+    private static SseFrame AssistantDelta(string text, string stepId, long sequence, bool reset = false)
+    {
+        var inner = JsonSerializer.Serialize(new
+        {
+            text,
+            model_step_id = stepId,
+            reset = reset ? true : (bool?)null,
+        });
+        var outer = JsonSerializer.Serialize(new { kind = "assistant.delta", data = inner });
+        return new SseFrame(null, "transient", outer, true, sequence);
+    }
+
+    /// <summary>Records the step-mark calls a row-marking writer receives.</summary>
+    private sealed class RewindRecordingWriter : StringWriter, ITranscriptStepRewriter
+    {
+        public List<string> Events { get; } = [];
+
+        public void BeginAssistantStep(string modelStepId) => Events.Add("begin:" + modelStepId);
+
+        public void RewindAssistantStep(string? modelStepId = null) => Events.Add("rewind:" + (modelStepId ?? "*"));
     }
 
     [Fact]

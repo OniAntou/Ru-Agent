@@ -74,6 +74,38 @@ public sealed class TgTranscriptTests
         app.Run(window);
     }
 
+    [Fact]
+    public void DropRowsSince_RemovesOnlyTheSupersededTail()
+    {
+        using var transcript = new TgTranscriptView { Frame = new System.Drawing.Rectangle(0, 0, 80, 10) };
+        transcript.Append("kept", TranscriptStyle.Prose);
+        var mark = transcript.CommittedRowCount;
+        transcript.Append("suppressed one", TranscriptStyle.Prose);
+        transcript.Append("suppressed two", TranscriptStyle.Prose);
+
+        transcript.DropRowsSince(mark);
+
+        var kept = Assert.Single(transcript.Lines);
+        Assert.Equal("kept", kept.Text);
+        // The retention counters follow the drop, so later trims still measure the view.
+        Assert.Equal(4, transcript.RetainedCharacterCount);
+    }
+
+    [Fact]
+    public void DropRowsSince_ErasesTheDroppedRowsFromTheScreen()
+    {
+        var rows = Render(6, t =>
+        {
+            t.Append("kept row", TranscriptStyle.Prose);
+            var mark = t.CommittedRowCount;
+            t.Append("SUPERSEDED", TranscriptStyle.Prose);
+            t.DropRowsSince(mark);
+        });
+
+        Assert.Contains(rows, row => row.Contains("kept row"));
+        Assert.DoesNotContain(rows, row => row.Contains("SUPERSEDED"));
+    }
+
     private static string[] Render(int rows, Action<TgTranscriptView> act)
     {
         using IApplication app = Application.Create();

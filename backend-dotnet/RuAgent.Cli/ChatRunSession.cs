@@ -6,6 +6,7 @@ internal sealed class ChatRunSession : IDisposable
     private CancellationTokenSource? _turnCancellation;
     private readonly List<string> _assistantPayloads = new();
     private readonly HashSet<string> _seenPayloads = new(StringComparer.Ordinal);
+    private bool _suppressedReply;
 
     internal string? ActiveRunId { get; private set; }
     internal string? ParkedRunId { get; private set; }
@@ -14,6 +15,14 @@ internal sealed class ChatRunSession : IDisposable
     internal CancellationToken Token => _turnCancellation?.Token
         ?? throw new InvalidOperationException("chat_turn_not_active");
     internal IReadOnlyList<string> AssistantPayloads => _assistantPayloads;
+
+    /// <summary>
+    /// True when the turn streamed a reply the host suppressed for recovery. The
+    /// streamed text then contains prose that is not part of the durable answer, so the
+    /// turn-end gap check cannot tell a lost tail from a superseded reply: it stands down
+    /// instead of reporting truncation or reprinting text the user must never see.
+    /// </summary>
+    internal bool HasSuppressedReply => _suppressedReply;
 
     internal string? InterruptedRunId => _turnCancellation?.IsCancellationRequested == true
         && ActiveRunId is not null && ActiveRunId != ParkedRunId ? ActiveRunId : null;
@@ -69,6 +78,8 @@ internal sealed class ChatRunSession : IDisposable
         if (_seenPayloads.Add(payloadRef)) _assistantPayloads.Add(payloadRef);
     }
 
+    internal void NoteSuppressedReply() => _suppressedReply = true;
+
     internal void EndTurn()
     {
         _turnCancellation?.Dispose();
@@ -88,6 +99,7 @@ internal sealed class ChatRunSession : IDisposable
     {
         _assistantPayloads.Clear();
         _seenPayloads.Clear();
+        _suppressedReply = false;
     }
 
     public void Dispose()

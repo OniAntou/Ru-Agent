@@ -314,6 +314,11 @@ budget, and the model-step id), published before the step's first token and on t
 same hub channel as activity rows so a delta burst cannot evict it. Provider usage
 only arrives when a step ends, so this frame is what lets a client's context meter
 move while the model is still working; the reported usage supersedes it.
+A model step the host suppresses for recovery (`model.step_completed` with an
+`*_advised` safe code) is audit-only, but its deltas already streamed: the
+Terminal.Gui transcript drops the rows that step painted and the turn-end gap check
+stands down for such a turn, so the model's re-answer cannot read as the same answer
+printed twice and suppressed prose is never reprinted by the recovery.
 Once the SSE feed emits `final_snapshot`, WinUI treats that terminal status as
 authoritative if a follow-up `GET` races host shutdown or restart. A late
 history/outbox failure after visible assistant deltas does not append a generic

@@ -38,6 +38,38 @@ public sealed class TgTranscriptWriterTests
         app.Run(window);
     }
     [Fact]
+    public void RewindAssistantStep_DropsTheSupersededStepRowsAndKeepsEarlierOnes()
+    {
+        // A retried attempt or a host-suppressed reply is superseded by the step that
+        // replaces it: the rows that step painted leave the screen while everything
+        // before the step's mark stays.
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 60 };
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            surface.BeginAssistantStep("step_one");
+            transcript.AppendAssistant("kept answer");
+            transcript.Flush();
+            surface.BeginAssistantStep("step_two");
+            transcript.AppendAssistant("SUPERSEDED answer");
+            transcript.Flush();
+            Assert.Contains(window.Transcript.Lines, row => row.Text.Contains("SUPERSEDED"));
+
+            surface.RewindAssistantStep();
+
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("SUPERSEDED"));
+            Assert.Contains(window.Transcript.Lines, row => row.Text.Contains("kept answer"));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
     public void MarkdownPreviewIsLiveAndCompletedRowsMatchWholeLines()
     {
         using IApplication app = Application.Create();

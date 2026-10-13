@@ -112,6 +112,52 @@ public sealed class TgTranscriptView : View
     /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
     internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
 
+    /// <summary>Rows committed so far; a step mark for <see cref="DropRowsSince"/>.</summary>
+    internal int CommittedRowCount => _lines.Count;
+
+    /// <summary>
+    /// Drops every row appended since <paramref name="mark"/> (a
+    /// <see cref="CommittedRowCount"/> reading). The host suppresses a dead-end reply
+    /// before its recovery note, and a retried attempt supersedes the partial text it
+    /// replaced, so the rows those streams painted leave the screen instead of stacking
+    /// a duplicate answer under the one that replaced them. The wrap cache rebuilds on
+    /// the next draw.
+    /// </summary>
+    internal void DropRowsSince(int mark)
+    {
+        if (mark < 0 || mark > _lines.Count)
+        {
+            return;
+        }
+
+        for (var i = mark; i < _lines.Count; i++)
+        {
+            _retainedCharacters -= CharacterCount(_lines[i].Text);
+        }
+
+        _lines.RemoveRange(mark, _lines.Count - mark);
+        if (_collapsedBlock is { } block && block.AfterLine > mark)
+        {
+            _collapsedBlock = RemoveCollapsedBlock();
+        }
+
+        if (_historyTruncated && mark == 0)
+        {
+            // The truncation marker itself was dropped with everything after it.
+            _historyTruncated = false;
+        }
+
+        _wrapWidth = -1;
+        _tailDirty = false;
+        _tailRows = 0;
+        if (_lines.Count == 0)
+        {
+            ContentCleared?.Invoke();
+        }
+
+        SetNeedsDraw();
+    }
+
     /// <summary>Test seam: the hidden rows of the last collapsed block, expanded or not.</summary>
     internal IReadOnlyList<(string Text, TranscriptStyle Style)> CollapsedRows =>
         _collapsedBlock?.Hidden ?? [];

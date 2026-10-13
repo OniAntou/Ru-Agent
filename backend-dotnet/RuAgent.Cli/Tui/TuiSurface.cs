@@ -56,6 +56,30 @@ public sealed class TuiSurface
         }
     }
 
+    /// <summary>
+    /// Names the model step the next streamed prose belongs to. Only a row-marking
+    /// writer (the Terminal.Gui bridge) acts on it; a raw console cannot unprint.
+    /// </summary>
+    public void BeginAssistantStep(string modelStepId)
+    {
+        lock (Gate)
+        {
+            if (Writer is ITranscriptStepRewriter rewriter) rewriter.BeginAssistantStep(modelStepId);
+        }
+    }
+
+    /// <summary>
+    /// Drops the rows a superseded step already painted — a retried attempt or a reply
+    /// the host suppressed for recovery. A no-op without a row-marking writer.
+    /// </summary>
+    public void RewindAssistantStep(string? modelStepId = null)
+    {
+        lock (Gate)
+        {
+            if (Writer is ITranscriptStepRewriter rewriter) rewriter.RewindAssistantStep(modelStepId);
+        }
+    }
+
     public void CommitProjectedLine(IReadOnlyList<string> rows)
     {
         lock (Gate)

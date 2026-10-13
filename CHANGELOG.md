@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: Drop a superseded reply's rows from the Terminal.Gui transcript. A model step the host suppresses for recovery (a tool failed and the reply was unverified, or the output was truncated) and a retried attempt both streamed prose that the answer replacing them must not duplicate: the transcript drops exactly the rows each superseded step painted, the held-back tail cannot leak into the next answer, and the turn-end gap check stands down for a turn that carried a suppressed reply instead of reporting truncation or reprinting text the user must never see. The suppressed payload reference is no longer chased by the recovery either.
+
 - **fix(cli)**: Wrap transcript prose across the full viewport width. The Terminal.Gui transcript capped prose at 100 cells, so a wide terminal showed a half-width column with words breaking mid-sentence; the classic renderer already wrapped at the full width and both engines now agree. Aligned and gutter rows still retain their exact columns.
 
 - **feat(agent,cli)**: Move the context meter while the model works. The Host publishes the measured request size for a step about to run as a typed `agent.usage_estimate` transient frame (on the activity channel so a delta burst cannot evict it), and the CLI folds it into the context reading as a max against the reported usage — the same policy as the desktop meter — so the meter is no longer empty for a whole first reply or frozen on the previous step's figure. Reported usage still supersedes the estimate as steps complete.

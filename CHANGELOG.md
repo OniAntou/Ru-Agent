@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Ship the wordmark's block `r` as the app identity. `gui-winui3/Assets/AppIcon.ico` is regenerated as seven frames — 16/24/32/48/64/128 as 32bpp BMP and 256 as PNG — drawn from the same half-cell grid as `docs/assets/wordmark.svg`, with an even cell per size so every half-cell stays a whole pixel and the small frames need no anti-aliasing. The packaged-app PNG set (square 44/150, wide 310×150, store, lock screen, splash) carries the same mark for a future MSIX build, and `scripts/make_app_icon.ps1` regenerates both (`-Verify` prints the frame table). The existing `<ApplicationIcon>` and `AppWindow.SetIcon` wiring picks the new file up unchanged.
+
 - **style(tui)**: Speed up the busy colour wave and widen its ramp: one cycle takes 0.8 s (was 1.4 s) on a 60 ms phase bucket, and the five cells sweep five palette anchors — aurora green, mint, brand blue, brand2 violet and warn amber — so more than two hues are in the row at any phase instead of one green-to-violet stretch. The bar glyph, cell count and the classic parity reference are unchanged.
 
 - **style(tui)**: Paint the composer's preset label in the green accent (`Ok`, the tone the user block's prompt chevron already carries) instead of brand blue, so `Standard` reads as an accent inside the filled block.

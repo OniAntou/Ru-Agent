@@ -15,6 +15,33 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## App icon from the wordmark (2026-10-14)
+
+The operator asked for the wordmark's block `r` as the app logo in the bare
+style: the mark alone, no tile. `scripts/make_app_icon.ps1` regenerates
+`gui-winui3/Assets/AppIcon.ico` (16/24/32/48/64/128 as 32bpp BMP frames plus a
+256 PNG frame) and the packaged-app PNG set from the same half-cell grid as
+`docs/assets/wordmark.svg`; an even cell per size keeps every half-cell a whole
+pixel, so the small frames stay crisp without anti-aliasing.
+
+- The .ico was parsed frame by frame with an independent reader: seven frames,
+  contiguous data, exact sizes and doubled BMP heights (`structure ok: True`).
+  Windows' own `System.Drawing.Icon` decoded every BMP frame for 1:1 and 4x
+  sheets on dark and light strips, and the 256 PNG frame was extracted and
+  rendered on its own (`System.Drawing` cannot decode PNG frames, which is why
+  only 256 ships as PNG, as convention expects).
+- `build.bat` **11/11** (`artifacts/tui-audit/app-icon-build.log`) and the
+  published `RuApp.exe` carries the new mark: the associated icon extracted
+  from the exe is the source 32x32 frame pixel for pixel
+  (`artifacts/tui-audit/app-icon-exe-check.log`, `app-icon-from-exe.png`).
+- GUI suite: **1,396 passed / 0 failed**; Python **212 passed / 1 skipped**
+  (`artifacts/tui-audit/app-icon-frames.png`, `app-icon-assets.png` for the
+  rendered sheets; they are reconstructed images, not native Explorer
+  captures).
+- The unpackaged app reads `AppIcon.ico` through the existing
+  `<ApplicationIcon>` and `AppWindow.SetIcon` wiring; the store PNG set is only
+  read by a packaged MSIX build.
+
 ## Faster multi-hue busy wave and green preset (2026-10-14)
 
 The operator asked for the wave to move faster and carry more colours, and for

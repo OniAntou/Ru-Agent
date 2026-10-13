@@ -25,7 +25,6 @@ public sealed partial class ToolExecutionService
     private const int DefaultSpoolPageChars = 8000;
 
     private readonly TerminalOutputSpool _spools;
-    private readonly BackgroundTaskRegistry _backgroundTasks = new();
 
     private async ValueTask<ToolExecutionOutcome> ExecuteBashAsync(
         ToolExecutionContext context,
@@ -234,8 +233,8 @@ public sealed partial class ToolExecutionService
     /// prefix (process create, job assign, resume) runs inline before this call
     /// returns; the rest continues detached on the registry's lifetime token,
     /// so the task outlives the tool call and dies at its lifetime cap or on
-    /// mode kill. A foreground call registers cap-exempt and becomes a
-    /// background task only when its wait window expires.
+    /// mode kill. Every launch reserves a concurrent slot, since a foreground
+    /// call can become a background task after its wait window expires.
     /// </summary>
     private (string ExecutionId, Task<StreamingProcessResult> Pump) StartTerminalTask(
         ToolExecutionContext context,
@@ -263,7 +262,6 @@ public sealed partial class ToolExecutionService
                     context.SessionId,
                     executionId,
                     lifetimeMs,
-                    enforceCap: isBackground,
                     isBackground,
                     out var lifetimeToken))
             {

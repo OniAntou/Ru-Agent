@@ -36,6 +36,13 @@ sequence number (`{ afterSequence: n }`). It ends on a terminal event; if the
 bridge detaches the subscription first (`run.detached`) or shuts down, the
 iterator throws a bounded `BridgeTransportError` instead of hanging.
 
+RPC request deadlines include time queued behind stdin backpressure. Requests
+are correlated before their frames are written, so a response arriving before
+`drain` is retained. An unanswered write that remains backpressured through its
+deadline closes the transport and rejects queued requests; expired queued
+frames are removed. A completed response cancels that request's write deadline.
+This does not send `run.cancel` to the shared Host.
+
 ## Protocol
 
 This SDK targets RPC protocol **v1**. The wire contract (methods,

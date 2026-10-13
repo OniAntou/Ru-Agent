@@ -15,6 +15,15 @@ interface PendingRequest {
   timer?: NodeJS.Timeout;
 }
 
+interface QueuedWrite {
+  id: string | number;
+  method: string;
+  payload?: string;
+  deadlineAt?: number;
+  timeoutMs?: number;
+  writeTimer?: NodeJS.Timeout;
+}
+
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void;
 
 // Matches the bridge's 1 MiB UTF-8 byte frame cap plus 64 KiB of slack for the
@@ -31,6 +40,10 @@ export class BridgeTransport {
   #child: ChildProcessWithoutNullStreams;
   #buffer = "";
   #pending = new Map<string | number, PendingRequest>();
+  #writeQueue: QueuedWrite[] = [];
+  #writing = false;
+  #activeWrite: QueuedWrite | undefined;
+  #cancelDrainWait: ((error: Error) => void) | undefined;
   #nextId = 1;
   #notificationHandlers: NotificationHandler[] = [];
   #closeHandlers: Array<(error: Error) => void> = [];
@@ -58,6 +71,7 @@ export class BridgeTransport {
       if (this.#exitError) return;
       this.#fail(new BridgeTransportError(`bridge stdin error: ${error.message}`));
     });
+    child.stdin.on("close", () => this.#fail(this.#exitError ?? new BridgeTransportError("bridge stdin closed")));
     child.on("close", () => this.#fail(this.#exitError ?? new BridgeTransportError("bridge stdout closed")));
   }
 
@@ -119,33 +133,164 @@ export class BridgeTransport {
       throw this.#exitError;
     }
     const id = this.#nextId++;
-    await this.#writeFrame(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n", method);
-    return await new Promise<T>((resolve, reject) => {
+    const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
+    const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const response = new Promise<T>((resolve, reject) => {
       const pending: PendingRequest = { resolve: resolve as (value: unknown) => void, reject };
       if (timeoutMs > 0) {
         pending.timer = setTimeout(() => {
-          this.#pending.delete(id);
-          reject(new BridgeTransportError(`request "${method}" timed out after ${timeoutMs} ms`));
+          this.#onRequestTimeout(id, new BridgeTransportError(`request "${method}" timed out after ${timeoutMs} ms`));
         }, timeoutMs);
       }
       this.#pending.set(id, pending);
     });
+    const queuedWrite: QueuedWrite = {
+      id,
+      method,
+      payload,
+      ...(deadlineAt !== undefined ? { deadlineAt, timeoutMs } : {}),
+    };
+    this.#writeQueue.push(queuedWrite);
+    this.#pumpWrites();
+    return response;
   }
 
   /**
-   * Writes one frame, waiting for drain when the child's stdin buffer is full.
-   * Without this the parent buffered unbounded request data in memory whenever
-   * the bridge fell behind.
+   * Pumps one frame at a time, waiting for drain before writing the next so
+   * concurrent requests cannot bypass the child's stdin backpressure signal.
    */
-  async #writeFrame(payload: string, method: string): Promise<void> {
-    try {
-      if (!this.#child.stdin.write(payload)) {
-        await new Promise<void>((resolve) => this.#child.stdin.once("drain", resolve));
+  #pumpWrites(): void {
+    if (this.#writing || this.#closed || this.#exitError) return;
+    this.#writing = true;
+    void this.#drainWrites().finally(() => {
+      this.#writing = false;
+      if (this.#writeQueue.length > 0) this.#pumpWrites();
+    });
+  }
+
+  async #drainWrites(): Promise<void> {
+    while (this.#writeQueue.length > 0 && !this.#closed && !this.#exitError) {
+      const queuedWrite = this.#writeQueue.shift()!;
+      if (!this.#pending.has(queuedWrite.id)) {
+        delete queuedWrite.payload;
+        continue;
       }
+      if (queuedWrite.deadlineAt !== undefined && Date.now() >= queuedWrite.deadlineAt) {
+        this.#onRequestTimeout(queuedWrite.id, this.#timeoutError(queuedWrite));
+        continue;
+      }
+
+      this.#activeWrite = queuedWrite;
+      try {
+        if (this.#writeQueuedFrame(queuedWrite)) await this.#waitForDrain(queuedWrite);
+      } catch (error) {
+        const failure = error instanceof BridgeTransportError
+          ? error
+          : new BridgeTransportError(`bridge stdin write failed for "${queuedWrite.method}": ${error instanceof Error ? error.message : String(error)}`);
+        this.#rejectPending(queuedWrite.id, failure);
+      } finally {
+        if (this.#activeWrite === queuedWrite) this.#activeWrite = undefined;
+        if (queuedWrite.writeTimer) clearTimeout(queuedWrite.writeTimer);
+        delete queuedWrite.payload;
+      }
+    }
+  }
+
+  #writeQueuedFrame(queuedWrite: QueuedWrite): boolean {
+    const payload = queuedWrite.payload;
+    delete queuedWrite.payload;
+    if (payload === undefined) return false;
+    try {
+      return !this.#child.stdin.write(payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new BridgeTransportError(`bridge stdin write failed for "${method}": ${message}`);
+      throw new BridgeTransportError(`bridge stdin write failed for "${queuedWrite.method}": ${message}`);
     }
+  }
+
+  #waitForDrain(queuedWrite: QueuedWrite): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let cancel: ((error: Error) => void) | undefined;
+      const finish = (error?: Error) => {
+        this.#child.stdin.off("drain", onDrain);
+        this.#child.stdin.off("error", onStdinError);
+        this.#child.stdin.off("close", onStdinClose);
+        this.#child.off("error", onChildError);
+        this.#child.off("exit", onExit);
+        this.#child.off("close", onChildClose);
+        if (queuedWrite.writeTimer) {
+          clearTimeout(queuedWrite.writeTimer);
+          delete queuedWrite.writeTimer;
+        }
+        if (this.#cancelDrainWait === cancel) this.#cancelDrainWait = undefined;
+        if (error) reject(error);
+        else resolve();
+      };
+      const onDrain = () => finish();
+      const onStdinError = (error: Error) => finish(this.#exitError ?? new BridgeTransportError(`bridge stdin error: ${error.message}`));
+      const onStdinClose = () => finish(this.#exitError ?? new BridgeTransportError("bridge stdin closed"));
+      const onChildError = (error: Error) => finish(this.#exitError ?? new BridgeTransportError(`bridge process error: ${error.message}`));
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) => finish(
+        this.#exitError ?? new BridgeTransportError(`bridge exited (code=${code ?? "null"}, signal=${signal ?? "null"})${this.#stderrSuffix()}`),
+      );
+      const onChildClose = () => finish(this.#exitError ?? new BridgeTransportError("bridge stdout closed"));
+
+      this.#child.stdin.on("drain", onDrain);
+      this.#child.stdin.on("error", onStdinError);
+      this.#child.stdin.on("close", onStdinClose);
+      this.#child.on("error", onChildError);
+      this.#child.on("exit", onExit);
+      this.#child.on("close", onChildClose);
+      cancel = (error) => finish(error);
+      this.#cancelDrainWait = cancel;
+
+      // An early response settles the call but does not release the drain gate;
+      // only an unanswered request may time out and abort its stalled writer.
+      if (this.#pending.has(queuedWrite.id) && queuedWrite.deadlineAt !== undefined && queuedWrite.timeoutMs !== undefined) {
+        queuedWrite.writeTimer = setTimeout(() => {
+          this.#abortBackpressuredWrite(this.#timeoutError(queuedWrite));
+        }, Math.max(0, queuedWrite.deadlineAt - Date.now()));
+      }
+
+      if (this.#exitError) finish(this.#exitError);
+      else if (this.#closed) finish(new BridgeTransportError("transport is closed"));
+    });
+  }
+
+  #timeoutError(queuedWrite: QueuedWrite): BridgeTransportError {
+    return new BridgeTransportError(`request "${queuedWrite.method}" timed out after ${queuedWrite.timeoutMs} ms`);
+  }
+
+  #onRequestTimeout(id: string | number, error: Error): void {
+    const didTimeout = this.#rejectPending(id, error);
+    const queuedIndex = this.#writeQueue.findIndex((queuedWrite) => queuedWrite.id === id);
+    if (queuedIndex >= 0) {
+      delete this.#writeQueue[queuedIndex]!.payload;
+      this.#writeQueue.splice(queuedIndex, 1);
+    }
+    if (didTimeout && this.#activeWrite?.id === id && this.#cancelDrainWait) this.#abortBackpressuredWrite(error);
+  }
+
+  #abortBackpressuredWrite(error: Error): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#fail(error);
+    this.#cancelDrainWait?.(error);
+    this.#child.kill();
+  }
+
+  #clearWriteQueue(): void {
+    for (const queuedWrite of this.#writeQueue) delete queuedWrite.payload;
+    this.#writeQueue = [];
+  }
+
+  #rejectPending(id: string | number, error: Error): boolean {
+    const pending = this.#pending.get(id);
+    if (!pending) return false;
+    this.#pending.delete(id);
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.reject(error);
+    return true;
   }
 
   async close(): Promise<void> {
@@ -230,6 +375,10 @@ export class BridgeTransport {
     if (!pending) return;
     this.#pending.delete(id);
     if (pending.timer) clearTimeout(pending.timer);
+    if (this.#activeWrite?.id === id && this.#activeWrite.writeTimer) {
+      clearTimeout(this.#activeWrite.writeTimer);
+      delete this.#activeWrite.writeTimer;
+    }
     if (message.error) {
       const error = message.error as { code: number; message: string; data?: { ruCode?: string; httpStatus?: number } };
       pending.reject(new RuRpcError(error.message, error.code, error.data?.ruCode, error.data?.httpStatus));
@@ -239,10 +388,9 @@ export class BridgeTransport {
   }
 
   #rejectAll(error: Error): void {
+    this.#clearWriteQueue();
     for (const [id, pending] of this.#pending) {
-      this.#pending.delete(id);
-      if (pending.timer) clearTimeout(pending.timer);
-      pending.reject(error);
+      this.#rejectPending(id, error);
     }
   }
 

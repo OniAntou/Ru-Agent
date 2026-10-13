@@ -1,15 +1,27 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-12.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-13.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
+
+Model transport rejects automatic HTTP redirects and reports `redirect_rejected`
+without changing the pinned endpoint. A shared adapter deadline bounds the
+request through response headers to 120 seconds (`provider_timeout`, retryable);
+caller cancellation remains cancellation. The whole-response HTTP timeout stays
+infinite, with the existing 120-second SSE idle watchdog governing body reads,
+so an active long generation is not cut off by the request deadline.
 
 The model runner preserves a provider's `length` finish before parsing or
 promoting native or text-encoded tool calls. An incomplete step returns no
 executable calls or continuation; the Harness records it internally and applies
 its existing bounded truncation recovery. Even a complete call preceding a
 truncated call is discarded with that step.
+
+Responses `response.incomplete` is a terminal event: `max_output_tokens`
+preserves usage and returns `length` without parsing partial function arguments;
+`content_filter` discards calls and maps to the existing Harness
+`model_content_filtered` failure. Neither case stores provider continuation.
 
 The Chat Completions adapter assembles indexed tool-call deltas by response-local
 `index` before the runner parses arguments or looks up tool names. Calls are
@@ -26,6 +38,15 @@ Session lists and interchange exports share `SessionWorkspaceResolver` to resolv
 the latest durable run's encrypted workspace metadata. Export resolves the requested
 session directly, independently of the session-list cap. Sessions without a readable
 workspace retain an unset working directory.
+
+Interchange exports have a shared 128 MiB bound on the actual serialized JSON
+envelope, including nested format escaping (`SessionInterchangeLimits`). The
+Host measures it with the same serializer used for the response and returns
+413 `export_too_large` before sending an oversized success. CLI and GUI use
+`ResponseHeadersRead` and parse a bounded JSON stream, independently of the
+general API reader's 8 MiB cap. Declared and actual stream lengths are checked.
+Format file contents and the parsed JSON still live in memory; this is bounded
+buffering, not a constant-memory export directly to disk.
 
 The coding core is the product: Public Host, Broker execution authority, the
 in-process Agent v2 model runner, the durable Agent SSE stream, and the
@@ -602,6 +623,14 @@ Import keeps the 200-message retention limit and reports the persisted count
 in `session.messages`, all omitted transcript entries in `dropped_entries`, and
 `partial_import` when any entry was omitted. An import with no persistable
 message fails without retaining an empty session.
+
+Interrupted imports attempt bounded compensation with a cleanup token independent
+of the request. The Session Store checks emptiness and deletes in one immediate
+transaction, preserving messages already committed by the import or another
+client. Cleanup failure is logged without replacing the original failure or
+cancellation; CLI and GUI propagate caller cancellation. Create and append
+remain separate transactions, so this does not promise rollback of a completed
+import after its response is lost.
 
 WinUI gives Creating its own cancellation lifetime, including the period before
 a run ID arrives. A late accepted response is canceled rather than attached to

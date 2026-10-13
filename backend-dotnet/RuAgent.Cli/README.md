@@ -207,6 +207,13 @@ Interrupting a chat turn is server-side, not just a local detach: Escape with an
 
 ## Bounds
 
+- Session export: 128 MiB serialized JSON envelope, shared with Host and GUI.
+  JSON is read from a bounded stream; the general 8 MiB API cap does not apply.
+  Oversized exports return `export_too_large` before any file is written.
+- Running terminal tasks: default 8 per session, configurable from 1–64 with
+  `RU_MAX_BACKGROUND_TERMINAL_TASKS` before Host startup. Foreground launches
+  reserve a slot and keep it on background promotion; a full session refuses
+  new launches without stopping existing tasks.
 - Max arguments: 64
 - Workspace path: 1..512
 - Prompt: 1..8192 (the composed prompt with inlined attachments is refused above 16,000 chars)

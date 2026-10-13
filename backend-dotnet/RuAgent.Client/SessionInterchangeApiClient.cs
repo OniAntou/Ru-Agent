@@ -64,9 +64,10 @@ public sealed class SessionInterchangeApiClient
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await ReadBodyAsync(response, cancellationToken).ConfigureAwait(false);
-        using var document = Parse(body);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        await ValidateResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        using var document = await BoundedJsonResponseReader.ReadAsync(response.Content,
+            RuAgent.SessionInterchange.SessionInterchangeLimits.MaxExportBodyBytes, cancellationToken).ConfigureAwait(false);
         var root = document.RootElement;
         ThrowIfError(root, "session_export_failed");
 
@@ -135,6 +136,12 @@ public sealed class SessionInterchangeApiClient
 
     private static async Task<string> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        await ValidateResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        return await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ValidateResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
@@ -150,7 +157,6 @@ public sealed class SessionInterchangeApiClient
                 (int)response.StatusCode);
         }
 
-        return await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -11,6 +11,14 @@ namespace RuAgent.SessionInterchange;
 public static class SessionInterchangeLimits
 {
     /// <summary>
+    /// Serialized export envelope bound shared by Host, CLI and GUI. Export nests
+    /// format JSON inside JSON strings, so it needs more room than a general API
+    /// response or the decoded import payload. The Host measures the actual envelope
+    /// before accepting it; clients enforce the same bound while reading its stream.
+    /// </summary>
+    public const int MaxExportBodyBytes = 128 * 1024 * 1024;
+
+    /// <summary>
     /// Largest session payload an import accepts, in UTF-8 bytes. Enforced on the file
     /// (CLI, GUI) and again on the decoded content (host), so a file that passes one
     /// surface's check cannot be refused as "too large" by another for a different reason.

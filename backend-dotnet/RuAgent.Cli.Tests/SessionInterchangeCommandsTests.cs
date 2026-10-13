@@ -104,6 +104,39 @@ public sealed class SessionInterchangeCommandsTests
         }
     }
 
+    [Fact]
+    public async Task Session_import_preserves_caller_cancellation_without_printing_an_import_error()
+    {
+        var directory = Directory.CreateTempSubdirectory("ru-cli-import-cancel").FullName;
+        try
+        {
+            var path = Path.Combine(directory, "transcript.jsonl");
+            await File.WriteAllTextAsync(path, "{}\n");
+            using var cancellation = new CancellationTokenSource();
+            using var http = new HttpClient(new CancellingHandler(cancellation));
+            var errors = new StringWriter();
+            var commands = new AgentCommands(Session(), http, new StringWriter(), errors);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => commands.SessionImportAsync(
+                new SessionImportCommand(path, "claude-code", null, Json: false), cancellation.Token));
+
+            Assert.Equal(string.Empty, errors.ToString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private sealed class CancellingHandler(CancellationTokenSource cancellation) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<HttpResponseMessage>(ct);
+        }
+    }
+
     private static RuAgent.Client.PublicHostSession Session()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();

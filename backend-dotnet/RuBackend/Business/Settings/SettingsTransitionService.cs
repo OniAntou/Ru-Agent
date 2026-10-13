@@ -136,18 +136,17 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var snapshots = new List<CredentialSnapshot>();
         try
         {
-            var current = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
-            ProviderSelection selection;
+            string? account;
             try
             {
-                selection = ProviderSelection.From(current, backendChoice);
+                account = ProviderSelection.CredentialAccountForAlias(backendChoice);
             }
             catch (Exception error) when (error is UnknownProviderAliasException or ArgumentException)
             {
                 return new SettingsTransitionResult(false, "Unknown provider.");
             }
 
-            if (selection.Account is null)
+            if (account is null)
             {
                 return new SettingsTransitionResult(
                     true,
@@ -156,17 +155,17 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
 
             var existing = await _credentials.GetAsync(
                 ServiceName,
-                selection.Account,
+                account,
                 cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(existing))
             {
                 return new SettingsTransitionResult(true, "Provider is already signed out.");
             }
 
-            snapshots.Add(new CredentialSnapshot(selection.Account, existing));
+            snapshots.Add(new CredentialSnapshot(account, existing));
             await _credentials.DeleteAsync(
                 ServiceName,
-                selection.Account,
+                account,
                 cancellationToken).ConfigureAwait(false);
             return new SettingsTransitionResult(true, "Provider signed out.");
         }

@@ -67,6 +67,10 @@ public static class AgentFailureCopy
             "Provider rejected the request",
             "the provider answered 4xx: unknown model, no access, or bad parameters",
             "check the model with /model, verify the key with /key, then retry");
+        Add(table, ["redirect_rejected"],
+            "Provider endpoint redirected the request",
+            "the configured endpoint returned a redirect, which Ru stopped to protect the request data",
+            "check the provider base URL and retry");
         Add(table, ["provider_server_error"],
             "Provider server error",
             "the provider failed on its side",

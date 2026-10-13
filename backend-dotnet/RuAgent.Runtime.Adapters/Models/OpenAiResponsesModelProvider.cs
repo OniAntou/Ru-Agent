@@ -10,7 +10,17 @@ namespace RuAgent.Runtime.Adapters.Models;
 public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _http;
-    public OpenAiResponsesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
+    private readonly TimeSpan? _requestTimeout;
+    public OpenAiResponsesModelProvider(HttpClient http)
+        : this(http, requestTimeout: null)
+    {
+    }
+
+    public OpenAiResponsesModelProvider(HttpClient http, TimeSpan? requestTimeout)
+    {
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _requestTimeout = requestTimeout;
+    }
 
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -22,10 +32,8 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         };
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.Credential);
 
-        HttpResponseMessage response;
-        try { response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
-        catch (HttpRequestException ex) { throw new ModelProviderException("transport_error", true, ex); }
+        var response = await ModelHttpTransport.SendAsync(
+            _http, message, cancellationToken, _requestTimeout).ConfigureAwait(false);
 
         using (response)
         {
@@ -42,7 +50,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     cancellationToken.ThrowIfCancellationRequested();
                     if (evt.Event is null) throw new ModelProviderException("malformed_payload", false);
                     if (evt.Event is not (
-                        "response.output_text.delta" or "response.completed" or "error"
+                        "response.output_text.delta" or "response.completed" or "response.incomplete" or "error"
                         or "response.failed" or "response.reasoning.delta" or "response.reasoning_summary_text.delta"
                         or "response.created" or "response.in_progress" or "response.output_item.added"
                         or "response.function_call_arguments.delta" or "response.function_call_arguments.done"
@@ -70,7 +78,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                         yield return new ModelDelta(t, [], false, null);
                         continue;
                     }
-                    if (evt.Event == "response.completed")
+                    if (evt.Event is "response.completed" or "response.incomplete")
                     {
                         var responseData = ReadObject(data["response"])
                             ?? throw new ModelProviderException("malformed_payload", false);
@@ -79,26 +87,29 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                         var status = ReadString(responseData["status"]);
                         if (status is null) throw new ModelProviderException("malformed_payload", false);
                         var usage = ReadUsage(responseData["usage"], request.Model);
-                        var output = ReadArray(responseData["output"]);
-                        var calls = AssembleFunctionCalls(functionCalls, output);
-                        var continuation = BuildContinuation(request, output, calls.Count > 0);
-                        if (status == "completed")
-                        {
-                            terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage, providerContinuation: continuation);
-                            continue;
-                        }
                         if (status == "incomplete")
                         {
                             var incompleteDetails = ReadObject(responseData["incomplete_details"]);
                             var reason = ReadString(incompleteDetails?["reason"]);
-                            if (reason == "max_output_tokens")
+                            terminal = reason switch
                             {
-                                terminal = new ModelDelta(null, [], true, "length", usage);
-                                continue;
-                            }
+                                "max_output_tokens" => new ModelDelta(null, [], true, "length", usage),
+                                "content_filter" => new ModelDelta(null, [], true, "content_filter", usage),
+                                _ => throw new ModelProviderException("malformed_payload", false),
+                            };
+                            continue;
+                        }
+
+                        if (evt.Event != "response.completed" || status != "completed")
+                        {
                             throw new ModelProviderException("malformed_payload", false);
                         }
-                        throw new ModelProviderException("malformed_payload", false);
+
+                        var output = ReadArray(responseData["output"]);
+                        var calls = AssembleFunctionCalls(functionCalls, output);
+                        var continuation = BuildContinuation(request, output, calls.Count > 0);
+                        terminal = new ModelDelta(null, calls, true, calls.Count > 0 ? "tool_calls" : "stop", usage, providerContinuation: continuation);
+                        continue;
                     }
                     if (evt.Event == "error" || type == "error")
                     {
@@ -394,6 +405,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
 
     private static ModelProviderException MapStatus(HttpStatusCode s) => s switch
     {
+        >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => new("redirect_rejected", false),
         HttpStatusCode.Unauthorized => new("auth_failed", false),
         HttpStatusCode.Forbidden => new("forbidden", false),
         HttpStatusCode.TooManyRequests => new("rate_limited", true),

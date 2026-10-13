@@ -83,7 +83,7 @@ public static class SessionInterchangeEndpoints
                 await WorkingDirectoryForAsync(sessionId, sqliteOptions, workspaceStore, trustService, cancellationToken).ConfigureAwait(false));
             var files = format.Write(transcript);
 
-            return Results.Ok(new
+            var envelope = new
             {
                 status = "ok",
                 harness = format.Id,
@@ -100,7 +100,19 @@ public static class SessionInterchangeEndpoints
                     created_at = transcript.CreatedAt,
                 },
                 files = files.Select(file => new { name = file.FileName, content = file.Content }),
-            });
+            };
+            if (!await SessionExportEnvelopeLimit.FitsAsync(envelope, cancellationToken).ConfigureAwait(false))
+            {
+                return Results.Json(new
+                {
+                    status = "error",
+                    error_code = "export_too_large",
+                    message = $"export_too_large: export envelopes are limited to {SessionInterchangeLimits.MaxExportBodyBytes / (1024 * 1024)} MiB.",
+                }, statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
+
+            // Use the same serializer options as the measurement, independent of Host DI overrides.
+            return Results.Json(envelope, JsonSerializerOptions.Web);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -119,6 +131,8 @@ public static class SessionInterchangeEndpoints
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
+        string? createdSessionId = null;
+        var completed = false;
         try
         {
             // Bounded before parsing: a body above the transport bound never becomes a
@@ -190,6 +204,7 @@ public static class SessionInterchangeEndpoints
             if (clientSource is not (null or "gui" or "cli"))
                 return Results.BadRequest(new { status = "error", code = "invalid_client_source" });
             var sessionId = await sessions.CreateForClientAsync(clientSource, cancellationToken).ConfigureAwait(false);
+            createdSessionId = sessionId;
             if (sessionId is null)
             {
                 return Results.Ok(new { status = "error", message = "Không tạo được session để import." });
@@ -200,7 +215,6 @@ public static class SessionInterchangeEndpoints
                 .ConfigureAwait(false);
             if (!appended)
             {
-                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 return Results.Ok(new
                 {
                     status = "error",
@@ -211,7 +225,6 @@ public static class SessionInterchangeEndpoints
             var document = await sessions.GetAsync(sessionId, cancellationToken).ConfigureAwait(false);
             if (document is null)
             {
-                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 return Results.Ok(new
                 {
                     status = "error",
@@ -223,7 +236,6 @@ public static class SessionInterchangeEndpoints
             var droppedEntries = Math.Max(0, transcript.Entries.Count - persistedMessages);
             if (persistedMessages == 0)
             {
-                await sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
                 return Results.Ok(new
                 {
                     status = "error",
@@ -233,6 +245,7 @@ public static class SessionInterchangeEndpoints
                 });
             }
 
+            completed = true;
             return Results.Ok(new
             {
                 status = "ok",
@@ -255,6 +268,35 @@ public static class SessionInterchangeEndpoints
         {
             LogFailure(loggers, "session import", error);
             return Results.Ok(new { status = "error", message = "Lỗi khi import session." });
+        }
+        finally
+        {
+            if (!completed && createdSessionId is not null)
+            {
+                await CleanupEmptyImportAsync(createdSessionId, sessions, loggers).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task CleanupEmptyImportAsync(
+        string sessionId, ISessionStore sessions, ILoggerFactory loggers)
+    {
+        // A cancelled request must not cancel its compensation. Preserve an
+        // append that already committed, even if its acknowledgement was lost.
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            if (!await sessions.CleanupEmptyAsync(sessionId, cleanup.Token).ConfigureAwait(false))
+            {
+                throw new IOException("session_import_cleanup_failed");
+            }
+        }
+        catch (Exception error)
+        {
+            // Cleanup diagnostics must not replace the request's original
+            // cancellation or failure, and must not carry transcript content.
+            loggers.CreateLogger("RuBackend.Business.SessionInterchange")
+                .LogWarning(error, "Session import cleanup failed.");
         }
     }
 

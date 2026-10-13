@@ -52,6 +52,29 @@ public sealed class SessionImportApiTests
         Assert.Equal("HTTP 502", outcome.Error);
     }
 
+    [Fact]
+    public async Task ImportSessionAsync_preserves_caller_cancellation_without_reporting_an_api_failure()
+    {
+        using var cancellation = new CancellationTokenSource();
+        using var api = new ApiService(
+            new BackendSession(new Uri("http://127.0.0.1:59999/"), "synthetic-secret"),
+            new CancellingHandler(cancellation));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            api.ImportSessionAsync("claude-code", "{}", cancellation.Token));
+
+        Assert.Null(api.LastError);
+    }
+
+    private sealed class CancellingHandler(CancellationTokenSource cancellation) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<HttpResponseMessage>(ct);
+        }
+    }
+
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _status;

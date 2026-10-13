@@ -52,6 +52,11 @@ must pass. SWE starters must fail every `FAIL_TO_PASS` group and pass every
 `PASS_TO_PASS` group. A passing self-test validates fixtures and graders. It
 does not execute Ru or measure model quality.
 
+Repository-wide Ruff excludes the deliberately faulty candidate repositories
+(`repository/` and `environment/workspace/`); graders and reference solutions
+remain in the lint gate. Style cleanup must preserve the starter-fails and
+reference-passes oracle.
+
 Prepare a candidate workspace for any coding agent, then grade its changes:
 
 ```powershell

@@ -204,7 +204,12 @@ remain denied.
 Explicit deny/ask rules, exact single-use authorization, protected structured
 paths, hard-invalid requests and process lifetime/output bounds remain enforced.
 Foreground launches above fifteen minutes still ask in Standard; background
-launches use their bounded lifetime instead. API keys remain in credential storage
+launches use their bounded lifetime instead. Every running terminal task reserves
+a session slot at launch, retained when foreground moves to background. The
+Broker's `RU_MAX_BACKGROUND_TERMINAL_TASKS` setting defaults to 8 (range 1–64);
+invalid explicit values fail initialization. A full session refuses new launches
+as `background_task_limit_reached` without cancelling existing tasks.
+API keys remain in credential storage
 and diagnostics redact secrets. See [ADR 0017](docs/adr/0017-workspace-terminal-policy.md).
 Structured protected paths and hard-invalid requests remain
 denied. Standard is the

@@ -12,9 +12,10 @@ namespace RuBackend.Hosting;
 /// session, one tool execution service and one execution runtime per Host
 /// process. The runtime is composed lazily — a Host that never executes a tool
 /// never creates the tool service or cleans the spool root — while everything
-/// that can fail from configuration (the session root, the web options, the
-/// workspace root) is resolved when the authority is constructed, so a managed
-/// Host fails startup with a bounded reason instead of failing every tool call.
+/// that can fail from configuration (the terminal capacity, session root, web
+/// options and workspace root) is resolved when the authority is constructed,
+/// so a managed Host fails startup with a bounded reason instead of failing
+/// every tool call.
 /// </summary>
 internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposable
 {
@@ -35,10 +36,13 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     internal InProcessExecutionAuthority(
         DataPaths paths,
         ILogger logger,
-        string? spoolRoot = null)
+        string? spoolRoot = null,
+        Func<string, string?>? readEnvironment = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(logger);
+        TerminalConcurrency = TerminalConcurrencyOptions.FromEnvironment(
+            readEnvironment ?? Environment.GetEnvironmentVariable);
         SessionRoot = ResolveSessionRoot(paths.LogRoot);
         WorkspaceRoot = ResolveWorkspaceRoot(
             Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT"),
@@ -54,6 +58,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     internal string SessionRoot { get; }
     internal string WorkspaceRoot { get; }
     internal WebOptions? WebOptions { get; }
+    internal TerminalConcurrencyOptions TerminalConcurrency { get; }
     internal string SpoolRoot { get; }
 
     /// <summary>
@@ -96,7 +101,8 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
                 WorkspaceRoot,
                 WebOptions,
                 approvalTokens: approvalTokens,
-                terminalSpoolRoot: SpoolRoot);
+                terminalSpoolRoot: SpoolRoot,
+                terminalConcurrencyOptions: TerminalConcurrency);
             // The child cleaned its spool root once at startup; the in-process
             // authority does the same on first composition, scoped to its root.
             tools.CleanStaleSpoolFiles();

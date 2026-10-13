@@ -67,7 +67,8 @@ provider, model, key or protocol is tried.
 
 Signing out is a separate, explicit action: `POST /settings/provider/remove`
 takes one `backend_choice`, resolves it with the same alias normalization, and
-deletes only that provider's credential from Windows Credential Manager under
+derives its canonical credential account without fetching a catalog or reading
+settings, and deletes only that credential from Windows Credential Manager under
 the shared settings gate. It never touches other accounts, never rewrites
 the stored settings row, and is idempotent (`Provider is already signed out`). Unknown
 aliases return `Unknown provider`. After removal the provider fails

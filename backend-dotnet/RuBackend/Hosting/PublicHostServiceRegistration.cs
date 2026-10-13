@@ -217,11 +217,14 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<IPostConfigureOptions<AgentV1Service>, AgentV1CatalogVisionConfigurator>();
 
         // Harness Core adapters: the typed in-process model step service. One
-        // HttpClient with an infinite timeout governs every request: HttpClient.Timeout
-        // would cancel the response stream itself once the whole request/response exceeds
-        // it, cutting a healthy long SSE generation at 100 seconds. The step token governs
-        // the request: the Host cancels a silent step, and the caller cancels the run.
-        services.AddSingleton(_ => new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
+        // Request deadlines end at response headers; the adapters retain an infinite
+        // whole-request timeout so healthy long SSE streams are bounded by their idle
+        // watchdog. Disable redirects here so provider credentials and prompts never
+        // follow a 307/308 to another origin.
+        services.AddSingleton(_ => new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        });
         services.AddSingleton<IModelProviderResolver>(services =>
         {
             var modelHttpClient = services.GetRequiredService<HttpClient>();

@@ -36,8 +36,9 @@ public static class TerminalLimits
     public const int StandardApprovalThresholdMs = 900_000;
 
     /// <summary>
-    /// Concurrent background terminal tasks one session may keep alive. Past
-    /// this the start fails closed with background_task_limit_reached.
+    /// Default concurrent terminal tasks per session. The Broker may configure
+    /// a value from 1 to 64; a full session fails closed with
+    /// background_task_limit_reached.
     /// </summary>
     public const int MaxBackgroundTasksPerSession = 8;
 

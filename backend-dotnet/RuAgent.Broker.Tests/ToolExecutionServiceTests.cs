@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
@@ -1270,7 +1271,10 @@ public sealed class ToolExecutionServiceTests
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
                 StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+        var service = new ToolExecutionService(
+            session,
+            workspaceRoot,
+            terminalConcurrencyOptions: new TerminalConcurrencyOptions(TerminalLimits.MaxBackgroundTasksPerSession));
         try
         {
             var ids = new List<string>();
@@ -1296,7 +1300,9 @@ public sealed class ToolExecutionServiceTests
                     ["mode"] = "run",
                     ["executable"] = "cmd.exe",
                     ["arguments"] = new JsonArray("/c", "ping -n 30 127.0.0.1 > nul"),
-                    ["background"] = true,
+                    // Foreground launches reserve the same slot because they
+                    // may outlive their wait window and become background.
+                    ["timeout_ms"] = 1_000,
                 }),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Failed, over.Status);

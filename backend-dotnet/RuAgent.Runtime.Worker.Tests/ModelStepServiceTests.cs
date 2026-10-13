@@ -1002,6 +1002,7 @@ public sealed class ModelStepServiceTests
 
     [Theory]
     [InlineData("timeout", false, "provider_timeout", true)]
+    [InlineData("redirect_rejected", false, "redirect_rejected", false)]
     [InlineData("auth_failed", false, "provider_auth", false)]
     [InlineData("forbidden", false, "provider_auth", false)]
     [InlineData("rate_limited", false, "provider_rate_limited", true)]

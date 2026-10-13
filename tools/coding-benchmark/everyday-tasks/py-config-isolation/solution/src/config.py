@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+
 def load_config(path, defaults):
     path = Path(path)
     if not path.exists():

@@ -244,6 +244,10 @@ public sealed partial class AgentCommands
 
             return 0;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             await _err.WriteLineAsync($"session_import_error: {ex.Message}").ConfigureAwait(false);

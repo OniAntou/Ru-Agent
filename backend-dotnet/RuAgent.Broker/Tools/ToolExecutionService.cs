@@ -49,6 +49,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly TerminalAdapter _terminal;
+    private readonly BackgroundTaskRegistry _backgroundTasks;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillBodyStore _skillBodies;
     private readonly Func<bool> _pythonAvailable;
@@ -64,11 +65,15 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         HttpClient? webHttpClient = null,
         ApprovalTokenService? approvalTokens = null,
         Func<bool>? pythonAvailable = null,
-        string? terminalSpoolRoot = null)
+        string? terminalSpoolRoot = null,
+        TerminalConcurrencyOptions? terminalConcurrencyOptions = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _session = session;
+        var terminalLimits = terminalConcurrencyOptions
+            ?? TerminalConcurrencyOptions.FromEnvironment(Environment.GetEnvironmentVariable);
+        _backgroundTasks = new BackgroundTaskRegistry(terminalLimits.MaxConcurrentTasks);
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _fileList = new FileListAdapter(_workspace.Root);
         _fileGlob = new FileGlobAdapter(_workspace.Root);

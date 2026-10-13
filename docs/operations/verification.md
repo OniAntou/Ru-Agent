@@ -6,13 +6,140 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,079 passed / 0 failed / 0 skipped** (2026-10-13, TUI chat-flow redesign). Broker 918; CLI 1,355; Client 215; Core 488; Persistence 177; Hosting 39; Protocol 86; Adapters 208; Worker 88; SessionInterchange 43; Backend 1,069; GUI 1,393. Log: `artifacts/tui-chat-flow-matrix-rerun.log`. |
-| Python suite | **216 passed, 1 skipped** (2026-10-13, TUI chat-flow redesign), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-chat-flow-python.log`. The skip is the POSIX process-group kill test on Windows. |
-| Release build | Isolated Release pipeline from `build.bat` passed **11/11 stages** (2026-10-13, TUI chat-flow redesign). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-chat-flow-release-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13) on the actual flat Release package: published `RuBackend.exe` booted managed, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-chat-flow-flat-smoke.log`. Interactive launcher startup, session listing, native UI appearance and live-provider behavior remain manual acceptance. |
+| .NET tests | Full **12-project** Debug matrix: **6,134 passed / 0 failed / 0 skipped** (2026-10-13, resource contracts after review). Broker 930; CLI 1,356; Client 222; Core 488; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,086; GUI 1,396. Log: `artifacts/limits-final-dotnet-rerun.log`. |
+| Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
+| TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-13, review remediation rebuild). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; the prior package is retained in ignored artifacts. Log: `artifacts/review-release-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13, review remediation rebuild) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Logs: `artifacts/review-release-flat-smoke.log`, `artifacts/review-release-cli-parser.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Review remediation Release rebuild (2026-10-13)
+
+The user requested a rebuild, commit and push after the review fixes and resource
+contracts were verified. `build.bat` completed all 11 Release stages and rebuilt
+the canonical flat package at
+`gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish`.
+The three apphosts, compiled XAML, GUI assets, .NET runtime and Windows App Runtime
+are present. The old package was copied to
+`artifacts/review-release-previous-20261013-172803` before the build cleaned output.
+
+A flat-package smoke derived from `scripts/publish_smoke.ps1` skipped its publish
+step and used the freshly built flat `RuBackend.exe`. It ran with isolated
+temporary data and a free loopback port, verified the descriptor and authenticated
+status, then shut down the process it started. The flat CLI parser also returned
+its expected `missing_subcommand` without starting a session. No desktop UI was
+opened and no live provider request was sent. SDK typecheck, all 32 tests and the
+ESM/declaration build passed; Ruff and `pip check` also passed.
+
+The first post-build Debug matrix stopped at
+`WorkspaceIdentityResolverTests.Moved_directory_requires_trust_again` and
+`Moved_identity_produces_different_lease_binding`: `Directory.Move` reported a
+Windows sharing violation before either identity assertion. The resolver and
+these tests were unchanged; inspection confirmed its native handles share
+delete access and are disposed before the move. The owning process could not
+be identified. The entire resolver test class then passed in isolation (8/8),
+without changing code or weakening assertions. Both results are retained in
+`artifacts/review-release-dotnet.log` and
+`artifacts/review-release-workspace-identity-isolated.log`; isolation does not
+establish the source of the temporary lock.
+
+## Resource contracts after review (2026-10-13)
+
+The four previously deferred items now have explicit operating contracts.
+Model request deadlines stop at response headers after 120 seconds and map to
+retryable `provider_timeout`; caller cancellation remains cancellation. Active
+streams retain an infinite whole-response HTTP timeout with the existing SSE
+idle watchdog. The model HTTP handler refuses redirects and adapters preserve
+the non-retryable `redirect_rejected` failure without another endpoint request.
+
+Terminal capacity defaults to eight running processes per session and can be
+configured with `RU_MAX_BACKGROUND_TERMINAL_TASKS` from 1–64. Configuration is
+validated and retained when the authority is constructed, while runtime/tool
+composition remains lazy. Every launch reserves capacity before dispatch;
+foreground promotion keeps its slot. A full session refuses a new launch and
+does not stop existing processes to free a slot. Lifetime and spool bounds remain.
+
+Export uses the shared 128 MiB serialized-envelope bound, independently of the
+general 8 MiB API bound. The Host measures the real JSON with its response
+serializer before sending success; CLI and GUI check declared and streamed bytes
+and parse directly from the response stream. This removes the eager HTTP buffer
+and intermediate body string, while format files and parsed JSON remain in memory.
+Both formats have round-trip regressions through SQLite, the real Host routes and
+the shared client, including large content with nested JSON escaping.
+
+Behavioral RED logs are `artifacts/limits-terminal-red.log` (foreground admitted
+at full capacity), `limits-provider-red.log` (three unnamed redirect failures),
+`limits-export-client-red.log` (8 MiB rejection and eager buffering), and
+`limits-export-gui-red.log` / `limits-export-gui-refusal-red.log` (missing size
+refusal). The new Host measurement API initially did not compile before its
+implementation (`limits-export-host-api-red.log`). The first full matrix stopped
+at `Request_deadline_does_not_cancel_a_stream_after_response_headers`: the new
+test incorrectly expected no deltas for `[DONE]`, although the existing adapter
+emits a completed `stop` marker. The assertion now checks that terminal marker;
+no production change was needed (`limits-final-dotnet.log`).
+
+Final `.\scripts\test_dotnet.ps1 -Configuration Debug` passed all 6,134 tests in
+12 projects (`artifacts/limits-final-dotnet-rerun.log`). The full Python suite
+passed 216 tests with one POSIX-only test skipped on Windows
+(`artifacts/limits-final-python.log`). Ruff, route-contract,
+Python-runtime-boundary and current-documentation guards also passed. The
+prior six-fix SDK evidence remains unchanged; no SDK code changed in this step.
+At this implementation checkpoint, no Release build, publication, native UI
+interaction or live provider request was performed. The later rebuild is recorded
+above; earlier live evidence retains its original scope.
+
+## Six confirmed review fixes (2026-10-13)
+
+The review was reassessed before implementation: only six demonstrated defects
+were changed. Grep now checks the opened handle's final path against the
+authorized canonical path; Responses `response.incomplete` preserves usage and
+maps token exhaustion to existing recovery while content filtering remains a
+named failure without executing partial tool calls; SDK RPC requests are
+correlated before writing and obey deadlines under stdin backpressure; provider
+sign-out derives the exact credential account without a catalog lookup; failed
+or cancelled session import compensates only an empty created session, with an
+atomic SQLite check/delete and caller cancellation preserved in both clients;
+Ruff excludes deliberately defective benchmark candidate trees while retaining
+checks on graders and reference solutions.
+
+Regression tests were run against the old implementation before fixes. The
+adapter run failed both incomplete-response cases, the backend run failed two
+catalog-independent sign-out cases and three import cleanup cases, and CLI/GUI
+each failed their caller-cancellation case. The grep handle-swap case failed on
+the old code. A second protected-path fixture from that exploratory run was
+removed because its process-wide environment mutation raced other tests; the
+final regression uses a deterministic junction swap and an ordinary-search
+control. Logs are retained as `artifacts/review-six-*-red.log`. Ruff initially
+reported 23 errors (`artifacts/review-six-ruff-red.log`). SDK regressions also
+failed before the lifecycle correction; a follow-up review caught the completed
+response's stale write timer, which is now covered for both asynchronous and
+synchronous responses arriving before drain.
+
+Final verification ran one process/loopback matrix at a time:
+
+- `scripts/test_dotnet.ps1 -Configuration Debug`: 6,096 passed in 12 projects.
+- `.venv\Scripts\python.exe -m pytest tests -q -rs`: 216 passed, one Windows skip.
+- `npm run typecheck --prefix sdk/ru-agent` and `npm test --prefix sdk/ru-agent`:
+  typecheck passed and 32 tests passed.
+- `.venv\Scripts\python.exe -m ruff check tests scripts tools`: passed.
+- `check_aspnetcore_route_matrix.py` and `check_python_runtime_boundary.py`:
+  passed; 43 HTTP routes, no WebSocket and no interpreter files in the product.
+- `benchmark.py validate --suite everyday`: passed. `self-test --suite everyday`
+  for `py-config-isolation` and `py-stable-dedupe`: each defective seed failed
+  and each reference solution passed all six groups. Reports:
+  `artifacts/review-six-config-selftest.json` and
+  `artifacts/review-six-dedupe-selftest.json`.
+- `git diff --check`: passed.
+
+The Python benchmark fixture fingerprints changed with grader formatting; old
+live benchmark results retain their original fingerprints and were not rerun.
+At this six-fix snapshot, provider response-header deadlines, redirect policy,
+terminal auto-background policy and session export size limits were deferred;
+the following resource-contract change resolves them. No Release package,
+native UI interaction or live-provider acceptance
+was run for these fixes; Release/smoke/live rows above describe earlier evidence.
 
 ## TUI chat-flow redesign (2026-10-13)
 

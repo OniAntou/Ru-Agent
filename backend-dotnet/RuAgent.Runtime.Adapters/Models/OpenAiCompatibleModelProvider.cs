@@ -10,10 +10,17 @@ namespace RuAgent.Runtime.Adapters.Models;
 public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelRequestBodyProjector
 {
     private readonly HttpClient _httpClient;
+    private readonly TimeSpan? _requestTimeout;
 
     public OpenAiCompatibleModelProvider(HttpClient httpClient)
+        : this(httpClient, requestTimeout: null)
+    {
+    }
+
+    public OpenAiCompatibleModelProvider(HttpClient httpClient, TimeSpan? requestTimeout)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _requestTimeout = requestTimeout;
     }
 
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(
@@ -30,19 +37,8 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.Credential);
         }
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new ModelProviderException("timeout", retryable: true);
-        }
-        catch (HttpRequestException error)
-        {
-            throw new ModelProviderException("transport_error", retryable: true, error);
-        }
+        var response = await ModelHttpTransport.SendAsync(
+            _httpClient, message, cancellationToken, _requestTimeout).ConfigureAwait(false);
 
         using (response)
         {
@@ -502,6 +498,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         // Gateways answer 404 both for unknown models and for models with no
         // serving capacity; either way the fix is picking another model.
         HttpStatusCode.NotFound => new ModelProviderException("model_unavailable", retryable: false),
+        >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => new ModelProviderException("redirect_rejected", retryable: false),
 
         // The provider answered, and the answer was "the account cannot pay". Folding this into
         // the generic 4xx bucket told the reader to check the model and the key, neither of which

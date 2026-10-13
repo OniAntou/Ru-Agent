@@ -16,7 +16,17 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
     public const int MaximumSupportedOutputTokens = 8192;
 
     private readonly HttpClient _http;
-    public AnthropicMessagesModelProvider(HttpClient http) => _http = http ?? throw new ArgumentNullException(nameof(http));
+    private readonly TimeSpan? _requestTimeout;
+    public AnthropicMessagesModelProvider(HttpClient http)
+        : this(http, requestTimeout: null)
+    {
+    }
+
+    public AnthropicMessagesModelProvider(HttpClient http, TimeSpan? requestTimeout)
+    {
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _requestTimeout = requestTimeout;
+    }
 
     public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -30,10 +40,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         message.Headers.TryAddWithoutValidation("x-api-key", request.Credential);
         message.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
 
-        HttpResponseMessage response;
-        try { response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
-        catch (HttpRequestException ex) { throw new ModelProviderException("transport_error", true, ex); }
+        var response = await ModelHttpTransport.SendAsync(
+            _http, message, cancellationToken, _requestTimeout).ConfigureAwait(false);
 
         using (response)
         {
@@ -398,6 +406,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
 
     private static ModelProviderException MapStatus(HttpStatusCode s) => s switch
     {
+        >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest => new("redirect_rejected", false),
         HttpStatusCode.Unauthorized => new("auth_failed", false),
         HttpStatusCode.Forbidden => new("forbidden", false),
         HttpStatusCode.TooManyRequests => new("rate_limited", true),

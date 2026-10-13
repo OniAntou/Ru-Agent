@@ -30,7 +30,7 @@ public sealed record ModelDelta
             throw new ArgumentException("Model tool fragments exceed the adapter cap.", nameof(toolFragments));
         }
 
-        if (finishReason is not null && finishReason is not ("stop" or "tool_calls" or "length"))
+        if (finishReason is not null && finishReason is not ("stop" or "tool_calls" or "length" or "content_filter"))
         {
             throw new ArgumentException("Model finish reason is invalid.", nameof(finishReason));
         }

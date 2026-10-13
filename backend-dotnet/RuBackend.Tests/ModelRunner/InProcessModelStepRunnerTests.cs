@@ -88,6 +88,27 @@ public sealed class InProcessModelStepRunnerTests
     }
 
     [Fact]
+    public async Task Content_filter_finish_maps_to_harness_without_parsing_partial_calls()
+    {
+        var provider = new ScriptedProvider((_, _) => Deltas(
+            new ModelDelta(
+                "filtered text",
+                [new ModelToolFragment("call-1", "read", "{\"path\":")],
+                completed: true,
+                finishReason: "content_filter",
+                usage: new ModelUsage(12, 5, 17, null, null))));
+
+        var result = await Runner(provider).RunStepAsync(
+            Request(ContextWithReadCapability()),
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(AssistantFinishReason.ContentFilter, result.Step.FinishReason);
+        Assert.Empty(result.Step.ToolCalls);
+        Assert.Equal(12, result.Usage!.InputTokens);
+    }
+
+    [Fact]
     public async Task Retries_retryable_provider_error_with_a_fresh_attempt()
     {
         var provider = new ScriptedProvider((_, attempt) => attempt == 1

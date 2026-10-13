@@ -69,6 +69,28 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
         Describe(NormalizeAlias(alias), settings);
 
     /// <summary>
+    /// Resolves only the credential account for a provider choice. This path
+    /// intentionally does not resolve a generic provider endpoint through the
+    /// Models.dev catalog, so signing out works offline.
+    /// </summary>
+    public static string? CredentialAccountForAlias(string alias)
+    {
+        var backend = NormalizeAlias(alias);
+        if (NormalizeModelsDevBackend(backend) is { } generic)
+        {
+            return generic["models.dev:".Length..] + "_api_key";
+        }
+
+        return backend switch
+        {
+            "Custom OpenAI" => "custom_api_key",
+            "OpenAI" => "openai_api_key",
+            "Anthropic" => "anthropic_api_key",
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// Generic <c>models.dev:&lt;provider-id&gt;</c> backends resolve their base URL
     /// from the Models.dev catalog. Unknown ids fail closed: the URL is never guessed.
     /// </summary>

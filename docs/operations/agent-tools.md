@@ -107,6 +107,16 @@ carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 `mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
 flag on `run`/`shell`. The schema has no sandbox selector; obsolete sandbox
 arguments are rejected.
+
+Every running terminal task reserves a per-session slot when launched, including
+foreground tasks that may later move to background. Promotion keeps that slot;
+it does not admit another process. `RU_MAX_BACKGROUND_TERMINAL_TASKS` sets this
+Broker capacity at initialization (default 8, valid 1–64). Invalid explicit values
+fail initialization. When full, a new launch returns
+`background_task_limit_reached`; existing tasks keep running. Lifetime, output,
+spool quotas and approval rules still apply, and model arguments cannot raise
+the configured capacity.
+
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url` plus optional `offset` (0–4194304,
 default 0) and `limit` (1–32000, default 32000); `skill` takes `name` (1–96) and loads one
@@ -205,6 +215,10 @@ The 50000-offset ceiling can prevent continuation even when more matches are
 known; narrow the query/path rather than exceeding it. If prompt projection
 clips the returned page, prefer its `projection_next_offset` over the receipt's
 `next_offset`.
+
+Each candidate's opened file handle must still match its previously authorized
+canonical path before content is read; a junction swap is skipped instead of
+being treated as an ordinary change to searchable content.
 
 ### Text paging boundaries
 

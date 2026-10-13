@@ -30,6 +30,12 @@ norecursedirs = [".venv", ".venv311", "omnivoice_env", "models", ".tmp", ".workt
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Benchmark candidate repositories deliberately contain defects. Keep grading
+# infrastructure and reference solutions in the lint gate.
+extend-exclude = [
+    "tools/coding-benchmark/**/repository",
+    "tools/coding-benchmark/**/environment/workspace",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

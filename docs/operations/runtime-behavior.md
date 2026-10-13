@@ -1,11 +1,18 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, updated 2026-10-08.
+Status: operating contract for the current development branch, updated 2026-10-13.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
 
 ## Conversation and generation
+
+Model requests have a 120-second deadline through response headers. Expiry is
+retryable `provider_timeout`; caller cancellation is preserved. After headers,
+the existing 120-second SSE idle watchdog bounds silence, while active streams
+can continue beyond the request deadline. Model transport does not follow HTTP
+redirects: `redirect_rejected` is a non-retryable failure on the selected endpoint,
+with no credential/prompt forwarding or automatic provider substitution.
 
 The cloud-first desktop default is OpenAI. Hosted OpenAI and Anthropic
 providers are the supported cloud adapters, alongside any `models.dev:<provider-id>`

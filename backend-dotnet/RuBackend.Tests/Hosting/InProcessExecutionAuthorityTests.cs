@@ -53,6 +53,43 @@ public sealed class InProcessExecutionAuthorityTests : IDisposable
     }
 
     [Fact]
+    public void InvalidTerminalCapacityFailsBeforeTheRuntimeIsCreated()
+    {
+        var logRoot = Path.Combine(_root, "invalid-config-logs");
+        var error = Assert.Throws<InvalidOperationException>(() => new InProcessExecutionAuthority(
+            BuildPaths(logRoot),
+            NullLogger.Instance,
+            spoolRoot: Path.Combine(_root, "invalid-config-spool"),
+            readEnvironment: name => name == "RU_MAX_BACKGROUND_TERMINAL_TASKS" ? "0" : null));
+
+        Assert.Contains("RU_MAX_BACKGROUND_TERMINAL_TASKS", error.Message, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(logRoot, "agent", "session")));
+        Assert.False(Directory.Exists(Path.Combine(_root, "invalid-config-spool")));
+    }
+
+    [Fact]
+    public void ValidTerminalCapacityIsReadOnceBeforeLazyRuntimeComposition()
+    {
+        var terminalCapacityReads = 0;
+        using var authority = new InProcessExecutionAuthority(
+            BuildPaths(Path.Combine(_root, "valid-config-logs")),
+            NullLogger.Instance,
+            spoolRoot: Path.Combine(_root, "valid-config-spool"),
+            readEnvironment: name =>
+            {
+                if (name != "RU_MAX_BACKGROUND_TERMINAL_TASKS") return null;
+                terminalCapacityReads++;
+                return "3";
+            });
+
+        Assert.Equal(1, terminalCapacityReads);
+        Assert.Equal(3, authority.TerminalConcurrency.MaxConcurrentTasks);
+        Assert.False(authority.Runtime.IsValueCreated);
+        Assert.NotNull(authority.Runtime.Value);
+        Assert.Equal(1, terminalCapacityReads);
+    }
+
+    [Fact]
     public void DisposedAuthorityCannotComposeANewRuntime()
     {
         var authority = new InProcessExecutionAuthority(

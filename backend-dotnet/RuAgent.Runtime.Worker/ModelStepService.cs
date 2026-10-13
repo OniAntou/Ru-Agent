@@ -382,11 +382,11 @@ public sealed class ModelStepService
             }
 
         finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
-        if (finishReason == "length")
+        if (finishReason is "length" or "content_filter")
         {
-            // A completed JSON call can precede a cut-off call in the same batch.
-            // Preserve the provider's finish marker before parsing or promoting
-            // any calls, so the Harness can recover the whole incomplete step.
+            // A completed JSON call can precede a cut-off or filtered call in
+            // the same batch. Preserve the provider's finish marker before
+            // parsing or promoting any calls, so no partial batch can execute.
             return new ModelStepServiceResult(text.Length == 0 ? null : text.ToString(),
                 [], finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text));
         }
@@ -972,7 +972,7 @@ public sealed class ModelStepService
     /// The single authoritative provider-code mapping. Retryability is a
     /// property of the row, not of the exception's flag: adapter call sites set
     /// <see cref="ModelProviderException.Retryable"/> for the codes that pass
-    /// through unchanged (<c>http_error</c>, <c>vision_unsupported</c>,
+    /// through unchanged (<c>http_error</c>, <c>redirect_rejected</c>, <c>vision_unsupported</c>,
     /// <c>empty_model_reply</c>, and unknown codes), while a listed code always
     /// carries the retryability decided here.
     /// </summary>
@@ -989,7 +989,7 @@ public sealed class ModelStepService
         // retrying spends the attempt budget to reach the same ceiling.
         "malformed_payload" => new ModelStepException("protocol_failure", retryable: true, error),
         "response_too_large" => new ModelStepException("protocol_failure", retryable: false, error),
-        "http_error" or "vision_unsupported" or "empty_model_reply" => new ModelStepException(error.Code, error.Retryable, error),
+        "http_error" or "redirect_rejected" or "vision_unsupported" or "empty_model_reply" => new ModelStepException(error.Code, error.Retryable, error),
         _ => new ModelStepException("generation_failed", error.Retryable, error),
     };
 

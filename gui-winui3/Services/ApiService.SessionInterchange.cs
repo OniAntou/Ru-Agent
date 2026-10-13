@@ -36,14 +36,16 @@ public partial class ApiService
         try
         {
             using var response = await _httpClient
-                .GetAsync($"{_baseUrl}/sessions/{sessionId}/export?harness={Uri.EscapeDataString(harness)}", cancellationToken)
+                .GetAsync($"{_baseUrl}/sessions/{sessionId}/export?harness={Uri.EscapeDataString(harness)}", System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                return new SessionExportOutcome(false, [], $"HTTP {(int)response.StatusCode}");
+                return new SessionExportOutcome(false, [], await ReadRefusalAsync(response, cancellationToken).ConfigureAwait(false));
             }
 
-            var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken).ConfigureAwait(false);
+            using var document = await RuAgent.Client.BoundedJsonResponseReader.ReadAsync(response.Content,
+                SessionInterchangeLimits.MaxExportBodyBytes, cancellationToken).ConfigureAwait(false);
+            var result = document.RootElement;
             if (!result.TryGetProperty("status", out var status) || status.GetString() != "ok")
             {
                 var message = result.TryGetProperty("message", out var text) ? text.GetString() : null;
@@ -176,6 +178,10 @@ public partial class ApiService
                 result.TryGetProperty("dropped_entries", out var dropped) ? dropped.GetInt32() : 0,
                 null);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             LogApiError("ImportSessionAsync", ex);
@@ -184,7 +190,7 @@ public partial class ApiService
     }
 
     /// <summary>
-    /// The host's own words for a non-success response, so an oversized import or a
+    /// The host's own words for a non-success response, so an oversized import/export or a
     /// bounded refusal is not flattened into "HTTP 413". Falls back to the status when
     /// the body carries no usable message.
     /// </summary>
@@ -194,7 +200,7 @@ public partial class ApiService
     {
         try
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await RuAgent.Client.BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(body))
             {
                 using var document = JsonDocument.Parse(body);
@@ -212,6 +218,10 @@ public partial class ApiService
                     }
                 }
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception)
         {

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Threading;
+using RuAgent.Broker.Configuration;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Terminal;
@@ -41,9 +42,23 @@ public sealed class BackgroundTaskRegistry
     /// <summary>Completed entries kept per session for state and exit reads.</summary>
     public const int MaxCompletedEntriesPerSession = 16;
 
+    private readonly int _maxRunningTasksPerSession;
     private readonly object _gate = new();
     private readonly Dictionary<string, Dictionary<string, TaskEntry>> _sessions = new(StringComparer.Ordinal);
     private long _sequence;
+
+    public BackgroundTaskRegistry(int maxRunningTasksPerSession = TerminalLimits.MaxBackgroundTasksPerSession)
+    {
+        if (maxRunningTasksPerSession is < TerminalConcurrencyOptions.MinimumMaxConcurrentTasks
+            or > TerminalConcurrencyOptions.MaximumMaxConcurrentTasks)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxRunningTasksPerSession),
+                $"The running task capacity must be from {TerminalConcurrencyOptions.MinimumMaxConcurrentTasks} to {TerminalConcurrencyOptions.MaximumMaxConcurrentTasks}.");
+        }
+
+        _maxRunningTasksPerSession = maxRunningTasksPerSession;
+    }
 
     /// <summary>Cancels running task tokens owned by one session, retaining their entries.</summary>
     public void CancelSession(string sessionId)
@@ -125,15 +140,13 @@ public sealed class BackgroundTaskRegistry
 
     /// <summary>
     /// Registers one running task. False when the session already keeps the
-    /// maximum number of running tasks and the caller asked for the cap, or the
-    /// id is still running. A foreground call registers cap-exempt: it becomes a
-    /// background task only when its wait window expires.
+    /// maximum number of running tasks or the id is still running. Capacity is
+    /// reserved for every launch that may later move to the background.
     /// </summary>
     public bool TryStart(
         string sessionId,
         string executionId,
         int lifetimeMs,
-        bool enforceCap,
         bool isBackground,
         out CancellationToken lifetimeToken)
     {
@@ -167,7 +180,7 @@ public sealed class BackgroundTaskRegistry
                 }
             }
 
-            if (enforceCap && running >= TerminalLimits.MaxBackgroundTasksPerSession)
+            if (running >= _maxRunningTasksPerSession)
             {
                 lifetimeToken = default;
                 return false;

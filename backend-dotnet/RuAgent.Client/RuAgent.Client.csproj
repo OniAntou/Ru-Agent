@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuAgent.Hosting\RuAgent.Hosting.csproj" />
+    <ProjectReference Include="..\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="RuAgent.Client.Tests" />

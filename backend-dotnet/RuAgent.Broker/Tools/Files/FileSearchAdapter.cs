@@ -178,6 +178,7 @@ public sealed class FileSearchAdapter
             var text = await Task.Run(() =>
             {
                 using var stream = HardLinkGuard.OpenRead(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
+                HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, path);
                 return ReadSearchText(stream, FileToolLimits.MaxSearchFileSize, 8000, cancellationToken);
             }, cancellationToken).ConfigureAwait(false);
             if (text is null) return FileSearchOutcome.SkippedFile;

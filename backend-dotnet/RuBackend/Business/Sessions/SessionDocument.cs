@@ -74,6 +74,11 @@ public interface ISessionStore
 
     Task<bool> DeleteAsync(string sessionId, CancellationToken cancellationToken);
 
+    /// <summary>Removes an empty session atomically; preserves populated sessions.
+    /// True means no orphaned empty row remains, including an already missing row.</summary>
+    Task<bool> CleanupEmptyAsync(string sessionId, CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
     Task<bool> AppendAsync(
         string sessionId,
         IReadOnlyList<SessionMessage> messages,

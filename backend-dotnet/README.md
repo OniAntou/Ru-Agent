@@ -61,6 +61,7 @@ persistent text.
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST clients. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
+| `RU_MAX_BACKGROUND_TERMINAL_TASKS` | `8` | Per-session running terminal capacity (1–64), including foreground reservations. Invalid explicit values fail initialization; a full session refuses new launches without stopping existing tasks. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates a 256-bit
 desktop secret, publishes an ACL-restricted loopback descriptor for

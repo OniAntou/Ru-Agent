@@ -331,6 +331,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         "stop" => AssistantFinishReason.Stop,
         "tool_calls" => AssistantFinishReason.ToolCalls,
         "length" => AssistantFinishReason.Length,
+        "content_filter" => AssistantFinishReason.ContentFilter,
         _ => throw new ModelRunnerProtocolException("invalid_step"),
     };
 

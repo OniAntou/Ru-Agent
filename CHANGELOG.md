@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(provider)**: Bound model requests through response headers to 120 seconds while preserving long active SSE streams. Reject automatic HTTP redirects as `redirect_rejected` without forwarding credentials or prompts to a new endpoint.
+- **fix(broker)**: Reserve a terminal concurrency slot for every foreground/background launch, preserving it on automatic background promotion. Refuse new launches when full without stopping existing tasks; configure the per-session cap with `RU_MAX_BACKGROUND_TERMINAL_TASKS` (default 8, range 1–64).
+- **fix(interchange)**: Use a shared 128 MiB serialized export-envelope limit in Host, CLI and GUI instead of the general 8 MiB client response cap. Read export JSON directly from a bounded response stream and return `export_too_large` before sending oversized success envelopes.
+
+- **fix(broker)**: Verify grep's opened file handle against its authorized canonical path before reading, rejecting targets changed through a junction swap.
+- **fix(provider)**: Handle Responses `response.incomplete` terminal events, preserve usage, and discard incomplete tool calls before truncation recovery or the existing content-filter failure.
+- **fix(sdk)**: Register RPC requests before writing, serialize stdin backpressure, release expired queued frames, and reject pending requests when a stalled write or bridge exit ends the transport.
+- **fix(settings)**: Sign out Models.dev providers through their canonical credential account without requiring settings or catalog resolution; preserve unrelated keys and unknown-alias refusal.
+- **fix(interchange)**: Clean up empty sessions after interrupted imports with an independent cleanup token and atomic empty-row check. Preserve committed messages and propagate caller cancellation in CLI and GUI.
+- **fix(ci)**: Keep deliberately faulty benchmark candidate repositories outside Ruff while retaining lint for graders and reference solutions; preserve the starter/reference behavioral oracles.
+
 - **refactor(agent)**: Keep native-tool system listings to the first sentence while retaining complete descriptions and schemas in native declarations. Add field guidance for terminal mode/argv/script/cwd and intentional file overwrite; accept string `description` schema annotations without changing argument constraints or execution permissions.
 
 - **feat(cli)**: Redesign the TUI chat flow (opencode-style). The live activity moved from the header into the transcript as one pinned live row — braille spinner + action + target + elapsed while thinking/writing, a rotating half-circle while a tool runs — that settles in place into a `✓`/`✗` tool row carrying its duration; the header drops to two rows (title/usage + workspace). Every animation phase is now a pure function of elapsed time (`TuiSpinner`), which fixes the TG spinner that advanced at the 18 ms meteor cadence, and the hints-row spinner animates from the same clock. The user message is a filled three-row block with a `❯` prompt chevron on the composer's input-surface tone, fenced code opens with a dim language label instead of a bare fence, and an expanded diff sits between two dim rules.

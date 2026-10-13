@@ -153,9 +153,10 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
-                      ColumnDefinitions="Auto,Auto"
+                      x:Name="ActivityHeader"
+                      ColumnDefinitions="Auto,Auto,*"
                       ColumnSpacing="8"
-                      HorizontalAlignment="Left"
+                      HorizontalAlignment="Stretch"
                       VerticalAlignment="Center">
                       <TextBlock Grid.Column="0"
                                  x:Name="AgentActivityText"
@@ -163,7 +164,11 @@
                                  Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                  FontFamily="{StaticResource RuUiFontFamily}"
                                Foreground="{StaticResource RuInkBrush}"
-                               TextWrapping="Wrap"
+                               TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis"
+                               MaxLines="1"
+                               MaxWidth="240"
+                               ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
                                VerticalAlignment="Center"
                                Margin="20,0,0,0" />
                       <!--
@@ -202,7 +207,11 @@
                                          Text="{x:Bind DisplayText, Mode=OneWay}"
                                          FontFamily="{StaticResource RuUiFontFamily}"
                                          Foreground="{StaticResource RuInkBrush}"
-                                         TextWrapping="Wrap"
+                                         TextWrapping="NoWrap"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxLines="1"
+                                         MaxWidth="240"
+                                         ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
                                          VerticalAlignment="Center" />
                           </StackPanel>
                        </ToggleButton>
@@ -236,7 +245,11 @@
                                           Text="{x:Bind DisplayText, Mode=OneWay}"
                                           FontFamily="{StaticResource RuUiFontFamily}"
                                           Foreground="{StaticResource RuInkBrush}"
-                                          TextWrapping="Wrap"
+                                          TextWrapping="NoWrap"
+                                          TextTrimming="CharacterEllipsis"
+                                          MaxLines="1"
+                                          MaxWidth="240"
+                                          ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
                                           VerticalAlignment="Center" />
                            </StackPanel>
                        </ToggleButton>
@@ -261,6 +274,11 @@
                                   Spacing="4"
                                   VerticalAlignment="Center">
                            <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
+                                      TextWrapping="NoWrap"
+                                      TextTrimming="CharacterEllipsis"
+                                      MaxLines="1"
+                                      MaxWidth="160"
+                                      ToolTipService.ToolTip="{x:Bind MetadataText, Mode=OneWay}"
                                       Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                       FontFamily="{StaticResource RuMonoFontFamily}"
                                       FontSize="12.5"
@@ -268,6 +286,11 @@
                                       Foreground="{StaticResource RuInkBrush}"
                                       VerticalAlignment="Center" />
                            <TextBlock Text="{x:Bind BaseMetadataText, Mode=OneWay}"
+                                      TextWrapping="NoWrap"
+                                      TextTrimming="CharacterEllipsis"
+                                      MaxLines="1"
+                                      MaxWidth="160"
+                                      ToolTipService.ToolTip="{x:Bind BaseMetadataText, Mode=OneWay}"
                                       Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                       FontFamily="{StaticResource RuMonoFontFamily}"
                                       FontSize="12.5"
@@ -297,17 +320,21 @@
                                     Foreground="{StaticResource RuDangerBrush}"
                                     VerticalAlignment="Center" />
                       </StackPanel>
-                </Grid>
-                <TextBlock Grid.Row="1"
+                <!-- Short tool context stays beside its status; growing details
+                     must not add a row and move every following transcript block. -->
+                <TextBlock Grid.Column="2"
                            x:Name="ActivityDetailText"
                            Text="{x:Bind Detail, Mode=OneWay}"
                            Visibility="{x:Bind ShowPlainDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            FontSize="11.5"
                            Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="Wrap"
-                           MaxWidth="560"
-                           Margin="20,2,0,0" />
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="1"
+                           VerticalAlignment="Center"
+                           ToolTipService.ToolTip="{x:Bind Detail, Mode=OneWay}" />
+                </Grid>
                 <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
                   chat, muted text so the reply below stays the visual focus. Closed by

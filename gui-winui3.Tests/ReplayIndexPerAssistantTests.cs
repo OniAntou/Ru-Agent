@@ -42,16 +42,14 @@ public sealed class ReplayIndexPerAssistantTests
     }
 
     [Fact]
-    public void A_turn_with_no_persisted_text_shifts_the_head_not_the_tail()
+    public void Legacy_history_with_missing_answers_does_not_guess_run_ownership()
     {
-        // Four runs but only two visible assistant bubbles: a denied or failed turn left
-        // no text. The newest bubbles must still line up with the newest runs, because
-        // that is where the user is looking.
+        // Without identities, missing answers can occur anywhere in history.
         var indices = ReloadActivitiesPolicy.PlaceReplayedRuns(
             4,
             Renders("user", "assistant", "user", "assistant"));
 
-        Assert.Equal(new[] { -1, 2, -1, 3 }, indices.Select(p => p.ReplayIndex));
+        Assert.All(indices, placement => Assert.Equal(-1, placement.ReplayIndex));
     }
 
     [Fact]
@@ -80,7 +78,7 @@ public sealed class ReplayIndexPerAssistantTests
             1,
             Renders("user", "assistant", "user", "assistant"));
 
-        Assert.Equal(new[] { -1, -1, -1, 0 }, indices.Select(p => p.ReplayIndex));
+        Assert.All(indices, placement => Assert.Equal(-1, placement.ReplayIndex));
     }
 
     [Fact]
@@ -107,7 +105,7 @@ public sealed class ReplayIndexPerAssistantTests
         Assert.Equal(-1, placements[0].ReplayIndex);
 
         Assert.True(placements[1].Renders);
-        Assert.Equal(1, placements[1].ReplayIndex);
+        Assert.Equal(-1, placements[1].ReplayIndex);
     }
 
     [Fact]

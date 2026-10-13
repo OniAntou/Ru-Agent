@@ -21,17 +21,26 @@ internal static class AgentActivityGrouper
             return;
         }
 
-        foreach (var item in items)
+        var visible = new bool[items.Count];
+        var durations = new int[items.Count];
+        var repeated = new bool[items.Count];
+        for (int i = 0; i < items.Count; i++)
         {
             // Narration is the model's own sentence, and the same sentence
             // streams into the prose beside it: showing the row too prints
             // every narration twice. The prose keeps the words.
-            item.IsVisibleInFeed = item.Kind != AgentActivityKind.Narration;
-            item.CollapsedDurationMs = 0;
-            item.SetDetailRepeated(false);
+            visible[i] = items[i].Kind != AgentActivityKind.Narration;
         }
 
-        CollapseIdenticalCompleted(items);
+        CollapseIdenticalCompleted(items, visible, durations, repeated);
+        // Publish only final derived values. Resetting bindings first briefly
+        // revealed collapsed rows/details on every unrelated feed update.
+        for (int i = 0; i < items.Count; i++)
+        {
+            items[i].IsVisibleInFeed = visible[i];
+            items[i].CollapsedDurationMs = durations[i];
+            items[i].SetDetailRepeated(repeated[i]);
+        }
     }
 
     /// <summary>
@@ -52,16 +61,17 @@ internal static class AgentActivityGrouper
         }
     }
 
-    private static void CollapseIdenticalCompleted(IList<AgentActivityItem> items)
+    private static void CollapseIdenticalCompleted(
+        IList<AgentActivityItem> items, bool[] visible, int[] durations, bool[] repeated)
     {
         for (int i = 1; i < items.Count; i++)
         {
             var previous = items[i - 1];
             var current = items[i];
-            if (!current.IsVisibleInFeed
+            if (!visible[i]
                 || current.State != AgentActivityState.Completed
                 || previous.State != AgentActivityState.Completed
-                || !previous.IsVisibleInFeed)
+                || !visible[i - 1])
             {
                 continue;
             }
@@ -76,7 +86,7 @@ internal static class AgentActivityGrouper
                 if (previous.Kind == AgentActivityKind.Thinking
                     && string.Equals(current.Detail, previous.Detail, StringComparison.Ordinal))
                 {
-                    current.SetDetailRepeated(true);
+                    repeated[i] = true;
                 }
 
                 continue;
@@ -98,8 +108,8 @@ internal static class AgentActivityGrouper
             {
                 // Fold the hidden row's duration into the survivor so the total
                 // time is preserved instead of silently dropped.
-                current.CollapsedDurationMs += previous.EffectiveDurationMs ?? 0;
-                previous.IsVisibleInFeed = false;
+                durations[i] += (previous.DurationMs ?? 0) + durations[i - 1];
+                visible[i - 1] = false;
             }
         }
     }

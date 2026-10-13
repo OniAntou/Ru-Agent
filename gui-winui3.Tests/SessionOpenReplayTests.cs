@@ -6,7 +6,7 @@ namespace RuApp.Tests;
 /// Opening a session must rebuild the agent's activity feed, not just its prose.
 /// </summary>
 /// <remarks>
-/// Session messages persist only role and content, so a transcript rebuilt from them alone
+/// Session messages persist role/content and run identity; a transcript built from them alone
 /// shows text with every tool, thinking and task-list row missing. The rows are recovered
 /// from each terminal run's durable events, which is the only reason a feed survives
 /// leaving a session or closing the app.
@@ -33,7 +33,7 @@ public sealed class SessionOpenReplayTests
     {
         string body = OpenSessionBody();
 
-        Assert.Contains("AgentActivities", body, StringComparison.Ordinal);
+        Assert.Contains("RegisterReplayedActivities", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -43,7 +43,9 @@ public sealed class SessionOpenReplayTests
         // on whether it was opened or had just finished its own turn.
         string body = OpenSessionBody();
 
-        Assert.Contains("PlaceReplayedRuns", body, StringComparison.Ordinal);
+        Assert.Contains("SessionTranscriptBuilder.Build", body, StringComparison.Ordinal);
+        var reload = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ReloadSessionHistoryAsync");
+        Assert.Contains("SessionTranscriptBuilder.Build", reload, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -55,7 +57,7 @@ public sealed class SessionOpenReplayTests
         // rather than deciding for itself.
         string body = OpenSessionBody();
 
-        Assert.Contains("RendersAsAssistant", body, StringComparison.Ordinal);
-        Assert.Contains("placement.Renders", body, StringComparison.Ordinal);
+        Assert.Contains("SessionTranscriptBuilder.Build", body, StringComparison.Ordinal);
+        Assert.Contains("projected[i].Render", GuiSource.Text("Services", "SessionTranscriptBuilder.cs"), StringComparison.Ordinal);
     }
 }

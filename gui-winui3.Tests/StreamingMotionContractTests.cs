@@ -23,12 +23,14 @@ public sealed class StreamingMotionContractTests
         // The deferred render is scheduled, not dropped, and it re-checks that the
         // message it carries is still the active one before touching the model.
         var tick = GuiSource.MethodBody(code, "OnReplyTextApplyTick");
-        Assert.Contains("_pendingReplyText", tick, StringComparison.Ordinal);
+        Assert.Contains("FlushPendingReplyText", tick, StringComparison.Ordinal);
+        var flush = GuiSource.MethodBody(code, "FlushPendingReplyText");
+        Assert.Contains("_pendingReplyText", flush, StringComparison.Ordinal);
         Assert.Contains(
             "ReferenceEquals(message, _activeAgentAssistantMessage)",
-            tick,
+            flush,
             StringComparison.Ordinal);
-        Assert.Contains("ApplyReplyText", tick, StringComparison.Ordinal);
+        Assert.Contains("ApplyReplyText", flush, StringComparison.Ordinal);
 
         // One render moves content, live tail and scroll together.
         var applyText = GuiSource.MethodBody(code, "ApplyReplyText");

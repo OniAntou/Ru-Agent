@@ -15,6 +15,9 @@ namespace RuApp.Models
 
     public class ChatMessageItem : INotifyPropertyChanged
     {
+        // Durable run ownership for history/replay reconciliation, not display.
+        public string? SourceRunId { get; set; }
+
         private string _id = Guid.NewGuid().ToString();
         private string _role = "user";
         private string _content = string.Empty;

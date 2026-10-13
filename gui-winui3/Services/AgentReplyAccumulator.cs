@@ -5,7 +5,7 @@ using System.Text;
 namespace RuApp.Services;
 
 public sealed record AgentReplySnapshot(
-    string SessionId, string RunId, long Generation, string Text);
+    string SessionId, string RunId, long Generation, string Text, int? ResetOffset = null);
 
 public sealed class AgentReplyAccumulator
 {
@@ -15,6 +15,8 @@ public sealed class AgentReplyAccumulator
     private long _generation;
     private readonly StringBuilder _builder = new();
     private readonly HashSet<string> _seenKeys = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _stepStarts = new(StringComparer.Ordinal);
+    private int? _pendingResetOffset;
     private bool _hasNewText;
 
     public void Begin(string sessionId, string runId)
@@ -26,6 +28,8 @@ public sealed class AgentReplyAccumulator
             _generation++;
             _builder.Clear();
             _seenKeys.Clear();
+            _stepStarts.Clear();
+            _pendingResetOffset = null;
             _hasNewText = false;
         }
     }
@@ -39,6 +43,7 @@ public sealed class AgentReplyAccumulator
             if (!string.Equals(_runId, runId, StringComparison.Ordinal)) return false;
             var key = $"{runId}:{modelStepId}:{sequence}";
             if (!_seenKeys.Add(key)) return false;
+            _stepStarts.TryAdd(modelStepId, _builder.Length);
             _builder.Append(text);
             _hasNewText = true;
             return true;
@@ -46,7 +51,7 @@ public sealed class AgentReplyAccumulator
     }
 
     /// <summary>
-    /// Drops the text streamed so far for the active run. A model step retried
+    /// Drops the text streamed by the retried model step. A model step retried
     /// after a transient failure re-runs on a fresh socket, and its answer
     /// replaces the partial one that had already been rendered.
     /// </summary>
@@ -59,8 +64,11 @@ public sealed class AgentReplyAccumulator
             if (!string.Equals(_runId, runId, StringComparison.Ordinal)) return false;
             var key = $"{runId}:{modelStepId}:{sequence}";
             if (!_seenKeys.Add(key)) return false;
-            _builder.Clear();
-            // Report the empty snapshot so the view clears the superseded text
+            _stepStarts.TryAdd(modelStepId, _builder.Length);
+            var offset = _stepStarts[modelStepId];
+            _builder.Length = offset;
+            _pendingResetOffset = Math.Min(_pendingResetOffset ?? offset, offset);
+            // Report the truncated snapshot so the view clears superseded text
             // instead of leaving it on screen until the retry writes again.
             _hasNewText = true;
             return true;
@@ -73,7 +81,9 @@ public sealed class AgentReplyAccumulator
         {
             if (!_hasNewText || _sessionId is null || _runId is null) return null;
             _hasNewText = false;
-            return new AgentReplySnapshot(_sessionId, _runId, _generation, _builder.ToString());
+            var snapshot = new AgentReplySnapshot(_sessionId, _runId, _generation, _builder.ToString(), _pendingResetOffset);
+            _pendingResetOffset = null;
+            return snapshot;
         }
     }
 
@@ -111,6 +121,7 @@ public sealed class AgentReplyAccumulator
             _runId = runId;
             _generation++;
             _seenKeys.Clear();
+            _stepStarts.Clear();
         }
     }
 
@@ -121,6 +132,8 @@ public sealed class AgentReplyAccumulator
             _generation++;
             _builder.Clear();
             _seenKeys.Clear();
+            _stepStarts.Clear();
+            _pendingResetOffset = null;
             _hasNewText = false;
             _sessionId = null;
             _runId = null;

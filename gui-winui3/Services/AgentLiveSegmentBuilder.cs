@@ -5,6 +5,25 @@ namespace RuApp.Services;
 
 internal static class AgentLiveSegmentBuilder
 {
+    // A retry can invalidate text already frozen before a Retry activity.
+    // Keep the activity identities and earlier prose; trim superseded slices
+    // in place so bindings cannot retain an old answer beside its replacement.
+    internal static int Reset(ChatMessageItem message, int offset, int frozen)
+    {
+        var retained = Math.Clamp(offset, 0, (message.Content ?? string.Empty).Length);
+        var cursor = 0;
+        if (message.Segments is { } segments)
+        {
+            foreach (var text in segments.OfType<TextSegment>())
+            {
+                var length = text.Text.Length;
+                text.Text = text.Text[..Math.Clamp(retained - cursor, 0, length)];
+                cursor += length;
+            }
+        }
+        return Math.Min(frozen, retained);
+    }
+
     // Call after rendering all preceding deltas. Activity boundaries reflect
     // event order, never a guessed word/line boundary in the model's prose.
     internal static int Freeze(ChatMessageItem message, AgentActivityItem activity, int frozen)

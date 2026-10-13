@@ -6,6 +6,17 @@ namespace RuApp.Tests;
 public sealed class ReloadActivitiesPolicyTests
 {
     [Fact]
+    public void Unanswered_last_user_turn_must_not_claim_the_greeting_run()
+    {
+        var messages = SessionTranscriptBuilder.Build(
+            [new("user", "Xin chào", "hello"), new("assistant", "Chào anh", "hello"),
+             new("user", "Giá vàng?", "gold")],
+            [new("hello", [], []), new("gold", [], [])]);
+        Assert.Equal("hello", messages[1].SourceRunId);
+        Assert.Equal("Chào anh", messages[1].Content);
+    }
+
+    [Fact]
     public void Live_rows_attach_when_last_assistant_is_final_message()
     {
         Assert.True(ReloadActivitiesPolicy.AttachLiveToLastAssistant(
@@ -54,13 +65,11 @@ public sealed class ReloadActivitiesPolicyTests
     }
 
     [Fact]
-    public void Replay_drops_oldest_runs_when_a_turn_has_no_text()
+    public void Legacy_replay_does_not_guess_when_a_turn_has_no_text()
     {
-        // 4 runs but only 3 assistants (one denied/failed turn persisted no text):
-        // the oldest run's rows drop so the newest turns stay correct.
-        Assert.Equal(1, ReloadActivitiesPolicy.ReplayIndexForAssistant(
+        Assert.Equal(-1, ReloadActivitiesPolicy.ReplayIndexForAssistant(
             runCount: 4, totalAssistants: 3, assistantOrdinal: 0));
-        Assert.Equal(3, ReloadActivitiesPolicy.ReplayIndexForAssistant(
+        Assert.Equal(-1, ReloadActivitiesPolicy.ReplayIndexForAssistant(
             runCount: 4, totalAssistants: 3, assistantOrdinal: 2));
     }
 

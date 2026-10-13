@@ -21,7 +21,8 @@ internal static class AgentReplaySegmentBuilder
 
     public static BuiltReplay? Build(
         IReadOnlyList<AgentActivityItem> items,
-        IReadOnlyList<ApiService.RunTranscriptEntry> transcript)
+        IReadOnlyList<ApiService.RunTranscriptEntry> transcript,
+        string? persistedText = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(transcript);
@@ -62,6 +63,18 @@ internal static class AgentReplaySegmentBuilder
             }
         }
 
+        // Replay payload reads are best-effort. An activity-only or incomplete
+        // transcript cannot erase the authoritative final session message.
+        var finalText = persistedText?.Trim();
+        var lastText = segments.OfType<TextSegment>().LastOrDefault()?.Text.Trim();
+        if (!string.IsNullOrEmpty(finalText)
+            && !string.Equals(finalText, lastText, StringComparison.Ordinal)
+            && !string.Equals(finalText, content.ToString().Trim(), StringComparison.Ordinal))
+        {
+            content.Append(finalText);
+            segments.Add(new TextSegment(finalText));
+            any = true;
+        }
         return any ? new BuiltReplay(content.ToString(), segments, offsets) : null;
     }
 }

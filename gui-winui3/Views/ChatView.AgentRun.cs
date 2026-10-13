@@ -1247,6 +1247,7 @@ namespace RuApp.Views
         {
             var completion = _sessionPresentation.TryBeginCompletion();
             if (completion is null) return;
+            FlushPendingReplyText();
             // Flush any pending coalesced render before completing
             AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
             if (pending != null && _activeAgentAssistantMessage != null)
@@ -1255,7 +1256,7 @@ namespace RuApp.Views
                 {
                     Messages.Add(_activeAgentAssistantMessage);
                 }
-                _activeAgentAssistantMessage.Content = pending.Text;
+                ApplyReplyText(_activeAgentAssistantMessage, pending.Text, pending.ResetOffset);
                 _activeAgentAssistantMessage.IsStreaming = false;
                 _activeAgentAssistantMessage.SettleSegments();
                 UpdateLiveTailText(_activeAgentAssistantMessage);
@@ -1311,11 +1312,11 @@ namespace RuApp.Views
 
         private void FailActiveAgentReply(Exception exception)
         {
+            FlushPendingReplyText();
             AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
             if (pending is not null && _activeAgentAssistantMessage is not null)
             {
-                _activeAgentAssistantMessage.Content = pending.Text;
-                UpdateLiveTailText(_activeAgentAssistantMessage);
+                ApplyReplyText(_activeAgentAssistantMessage, pending.Text, pending.ResetOffset);
             }
 
             bool hasReply = HasRenderedAgentReply();

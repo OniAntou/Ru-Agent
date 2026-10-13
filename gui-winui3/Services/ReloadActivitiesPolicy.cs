@@ -45,13 +45,12 @@ internal static class ReloadActivitiesPolicy
     public readonly record struct ReplayPlacement(bool Renders, int ReplayIndex);
 
     /// <summary>
-    /// The run that backs each persisted message, oldest message first.
+    /// Legacy ordinal matching for a balanced message/run history only.
     /// </summary>
     /// <remarks>
-    /// One place decides which rows belong to which turn, shared by the open path and the
-    /// end-of-turn reload. Two rules would mean a session renders differently depending on
-    /// how it was reached, which is precisely the bug that made the feed look absent on
-    /// open while it was correct right after a turn.
+    /// Modern histories use source_run_id through SessionTranscriptBuilder.
+    /// Without identities, unequal counts cannot reveal which turn has no
+    /// response. Retain the saved prose instead of guessing from the tail.
     ///
     /// Rendering and backing are answered separately and deliberately. Deriving one from
     /// the other is wrong in both directions: a bubble that renders may have no run behind
@@ -84,13 +83,10 @@ internal static class ReloadActivitiesPolicy
     }
 
     /// <summary>
-    /// Maps a rendered assistant ordinal to its run's replayed rows, or -1 when
-    /// no run backs it. Runs align tail-first: the newest run belongs to the
-    /// newest assistant message. A denied/failed turn with no persisted text
-    /// shifts the head, never the tail, so recent turns stay correct.
+    /// Maps a legacy rendered assistant ordinal only when counts match.
     /// </summary>
     public static int ReplayIndexForAssistant(int runCount, int totalAssistants, int assistantOrdinal) =>
-        runCount - totalAssistants + assistantOrdinal is { } index && index >= 0 && index < runCount
-            ? index
+        runCount == totalAssistants && assistantOrdinal >= 0 && assistantOrdinal < runCount
+            ? assistantOrdinal
             : -1;
 }

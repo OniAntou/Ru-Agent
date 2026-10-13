@@ -88,11 +88,26 @@ startup, independently of session polling. An unchanged poll retains rendered
 rows, but rebuilds them if the sidebar has not been populated.
 `AgentReplyAccumulator` is the view's sole reply-delta deduplication owner;
 rebinding the same run preserves delivered-frame and reset identities.
-Live transcript activity insertion renders preceding pending deltas before
+Retries truncate only the failed model step's text, preserving earlier steps;
+snapshots carry the reset offset so frozen slices and activity split offsets
+discard superseded prose even when reset and replacement deltas coalesce.
+Live transcript activity insertion drains both pending deltas and the deferred
+100 ms text render before
 `AgentLiveSegmentBuilder` freezes text at its received end. Queued earlier
 activities are drained before later text is accepted. Frozen slices settle
 Markdown once; only the next tail remains live. No line/word heuristic moves
 sentence suffixes across activity rows.
+Activity grouping computes visibility, folded durations and repeated details
+before publishing final values, keeping unchanged rows stable across refreshes.
+Activity headers keep short tool context on the same line, with bounded labels
+and metadata and ellipsis for overflow. Tooltips retain the full text; expanded
+thinking, diffs and terminal output remain separate blocks.
+Session reopen and end-of-turn reload share `SessionTranscriptBuilder`, joining
+messages and activity replay by the persisted `source_run_id`. A run without a
+saved assistant message gets its own bubble after its user turn, never an older
+turn's bubble. Replay preserves the saved final answer when payload reads omit
+it. Legacy messages without run identities permit ordinal replay only when the
+message/run counts match; unbalanced histories retain prose without guessing.
 GUI Tasks refreshes bind completion to session generation, current run and newest
 request. Interactive-terminal output/exit callbacks carry shell lifetime versions;
 workspace replacement and shutdown invalidate queued callbacks. Model selection

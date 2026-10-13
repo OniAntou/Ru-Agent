@@ -15,6 +15,34 @@ namespace RuApp.Tests;
 public sealed class AgentActivityGrouperRepeatTests
 {
     [Fact]
+    public void Reconciling_unchanged_feed_does_not_reveal_and_hide_repeated_detail()
+    {
+        var rows = new List<AgentActivityItem> { Thinking("Same", 3), Thinking("Same", 4) };
+        AgentActivityGrouper.Reconcile(rows);
+        var changes = new List<string?>();
+        rows[1].PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+        for (int i = 0; i < 10; i++) AgentActivityGrouper.Reconcile(rows);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
+    public void Reconciling_unchanged_collapsed_rows_does_not_toggle_visibility_or_duration()
+    {
+        var rows = new List<AgentActivityItem>
+        {
+            new(Row("same", 3, AgentActivityState.Completed) with { Kind = AgentActivityKind.Search }),
+            new(Row("same", 4, AgentActivityState.Completed) with { Kind = AgentActivityKind.Search }),
+        };
+        AgentActivityGrouper.Reconcile(rows);
+        Assert.False(rows[0].IsVisibleInFeed);
+        Assert.Equal(7_000, rows[1].EffectiveDurationMs);
+        var changes = new List<string?>();
+        foreach (var row in rows) row.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+        for (int i = 0; i < 10; i++) AgentActivityGrouper.Reconcile(rows);
+        Assert.Empty(changes);
+    }
+
+    [Fact]
     public void A_deliberation_repeated_across_steps_is_read_once()
     {
         const string repeated = "The user wants me to create a small web app.";

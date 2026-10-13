@@ -13,7 +13,7 @@ namespace RuApp.Services
 {
     /// <summary>
     /// Replays durable run activity for transcript rebuilds. Session messages persist
-    /// only role/content, while activity rows are transient — so a reloaded session
+    /// role/content plus source_run_id, while activity rows are transient — so a reloaded session
     /// would otherwise lose every tool row. These reads are best-effort: any failure
     /// keeps the text-only transcript instead of a partial feed.
     /// </summary>

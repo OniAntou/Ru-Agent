@@ -18,6 +18,9 @@ public sealed class AgentLiveSegmentTests
         var freeze = source[source.IndexOf("private void FreezeTextSegmentForActivity", StringComparison.Ordinal)..];
         Assert.True(freeze.IndexOf("_replyRenderScheduler.ApplyPending();", StringComparison.Ordinal)
             < freeze.IndexOf("AgentLiveSegmentBuilder.Freeze", StringComparison.Ordinal));
+        Assert.True(freeze.IndexOf("FlushPendingReplyText();", StringComparison.Ordinal) >= 0
+            && freeze.IndexOf("FlushPendingReplyText();", StringComparison.Ordinal)
+                < freeze.IndexOf("AgentLiveSegmentBuilder.Freeze", StringComparison.Ordinal));
     }
 
     private static AgentActivityItem Activity(string id) => new(new AgentActivityModel(
@@ -25,6 +28,50 @@ public sealed class AgentLiveSegmentTests
         FileName: null, LineStart: null, LineEnd: null, Symbol: null, Count: null,
         Added: null, Removed: null, DurationMs: null, SafeCode: "in_progress",
         ToolDisplay: null, DurableSequence: null, TransientSequence: 1));
+
+    [Theory]
+    [InlineData("Giá mới.")]
+    [InlineData("Bảng giá thay thế dài hơn bảng giá cũ và vẫn chỉ hiển thị một lần.")]
+    public void Retry_removes_frozen_failed_answer_but_preserves_earlier_prose_and_activity(string replacement)
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s", "r");
+        var message = new ChatMessageItem { Role = "assistant" };
+        const string earlier = "Để em tìm giá vàng.\n";
+        reply.TryAppend("r", "search", 1, earlier);
+        message.Content = reply.TakeSnapshot()!.Text;
+        var frozen = AgentLiveSegmentBuilder.Freeze(message, Activity("fetch"), 0);
+        reply.TryAppend("r", "answer", 1, "Bảng giá cũ chưa hoàn chỉnh.");
+        message.Content = reply.TakeSnapshot()!.Text;
+        Assert.IsType<TextSegment>(message.Segments![^1]).Text = message.Content[frozen..];
+        frozen = AgentLiveSegmentBuilder.Freeze(message, Activity("retry"), frozen);
+
+        // The reset and replacement may coalesce before the UI renders again.
+        reply.TryReset("r", "answer", 2);
+        reply.TryAppend("r", "answer", 3, replacement);
+        var snapshot = reply.TakeSnapshot()!;
+        Assert.Equal(earlier.Length, snapshot.ResetOffset);
+        frozen = AgentLiveSegmentBuilder.Reset(message, snapshot.ResetOffset!.Value, frozen);
+        message.Content = snapshot.Text;
+        Assert.IsType<TextSegment>(message.Segments[^1]).Text = snapshot.Text[frozen..];
+
+        Assert.Equal(earlier + replacement, string.Concat(message.Segments.OfType<TextSegment>().Select(text => text.Text)));
+        Assert.Equal(new[] { "fetch", "retry" }, message.Segments.OfType<ActivitySegment>().Select(item => item.ActivityId));
+        Assert.Equal(earlier.Length, frozen);
+        Assert.False(reply.TryReset("r", "answer", 2));
+        Assert.Null(reply.TakeSnapshot());
+    }
+
+    [Fact]
+    public void Retry_clears_the_existing_live_tail_before_new_text_arrives()
+    {
+        var message = new ChatMessageItem { Content = "answer" };
+        AgentLiveSegmentBuilder.Freeze(message, Activity("retry"), 0);
+        var frozen = AgentLiveSegmentBuilder.Reset(message, 0, message.Content.Length);
+        Assert.Equal(0, frozen);
+        Assert.All(message.Segments!.OfType<TextSegment>(), text => Assert.Empty(text.Text));
+        Assert.Single(message.Segments!.OfType<ActivitySegment>());
+    }
 
     [Theory]
     [InlineData("Bắt đầu với câu đầu tiên để kiểm tra phần hiển thị lựa chọn:")]

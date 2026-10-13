@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -86,6 +87,14 @@ namespace RuApp.Services
             string sessionId,
             CancellationToken cancellationToken = default)
         {
+            var history = await GetSessionHistoryAsync(sessionId, cancellationToken);
+            return history?.Select(row => (row.Role, row.Content)).ToList();
+        }
+
+        public async Task<List<SessionHistoryEntry>?> GetSessionHistoryAsync(
+            string sessionId,
+            CancellationToken cancellationToken = default)
+        {
             try
             {
                 using var response = await _httpClient.PostAsync(
@@ -98,14 +107,16 @@ namespace RuApp.Services
                     if (result.TryGetProperty("session", out var sessionProp) &&
                         sessionProp.TryGetProperty("messages", out var messagesProp))
                     {
-                        var list = new List<(string, string)>();
+                        var list = new List<SessionHistoryEntry>();
                         foreach (var item in messagesProp.EnumerateArray())
                         {
                             string role = item.TryGetProperty("role", out var roleProp) ? roleProp.GetString() ?? "" : "";
                             string content = item.TryGetProperty("content", out var contentProp) ? contentProp.GetString() ?? "" : "";
                             if (role == "user" || role == "ai" || role == "assistant")
                             {
-                                list.Add((role == "user" ? "user" : "assistant", content));
+                                string? runId = item.TryGetProperty("source_run_id", out var runProp)
+                                    && runProp.ValueKind == JsonValueKind.String ? runProp.GetString() : null;
+                                list.Add(new SessionHistoryEntry(role == "user" ? "user" : "assistant", content, runId));
                             }
                         }
                         return list;
@@ -114,7 +125,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                LogApiError("GetSessionMessagesAsync", ex);
+                LogApiError("GetSessionHistoryAsync", ex);
             }
             return null;
         }

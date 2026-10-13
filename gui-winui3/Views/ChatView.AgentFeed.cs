@@ -292,6 +292,7 @@ namespace RuApp.Views
             }
 
             _replyRenderScheduler.ApplyPending();
+            FlushPendingReplyText();
             var splitAt = AgentLiveSegmentBuilder.Freeze(message, item, _segmentFrozenLength);
             _activitySplitOffsetById[item.ActivityId] = splitAt;
             _segmentFrozenLength = splitAt;
@@ -606,7 +607,8 @@ namespace RuApp.Views
 
             // Non-text deltas still schedule a render: skip the layout + scroll
             // pass when the text did not actually grow.
-            if (!string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
+            if (snapshot.ResetOffset is not null
+                || !string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
             {
                 // Every text render re-parses the whole reply and rebuilds its runs,
                 // so a delta burst renders on a cadence instead of per delta. The
@@ -614,9 +616,9 @@ namespace RuApp.Views
                 // it within one interval, including after the final delta.
                 long elapsed = Environment.TickCount64 - _lastReplyTextApplyTick;
                 long cadence = (long)Services.UiTiming.StreamTextRefresh.TotalMilliseconds;
-                if (elapsed >= cadence)
+                if (snapshot.ResetOffset is not null || elapsed >= cadence)
                 {
-                    ApplyReplyText(_activeAgentAssistantMessage, snapshot.Text);
+                    ApplyReplyText(_activeAgentAssistantMessage, snapshot.Text, snapshot.ResetOffset);
                 }
                 else
                 {
@@ -634,11 +636,18 @@ namespace RuApp.Views
         /// slice and the follow scroll move together so the cadence never splits
         /// them.
         /// </summary>
-        private void ApplyReplyText(ChatMessageItem message, string text)
+        private void ApplyReplyText(ChatMessageItem message, string text, int? resetOffset = null)
         {
+            _replyTextApplyTimer?.Stop();
             _pendingReplyMessage = null;
             _pendingReplyText = null;
             _lastReplyTextApplyTick = Environment.TickCount64;
+            if (resetOffset is { } offset)
+            {
+                _segmentFrozenLength = AgentLiveSegmentBuilder.Reset(message, offset, _segmentFrozenLength);
+                foreach (var id in _activitySplitOffsetById.Keys.ToArray())
+                    _activitySplitOffsetById[id] = Math.Min(_activitySplitOffsetById[id], offset);
+            }
             message.Content = text;
             UpdateLiveTailText(message);
             ScrollChatToBottom();
@@ -661,6 +670,12 @@ namespace RuApp.Views
         private void OnReplyTextApplyTick(DispatcherQueueTimer sender, object args)
         {
             sender.Stop();
+            FlushPendingReplyText();
+        }
+
+        private void FlushPendingReplyText()
+        {
+            _replyTextApplyTimer?.Stop();
             var message = _pendingReplyMessage;
             var text = _pendingReplyText;
             _pendingReplyMessage = null;

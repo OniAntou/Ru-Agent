@@ -15,6 +15,93 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Combined GUI fixes before integration (2026-10-14)
+
+The streaming/retry, session replay ownership and inline activity context
+changes below were checked together before commit/push:
+
+- Entire GUI Debug suite: **1,423 passed / 0 failed / 0 skipped**
+  (`artifacts/gui-fixes-final.log`).
+- The canonical Release package was already built from this GUI implementation
+  by the 11/11 inline-activity build recorded below. This integration check did
+  not repeat the 12-project matrix or native/provider acceptance.
+
+## Inline activity context (2026-10-14)
+
+Tool context such as search queries and website names now shares the activity
+header row. The header stretches to the transcript width; context takes the
+remaining column and uses one-line ellipsis. Header labels and metadata are also
+one-line and bounded; tooltips expose their full text. Thinking, edit and terminal
+detail blocks retain their existing explicit expansion behavior.
+
+- Debug GUI build and **36 focused checks passed / 0 failed**
+  (`artifacts/gui-inline-activity-green.log`), covering activity bindings,
+  same-row context, single-line overflow/tooltips and transcript typography.
+- `build.bat`: **11/11 stages passed**, canonical publish updated
+  (`artifacts/gui-inline-activity-build.log`). Documentation guards: **15 passed**;
+  `git diff --check` passed.
+- The first check attempt built the GUI but failed compiling the new test with
+  CS1503: the XML helper accepts XDocument, not XElement. Corrected the test to
+  pass its owning document before the successful run
+  (`artifacts/gui-inline-activity-tests.log`).
+- The full GUI suite was not repeated for this bounded XAML change. Existing
+  full-suite figures below remain their recorded snapshots. Native resize and
+  streaming appearance still require operator acceptance.
+
+## Session replay ownership correction (2026-10-14)
+
+GUI session reads now retain the existing `source_run_id` wire field. Both open
+and turn reload use `SessionTranscriptBuilder` to attach replay by identity and
+insert an unanswered run's feed after its user message. Partial/activity-only
+replay preserves the persisted final answer. Legacy histories without identities
+use ordinal matching only with balanced counts; ambiguous histories keep saved
+prose rather than borrowing a different turn's feed. No schema or public route
+changed, and no stored user history is rewritten.
+
+- Before correction: the greeting + unanswered gold-question reproduction
+  failed because the second run was placed on the first assistant bubble
+  (`artifacts/gui-session-replay-red.log`).
+- Focused replay checks: **23 passed / 0 failed**
+  (`artifacts/gui-session-replay-green.log`). Includes failed middle/last turns,
+  permuted run order, incomplete replay, missing run data, final-answer
+  deduplication and the actual API parser preserving source ids.
+- Full GUI Debug suite after tightening the legacy matching policy:
+  **1,422 passed / 0 failed / 0 skipped** (`artifacts/gui-session-replay-full.log`).
+- `build.bat`: **11/11 stages passed**, canonical publish updated
+  (`artifacts/gui-session-replay-build.log`). Documentation guards: **15 passed**;
+  `git diff --check` passed.
+- Evidence is deterministic synthetic history/replay and source wiring checks.
+  Reopening the user's actual session remains native acceptance. A transient
+  failed-attempt answer that was never committed is not durable history and is
+  not reconstructed or invented by this change.
+
+## Agent Feed streaming and retry correction (2026-10-14)
+
+Scoped GUI correction after the streaming-motion pass. Activity boundaries and
+turn completion now drain the deferred 100 ms render as well as queued deltas.
+Retry snapshots retain earlier model steps and explicitly invalidate failed
+attempt text in frozen slices and activity split offsets. Grouping publishes
+final visibility, folded durations and repeated-detail flags without resetting
+live bindings first.
+
+- Before correction: **4 failed / 18 passed** in the focused reproductions,
+  including lost earlier-step prose, unchanged-feed binding churn and the
+  missing deferred-render drain at the view boundary (`artifacts/gui-feed-red.log`).
+- After correction: **43 passed / 0 failed** focused checks, including a retry
+  after an activity froze the failed answer, reset/replacement coalescing,
+  shorter and longer replacements, and replayed-reset deduplication
+  (`artifacts/gui-feed-green.log`).
+- Entire GUI Debug suite: **1,414 passed / 0 failed / 0 skipped**
+  (`artifacts/gui-feed-full.log`). This is scoped evidence; the full 12-project
+  matrix above remains the earlier snapshot.
+- `build.bat`: **11/11 stages passed**, replacing the canonical self-contained
+  GUI/backend/CLI publish directory (`artifacts/gui-feed-build.log`).
+- Documentation guards: **15 passed**; `git diff --check` passed.
+- Tests replay synthetic events through production accumulator, scheduler,
+  segment and grouping helpers, plus source contracts for WinUI timer wiring.
+  Native GUI appearance and real-provider retry behavior remain manual
+  acceptance; the test process does not interact with the user's app.
+
 ## Hover and state brush fades (2026-10-14)
 
 GUI motion slice 5, the follow-up to the shell pass: the swaps that were still

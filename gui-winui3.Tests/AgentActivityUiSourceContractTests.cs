@@ -19,6 +19,27 @@ namespace RuApp.Tests;
 public sealed class AgentActivityUiSourceContractTests
 {
     [Fact]
+    public void Tool_context_is_a_single_line_in_the_header_with_full_text_available()
+    {
+        var template = ActivityTemplate();
+        var header = GuiSource.Require(template.Document!, "ActivityHeader");
+        var detail = GuiSource.Require(template.Document!, "ActivityDetailText");
+        Assert.True(GuiSource.IsDescendantOf(detail, header));
+        Assert.Equal("2", GuiSource.AttributeValue(detail, "Grid.Column"));
+        Assert.Equal("Auto,Auto,*", GuiSource.AttributeValue(header, "ColumnDefinitions"));
+        Assert.Equal("Stretch", GuiSource.AttributeValue(header, "HorizontalAlignment"));
+        foreach (var text in header.Descendants().Where(element => element.Name.LocalName == "TextBlock"
+            && (Binds(element, "Detail") || Binds(element, "MetadataText")
+                || Binds(element, "BaseMetadataText") || Binds(element, "DisplayText"))))
+        {
+            Assert.Equal("NoWrap", GuiSource.AttributeValue(text, "TextWrapping"));
+            Assert.Equal("1", GuiSource.AttributeValue(text, "MaxLines"));
+            Assert.Equal("CharacterEllipsis", GuiSource.AttributeValue(text, "TextTrimming"));
+            Assert.NotNull(GuiSource.AttributeValue(text, "ToolTipService.ToolTip"));
+        }
+    }
+
+    [Fact]
     public void The_feed_lives_inside_the_transcript_scroll_host()
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");

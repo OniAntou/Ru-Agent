@@ -10,6 +10,19 @@ namespace RuApp.Tests;
 public sealed class AgentReplyAccumulatorTests
 {
     [Fact]
+    public void Retrying_a_later_step_preserves_completed_earlier_step_text()
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s", "r");
+        reply.TryAppend("r", "search", 1, "Để em tra cứu.\n");
+        reply.TryAppend("r", "answer", 1, "Bảng giá chưa xong");
+        reply.TakeSnapshot();
+        reply.TryReset("r", "answer", 2);
+        reply.TryAppend("r", "answer", 3, "Bảng giá đầy đủ.");
+        Assert.Equal("Để em tra cứu.\nBảng giá đầy đủ.", reply.TakeSnapshot()!.Text);
+    }
+
+    [Fact]
     public void Rebinding_each_frame_to_the_same_run_keeps_duplicate_history()
     {
         var reply = new AgentReplyAccumulator();

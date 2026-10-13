@@ -157,25 +157,24 @@ namespace RuApp.Views
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
-            var history = await _apiService.GetSessionMessagesAsync(sessionId, cancellationToken);
+            var history = await _apiService.GetSessionHistoryAsync(sessionId, cancellationToken);
             if (history is null || !OwnsReload())
             {
                 return null;
             }
 
-            var projectedHistory = SessionHistoryProjection.Project(history);
+            var projectedHistory = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
             var normalizedHistory = projectedHistory
                 .Select(row => (row.Role, row.Content))
                 .ToList();
             string? latestAssistant = projectedHistory
                 .LastOrDefault(row => string.Equals(row.Role, "assistant", StringComparison.Ordinal))
                 ?.Content ?? string.Empty;
-            int lastAssistantIndex = SessionHistoryProjection.LastAssistantIndex(history);
             bool preserveStreamedReply = ChatHistoryReloadPolicy.ShouldPreserveStreamedReply(
                 normalizedHistory,
                 streamedReply);
 
-            // Durable replay: session messages persist only role/content, so a fresh
+            // Durable replay: messages carry source_run_id, while a fresh
             // load would drop every tool row. Rebuild settled rows from each terminal
             // run's durable events; the live turn keeps its in-memory rows below.
             var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, cancellationToken);
@@ -202,132 +201,24 @@ namespace RuApp.Views
                         return;
                     }
 
-                    var existingActivities = Messages
-                        .Where(m => m.Role == "assistant")
-                        .Select(m => m.AgentActivities != null && !ReferenceEquals(m.AgentActivities, AgentActivities)
-                            ? m.AgentActivities
-                            : (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
-                                ? new ObservableCollection<AgentActivityItem>(AgentActivities)
-                                : null))
-                        .ToList();
-                    var existingOffsets = Messages
-                        .Where(m => m.Role == "assistant")
-                        .Select(m => m.ActivitySplitOffsets
-                            ?? (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
-                                ? TakeSplitOffsetSnapshot(AgentActivities)
-                                : null))
-                        .ToList();
-
                     DetachAgentActivitiesFromMessages();
-                    // Bulk load: one reset notification for the whole transcript
-                    // instead of one add notification per row.
-                    var restored = new List<ChatMessageItem>(projectedHistory.Count);
-                    int assistantCount = 0;
-                    // Live rows belong to the turn that just ended. They may only
-                    // ride on history's last assistant when it is the final
-                    // persisted message; otherwise the turn has no persisted
-                    // assistant yet (deny/fail) and the rows need their own bubble.
-                    bool attachLive = SessionHistoryProjection.AttachLiveToLastAssistant(
-                        projectedHistory.Count, lastAssistantIndex, AgentActivities.Count);
-                    bool liveAttached = false;
-                    // Runs align to rendered assistant turns tail-first: the newest
-                    // run belongs to the newest assistant message. A denied/failed
-                    // turn with no persisted text shifts the head, never the tail.
-                    int totalAssistants = projectedHistory.Count(row =>
-                        string.Equals(row.Role, "assistant", StringComparison.Ordinal) && row.Render);
-                    for (int index = 0; index < projectedHistory.Count; index++)
+                    var restored = SessionTranscriptBuilder.Build(history, replayedRuns);
+                    if (runId is not null && AgentActivities.Count > 0)
                     {
-                        var row = projectedHistory[index];
-                        // A machine tool envelope must never render as chat text
-                        // (e.g. a repeated call that failed the run). Drop it.
-                        if (!row.Render)
+                        var current = restored.LastOrDefault(item => item.Role == "assistant"
+                            && string.Equals(item.SourceRunId, runId, StringComparison.Ordinal));
+                        if (current is null)
                         {
-                            continue;
+                            current = new ChatMessageItem { Role = "assistant", SourceRunId = runId };
+                            restored.Add(current);
                         }
-
-                        string role = row.Role;
-                        string content = row.Content;
-
-                        ObservableCollection<AgentActivityItem>? activities = null;
-                        List<ActivitySplitOffset>? splitOffsets = null;
-                        ReplayedRunBundle? replayBundle = null;
-                        if (role == "assistant")
-                        {
-                            if (index == lastAssistantIndex)
-                            {
-                                if (attachLive)
-                                {
-                                    activities = new ObservableCollection<AgentActivityItem>(AgentActivities);
-                                    splitOffsets = TakeSplitOffsetSnapshot(AgentActivities);
-                                    liveAttached = true;
-                                }
-                                else
-                                {
-                                    activities = assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null;
-                                    splitOffsets = assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null;
-                                }
-                            }
-                            else if (assistantCount < existingActivities.Count)
-                            {
-                                activities = existingActivities[assistantCount];
-                                splitOffsets = assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null;
-                            }
-
-                            if (activities is null)
-                            {
-                                int replayIndex = Services.ReloadActivitiesPolicy.ReplayIndexForAssistant(
-                                    replayedRuns.Count, totalAssistants, assistantCount);
-                                if (replayIndex >= 0
-                                    && replayedRuns[replayIndex].Activities.Count > 0)
-                                {
-                                    replayBundle = replayedRuns[replayIndex];
-                                    activities = new ObservableCollection<AgentActivityItem>(replayBundle.Activities);
-                                    // Register by id so live frames for a still-running
-                                    // run update these rows in place instead of
-                                    // appending duplicates beside them.
-                                    foreach (var replayed in activities)
-                                    {
-                                        _agentActivityById.TryAdd(replayed.ActivityId, replayed);
-                                    }
-                                }
-                            }
-
-                            assistantCount++;
-                        }
-
-                        var restoredMessage = new ChatMessageItem
-                        {
-                            Role = role,
-                            Content = role == "assistant" ? StripDisplayMarkers(content) : content,
-                            Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
-                            AgentActivities = activities,
-                            ActivitySplitOffsets = splitOffsets,
-                        };
-                        RebuildMessageSegments(restoredMessage);
-                        if (replayBundle is not null)
-                        {
-                            ApplyReplayedTranscript(restoredMessage, replayBundle);
-                        }
-
-                        restored.Add(restoredMessage);
+                        if (!string.IsNullOrEmpty(streamedReply)) current.Content = streamedReply;
+                        current.Usage = _activeAgentUsage;
+                        current.AgentActivities = new ObservableCollection<AgentActivityItem>(AgentActivities);
+                        current.ActivitySplitOffsets = TakeSplitOffsetSnapshot(AgentActivities);
+                        RebuildMessageSegments(current);
                     }
-
-                    if (Services.ReloadActivitiesPolicy.AppendOrphanedActivities(AgentActivities.Count, liveAttached))
-                    {
-                        // The ended turn has live rows but no persisted assistant
-                        // (denied/failed before any reply text). Keep the rows in
-                        // their own trailing bubble instead of dropping them.
-                        var orphan = new ChatMessageItem
-                        {
-                            Role = "assistant",
-                            Content = StripDisplayMarkers(streamedReply ?? string.Empty),
-                            Usage = _activeAgentUsage,
-                            AgentActivities = new ObservableCollection<AgentActivityItem>(AgentActivities),
-                            ActivitySplitOffsets = TakeSplitOffsetSnapshot(AgentActivities),
-                        };
-                        RebuildMessageSegments(orphan);
-                        restored.Add(orphan);
-                    }
+                    RegisterReplayedActivities(restored);
 
                     var scroller = ChatScrollViewer;
                     double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
@@ -373,31 +264,13 @@ namespace RuApp.Views
             return didApply ? (preserveStreamedReply ? streamedReply : latestAssistant) : null;
         }
 
-        /// <summary>
-        /// Rebuilds settled activity rows for every terminal run of the session,
-        /// oldest-first and positionally aligned with the run list (a non-terminal
-        /// or unreadable run keeps an empty placeholder so tail alignment holds).
-        /// Best-effort: any failure yields empty rows and the text-only transcript.
-        /// </summary>
-        /// <summary>
-        /// One run's durable replay: its activity rows plus the narration transcript
-        /// that interleaves them. Empty when the run has nothing replayable; the
-        /// caller then renders the grouped legacy feed.
-        /// </summary>
-        private sealed record ReplayedRunBundle(
-            IReadOnlyList<AgentActivityItem> Activities,
-            IReadOnlyList<ApiService.RunTranscriptEntry> Transcript)
-        {
-            public static readonly ReplayedRunBundle Empty = new(
-                Array.AsReadOnly(Array.Empty<AgentActivityItem>()),
-                Array.AsReadOnly(Array.Empty<ApiService.RunTranscriptEntry>()));
-        }
-
-        private async Task<IReadOnlyList<ReplayedRunBundle>> LoadReplayedRunActivitiesAsync(
+        // Both open and reload preserve run identities, including unreadable
+        // replay slots, so a missing response cannot shift another turn's feed.
+        private async Task<IReadOnlyList<SessionRunReplay>> LoadReplayedRunActivitiesAsync(
             string sessionId,
             CancellationToken cancellationToken)
         {
-            var empty = Array.AsReadOnly(Array.Empty<ReplayedRunBundle>());
+            var empty = Array.AsReadOnly(Array.Empty<SessionRunReplay>());
             if (_apiService is null || string.IsNullOrWhiteSpace(sessionId))
             {
                 return empty;
@@ -409,7 +282,7 @@ namespace RuApp.Views
                 return empty;
             }
 
-            var slots = new ReplayedRunBundle?[runs.Count];
+            var slots = new SessionRunReplay?[runs.Count];
             using var gate = new SemaphoreSlim(4);
             var tasks = new List<Task>(runs.Count);
             for (int index = 0; index < runs.Count; index++)
@@ -423,20 +296,20 @@ namespace RuApp.Views
                     {
                         var replay = await _apiService.ListRunActivitiesAsync(runId, cancellationToken);
                         slots[slot] = replay is null
-                            ? ReplayedRunBundle.Empty
-                            : new ReplayedRunBundle(
-                                replay.Activities
+                            ? new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>())
+                            : new SessionRunReplay(
+                                runId, replay.Activities
                                 .Select(model => new AgentActivityItem(model))
                                 .ToArray(),
                                 replay.Transcript);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
-                        slots[slot] = ReplayedRunBundle.Empty;
+                        slots[slot] = new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>());
                     }
                     catch (Exception)
                     {
-                        slots[slot] = ReplayedRunBundle.Empty;
+                        slots[slot] = new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>());
                     }
                     finally
                     {
@@ -454,34 +327,16 @@ namespace RuApp.Views
                 return empty;
             }
 
-            return slots.Select(slot => slot ?? ReplayedRunBundle.Empty).ToArray();
+            return slots.Select((slot, index) => slot ?? new SessionRunReplay(runs[index].RunId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>())).ToArray();
         }
 
-        /// <summary>
-        /// Rebuilds a reopened bubble's chronological segments from its run replay:
-        /// narration chunks become prose slices interleaved with the activity rows,
-        /// the same shape the live turn assembled while streaming. Without a
-        /// transcript the bubble keeps the grouped legacy feed.
-        /// </summary>
-        private static void ApplyReplayedTranscript(ChatMessageItem message, ReplayedRunBundle bundle)
+        private void RegisterReplayedActivities(IEnumerable<ChatMessageItem> messages)
         {
-            if (bundle.Transcript.Count == 0 || message.AgentActivities is null)
-            {
-                return;
-            }
-
-            var built = AgentReplaySegmentBuilder.Build(message.AgentActivities, bundle.Transcript);
-            if (built is null)
-            {
-                return;
-            }
-
-            message.Content = built.Content;
-            message.Segments = built.Segments;
-            message.ActivitySplitOffsets = built.Offsets;
-            SyncSegmentErrorState(message);
+            foreach (var message in messages)
+                if (message.AgentActivities is { } activities)
+                    foreach (var item in activities)
+                        _agentActivityById.TryAdd(item.ActivityId, item);
         }
-
 
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
         {
@@ -694,9 +549,9 @@ namespace RuApp.Views
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
                 // up on a different session than the one on screen.
-                var history = await _apiService.GetSessionMessagesAsync(sessionId, openToken);
+                var history = await _apiService.GetSessionHistoryAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
-                // Durable replay: session messages persist only role/content, so a session
+                // Durable replay: messages carry source_run_id, while a session
                 // opened fresh would show a transcript of prose with every tool row missing.
                 // Rebuild the settled rows from each terminal run's durable events. This is
                 // what makes the activity feed survive leaving the session or closing the app;
@@ -707,55 +562,8 @@ namespace RuApp.Views
 
                 if (history != null)
                 {
-                    // Which run backs which bubble is decided in one shared place, so this
-                    // path and the end-of-turn reload cannot drift apart. Rendering and
-                    // backing are separate answers: a bubble can render with no run behind
-                    // it, and a hidden envelope must consume neither a bubble nor a run.
-                    var placements = ReloadActivitiesPolicy.PlaceReplayedRuns(
-                        replayedRuns.Count,
-                        history
-                            .Select(entry => ReloadActivitiesPolicy.RendersAsAssistant(
-                                entry.Role,
-                                entry.Content,
-                                candidate => ModelToolSelectionParser.LooksLikeToolSelection(
-                                    StripDisplayMarkers(candidate))))
-                            .ToArray());
-
-                    for (int index = 0; index < history.Count; index++)
-                    {
-                        var (role, content) = history[index];
-                        var placement = placements[index];
-                        if (string.Equals(role, "assistant", StringComparison.Ordinal)
-                            && !placement.Renders)
-                        {
-                            continue;
-                        }
-
-                        var item = new ChatMessageItem
-                        {
-                            Role = role,
-                            Content = role == "assistant" ? StripDisplayMarkers(content) : content
-                        };
-
-                        if (placement.ReplayIndex >= 0
-                            && replayedRuns[placement.ReplayIndex].Activities.Count > 0)
-                        {
-                            var bundle = replayedRuns[placement.ReplayIndex];
-                            item.AgentActivities = new ObservableCollection<AgentActivityItem>(
-                                bundle.Activities);
-                            // Register by id so live frames for a still-running run
-                            // update these rows in place instead of appending
-                            // duplicates beside them, same as the reopen path above.
-                            foreach (var replayed in item.AgentActivities)
-                            {
-                                _agentActivityById.TryAdd(replayed.ActivityId, replayed);
-                            }
-
-                            ApplyReplayedTranscript(item, bundle);
-                        }
-
-                        opened.Add(item);
-                    }
+                    opened = SessionTranscriptBuilder.Build(history, replayedRuns);
+                    RegisterReplayedActivities(opened);
 
                     Messages.ReplaceAll(opened);
 

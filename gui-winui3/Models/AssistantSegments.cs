@@ -42,8 +42,8 @@ namespace RuApp.Models
         public bool HasText => !string.IsNullOrEmpty(_text);
 
         /// <summary>
-        /// True while this slice still streams: its MarkdownBlock renders
-        /// literal text so partial Markdown cannot reflow the reply mid-turn.
+        /// True while this slice still streams: its MarkdownBlock parses the
+        /// newest text on the view's render cadence and can play its arrival.
         /// An activity freezes and settles its preceding slice; the new tail
         /// remains live. The turn settles remaining slices (see
         /// <see cref="ChatMessageItem.SettleSegments"/>) on completion or failure.

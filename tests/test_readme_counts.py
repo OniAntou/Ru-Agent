@@ -1,43 +1,24 @@
 """The README states counts the repository already knows: they must agree.
 
 These numbers drifted before -- the README claimed 38 routes, 12 test projects and
-10 tools while the code held 40, 13 and 11 -- because nothing compared them. Each
-count here has exactly one source of truth in the tree, so the comparison is cheap
-and it fails the moment the two disagree.
+10 tools while the code held 40, 13 and 11 -- because nothing compared them. The
+count kept here has exactly one source of truth in the tree, so the comparison is
+cheap and it fails the moment the two disagree.
 
-The README no longer publishes route or test totals; the counts it does carry
-(tools, test projects) stay pinned here.
+The README no longer publishes route, tool or test totals; the test-project count
+it does carry (the matrix roots) stays pinned here.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
-TOOL_CATALOG = (
-    ROOT / "backend-dotnet" / "RuAgent.Protocol" / "AgentToolDefinitionCatalog.cs"
-)
 
 
 def _readme() -> str:
     return README.read_text(encoding="utf-8")
-
-
-def test_readme_tool_count_matches_the_catalog() -> None:
-    catalog = TOOL_CATALOG.read_text(encoding="utf-8")
-    # Model-visible entries are the `new("<id>", ...)` rows of the Entries array.
-    ids = re.findall(r'^\s*new\("([a-z_]+)",', catalog, flags=re.MULTILINE)
-    assert ids, "no tool definitions found; the catalog shape changed"
-
-    text = _readme()
-    assert f"tools-{len(ids)}-" in text, (
-        f"README tools badge does not say {len(ids)} (found ids: {ids})"
-    )
-    assert f"**{len(ids)} tools**" in text, (
-        f"README body does not say {len(ids)} tools"
-    )
 
 
 def test_readme_test_project_count_matches_the_matrix_roots() -> None:

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/wordmark.svg" width="240" alt="ru agent" />
+<img src="docs/assets/wordmark.svg" width="300" alt="ru agent" />
 
 **A coding agent for Windows that runs on your machine and answers to you.**
 
@@ -10,7 +10,6 @@ prompts, attachments and tool results go to the model provider you select.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-does-for-you)
 [![License: MIT](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
 
 </div>
@@ -24,7 +23,6 @@ prompts, attachments and tool results go to the model provider you select.
 | **Platform** | Windows 10/11 x64 — self-contained folder, nothing to install |
 | **Surfaces** | WinUI 3 desktop app · full-screen terminal UI · stdio RPC bridge + TypeScript SDK |
 | **Model access** | Your provider, your key; no Ru account and no proxy in the middle |
-| **Tools** | **13** bounded tools, executed in-process under one permission model |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
 
 ## What Ru does for you
@@ -35,18 +33,12 @@ You open a chat, describe what you want, and Ru works on your project:
 - **Edits and writes files** — the diff lands only after you can see it.
 - **Runs your build, tests and git commands** in a terminal you can watch, with
   output streamed into the conversation.
-- **Runs long work in the background** — a command that outlives its timeout is
-  moved to a background task; Ru keeps working, pages live output, and stops it
-  on request.
+- **Runs long work in the background** — long commands move to a background
+  task instead of blocking the conversation.
 - **Searches the web** when you ask, with results sanitized and cited.
-- **Keeps a task list** for multi-step work, so progress is visible at a glance.
+- **Keeps a task list** for multi-step work.
 - **Loads workspace skills** — a `SKILL.md` in your repository teaches Ru a
   workflow; it stays descriptive guidance and never grants extra powers.
-
-Behind that is **13 tools**, each deliberately small and bounded: reads are
-capped, search results are capped, terminal output is truncated, and every
-command dies with its own timeout. A pathological request degrades into a
-bounded result, never a frozen app.
 
 ## How the pieces fit
 
@@ -59,9 +51,8 @@ bounded result, never a frozen app.
 
 The three executables ship side by side in one folder; the app starts the Host
 itself, which executes tools in-process, and the CLI drives the same loopback
-surface. Business data lives in one local SQLite database, `agent_harness.db`
-(settings, sessions and messages, activity, runs and workspaces); API keys stay
-in Windows Credential Manager. See
+surface. Business data lives in one local SQLite database, `agent_harness.db`;
+API keys stay in Windows Credential Manager. See
 [the persistence decision](docs/adr/0013-consolidate-business-persistence-in-sqlite.md).
 
 ## Autonomy, trust, and approval
@@ -76,8 +67,8 @@ Every run uses one of three canonical, session-scoped presets:
   without OS filesystem or network confinement.
 - **`full_access`**: the skip-all mode — external structured files and arbitrary
   terminal commands run automatically; structured protected paths (the harness's
-  own key/database files and runtime descriptors, plus any user-added
-  `RU_PROTECTED_PATHS` entries) and hard-invalid requests are still denied.
+  own key/database files and runtime descriptors) and hard-invalid requests are
+  still denied.
 
 Workspace trust is separate from the preset and must be approved **explicitly
 once per canonical identity**: the GUI asks in a dialog, CLI `run` and `chat`
@@ -85,22 +76,20 @@ require `--trust-workspace`, and moving or recreating the workspace requires
 trust again. `full_access` never implies trust, and carries its own explicit
 gate — `--confirm-full-access` on the CLI, a confirmation dialog in the GUI.
 Both gates are guardrails against accidental escalation, not a boundary against
-code already running as your user: the real boundary is the bearer token in an
-owner-only descriptor, and every preset change is recorded in the activity log.
+code already running as your user; every preset change is recorded in the
+activity log.
 
 > **Full Access terminal warning:** commands run as the current Windows user,
 > can read or change data outside the workspace, and can use the network. There
 > is no OS filesystem or network sandbox or confinement; process timeout, output
 > cap, cancellation and process-tree cleanup still apply.
 
-Approvals are single-use and bound to the exact call. `allow_once` remembers the
-reviewed intent for the session; `allow_always` remembers a bounded pattern as a
-durable project rule — a terminal command prefix (resolved executable plus at
-most two leading non-flag argv tokens, in the exact launch directory), or an
-approved external folder covering its subtree. Flag-first invocations and
-shell-mode scripts are remembered exactly instead of as a prefix. `rule_asks`
-and `terminal_protected_path_requires_approval` never become a reusable rule;
-current reasons include `external_directory_required`,
+Approvals are single-use and bound to the exact call. `allow_always` remembers a
+bounded pattern as a durable project rule — a terminal command prefix (resolved
+executable plus at most two leading non-flag argv tokens, in the exact launch
+directory), or an approved external folder covering its subtree. `rule_asks` and
+`terminal_protected_path_requires_approval` never become reusable; current
+reasons include `external_directory_required`,
 `terminal_external_cwd_requires_approval` and
 `terminal_timeout_requires_approval`, while `web_approval_required` remains a
 compatibility reason for an explicit ask rule. No provider, model, protocol or
@@ -111,8 +100,8 @@ tool fallback bypasses a denial.
 `bash` with `background: true` returns immediately with an execution id, and a
 foreground command that outlives its approved timeout moves to the background
 instead of being killed. Tasks are session-scoped and bounded (30-minute
-default, 2-hour ceiling): page output with `read_output`, stop one with `kill`,
-or use the composer's **Tasks** flyout in the GUI / `/tasks` in the CLI.
+default): page output with `read_output`, stop one with `kill`, or use the GUI's
+**Tasks** flyout / `/tasks` in the CLI.
 
 ## Your data stays local
 
@@ -149,15 +138,13 @@ model, open a project folder, and start chatting.
 `ru agent chat` drives a full-screen TUI rendered by **Terminal.Gui v2** on any
 interactive, colour-capable terminal of at least 80×24; redirected output,
 `--json`, `--classic`, `NO_COLOR`, `TERM=dumb` and smaller viewports stay on the
-sequential path. GUI and CLI attachments accept images and text/code files
-(Office documents are not converted into prompt text).
+sequential path.
 
 The layout is OpenCode-inspired with Ru's colours: a centred landing wordmark, a
 padded transcript, and a square prompt frame that shares the terminal background
 with the session preset and the active model on its edges. The prompt grows with
-your draft — Ctrl+J, a supported Shift+Enter, or a trailing backslash start a new
-line — and keeps pasted code, the cursor position and an oversized draft that was
-refused. A rule separates the header from the chat, and the footer carries the
+your draft (Ctrl+J, Shift+Enter or a trailing backslash starts a new line) and
+keeps pasted code, the cursor and an oversized draft. The footer carries the
 shortcuts, queue status and a colour wave while a run is live.
 
 Ctrl+P opens the command palette; PageUp/PageDown and Ctrl+Home/End navigate
@@ -174,6 +161,7 @@ limits and remaining gaps.
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
+`ci.yml` runs the 12 test projects, the route contract and the repository guards.
 The suite takes a machine-wide lock and reports contention as a failure (exit
 code 75) rather than a flaky result.
 
@@ -188,18 +176,6 @@ code 75) rather than a flaky result.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, verification by impact, and contribution practices |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
 | [AGENTS.md](AGENTS.md) | Agent workflow, execution boundaries, and implementation guidance |
-
-## Not done yet
-
-- **Not ahead-of-time compiled.** `PublishReadyToRun` is on for Release and off
-  for Debug; Native AOT is not enabled anywhere.
-- **No performance gate in CI.** `ci.yml` runs the 12 test projects, the route
-  contract and the repository guards; nothing measures CPU or memory yet.
-- **No installer.** The build produces a runnable folder, not an MSIX.
-- **No live-provider quality baseline.** Deterministic tests prove wiring,
-  limits and cancellation; they do not measure model quality, tokens or cost.
-- Out of scope for now: subagent orchestration, LSP integration, and MCP
-  discovery.
 
 ## License
 

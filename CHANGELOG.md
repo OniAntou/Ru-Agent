@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **docs**: Rework the public README: it no longer publishes test or HTTP-route totals (the tool and test-project counts stay pinned by the repository guards), the long sections are tightened, and the header wordmark returns to the lowercase `ru agent` mark drawn smooth — a monospace system stack in aurora and muted tones with a transparent background, so it reads on either GitHub theme.
+- **docs**: Rework the public README: it no longer publishes test, tool or HTTP-route totals (the test-project count stays pinned by the repository guards), the long sections are tightened, and the header carries the lowercase `ru agent` block wordmark on a transparent background — aurora green for `ru`, muted grey for `agent`, drawn from rectangles so it renders identically everywhere and reads on either GitHub theme.
 
 - **docs**: Relicense the repository under the MIT License, superseding the Functional Source License: use, modification, redistribution and commercial use are permitted with no restriction beyond keeping the copyright notice. The SDK package metadata carries the `MIT` SPDX identifier, and the README's license section and badge state the new terms.
 

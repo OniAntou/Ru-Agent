@@ -1,6 +1,6 @@
 <div align="center">
 
-# Ru
+<img src="docs/assets/wordmark.svg" width="300" alt="Ru Agent" />
 
 **A coding agent for Windows that runs on your machine and answers to you.**
 
@@ -13,6 +13,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 [![Tests](https://img.shields.io/badge/tests-6%2C213%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-13-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-43%20HTTP-6E7681)](#your-data-stays-local)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
 
 </div>
 
@@ -28,7 +29,7 @@ Prompts, attachments and tool results are sent to the model provider you select.
 | **Tools** | **13** bounded tools; tool calls execute in-process, and Host-intercepted `ask_user` parks the run for a user answer |
 | **Public surface** | **43 HTTP routes** on `127.0.0.1` behind a bearer token |
 | **Permissions** | Three session-scoped presets + explicit workspace trust + single-use approvals |
-| **Tests** | 6,134 passing across 12 projects |
+| **Tests** | 6,213 passing across 12 projects |
 
 ## What Ru does for you
 
@@ -196,9 +197,14 @@ smaller viewport all stay on the sequential path, unchanged.
 Terminal.Gui or the sequential fallback.
 
 The TUI uses an OpenCode-inspired layout with Ru's colours: a centred landing
-prompt, padded session transcript and a filled composer with a green left rail.
-Session title, workspace, usage and live activity occupy a compact header above
-the conversation; the transcript uses the available width without a side panel.
+wordmark, a padded session transcript, and a square prompt frame that shares the
+terminal background with the session preset and the active model on its edges.
+The prompt grows with your draft — Ctrl+J, a supported Shift+Enter, or a
+trailing backslash start a new line — and keeps pasted code, the cursor position
+and an oversized draft that was refused. Session title, workspace and usage sit
+in a compact header above the conversation, a rule separates it from the chat,
+and the footer carries the shortcuts, queue status and a colour wave while a run
+is live. The transcript uses the available width without a side panel.
 
 Ctrl+P opens the command palette; PageUp/PageDown and Ctrl+Home/End navigate
 output during streaming. `/new`, `/sessions`, `/resume`, `/follow`, `/files` and
@@ -227,6 +233,7 @@ contention as a failure (exit code 75) rather than a flaky result.
 | [CONTEXT.md](CONTEXT.md) | The domain language |
 | [docs/operations/agent-tools.md](docs/operations/agent-tools.md) | Every tool, its bounds, and the policy matrix |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, verification by impact, and contribution practices |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
 | [AGENTS.md](AGENTS.md) | Agent workflow, execution boundaries, and implementation guidance |
 
 ## Not done yet
@@ -248,8 +255,7 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 
 ## License
 
-Ru is Fair Source under the [Functional Source License 1.1, ALv2 Future License](LICENSE)
-(FSL-1.1-ALv2): use it for any purpose — including inside your company — and
-modify and share it freely. You may not offer it, or a substantially similar
-product, as a competing commercial product or service. Each release becomes
-available under Apache 2.0 on its second anniversary.
+Ru is released under the [MIT License](LICENSE): use it, modify it, share it and
+build on it — including commercially — with no strings beyond keeping the
+copyright notice. No contributor license agreement, no dual licensing, no
+"source available" carve-outs.

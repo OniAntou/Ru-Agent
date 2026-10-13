@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **docs**: Relicense the repository under the MIT License, superseding the Functional Source License: use, modification, redistribution and commercial use are permitted with no restriction beyond keeping the copyright notice. The SDK package metadata carries the `MIT` SPDX identifier, and the README's license section and badge state the new terms.
+
 - **style(tui)**: Add a header/chat divider and a full-width square prompt with preset/model metadata on its edges, sharing the terminal background throughout. Slash suggestions span the prompt width; other popups centre on the terminal. Make the busy colour wave thicker with five half-height block cells and simplify footer shortcuts to commands or interrupt, preserving room for feedback and queued prompts.
 
 - **fix(tui)**: Make the prompt a growing multiline editor with Ctrl+J, supported Shift+Enter and backslash/Enter newlines; preserve pasted code, cursor position and rejected oversized drafts. Resize picker/approval cards to their available height and restore draft focus after dismissal. Keep independently expandable tool/reasoning history, add block navigation and explicit clipboard copy, and distinguish run/approval/paused states from submission feedback while showing queued prompts.

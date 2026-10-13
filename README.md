@@ -245,3 +245,10 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 - Out of scope for now: subagent orchestration, LSP integration, and MCP discovery.
   Terminal children run as the current Windows user; structured file tools keep
   their separate canonical path containment and protected-path rules.
+
+## License
+
+Ru is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE):
+you may use, change and share it for any noncommercial purpose — personal
+projects, study, research, education, charities and government. Commercial use
+is not permitted. This is not an OSI-approved open source license.

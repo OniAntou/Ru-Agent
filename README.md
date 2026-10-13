@@ -13,6 +13,8 @@ No Ru account, no telemetry. API keys stay in Windows Credential Manager.
 
 ---
 
+# Ru Agent
+
 You open a chat, describe what you want, and Ru works on your project:
 
 - **Reads and searches your files** before changing them.

@@ -248,7 +248,8 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 
 ## License
 
-Ru is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE):
-you may use, change and share it for any noncommercial purpose — personal
-projects, study, research, education, charities and government. Commercial use
-is not permitted. This is not an OSI-approved open source license.
+Ru is Fair Source under the [Functional Source License 1.1, ALv2 Future License](LICENSE)
+(FSL-1.1-ALv2): use it for any purpose — including inside your company — and
+modify and share it freely. You may not offer it, or a substantially similar
+product, as a competing commercial product or service. Each release becomes
+available under Apache 2.0 on its second anniversary.

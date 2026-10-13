@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **docs**: License the repository under the PolyForm Noncommercial License 1.0.0: use, modification and redistribution are permitted for any noncommercial purpose (personal, study, research, education, charities, government); commercial use is not. Source-available, not OSI-approved open source; the SDK package metadata carries the same SPDX identifier.
+- **docs**: License the repository under the Functional Source License 1.1, ALv2 Future License (FSL-1.1-ALv2): use, modification and redistribution are permitted for any purpose including internal company use; offering the software or a substantially similar product as a competing commercial product or service is not. Each release becomes Apache 2.0 on its second anniversary; the SDK package metadata carries the same SPDX identifier.
 
 - **fix(provider)**: Bound model requests through response headers to 120 seconds while preserving long active SSE streams. Reject automatic HTTP redirects as `redirect_rejected` without forwarding credentials or prompts to a new endpoint.
 - **fix(broker)**: Reserve a terminal concurrency slot for every foreground/background launch, preserving it on automatic background promotion. Refuse new launches when full without stopping existing tasks; configure the per-session cap with `RU_MAX_BACKGROUND_TERMINAL_TASKS` (default 8, range 1–64).

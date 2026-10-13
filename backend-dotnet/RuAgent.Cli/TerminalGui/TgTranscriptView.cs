@@ -677,10 +677,13 @@ public sealed class TgTranscriptView : View
 
     private static IReadOnlyList<string> WrapLine(string text, TranscriptStyle style, int width)
     {
-        // Reflow prose on words, but retain exact columns in indented/code-gutter rows.
+        // Reflow prose on words across the full viewport — the classic renderer wraps at
+        // the same width, and a capped measure left wide terminals with a half-width
+        // column and words breaking mid-sentence. Indented/code-gutter rows still retain
+        // their exact columns.
         return style == TranscriptStyle.Prose && text.Length > 0
             && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal)
-                ? TuiText.Wrap(text, Math.Min(width, 100))
+                ? TuiText.Wrap(text, width)
                 : TuiText.HardWrapLine(text, width);
     }
 

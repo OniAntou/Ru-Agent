@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: Wrap transcript prose across the full viewport width. The Terminal.Gui transcript capped prose at 100 cells, so a wide terminal showed a half-width column with words breaking mid-sentence; the classic renderer already wrapped at the full width and both engines now agree. Aligned and gutter rows still retain their exact columns.
+
+- **feat(agent,cli)**: Move the context meter while the model works. The Host publishes the measured request size for a step about to run as a typed `agent.usage_estimate` transient frame (on the activity channel so a delta burst cannot evict it), and the CLI folds it into the context reading as a max against the reported usage — the same policy as the desktop meter — so the meter is no longer empty for a whole first reply or frozen on the previous step's figure. Reported usage still supersedes the estimate as steps complete.
+
 - **style(tui)**: Remove the composer's green left rail; the user block's prompt chevron takes the green tone instead.
 
 - **docs**: License the repository under the Functional Source License 1.1, ALv2 Future License (FSL-1.1-ALv2): use, modification and redistribution are permitted for any purpose including internal company use; offering the software or a substantially similar product as a competing commercial product or service is not. Each release becomes Apache 2.0 on its second anniversary; the SDK package metadata carries the same SPDX identifier.

@@ -43,6 +43,34 @@ public sealed class TuiUsageTracker
         ContextPercent = null;
     }
 
+    /// <summary>
+    /// Folds one pre-dispatch request-size estimate into the context reading. Provider
+    /// usage only arrives when a step ends, so without this the meter stays on the
+    /// previous step's figure — or blank on the first turn — while the model works.
+    /// The estimate is the same serialized-request measure the admission policy uses,
+    /// and the reported usage supersedes it as steps complete (the reading is a max,
+    /// like the desktop meter, so the number never bounces).
+    /// </summary>
+    public void ApplyEstimate(long estimatedInputTokens, long maxPromptTokens)
+    {
+        if (maxPromptTokens > 0)
+        {
+            // The step's own prompt budget is authoritative for the percent: it is the
+            // limit the estimate was measured against, ahead of any stale catalog value.
+            ContextLimit = maxPromptTokens;
+        }
+
+        if (estimatedInputTokens <= 0)
+        {
+            return;
+        }
+
+        _maxStepInputTokens = Math.Max(_maxStepInputTokens, estimatedInputTokens);
+        ContextPercent = ContextLimit is { } limit and > 0
+            ? Math.Clamp(100.0 * _maxStepInputTokens / limit, 0, 999)
+            : null;
+    }
+
     /// <summary>Feeds one usage envelope and recomputes the cluster.</summary>
     public void Apply(long? inputTokens, long? outputTokens)
     {

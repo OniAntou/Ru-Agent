@@ -340,8 +340,17 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         }
     }
 
-    private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
+    internal static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
     {
+        if (frame.Kind == TransientFrameKind.UsageEstimate)
+        {
+            // The content is already the wire payload: the measured request size for the
+            // step about to run, published so a client's context meter moves before the
+            // provider's usage report lands at step end.
+            hub.TryPublish(frame.RunId, "agent.usage_estimate", frame.Content);
+            return;
+        }
+
         var kind = frame.Kind == TransientFrameKind.AssistantDelta
             ? "assistant.delta"
             : "tool.output.delta";

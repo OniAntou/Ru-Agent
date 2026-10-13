@@ -47,6 +47,33 @@ public sealed class TgTranscriptTests
         app.Run(window);
     }
 
+    [Fact]
+    public void ProseWrapsAtTheFullViewportWidthOnAWideScreen()
+    {
+        // The transcript used to cap prose at 100 cells, so a 160-column frame wrapped
+        // mid-sentence at 100 while the classic renderer used the full width. One
+        // 151-character line must stay on one row here.
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = new Window { BorderStyle = LineStyle.None };
+        var transcript = new TgTranscriptView { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+        window.Add(transcript);
+        transcript.Append(new string('a', 100) + " " + new string('b', 50), TranscriptStyle.Prose);
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            app.Driver!.SetScreenSize(160, 12);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            Assert.Contains(new string('b', 50), rows[0]);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
     private static string[] Render(int rows, Action<TgTranscriptView> act)
     {
         using IApplication app = Application.Create();

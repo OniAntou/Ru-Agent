@@ -94,6 +94,28 @@ public sealed class HarnessOutputDeltaTests
     }
 
     [Fact]
+    public async Task Usage_estimate_frame_maps_onto_the_activity_channel_with_its_measured_payload()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(new RunId(RunId));
+        var stepId = new ModelStepId("step_44444444444444444444444444444444");
+        var frame = new HarnessTransientFrame(
+            new RunId(RunId),
+            TransientFrameKind.UsageEstimate,
+            1,
+            "{\"estimated_input_tokens\":4000,\"max_prompt_tokens\":200000,\"model_step_id\":\"step_44444444444444444444444444444444\"}",
+            stepId);
+
+        AgentRuntimeCoordinatorFactory.PublishLiveFrame(hub, frame);
+
+        var published = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+        Assert.Equal("agent.usage_estimate", published.Kind);
+        Assert.Equal(new RunId(RunId), published.RunId);
+        Assert.Equal(frame.Content, published.Data);
+        Assert.False(lease.Reader.TryRead(out _));
+    }
+
+    [Fact]
     public void Invalid_delta_frames_fail_closed_at_the_contract_boundary()
     {
         Assert.Throws<AgentProtocolException>(() => BrokerToolOutputDeltaWire.Validate(new BrokerToolOutputDeltaWire(

@@ -1346,6 +1346,23 @@ public sealed partial class AgentCommands
                         }
                     }
 
+                    if (frame.IsTransient
+                        && AgentUsageEstimateModel.TryParse(frame, out var usageEstimate)
+                        && usageEstimate is not null)
+                    {
+                        // The step's measured request size arrives before its first token,
+                        // so the meter shows the context the model is about to read instead
+                        // of waiting for the usage report at step end.
+                        usage.ApplyEstimate(usageEstimate.EstimatedInputTokens, usageEstimate.MaxPromptTokens);
+                        if (tgMode)
+                        {
+                            RunOnTgUi(() => tgWindow!.Header.UpdateUsage(
+                                lastTotalTokens ?? 0,
+                                usage.ContextPercent,
+                                usage.CostKnown ? (decimal)usage.SessionCost : null));
+                        }
+                    }
+
                     if (!frame.IsTransient && frame.Data is not null)
                     {
                         try

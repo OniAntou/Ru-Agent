@@ -6,14 +6,40 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,134 passed / 0 failed / 0 skipped** (2026-10-13, resource contracts after review). Broker 930; CLI 1,356; Client 222; Core 488; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,086; GUI 1,396. Log: `artifacts/limits-final-dotnet-rerun.log`. |
+| .NET tests | Full **12-project** Debug matrix: **6,154 passed / 0 failed / 0 skipped** (2026-10-13, TUI wrap and live context meter). Broker 930; CLI 1,361; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-context-fix-matrix.log`. |
 | Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-13, review remediation rebuild). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory; the prior package is retained in ignored artifacts. Log: `artifacts/review-release-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13, review remediation rebuild) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Logs: `artifacts/review-release-flat-smoke.log`, `artifacts/review-release-cli-parser.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI wrap and live context meter). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-context-fix-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13, TUI wrap and live context meter) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-context-fix-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## TUI wrap and live context meter (2026-10-13)
+
+Three defects reported from a live Terminal.Gui session: prose wrapped at a
+half-width measure on wide terminals, the context meter only moved once a reply
+finished, and a row that repeated after completion.
+
+Transcript prose now wraps across the full viewport width like the classic
+renderer (the 100-cell cap is gone; aligned and gutter rows keep their exact
+columns). The Host publishes the measured request size for a step about to run as
+a typed `agent.usage_estimate` transient frame on the activity hub channel (a
+delta burst cannot evict it), and the CLI folds it into the context reading as a
+max against reported usage — the desktop meter's policy — so the meter moves while
+the model works and is never empty for a whole first reply. The no-argument turn
+stop is now a true no-op after a completion: `_sawCompletion` no longer survives
+the first stop, so a second stop cannot reprint the footer with a zeroed clock.
+
+Focused suites: Core 489, Client 235, CLI 1,361, Backend 1,087 — all 0 failed.
+The full 12-project matrix then passed **6,154 / 0 / 0**
+(`artifacts/tui-context-fix-matrix.log`), `build.bat` completed all 11 Release
+stages (`artifacts/tui-context-fix-build.log`) and the flat-package smoke passed
+(`artifacts/tui-context-fix-smoke.log`). The estimate frame was verified at the
+coordinator boundary (published before the first delta, carrying the measured
+size and prompt budget) and at the wire mapping (activity channel,
+`agent.usage_estimate`); the client parser and tracker have unit coverage. Live
+provider behavior on a real terminal remains manual acceptance.
 
 ## Review remediation Release rebuild (2026-10-13)
 

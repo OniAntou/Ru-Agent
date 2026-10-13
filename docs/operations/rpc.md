@@ -158,7 +158,8 @@ Details that are easy to get wrong:
 - **`run.transient`** — live frames delivered **only** when the subscription was
   created with `includeTransient: true`. The SSE wire tags every one of them
   `event: transient`, so `event_type` is always `"transient"`; the actual kind
-  (`assistant.delta`, `tool.output.delta`, `agent.activity`, `agent.summary`) rides
+  (`assistant.delta`, `tool.output.delta`, `agent.activity`, `agent.summary`,
+  `agent.usage_estimate`) rides
   inside `data` as a `{"kind":"...","data":"..."}` JSON string. Params:
   `subscription_id`, `transient_sequence`, `event_type`, `data`. Transient frames are
   never replayed and never buffered, so a reconnect starts without them.

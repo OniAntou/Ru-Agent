@@ -7,6 +7,13 @@ public enum TransientFrameKind
 {
     AssistantDelta,
     ToolOutput,
+
+    /// <summary>
+    /// The measured request size for a model step about to run. Provider usage only
+    /// arrives when a step ends, so this frame is what lets a client show the context
+    /// meter moving while the model is still working.
+    /// </summary>
+    UsageEstimate,
 }
 
 public sealed record HarnessTransientFrame

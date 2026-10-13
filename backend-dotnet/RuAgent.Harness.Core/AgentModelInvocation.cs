@@ -1,3 +1,4 @@
+using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Diagnostics;
 using RuAgent.Harness.Core.Persistence;
@@ -107,6 +108,7 @@ internal sealed class AgentModelInvocation
         var request = preparedRequest ?? new ModelStepRequest(
             run.RunId, modelStepId, context, promptContext, run.Preset,
             run.PolicySnapshotVersion, run.PolicySnapshotSha256);
+        PublishUsageEstimate(run.RunId, modelStepId, request.Preparation);
         var droppedBefore = _frames.DroppedCount;
         var assistantStream = new TransientContentStream(
             _frames,
@@ -289,6 +291,32 @@ internal sealed class AgentModelInvocation
             modelDroppedCount,
             modelResult.ReasoningText,
             modelResult.ProviderContinuation);
+    }
+
+    /// <summary>
+    /// Publishes the measured request size for the step about to run, so a client's
+    /// context meter can move while the provider still owes its usage report. The
+    /// figure is the same serialized-request estimate the admission policy applies;
+    /// the step's reported usage supersedes it when the step ends.
+    /// </summary>
+    private void PublishUsageEstimate(RunId runId, ModelStepId modelStepId, IPreparedModelStep? preparation)
+    {
+        if (preparation is not { EstimatedInputTokens: > 0 } prepared)
+        {
+            return;
+        }
+
+        _frames.TryPublish(new HarnessTransientFrame(
+            runId,
+            TransientFrameKind.UsageEstimate,
+            1,
+            JsonSerializer.Serialize(new
+            {
+                estimated_input_tokens = prepared.EstimatedInputTokens,
+                max_prompt_tokens = prepared.MaxPromptTokens,
+                model_step_id = modelStepId.Value,
+            }),
+            modelStepId));
     }
 
     public async Task<ModelStepRequest?> PrepareForBudgetAsync(

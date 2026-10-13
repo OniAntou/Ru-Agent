@@ -141,7 +141,10 @@ public sealed class HarnessLiveEventHub
 
     private static bool IsActivityKind(string kind) =>
         string.Equals(kind, "agent.activity", StringComparison.Ordinal)
-        || string.Equals(kind, "agent.summary", StringComparison.Ordinal);
+        || string.Equals(kind, "agent.summary", StringComparison.Ordinal)
+        // The usage estimate is as unrecoverable as an activity row and just as
+        // low-volume: a delta burst must not evict the frame that moves the meter.
+        || string.Equals(kind, "agent.usage_estimate", StringComparison.Ordinal);
 
     public long DroppedCount => Volatile.Read(ref _droppedCount);
 

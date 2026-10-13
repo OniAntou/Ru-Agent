@@ -109,4 +109,58 @@ public sealed class TuiUsageTrackerTests
 
         Assert.Null(tracker.ContextPercent);
     }
+
+    [Fact]
+    public void ApplyEstimate_ShowsTheMeasuredRequestSizeBeforeTheUsageReport()
+    {
+        var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
+
+        tracker.BeginTurn();
+        Assert.Null(tracker.ContextPercent);
+
+        // The step's measured request size arrives before its first token, so the
+        // meter is not empty for the whole first reply.
+        tracker.ApplyEstimate(estimatedInputTokens: 4_000, maxPromptTokens: 10_000);
+        Assert.Equal(40d, tracker.ContextPercent);
+    }
+
+    [Fact]
+    public void ApplyEstimate_UsesTheStepsOwnPromptBudgetWhenTheCatalogHasNone()
+    {
+        var tracker = new TuiUsageTracker();
+
+        tracker.ApplyEstimate(estimatedInputTokens: 2_000, maxPromptTokens: 8_000);
+
+        Assert.Equal(25d, tracker.ContextPercent);
+    }
+
+    [Fact]
+    public void ApplyEstimate_IsSupersededByReportedUsageWithoutBouncing()
+    {
+        var tracker = new TuiUsageTracker { ContextLimit = 10_000 };
+        tracker.ApplyEstimate(4_000, 10_000);
+        Assert.Equal(40d, tracker.ContextPercent);
+
+        // The reported step input (3,600) is smaller than the estimate. The reading is
+        // a max — the desktop meter's policy — so the number never drops back.
+        tracker.Apply(3_600, 200);
+        Assert.Equal(40d, tracker.ContextPercent);
+
+        // The next step's reported input is larger: it raises the reading.
+        tracker.Apply(9_600, 500);
+        Assert.Equal(60d, tracker.ContextPercent);
+    }
+
+    [Fact]
+    public void ApplyEstimate_IgnoresNonPositiveEstimatesAndKeepsTheLastReading()
+    {
+        var tracker = new TuiUsageTracker { ContextLimit = 1000 };
+        tracker.Apply(500, 100);
+        Assert.Equal(50d, tracker.ContextPercent);
+
+        tracker.ApplyEstimate(0, 1000);
+        tracker.ApplyEstimate(-1, 1000);
+
+        Assert.Equal(50d, tracker.ContextPercent);
+    }
 }

@@ -359,7 +359,8 @@ reconciliation surfaces from Phase 3:
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Command overlays follow the composer and remain bounded within the frame.
-  Prose measure is capped at 100 cells; verified Markdown table blocks reflow
+  Prose reflows across the full viewport width like the classic renderer; verified
+  Markdown table blocks reflow
   from raw rows and preserve values on narrow screens. Reasoning uses the same
   bounded collapsed-detail owner without repeated feed summaries. Web tool detail
   includes queries up to 160 characters or fetched host names. Detail passes the

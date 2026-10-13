@@ -1300,6 +1300,9 @@ public sealed class TuiTranscript
         _terminalCode = null;
         _summaryDetail = null;
         _pendingTools.Clear();
+        // The turn is fully wound down: a second stop (the documented no-op path)
+        // must not re-read the completion flag and print a second footer.
+        _sawCompletion = false;
     }
 
     /// <summary>

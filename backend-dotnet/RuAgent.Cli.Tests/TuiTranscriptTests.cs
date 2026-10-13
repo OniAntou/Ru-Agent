@@ -324,6 +324,23 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void A_second_end_turn_after_completion_stays_a_no_op()
+    {
+        // The chat dispatcher documents a second stop as a safe no-op. The completion
+        // flag must not survive the first stop, or the second call reprints the footer
+        // with a zeroed clock — a duplicate "✓ 0.0s · 0 tools" row after every reply.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("done");
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+        var afterFirstStop = output.ToString();
+
+        transcript.EndTurn();
+
+        Assert.Equal(afterFirstStop, output.ToString());
+    }
+
+    [Fact]
     public void ResetAssistant_drops_superseded_text_from_gap_detection()
     {
         // A retried attempt replaces the previous answer: the head sitting in the

@@ -308,6 +308,12 @@ frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
 optional execution id, and positive transient sequence before dispatching it;
 unknown fields, malformed JSON, raw tool output, and replayed sequence keys are
 dropped without changing the durable cursor.
+The measured request size for a model step about to run rides a typed
+`agent.usage_estimate` transient frame (estimated input tokens, the step's prompt
+budget, and the model-step id), published before the step's first token and on the
+same hub channel as activity rows so a delta burst cannot evict it. Provider usage
+only arrives when a step ends, so this frame is what lets a client's context meter
+move while the model is still working; the reported usage supersedes it.
 Once the SSE feed emits `final_snapshot`, WinUI treats that terminal status as
 authoritative if a follow-up `GET` races host shutdown or restart. A late
 history/outbox failure after visible assistant deltas does not append a generic

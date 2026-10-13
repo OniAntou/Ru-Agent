@@ -507,6 +507,36 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Prepared_step_publishes_the_measured_request_size_before_the_first_delta()
+    {
+        var frames = new List<HarnessTransientFrame>();
+        var buffer = new TransientFrameBuffer(32, frames.Add);
+        var model = new PreparingModelStepRunner();
+        model.Enqueue(FinalStep("hi"), "hi");
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+
+        var result = await Coordinator(
+                model,
+                new FakeToolGateway(),
+                store,
+                buffer,
+                contextLimit: new StaticModelContextLimitProvider(200_000))
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        var estimate = Assert.Single(frames, frame => frame.Kind == TransientFrameKind.UsageEstimate);
+        Assert.Equal(0, frames.IndexOf(estimate));
+        Assert.Equal(1, estimate.Sequence);
+        using var payload = JsonDocument.Parse(estimate.Content);
+        Assert.Equal(4_000, payload.RootElement.GetProperty("estimated_input_tokens").GetInt64());
+        Assert.Equal(200_000, payload.RootElement.GetProperty("max_prompt_tokens").GetInt64());
+        Assert.Equal(
+            estimate.ModelStepId!.Value.Value,
+            payload.RootElement.GetProperty("model_step_id").GetString());
+    }
+
+    [Fact]
     public async Task Repairable_model_step_failure_resets_the_partial_stream_before_the_note()
     {
         var frames = new List<HarnessTransientFrame>();
@@ -1937,7 +1967,8 @@ public sealed partial class AgentRunCoordinatorTests
         IModelContextSource? contextSource = null,
         IRetainedApprovalStash? retainedStash = null,
         Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null,
-        IAgentActivitySink? activitySink = null) =>
+        IAgentActivitySink? activitySink = null,
+        IModelContextLimitProvider? contextLimit = null) =>
         new(
             model,
             gateway,
@@ -1948,6 +1979,7 @@ public sealed partial class AgentRunCoordinatorTests
             new ToolCallScheduler(),
             frames ?? new TransientFrameBuffer(32),
             redactor,
+            contextLimit,
             replyPolicy: replyPolicy,
             replyEffects: replyEffects,
             promptContextProvider: new FakeSystemPromptContextProvider(),
@@ -2065,6 +2097,28 @@ public sealed partial class AgentRunCoordinatorTests
 
     private static RunId RunId() =>
         new("run_11111111111111111111111111111111");
+
+    /// <summary>
+    /// The provider-backed shape in miniature: the step is prepared first, so the
+    /// coordinator hands the invocation a request carrying the measured request size.
+    /// </summary>
+    private sealed class PreparingModelStepRunner : IModelStepRunner, IModelStepRequestPreparer
+    {
+        private readonly FakeModelStepRunner _inner = new();
+
+        public void Enqueue(AssistantStep step, params string[] deltas) => _inner.Enqueue(step, deltas);
+
+        public Task<IPreparedModelStep> PrepareAsync(ModelStepRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<IPreparedModelStep>(new PreparedEstimate(4_000, 200_000));
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken) =>
+            _inner.RunStepAsync(request, publishDelta, cancellationToken);
+
+        private sealed record PreparedEstimate(long EstimatedInputTokens, long MaxPromptTokens) : IPreparedModelStep;
+    }
 
     private sealed class NullProviderCallRunner : IModelStepRunner
     {

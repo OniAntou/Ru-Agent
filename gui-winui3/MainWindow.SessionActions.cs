@@ -411,13 +411,13 @@ namespace RuApp
 
             if (cell.FindName("SessionMoreButton") is Button moreButton)
             {
-                moreButton.Opacity = visible ? 1.0 : 0.0;
+                Services.UiMotion.FadeOpacity(moreButton, visible ? 1.0 : 0.0);
                 moreButton.IsHitTestVisible = visible;
             }
 
             if (cell.FindName("SessionDeleteButton") is Button deleteButton)
             {
-                deleteButton.Opacity = visible ? 1.0 : 0.0;
+                Services.UiMotion.FadeOpacity(deleteButton, visible ? 1.0 : 0.0);
                 deleteButton.IsHitTestVisible = visible;
             }
 

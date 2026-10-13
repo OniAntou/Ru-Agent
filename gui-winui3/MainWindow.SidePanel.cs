@@ -82,7 +82,7 @@ namespace RuApp
             }
 
             bool isActive = args.WindowActivationState != WindowActivationState.Deactivated;
-            SidePanelToggleButton.Opacity = isActive ? 1 : 0.55;
+            Services.UiMotion.FadeOpacity(SidePanelToggleButton, isActive ? 1 : 0.55);
         }
 
         /// <summary>

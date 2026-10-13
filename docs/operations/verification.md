@@ -15,6 +15,27 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Hover and state brush fades (2026-10-14)
+
+GUI motion slice 5, the follow-up to the shell pass: the swaps that were still
+instant now cross-fade. The nav, settings and theme-toggle hovers, the
+active-nav selection, the composer's attach-image and context-meter hovers, the
+session rows' action buttons and the title-bar toggle all route through
+`UiMotion.FadeBrush` / `UiMotion.FadeOpacity`. `FadeBrush` animates a private
+solid-colour brush per fade, because the theme brushes are shared instances and
+animating one would repaint every element painted with it; it reads the live
+colour before replacing the brush, so a fade interrupted by its reverse
+continues from where it is. Non-solid targets and animations-off readers keep
+the instant swap.
+
+- GUI suite: **1,408 passed / 0 failed**, with two new contracts (the nav and
+  hover brush fades with no direct assignment left, and the composer/row state
+  fades) plus the module's private-brush rule
+  (`artifacts/tui-audit/hover-motion-gui.log`).
+- `build.bat` **11/11** (`artifacts/tui-audit/hover-motion-build.log`).
+- Hover feel is visual behaviour and needs the operator's eye on the running
+  app.
+
 ## Theme fade-through and send-button morph (2026-10-14)
 
 GUI motion slice 4, closing the pass. A theme switch now fades the shell out,

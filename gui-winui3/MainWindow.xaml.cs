@@ -413,13 +413,13 @@ namespace RuApp
             // Theme toggle button
             ThemeToggleButton.PointerEntered += (s, e) =>
             {
-                ThemeToggleButton.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
-                ThemeToggleButton.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+                Services.UiMotion.FadeBrush(ThemeToggleButton, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
+                Services.UiMotion.FadeBrush(ThemeToggleButton, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
             };
             ThemeToggleButton.PointerExited += (s, e) =>
             {
-                ThemeToggleButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                ThemeToggleButton.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+                Services.UiMotion.FadeBrush(ThemeToggleButton, Control.BackgroundProperty, null);
+                Services.UiMotion.FadeBrush(ThemeToggleButton, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuMutedBrush"]);
             };
         }
 
@@ -429,16 +429,16 @@ namespace RuApp
             {
                 if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
                 {
-                    btn.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
-                    btn.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+                    Services.UiMotion.FadeBrush(btn, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
+                    Services.UiMotion.FadeBrush(btn, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
                 }
             };
             btn.PointerExited += (s, e) =>
             {
                 if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
                 {
-                    btn.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                    btn.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+                    Services.UiMotion.FadeBrush(btn, Control.BackgroundProperty, null);
+                    Services.UiMotion.FadeBrush(btn, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuMutedBrush"]);
                 }
             };
         }
@@ -446,7 +446,6 @@ namespace RuApp
         private void SetActiveNav(Button activeBtn)
         {
             _activeNavButton = activeBtn;
-            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             var muted = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
             var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
@@ -455,16 +454,16 @@ namespace RuApp
 
             foreach (var button in new[] { NavChat, NavSettings })
             {
-                button.Background = transparent;
-                button.Foreground = muted;
-                button.BorderBrush = transparent;
+                Services.UiMotion.FadeBrush(button, Control.BackgroundProperty, null);
+                Services.UiMotion.FadeBrush(button, Control.ForegroundProperty, muted);
+                Services.UiMotion.FadeBrush(button, Control.BorderBrushProperty, null);
                 button.BorderThickness = new Thickness(0);
                 button.CornerRadius = navCorner;
             }
 
-            activeBtn.Background = surface;
-            activeBtn.Foreground = ink;
-            activeBtn.BorderBrush = line;
+            Services.UiMotion.FadeBrush(activeBtn, Control.BackgroundProperty, surface);
+            Services.UiMotion.FadeBrush(activeBtn, Control.ForegroundProperty, ink);
+            Services.UiMotion.FadeBrush(activeBtn, Control.BorderBrushProperty, line);
             activeBtn.BorderThickness = new Thickness(1);
             activeBtn.CornerRadius = navCorner;
         }
@@ -539,8 +538,8 @@ namespace RuApp
             }
             _ = _settingsView?.RefreshProviderCatalogAsync();
 
-            NavSettings.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
-            NavSettings.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+            Services.UiMotion.FadeBrush(NavSettings, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
+            Services.UiMotion.FadeBrush(NavSettings, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
             _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSettingsButton?.Focus(FocusState.Programmatic);
         }
@@ -563,8 +562,8 @@ namespace RuApp
 
             if (_activeNavButton != NavSettings)
             {
-                NavSettings.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                NavSettings.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+                Services.UiMotion.FadeBrush(NavSettings, Control.BackgroundProperty, null);
+                Services.UiMotion.FadeBrush(NavSettings, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuMutedBrush"]);
             }
 
             // The overlay leaves with a fade; the collapse and the focus hand-back

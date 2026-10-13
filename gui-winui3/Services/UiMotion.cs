@@ -5,6 +5,8 @@ using Microsoft.UI.Composition;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace RuApp.Services
 {
@@ -21,6 +23,8 @@ namespace RuApp.Services
         public const double ExitMilliseconds = 120;
         public const double SwapOutMilliseconds = 100;
         public const double SwapInMilliseconds = 140;
+        public const double BrushFadeMilliseconds = 140;
+        public const double StateFadeMilliseconds = 120;
         private const double RiseDistance = 8;
 
         /// <summary>
@@ -139,6 +143,87 @@ namespace RuApp.Services
             if (!wasVisible)
             {
                 Enter(element);
+            }
+        }
+
+        /// <summary>
+        /// Cross-fades one brush-valued property to <paramref name="target"/>. The
+        /// theme brushes are shared instances, so animating one of those would repaint
+        /// every element that uses it: each fade builds a private solid-colour brush
+        /// and animates that instead. Non-solid targets (a gradient, or a reader with
+        /// animations off) are applied instantly.
+        /// </summary>
+        public static void FadeBrush(DependencyObject owner, DependencyProperty property, Brush? target)
+        {
+            ArgumentNullException.ThrowIfNull(owner);
+            ArgumentNullException.ThrowIfNull(property);
+
+            if (!UiTiming.AnimationsEnabled || target is not null and not SolidColorBrush)
+            {
+                owner.SetValue(property, target);
+                return;
+            }
+
+            // Read the live colour first: replacing the brush strands the old one,
+            // and with it the animated value a second fade would start from.
+            var from = (owner.GetValue(property) as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Transparent;
+            var to = (target as SolidColorBrush)?.Color ?? Microsoft.UI.Colors.Transparent;
+            if (from == to)
+            {
+                return;
+            }
+
+            try
+            {
+                var brush = new SolidColorBrush(from);
+                owner.SetValue(property, brush);
+                var animation = new ColorAnimation
+                {
+                    To = to,
+                    Duration = TimeSpan.FromMilliseconds(BrushFadeMilliseconds),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                };
+                Storyboard.SetTarget(animation, brush);
+                Storyboard.SetTargetProperty(animation, "Color");
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(animation);
+                storyboard.Begin();
+            }
+            catch (Exception error)
+            {
+                Trace("brush fade", error);
+                owner.SetValue(property, target);
+            }
+        }
+
+        /// <summary>Fades one element's opacity to a target; instant with animations off.</summary>
+        public static void FadeOpacity(FrameworkElement element, double target)
+        {
+            ArgumentNullException.ThrowIfNull(element);
+            if (!UiTiming.AnimationsEnabled)
+            {
+                element.Opacity = target;
+                return;
+            }
+
+            try
+            {
+                var fade = new DoubleAnimation
+                {
+                    To = target,
+                    Duration = TimeSpan.FromMilliseconds(StateFadeMilliseconds),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                };
+                Storyboard.SetTarget(fade, element);
+                Storyboard.SetTargetProperty(fade, "Opacity");
+                var storyboard = new Storyboard();
+                storyboard.Children.Add(fade);
+                storyboard.Begin();
+            }
+            catch (Exception error)
+            {
+                Trace("opacity fade", error);
+                element.Opacity = target;
             }
         }
 

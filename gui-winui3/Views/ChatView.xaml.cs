@@ -221,15 +221,15 @@ namespace RuApp.Views
         private void OnAttachImagePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (AttachImageButton is null) return;
-            AttachImageButton.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
-            if (AttachImageIcon != null) AttachImageIcon.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+            Services.UiMotion.FadeBrush(AttachImageButton, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
+            if (AttachImageIcon != null) Services.UiMotion.FadeBrush(AttachImageIcon, IconElement.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
         }
 
         private void OnAttachImagePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (AttachImageButton is null) return;
-            AttachImageButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            if (AttachImageIcon != null) AttachImageIcon.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+            Services.UiMotion.FadeBrush(AttachImageButton, Control.BackgroundProperty, null);
+            if (AttachImageIcon != null) Services.UiMotion.FadeBrush(AttachImageIcon, IconElement.ForegroundProperty, (Brush)Application.Current.Resources["RuMutedBrush"]);
         }
 
         private DispatcherTimer? _contextHoverTimer;
@@ -238,7 +238,7 @@ namespace RuApp.Views
         {
             if (ContextMeterButton is null) return;
             var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
-            ContextMeterButton.Background = canvas;
+            Services.UiMotion.FadeBrush(ContextMeterButton, Control.BackgroundProperty, canvas);
             // One timer for the control's lifetime: a fresh DispatcherTimer per
             // hover churned allocations and left the previous Tick handler behind
             // until the next hover.
@@ -277,8 +277,7 @@ namespace RuApp.Views
         private void OnContextMeterPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (ContextMeterButton is null) return;
-            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            ContextMeterButton.Background = transparent;
+            Services.UiMotion.FadeBrush(ContextMeterButton, Control.BackgroundProperty, null);
             _contextHoverTimer?.Stop();
         }
 

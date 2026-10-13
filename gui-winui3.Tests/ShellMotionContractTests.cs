@@ -92,7 +92,7 @@ public sealed class ShellMotionContractTests
         }
 
         var motion = GuiSource.Text("Services", "UiMotion.cs");
-        foreach (var member in new[] { "Enter", "Exit", "SwapContent", "SetVisible" })
+        foreach (var member in new[] { "Enter", "Exit", "SwapContent", "SetVisible", "FadeBrush", "FadeOpacity" })
         {
             // Every entry point is one code path: the gate lives inside the module.
             var body = GuiSource.MethodBody(motion, member);
@@ -106,6 +106,10 @@ public sealed class ShellMotionContractTests
         Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(motion, "Enter"), StringComparison.Ordinal);
         Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(motion, "Exit"), StringComparison.Ordinal);
         Assert.Contains("UiTiming.AnimationsEnabled", GuiSource.MethodBody(motion, "SwapContent"), StringComparison.Ordinal);
+
+        // The theme brushes are shared instances: a fade must animate a private
+        // copy, never the resource every other element is painted with.
+        Assert.Contains("new SolidColorBrush(from)", GuiSource.MethodBody(motion, "FadeBrush"), StringComparison.Ordinal);
 
         Assert.InRange(UiMotion.ExitMilliseconds, 60, 200);
         Assert.InRange(UiMotion.EntranceMilliseconds, 60, 240);
@@ -139,5 +143,52 @@ public sealed class ShellMotionContractTests
         Assert.Contains("faceChanged", body, StringComparison.Ordinal);
         Assert.Contains("StopGlyph", body, StringComparison.Ordinal);
         Assert.Contains("SendGlyph", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Hover_and_nav_swaps_cross_fade_their_brushes()
+    {
+        var code = GuiSource.ViewText("MainWindow");
+
+        foreach (var member in new[] { "SetupNavHover", "InitializeSidebarHoverEffects", "SetActiveNav" })
+        {
+            var body = GuiSource.MethodBody(code, member);
+            Assert.Contains("UiMotion.FadeBrush", body, StringComparison.Ordinal);
+            // No direct assignment survives: a brush swap that is not routed
+            // through the fade is the blink this slice removed.
+            Assert.DoesNotContain("Background = ", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("Foreground = ", body, StringComparison.Ordinal);
+        }
+
+        foreach (var member in new[] { "OpenSettingsPopup", "CloseSettingsPopup" })
+        {
+            Assert.Contains("UiMotion.FadeBrush", GuiSource.MethodBody(code, member), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Composer_and_row_state_swaps_fade_instead_of_blinking()
+    {
+        var chat = GuiSource.ViewText("ChatView");
+        foreach (var member in new[]
+                 {
+                     "OnAttachImagePointerEntered",
+                     "OnAttachImagePointerExited",
+                     "OnContextMeterPointerEntered",
+                     "OnContextMeterPointerExited",
+                 })
+        {
+            Assert.Contains("UiMotion.FadeBrush", GuiSource.MethodBody(chat, member), StringComparison.Ordinal);
+        }
+
+        var main = GuiSource.ViewText("MainWindow");
+        Assert.Contains(
+            "UiMotion.FadeOpacity",
+            GuiSource.MethodBody(main, "SetSessionRowActionsVisible"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "UiMotion.FadeOpacity",
+            GuiSource.MethodBody(main, "OnWindowActivatedForSidePanelToggle"),
+            StringComparison.Ordinal);
     }
 }

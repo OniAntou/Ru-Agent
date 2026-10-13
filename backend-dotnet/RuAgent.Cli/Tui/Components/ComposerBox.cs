@@ -103,11 +103,11 @@ public static class ComposerBox
     }
 
     /// <summary>
-    /// The hint row below the composer: the spinner with esc-interrupt on the left while a
-    /// turn runs (the workspace label when idle), key hints right-aligned. Exactly
-    /// <paramref name="width"/> cells.
+    /// The hint row below the composer: the colour-wave busy indicator with
+    /// esc-interrupt on the left while a turn runs (the workspace label when idle), key
+    /// hints right-aligned. Exactly <paramref name="width"/> cells.
     /// </summary>
-    public static string ComposeHints(int width, string? spinnerFrame, string idleLeft)
+    public static string ComposeHints(int width, bool busy, string idleLeft)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
         var right = string.Concat(HintKeySegments.Select(segment => segment.Token is { } token
@@ -115,8 +115,8 @@ public static class ComposerBox
             : segment.Text));
         var rightWidth = TuiText.VisibleWidth(right);
 
-        var left = spinnerFrame is not null
-            ? TuiPalette.Paint(spinnerFrame, TuiToken.Bright)
+        var left = busy
+            ? TuiPalette.Paint(TuiSpinner.WaveText, TuiToken.Aurora)
                 + " "
                 + TuiPalette.Paint("esc", TuiToken.Bright)
                 + TuiPalette.Paint(" interrupt", TuiToken.Meta)

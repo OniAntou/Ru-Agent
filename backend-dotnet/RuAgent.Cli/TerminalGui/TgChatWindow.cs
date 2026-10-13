@@ -318,7 +318,7 @@ public sealed class TgChatWindow : Window
     {
         _commandPalette.SetStatusMessage("active turn in progress · apply command after it finishes");
         _commandPaletteView?.SetNeedsDraw();
-        Hints.SetBusy("⠋", "finish turn before applying command");
+        Hints.SetBusy("finish turn before applying command");
     }
 
     private void CloseCommandPalette(bool restoreDraft)

@@ -78,14 +78,14 @@ public sealed class TgCopyParityTests
         var idle = new TgHintsView { X = 0, Y = 0, Width = Dim.Fill() };
         idle.SetIdle("D:/LLM");
         var busy = new TgHintsView { X = 0, Y = 1, Width = Dim.Fill() };
-        busy.SetBusy("⠋");
+        busy.SetBusy();
 
         var rows = Render(idle, busy);
 
-        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, null, "D:/LLM")), rows[0]);
-        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, "⠋", "D:/LLM")), rows[1]);
+        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: false, "D:/LLM")), rows[0]);
+        Assert.Equal(Visible(ComposerBox.ComposeHints(Width, busy: true, "D:/LLM")), rows[1]);
         Assert.Contains("/ commands  tab complete  ctrl+o expand", rows[0], StringComparison.Ordinal);
-        Assert.Contains("⠋ esc interrupt", rows[1], StringComparison.Ordinal);
+        Assert.Contains("●●● esc interrupt", rows[1], StringComparison.Ordinal);
     }
 
     [Fact]

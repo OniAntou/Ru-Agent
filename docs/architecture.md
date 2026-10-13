@@ -351,7 +351,8 @@ reconciliation surfaces from Phase 3:
   and metrics when shortening targets. Frames below
   20 rows keep a single heading row. The header projects existing session data;
   it adds no API calls. Every animation phase (braille spinner, running-tool
-  glyph rotation, elapsed clock) is a pure function of elapsed seconds in
+  glyph rotation, busy-hint colour wave, elapsed clock) is a pure function of
+  elapsed seconds in
   `TuiSpinner`, so the 18 ms meteor ticker and any slower cadence yield the same
   motion; the ticker runs only while the frame is live, and the live row's
   spinner pauses on parked states. Streaming reflows a dirty tail at draw/scroll

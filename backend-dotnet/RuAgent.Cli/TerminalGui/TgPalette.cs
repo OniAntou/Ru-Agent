@@ -35,6 +35,10 @@ public static class TgPalette
     public static Attr Attr(TuiToken fg, TuiToken? bg = null) =>
         new(ToColor(fg), bg is { } b ? ToColor(b) : new Color(0, 0, 0, 255));
 
+    /// <summary>Per-cell truecolor foreground over the row's black background.</summary>
+    public static Attr Attr((int R, int G, int B) fg) =>
+        new(ToColor(fg), new Color(0, 0, 0, 255));
+
     public static Attr Attr(TuiToken fg, (int R, int G, int B) bg) =>
         new(ToColor(fg), ToColor(bg));
 

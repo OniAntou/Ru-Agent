@@ -6,14 +6,33 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,162 passed / 0 failed / 0 skipped** (2026-10-13, TUI wrap, live context meter and suppressed-reply rewind). Broker 930; CLI 1,369; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-suppressed-fix-matrix.log`. |
+| .NET tests | Full **12-project** Debug matrix: **6,165 passed / 0 failed / 0 skipped** (2026-10-13, TUI busy-hint colour wave). Broker 930; CLI 1,372; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-color-wave-matrix.log`. |
 | Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI wrap, live context meter and suppressed-reply rewind). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-suppressed-fix-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13, TUI wrap, live context meter and suppressed-reply rewind) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-suppressed-fix-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI busy-hint colour wave). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-color-wave-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13, TUI busy-hint colour wave) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-color-wave-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## TUI busy-hint colour wave (2026-10-13)
+
+The busy hint row's braille spinner is replaced by a colour wave: three fixed dots whose
+colours travel the aurora → brand → brand2 ramp. The phase is a pure function of
+elapsed seconds in `TuiSpinner` (`WaveRgbAt`), repainted on a 90 ms bucket so the 18 ms
+ticker repaints about eleven times a second, and the sine envelope fades the trailing
+cells so the row reads as one drifting glow instead of three blinking dots. The interrupt
+copy, queue hints, scrolled-back prefix and idle workspace label are unchanged; the
+classic reference composition (`ComposerBox.ComposeHints`) tracks the same visible text,
+and the live activity row in the transcript keeps the braille spinner.
+
+Tests pin the wave clock (bucket advance, negative clamp), determinism, distinct cells,
+seamless cycle wrap and the left-to-right travel, plus the Terminal.Gui row's visible text
+and its three distinct per-cell foregrounds. Full 12-project matrix **6,165 / 0 / 0**
+(`artifacts/tui-color-wave-matrix.log`), `build.bat` **11/11** Release stages
+(`artifacts/tui-color-wave-build.log`) and the flat-package smoke **PASS**
+(`artifacts/tui-color-wave-smoke.log`). Live appearance on a real terminal remains manual
+acceptance.
 
 ## TUI wrap and live context meter (2026-10-13)
 

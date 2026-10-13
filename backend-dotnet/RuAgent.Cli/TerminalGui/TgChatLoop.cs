@@ -17,7 +17,6 @@ public sealed class TgChatLoop
     /// <summary>Prompts typed while a turn streams wait here; a full queue refuses the new prompt.</summary>
     public const int MaxQueueDepth = 8;
 
-    private const string SpinnerFrame = "⠋";
     private const string QueueHint = "enter queues · esc cancels";
     private const string QueueFullHint = "queue full · enter retries";
     private const string SubmissionTooLargeHint = "submission too large · shorten or detach files";
@@ -213,7 +212,7 @@ public sealed class TgChatLoop
                 && !isRepairCommandWhilePaused
                 && _stateChangingCommandClassifier?.Invoke(line) is true)
             {
-                _window.Hints.SetBusy(SpinnerFrame, StateChangeBusyHint);
+                _window.Hints.SetBusy(StateChangeBusyHint);
                 return;
             }
         }
@@ -221,7 +220,7 @@ public sealed class TgChatLoop
         var submission = _snapshotFactory?.Invoke(line);
         if (_snapshotFactory is not null && submission is null)
         {
-            _window.Hints.SetBusy(SpinnerFrame, SubmissionUnavailableHint);
+            _window.Hints.SetBusy(SubmissionUnavailableHint);
             return;
         }
 
@@ -230,7 +229,7 @@ public sealed class TgChatLoop
             || submission.OwnedBytes > MaxQueuedSubmissionBytes)
         {
             TuiDebug.Log("submit", "refused: submission exceeds the bounded prompt or attachment cap");
-            _window.Hints.SetBusy(SpinnerFrame, SubmissionTooLargeHint);
+            _window.Hints.SetBusy(SubmissionTooLargeHint);
             return;
         }
 
@@ -266,7 +265,7 @@ public sealed class TgChatLoop
         if (refused)
         {
             TuiDebug.Log("submit", "refused: queue full");
-            _window.Hints.SetBusy(SpinnerFrame, QueueFullHint);
+            _window.Hints.SetBusy(QueueFullHint);
             return;
         }
 
@@ -279,7 +278,7 @@ public sealed class TgChatLoop
         if (queued)
         {
             TuiDebug.Log("submit", $"queued ({_queued.Count})");
-            _window.Hints.SetBusy(SpinnerFrame, QueueHint);
+            _window.Hints.SetBusy(QueueHint);
             return;
         }
 
@@ -434,7 +433,7 @@ public sealed class TgChatLoop
     {
         try
         {
-            Dispatch(() => _window.Hints.SetBusy(SpinnerFrame, HasQueued ? QueueHint : null));
+            Dispatch(() => _window.Hints.SetBusy(HasQueued ? QueueHint : null));
             await _submissionHandler(submission, stream, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

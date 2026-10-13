@@ -42,7 +42,7 @@ public sealed class TgIntegrationRegressionTests
         using var window = TgChatWindow.Build();
         var loop = new TgChatLoop(window);
         RunSteps(app, [
-            () => { for (var i=0;i<80;i++) window.Transcript.Append($"line {i}", TranscriptStyle.Prose); window.FocusComposer(); window.Hints.SetBusy("spinner"); },
+            () => { for (var i=0;i<80;i++) window.Transcript.Append($"line {i}", TranscriptStyle.Prose); window.FocusComposer(); window.Hints.SetBusy(); },
             () => app.Keyboard.RaiseKeyDownEvent(Key.PageUp),
             () => { Assert.False(window.Transcript.IsFollowingTail); Assert.Contains("scrolled back", string.Join('\n', TgSnapshot.Capture(app)), StringComparison.Ordinal); },
         ]);

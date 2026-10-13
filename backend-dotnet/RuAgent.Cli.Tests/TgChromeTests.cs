@@ -260,29 +260,29 @@ public sealed class TgChromeTests
     }
 
     [Fact]
-    public void HintsSpinnerFrame_AdvancesWhileBusyOnly()
+    public void HintsWaveClock_AdvancesWhileBusyOnly()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = TgChatWindow.Build();
         window.Hints.SetIdle("D:\\LLM");
         window.Transcript.Append("answer content", TranscriptStyle.Prose);
-        window.Hints.SetBusy("⠋");
+        window.Hints.SetBusy();
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
-            window.Hints.SetSpinnerFrame("⠹");
+            window.Hints.SetWaveClock(0.5);
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
         {
-            Assert.Contains("⠹ esc interrupt", TgSnapshot.Capture(app)[^1]);
+            Assert.Contains("●●● esc interrupt", TgSnapshot.Capture(app)[^1]);
             window.Hints.SetIdle("D:\\LLM");
-            window.Hints.SetSpinnerFrame("⠼");
+            window.Hints.SetWaveClock(1.0);
             return false;
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
         {
-            // Idle hints keep the workspace: the frame belongs to the busy state.
+            // Idle hints keep the workspace: the wave belongs to the busy state.
             Assert.Contains("D:\\LLM", TgSnapshot.Capture(app)[^1]);
             app.RequestStop();
             return false;
@@ -545,20 +545,28 @@ public sealed class TgChromeTests
     }
 
     [Fact]
-    public void Hints_BusyShowsSpinnerAndInterrupt()
+    public void Hints_BusyShowsTheColourWaveAndInterrupt()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
         using var window = new Window { BorderStyle = LineStyle.None };
         var hints = new TgHintsView { X = 0, Y = 0, Width = Dim.Fill() };
-        hints.SetBusy("⠋");
+        hints.SetBusy();
         window.Add(hints);
         app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
         {
             var row = TgSnapshot.Capture(app)[0];
-            Assert.Contains("⠋ esc interrupt", row);
-            var spinner = row.IndexOf('⠋');
-            Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, spinner).Foreground);
+            Assert.Contains("●●● esc interrupt", row);
+            // Each dot carries its own ramp colour: the wave is three distinct cells,
+            // not one glyph with one tone.
+            var first = row.IndexOf('●');
+            var cell0 = TgSnapshot.CellAttribute(app, 0, first).Foreground;
+            var cell1 = TgSnapshot.CellAttribute(app, 0, first + 1).Foreground;
+            var cell2 = TgSnapshot.CellAttribute(app, 0, first + 2).Foreground;
+            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(0, 0)), cell0);
+            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(1, 0)), cell1);
+            Assert.Equal(TgPalette.ToColor(TuiSpinner.WaveRgbAt(2, 0)), cell2);
+            Assert.NotEqual(cell0, cell1);
             var esc = row.IndexOf("esc", StringComparison.Ordinal);
             Assert.Equal(TgPalette.ToColor(TuiToken.Bright), TgSnapshot.CellAttribute(app, 0, esc).Foreground);
             Assert.Equal(TgPalette.ToColor(TuiToken.Meta), TgSnapshot.CellAttribute(app, 0, esc + 4).Foreground);

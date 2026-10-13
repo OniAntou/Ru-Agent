@@ -11,8 +11,15 @@ public sealed class TgHintsView : View
     private static readonly string DetachedKeysRight = "↓ new output  ctrl+end tail  " + KeysRight;
     private static readonly string ExtendedDetachedKeysRight = DetachedKeysRight + "  ctrl+p palette  pgup/dn scroll";
     private const int ExtendedHintsMinimumWidth = 128;
+
+    /// <summary>The busy indicator's visible text: the wave dots, then the interrupt copy.</summary>
+    private static readonly string WaveText = TuiSpinner.WaveText;
+    private static readonly string BusyText = WaveText + " esc interrupt";
+
     private string _left = string.Empty;
-    private string? _spinnerFrame;
+    private bool _busy;
+    private long _waveBucket;
+    private double _waveSeconds;
     private string? _busyHint;
     private bool _hasUnseenTranscript;
     private bool _scrolledBack;
@@ -34,34 +41,44 @@ public sealed class TgHintsView : View
         Workspace = workspace;
         WorkspaceChanged?.Invoke();
         _left = workspace;
-        _spinnerFrame = null;
+        _busy = false;
+        _waveBucket = 0;
         _busyHint = null;
         SetNeedsDraw();
     }
 
     /// <summary>
-    /// Swaps the left text for the spinner. An optional hint replaces the default
-    /// "esc interrupt" copy, e.g. while queued lines wait behind the active turn.
+    /// Swaps the left text for the colour-wave busy indicator. An optional hint replaces
+    /// the default "esc interrupt" copy, e.g. while queued lines wait behind the active
+    /// turn.
     /// </summary>
-    public void SetBusy(string spinnerFrame, string? hint = null)
+    public void SetBusy(string? hint = null)
     {
-        _spinnerFrame = spinnerFrame;
+        _busy = true;
         _busyHint = hint;
         SetNeedsDraw();
     }
 
     /// <summary>
-    /// Advances the busy spinner frame from the shared animation clock. A no-op while
-    /// the row is idle: the frame belongs to the busy state the loop already set.
+    /// Advances the busy wave from the shared animation clock; the phase is a pure
+    /// function of elapsed seconds. A no-op while the row is idle or while the phase
+    /// bucket has not moved, so an 18 ms ticker repaints about eleven times a second.
     /// </summary>
-    public void SetSpinnerFrame(string frame)
+    public void SetWaveClock(double elapsedSeconds)
     {
-        if (_spinnerFrame is null || _spinnerFrame == frame)
+        if (!_busy)
         {
             return;
         }
 
-        _spinnerFrame = frame;
+        var bucket = TuiSpinner.WaveBucketAt(elapsedSeconds);
+        if (bucket == _waveBucket)
+        {
+            return;
+        }
+
+        _waveBucket = bucket;
+        _waveSeconds = elapsedSeconds;
         SetNeedsDraw();
     }
 
@@ -108,11 +125,11 @@ public sealed class TgHintsView : View
         // Classic truncates the workspace first so the key hints always survive; the
         // remaining columns are split between the two sides.
         var leftBudget = Math.Max(0, width - rightWidth - 2);
-        var leftText = _spinnerFrame is null
+        var leftText = !_busy
             ? _left
             : _busyHint is null
-                ? $"{_spinnerFrame} esc interrupt"
-                : $"{_spinnerFrame} {_busyHint}";
+                ? BusyText
+                : $"{WaveText} {_busyHint}";
         if (_scrolledBack) leftText = "↑ scrolled back · " + leftText;
         var shownLeft = TuiText.Truncate(leftText, leftBudget);
         var leftWidth = TuiText.VisibleWidth(shownLeft);
@@ -123,7 +140,7 @@ public sealed class TgHintsView : View
         return true;
     }
 
-    /// <summary>Idle workspace is meta; busy paints the spinner and <c>esc</c> bright.</summary>
+    /// <summary>Idle workspace is meta; busy paints the colour wave and <c>esc</c> bright.</summary>
     private void DrawLeft(int maxWidth, string shownText)
     {
         if (_scrolledBack)
@@ -131,26 +148,48 @@ public sealed class TgHintsView : View
             Draw(0, [(shownText, TuiToken.Meta)], maxWidth);
             return;
         }
-        IReadOnlyList<(string Text, TuiToken Token)> segments = _spinnerFrame is null
-            ?
-            [
-                (TuiText.Truncate(_left, maxWidth), TuiToken.Meta),
-            ]
-            : _busyHint is null
-                ?
-                [
-                    (_spinnerFrame, TuiToken.Bright),
-                    (" ", TuiToken.Bright),
-                    ("esc", TuiToken.Bright),
-                    (" interrupt", TuiToken.Meta),
-                ]
-                :
-                [
-                    (_spinnerFrame, TuiToken.Bright),
-                    (" ", TuiToken.Bright),
-                    (_busyHint, TuiToken.Meta),
-                ];
-        Draw(0, segments, maxWidth);
+
+        if (!_busy)
+        {
+            Draw(0, [(TuiText.Truncate(_left, maxWidth), TuiToken.Meta)], maxWidth);
+            return;
+        }
+
+        // The wave dots carry their own per-cell ramp colours; the copy after them keeps
+        // the bright "esc" and meta " interrupt" split.
+        var column = DrawWave(0, maxWidth);
+        var rest = shownText.Length > WaveText.Length ? shownText[WaveText.Length..] : string.Empty;
+        if (rest.Length == 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<(string Text, TuiToken Token)> segments = _busyHint is null
+            ? rest.Length > 4
+                ? [(rest[..4], TuiToken.Bright), (rest[4..], TuiToken.Meta)]
+                : [(rest, TuiToken.Bright)]
+            : [(rest, TuiToken.Meta)];
+        Draw(column, segments, maxWidth - column);
+    }
+
+    /// <summary>Draws the wave dots with their per-cell ramp colours; returns the column after them.</summary>
+    private int DrawWave(int column, int maxWidth)
+    {
+        for (var cell = 0; cell < TuiSpinner.WaveCells; cell++)
+        {
+            if (maxWidth <= 0 || column >= Viewport.Width)
+            {
+                break;
+            }
+
+            SetAttribute(TgPalette.Attr(TuiSpinner.WaveRgbAt(cell, _waveSeconds)));
+            Move(column, 0);
+            AddStr(TuiSpinner.WaveGlyph);
+            column += TuiText.VisibleWidth(TuiSpinner.WaveGlyph);
+            maxWidth -= TuiText.VisibleWidth(TuiSpinner.WaveGlyph);
+        }
+
+        return column;
     }
 
     /// <summary>Bright key caps with meta words, matching ComposerBox.ComposeHints.</summary>

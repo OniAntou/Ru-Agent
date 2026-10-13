@@ -212,9 +212,9 @@ public sealed class ComposerBoxTests : IDisposable
     }
 
     [Fact]
-    public void ComposeHints_PinsKeyOrderAndSpinnerStates()
+    public void ComposeHints_PinsKeyOrderAndBusyStates()
     {
-        var idle = TuiText.Strip(ComposerBox.ComposeHints(100, null, "D:/LLM"));
+        var idle = TuiText.Strip(ComposerBox.ComposeHints(100, busy: false, "D:/LLM"));
 
         Assert.Contains("D:/LLM", idle, StringComparison.Ordinal);
         Assert.DoesNotContain("interrupt", idle, StringComparison.Ordinal);
@@ -222,8 +222,8 @@ public sealed class ComposerBoxTests : IDisposable
         Assert.True(idle.IndexOf("tab complete", StringComparison.Ordinal) < idle.IndexOf("ctrl+o expand", StringComparison.Ordinal));
         Assert.Equal(100, TuiText.VisibleWidth(idle));
 
-        var busy = TuiText.Strip(ComposerBox.ComposeHints(100, "⠋", "D:/LLM"));
-        Assert.Contains("⠋ esc interrupt", busy, StringComparison.Ordinal);
+        var busy = TuiText.Strip(ComposerBox.ComposeHints(100, busy: true, "D:/LLM"));
+        Assert.Contains("●●● esc interrupt", busy, StringComparison.Ordinal);
         Assert.DoesNotContain("D:/LLM", busy, StringComparison.Ordinal);
     }
 }

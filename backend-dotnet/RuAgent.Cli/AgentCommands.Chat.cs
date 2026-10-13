@@ -2726,7 +2726,7 @@ public sealed partial class AgentCommands
                         }
                     }
 
-                    tgWindow.Hints.SetSpinnerFrame(Tui.TuiSpinner.FrameAt(uiClock.Elapsed.TotalSeconds));
+                    tgWindow.Hints.SetWaveClock(uiClock.Elapsed.TotalSeconds);
                     return true;
                 });
             tgApp.Run(tgWindow);

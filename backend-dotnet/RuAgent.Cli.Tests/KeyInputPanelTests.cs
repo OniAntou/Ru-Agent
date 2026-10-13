@@ -15,45 +15,47 @@ public sealed class KeyInputPanelTests : IDisposable
     public void Dispose() => _levelPin.Dispose();
 
     [Theory]
-    [InlineData(24)]
-    [InlineData(40)]
-    [InlineData(80)]
-    [InlineData(120)]
-    public void Compose_FillsExactlyTheViewportWidth(int width)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(12)]
+    [InlineData(5000)]
+    public void MaskText_ShowsOneBulletPerCharAndACaret(int bullets)
     {
-        var lines = KeyInputPanel.Compose(width, "models.dev:openrouter", 7);
+        var mask = KeyInputPanel.MaskText(bullets);
 
-        Assert.Equal(3, lines.Count);
-        Assert.All(lines, line => Assert.Equal(width, TuiText.VisibleWidth(line)));
-    }
-
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(1, 1)]
-    [InlineData(12, 12)]
-    [InlineData(5000, 74)]
-    public void MaskRow_ShowsOneBulletPerCharCappedToTheFrame(int bullets, int expected)
-    {
-        var row = TuiText.Strip(KeyInputPanel.ComposeMaskRow(80, bullets));
-
-        Assert.Equal(expected, row.Count(c => c == KeyInputPanel.MaskGlyph));
+        Assert.Equal(bullets, mask.Count(c => c == KeyInputPanel.MaskGlyph));
+        Assert.EndsWith(KeyInputPanel.Caret.ToString(), mask, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Compose_NamesProviderAndHintsWithoutSecretContent()
+    public void CardTitle_NamesTheProvider()
     {
-        var text = string.Join("\n", KeyInputPanel.Compose(80, "models.dev:openrouter", 9));
-
-        Assert.Contains("openrouter", text, StringComparison.Ordinal);
-        Assert.Contains("esc", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("sk-", text, StringComparison.Ordinal);
+        Assert.Equal("api key · models.dev:openrouter", KeyInputPanel.CardTitle("models.dev:openrouter"));
+        Assert.Equal("api key · provider", KeyInputPanel.CardTitle("  "));
     }
 
     [Fact]
-    public void Compose_TrimsALongProviderButKeepsTheFrame()
+    public void CardBody_IsTheMaskedFieldAndCarriesNoSecretContent()
     {
-        var lines = KeyInputPanel.Compose(40, "models.dev:a-very-long-provider-id-that-overflows", 3);
+        var body = KeyInputPanel.CardBody(9);
 
-        Assert.All(lines, line => Assert.Equal(40, TuiText.VisibleWidth(line)));
+        var row = Assert.Single(body);
+        Assert.Equal(CardRowKind.Field, row.Kind);
+        Assert.Equal(KeyInputPanel.MaskText(9), row.Label);
+        Assert.DoesNotContain("sk-", row.Label, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Card_TruncatesALongMaskToTheCardWidthWithoutLosingTheCaretContract()
+    {
+        var lines = TuiCard.Compose(
+            40,
+            KeyInputPanel.CardTitle("models.dev:a-very-long-provider-id-that-overflows"),
+            "esc",
+            KeyInputPanel.CardBody(5000),
+            "ctrl+v paste · enter save · esc cancel");
+
+        Assert.All(lines, line => Assert.Equal(40, TuiText.VisibleWidth(line.Text)));
+        Assert.Contains(lines, line => line.Text.Contains(KeyInputPanel.Caret, StringComparison.Ordinal));
     }
 }

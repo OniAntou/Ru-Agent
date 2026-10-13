@@ -6,14 +6,40 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,165 passed / 0 failed / 0 skipped** (2026-10-13, TUI busy-hint colour wave). Broker 930; CLI 1,372; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-color-wave-matrix.log`. |
+| .NET tests | Full **12-project** Debug matrix: **6,178 passed / 0 failed / 0 skipped** (2026-10-13, TUI cards and the session picker). Broker 930; CLI 1,385; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-cards-sessions-matrix.log`. |
 | Python suite | **216 passed, 1 skipped** (2026-10-13, resource contracts after review), via `.venv\Scripts\python.exe -m pytest tests -q -rs`. Log: `artifacts/limits-final-python.log`. The skip is the POSIX process-group kill test on Windows. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI busy-hint colour wave). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-color-wave-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-13, TUI busy-hint colour wave) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-color-wave-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| Release build | `build.bat` passed **11/11 stages** (2026-10-13, TUI cards and the session picker). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-cards-sessions-build.log`. |
+| Managed runtime smoke | **PASS** (2026-10-13, TUI cards and the session picker) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`). Log: `artifacts/tui-cards-sessions-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. See [Everyday evaluation](everyday-coding-2026-10-13.md) for fingerprints, failures and comparison limits. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## TUI cards and the session picker (2026-10-13)
+
+The busy hint row's wave became one five-cell horizontal line (`━━━━━`)
+instead of three dots: the same aurora → brand → brand2 ramp travels along it with a
+tighter phase spacing.
+
+Every Terminal.Gui popup now shares one flat card: the title with its dismiss hint, a dim
+header rule, the filled selection bar, footer keys and a scroll position (`3/12`) when a list
+is clipped. Approval, workspace trust, the secret key field, the document window and the slash
+suggestions render through that frame; the bordered floating-panel renderer, the framed secret
+composition and the floating-panel placement helpers were removed with their callers. The
+secret field keeps the tail of an overflowing mask so its caret stays visible.
+
+`/sessions` (and bare `/resume`) opens the session card in the Terminal.Gui engine: title,
+message count and workspace per row, the current session marked, typing filters, Enter
+switches. Delete or Ctrl+D asks for confirmation (default: keep) and removes the session;
+the card reloads, deleting the open session moves to the newest remaining one or creates a
+fresh one (desktop-client parity), a partial cleanup reads as deleted with the host's retry
+hint, and switching or deleting is refused while a run is live. The sequential engine keeps
+the plain `/sessions` list and `/resume <id>`, and `/delete <id>` keeps its explicit-id flow.
+
+Full 12-project matrix **6,178 / 0 / 0** (`artifacts/tui-cards-sessions-matrix.log`),
+`build.bat` **11/11** Release stages (`artifacts/tui-cards-sessions-build.log`) and the
+flat-package smoke **PASS** (`artifacts/tui-cards-sessions-smoke.log`). Live appearance and
+the interactive session flow on a real terminal remain manual acceptance.
 
 ## TUI busy-hint colour wave (2026-10-13)
 

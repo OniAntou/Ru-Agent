@@ -10,8 +10,14 @@ public enum CardRowKind
     /// <summary>The bold card heading; its right side carries the dismiss hint.</summary>
     Title,
 
+    /// <summary>A dim horizontal rule under the heading, separating it from the body.</summary>
+    Rule,
+
     /// <summary>The filter field; its label is what has been typed so far.</summary>
     Search,
+
+    /// <summary>A plain input row (the masked secret), painted bright like typed content.</summary>
+    Field,
 
     /// <summary>A group heading, painted in the accent colour.</summary>
     Section,
@@ -68,10 +74,11 @@ public static class TuiCard
         string title,
         string hint,
         IReadOnlyList<CardRow> body,
-        string? footer)
+        string? footer,
+        string? footerRight = null)
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
-        return Frame(title, hint, body, footer).Select(row => Row(w, row)).ToList();
+        return Frame(title, hint, body, footer, footerRight).Select(row => Row(w, row)).ToList();
     }
 
     /// <summary>Composes a list card: the search field, the entries and the footer.</summary>
@@ -84,10 +91,24 @@ public static class TuiCard
         int maxVisible,
         string? footer,
         string? search = null) =>
-        Compose(width, title, hint, ListRows(items, selected, maxVisible, search), footer);
+        Compose(
+            width,
+            title,
+            hint,
+            ListRows(items, selected, maxVisible, search),
+            footer,
+            // A clipped list says where the cursor sits; a short one needs no ratio.
+            items.Count > maxVisible ? $"{Math.Clamp(selected, 0, items.Count - 1) + 1}/{items.Count}" : null);
 
     private static CardLine Row(int width, CardRow row)
     {
+        if (row.Kind == CardRowKind.Rule)
+        {
+            // The header divider spans the card: a borderless card separates its heading
+            // with a dim rule instead of a box glyph.
+            return new CardLine(new string('─', width), row.Kind, width);
+        }
+
         var inner = InnerWidth(width);
         var bullet = row.Kind switch
         {
@@ -103,7 +124,12 @@ public static class TuiCard
         }
 
         var labelRoom = Math.Max(0, inner - TuiText.VisibleWidth(text) - TuiText.VisibleWidth(right));
-        text += TuiText.Pad(TuiText.Truncate(row.Label, labelRoom), labelRoom);
+        var label = row.Kind == CardRowKind.Field
+            // An input field shows the end of its content: the caret must stay visible even
+            // when the typed value overflows the card.
+            ? TuiText.Tail(row.Label, labelRoom)
+            : TuiText.Truncate(row.Label, labelRoom);
+        text += TuiText.Pad(label, labelRoom);
         if (right.Length > 0)
         {
             text = TuiText.Pad(text, inner - TuiText.VisibleWidth(right)) + right;
@@ -113,20 +139,23 @@ public static class TuiCard
     }
 
     /// <summary>
-    /// The whole card: a spacer, the titled row with its hint, the body, a spacer and the
-    /// footer. The caller supplies the body so a picker and a document share one frame.
+    /// The whole card: a spacer, the titled row with its hint, the header rule, the body, a
+    /// spacer and the footer. The caller supplies the body so a picker, an approval and a
+    /// document share one frame.
     /// </summary>
     public static IReadOnlyList<CardRow> Frame(
         string title,
         string hint,
         IReadOnlyList<CardRow> body,
-        string? footer) =>
+        string? footer,
+        string? footerRight = null) =>
     [
         new(CardRowKind.Spacer, string.Empty),
         new(CardRowKind.Title, title, hint),
+        new(CardRowKind.Rule, string.Empty),
         .. body,
         new(CardRowKind.Spacer, string.Empty),
-        new(CardRowKind.Footer, footer ?? string.Empty),
+        new(CardRowKind.Footer, footer ?? string.Empty, footerRight),
     ];
 
     /// <summary>
@@ -175,7 +204,7 @@ public static class TuiCard
 
     /// <summary>
     /// The card width for a viewport and the number of entry rows that fit in a viewport
-    /// height. Two spacers, the title and the footer are the frame's own rows.
+    /// height. Two spacers, the title, the header rule and the footer are the frame's own rows.
     /// </summary>
     public static (int Width, int VisibleRows) Fit(int screenWidth, int screenHeight)
     {
@@ -183,8 +212,8 @@ public static class TuiCard
         return (width, Math.Max(1, screenHeight - TuiCardFrameRows));
     }
 
-    /// <summary>Rows the frame spends on the top spacer, title, bottom spacer and footer.</summary>
-    public const int TuiCardFrameRows = 4;
+    /// <summary>Rows the frame spends on the top spacer, title, rule, bottom spacer and footer.</summary>
+    public const int TuiCardFrameRows = 5;
 
     private static int SelectedRow(IReadOnlyList<CardRow> rows)
     {

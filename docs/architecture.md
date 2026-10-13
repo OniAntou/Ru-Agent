@@ -364,7 +364,13 @@ reconciliation surfaces from Phase 3:
   Markdown table blocks reflow
   from raw rows and preserve values on narrow screens.
   A model step the host suppresses for recovery drops the rows it painted, so the
-  answer that replaces it never reads as the same answer printed twice. Reasoning uses the same
+  answer that replaces it never reads as the same answer printed twice.
+  One flat card frame backs every popup — picker, approval, workspace trust,
+  secret key, document window and slash suggestions — with the title and its
+  dismiss hint, a dim header rule, the filled selection bar, footer keys and a
+  scroll position when a list is clipped. The session card switches on Enter and
+  deletes behind a confirm on Delete, moving off the open session when it is the
+  one removed. Reasoning uses the same
   bounded collapsed-detail owner without repeated feed summaries. Web tool detail
   includes queries up to 160 characters or fetched host names. Detail passes the
   existing known-secret redactor before the public activity sink; URL credentials,

@@ -22,7 +22,7 @@ public static class ChatCommandCatalog
         new("/rewind", "Rewind to an earlier message", "/rewind <index>"),
         new("/continue", "Resume a parked run", "/continue [run-id]"),
         new("/new", "Start a new session", "/new"),
-        new("/sessions", "Browse or search sessions", "/sessions [query]"),
+        new("/sessions", "Switch or delete sessions", "/sessions [query]"),
         new("/resume", "Resume a session", "/resume [session-id]"),
         new("/files", "Browse or search project files", "/files [query]"),
         new("/follow", "Follow a retained run", "/follow [run-id]"),

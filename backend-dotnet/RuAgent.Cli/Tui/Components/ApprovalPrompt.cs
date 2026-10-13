@@ -67,6 +67,12 @@ public sealed class ApprovalPrompt
     /// <summary>Bounded safe summary code from the wire (never raw command text).</summary>
     public string Summary { get; }
 
+    /// <summary>The card heading: what is being approved, with the ask's safe code.</summary>
+    public string Title => _list.Title;
+
+    /// <summary>The card footer: the shared navigation keys.</summary>
+    public string? Footer => _list.Footer;
+
     public IReadOnlyList<ApprovalChoice> Choices => _choices;
 
     public int Selected
@@ -155,13 +161,14 @@ public sealed class ApprovalPrompt
     public IReadOnlyList<string> Render(int width) => _list.Render(width);
 
     /// <summary>
-    /// The approval block as the full-screen floating panel: compact width derived from the
-    /// viewport, horizontally centered. Keyboard behaviour (digits, arrows, Enter, Escape) is
-    /// untouched; only the placement changes.
+    /// The choices as card rows: the label left, the description right, the chosen one as
+    /// the filled bar. The window composes these into the shared card frame.
     /// </summary>
-    public IReadOnlyList<string> RenderFloating(int screenWidth)
-    {
-        var width = TuiFloatingPanel.ComputeWidth(screenWidth);
-        return TuiFloatingPanel.Center(_list.Render(width), screenWidth);
-    }
+    public IReadOnlyList<CardRow> CardBody() =>
+        _choices
+            .Select((choice, index) => new CardRow(
+                index == _list.Selected ? CardRowKind.Selected : CardRowKind.Item,
+                choice.Label,
+                string.IsNullOrEmpty(choice.Description) ? null : choice.Description))
+            .ToList();
 }

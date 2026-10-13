@@ -12,6 +12,26 @@ internal sealed record ChatSessionChoice(string Id, string Title, int MessageCou
         $"{(string.IsNullOrWhiteSpace(Title) ? "Untitled" : Title)} · {MessageCount} messages · {WorkspaceLabel} · {Id}";
 }
 
+/// <summary>
+/// What the session picker resolved: the chosen session, a delete request for the row under
+/// the cursor, or neither (Escape closed the card).
+/// </summary>
+internal readonly record struct SessionPickerOutcome(string? SessionId, bool DeleteRequested);
+
+/// <summary>
+/// The outcome of one session delete. <see cref="Deleted"/> stays true when only the
+/// session's artifacts remain: the chat itself is gone and a retry is the host's own advice.
+/// </summary>
+internal readonly record struct SessionDeleteResult(bool Deleted, string? Message)
+{
+    /// <summary>
+    /// The host's bounded message for a partial cleanup. The body carries no machine code for
+    /// it, so this sentence is what tells that state apart from an undeleted session (the
+    /// desktop client matches the same string).
+    /// </summary>
+    public const string PartialArtifactsMessage = "Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại.";
+}
+
 internal static class ChatSessionWorkflow
 {
     public const int MaxListedSessions = 50;
@@ -103,14 +123,20 @@ internal static class ChatSessionWorkflow
 
     public static ChoiceList ToChoiceList(IReadOnlyList<ChatSessionChoice> sessions, string? currentSessionId)
     {
+        // The card shows the title left and the identity right: a session is told apart by
+        // its title plus how much it holds, not by a 60-character one-line dump.
         var items = sessions.Select(session => new ChoiceItem(
             string.Equals(session.Id, currentSessionId, StringComparison.Ordinal)
-                ? session.Display + " (current)"
-                : session.Display,
-            session.Id,
+                ? $"{(string.IsNullOrWhiteSpace(session.Title) ? "Untitled" : session.Title)} (current)"
+                : string.IsNullOrWhiteSpace(session.Title) ? "Untitled" : session.Title,
+            $"{session.MessageCount} msg · {session.WorkspaceLabel}",
             session.Id)).ToArray();
         var selected = Array.FindIndex(items, item => string.Equals(item.Value, currentSessionId, StringComparison.Ordinal));
-        return new ChoiceList("resume session", items, selected < 0 ? 0 : selected, "Enter resumes · Esc cancels");
+        return new ChoiceList(
+            "sessions",
+            items,
+            selected < 0 ? 0 : selected,
+            "↑↓ select · enter switch · del delete · esc close");
     }
 
     private static bool TryRead(JsonElement item, out ChatSessionChoice choice)

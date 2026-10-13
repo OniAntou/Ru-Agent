@@ -5,9 +5,9 @@ using Terminal.Gui.ViewBase;
 namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
-/// The slash-command suggestion list, anchored just above the composer. Rows, border and
-/// footer are composed by the classic <see cref="SlashDropdown"/> so the copy cannot drift
-/// from the classic engine; this view only positions, colours and drives the selection.
+/// The slash-command suggestion list, anchored just above the composer. It draws through the
+/// shared <see cref="TuiCard"/> frame, so a suggestion reads exactly like every other picker;
+/// this view only positions, colours and drives the selection.
 /// The composer keeps focus the whole time the list is open, because typing must keep
 /// filtering it. This view is therefore not focusable and takes no keys: the run loop routes
 /// Up/Down, Enter/Tab and Escape here while every other character stays in the composer.
@@ -34,8 +34,9 @@ public sealed class TgSlashDropdown : View
 
     public string? SelectedCommand => _matches.Count == 0 ? null : _matches[_selected].Command;
 
-    /// <summary>Bordered height for the current match set, used by the owner to anchor the view.</summary>
-    public int PanelHeight => Math.Min(MaxVisible, Math.Max(1, _matches.Count)) + 2;
+    /// <summary>Card height for the current match set, used by the owner to anchor the view.</summary>
+    public int PanelHeight =>
+        Math.Min(MaxVisible, Math.Max(1, _matches.Count)) + TuiCard.TuiCardFrameRows;
 
     public void SetMatches(IReadOnlyList<ChatCommandCatalog.SlashCommandInfo> matches)
     {
@@ -82,25 +83,27 @@ public sealed class TgSlashDropdown : View
             return true;
         }
 
-        var width = Math.Clamp(Viewport.Width, SlashDropdown.MinWidth, SlashDropdown.MaxWidth);
+        var width = TuiCard.ComputeWidth(Viewport.Width);
+        var visible = Math.Max(1, Math.Min(MaxVisible, Viewport.Height - TuiCard.TuiCardFrameRows));
         var items = _matches
-            .Select(match => new DropdownItem(match.Command, match.Description, match.Syntax))
+            .Select(match => new CardItem(
+                match.Command,
+                string.IsNullOrWhiteSpace(match.Syntax) ? match.Description : match.Description + " " + match.Syntax))
             .ToList();
-        var lines = SlashDropdown.Compose(
+        var lines = TuiCard.ComposeList(
             width,
             "commands",
+            "esc",
             items,
             _selected,
-            Math.Max(1, Math.Min(MaxVisible, Viewport.Height - 2)),
+            visible,
             "↑↓ select · tab apply · esc close");
+        var left = Math.Max(0, (Viewport.Width - width) / 2);
         for (var i = 0; i < lines.Count && i < Viewport.Height; i++)
         {
-            var text = TuiText.Strip(lines[i]);
-            var isSelectedRow = text.StartsWith("❯", StringComparison.Ordinal);
-            var isFrame = i == 0 || i == lines.Count - 1;
-            SetAttribute(TgPalette.Attr(isSelectedRow ? TuiToken.Brand : isFrame ? TuiToken.Brand : TuiToken.Meta));
-            Move(0, i);
-            AddStr(text);
+            SetAttribute(TgCard.Attribute(lines[i].Kind));
+            Move(left, i);
+            AddStr(lines[i].Text);
         }
 
         return true;

@@ -2,6 +2,7 @@ using RuAgent.Cli.TerminalGui;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
+using Terminal.Gui.Input;
 using Terminal.Gui.Testing;
 using Xunit;
 
@@ -109,6 +110,31 @@ public sealed class TuiCardTests
         Assert.Equal(72, TuiCard.ComputeWidth(80));
     }
 
+    [Fact]
+    public void Compose_DrawsTheHeaderRuleUnderTheTitle()
+    {
+        var lines = TuiCard.ComposeList(60, "model", "esc", Items(2), 0, 8, null);
+
+        Assert.Equal(CardRowKind.Title, lines[1].Kind);
+        Assert.Equal(CardRowKind.Rule, lines[2].Kind);
+        Assert.Equal(new string('─', 60), lines[2].Text);
+    }
+
+    [Fact]
+    public void Compose_ShowsTheScrollPositionOnlyWhenTheListIsClipped()
+    {
+        var clipped = TuiCard
+            .ComposeList(60, "model", "esc", Items(30), 20, 8, "↑↓ select")
+            .Single(line => line.Kind == CardRowKind.Footer);
+        var short_ = TuiCard
+            .ComposeList(60, "model", "esc", Items(3), 1, 8, "↑↓ select")
+            .Single(line => line.Kind == CardRowKind.Footer);
+
+        Assert.EndsWith("21/30", TuiText.Strip(clipped.Text).TrimEnd(), StringComparison.Ordinal);
+        Assert.StartsWith("↑↓ select", TuiText.Strip(clipped.Text).TrimStart(), StringComparison.Ordinal);
+        Assert.DoesNotContain("/3", TuiText.Strip(short_.Text), StringComparison.Ordinal);
+    }
+
     private static CardRowKind Kind(int index) =>
         TuiCard.ComposeList(60, "model", "esc", Items(2), 0, 8, null)[index].Kind;
 }
@@ -196,6 +222,61 @@ public sealed class TgCardTests
                 TgPalette.ToColor(TgPalette.CardBgRgb()),
                 TgSnapshot.CellAttribute(app, other, 20).Background);
         });
+    }
+
+    [Fact]
+    public void Picker_DrawsTheHeaderRuleInTheLineToneOnTheCardFill()
+    {
+        WithPicker(app =>
+        {
+            var rows = TgSnapshot.Capture(app);
+            var ruleRow = Array.FindIndex(rows, row => row.Trim().Length > 0 && row.Trim().All(c => c == '─'));
+            Assert.True(ruleRow > 0, "the card must separate its heading with a rule");
+
+            var attr = TgSnapshot.CellAttribute(app, ruleRow, 20);
+            Assert.Equal(TgPalette.ToColor(TuiToken.Line), attr.Foreground);
+            Assert.Equal(TgPalette.ToColor(TgPalette.CardBgRgb()), attr.Background);
+        });
+    }
+
+    [Fact]
+    public void Picker_DeleteKey_RequestsTheRowUnderTheCursorOnlyWhenAllowed()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var requested = new List<string>();
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            window.FocusComposer();
+            window.PanelDeleteRequested += value => requested.Add(value);
+            window.ShowPicker("sessions", Models, allowDelete: false);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            app.InjectKey(Key.Delete);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(450), () =>
+        {
+            // A picker without the delete affordance ignores the key.
+            Assert.Empty(requested);
+            window.ShowPicker("sessions", Models, allowDelete: true);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            app.InjectKey(Key.Delete);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
+        {
+            Assert.Equal(["a"], requested);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
     }
 
     [Fact]

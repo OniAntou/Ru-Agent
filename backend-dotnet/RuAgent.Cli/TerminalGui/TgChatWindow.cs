@@ -27,6 +27,7 @@ public sealed class TgChatWindow : Window
     private TgDocumentPanel? _document;
     private ApprovalPrompt? _approval;
     private ChoiceList? _choices;
+    private bool _choicesAllowDelete;
     private bool _secretPanel;
     private readonly StringBuilder _secret = new();
     private string _secretProvider = string.Empty;
@@ -186,6 +187,12 @@ public sealed class TgChatWindow : Window
 
     /// <summary>Escape on a panel: an approval denies, a picker aborts.</summary>
     public event Action? PanelCancelled;
+
+    /// <summary>
+    /// Delete on a picker that allows it: the value of the row under the cursor, so the owner
+    /// can confirm and run the destructive action. The panel closes like a confirm.
+    /// </summary>
+    public event Action<string>? PanelDeleteRequested;
 
     /// <summary>The read-only output window closed, by Enter or by Escape.</summary>
     public event Action? DocumentClosed;
@@ -369,17 +376,28 @@ public sealed class TgChatWindow : Window
         _approval = prompt;
         _choices = null;
         _secretPanel = false;
-        ShowPanel(width => CenterPanel(prompt.Render(TuiFloatingPanel.ComputeWidth(width)), width), null);
+        ShowPanel(width => TuiCard.Compose(
+            TuiCard.ComputeWidth(width),
+            prompt.Title,
+            "esc",
+            prompt.CardBody(),
+            prompt.Footer));
     }
 
     /// <summary>A picker over the transcript, navigated by the shared <see cref="ChoiceList"/> grammar.</summary>
-    public void ShowPicker(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null)
+    public void ShowPicker(
+        string title,
+        IReadOnlyList<ChoiceItem> items,
+        int selected = 0,
+        string? footer = null,
+        bool allowDelete = false)
     {
-        var list = new ChoiceList(title, items, selected, footer, showRowCount: true);
+        var list = new ChoiceList(title, items, selected, footer);
         _approval = null;
         _choices = list;
+        _choicesAllowDelete = allowDelete;
         _secretPanel = false;
-        ShowPanel(null, width => TuiCard.ComposeList(
+        ShowPanel(width => TuiCard.ComposeList(
             TuiCard.ComputeWidth(width),
             title,
             "esc",
@@ -400,10 +418,9 @@ public sealed class TgChatWindow : Window
             .Select(item => new CardItem(item.Label, string.IsNullOrEmpty(item.Detail) ? null : item.Detail, item.Enabled))
             .ToList();
 
+    /// <summary>The picker footer: the caller's copy, or the shared navigation hints.</summary>
     private static string PickerFooter(ChoiceList list) =>
-        string.IsNullOrWhiteSpace(list.Footer)
-            ? "↑↓ select · enter apply"
-            : $"{list.Footer} · {list.TotalCount} models";
+        string.IsNullOrWhiteSpace(list.Footer) ? "↑↓ select · enter apply" : list.Footer;
 
     /// <summary>
     /// The masked secret panel: typed characters append to the buffer, Backspace trims it,
@@ -417,9 +434,12 @@ public sealed class TgChatWindow : Window
         _secretPanel = true;
         _secret.Clear();
         _secretProvider = string.IsNullOrWhiteSpace(providerDisplay) ? "api key" : providerDisplay.Trim();
-        ShowPanel(width => CenterPanel(
-            KeyInputPanel.Compose(TuiFloatingPanel.ComputeWidth(width), _secretProvider, _secret.Length),
-            width), null);
+        ShowPanel(width => TuiCard.Compose(
+            TuiCard.ComputeWidth(width),
+            KeyInputPanel.CardTitle(_secretProvider),
+            "esc",
+            KeyInputPanel.CardBody(_secret.Length),
+            "ctrl+v paste · enter save · esc cancel"));
     }
 
     /// <summary>
@@ -441,6 +461,7 @@ public sealed class TgChatWindow : Window
 
         _approval = null;
         _choices = null;
+        _choicesAllowDelete = false;
         _secretPanel = false;
         _secret.Clear();
         if (App is not null)
@@ -544,7 +565,7 @@ public sealed class TgChatWindow : Window
         });
     }
 
-    private void ShowPanel(Func<int, IReadOnlyList<string>>? render, Func<int, IReadOnlyList<CardLine>>? card)
+    private void ShowPanel(Func<int, IReadOnlyList<CardLine>> card)
     {
         // A modal panel takes the keyboard; the suggestion list must not linger behind it.
         HideSlashDropdown();
@@ -554,15 +575,7 @@ public sealed class TgChatWindow : Window
             _panel.PanelKey += OnPanelKey;
         }
 
-        if (card is not null)
-        {
-            _panel.SetCard(card);
-        }
-        else
-        {
-            _panel.SetRenderer(render ?? (_ => []));
-        }
-
+        _panel.SetCard(card);
         if (_panel.SuperView is null)
         {
             Add(_panel);
@@ -571,9 +584,6 @@ public sealed class TgChatWindow : Window
         SetNeedsDraw();
         _panel.SetFocus();
     }
-
-    private static IReadOnlyList<string> CenterPanel(IReadOnlyList<string> lines, int width) =>
-        TuiFloatingPanel.Center(lines, width);
 
     private void RefreshSlashDropdown()
     {
@@ -647,6 +657,11 @@ public sealed class TgChatWindow : Window
                 case TgPanelKeyKind.Backspace:
                     choices.TryTrimFilter();
                     _panel?.SetNeedsDraw();
+                    return;
+                case TgPanelKeyKind.Delete when _choicesAllowDelete:
+                    // The owner confirms and runs the destructive action; the panel closes
+                    // like a confirm so the owner can show its own confirm card next.
+                    PanelDeleteRequested?.Invoke(choices.Current.Value);
                     return;
                 case TgPanelKeyKind.Character:
                     // The card's search field: typing narrows the list, Backspace widens it.

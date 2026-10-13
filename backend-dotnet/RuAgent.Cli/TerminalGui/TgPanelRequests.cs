@@ -6,7 +6,8 @@ namespace RuAgent.Cli.TerminalGui;
 /// <summary>
 /// Marshals the slash-command picker and masked-secret panels onto the Terminal.Gui loop
 /// and resolves their answer for the awaiting command: the chosen item's value, the typed
-/// secret, or null on Escape/cancellation. The panel is always closed on the way out, and
+/// secret, or null on Escape/cancellation. The session picker additionally reports a delete
+/// request for the row under the cursor. The panel is always closed on the way out, and
 /// a session that already wound down is a no-op instead of an error.
 /// </summary>
 public static class TgPanelRequests
@@ -19,6 +20,25 @@ public static class TgPanelRequests
         RunAsync(
             window,
             () => window.ShowPicker(list.Title, list.Items, list.Selected, list.Footer),
+            confirmed: value => value,
+            delete: null,
+            cancelled: null,
+            cancellationToken);
+
+    /// <summary>
+    /// Runs the session picker: the answer is the chosen session, or a delete request for the
+    /// row under the cursor (Delete or Ctrl+D). Escape answers neither.
+    /// </summary>
+    internal static Task<SessionPickerOutcome> RequestSessionChoiceAsync(
+        TgChatWindow window,
+        ChoiceList list,
+        CancellationToken cancellationToken) =>
+        RunAsync(
+            window,
+            () => window.ShowPicker(list.Title, list.Items, list.Selected, list.Footer, allowDelete: true),
+            confirmed: value => new SessionPickerOutcome(value, DeleteRequested: false),
+            delete: value => new SessionPickerOutcome(value, DeleteRequested: true),
+            cancelled: new SessionPickerOutcome(null, DeleteRequested: false),
             cancellationToken);
 
     /// <summary>Runs the masked secret panel; only the bullet count reaches the screen.</summary>
@@ -29,6 +49,9 @@ public static class TgPanelRequests
         RunAsync(
             window,
             () => window.ShowSecret(providerDisplay ?? "api key"),
+            confirmed: value => value,
+            delete: null,
+            cancelled: null,
             cancellationToken);
 
     /// <summary>
@@ -84,15 +107,19 @@ public static class TgPanelRequests
         }
     }
 
-    private static async Task<string?> RunAsync(
+    private static async Task<T> RunAsync<T>(
         TgChatWindow window,
         Action show,
+        Func<string, T> confirmed,
+        Func<string, T>? delete,
+        T cancelled,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(window);
-        var decision = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnConfirmed(string value) => decision.TrySetResult(value);
-        void OnCancelled() => decision.TrySetResult(null);
+        var decision = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnConfirmed(string value) => decision.TrySetResult(confirmed(value));
+        void OnCancelled() => decision.TrySetResult(cancelled);
+        void OnDelete(string value) => decision.TrySetResult(delete is null ? cancelled : delete(value));
 
         try
         {
@@ -100,6 +127,11 @@ public static class TgPanelRequests
             {
                 window.PanelConfirmed += OnConfirmed;
                 window.PanelCancelled += OnCancelled;
+                if (delete is not null)
+                {
+                    window.PanelDeleteRequested += OnDelete;
+                }
+
                 show();
             });
         }
@@ -107,10 +139,10 @@ public static class TgPanelRequests
         {
             // The session wound down before the panel could open: the answer is
             // a cancel, never a silent confirmation.
-            return null;
+            return cancelled;
         }
 
-        using var registration = cancellationToken.Register(() => decision.TrySetResult(null));
+        using var registration = cancellationToken.Register(() => decision.TrySetResult(cancelled));
         try
         {
             return await decision.Task.ConfigureAwait(false);
@@ -123,12 +155,17 @@ public static class TgPanelRequests
                 {
                     window.PanelConfirmed -= OnConfirmed;
                     window.PanelCancelled -= OnCancelled;
+                    if (delete is not null)
+                    {
+                        window.PanelDeleteRequested -= OnDelete;
+                    }
+
                     window.HidePanel();
                 });
             }
             catch (NotInitializedException)
             {
-                // The session wound down while the panel was open; nothing left to close.
+                // The session wound down while the window was open; nothing left to close.
             }
         }
     }

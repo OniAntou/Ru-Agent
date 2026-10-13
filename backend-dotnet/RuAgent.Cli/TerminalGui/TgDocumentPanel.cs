@@ -61,7 +61,7 @@ public sealed class TgDocumentPanel : View
             return true;
         }
 
-        var width = Math.Clamp(Viewport.Width, TuiDocumentPanel.MinWidth, TuiFloatingPanel.MaxWidth);
+        var width = Math.Clamp(Viewport.Width, TuiDocumentPanel.MinWidth, TuiCard.MaxWidth);
         var inner = TuiCard.InnerWidth(width);
         if (inner != _wrapWidth)
         {

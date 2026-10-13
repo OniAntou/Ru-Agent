@@ -1719,10 +1719,36 @@ public sealed partial class AgentCommands
             async (query, ct) => ChatSessionWorkflow.Filter(await _sessionClient.ListAsync(ct).ConfigureAwait(false), query),
             SwitchSessionAsync,
             _slashCommands.Picker,
+            // The session card (switch + delete) and the delete call exist only where a panel
+            // can be drawn; the sequential engine keeps the plain list and /resume <id>.
+            tgMode ? (list, ct) => TgPanelRequests.RequestSessionChoiceAsync(tgWindow!, list, ct) : null,
+            tgMode ? DeleteSessionAsync : null,
             WriteDiagnosticLineAsync,
             humanOut,
             _err,
             cmd.Json);
+
+        async Task<SessionDeleteResult> DeleteSessionAsync(string targetId, CancellationToken ct)
+        {
+            try
+            {
+                await _sessionClient.DeleteAsync(targetId, ct).ConfigureAwait(false);
+                return new SessionDeleteResult(Deleted: true, Message: null);
+            }
+            catch (AgentApiException ex) when (string.Equals(
+                ex.Message,
+                SessionDeleteResult.PartialArtifactsMessage,
+                StringComparison.Ordinal))
+            {
+                // The chat is gone; only its artifacts remain. The host's own advice is to
+                // delete again, so this reads as a delete with a retry hint, not a failure.
+                return new SessionDeleteResult(Deleted: true, Message: SessionDeleteResult.PartialArtifactsMessage);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return new SessionDeleteResult(Deleted: false, Message: CliErrorText.ShortMessage(ex.Message));
+            }
+        }
 
         Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
             sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);

@@ -20,6 +20,9 @@ public enum TgPanelKeyKind
     /// <summary>A printable rune; <see cref="TgPanelKey.Character"/> carries it.</summary>
     Character,
 
+    /// <summary>Delete or Ctrl+D: the owner may remove the row under the cursor.</summary>
+    Delete,
+
     /// <summary>Ctrl+V: the secret panel reads the clipboard text itself.</summary>
     Paste,
 }
@@ -41,8 +44,10 @@ public static class TgCard
             : kind switch
             {
                 CardRowKind.Title => TgPalette.Attr(TuiToken.Bright, card),
+                CardRowKind.Rule => TgPalette.Attr(TuiToken.Line, card),
                 CardRowKind.Section => TgPalette.Attr(TuiToken.Brand2, card),
                 CardRowKind.Search => TgPalette.Attr(TuiToken.Meta, card),
+                CardRowKind.Field => TgPalette.Attr(TuiToken.Bright, card),
                 CardRowKind.Footer or CardRowKind.Spacer => TgPalette.Attr(TuiToken.Meta, card),
                 CardRowKind.Disabled => TgPalette.Attr(TuiToken.Line, card),
                 _ => TgPalette.Attr(TuiToken.Bright, card),
@@ -53,16 +58,15 @@ public static class TgCard
 /// <summary>
 /// Floating panel over the transcript for the approval, trust, picker and secret surfaces.
 /// Content is composed by the classic renderers by the owner (<see cref="ApprovalPrompt"/>,
-/// <see cref="ChoiceList"/>, <see cref="KeyInputPanel"/>); the host only strips the palette
-/// escapes, centers the frame and forwards 1/2/3, arrow, Enter, Escape, Backspace and
-/// printable keys (the secret panel needs to accept a typed key).
-/// A card surface is drawn as a filled block with no border glyphs, which is what makes it
+/// <see cref="ChoiceList"/>, <see cref="KeyInputPanel"/>, <see cref="TuiCard"/>); the host only
+/// centers the card and forwards 1/2/3, arrow, Enter, Escape, Backspace and printable keys
+/// (the secret panel needs to accept a typed key).
+/// The card is a filled block with no border glyphs, which is what makes it
 /// read as a card floating on the dark terminal rather than a box drawn on it.
 /// </summary>
 public sealed class TgPanelHost : View
 {
-    private Func<int, IReadOnlyList<string>> _render = _ => [];
-    private Func<int, IReadOnlyList<CardLine>>? _card;
+    private Func<int, IReadOnlyList<CardLine>> _card = _ => [];
 
     public TgPanelHost()
     {
@@ -74,16 +78,7 @@ public sealed class TgPanelHost : View
     /// <summary>Raised for every mapped key while the panel owns the keyboard.</summary>
     public event Action<TgPanelKey>? PanelKey;
 
-    /// <summary>The panel content for a viewport width, composed by the classic renderer.</summary>
-    public void SetRenderer(Func<int, IReadOnlyList<string>> render)
-    {
-        ArgumentNullException.ThrowIfNull(render);
-        _render = render;
-        _card = null;
-        SetNeedsDraw();
-    }
-
-    /// <summary>Draws the panel as a floating card instead of a bordered box.</summary>
+    /// <summary>The card content for a viewport width, composed by the classic renderer.</summary>
     public void SetCard(Func<int, IReadOnlyList<CardLine>> card)
     {
         ArgumentNullException.ThrowIfNull(card);
@@ -98,28 +93,7 @@ public sealed class TgPanelHost : View
             return true;
         }
 
-        if (_card is { } card)
-        {
-            DrawCard(card(Viewport.Width));
-            return true;
-        }
-
-        var stripped = _render(Viewport.Width).Select(TuiText.Strip).ToList();
-        if (stripped.Count == 0)
-        {
-            return true;
-        }
-
-        var centered = TuiFloatingPanel.Center(stripped, Viewport.Width);
-        var top = Math.Max(0, (Viewport.Height - centered.Count) / 2);
-        for (var i = 0; i < centered.Count && top + i < Viewport.Height; i++)
-        {
-            var isFrame = i == 0 || i == centered.Count - 1;
-            SetAttribute(TgPalette.Attr(isFrame ? TuiToken.Brand : TuiToken.Ink));
-            Move(0, top + i);
-            AddStr(centered[i]);
-        }
-
+        DrawCard(_card(Viewport.Width));
         return true;
     }
 
@@ -173,6 +147,11 @@ public sealed class TgPanelHost : View
         if (key == Key.Esc)
         {
             return new TgPanelKey(TgPanelKeyKind.Escape);
+        }
+
+        if (key == Key.Delete || key == Key.D.WithCtrl)
+        {
+            return new TgPanelKey(TgPanelKeyKind.Delete);
         }
 
         if (key == Key.V.WithCtrl)

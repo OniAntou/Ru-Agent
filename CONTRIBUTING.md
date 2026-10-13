@@ -4,6 +4,13 @@ This guide covers setup, verification and contribution practices. Agent
 workflow lives in [AGENTS.md](AGENTS.md); domain language and current wiring live
 in [CONTEXT.md](CONTEXT.md) and [docs/architecture.md](docs/architecture.md).
 
+Start a [bug report](https://github.com/OniAntou/Ru-Agent/issues/new?template=bug_report.yml)
+with a reproduction, or a [feature request](https://github.com/OniAntou/Ru-Agent/issues/new?template=feature_request.yml)
+with the workflow you want to improve. General questions belong in
+[Discussions](https://github.com/OniAntou/Ru-Agent/discussions); security reports
+follow [SECURITY.md](SECURITY.md). For repository artwork and social-preview
+exports, see [docs/assets/README.md](docs/assets/README.md).
+
 Ru is a native Windows coding agent with a WinUI 3 app, terminal TUI, and
 ASP.NET Core Public Host that runs the Broker execution authority in process.
 The default product is .NET 10 and its

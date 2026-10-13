@@ -1,79 +1,114 @@
 <div align="center">
 
-<img src="docs/assets/wordmark.svg" width="300" alt="ru agent" />
+<img src="docs/assets/repository-banner.svg" width="100%" alt="Ru Agent — a native Windows coding agent with desktop and terminal interfaces" />
 
-**A coding agent for Windows that runs on your machine and answers to you.**
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square)](#quick-start) [![C# / .NET](https://img.shields.io/badge/C%23-.NET%2010-512BD4?style=flat-square)](CONTRIBUTING.md) [![CI](https://github.com/OniAntou/Ru-Agent/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/OniAntou/Ru-Agent/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-00a85a?style=flat-square)](LICENSE)
 
-No Ru account, no telemetry. API keys stay in Windows Credential Manager.
-
-[![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![License: MIT](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
+[**Get started**](#quick-start) · [**Terminal guide**](backend-dotnet/RuAgent.Cli/README.md) · [**Discuss**](https://github.com/OniAntou/Ru-Agent/discussions) · [**Contribute**](CONTRIBUTING.md)
 
 </div>
 
----
-
 # Ru Agent
 
-You open a chat, describe what you want, and Ru works on your project:
+**A coding agent built for Windows. Choose your model provider, bring your own
+API key, and work from a native desktop app or your terminal.**
 
-- **Reads and searches your files** before changing them.
-- **Edits and writes files** — the diff lands only after you can see it.
-- **Runs your build, tests and git commands** in a terminal you can watch.
-- **Keeps working in the background** — long commands move to a task instead of
-  blocking the conversation, and a task list keeps multi-step work visible.
-- **Searches the web** when you ask, with results sanitized and cited.
-- **Learns your workflows** — a `SKILL.md` in your repository teaches Ru steps
-  you repeat; it stays guidance and never grants extra powers.
+Describe a change. Ru reads your project, edits files, runs commands and keeps
+the work visible in the conversation. Your project and conversation storage
+stay on your machine; prompts and tool results go to the provider you select.
 
-Use it as a **WinUI 3 desktop app** or a **full-screen terminal UI**
-(`ru agent chat`) — the same agent either way.
+> **Early development.** Ru is currently built from source on Windows x64.
+> Expect rough edges; reproducible bug reports help shape the next version.
 
-## Staying in control
+## Why Ru?
 
-- **Runs on your machine.** Ru talks to nothing but the model provider you
-  choose, and nothing listens on the network.
-- **Your key, your account.** Keys live in Windows Credential Manager, payloads
-  are encrypted on disk, and `%LOCALAPPDATA%\Ru` is all Ru keeps — delete it and
-  Ru forgets everything.
-- **Three permission presets**: `plan` (read-only), `standard` (works inside your
-  workspace and asks for the rest) and `full_access` (skip-all, though protected
-  paths stay denied) — plus an explicit, once-per-workspace trust step and
-  single-use approvals for anything beyond the preset.
-- **Terminal commands run as you**, with no OS sandbox: approve only what you
-  would run yourself.
+| | What you get |
+| --- | --- |
+| **A native Windows app** | A WinUI 3 chat surface with an activity feed, file changes and an integrated terminal. |
+| **A terminal interface** | A full-screen TUI with session history, model selection, slash commands and a multiline composer. |
+| **Your provider and keys** | Choose the model/provider in Settings. No Ru account; API keys use Windows Credential Manager. |
+| **Work you can follow** | Read/search files, make edits, run builds/tests, inspect tool activity and track background commands. |
+| **Reusable workflows** | Add repository instructions and `SKILL.md` workflows for tasks you repeat. |
 
-## Get started
+Ru's orchestration runs locally. It also supports web search/fetch, which make
+network requests when used. Local-first does **not** mean offline inference or
+a bundled local model.
 
-The build produces a self-contained folder — nothing to install afterwards:
+## Quick start
+
+### 1. Build on Windows
+
+Install the **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)**
+and Git, then run in PowerShell:
 
 ```powershell
 git clone https://github.com/OniAntou/Ru-Agent.git
 cd Ru-Agent
 .\build.bat
+.\start_dev.bat
 ```
 
-Then run `RuApp.exe` from the published folder. First launch: open **Settings**,
-paste an API key for your provider, pick a model, open a project folder, and
-start chatting. The same folder carries the CLI if you prefer the terminal.
+The build creates a self-contained folder with `RuApp.exe`, `RuBackend.exe`
+and `RuAgent.Cli.exe`. The published app includes .NET and the Windows App
+Runtime. See [the contributor guide](CONTRIBUTING.md#development-environment)
+for the complete build requirements and output path.
 
-## Requirements
+### 2. Choose a model and open a project
 
-**Windows 10 or 11, 64-bit.** Everything else ships inside the published folder.
+In the desktop app, open **Settings**, configure your provider/API key and pick
+a model. Open your project folder, review the workspace trust prompt, then ask
+Ru to do a small task:
 
-## Learn more
+> Find where this project handles configuration. Explain it before changing anything.
 
-| Document | What is in it |
+Or start a terminal chat from the repository:
+
+```powershell
+.\bin\ru.cmd agent chat
+```
+
+See the [TUI guide](backend-dotnet/RuAgent.Cli/README.md) for commands, keyboard
+shortcuts and session navigation.
+
+## You choose the permissions
+
+| Preset | Intended use |
 | --- | --- |
-| [docs/README.md](docs/README.md) | The documentation index |
-| [backend-dotnet/RuAgent.Cli/README.md](backend-dotnet/RuAgent.Cli/README.md) | The terminal UI guide |
-| [docs/operations/agent-tools.md](docs/operations/agent-tools.md) | Every tool, its bounds and the policy matrix |
-| [docs/architecture.md](docs/architecture.md) | How the app, the Host and the CLI fit together |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Building from source, tests and contribution practices |
-| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
+| `plan` | Explore and plan with read-only tools. |
+| `standard` | Work with the workspace under the standard policy; requests beyond it can require approval. |
+| `full_access` | Allow broader tool access; structured tools still deny protected paths. |
+
+Workspace trust and explicit approvals are part of the workflow. Instructions
+and skills guide the agent; they do not grant execution authority.
+
+**Terminal commands run as your Windows user, without an OS filesystem or
+network sandbox.** Standard launch permission does not confine a child process
+to the workspace. Read the [tool policy](docs/operations/agent-tools.md) for
+exact boundaries.
+
+## Help build Ru
+
+Use Ru on a small project and tell us what worked or broke. A short reproduction
+helps us improve the next version.
+
+- [Report a bug](https://github.com/OniAntou/Ru-Agent/issues/new?template=bug_report.yml): include the surface, commit/version and reproduction steps.
+- [Suggest a feature](https://github.com/OniAntou/Ru-Agent/issues/new?template=feature_request.yml): describe the workflow you want to improve.
+- [Start a discussion](https://github.com/OniAntou/Ru-Agent/discussions): share a use case, ask a question or compare workflows.
+- [Contribute code or docs](CONTRIBUTING.md): keep changes scoped and verify the behavior you touched.
+
+If Ru is useful to you, a star helps other developers discover the project.
+Security reports belong in [private advisories](SECURITY.md), not public issues.
+
+## Documentation
+
+| Start here | Go deeper |
+| --- | --- |
+| [Documentation index](docs/README.md) | [Architecture](docs/architecture.md) |
+| [Terminal UI guide](backend-dotnet/RuAgent.Cli/README.md) | [Domain language](CONTEXT.md) |
+| [Tool policy](docs/operations/agent-tools.md) | [Verification evidence](docs/operations/verification.md) |
+| [Contributing](CONTRIBUTING.md) | [Security policy](SECURITY.md) |
 
 ## License
 
-Ru is released under the [MIT License](LICENSE): use it, modify it, share it and
-build on it — including commercially — with no strings beyond keeping the
-copyright notice.
+[MIT](LICENSE). Use, modify and distribute Ru, including commercially, while
+keeping the license notice.

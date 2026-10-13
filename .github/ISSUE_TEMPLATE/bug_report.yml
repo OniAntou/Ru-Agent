@@ -1,0 +1,47 @@
+name: Bug report
+description: Help reproduce a problem in Ru.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use SECURITY.md. Remove credentials and private project data from logs/screenshots."
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does it happen?
+      options:
+        - Desktop GUI
+        - Terminal TUI
+        - CLI / SDK
+        - Build / startup
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: "For source builds, run: git rev-parse --short HEAD"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version; terminal (for TUI); provider/model if relevant. No keys.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or relevant logs
+      description: Paste a relevant excerpt with credentials and private data removed.

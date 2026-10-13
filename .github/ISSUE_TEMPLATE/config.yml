@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and workflow discussions
+    url: https://github.com/OniAntou/Ru-Agent/discussions
+    about: Discuss how you use Ru or ask a general question.
+  - name: Report a security vulnerability privately
+    url: https://github.com/OniAntou/Ru-Agent/security/advisories/new
+    about: Do not disclose vulnerabilities or credentials in a public issue.

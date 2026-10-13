@@ -113,7 +113,25 @@ namespace RuApp
             _themePreferenceStore.TrySave(nextTheme);
         }
 
+        private bool _hasAppliedTheme;
+
         private void ApplyTheme(UiTheme theme)
+        {
+            // The palette swap itself cannot be animated — ThemeResource bindings
+            // only re-resolve on a theme change — so the shell fades through the
+            // flip instead of blinking from one theme to the other. The first apply
+            // is the startup theme and lands instantly, before the window is up.
+            if (!_hasAppliedTheme)
+            {
+                _hasAppliedTheme = true;
+                ApplyThemeCore(theme);
+                return;
+            }
+
+            Services.UiMotion.SwapContent(ShellRoot, () => ApplyThemeCore(theme));
+        }
+
+        private void ApplyThemeCore(UiTheme theme)
         {
             _currentTheme = theme;
             CurrentTheme = theme;

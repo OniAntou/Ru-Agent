@@ -15,6 +15,26 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Theme fade-through and send-button morph (2026-10-14)
+
+GUI motion slice 4, closing the pass. A theme switch now fades the shell out,
+flips the palette and the title-bar colours at the trough and fades back in:
+`ApplyTheme` hands the flip to `ApplyThemeCore` through `UiMotion.SwapContent`,
+and the startup theme still lands instantly (`_hasAppliedTheme`, before the
+window is up). The composer's send button cross-fades between the send and stop
+faces instead of swapping the glyph in place, and only a real face change
+animates — repeat refreshes re-apply instantly so a refresh storm cannot strobe
+the button. Both paths fall back to the instant state change with animations
+off.
+
+- GUI suite: **1,406 passed / 0 failed**, with two new contracts (the
+  fade-through split with its startup guard, and the guarded send-face
+  cross-fade) (`artifacts/tui-audit/window-motion-gui.log`).
+- `build.bat` **11/11** (`artifacts/tui-audit/window-motion-build.log`).
+- The fade and the morph are visual behaviour and need the operator's eye on
+  the running app. Interactive acceptance of all four motion slices (streaming,
+  shell, theme, icon) remains the operator's pass.
+
 ## Shell motion (2026-10-14)
 
 GUI motion slice 3, built on a new shared module `UiMotion` (fade-and-lift

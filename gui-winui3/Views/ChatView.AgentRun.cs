@@ -116,33 +116,40 @@ namespace RuApp.Views
         {
             if (SendButton is null) return;
 
+            bool faceChanged = _isSendButtonInStopMode != isAgentRunning;
             _isSendButtonInStopMode = isAgentRunning;
 
-            if (isAgentRunning)
+            void ApplyFace()
             {
-                if (SendButtonIcon is not null)
+                if (SendButtonIcon is null)
                 {
-                    SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph;
-                    SendButtonIcon.Margin = new Thickness(0);
-                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentStop) && onAccentStop is Brush onAccentStopBrush)
-                    {
-                        SendButtonIcon.Foreground = onAccentStopBrush;
-                    }
+                    return;
                 }
-                AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName);
+
+                SendButtonIcon.Glyph = isAgentRunning
+                    ? AgentComposerPresentation.StopGlyph
+                    : AgentComposerPresentation.SendGlyph;
+                SendButtonIcon.Margin = isAgentRunning ? new Thickness(0) : new Thickness(-1, 1, 0, 0);
+                if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccent) && onAccent is Brush onAccentBrush)
+                {
+                    SendButtonIcon.Foreground = onAccentBrush;
+                }
+            }
+
+            AutomationProperties.SetName(
+                SendButton,
+                isAgentRunning ? AgentComposerPresentation.StopName : AgentComposerPresentation.SendName);
+
+            // The two faces occupy the same box, so a cross-fade reads as one button
+            // turning over instead of a glyph blinking into a different one. Repeat
+            // calls with the same face re-apply instantly and never animate.
+            if (faceChanged && SendButtonIcon is not null)
+            {
+                Services.UiMotion.SwapContent(SendButtonIcon, ApplyFace);
             }
             else
             {
-                if (SendButtonIcon is not null)
-                {
-                    SendButtonIcon.Glyph = AgentComposerPresentation.SendGlyph;
-                    SendButtonIcon.Margin = new Thickness(-1, 1, 0, 0);
-                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentBrush) && onAccentBrush is Brush onAccent)
-                    {
-                        SendButtonIcon.Foreground = onAccent;
-                    }
-                }
-                AutomationProperties.SetName(SendButton, AgentComposerPresentation.SendName);
+                ApplyFace();
             }
 
             // The composer says which of the two things Enter will do, so a second

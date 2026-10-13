@@ -110,4 +110,34 @@ public sealed class ShellMotionContractTests
         Assert.InRange(UiMotion.ExitMilliseconds, 60, 200);
         Assert.InRange(UiMotion.EntranceMilliseconds, 60, 240);
     }
+
+    [Fact]
+    public void Theme_flip_fades_through_instead_of_blinking()
+    {
+        var code = GuiSource.ViewText("MainWindow");
+
+        var apply = GuiSource.MethodBody(code, "ApplyTheme");
+        Assert.Contains("UiMotion.SwapContent", apply, StringComparison.Ordinal);
+        Assert.Contains("ApplyThemeCore", apply, StringComparison.Ordinal);
+        // The first apply is the startup theme and lands instantly, before the
+        // window is up.
+        Assert.Contains("_hasAppliedTheme", apply, StringComparison.Ordinal);
+
+        var core = GuiSource.MethodBody(code, "ApplyThemeCore");
+        Assert.Contains("ShellRoot.RequestedTheme", core, StringComparison.Ordinal);
+        Assert.Contains("ApplyTitleBarTheme()", core, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_send_button_cross_fades_between_send_and_stop()
+    {
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSendButtonMode");
+
+        Assert.Contains("UiMotion.SwapContent", body, StringComparison.Ordinal);
+        // Only a real face change animates; repeat calls with the same face
+        // re-apply instantly so a refresh storm cannot strobe the button.
+        Assert.Contains("faceChanged", body, StringComparison.Ordinal);
+        Assert.Contains("StopGlyph", body, StringComparison.Ordinal);
+        Assert.Contains("SendGlyph", body, StringComparison.Ordinal);
+    }
 }

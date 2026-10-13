@@ -8,8 +8,8 @@ Start a [bug report](https://github.com/OniAntou/Ru-Agent/issues/new?template=bu
 with a reproduction, or a [feature request](https://github.com/OniAntou/Ru-Agent/issues/new?template=feature_request.yml)
 with the workflow you want to improve. General questions belong in
 [Discussions](https://github.com/OniAntou/Ru-Agent/discussions); security reports
-follow [SECURITY.md](SECURITY.md). For repository artwork and social-preview
-exports, see [docs/assets/README.md](docs/assets/README.md).
+follow [SECURITY.md](SECURITY.md). For the repository wordmark, see
+[docs/assets/README.md](docs/assets/README.md).
 
 Ru is a native Windows coding agent with a WinUI 3 app, terminal TUI, and
 ASP.NET Core Public Host that runs the Broker execution authority in process.

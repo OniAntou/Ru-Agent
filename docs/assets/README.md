@@ -1,15 +1,10 @@
-# Repository artwork
+# Ru wordmark
 
-The repository banner and social card reuse the rectangle geometry from
-[wordmark.svg](wordmark.svg). They are brand illustrations, not app screenshots.
+The README uses [wordmark-clean.svg](wordmark-clean.svg), without a banner,
+tagline or background. It keeps the green/grey geometry from the wordmark in
+the former banner, rendered as one compound path per colour with crisp edges
+to prevent seams between adjoining tiles when resized.
 
-- [repository-banner.svg](repository-banner.svg): README banner, 1280 × 480.
-- [repository-social.svg](repository-social.svg): editable social card, 1280 × 640.
-- [repository-social.png](repository-social.png): exported social card, ready to upload
-  under the repository's **Settings → General → Social preview**.
-
-Keep the logo scale integral: the source half-cell grid scales by 2 here,
-preventing visible seams between adjacent rectangles in the PNG export.
-If the social SVG changes, re-export the PNG at 1280 × 640, below 1 MB.
-Keep text inside the 64 px inset. Avoid claims about benchmark rankings,
-offline inference or OS sandboxing unless the product actually supports them.
+The original [wordmark.svg](wordmark.svg) retains its individual rectangles as
+the source for the app icon generator. Keep its geometry and colours aligned
+with the clean variant; do not replace the lettering with typeset text.

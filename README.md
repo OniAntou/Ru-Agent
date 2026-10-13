@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/repository-banner.svg" width="100%" alt="Ru Agent — a native Windows coding agent with desktop and terminal interfaces" />
+<img src="docs/assets/wordmark-clean.svg" width="394" alt="ru agent" />
 
 [![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square)](#quick-start) [![C# / .NET](https://img.shields.io/badge/C%23-.NET%2010-512BD4?style=flat-square)](CONTRIBUTING.md) [![CI](https://github.com/OniAntou/Ru-Agent/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/OniAntou/Ru-Agent/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/License-MIT-00a85a?style=flat-square)](LICENSE)
 

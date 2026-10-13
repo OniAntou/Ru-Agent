@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **docs(repo)**: Refresh the public README with Ru artwork, verified quick-start requirements, desktop/TUI benefits and community links. Add bug/feature issue forms, a PR template and an exportable social-preview card. Clarify provider/network use and terminal boundaries without implying offline inference or an OS sandbox.
+- **docs(repo)**: Refresh the public README with Ru's wordmark, verified quick-start requirements, desktop/TUI benefits and community links. Add bug/feature issue forms and a PR template. Clarify provider/network use and terminal boundaries without implying offline inference or an OS sandbox.
+
+- **style(repo)**: Replace the marketing banner with the wordmark alone. The clean SVG keeps the banner's lettering and colours while joining its tiles into compound paths to avoid seams on resize; the original rectangle SVG remains the app icon source.
 
 - **feat(gui)**: Cross-fade the last brush and opacity swaps. The nav, settings and theme-toggle hovers, the active-nav selection, the composer's attach-image and context-meter hovers, the session rows' action buttons and the title-bar toggle now fade instead of swapping instantly, so no hover or state change blinks. `UiMotion.FadeBrush` animates a private solid-colour brush per fade — the theme brushes are shared instances, and animating one of those would repaint every element painted with it — and reads the live colour before replacing the brush, so a fade interrupted by its reverse continues from where it is. Non-solid targets and readers with animations off keep the instant swap.
 

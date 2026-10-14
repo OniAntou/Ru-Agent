@@ -143,29 +143,60 @@ begin
   Result := Lowercase(RemoveBackslashUnlessRoot(Value));
 end;
 
-procedure ChangeUserPath(Remove: Boolean);
-var Value, Remaining, Part, ResultPath, AppPath: String; Separator: Integer; Found: Boolean;
+function PathWithInstallation(Value, Installation: String; Remove: Boolean): String;
+var Remaining, Part, ResultPath, AppPath: String;
+    Separator: Integer; Found, FirstPart: Boolean;
 begin
-  RegQueryStringValue(HKCU, 'Environment', 'Path', Value);
-  Remaining := Value; ResultPath := ''; Found := False;
-  AppPath := CleanPathEntry(ExpandConstant('{app}'));
-  while Remaining <> '' do begin
+  Remaining := Value; ResultPath := ''; Found := False; FirstPart := True;
+  AppPath := CleanPathEntry(Installation);
+  repeat
     Separator := Pos(';', Remaining);
     if Separator = 0 then begin Part := Remaining; Remaining := ''; end
     else begin Part := Copy(Remaining, 1, Separator - 1); Delete(Remaining, 1, Separator); end;
     if CleanPathEntry(Part) = AppPath then begin
       Found := True;
-      if Remove then Continue;
     end;
-    if ResultPath <> '' then ResultPath := ResultPath + ';';
-    ResultPath := ResultPath + Part;
-  end;
+    if not Remove or (CleanPathEntry(Part) <> AppPath) then begin
+      if not FirstPart then ResultPath := ResultPath + ';';
+      ResultPath := ResultPath + Part;
+      FirstPart := False;
+    end;
+  until Separator = 0;
   if not Remove and not Found then begin
+    { Append to the original value, preserving leading/trailing empty entries.
+      The extra separator belongs to Ru and disappears with its entry. }
+    ResultPath := Value;
     if ResultPath <> '' then ResultPath := ResultPath + ';';
-    ResultPath := ResultPath + ExpandConstant('{app}');
+    ResultPath := ResultPath + Installation;
   end;
-  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', ResultPath);
+  if (Remove and not Found) or (not Remove and Found) then Result := Value
+  else Result := ResultPath;
 end;
+
+procedure ChangeUserPath(Remove: Boolean);
+var Value, Updated: String;
+begin
+  RegQueryStringValue(HKCU, 'Environment', 'Path', Value);
+  Updated := PathWithInstallation(Value, ExpandConstant('{app}'), Remove);
+  if Updated <> Value then RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Updated);
+end;
+
+#ifdef LocalSmoke
+function InitializeSetup(): Boolean;
+var Original, Added: String;
+begin
+  { Pure string regression cases: no access to the real user PATH. }
+  Original := ';C:\Tools;;%USERPROFILE%\bin;';
+  Added := PathWithInstallation(Original, 'C:\Ru', False);
+  if Added <> Original + ';C:\Ru' then RaiseException('PATH append changed unrelated entries');
+  if PathWithInstallation(Added, 'C:\Ru', True) <> Original then RaiseException('PATH roundtrip changed separators');
+  if PathWithInstallation(Original, 'C:\Ru', True) <> Original then RaiseException('PATH removal changed an absent entry');
+  if PathWithInstallation('C:\Tools;"C:\RU\";;', 'C:\Ru', False) <> 'C:\Tools;"C:\RU\";;' then RaiseException('PATH duplicated an existing entry');
+  if PathWithInstallation('C:\Tools;"C:\RU\";;', 'C:\Ru', True) <> 'C:\Tools;;' then RaiseException('PATH removal changed surrounding entries');
+  if PathWithInstallation(PathWithInstallation('', 'C:\Ru', False), 'C:\Ru', True) <> '' then RaiseException('Empty PATH roundtrip failed');
+  Result := True;
+end;
+#endif
 
 procedure CurUninstallStepChanged(Step: TUninstallStep);
 begin

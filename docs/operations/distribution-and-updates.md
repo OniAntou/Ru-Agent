@@ -87,6 +87,8 @@ The release workflow validates code, builds packages and runs install/update/uni
 smoke checks on a disposable CI machine before creating a draft release.
 CI downloads Inno Setup 6.5.3 from its official release, checks its pinned SHA-256
 and publisher signature, and installs it only on that disposable runner.
+CLI PATH maintenance preserves unrelated entries and their empty separators;
+uninstall removes only the matching installation entry.
 Publishing the draft is a separate maintainer action. No package manager listing
 or published release is implied by this workflow.
 
@@ -96,6 +98,8 @@ launch. It checks file installation, lock refusal, helper handoff, owned-file
 cleanup and uninstall. Its synthetic old marker exercises installer mechanics,
 not compatibility with an older released binary. The production registration
 and PATH checks run separately on disposable CI.
+The local CLI variant also runs pure string cases for PATH append/remove,
+including quoted entries, empty separators and a missing installation entry.
 
 Local compile/download fixtures, real installer acceptance and live-provider
 behavior are separate evidence. Local builds can be unsigned previews. Provision

@@ -338,8 +338,8 @@
                 <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
                   chat, muted text so the reply below stays the visual focus. Closed by
-                  default. The accent bar down its left edge is gone: the fill already
-                  separates it, and the bar read as one more line beside the words.
+                  default. It uses the full reading column so long reasoning does
+                  not get squeezed into a narrow strip on the left.
                 -->
                 <Border Grid.Row="1"
                         Visibility="{x:Bind ShowThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
@@ -347,8 +347,7 @@
                         CornerRadius="{StaticResource AppCardCornerRadius}"
                         Padding="12,10"
                         Margin="0,6,0,0"
-                        MaxWidth="560"
-                        HorizontalAlignment="Left">
+                        HorizontalAlignment="Stretch">
                     <TextBlock Text="{x:Bind Detail, Mode=OneWay}"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="12.5"
@@ -444,7 +443,7 @@
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
                 <StackPanel MaxWidth="820"
-                            HorizontalAlignment="Left"
+                            HorizontalAlignment="Stretch"
                             Spacing="16">
                     <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
                                   AutomationProperties.Name="Agent Activity Timeline"
@@ -519,6 +518,7 @@
 
         <DataTemplate x:Key="AssistantActivitySegmentTemplate" x:DataType="models:ActivitySegment">
             <ContentPresenter Content="{x:Bind Item, Mode=OneWay}"
+                              HorizontalContentAlignment="Stretch"
                               ContentTemplate="{StaticResource AgentActivityTemplate}" />
         </DataTemplate>
 
@@ -721,12 +721,16 @@
                 Click="OnNewMessagesPillClick"
                 AutomationProperties.AutomationId="NewMessagesPill"
                 AutomationProperties.Name="Jump to latest messages"
-                Background="{StaticResource RuSurfaceBrush}"
+                Background="Transparent"
                 Foreground="{StaticResource RuInkBrush}"
-                BorderBrush="{StaticResource RuLineBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource AppPillCornerRadius}"
+                BorderThickness="0"
                 Padding="12,6">
+            <Button.Resources>
+                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+            </Button.Resources>
             <Button.RenderTransform>
                 <TranslateTransform x:Name="NewMessagesPillSlide" />
             </Button.RenderTransform>
@@ -777,22 +781,17 @@
                                         Grid.Row="0" />
 
             <!--
-              The agent's standing task list. Its own card above the composer,
-              never fused with it: a gap separates the two, depth comes from
-              shadow, per the app card style. A count pill, the current task,
-              and a progress hairline lead; expanded adds the full read-only
-              list, collapsed keeps the header only. Hidden until the first
-              todo write, cleared on session switch.
+              A bounded task shelf above the composer. Expanding scrolls the list
+              inside the shelf instead of taking the transcript's whole viewport.
             -->
             <Border x:Name="TodoPanel"
                     Grid.Row="1"
                     Visibility="Collapsed"
-                    Margin="8,0,8,8"
+                    Margin="0,0,0,8"
                     Background="{StaticResource RuSurfaceBrush}"
-                    BorderThickness="0"
+                    BorderBrush="{StaticResource RuLineBrush}"
+                    BorderThickness="1"
                     CornerRadius="{StaticResource AppCardCornerRadius}"
-                    Translation="0,0,4"
-                    Shadow="{StaticResource RuRestShadow}"
                     AutomationProperties.Name="Agent task list">
                 <Border.Resources>
                     <!-- Collapse toggle: no surface of its own in any state, only
@@ -844,44 +843,43 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="TodoPanelCount"
+                            <TextBlock Text="Tasks"
                                        Grid.Column="0"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuAccentBrush}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock x:Name="TodoPanelHeader"
-                                       Grid.Column="1"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
+                                       FontSize="12"
                                        FontWeight="SemiBold"
                                        Foreground="{StaticResource RuInkBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="TodoPanelCount"
+                                       Grid.Column="1"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       HorizontalAlignment="Right"
                                        VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       MaxLines="1" />
+                                       Margin="8,0,0,0" />
                             <Button x:Name="TodoPanelToggle"
                                     Grid.Column="2"
                                     Click="OnTodoPanelToggleClick"
                                     Style="{StaticResource TodoToggleButtonStyle}"
                                     AutomationProperties.Name="Expand or collapse task list">
-                                <FontIcon x:Name="TodoPanelToggleIcon" Glyph="&#xE70E;" FontSize="12" />
+                                <FontIcon x:Name="TodoPanelToggleIcon" Glyph="&#xE70D;" FontSize="12" />
                             </Button>
                         </Grid>
                         <ProgressBar x:Name="TodoPanelProgress"
-                                     Height="4"
+                                     Height="2"
                                      CornerRadius="0"
-                                     Background="{StaticResource RuAccentSoftBrush}"
-                                     BorderThickness="0">
-                            <ProgressBar.Foreground>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                    <GradientStop Offset="0" Color="{ThemeResource RuAccentColor}" />
-                                    <GradientStop Offset="1" Color="{ThemeResource RuVioletColor}" />
-                                </LinearGradientBrush>
-                            </ProgressBar.Foreground>
-                        </ProgressBar>
-                        <controls:TodoChecklistControl x:Name="TodoPanelList"
-                                                       HorizontalAlignment="Stretch" />
+                                     Background="{StaticResource RuLineBrush}"
+                                     Foreground="{StaticResource RuAccentBrush}"
+                                     BorderThickness="0" />
+                        <TextBlock x:Name="TodoPanelHeader" FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12" Foreground="{StaticResource RuMutedBrush}"
+                                   TextTrimming="CharacterEllipsis" MaxLines="1" />
+                        <ScrollViewer x:Name="TodoPanelScroll" MaxHeight="180" Visibility="Collapsed"
+                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      HorizontalScrollMode="Disabled" VerticalScrollMode="Enabled">
+                            <controls:TodoChecklistControl x:Name="TodoPanelList" HorizontalAlignment="Stretch" />
+                        </ScrollViewer>
                 </StackPanel>
             </Border>
 
@@ -890,7 +888,8 @@
                         Visibility="Collapsed"
                         Spacing="6"
                         Margin="8,0,8,6">
-                <!-- Status pill removed per user directive; placeholders preserved for accessibility/automation -->
+                <!-- Only actionable errors or composer feedback appear here;
+                     routine run progress stays in the transcript. -->
                 <TextBlock x:Name="AgentStatusText"
                            Visibility="Collapsed"
                            AutomationProperties.AutomationId="AgentStatusText"

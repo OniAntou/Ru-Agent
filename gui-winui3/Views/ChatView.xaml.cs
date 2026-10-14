@@ -97,7 +97,8 @@ namespace RuApp.Views
         private const double MessageColumnMaxWidth = 820;
         private const double NarrowWidthThreshold = 900;
         private const double MediumWidthThreshold = 1280;
-        private const double NarrowHorizontalInset = 24;
+        // Cover both 16px composer margins even at the narrow breakpoint.
+        private const double NarrowHorizontalInset = 32;
         private const double MediumHorizontalInset = 48;
         private const double WideHorizontalInset = 96;
         private const double MinAvailableInputWidth = 160;

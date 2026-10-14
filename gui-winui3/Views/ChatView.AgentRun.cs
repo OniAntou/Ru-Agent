@@ -39,9 +39,9 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Drops a composer-local message so the live run status is shown again.
+        /// Drops local feedback so only actionable run status can remain.
         /// Without this a transient message ("Submitting approval…") outlives
-        /// the moment that described and keeps overwriting the run's own status.
+        /// the moment it described and masks later actionable feedback.
         /// </summary>
         private void ClearComposerStatus()
         {

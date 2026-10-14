@@ -94,7 +94,7 @@ public static class AgentInlinePanelPolicy
                 ShowApproval: false,
                 ShowQuestion: false,
                 ShowStop: false,
-                StatusText: input.StatusText,
+                StatusText: string.Empty,
                 IsRunning: isRunning,
                 ShowWorkspaceTrust: true,
                 SuppressInteraction: input.InteractionPending);
@@ -106,13 +106,15 @@ public static class AgentInlinePanelPolicy
             || input.HasPendingInput
             || input.CanContinue
             || input.KeepTerminalFailureVisible;
+        string status = input.KeepTerminalFailureVisible || input.CanContinue
+            ? input.StatusText : string.Empty;
 
         return new AgentInlinePanelState(
-            ShowInlinePanel: hasInlineAction || !string.IsNullOrWhiteSpace(input.StatusText),
+            ShowInlinePanel: hasInlineAction,
             ShowApproval: input.HasPendingApproval,
             ShowQuestion: input.HasPendingInput,
             ShowStop: false,
-            StatusText: input.StatusText,
+            StatusText: status,
             IsRunning: isRunning,
             ShowWorkspaceTrust: false,
             SuppressInteraction: input.InteractionPending);

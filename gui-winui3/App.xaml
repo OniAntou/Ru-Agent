@@ -27,6 +27,10 @@
                     <Color x:Key="RuDangerColor">#B91C1C</Color>
                     <Color x:Key="RuInfoColor">#075985</Color>
                     <Color x:Key="RuVioletColor">#7E22CE</Color>
+                    <Color x:Key="RuNewChatStartColor">#DEF0E5</Color>
+                    <Color x:Key="RuNewChatMiddleColor">#E6EEF8</Color>
+                    <Color x:Key="RuNewChatEndColor">#DDD8F1</Color>
+                    <Color x:Key="RuNewChatBorderColor">#8B7AB5</Color>
                     <Color x:Key="RuPinkColor">#BE123C</Color>
 
                     <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#1E293B" />
@@ -129,6 +133,10 @@
                     <Color x:Key="RuDangerColor">#F87171</Color>
                     <Color x:Key="RuInfoColor">#38BDF8</Color>
                     <Color x:Key="RuVioletColor">#C084FC</Color>
+                    <Color x:Key="RuNewChatStartColor">#203E34</Color>
+                    <Color x:Key="RuNewChatMiddleColor">#293847</Color>
+                    <Color x:Key="RuNewChatEndColor">#403858</Color>
+                    <Color x:Key="RuNewChatBorderColor">#8D7DB6</Color>
                     <Color x:Key="RuPinkColor">#F472B6</Color>
 
                     <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#E2E8F0" />

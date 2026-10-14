@@ -12,6 +12,48 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="ShellRoot" Background="{StaticResource RuCanvasBrush}" PreviewKeyDown="OnShellPreviewKeyDown">
+        <Grid.Resources>
+            <Style x:Key="SidebarNewChatButtonStyle" TargetType="Button">
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="{ThemeResource RuNewChatStartColor}" Offset="0" />
+                            <GradientStop Color="{ThemeResource RuNewChatMiddleColor}" Offset="0.5" />
+                            <GradientStop Color="{ThemeResource RuNewChatEndColor}" Offset="1" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="BorderBrush">
+                    <Setter.Value><SolidColorBrush Color="{ThemeResource RuNewChatBorderColor}" /></Setter.Value>
+                </Setter>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="HoverLayer.Opacity" Value="0.6" /></VisualState.Setters></VisualState>
+                                        <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="Chrome.Opacity" Value="0.7" /></VisualState.Setters></VisualState>
+                                        <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Chrome.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Grid>
+                                    <Border x:Name="HoverLayer" Background="{StaticResource RuAccentSoftBrush}" CornerRadius="{TemplateBinding CornerRadius}" Opacity="0" />
+                                    <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalContentAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -374,6 +416,28 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
             <Setter Property="Margin" Value="0,1" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="SessionChrome" CornerRadius="{TemplateBinding CornerRadius}" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="SessionChrome.Background" Value="{StaticResource RuSurfaceBrush}" /></VisualState.Setters></VisualState>
+                                    <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="SessionChrome.Background" Value="{StaticResource RuLineBrush}" /></VisualState.Setters></VisualState>
+                                    <VisualState x:Name="Selected"><VisualState.Setters><Setter Target="SessionChrome.Background" Value="{StaticResource RuAccentSoftBrush}" /><Setter Target="SessionChrome.BorderBrush" Value="{StaticResource RuLineBrush}" /></VisualState.Setters></VisualState>
+                                    <VisualState x:Name="PointerOverSelected"><VisualState.Setters><Setter Target="SessionChrome.Background" Value="{StaticResource RuLineBrush}" /><Setter Target="SessionChrome.BorderBrush" Value="{StaticResource RuMutedBrush}" /></VisualState.Setters></VisualState>
+                                    <VisualState x:Name="PressedSelected"><VisualState.Setters><Setter Target="SessionChrome.Background" Value="{StaticResource RuLineBrush}" /></VisualState.Setters></VisualState>
+                                    <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="SessionChrome.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="SidebarHeadingContainerStyle" TargetType="ListViewItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -433,7 +497,7 @@
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Padding="10,8"
                                     CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Stretch"
-                                    Style="{StaticResource RuSecondaryButtonStyle}"
+                                    Style="{StaticResource SidebarNewChatButtonStyle}"
                                     AutomationProperties.AutomationId="NewSessionButton"
                                     AutomationProperties.Name="New Chat">
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">

@@ -91,7 +91,7 @@ jobs:
           $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           @(
             'Separate per-user Windows x64 Desktop and CLI packages, with matching self-contained Hosts.',
-            'Updates: Settings > General > Updates, ru update, or /update in TUI. Stable is the default; Preview is opt-in.',
+            'Updates: Settings > About, ru update, or /update in TUI. Stable is the default; Preview is opt-in.',
             'These initial packages are unsigned. SHA256SUMS.txt verifies integrity, not publisher identity.',
             'See docs/operations/distribution-and-updates.md for installation, recovery and verification limits.'
           ) | Set-Content -LiteralPath $notes -Encoding utf8

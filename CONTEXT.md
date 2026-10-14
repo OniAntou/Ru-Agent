@@ -338,7 +338,7 @@ new prompt; the memory is in-process and dies with the session or a host
 restart, and a session allow still passes every protected-path denial and
 Broker evaluation. The explicit `allow_always` decision additionally remembers
 a bounded pattern as a durable project-scope allow rule: a terminal run call
-stores its resolved executable plus at most two leading non-flag argv tokens
+stores its requested executable plus at most two leading non-flag argv tokens
 with the exact launch directory, while flag-first invocations and shell-mode
 scripts stay exact; an external-directory ask stores the approved folder as a
 path pattern that covers its subtree and survives restarts and later sessions
@@ -360,6 +360,11 @@ restart, is bounded by a 30-minute entry lifetime and a per-session cap, and is
 cleared when the session is deleted. External-directory approvals keep the
 Broker session directory grant (plus the durable project rule when
 `allow_always` saved one) and write no entry.
+Shell policy contexts and Host approval bindings carry the same selected runtime
+and literal invocation prefix/script. Executable resolution stays in execution.
+Nonempty shell argv allow matchers compare the whole invocation literally and
+with case sensitivity; script wildcards cannot widen permission. Deny/ask rules
+retain pattern matching.
 _Avoid_: global approval cache, persisted permission
 
 **Run Provider Selection**:

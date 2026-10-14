@@ -55,7 +55,7 @@ namespace RuApp.Views
                     case MarkdownBlock reply:
                         reply.FontSize = typography.MessageFontSize;
                         break;
-                    case TextBlock { Name: "AgentActivityText" } activity:
+                    case TextBlock { Name: "AgentActivityText" or "ThinkingLabel" or "EditPreviewLabel" } activity:
                         activity.FontSize = typography.ActivityFontSize;
                         break;
                 }
@@ -332,10 +332,15 @@ namespace RuApp.Views
 
         private void RegisterReplayedActivities(IEnumerable<ChatMessageItem> messages)
         {
+            IReadOnlyList<TodoItemModel>? latestTodos = null;
             foreach (var message in messages)
                 if (message.AgentActivities is { } activities)
                     foreach (var item in activities)
+                    {
                         _agentActivityById.TryAdd(item.ActivityId, item);
+                        if (item.Todos is not null) latestTodos = item.Todos;
+                    }
+            UpdateTodoPanel(latestTodos);
         }
 
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
@@ -817,6 +822,7 @@ namespace RuApp.Views
         private void ApplyInputWidth()
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
+            TodoPanelScroll.MaxHeight = AgentTodoPanelPresentation.Create(_latestTodos, RootGrid.ActualHeight).ListHeight;
 
             UpdateSidePanelLayout();
 

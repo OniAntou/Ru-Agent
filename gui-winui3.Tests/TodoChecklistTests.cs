@@ -127,16 +127,14 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_panel_is_its_own_card_above_the_composer()
     {
-        // Its own card, not fused with the composer: fully rounded corners, a
-        // gap underneath, no outline ring (depth comes from shadow, per the
-        // app card style), a count pill and a progress hairline inside.
+        // A separate outlined shelf keeps a gap and leaves composer corners alone.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "TodoPanel");
 
-        Assert.Equal("8,0,8,8", GuiSource.AttributeValue(panel, "Margin"));
-        Assert.Equal("0", GuiSource.AttributeValue(panel, "BorderThickness"));
+        Assert.Equal("0,0,0,8", GuiSource.AttributeValue(panel, "Margin"));
+        Assert.Equal("1", GuiSource.AttributeValue(panel, "BorderThickness"));
         Assert.Contains("AppCardCornerRadius", GuiSource.AttributeValue(panel, "CornerRadius"), StringComparison.Ordinal);
-        Assert.Contains("RuRestShadow", GuiSource.AttributeValue(panel, "Shadow"), StringComparison.Ordinal);
+        Assert.Null(GuiSource.AttributeValue(panel, "Shadow"));
 
         GuiSource.Require(document, "TodoPanelCount");
         GuiSource.Require(document, "TodoPanelProgress");
@@ -153,19 +151,14 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_progress_hairline_uses_a_gradient_fill()
+    public void Expanded_tasks_scroll_inside_a_bounded_shelf()
     {
-        // A flat accent fill reads generic; the hairline blends accent into
-        // violet from the app tokens.
+        // Long plans scroll without consuming the transcript viewport.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var progress = GuiSource.Require(document, "TodoPanelProgress");
-
-        var gradient = progress.Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "LinearGradientBrush");
-
-        Assert.NotNull(gradient);
-        Assert.True(
-            gradient!.Elements().Count(element => element.Name.LocalName == "GradientStop") >= 2);
+        var scroll = GuiSource.Require(document, "TodoPanelScroll");
+        Assert.Equal("Auto", GuiSource.AttributeValue(scroll, "VerticalScrollBarVisibility"));
+        Assert.Equal("180", GuiSource.AttributeValue(scroll, "MaxHeight"));
+        Assert.True(GuiSource.IsDescendantOf(GuiSource.Require(document, "TodoPanelList"), scroll));
     }
 
     [Fact]
@@ -201,27 +194,27 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_finished_count_turns_success_and_the_progress_announces_itself()
+    public void Progress_and_expand_actions_announce_their_state()
     {
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("AppSuccessBrush", update, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetName(TodoPanelProgress", update, StringComparison.Ordinal);
         Assert.Contains("SetToolTip", update, StringComparison.Ordinal);
         Assert.Contains("Collapse task list", update, StringComparison.Ordinal);
         Assert.Contains("Expand task list", update, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Showing_or_hiding_the_panel_rejoins_the_input_border()
+    public void Showing_or_hiding_tasks_does_not_restyle_the_composer()
     {
         string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
-        Assert.Contains("FuseInputBorder", update, StringComparison.Ordinal);
+        Assert.DoesNotContain("InputBorder", update, StringComparison.Ordinal);
 
         string clear = GuiSource.MethodBody(code, "ClearTodoPanel");
-        Assert.Contains("RestoreInputBorder", clear, StringComparison.Ordinal);
+        Assert.DoesNotContain("InputBorder", clear, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -246,8 +239,11 @@ public sealed class TodoChecklistTests
 
         Assert.True(GuiSource.HasMember(code, "UpdateTodoPanel"));
 
+        string apply = GuiSource.MethodBody(code, "ApplyAgentActivity");
+        Assert.Contains("UpdateTodoPanel", apply, StringComparison.Ordinal);
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
-        Assert.Contains("UpdateTodoPanel", attach, StringComparison.Ordinal);
+        Assert.DoesNotContain("UpdateTodoPanel", attach, StringComparison.Ordinal);
+        Assert.Contains("UpdateTodoPanel", GuiSource.MethodBody(code, "RegisterReplayedActivities"), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -213,6 +213,9 @@ namespace RuApp.Views
                 TrackTerminalToolState(item);
                 TrackTerminalOutputRow(item);
             }
+
+            if (activity.Todos is not null)
+                UpdateTodoPanel(AgentActivities.LastOrDefault(item => item.Todos is not null)?.Todos);
         }
 
         /// <summary>
@@ -847,6 +850,7 @@ namespace RuApp.Views
         private void AttachActivityItem(Grid grid)
         {
             DetachActivityItem(grid, clearEntrance: false);
+            ApplyTranscriptTypography(grid);
 
             if (grid.DataContext is not AgentActivityItem item)
                 return;
@@ -888,24 +892,33 @@ namespace RuApp.Views
 
             ApplyActivityTextStyle(displayText, item);
             ApplyActivityLiveSetting(grid, item);
-            if (item.Todos is { Count: > 0 } latestTodos)
-            {
-                DispatcherQueue?.TryEnqueue(() => UpdateTodoPanel(latestTodos));
-            }
 
-            PropertyChangedEventHandler handler = (s, args) =>
+            PropertyChangedEventHandler handler = null!;
+            handler = (s, args) =>
             {
                 if (string.IsNullOrEmpty(args.PropertyName) ||
                     args.PropertyName == nameof(AgentActivityItem.State) ||
                     args.PropertyName == nameof(AgentActivityItem.IsRunning) ||
                     args.PropertyName == nameof(AgentActivityItem.IsCompleted) ||
                     args.PropertyName == nameof(AgentActivityItem.IsFailed) ||
-                    args.PropertyName == nameof(AgentActivityItem.IsWaiting))
+                    args.PropertyName == nameof(AgentActivityItem.IsWaiting) ||
+                    args.PropertyName == nameof(AgentActivityItem.HasThinkingDetail) ||
+                    args.PropertyName == nameof(AgentActivityItem.ShowRowDetailToggle))
                 {
                     DispatcherQueue?.TryEnqueue(() =>
                     {
-                        if (s is AgentActivityItem ai && ReferenceEquals(grid.DataContext, ai))
+                        if (s is AgentActivityItem ai && ReferenceEquals(grid.DataContext, ai)
+                            && grid.Tag is ValueTuple<PropertyChangedEventHandler, TextBlock, AgentActivityItem> attachment
+                            && attachment.Item1 == handler)
                         {
+                            var currentLabel = grid.FindName(ActivityLabelElementName(ai)) as TextBlock;
+                            if (currentLabel is null) return;
+                            if (!ReferenceEquals(displayText, currentLabel))
+                            {
+                                StopTextSweep(displayText);
+                                displayText = currentLabel;
+                                grid.Tag = (handler, displayText, ai);
+                            }
                             ApplyActivityTextStyle(displayText, ai);
                             ApplyActivityLiveSetting(grid, ai);
                         }
@@ -926,151 +939,6 @@ namespace RuApp.Views
                 item.IsWaiting
                     ? Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Assertive
                     : Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-
-        /// <summary>
-        /// Draws the standing todo panel above the composer from the latest list.
-        /// </summary>
-        /// <remarks>
-        /// One block fused with the composer: the panel owns the top border and
-        /// top corners, the input owns the bottom ones. Every activity carrying
-        /// todos replaces the previous plan. Passing null or an empty list hides
-        /// the panel, and so does a fully completed list: a finished plan has
-        /// nothing left to watch. Collapsed shows just the one-line
-        /// header with the counts; expanded renders the whole list.
-        /// </remarks>
-        private void UpdateTodoPanel(IReadOnlyList<TodoItemModel>? todos)
-        {
-            _latestTodos = todos;
-            if (TodoPanel is null || TodoPanelList is null || TodoPanelHeader is null
-                || TodoPanelCount is null || TodoPanelProgress is null)
-            {
-                return;
-            }
-
-            if (todos is not { Count: > 0 })
-            {
-                Services.UiMotion.SetVisible(TodoPanel, false);
-                RestoreInputBorder();
-                return;
-            }
-
-            int done = 0;
-            string? current = null;
-            foreach (var todo in todos)
-            {
-                if (todo.IsCompleted)
-                {
-                    done++;
-                }
-                else if (current is null)
-                {
-                    current = todo.Content;
-                }
-            }
-
-            if (done == todos.Count)
-            {
-                ClearTodoPanel();
-                return;
-            }
-
-            TodoPanelCount.Text = $"{done}/{todos.Count}";
-            TodoPanelHeader.Text = current ?? "All tasks done";
-            TodoPanelProgress.Maximum = todos.Count;
-            TodoPanelProgress.Value = done;
-            string progressName = $"Tasks {done} of {todos.Count} done";
-            AutomationProperties.SetName(TodoPanelProgress, progressName);
-            ToolTipService.SetToolTip(TodoPanelProgress, progressName);
-            if (Application.Current?.Resources.TryGetValue(
-                    done == todos.Count ? "AppSuccessBrush" : "RuAccentBrush",
-                    out var countColor) == true
-                && countColor is Brush countBrush)
-            {
-                TodoPanelCount.Foreground = countBrush;
-            }
-
-            if (TodoPanelToggle is not null)
-            {
-                AutomationProperties.SetName(
-                    TodoPanelToggle,
-                    _todoPanelExpanded ? "Collapse task list" : "Expand task list");
-            }
-
-            Services.UiMotion.SetVisible(TodoPanel, true);
-            FuseInputBorder();
-
-            if (_todoPanelExpanded)
-            {
-                TodoPanelList.Visibility = Visibility.Visible;
-                TodoPanelList.Render(todos);
-            }
-            else
-            {
-                TodoPanelList.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private void ClearTodoPanel()
-        {
-            _latestTodos = null;
-            _todoPanelExpanded = false;
-            if (TodoPanelToggleIcon is not null)
-            {
-                TodoPanelToggleIcon.Glyph = "\uE70E";
-            }
-
-            if (TodoPanel is not null)
-            {
-                Services.UiMotion.SetVisible(TodoPanel, false);
-            }
-
-            RestoreInputBorder();
-        }
-
-        /// <summary>
-        /// Joins the input to the panel above it by squaring its top corners.
-        /// The panel carries no outline of its own; the input keeps its
-        /// borderless shadow style, so the two read as one block.
-        /// </summary>
-        private void FuseInputBorder()
-        {
-            if (InputBorder is null)
-            {
-                return;
-            }
-
-            var card = UiCornerRadius.Card;
-            InputBorder.CornerRadius = new CornerRadius(0, 0, card.BottomRight, card.BottomRight);
-        }
-
-        /// <summary>
-        /// Gives the input its own standalone border back when the panel hides.
-        /// </summary>
-        private void RestoreInputBorder()
-        {
-            if (InputBorder is null)
-            {
-                return;
-            }
-
-            InputBorder.BorderThickness = new Thickness(0);
-            InputBorder.CornerRadius = UiCornerRadius.Card;
-        }
-
-        /// <summary>
-        /// Expands or collapses the standing todo panel. Viewing only: the list
-        /// itself stays read-only, so this changes no plan state.
-        /// </summary>
-        private void OnTodoPanelToggleClick(object sender, RoutedEventArgs e)
-        {
-            _todoPanelExpanded = !_todoPanelExpanded;
-            if (TodoPanelToggleIcon is not null)
-            {
-                TodoPanelToggleIcon.Glyph = _todoPanelExpanded ? "\uE70D" : "\uE70E";
-            }
-
-            UpdateTodoPanel(_latestTodos);
-        }
 
         private void DetachActivityItem(Grid grid, bool clearEntrance = true)
         {

@@ -82,6 +82,32 @@ managed startup failure exits with a bounded code.
 
 Closing the GUI sends an authenticated `POST /host/shutdown` so the Host exits gracefully; CLI detach still does not force-kill the shared Host.
 
+Live SSE activity and delta queues retain separate bounded capacities, then
+merge by publication sequence before delivery. Queue priority must not reorder
+an activity ahead of preceding prose. The desktop replay builder joins adjacent
+text entries into one Markdown segment; only intervening activities divide it.
+Activity labels share transcript typography across plain and detail-toggle
+headers, including transitions that reveal reasoning or terminal output. Expanded
+reasoning stretches across the available reading column instead of a fixed
+left-aligned width.
+The task shelf is separate from the composer. Expanded tasks use a scroll
+viewport capped at 180 pixels and one quarter of the chat height (64-pixel
+minimum). Incoming activity data and session replay own its current plan;
+realizing or recycling a transcript row cannot update it. Routine run/model-step
+status stays in the transcript; the composer feedback row is for actionable
+failures, resumable states and local input feedback.
+Shell policy contexts retain the selected runtime and exact invocation for
+approval matching; nonempty shell argv allow rules use literal, case-sensitive
+whole invocations, so script wildcards cannot widen a remembered permission.
+Deny and ask rules retain pattern matching.
+
+Markdown embedded code/table frames track the available reading-column width
+without reparsing on resize. Code preserves line boundaries with horizontal
+scrolling; wide tables scroll within the column. Plain table-cell extraction
+walks nested inline containers so emphasis and link labels survive display and
+TSV copy. Rich-block layout lives in `MarkdownBlock.RichBlocks.cs`, separate
+from prose and inline rendering.
+
 GUI conversation ownership lives in the WinUI-independent
 `ChatSessionPresentation`. It waits for the outgoing run stop, retains its
 composer draft, then activates only the latest requested session. Activation

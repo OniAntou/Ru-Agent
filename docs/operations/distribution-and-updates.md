@@ -4,7 +4,7 @@ Ru targets Windows 10 build 17763 or newer on x64. Desktop and CLI are separate
 products with their own matching, self-contained Host. Neither requires a .NET
 SDK on the user's computer. Source builds still use `build.bat`.
 
-Source builds use the shared version `0.1.0` from `Directory.Build.props`,
+Source builds use the shared version `0.1.1` from `Directory.Build.props`,
 so CLI `ru --version` and GUI About agree. `RuReleaseVersion` overrides that
 default for Stable or Preview packaging; `package_release.ps1 -Version ...`
 sets it for every published project.
@@ -14,7 +14,7 @@ sets it for every published project.
 Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or
 `Ru-CLI-VERSION-win-x64-Setup.exe` from the official
 [releases](https://github.com/OniAntou/Ru-Agent/releases). The first public release
-is [0.1.0-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1);
+is [0.1.1-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.1-preview.1);
 no Stable release is published yet. Default installation roots are `%LOCALAPPDATA%\Programs\Ru\Desktop`
 and `%LOCALAPPDATA%\Programs\Ru\CLI`, without administrator rights. Use a
 dedicated empty directory for a new installation. Desktop adds a Start-menu
@@ -79,8 +79,8 @@ is found. It opens About without discarding that result. No result, channel
 changes or failed checks hide it. You can always open
 **Settings → About → Updates**, choose Stable or Preview,
 then **Check for updates**. In the original `0.1.0-preview.1`, this section is
-still under General; About and the conditional title-bar button are later
-source changes. **Install and restart** downloads with progress and
+still under General; About and the conditional title-bar button are included in
+`0.1.1-preview.1` and later. **Install and restart** downloads with progress and
 cancellation, verifies the asset and exits before replacing files. In a terminal:
 
 ```text
@@ -120,7 +120,7 @@ before deliberate manual version rollback.
 Build release artifacts with Inno Setup 6.2.2+ available:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0-preview.1 -IsccPath C:\Tools\Inno\ISCC.exe
+.\scripts\package_release.ps1 -Version 0.1.1-preview.1 -IsccPath C:\Tools\Inno\ISCC.exe
 ```
 
 Output lives under `artifacts/releases/VERSION`: two Setup executables, two ZIPs,

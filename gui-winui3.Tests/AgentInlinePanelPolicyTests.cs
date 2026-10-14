@@ -43,14 +43,12 @@ public sealed class AgentInlinePanelPolicyTests
     }
 
     [Theory]
-    [InlineData(nameof(AgentInlinePanelInput.IsBusy))]
-    [InlineData(nameof(AgentInlinePanelInput.CanCancel))]
     [InlineData(nameof(AgentInlinePanelInput.HasPendingApproval))]
     [InlineData(nameof(AgentInlinePanelInput.HasPendingInput))]
     [InlineData(nameof(AgentInlinePanelInput.NeedsWorkspaceTrust))]
     [InlineData(nameof(AgentInlinePanelInput.CanContinue))]
     [InlineData(nameof(AgentInlinePanelInput.KeepTerminalFailureVisible))]
-    public void Any_single_live_signal_keeps_the_panel_from_collapsing(string flag)
+    public void Actionable_signals_keep_the_panel_from_collapsing(string flag)
     {
         // Each of these is a reason the user still has something in front of them,
         // so none of them may be dropped by the idle branch.
@@ -197,8 +195,20 @@ public sealed class AgentInlinePanelPolicyTests
             statusText: "Preparing action…"));
 
         Assert.True(state.IsRunning);
-        Assert.True(state.ShowInlinePanel);
-        Assert.Equal("Preparing action…", state.StatusText);
+        Assert.False(state.ShowInlinePanel);
+        Assert.Empty(state.StatusText);
+    }
+
+    [Theory]
+    [InlineData("running")]
+    [InlineData("model.step.started")]
+    [InlineData("Preparing action…")]
+    public void Routine_activity_does_not_add_a_line_above_the_composer(string status)
+    {
+        var state = AgentInlinePanelPolicy.Evaluate(Input(isBusy: true, canCancel: true, statusText: status));
+        Assert.True(state.IsRunning);
+        Assert.False(state.ShowInlinePanel);
+        Assert.Empty(state.StatusText);
     }
 
     [Fact]

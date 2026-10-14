@@ -43,6 +43,13 @@ internal static class AgentReplaySegmentBuilder
         var segments = new ObservableCollection<AssistantSegment>();
         var offsets = new List<ActivitySplitOffset>();
         var content = new StringBuilder();
+        var prose = new StringBuilder();
+        void FlushProse()
+        {
+            if (prose.Length == 0) return;
+            segments.Add(new TextSegment(prose.ToString()));
+            prose.Clear();
+        }
         bool any = false;
         foreach (var entry in transcript.OrderBy(item => item.Sequence))
         {
@@ -50,18 +57,22 @@ internal static class AgentReplaySegmentBuilder
                 && !string.IsNullOrEmpty(entry.Text))
             {
                 content.Append(entry.Text);
-                segments.Add(new TextSegment(entry.Text));
+                // Transport chunks are not paragraph boundaries. Only an
+                // intervening activity starts a new Markdown block.
+                prose.Append(entry.Text);
                 any = true;
             }
             else if (string.Equals(entry.Kind, "activity", StringComparison.Ordinal)
                 && !string.IsNullOrWhiteSpace(entry.ActivityId)
                 && byId.TryGetValue(entry.ActivityId, out var item))
             {
+                FlushProse();
                 offsets.Add(new ActivitySplitOffset(entry.ActivityId, content.Length));
                 segments.Add(new ActivitySegment(entry.ActivityId, item));
                 any = true;
             }
         }
+        FlushProse();
 
         // Replay payload reads are best-effort. An activity-only or incomplete
         // transcript cannot erase the authoritative final session message.

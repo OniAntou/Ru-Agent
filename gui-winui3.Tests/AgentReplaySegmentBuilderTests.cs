@@ -14,6 +14,19 @@ namespace RuApp.Tests;
 public sealed class AgentReplaySegmentBuilderTests
 {
     [Fact]
+    public void Adjacent_text_chunks_keep_words_and_markdown_in_one_block()
+    {
+        var built = AgentReplaySegmentBuilder.Build(Array.Empty<AgentActivityItem>(),
+            new[]
+            {
+                new ApiService.RunTranscriptEntry(1, "text", "npm install thành", null),
+                new ApiService.RunTranscriptEntry(2, "text", " công. `dist", null),
+                new ApiService.RunTranscriptEntry(3, "text", "/`", null),
+            });
+        Assert.Equal("npm install thành công. `dist/`", Assert.IsType<TextSegment>(Assert.Single(built!.Segments)).Text);
+    }
+
+    [Fact]
     public void Build_interleaves_narration_with_activities_and_tracks_offsets()
     {
         var tool = Item("act_tool_1", AgentActivityKind.Terminal);

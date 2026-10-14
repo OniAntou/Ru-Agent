@@ -15,6 +15,17 @@ namespace RuApp.Tests;
 /// </summary>
 public sealed class MarkdownEngineTests
 {
+    [Theory]
+    [InlineData("**SJC**", "SJC")]
+    [InlineData("[docs](https://example.com)", "docs")]
+    [InlineData("*run **`npm install`***", "run npm install")]
+    public void Table_cells_keep_nested_inline_content(string markdown, string expected)
+    {
+        var document = MarkdownEngine.Parse($"| Name |\n|---|\n| {markdown} |");
+        var cell = document.Descendants().OfType<TableCell>().Last();
+        Assert.Equal(expected, MarkdownEngine.TableCellText(cell));
+    }
+
     [Fact]
     public void Single_newlines_stay_in_one_paragraph()
     {

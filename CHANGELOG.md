@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **fix(build)**: Default source builds to Ru 0.1.0 instead of the .NET SDK's implicit 1.0.0. Keep explicit Stable/Preview release-version overrides shared by GUI and CLI.
+## [0.1.1-preview.1] - 2026-10-15
+
+- **fix(gui)**: Let expanded model thinking use the available reading column instead of a fixed 560-pixel left-aligned panel.
+
+- **fix(gui)**: Fit Markdown code blocks and tables to the reading column on resize, scroll long code horizontally and give table rows more space with lighter separators. Preserve nested emphasis and link text in table cells and copied TSV.
+
+- **feat(gui)**: Give New Chat a muted green-blue-violet fill with a thin violet edge, retain rounded session hover/selected states and keep titles free of leading icons. Preserve keyboard navigation and row actions.
+- **fix(gui)**: Replace the unbounded todo panel with a compact, independently scrolling task shelf. Restore the latest plan from session data, update it from incoming activities instead of recycled rows, prioritize the active task and keep composer corners intact. Hide routine running/model-step status above the composer while retaining actionable feedback.
+
+- **fix(gui)**: Preserve live text/activity publication order and join adjacent replay text chunks, avoiding artificial paragraph breaks. Keep Thought and tool headers at the shared activity font size when their detail toggles appear. Show New messages as an icon and text without pill chrome.
+- **fix(approvals)**: Include the selected PowerShell runtime and exact script invocation in shell policy contexts, so remembered approvals match later identical shell calls. Match shell scripts literally, including wildcards and letter case. Keep working-directory, network, expiry and explicit policy checks; executable resolution stays in terminal execution.
+
+- **fix(build)**: Default source builds to Ru 0.1.1 instead of the .NET SDK's implicit 1.0.0. Keep explicit Stable/Preview release-version overrides shared by GUI and CLI.
 
 - **fix(agent)**: Preserve complete native tool guidance/examples across OpenAI and Anthropic; align the prompt date with local timezone, expose the supported PowerShell selector, and provide full schemas to legacy text selection without advertising native functions.
 - **fix(agent)**: Budget aggregate prompt context before preflight, report skipped instructions and deduplicate outputs already present in native history. Expand native history to 1,024 messages / 8 MiB and result pages to 128 Ki characters while retaining exact provider-token preflight and compaction.

@@ -37,7 +37,7 @@ a bundled local model.
 ## Install and update
 
 Separate Windows x64 Desktop and CLI installers are available in
-[0.1.0-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1). Each includes its
+[0.1.1-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.1-preview.1). Each includes its
 matching backend; the .NET SDK is only needed when building from source. Desktop
 updates from **Settings → About → Updates**; CLI uses `ru update` and TUI uses
 `/update`. Stable is the default, with Preview available by choice.

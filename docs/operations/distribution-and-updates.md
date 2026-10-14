@@ -85,6 +85,8 @@ trees whose stamped version matches; it also rejects a desktop tree containing
 the CLI frontend. The packaging script uses the same machine-wide build/test mutex.
 The release workflow validates code, builds packages and runs install/update/uninstall
 smoke checks on a disposable CI machine before creating a draft release.
+CI downloads Inno Setup 6.5.3 from its official release, checks its pinned SHA-256
+and publisher signature, and installs it only on that disposable runner.
 Publishing the draft is a separate maintainer action. No package manager listing
 or published release is implied by this workflow.
 

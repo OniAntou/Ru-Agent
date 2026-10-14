@@ -59,10 +59,10 @@ jobs:
         run: .\scripts\test_dotnet.ps1 -Configuration Debug
       - name: Install compiler on disposable runner
         shell: pwsh
-        run: choco install innosetup --version=6.5.3 --yes --no-progress
+        run: .\scripts\prepare_ci_compiler.ps1
       - name: Package Desktop and CLI
         shell: pwsh
-        run: .\scripts\package_release.ps1 -Version $env:RU_PACKAGE_VERSION -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+        run: .\scripts\package_release.ps1 -Version $env:RU_PACKAGE_VERSION -IsccPath (Join-Path $env:RUNNER_TEMP 'ru-inno-6.5.3\ISCC.exe')
       - name: Install, update and uninstall on disposable runner
         shell: pwsh
         run: .\scripts\installer_smoke.ps1 -Version $env:RU_PACKAGE_VERSION

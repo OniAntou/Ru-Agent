@@ -24,6 +24,7 @@ public sealed class HarnessLiveEventHub
     private const int Capacity = 64;
     private const int ActivityCapacity = 64;
     private readonly ConcurrentDictionary<Guid, Subscription> _subscriptions = new();
+    private readonly object _publishGate = new();
     private long _localSequence;
     private long _droppedCount;
     private long _activityDroppedCount;
@@ -120,23 +121,26 @@ public sealed class HarnessLiveEventHub
             return true;
         }
 
-        var seq = Interlocked.Increment(ref _localSequence);
-        var frame = new TransientFrame(seq, runId, kind, data);
-        var activity = IsActivityKind(kind);
-        foreach (var pair in _subscriptions)
+        lock (_publishGate)
         {
-            if (pair.Value.RunId.Value != runId.Value)
+            var seq = Interlocked.Increment(ref _localSequence);
+            var frame = new TransientFrame(seq, runId, kind, data);
+            var activity = IsActivityKind(kind);
+            foreach (var pair in _subscriptions)
             {
-                continue;
+                if (pair.Value.RunId.Value != runId.Value)
+                {
+                    continue;
+                }
+
+                var channel = activity ? pair.Value.ActivityChannel : pair.Value.Channel;
+                // DropOldest guarantees acceptance; a slow reader's loss surfaces
+                // through the per-subscription dropped counters instead.
+                channel.Writer.TryWrite(frame);
             }
 
-            var channel = activity ? pair.Value.ActivityChannel : pair.Value.Channel;
-            // DropOldest guarantees acceptance; a slow reader's loss surfaces
-            // through the per-subscription dropped counters instead.
-            channel.Writer.TryWrite(frame);
+            return true;
         }
-
-        return true;
     }
 
     private static bool IsActivityKind(string kind) =>
@@ -158,6 +162,20 @@ public sealed class HarnessLiveEventHub
         private readonly Guid _id;
         public ChannelReader<TransientFrame> Reader { get; }
         public ChannelReader<TransientFrame> ActivityReader { get; }
+
+        // Separate capacities protect activity from delta bursts; delivery still
+        // follows publication order, so an activity cannot cut earlier prose.
+        public bool TryReadNext(out TransientFrame frame)
+        {
+            lock (_hub._publishGate)
+            {
+                var hasText = Reader.TryPeek(out var text);
+                var hasActivity = ActivityReader.TryPeek(out var activity);
+                var next = hasActivity && (!hasText || activity!.LocalSequence < text!.LocalSequence)
+                    ? ActivityReader : Reader;
+                return next.TryRead(out frame!);
+            }
+        }
 
         internal HubLease(HarnessLiveEventHub hub, Guid id, ChannelReader<TransientFrame> reader, ChannelReader<TransientFrame> activityReader)
         {

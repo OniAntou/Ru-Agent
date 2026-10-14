@@ -704,17 +704,23 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
-    [Fact]
-    public async Task Allow_once_remembers_intent_for_a_later_run_in_the_same_session()
+    [Theory]
+    [InlineData("allow_once", false)]
+    [InlineData("allow_once", true)]
+    [InlineData("allow_always", true)]
+    public async Task Allow_remembers_terminal_intent_for_a_later_run_in_the_same_session(string decision, bool shell)
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
         try
         {
+            var command = shell
+                ? JsonSerializer.Serialize(new { mode = "shell", script = "Write-Output 'session-memory'", working_directory = Path.GetTempPath() })
+                : Command("session-memory");
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", Command("session-memory")),
+                ToolCall("bash", command),
                 FinalStep("done"),
-                ToolCall("terminal.run", Command("session-memory")),
+                ToolCall("bash", command),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -727,7 +733,7 @@ public sealed class AgentApprovalEndpointTests
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
-                new { command = "allow_once" });
+                new { command = decision });
             Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
             Assert.True(
                 await WaitForStatusAsync(

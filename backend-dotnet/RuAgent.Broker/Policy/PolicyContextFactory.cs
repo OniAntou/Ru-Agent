@@ -81,6 +81,7 @@ public sealed class PolicyContextFactory
         if (operationClass == PolicyOperationClasses.Terminal)
         {
             var mode = OptionalText(arguments, "mode") ?? "run";
+            string? shellScript = null;
             if (mode is not ("run" or "shell"))
             {
                 throw new PolicyContextException(
@@ -120,6 +121,7 @@ public sealed class PolicyContextFactory
                         hint: "bash mode \"shell\" requires script as a single string.");
                 _ = OptionalText(arguments, "shell");
                 // Shell text is bound verbatim; the installed shell owns syntax validation.
+                shellScript = script;
             }
 
             if (arguments["arguments"] is JsonArray argvNode)
@@ -164,6 +166,16 @@ public sealed class PolicyContextFactory
             if (string.Equals(mode, "run", StringComparison.Ordinal))
             {
                 terminalAnalysis = _commandAnalyzers.Analyze(resolvedExecutable, argv);
+            }
+            else
+            {
+                // Match the Host's remembered shell approval. Policy runs before
+                // executable resolution: keep the selected runtime and its exact
+                // invocation, rather than an empty executable/argv that can never
+                // match the user's approved script. Execution still resolves and
+                // validates the executable through the terminal adapter.
+                resolvedExecutable = OptionalText(arguments, "shell") ?? "powershell";
+                argv = ["-NoProfile", "-NonInteractive", "-Command", shellScript!];
             }
         }
         else

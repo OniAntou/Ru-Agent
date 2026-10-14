@@ -14,6 +14,62 @@ public sealed class TerminalIntentClassifierTests
     private readonly TerminalIntentClassifier _classifier = new();
 
     [Theory]
+    [InlineData("powershell")]
+    [InlineData("pwsh")]
+    public void Remembered_shell_intent_matches_real_policy_context_without_allowing_changed_calls(string shell)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        const string script = "Write-Output 'session approval'";
+        var args = new JsonObject { ["mode"] = "shell", ["shell"] = shell, ["script"] = script };
+        var context = factory.Create("bash", "1.0.0", args);
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('1', 32), "run", "allow",
+            new MatcherSpec("bash", "1.0.0", null, shell,
+                ["-NoProfile", "-NonInteractive", "-Command", script], context.CanonicalCwd,
+                "terminal", "none"), 1, now.AddMinutes(30));
+
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        args["script"] = "Write-Output 'another command'";
+        var changed = factory.Create("bash", "1.0.0", args);
+        Assert.False(PolicyRuleMatcher.Matches(rule, changed, now));
+        Assert.NotEqual(context.IntentHash, changed.IntentHash);
+        args["script"] = script;
+        args["shell"] = shell == "powershell" ? "pwsh" : "powershell";
+        Assert.False(PolicyRuleMatcher.Matches(rule, factory.Create("bash", "1.0.0", args), now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, context with { CanonicalCwd = workspace.Outside }, now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, context with { NetworkIntent = "declared" }, now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, context, now.AddMinutes(31)));
+        args.Remove("shell");
+        Assert.Equal("powershell", factory.Create("bash", "1.0.0", args).ResolvedExecutable);
+    }
+
+    [Theory]
+    [InlineData("Write-Output 'a*b'", "Write-Output 'axb'")]
+    [InlineData("Write-Output 'A'", "Write-Output 'a'")]
+    public void Remembered_shell_script_is_literal_and_case_sensitive(string script, string different)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        var args = new JsonObject { ["mode"] = "shell", ["script"] = script };
+        var context = factory.Create("bash", "1.0.0", args);
+        var now = DateTimeOffset.UtcNow;
+        var rule = new PolicyRuleSpec("rule_" + new string('1', 32), "run", "allow",
+            new MatcherSpec("bash", "1.0.0", null, "powershell", context.Argv,
+                context.CanonicalCwd, "terminal", "none"), 1, null);
+        Assert.True(PolicyRuleMatcher.Matches(rule, context, now));
+        args["script"] = different;
+        Assert.False(PolicyRuleMatcher.Matches(rule, factory.Create("bash", "1.0.0", args), now));
+        Assert.False(PolicyRuleMatcher.Matches(rule, context with { Argv = [.. context.Argv, "extra"] }, now));
+        var restriction = rule with { Matcher = rule.Matcher with
+        {
+            ArgvPattern = ["-NoProfile", "-NonInteractive", "-Command", "**"],
+        } };
+        Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "deny" }, context, now));
+        Assert.True(PolicyRuleMatcher.Matches(restriction with { Decision = "ask" }, context, now));
+    }
+
+    [Theory]
     [InlineData("git", "push")]
     [InlineData("python", "-c", "print('a;b|c')")]
     [InlineData("node", "-e", "console.log('hi')")]

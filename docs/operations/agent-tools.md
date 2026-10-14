@@ -636,7 +636,7 @@ reason code:
   re-uses the grant on subsequent calls, and new sessions ask again.
 - `terminal_external_cwd_requires_approval` — Lệnh sẽ chạy ở thư mục ngoài
   workspace. Approval authorizes this launch; choosing always additionally
-  remembers the bounded command pattern (resolved executable plus at most two
+  remembers the bounded command pattern (requested executable plus at most two
   leading non-flag argv tokens) with the exact launch directory — không phải
   một folder grant cho terminal.
 - `rule_asks` — Rule của người dùng yêu cầu duyệt lời gọi này.
@@ -762,7 +762,7 @@ fields and expired or moved-workspace replays return `approval_stale`. The
 Broker reply carries the matcher preview plus one `authorization_token`
 (60s); a durable project rule is produced only for the explicit
 `allow_always` decision, and it carries the bounded pattern that decision
-remembered: a terminal run call stores the resolved executable plus at most two
+remembered: a terminal run call stores the requested executable plus at most two
 leading non-flag argv tokens with the exact launch directory (flag-first and
 shell-mode calls stay exact), an external-directory ask stores the approved
 folder as a path pattern, and `rule_asks` / `terminal_protected_path_requires_approval`

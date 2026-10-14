@@ -465,23 +465,8 @@ public static class AgentV1Endpoints
 
                     await StreamDurablesAsync();
 
-                    // Activity rows ride a dedicated hub channel so a delta
-                    // burst can never evict them. Drain them first: a slow
-                    // client must see the tool row even when it later drops
-                    // some of the surrounding streamed text.
-                    while (hubLease is { } activityLease && activityLease.ActivityReader.TryRead(out var activityFrame))
-                    {
-                        localTransientSeq++;
-                        if (activityFrame.Kind == "agent.summary")
-                        {
-                            summaryWritten = true;
-                        }
-                        var activityPayload = new { kind = activityFrame.Kind, data = activityFrame.Data };
-                        await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, activityFrame.Kind, activityPayload, ct);
-                        // transient does not advance lastSent (durable cursor)
-                    }
-
-                    while (hubLease is { } activeLease && activeLease.Reader.TryRead(out var frame))
+                    // Merge protected activity and delta queues in publication order.
+                    while (hubLease is { } activeLease && activeLease.TryReadNext(out var frame))
                     {
                         localTransientSeq++;
                         if (frame.Kind == "agent.summary")

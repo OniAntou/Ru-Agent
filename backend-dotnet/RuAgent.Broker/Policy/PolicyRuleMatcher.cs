@@ -49,10 +49,13 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        return MatchesMatcher(rule.Matcher, context);
+        return MatchesMatcher(rule.Matcher, context, exactShellInvocation: rule.Decision == "allow");
     }
 
     public static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context)
+        => MatchesMatcher(matcher, context, exactShellInvocation: false);
+
+    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation)
     {
         if (matcher.ToolId is not null
             && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
@@ -90,7 +93,12 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        if (matcher.ArgvPattern.Count > 0 && !ArgvMatches(matcher.ArgvPattern, context.Argv))
+        // A shell allow binds program text, not a glob or a command prefix.
+        // Deny/ask rules retain pattern matching so a broad restriction wins.
+        if (matcher.ArgvPattern.Count > 0
+            && !(context.BashMode == "shell" && exactShellInvocation
+                ? matcher.ArgvPattern.SequenceEqual(context.Argv, StringComparer.Ordinal)
+                : ArgvMatches(matcher.ArgvPattern, context.Argv)))
         {
             return false;
         }

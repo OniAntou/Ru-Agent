@@ -116,7 +116,13 @@ public sealed class ToolBoundaryRegressionTests : IDisposable
         session.Open("boundary", new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SystemRead]));
         await using var service = new ToolExecutionService(session, _root);
         using var cancellation = new CancellationTokenSource();
-        if (callerCancelled) cancellation.CancelAfter(1);
+        var cancelTask = callerCancelled
+            ? Task.Factory.StartNew(() =>
+            {
+                Thread.Sleep(1);
+                cancellation.Cancel();
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)
+            : Task.CompletedTask;
         try
         {
             var result = await service.ExecuteAsync(new AgentEnvelope(1, "glob-boundary", AgentMessageTypes.ToolRequest,
@@ -128,6 +134,10 @@ public sealed class ToolBoundaryRegressionTests : IDisposable
             Assert.Equal(callerCancelled ? ToolResultStatuses.Cancelled : ToolResultStatuses.TimedOut, result.Status);
             Assert.Contains(result.ErrorCode, callerCancelled ? new[] { "cancelled", "process_cancelled" } : new[] { "process_timed_out" });
         }
-        finally { await service.RemoveSessionAsync("boundary"); }
+        finally
+        {
+            await cancelTask;
+            await service.RemoveSessionAsync("boundary");
+        }
     }
 }

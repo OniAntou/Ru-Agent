@@ -46,6 +46,9 @@ PowerShell and Git. Windows CI extracts the official ripgrep 14.1.1 archive,
 verifies its pinned SHA-256, and adds it to the runner's PATH. The release
 workflow also checks a PowerShell child process in isolation before running the
 complete .NET matrix.
+Concurrency fixtures use independent workers for editor/cancellation probes so
+thread-pool load cannot suppress the action being tested. Real PowerShell startup
+budgets are separate from cancellation latency and production tool limits.
 
 Choose verification by impact. During iteration, run checks that exercise the
 changed behavior; expand for failures or cross-component dependencies. A small

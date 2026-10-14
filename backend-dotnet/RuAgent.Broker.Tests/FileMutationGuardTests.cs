@@ -188,7 +188,14 @@ public sealed class FileMutationGuardTests : IDisposable
             var expected = FileHashService.ComputeFileHash(path);
             var swapped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using var stop = new CancellationTokenSource();
-            var editor = Task.Run(() => AtomicSaveWhenHeld(path, swapped, stop.Token));
+            using var editorStarted = new ManualResetEventSlim();
+            // A blocked test worker must not starve the independent editor.
+            var editor = Task.Factory.StartNew(() =>
+            {
+                editorStarted.Set();
+                AtomicSaveWhenHeld(path, swapped, stop.Token);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Assert.True(editorStarted.Wait(TimeSpan.FromSeconds(10)), "editor did not start");
 
             UnauthorizedAccessException? error = null;
             try

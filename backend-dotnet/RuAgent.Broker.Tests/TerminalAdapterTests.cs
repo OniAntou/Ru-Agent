@@ -548,7 +548,8 @@ public sealed class TerminalAdapterTests
                     Approved: true),
                 confineWorkspace: false,
                 cancellation.Token);
-            childProcessId = await WaitForProcessIdAsync(marker, TimeSpan.FromSeconds(5));
+            // This is startup of two real PowerShell processes, not cancellation latency.
+            childProcessId = await WaitForProcessIdAsync(marker, TimeSpan.FromSeconds(20));
             cancellation.Cancel();
             var result = await executionTask;
             Assert.Equal("cancelled", result.Status);
@@ -719,13 +720,13 @@ public sealed class TerminalAdapterTests
                 "powershell",
                 ".",
                 "Get-Date",
-                1_000,
+                10_000,
                 string.Empty));
             var staleIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
                 "powershell",
                 ".",
                 "Get-Location",
-                1_000,
+                10_000,
                 string.Empty));
             var token = approvals.Issue(
                 "request-1",
@@ -741,7 +742,7 @@ public sealed class TerminalAdapterTests
                         "powershell",
                         ".",
                         "Get-Location",
-                        1_000,
+                        10_000,
                         token,
                         "request-1",                        "session-1"),
                     confineWorkspace: true,
@@ -752,7 +753,7 @@ public sealed class TerminalAdapterTests
                     "powershell",
                     ".",
                     "Get-Date",
-                    1_000,
+                    10_000,
                     token,
                     "request-1",                    "session-1"),
                 confineWorkspace: true,
@@ -765,7 +766,7 @@ public sealed class TerminalAdapterTests
                         "powershell",
                         ".",
                         "Get-Date",
-                        1_000,
+                        10_000,
                         token,
                         "request-1",                        "session-1"),
                     confineWorkspace: true,

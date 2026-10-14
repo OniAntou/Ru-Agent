@@ -41,6 +41,24 @@ Scoped verification passed:
   15 passed.
 - `git diff --check`: passed.
 
+## CLI model usage refactor (2026-10-14)
+
+Extracted header metadata lookup from the chat orchestration into
+`ChatModelUsage`, with explicit model-selection inputs and an injectable catalog
+reader. Retained-run context windows, unknown selection handling, rate reset,
+catalog failure handling and cancellation keep their previous behavior.
+
+`scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter RuAgent.Cli.Tests -NoRestore`
+built the affected CLI and passed all 1,436 tests, including nine resolver cases.
+The first build failed because the forwarding function retained an unnecessary
+`async`; after that correction, three new test cases failed because `InlineData`
+provided `int` values for a `long?` parameter. Correcting those values to `long`
+produced the final passing run; assertions were retained.
+
+Current-documentation and route-count guards passed all 15 tests, and
+`git diff --check` passed. No full matrix, release publish, native UI acceptance
+or performance benchmark was run for this internal refactor.
+
 ## Product packages and explicit updates (2026-10-14)
 
 Workspace-only native installer checks passed for both products: install,

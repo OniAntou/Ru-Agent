@@ -227,6 +227,10 @@ retained run's selection is unknown. Create and idempotent-replay responses keep
 their narrow create contract; the shared client validates those fields
 separately, then reads enriched metadata through run detail.
 
+The CLI's `ChatModelUsage` resolves header metadata separately from chat
+orchestration. It keeps a retained run's context window from its snapshot and
+uses catalog details only for rates; sequential/data-only chat skips that lookup.
+
 Schema v13 adds the bounded session-workspace lookup index. Schema v14 adds
 the typed run-model metadata columns and backfills labels and fixed legacy
 calling modes for existing pins; unknown historic context windows remain

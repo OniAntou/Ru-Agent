@@ -211,66 +211,23 @@ public sealed partial class AgentCommands
         string? sessionTitle = null;
         long? lastTotalTokens = null;
         var usage = new Tui.TuiUsageTracker();
+        var modelUsage = new ChatModelUsage(_settingsClient.GetModelDetailsAsync);
         var sessionTitleProbes = 0;
 
         // Best effort: the header's percent and cost need the catalog's published context
         // window and rates; a catalog that cannot answer leaves both off rather than
         // inventing numbers.
-        async Task RefreshModelUsageInfoAsync(
+        Task RefreshModelUsageInfoAsync(
             CancellationToken ct,
             string? retainedBackend = null,
             string? retainedModel = null,
             long? retainedContextWindow = null,
             string? retainedProtocol = null,
-            bool isRetainedRun = false)
-        {
-            usage.ContextLimit = null;
-            usage.InputRate = null;
-            usage.OutputRate = null;
-            if (isRetainedRun)
-            {
-                usage.ContextLimit = retainedProtocol is "openai_responses" or "chat_completions"
-                    ? retainedContextWindow
-                    : null;
-            }
-            // The usage cluster only exists on the TG header; a sequential/data-only
-            // chat must not pay a catalog read for numbers it never shows.
-            var usageBackend = isRetainedRun ? retainedBackend : backendName;
-            var usageModel = isRetainedRun ? retainedModel : activeModel;
-            if (!tgMode || string.IsNullOrWhiteSpace(usageModel) || (isRetainedRun && string.IsNullOrWhiteSpace(usageBackend)))
-            {
-                return;
-            }
-
-            try
-            {
-                var details = await _settingsClient
-                    .GetModelDetailsAsync(usageBackend is "(provider unknown)" ? null : usageBackend, usageModel, ct)
-                    .ConfigureAwait(false);
-                if (details is null)
-                {
-                    return;
-                }
-
-                if (!isRetainedRun)
-                {
-                    usage.ContextLimit = details.ContextLength;
-                }
-                if (details.InputCost is { } inputRate && details.OutputCost is { } outputRate)
-                {
-                    usage.InputRate = inputRate;
-                    usage.OutputRate = outputRate;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Tui.TuiDebug.Log("usage", $"model details read failed: {CliErrorText.ShortMessage(ex.Message)}");
-            }
-        }
+            bool isRetainedRun = false) =>
+            modelUsage.RefreshAsync(usage, new ChatModelUsageSelection(
+                isRetainedRun ? retainedBackend : backendName,
+                isRetainedRun ? retainedModel : activeModel,
+                isRetainedRun, retainedContextWindow, retainedProtocol), tgMode, ct);
 
         async Task ShowRetainedRunProviderAsync(GetAgentRunResponse run)
         {

@@ -547,6 +547,15 @@ public sealed partial class ToolExecutionService
                 "Tool timed out.",
                 ToolVerificationStates.NotRequired);
         }
+        catch (TimeoutException error) when (error.Message == "process_timed_out")
+        {
+            outcome = new ToolExecutionOutcome(
+                ToolResultStatuses.TimedOut,
+                new JsonObject(),
+                "process_timed_out",
+                "Tool timed out.",
+                ToolVerificationStates.NotRequired);
+        }
         catch (ToolSchemaException error)
         {
             outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));

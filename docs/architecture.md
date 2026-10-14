@@ -331,6 +331,8 @@ reconciliation surfaces from Phase 3:
   Terminal children retain the trusted parent's `PSModulePath` for PowerShell
   module discovery; model input cannot supply or override environment entries.
   Secret variables remain stripped and seeded into output redaction.
+  Glob traversal also checks its elapsed request budget directly, so delayed
+  cancellation timers cannot turn an expired scan into a successful receipt.
   Read-only Git preparation and the managed-commit temporary-index workflow remain
   execution behavior, not separate authority. Legacy adapter-only callers retain
   their older approval contract; production v2 calls use Broker authorization.

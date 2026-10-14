@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(updates)**: Add Settings update controls with progress/cancel, `ru update` and TUI `/update`. Stable is the default; Preview includes prereleases. Updates verify official release origins, size and SHA-256, refuse unfinished runs, and install after the caller exits without terminating other applications. Desktop restarts after success; previous outcomes remain visible.
 - **build(release)**: Stamp and validate package versions, create draft-release artifacts, and remove whitespace reported by the shallow-checkout CI gate.
 - **fix(terminal)**: Preserve the trusted parent's PowerShell module search path in sanitized child environments to avoid module discovery stalls on hosted Windows images; credential filtering and launch permissions are unchanged.
+- **fix(glob)**: Observe the request deadline while scanning files even when the cancellation timer is delayed by worker load; expired requests return `process_timed_out`.
 
 
 - **docs(repo)**: Refresh the public README with Ru's wordmark, verified quick-start requirements, desktop/TUI benefits and community links. Add bug/feature issue forms and a PR template. Clarify provider/network use and terminal boundaries without implying offline inference or an OS sandbox.

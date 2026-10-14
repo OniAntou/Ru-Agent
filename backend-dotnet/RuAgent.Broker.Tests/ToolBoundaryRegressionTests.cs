@@ -106,6 +106,15 @@ public sealed class ToolBoundaryRegressionTests : IDisposable
         Assert.Equal("web_offset_invalid_boundary", error.Message);
     }
 
+    [Fact]
+    public void Glob_request_deadline_does_not_depend_on_a_cancellation_timer()
+    {
+        for (var index = 0; index < 1024; index++) File.WriteAllText(Path.Combine(_root, $"{index:D4}.cs"), "// fixture");
+        var error = Assert.Throws<TimeoutException>(() => new FileGlobAdapter(_root).Execute(
+            new JsonObject { ["pattern"] = "*.cs" }, CancellationToken.None, deadlineMs: 1));
+        Assert.Equal("process_timed_out", error.Message);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

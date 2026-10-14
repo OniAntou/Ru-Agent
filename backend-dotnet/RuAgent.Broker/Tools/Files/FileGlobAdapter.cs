@@ -16,10 +16,18 @@ public sealed class FileGlobAdapter
         _resolver = new CanonicalPathResolver(_workspaceRoot);
     }
 
-    public JsonObject Execute(JsonObject arguments, CancellationToken cancellationToken = default)
+    public JsonObject Execute(JsonObject arguments, CancellationToken cancellationToken = default, int? deadlineMs = null)
     {
+        var sw = Stopwatch.StartNew();
+        if (deadlineMs is { } milliseconds) ArgumentOutOfRangeException.ThrowIfNegativeOrZero(milliseconds);
+        void ObserveBoundary()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (deadlineMs is { } budget && sw.ElapsedMilliseconds >= budget)
+                throw new TimeoutException("process_timed_out");
+        }
         ArgumentNullException.ThrowIfNull(arguments);
-        cancellationToken.ThrowIfCancellationRequested();
+        ObserveBoundary();
         var basePath = GetOptionalString(arguments, "path") ?? ".";
         if (string.IsNullOrWhiteSpace(basePath))
         {
@@ -67,7 +75,6 @@ public sealed class FileGlobAdapter
             throw new IOException("not_a_directory");
         }
 
-        var sw = Stopwatch.StartNew();
         var results = new List<string>();
         int skipped = 0;
         int scanned = 0;
@@ -83,7 +90,7 @@ public sealed class FileGlobAdapter
 
         while (stack.Count > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            ObserveBoundary();
             if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
             {
                 break;
@@ -119,7 +126,7 @@ public sealed class FileGlobAdapter
 
             foreach (var entry in entries)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                ObserveBoundary();
                 if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
                 {
                     break;
@@ -201,7 +208,7 @@ public sealed class FileGlobAdapter
             }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        ObserveBoundary();
         results.Sort(StringComparer.Ordinal);
 
         bool truncated = false;

@@ -59,7 +59,7 @@ public sealed class FileReadAdapter
             }
         }
 
-        var limit = FileToolLimits.MaxReadBytes;
+        var limit = FileToolLimits.DefaultReadLimit;
         if (arguments.TryGetPropertyValue("limit", out var limNode) && limNode is not null)
         {
             if (limNode is JsonValue lv && lv.TryGetValue<int>(out var lvInt))
@@ -172,7 +172,7 @@ public sealed class FileReadAdapter
         bool truncated = isMore || utfTruncated || validLength < bytesRead;
 
         var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, canonical);
-        return new JsonObject
+        var output = new JsonObject
         {
             ["path"] = relative,
             ["content"] = content,
@@ -183,6 +183,7 @@ public sealed class FileReadAdapter
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
             ["sha256"] = sha256,
         };
+        return FileReadOutputBudget.Fit(output);
     }
 
     private ResolvedPath ResolveChecked(string input)

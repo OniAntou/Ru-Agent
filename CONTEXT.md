@@ -149,7 +149,14 @@ pagination promise. Text pages preserve character boundaries: file cursors are
 UTF-8 byte boundaries, web cursors are UTF-16 boundaries outside surrogate
 pairs, and a window too small to advance returns a named failure. Missing
 source identity fails closed when clipping needs a
-cursor. The bounded prompt may still omit older output exchanges.
+cursor. The bounded prompt may still omit older output exchanges. Native history is
+limited to 1,024 messages / 8 MiB and tool pages to 128 Ki characters; exact
+provider-token preflight remains authoritative. Runtime references are at most
+128 KiB each and are collectively fitted to the 8 MiB serialized context cap;
+outputs already present in retained native history are not duplicated in the
+system prompt. Read windows default to 1 MiB and accept up to 4 MiB, with
+serialized-output fitting before Broker normalization and byte cursors for
+continuation.
 _Avoid_: treating projected output as a new receipt, complete history, or authority
 
 **Skill Manifest**:
@@ -277,7 +284,12 @@ context. A note is persisted with the system role and is therefore never folded
 away by compaction, so the cap is cumulative for the whole run rather than
 per budget window. Every note is
 same-model bounded self-correction, never provider/model/tool substitution;
-when a bound is spent the run fails closed with the original code. An exhausted
+when a bound is spent the run fails closed with the original code. A model
+may instead emit a final `[BLOCKED]` report describing the incomplete/partial
+outcome. The marker is removed from durable visible history, and the run ends
+as failed with the receipt code (or `model_reported_blocker` without a failed
+receipt), never verified success. This report does not spend further recovery
+notes. Its durable outbox remains deliverable after runtime cleanup. An exhausted
 provider-transient step is not failed either: it parks in `WaitingUser` with a
 `ContinueRequested` preserving the provider's code, and an explicit Continue
 retries the same provider. An approval-decision deny never enters recovery: a

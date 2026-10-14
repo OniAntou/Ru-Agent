@@ -710,7 +710,7 @@ public sealed class OpenAiCompatibleModelProviderTests
         turns ?? Array.Empty<ModelTurn>(),
         settings ?? new JsonObject { ["temperature"] = 0.7 },
         new Uri("https://provider.invalid/v1/chat/completions"),
-        "provider-secret");
+        "provider-secret", nativeToolCalling: true);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

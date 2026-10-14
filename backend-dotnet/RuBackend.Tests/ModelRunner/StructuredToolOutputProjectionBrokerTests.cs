@@ -1,4 +1,4 @@
-﻿extern alias Broker;
+extern alias Broker;
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -25,8 +25,8 @@ public sealed class StructuredToolOutputProjectionBrokerTests
                 TerminalRequest(sessionId, executionId, new JsonObject
                 {
                     ["mode"] = "run",
-                    ["executable"] = "cmd.exe",
-                    ["arguments"] = new JsonArray("/c", "(echo once>>ran.txt) & (for /L %i in (1,1,950) do @echo 012345678901234567890123456789) & @echo CURSOR-MIDDLE-MARKER & (for /L %i in (1,1,1000) do @echo 012345678901234567890123456789)"),
+                    ["executable"] = "powershell.exe",
+                    ["arguments"] = new JsonArray("-NoProfile", "-NonInteractive", "-Command", "Add-Content -LiteralPath ran.txt -Value once; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Console]::Write(('界' * 29900) + 'CURSOR-MIDDLE-MARKER' + ('界' * 10000))"),
                 }),
                 CancellationToken.None);
 
@@ -106,7 +106,7 @@ public sealed class StructuredToolOutputProjectionBrokerTests
         using var fixture = BrokerFixture.Create();
         const string hiddenMarker = "NEEDLE-GREP-PROJECTION-MARKER";
         var lines = Enumerable.Range(0, 120)
-            .Select(index => $"needle match {index:D3} {new string('x', 400)}")
+            .Select(index => $"needle match {index:D3} {new string('界', 250)}")
             .ToArray();
         lines[60] += " " + hiddenMarker;
         await File.WriteAllLinesAsync(Path.Combine(fixture.Workspace, "matches.txt"), lines, new System.Text.UTF8Encoding(false));

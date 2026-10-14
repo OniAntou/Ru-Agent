@@ -177,6 +177,7 @@ public static class AgentToolDefinitionCatalog
         ("executable", WithDescription(StringSchema(TerminalLimits.MaxExecutableChars), "Required for mode=run: program name or path only, without command arguments. For command text use mode=shell and script instead.")),
         ("arguments", WithDescription(ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars), "mode=run only: literal argv array, without the executable; no shell expansion, pipes or command text.")),
         ("script", WithDescription(StringSchema(TerminalLimits.MaxScriptChars), "mode=shell only: command text, using Windows PowerShell syntax by default. Example: dotnet test. Do not send script with mode=run.")),
+        ("shell", WithDescription(EnumSchema(["powershell", "pwsh"]), "mode=shell only: powershell (Windows PowerShell 5.1) is the default; pwsh requires PowerShell 7 installed.")),
         ("working_directory", WithDescription(StringSchema(TerminalLimits.MaxWorkingDirectoryChars), "Optional: omit to use the current workspace. Relative paths resolve against that workspace. Do not invent an absolute path from the workspace label.")),
         // The schema carries the background ceiling; the evaluator enforces the
         // tighter foreground hard max when background is not set.
@@ -192,7 +193,7 @@ public static class AgentToolDefinitionCatalog
         ("limit", IntegerSchema(1, TerminalLimits.MaxSpoolPageChars)),
     ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
-    private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 512 * 1024))]);
+    private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 4 * 1024 * 1024))]);
     private static JsonObject FileEditSchema() => ObjectSchema(["path", "old_string"], [("path", StringSchema()), ("old_string", StringSchema(minLength: 1)), ("new_string", StringSchema()), ("expected_occurrences", IntegerSchema(1, 1024))]);
     private static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 

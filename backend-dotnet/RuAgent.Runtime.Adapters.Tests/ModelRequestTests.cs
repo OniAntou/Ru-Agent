@@ -85,55 +85,26 @@ public sealed class ModelRequestTests
         Assert.Equal("original", request.Turns[0].Content);
     }
 
-    [Fact]
-    public void ModelRequest_accepts_exact_512_kib_history_boundary()
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void ModelRequest_enforces_exact_history_byte_boundary(int extra, bool accepted)
     {
-        const int limit = 512 * 1024;
-        var emptyWire = new JsonArray
-        {
-            new JsonObject { ["role"] = "user", ["content"] = "" },
-        };
-        var content = new string(
-            'x',
-            limit - System.Text.Encoding.UTF8.GetByteCount(emptyWire.ToJsonString()));
-        var request = new ModelRequest(
-            "gpt-4o",
-            "sys",
-            "hi",
-            [new ModelTurn("user", content)],
-            new JsonObject(),
-            new Uri("https://api.openai.com/v1"),
-            "sk");
-
-        Assert.Single(request.Turns);
+        var placeholders = Enumerable.Range(0, 10).Select(_ => new ModelTurn("user", "x")).ToArray();
+        var remaining = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(placeholders) + extra;
+        var turns = placeholders.Select((_, index) => new ModelTurn("user",
+            new string('x', 1 + remaining / 10 + (index < remaining % 10 ? 1 : 0)))).ToArray();
+        Assert.Equal(ModelInputLimits.MaxHistoryBytes + extra, ModelRequest.MeasureModelMessagesBytes(turns));
+        ModelRequest Construct() => new("test-model", "sys", "hi", turns, new JsonObject(),
+            new Uri("https://provider.invalid/v1"), "synthetic");
+        if (accepted) Assert.Equal(10, Construct().Turns.Count);
+        else Assert.Throws<ArgumentException>(Construct);
     }
 
     [Fact]
-    public void ModelRequest_rejects_one_byte_over_512_kib_history()
+    public void ModelRequest_accepts_configured_message_history_boundary()
     {
-        const int limit = 512 * 1024;
-        var emptyWire = new JsonArray
-        {
-            new JsonObject { ["role"] = "user", ["content"] = "" },
-        };
-        var content = new string(
-            'x',
-            limit - System.Text.Encoding.UTF8.GetByteCount(emptyWire.ToJsonString()) + 1);
-
-        Assert.Throws<ArgumentException>(() => new ModelRequest(
-            "gpt-4o",
-            "sys",
-            "hi",
-            [new ModelTurn("user", content)],
-            new JsonObject(),
-            new Uri("https://api.openai.com/v1"),
-            "sk"));
-    }
-
-    [Fact]
-    public void ModelRequest_accepts_256_message_history_boundary()
-    {
-        var turns = Enumerable.Range(0, 256)
+        var turns = Enumerable.Range(0, ModelInputLimits.MaxMessages)
             .Select(_ => new ModelTurn("user", "x"))
             .ToArray();
 
@@ -146,13 +117,13 @@ public sealed class ModelRequestTests
             new Uri("https://api.openai.com/v1"),
             "sk");
 
-        Assert.Equal(256, request.Turns.Count);
+        Assert.Equal(ModelInputLimits.MaxMessages, request.Turns.Count);
     }
 
     [Fact]
-    public void ModelRequest_rejects_more_than_256_messages()
+    public void ModelRequest_rejects_more_than_configured_messages()
     {
-        var turns = Enumerable.Range(0, 257)
+        var turns = Enumerable.Range(0, ModelInputLimits.MaxMessages + 1)
             .Select(_ => new ModelTurn("user", "x"))
             .ToArray();
 
@@ -167,9 +138,9 @@ public sealed class ModelRequestTests
     }
 
     [Fact]
-    public void ModelRequest_rejects_history_larger_than_512_kib()
+    public void ModelRequest_rejects_history_larger_than_memory_ceiling()
     {
-        var turns = Enumerable.Range(0, 6)
+        var turns = Enumerable.Range(0, 90)
             .Select(_ => new ModelTurn("user", new string('x', 100_000)))
             .ToArray();
 

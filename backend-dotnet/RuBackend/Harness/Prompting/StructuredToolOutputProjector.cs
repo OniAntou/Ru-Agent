@@ -14,7 +14,7 @@ internal enum ToolOutputProjectionUnit
 
 internal static class StructuredToolOutputProjector
 {
-    private const int MaximumKnownOutputChars = 1_000_000;
+    private const int MaximumKnownOutputChars = 4 * 1024 * 1024;
     private const string ProjectionErrorCode = "tool_output_projection_invalid";
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 

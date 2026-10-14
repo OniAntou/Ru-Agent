@@ -6,7 +6,8 @@ public static class FileToolLimits
     public const int MaxResults = 128;
     public const int MaxGlobResults = 128;
     public const int MaxSearchResults = 128;
-    public const int MaxReadBytes = 512 * 1024;
+    public const int MaxReadBytes = 4 * 1024 * 1024;
+    public const int MaxReadOutputBytes = 4 * 1024 * 1024;
     public const int MaxPathLength = 4096;
     public const int MaxPatternLength = 512;
     public const int MaxQueryLength = 2048;
@@ -15,7 +16,7 @@ public static class FileToolLimits
     public const int MaxTimeMs = 5000;
     public const int DefaultMaxEntries = 512;
     public const int DefaultMaxResults = 128;
-    public const int DefaultReadLimit = 512 * 1024;
+    public const int DefaultReadLimit = 1024 * 1024;
     public const int MaxRecoveryBytes = 4 * 1024 * 1024;
     public const int HardMaxRecoveryBytes = MaxRecoveryBytes;
 

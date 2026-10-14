@@ -52,6 +52,10 @@ internal sealed partial class AgentRunStepHandlers
         string? reasoningText = null)
     {
         const string stepErrorCode = "unverified_after_tool_failure";
+        var reportsBlocker = AgentRecoveryNotes.TryReadBlockedReply(step, out var blockerReport);
+        if (reportsBlocker)
+            return await HandleBlockedReportAsync(run, modelStepId, step, blockerReport, errorCode,
+                droppedCount, promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText).ConfigureAwait(false);
         if (AgentRecoveryNotes.CanAdvise(context, AgentRecoveryKind.UnverifiedAfterToolFailure))
         {
             return await HandleRecoveryAdviceStepAsync(

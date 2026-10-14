@@ -222,7 +222,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         };
         if (request.MaximumOutputTokens is { } outputCap)
             body["max_output_tokens"] = outputCap;
-        if (request.Settings["model_tools"] is JsonArray modelTools)
+        if (request.NativeToolCalling && request.Settings["model_tools"] is JsonArray modelTools)
         {
             var tools = new JsonArray();
             foreach (var toolNode in modelTools)
@@ -231,7 +231,9 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     || ReadString(tool["tool_id"]) is not { } name
                     || tool["input_schema"] is not JsonObject schema)
                     throw new ModelProviderException("malformed_payload", false);
-                tools.Add(new JsonObject { ["type"] = "function", ["name"] = name, ["parameters"] = schema.DeepClone(), ["strict"] = false });
+                tools.Add(new JsonObject { ["type"] = "function", ["name"] = name,
+                    ["description"] = ReadString(tool["description"]) ?? string.Empty,
+                    ["parameters"] = schema.DeepClone(), ["strict"] = false });
             }
 
             // An empty list omits the key rather than declaring no tools, the

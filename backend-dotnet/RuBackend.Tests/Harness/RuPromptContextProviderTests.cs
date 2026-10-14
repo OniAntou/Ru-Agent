@@ -19,6 +19,46 @@ namespace RuBackend.Tests.Harness;
 public sealed class RuPromptContextProviderTests
 {
     [Fact]
+    public async Task Environment_date_uses_the_advertised_local_timezone()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var utc = new DateTimeOffset(2026, 10, 13, 23, 30, 0, TimeSpan.Zero);
+        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+            new StubSettingsStore(Settings()), new FixedTimeProvider(utc));
+        var context = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([], Array.Empty<byte>()), CancellationToken.None);
+        Assert.Equal(TimeZoneInfo.ConvertTime(utc, TimeZoneInfo.Local).ToString("yyyy-MM-dd"), context.Environment.Date);
+    }
+
+    [Fact]
+    public async Task Many_large_results_and_escaped_instructions_fit_the_aggregate_budget()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "AGENTS.md"), new string('界', 20_000));
+        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+            new StubSettingsStore(Settings()), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var entries = Enumerable.Range(1, 32).Select(index => ModelContextEntry.ToolResult(
+            "result-" + index, index, ToolReceipt(index), new string('é', 60_000))).ToArray();
+        var context = await provider.BuildAsync(TestRun(), new ModelContextSnapshot(entries, Array.Empty<byte>()), CancellationToken.None);
+        Assert.InRange(context.SerializeUtf8().Length, 1, SystemPromptContext.MaxSerializedBytes);
+        Assert.Contains(context.InstructionBlocks, block => block.SourceId == "root:AGENTS.md");
+        Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "tool_result");
+        Assert.Contains(context.RuntimeContext.References, reference => reference.Kind == "references_omitted");
+    }
+
+    [Fact]
+    public async Task Existing_but_unreadable_instruction_is_reported_without_raw_content()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        await File.WriteAllBytesAsync(Path.Combine(fixture.Root, "AGENTS.md"), [0xff]);
+        var provider = new RuPromptContextProvider(fixture.Root, new RuInstructionLoader(),
+            new StubSettingsStore(Settings()), new FixedTimeProvider(DateTimeOffset.UtcNow));
+        var context = await provider.BuildAsync(TestRun(), new ModelContextSnapshot([], Array.Empty<byte>()), CancellationToken.None);
+        var warning = Assert.Single(context.RuntimeContext.References, r => r.Kind == "instruction_skipped");
+        Assert.Contains("AGENTS.md", warning.Content);
+        Assert.DoesNotContain(fixture.Root, warning.Content);
+    }
+
+    [Fact]
     public async Task Background_task_note_rides_along_as_a_bounded_reference()
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();

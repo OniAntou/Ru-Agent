@@ -6,14 +6,13 @@ using RuAgent.Runtime.Adapters.Models;
 namespace RuAgent.Runtime.Model;
 
 /// <summary>
-/// Memory and shape bounds for the typed model generation request. Values are
-/// unchanged from the retired worker wire contract.
+/// Memory and shape bounds for the typed model generation request. Provider token limits remain enforced by exact request preflight.
 /// </summary>
 public static class ModelGenerationBounds
 {
-    public const int MaxPromptChars = 16_000;
-    public const int MaxModelMessages = 256;
-    public const int MaxModelMessagesBytes = 512 * 1024;
+    public const int MaxPromptChars = ModelInputLimits.MaxPromptChars;
+    public const int MaxModelMessages = ModelInputLimits.MaxMessages;
+    public const int MaxModelMessagesBytes = ModelInputLimits.MaxHistoryBytes;
     public const int MaxTextChars = 1_000_000;
     public const int MaxToolArgumentsBytes = 64 * 1024;
 }

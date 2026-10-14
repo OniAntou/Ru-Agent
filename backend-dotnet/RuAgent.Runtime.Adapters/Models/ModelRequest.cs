@@ -5,11 +5,11 @@ namespace RuAgent.Runtime.Adapters.Models;
 
 public sealed record ModelRequest
 {
-    private const int MaxModelMessages = 256;
-    private const int MaxModelMessagesBytes = 512 * 1024;
+    private const int MaxModelMessages = ModelInputLimits.MaxMessages;
+    private const int MaxModelMessagesBytes = ModelInputLimits.MaxHistoryBytes;
     private const int MaxAnthropicContentBlocks = 64;
     private const int MaxNativeArgumentsBytes = 64 * 1024;
-    public const int MaximumSerializedBodyBytes = 24 * 1024 * 1024;
+    public const int MaximumSerializedBodyBytes = ModelInputLimits.MaxRequestBytes;
     public ModelRequest(
         string model,
         string systemPrompt,
@@ -31,21 +31,21 @@ public sealed record ModelRequest
             throw new ArgumentException("Model is invalid.", nameof(model));
         }
 
-        if (systemPrompt is null || systemPrompt.Length > 1_000_000 || systemPrompt.Contains('\0'))
+        if (systemPrompt is null || systemPrompt.Length > ModelInputLimits.MaxSystemPromptChars || systemPrompt.Contains('\0'))
         {
             throw new ArgumentException("System prompt exceeds the adapter cap.", nameof(systemPrompt));
         }
 
         if (images is null || images.Count == 0)
         {
-            if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 16_000 || prompt.Contains('\0'))
+            if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > ModelInputLimits.MaxPromptChars || prompt.Contains('\0'))
             {
                 throw new ArgumentException("Prompt is invalid.", nameof(prompt));
             }
         }
         else
         {
-            if (prompt is null || prompt.Length > 16_000 || prompt.Contains('\0'))
+            if (prompt is null || prompt.Length > ModelInputLimits.MaxPromptChars || prompt.Contains('\0'))
             {
                 throw new ArgumentException("Prompt is invalid.", nameof(prompt));
             }
@@ -58,7 +58,7 @@ public sealed record ModelRequest
         }
 
         ValidateModelHistory(turns);
-        if (responsesInputItems is { Count: > 256 }
+        if (responsesInputItems is { Count: > MaxModelMessages }
             || responsesInputItems?.Any(item => !IsSupportedResponsesInputItem(item)) == true)
             throw new ArgumentException("Responses input history is invalid.", nameof(responsesInputItems));
         var historyBytes = responsesInputItems is { Count: > 0 }
@@ -228,15 +228,15 @@ public sealed record ModelRequest
         };
         if (fields.Length == 0 || !block.Select(property => property.Key).Order(StringComparer.Ordinal).SequenceEqual(fields, StringComparer.Ordinal))
             return false;
-        if (type == "text") return TryGetBoundedString(block["text"], 64_000);
-        if (type == "thinking") return TryGetBoundedString(block["thinking"], 64_000) && TryGetBoundedString(block["signature"], 16_384);
+        if (type == "text") return TryGetBoundedString(block["text"], ModelInputLimits.MaxToolResultChars);
+        if (type == "thinking") return TryGetBoundedString(block["thinking"], ModelInputLimits.MaxToolResultChars) && TryGetBoundedString(block["signature"], 16_384);
         if (type == "redacted_thinking") return TryGetBoundedString(block["data"], 32_768);
         if (type == "tool_use")
             return TryGetBoundedString(block["id"], 256) && TryGetBoundedString(block["name"], 128)
                 && block["input"] is JsonObject input && Encoding.UTF8.GetByteCount(input.ToJsonString()) <= MaxNativeArgumentsBytes;
         isToolResult = true;
         return TryGetBoundedString(block["tool_use_id"], 256)
-            && TryGetBoundedString(block["content"], 64_000)
+            && TryGetBoundedString(block["content"], ModelInputLimits.MaxToolResultChars)
             && block["is_error"] is JsonValue error && error.TryGetValue<bool>(out _);
     }
 

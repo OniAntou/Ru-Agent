@@ -89,7 +89,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             : (await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false)).ModelLabel;
         cancellationToken.ThrowIfCancellationRequested();
         var instructions = _instructionLoader.Load(_canonicalRoot);
-        var now = _time.UtcNow;
+        var now = TimeZoneInfo.ConvertTime(_time.UtcNow, TimeZoneInfo.Local);
         var environment = new PromptEnvironment(
             model,
             Environment.OSVersion.Platform.ToString(),
@@ -99,9 +99,21 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             WorkspaceLabel(_canonicalRoot),
             ToolInventoryProbe.Probe());
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
+        var skipped = instructions.Skips.Where(skip => skip.Reason is not ("missing" or "empty")).ToArray();
+        if (skipped.Length > 0)
+        {
+            var references = runtime.References.ToList();
+            references.Add(new PromptReference("instruction_skipped", "workspace instruction diagnostics",
+                "Some instructions were not loaded: " + string.Join("; ", skipped.Take(16)
+                    .Select(skip => $"{skip.SourceId}: {skip.Reason}"))
+                + ". Do not assume those instructions were applied. Inspect or repair them within current permissions."));
+            // The warning stays newest, while preserving the reference-count invariant.
+            if (references.Count > PromptRuntimeContext.MaxRuntimeReferences) references.RemoveAt(0);
+            runtime = new PromptRuntimeContext(runtime.Mood, runtime.Hardware, references);
+        }
         var capabilities = BuildCapabilities();
 
-        return new SystemPromptContext(
+        return PromptContextBudget.Create(
             SystemPromptContext.PromptContextSchemaVersion,
             SystemPromptContext.RequiredAgentProfile,
             AgentPermissionPresetMapper.ToWireValue(run.Preset),
@@ -246,7 +258,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             toolCallByReceiptId.TryGetValue(receipt.ToolCallId.Value, out var call);
             return new PromptReference(
                 "tool_result",
-                "untrusted tool result",
+                "untrusted tool result" + (receipt.ProviderCallId is { } providerId ? ":" + providerId : string.Empty),
                 StructuredToolOutputProjector.Project(
                     call?.ToolId ?? string.Empty,
                     call?.Arguments,

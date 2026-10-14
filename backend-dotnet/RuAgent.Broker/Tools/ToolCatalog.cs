@@ -81,7 +81,8 @@ public sealed class ToolCatalog
 
     private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
-        yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false,
+            maxOutputBytes: Files.FileToolLimits.MaxReadOutputBytes);
         yield return Manifest("list", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("help", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("todo_write", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
@@ -102,7 +103,7 @@ public sealed class ToolCatalog
         string adapter,
         bool workspace = false,
         bool requiresApproval = false,
-        int maxOutputBytes = 256 * 1024,
+        int maxOutputBytes = 4 * 1024 * 1024,
         string[]? extraScopes = null) => new(
         id,
         "1.0.0",

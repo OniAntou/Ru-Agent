@@ -144,12 +144,12 @@ public sealed record PromptReference
     /// prompt rather than the row that was too large -- a listing or a file read big enough
     /// to exceed it used to end the run.
     /// </remarks>
-    public const int ContentMaxBytes = 32 * 1024;
+    public const int ContentMaxBytes = 128 * 1024;
 
     public PromptReference(string kind, string label, string content)
     {
         Kind = PromptText.RequireIdentifier(kind, 64, nameof(kind));
-        Label = PromptText.Require(label, 256, nameof(label));
+        Label = PromptText.Require(label, 512, nameof(label));
         Content = PromptText.NormalizeAndRequireBytes(content, ContentMaxBytes, nameof(content));
     }
 
@@ -211,7 +211,7 @@ public sealed record SystemPromptContext
     public const int MaxInstructionBlocks = 16;
     public const int MaxCapabilities = 16;
     public const int MaxCombinedInstructionBytes = 256 * 1024;
-    public const int MaxSerializedBytes = 512 * 1024;
+    public const int MaxSerializedBytes = 8 * 1024 * 1024;
 
     // Transitional empty context for callers that construct requests directly. The
     // production coordinator replaces this with a root-bound context provider before

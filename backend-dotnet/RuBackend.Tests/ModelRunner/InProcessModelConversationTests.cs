@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,6 +13,24 @@ namespace RuBackend.Tests.ModelRunner;
 
 public sealed class InProcessModelConversationTests
 {
+    [Fact]
+    public void Large_read_page_is_projected_as_valid_json_with_a_source_cursor()
+    {
+        var source = new JsonObject { ["path"] = "large.txt", ["offset"] = 0,
+            ["content"] = new string('a', 1024 * 1024), ["bytes_read"] = 1024 * 1024,
+            ["truncated"] = false }.ToJsonString();
+        var context = Snapshot(ModelContextEntry.Text("user", 1, ModelContextRole.User, "Read the file"),
+            AssistantStepEntry("call", 2, "provider_large", "read", "{\"path\":\"large.txt\"}"),
+            ToolResultEntry("result", 3, "internal_large", "provider_large", source));
+        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+        using var json = JsonDocument.Parse(messages![^1].Content);
+        var root = json.RootElement;
+        Assert.True(root.GetProperty("projection_has_more").GetBoolean());
+        Assert.Equal(Encoding.UTF8.GetByteCount(root.GetProperty("content").GetString()!),
+            root.GetProperty("projection_next_offset").GetInt32());
+        Assert.Equal("provider_large", messages[^1].ToolCallId);
+    }
+
     [Fact]
     public void Anthropic_native_history_keeps_signed_blocks_order_and_pairs_results_with_is_error()
     {
@@ -117,7 +135,7 @@ public sealed class InProcessModelConversationTests
     [Fact]
     public void Oversized_current_prompt_fails_instead_of_prefix_clamping()
     {
-        var prompt = new string('p', 16_001);
+        var prompt = new string('p', ModelInputLimits.MaxPromptChars + 1);
         var context = Snapshot(
             ModelContextEntry.Text("event:evt_" + new string('c', 32), 1, ModelContextRole.User, prompt));
 
@@ -132,7 +150,7 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 17;
         const string hiddenMarker = "READ-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 1_400)) + hiddenMarker;
+        var content = "\uFEFF" + string.Concat(Enumerable.Repeat("Tiáº¿ngðŸ™‚", 14_000)) + hiddenMarker;
         var bytesRead = Encoding.UTF8.GetByteCount(content);
         var source = new JsonObject
         {
@@ -210,7 +228,7 @@ public sealed class InProcessModelConversationTests
             {
                 ["path"] = "docs/matches.txt",
                 ["line"] = index + 1,
-                ["text"] = index == 99 ? hiddenMarker : $"needle match detail {index:D3} {new string('x', 250)}",
+                ["text"] = index == 99 ? hiddenMarker : $"needle match detail {index:D3} {new string('界', 250)}",
             });
         }
         var source = new JsonObject
@@ -271,13 +289,13 @@ public sealed class InProcessModelConversationTests
     {
         const int sourceOffset = 120;
         const string hiddenMarker = "SPOOL-CURSOR-MARKER-INSIDE-BROKER-PAGE";
-        var page = new string('s', 29_880) + "ðŸ™‚" + new string('t', 300) + hiddenMarker;
+        var page = new string('s', ModelInputLimits.MaxToolResultChars - 120) + "ðŸ™‚" + new string('t', 300) + hiddenMarker;
         var source = new JsonObject
         {
             ["spool_id"] = "execution_0123456789abcdef0123456789abcdef",
             ["offset"] = sourceOffset,
             ["limit"] = 31_000,
-            ["total_chars"] = 60_000,
+            ["total_chars"] = 600_000,
             ["page"] = page,
             ["truncated"] = true,
         }.ToJsonString();
@@ -296,7 +314,7 @@ public sealed class InProcessModelConversationTests
         _ = new UTF8Encoding(false, true).GetBytes(visible);
         Assert.Equal("execution_0123456789abcdef0123456789abcdef", root.GetProperty("spool_id").GetString());
         Assert.Equal(sourceOffset, root.GetProperty("offset").GetInt32());
-        Assert.Equal(60_000, root.GetProperty("total_chars").GetInt32());
+        Assert.Equal(600_000, root.GetProperty("total_chars").GetInt32());
         Assert.DoesNotContain(hiddenMarker, visible, StringComparison.Ordinal);
         Assert.True(root.GetProperty("projection_has_more").GetBoolean());
         Assert.Equal(sourceOffset + visible.Length, root.GetProperty("projection_next_offset").GetInt32());
@@ -453,14 +471,14 @@ public sealed class InProcessModelConversationTests
                 3,
                 "internal_call_1",
                 "provider_read_1",
-                "{\"unknown\":\"" + new string('x', 40_000)));
+                "{\"unknown\":\"" + new string('x', ModelInputLimits.MaxToolResultChars + 40_000)));
 
         var (prompt, turns, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Continue from the durable tool results.", prompt);
         Assert.Null(turns);
         Assert.NotNull(messages);
-        Assert.True(messages[2].Content.Length <= 30_000, $"tool content length was {messages[2].Content.Length}");
+        Assert.True(messages[2].Content.Length <= ModelInputLimits.MaxToolResultChars, $"tool content length was {messages[2].Content.Length}");
         Assert.Contains("truncated", messages[2].Content, StringComparison.Ordinal);
     }
 
@@ -468,7 +486,7 @@ public sealed class InProcessModelConversationTests
     public void Oversized_unknown_tool_history_keeps_the_full_block_cap_and_truthful_omission_count()
     {
         const string prefix = "{\"unknown\":\"";
-        var source = prefix + string.Concat(Enumerable.Repeat("ðŸ™‚", 20_000));
+        var source = prefix + string.Concat(Enumerable.Repeat("ðŸ™‚", 100_000));
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect output"),
             AssistantStepEntry("src-2", 2, "provider_unknown_1", "unknown_tool", "{}"),
@@ -478,7 +496,7 @@ public sealed class InProcessModelConversationTests
 
         var visible = Assert.Single(messages!, message => message.Role == "tool").Content;
         const string note = "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
-        Assert.InRange(visible.Length, 1, 30_000);
+        Assert.InRange(visible.Length, 1, ModelInputLimits.MaxToolResultChars);
         var noteOffset = visible.IndexOf(note, StringComparison.Ordinal);
         Assert.True(noteOffset >= 0);
         var omitted = source.Length - noteOffset;
@@ -513,83 +531,50 @@ public sealed class InProcessModelConversationTests
     [Fact]
     public void Native_history_budget_counts_exact_array_bytes_at_limit_and_over()
     {
-        var emptyMessages = new ModelTurn[]
+        const int resultSize = 130_000;
+        var calls = Enumerable.Range(0, 64).Select(index => new ModelToolCall(
+            "provider_" + index, "unknown", "1.0.0", Json("{}"))).ToArray();
+        var messages = new List<ModelTurn> { new("assistant", "", calls.Select(call =>
+            new ModelFunctionCall(call.ProviderCallId, call.ToolId, call.Arguments)).ToArray()) };
+        messages.AddRange(calls.Select(call => new ModelTurn("tool", new string('r', resultSize),
+            toolCallId: call.ProviderCallId, toolResultCode: "ok")));
+        var narration = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(messages);
+        ModelContextSnapshot Build(int extra)
         {
-            new("assistant", "", [new ModelFunctionCall("provider_read_1", "read", Json("{}"))]),
-            new("tool", "r", toolCallId: "provider_read_1", toolResultCode: "ok"),
-        };
-        const int limit = 512 * 1024;
-        var contentLength = limit - (int)ModelRequest.MeasureModelMessagesBytes(emptyMessages);
-        var context = Snapshot(
-            ModelContextEntry.Assistant(
-                "src-1",
-                1,
-                new AssistantStep(
-                    new string('a', contentLength),
-                    [new ModelToolCall("provider_read_1", "read", "1.0.0", Json("{}"))],
-                    AssistantFinishReason.ToolCalls,
-                    1)),
-            ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
-
-        var (_, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context, hasImages: true);
-        Assert.Equal(2, messages!.Count);
-        Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(messages));
-
-        var oversized = Snapshot(
-            ModelContextEntry.Assistant(
-                "src-1",
-                1,
-                new AssistantStep(
-                    new string('a', contentLength + 1),
-                    [new ModelToolCall("provider_read_1", "read", "1.0.0", Json("{}"))],
-                    AssistantFinishReason.ToolCalls,
-                    1)),
-            ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
+            var entries = new List<ModelContextEntry> { ModelContextEntry.Assistant("batch", 1,
+                new AssistantStep(new string('a', narration + extra), calls, AssistantFinishReason.ToolCalls, 1)) };
+            entries.AddRange(calls.Select((call, index) => ToolResultEntry("result-" + index, index + 2,
+                "internal_" + index, call.ProviderCallId, new string('r', resultSize))));
+            return Snapshot(entries.ToArray());
+        }
+        var (_, _, exact) = InProcessModelStepRunner.BuildConversationForTests(Build(0), hasImages: true);
+        Assert.Equal(ModelInputLimits.MaxHistoryBytes, ModelRequest.MeasureModelMessagesBytes(exact!));
         var error = Assert.Throws<ModelRunnerProtocolException>(() =>
-            InProcessModelStepRunner.BuildConversationForTests(oversized, hasImages: true));
+            InProcessModelStepRunner.BuildConversationForTests(Build(1), hasImages: true));
         Assert.Equal("model_history_too_large", error.Code);
     }
 
     [Fact]
     public void Multi_message_history_uses_n_minus_one_separators_at_exact_budget()
     {
-        const int limit = 512 * 1024;
-        // A user message cannot be empty, so the baseline is measured with a
-        // one-character placeholder and the old block is grown to fit the budget.
-        var placeholder = Snapshot(
-            ModelContextEntry.Text("old", 1, ModelContextRole.User, "o"),
-            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
-            ModelContextEntry.Assistant(
-                "done",
-                3,
-                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
-        var (_, _, placeholderMessages) = InProcessModelStepRunner.BuildConversationForTests(placeholder);
-        var oldLength = limit - (int)ModelRequest.MeasureModelMessagesBytes(placeholderMessages!) + 1;
-
-        var exact = Snapshot(
-            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength)),
-            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
-            ModelContextEntry.Assistant(
-                "done",
-                3,
-                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
-        var (_, _, exactMessages) = InProcessModelStepRunner.BuildConversationForTests(exact);
-
-        Assert.Equal(3, exactMessages!.Count);
-        Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(exactMessages));
-
-        var oversized = Snapshot(
-            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength + 1)),
-            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
-            ModelContextEntry.Assistant(
-                "done",
-                3,
-                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
-        var (_, _, trimmedMessages) = InProcessModelStepRunner.BuildConversationForTests(oversized);
-
-        Assert.Equal(["user", "assistant"], trimmedMessages!.Select(message => message.Role));
-        var retainedUser = trimmedMessages!.First(message => message.Role == "user");
-        Assert.Equal("new", retainedUser.Content);
+        var placeholder = Enumerable.Range(0, 10).Select(index => ModelContextEntry.Text(
+            "user-" + index, index + 1, ModelContextRole.User, "x")).ToList();
+        placeholder.Add(ModelContextEntry.Assistant("done", 11, new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
+        var (_, _, baseline) = InProcessModelStepRunner.BuildConversationForTests(Snapshot(placeholder.ToArray()));
+        var remaining = ModelInputLimits.MaxHistoryBytes - (int)ModelRequest.MeasureModelMessagesBytes(baseline!);
+        ModelContextSnapshot Build(int extra)
+        {
+            var entries = Enumerable.Range(0, 10).Select(index => ModelContextEntry.Text("user-"+index,
+                index+1, ModelContextRole.User, new string('x', 1+remaining/10+(index<remaining%10?1:0)+(index==0?extra:0)))).ToList();
+            entries.Add(placeholder[^1]);
+            return Snapshot(entries.ToArray());
+        }
+        var (_, _, exact) = InProcessModelStepRunner.BuildConversationForTests(Build(0));
+        Assert.Equal(11, exact!.Count);
+        Assert.Equal(ModelInputLimits.MaxHistoryBytes, ModelRequest.MeasureModelMessagesBytes(exact));
+        var (_, _, trimmed) = InProcessModelStepRunner.BuildConversationForTests(Build(1));
+        Assert.Equal(10, trimmed!.Count);
+        Assert.True(ModelRequest.MeasureModelMessagesBytes(trimmed) < ModelInputLimits.MaxHistoryBytes);
     }
 
     [Fact]
@@ -613,7 +598,7 @@ public sealed class InProcessModelConversationTests
                 sequence++,
                 $"internal_stale_{index}",
                 $"provider_stale_{index}",
-                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\",\"offset\":0}}"));
+                $"{{\"stale\":{index},\"content\":\"{new string('s', 100_000)}\",\"offset\":0}}"));
         }
         entries.Add(AssistantStepEntry("src-new-a", sequence++, "provider_fresh", "read", "{\"path\":\"fresh.txt\"}"));
         entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\",\"offset\":0}"));
@@ -624,11 +609,11 @@ public sealed class InProcessModelConversationTests
         Assert.Null(turns);
         Assert.NotNull(messages);
         Assert.NotEmpty(messages);
-        Assert.True(messages.Count <= 256, $"messages count was {messages.Count}");
+        Assert.True(messages.Count <= ModelInputLimits.MaxMessages, $"messages count was {messages.Count}");
         var lowerBoundBytes = messages.Sum(message =>
             Encoding.UTF8.GetByteCount(message.Content)
             + message.ToolCalls.Sum(call => Encoding.UTF8.GetByteCount(call.Arguments.GetRawText())));
-        Assert.True(lowerBoundBytes <= 512 * 1024, $"history lower-bound bytes were {lowerBoundBytes}");
+        Assert.True(lowerBoundBytes <= ModelInputLimits.MaxHistoryBytes, $"history lower-bound bytes were {lowerBoundBytes}");
         Assert.True(messages.Count < 181, $"history was not trimmed: {messages.Count} messages");
         Assert.Equal("provider_fresh", messages[^2].ToolCalls.Single().Id);
         Assert.Equal("provider_fresh", messages[^1].ToolCallId);

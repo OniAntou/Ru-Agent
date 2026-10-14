@@ -9,7 +9,7 @@
           },
           {
             "block_id": "agent.contract",
-            "sha256": "b848b6bc2461b3c0b90eb40d063a16dfbd9ac5af99ab5ef2c8bd103489157450"
+            "sha256": "9a6b6c8b380d419ef9cfa35d9d7d4b25748124a5c827e29fd681b54ff6a9468a"
           },
           {
             "block_id": "environment",
@@ -25,16 +25,16 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "a1ebd217dd72cc639e11eaf6391c53cb897a1b097633c90a25e3deb35763c91a"
+            "sha256": "480de726454533730205be0b19b4506d637f112585df8f37d34afe74d988e0af"
           },
           {
             "block_id": "runtime",
-            "sha256": "3e590028cfe3145f1874d6ede282bf027dfc66fcd7f025c91a21636d1bdacf21"
+            "sha256": "4569a9e6d80559c5582db5ed6c1b4ffa0c85cdcbdfaaff6dd8e170a42308c211"
           }
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "d316b09feabea97f9c5a649de45fd5ab418dc26388dfa6a955277fa36e11bb7b"
+        "prompt_sha256": "f1c6832a2e1ac36fae882eb7571ba6a7cd97fb32d16445981ccd375e0cffac43"
       },
       "group": "prompt",
       "id": "prompt.basic",

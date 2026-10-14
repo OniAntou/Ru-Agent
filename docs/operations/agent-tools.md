@@ -2,7 +2,7 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces, updated 2026-10-12.
+v2 surfaces, updated 2026-10-14.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -86,12 +86,35 @@ not advertised Agent tools.
 >   covered in `docs/architecture.md`, `CONTEXT.md`,
 >   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
 
+## Incomplete outcomes and model context
+
+A final reply beginning `[BLOCKED]` reports an incomplete/partial outcome. The
+Host strips that marker from durable assistant history and records a failed run
+with the original tool error (or `model_reported_blocker`), so an honest blocker
+report does not repeatedly consume recovery turns or masquerade as verified
+success. Ordinary unsupported success claims after failed tools still receive
+bounded recovery feedback. Approvals and protected paths are unchanged.
+
+Native requests carry full tool descriptions, schemas and argument examples.
+Legacy text selection receives these in the system prompt and has no native
+function declarations. Native history holds up to 1,024 messages / 8 MiB, with
+128 Ki-character result pages; encoded prompt context has an 8 MiB cap and
+128 KiB references fitted collectively. Broker tool output now has a 4 MiB ceiling; adapter-specific result, time and network bounds still apply. These are memory ceilings; exact
+provider-token preflight and compaction decide how much fits the selected model.
+Existing instruction files omitted for invalid encoding, size or containment
+produce a safe source-ID/reason notice. Workspace guidance cannot override the
+current user's explicit instructions or the system execution contract.
+
 ## Current capability matrix
 
 The immutable Protocol catalog contains 13 model-visible definitions (`read`,
 `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
 `web_search`, `web_fetch`, `skill`, `ask_user`). Each tool has one purpose: `read` takes `path` with
-optional `offset`/`limit` and reads one file; `list` takes `path` with optional
+optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
+one file. Returned JSON is fitted into 4 MiB, including escaping and metadata;
+`offset + bytes_read` continues a truncated Broker page, while
+`projection_next_offset` takes precedence when model projection clips it.
+`list` takes `path` with optional
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
 session task list (at most 64 rows of `content` plus a `status` of `pending`,
@@ -105,7 +128,8 @@ stable sorted relative paths without content access; `grep` takes `query`
 and returns bounded match locations with previews up to 512 characters. `write`
 carries `op=write`, `op=delete` or `op=restore`; `bash` carries `mode=run`,
 `mode=shell`, `mode=read_output`, or `mode=kill`, plus an optional `background`
-flag on `run`/`shell`. The schema has no sandbox selector; obsolete sandbox
+flag on `run`/`shell`. `mode=shell` accepts `shell=powershell` (default Windows
+PowerShell 5.1) or `shell=pwsh` (requires PowerShell 7 installed). The schema has no sandbox selector; obsolete sandbox
 arguments are rejected.
 
 Every running terminal task reserves a per-session slot when launched, including

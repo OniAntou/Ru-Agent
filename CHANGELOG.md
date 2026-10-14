@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: Preserve complete native tool guidance/examples across OpenAI and Anthropic; align the prompt date with local timezone, expose the supported PowerShell selector, and provide full schemas to legacy text selection without advertising native functions.
+- **fix(agent)**: Budget aggregate prompt context before preflight, report skipped instructions and deduplicate outputs already present in native history. Expand native history to 1,024 messages / 8 MiB and result pages to 128 Ki characters while retaining exact provider-token preflight and compaction.
+- **fix(tools)**: Allow read windows up to 4 MiB (default 1 MiB), fit encoded output into the Broker budget and preserve UTF-8 paging instead of discarding large or escaped content.
+- **feat(agent)**: Let explicit blocker reports end as unsuccessful with visible durable history, preserving the original error and avoiding redundant recovery turns. Delivery remains valid after runtime cleanup; approval and protected-path rules remain unchanged.
+
 - **feat(cli)**: Add `ru uninstall` to open the registered Windows CLI uninstaller after the caller exits. Keep profile data and refuse source, portable, Desktop or mismatched installations.
 - **feat(distribution)**: Document a one-command CLI bootstrap and show actual download progress, transferred size and average speed during interactive installation/update; redirected output stays plain text.
 - **feat(gui)**: Move version, build/platform information, repository links and update controls into Settings → About. Show the title-bar Update action only for a newer compatible release. Installed apps check at startup and every 30 minutes; installation remains explicit and source builds do not poll.

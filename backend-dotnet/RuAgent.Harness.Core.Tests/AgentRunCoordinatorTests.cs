@@ -603,6 +603,44 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Explicit_blocker_without_a_failed_tool_still_does_not_complete_successfully()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("[BLOCKED] The necessary source is unavailable."));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var result = await Coordinator(model, new FakeToolGateway(), store).RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal("model_reported_blocker", result.Run.TerminalErrorCode);
+        Assert.Single(store.Commits.Last().ConversationOutbox);
+    }
+
+    [Fact]
+    public async Task Explicit_blocker_report_is_visible_and_terminal_without_claiming_success()
+    {
+        const string code = "approval_denied";
+        var source = new FixedContextSource(ModelContextEntry.Assistant("assistant-prior", 1, ToolStep()),
+            ModelContextEntry.ToolResult("tool-prior", 2, new ToolExecutionReceipt(
+                new ExecutionId("exec_11111111111111111111111111111111"),
+                new ToolCallId("call_11111111111111111111111111111111"),
+                ToolExecutionOutcome.Failed, code, null, false, providerCallId: "provider_call"), "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("[BLOCKED] I could not verify the change because access was denied."));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store, contextSource: source);
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal(code, result.Run.TerminalErrorCode);
+        var commit = store.Commits.Last();
+        Assert.Single(commit.ConversationOutbox);
+        var text = Assert.Single(commit.Payloads, p => p.Kind == HarnessPayloadKind.AssistantText);
+        Assert.Contains("could not verify", Encoding.UTF8.GetString(text.Plaintext.Span));
+        Assert.DoesNotContain("[BLOCKED]", Encoding.UTF8.GetString(text.Plaintext.Span));
+        Assert.DoesNotContain(commit.Events, e => e.Kind == HarnessEventKind.RunNoteAdded);
+    }
+
+    [Fact]
     public async Task Final_prose_after_failed_tool_gets_a_recovery_note_before_fail()
     {
         var prior = ToolStep();

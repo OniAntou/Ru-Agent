@@ -333,13 +333,14 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
-        if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode))
+        if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
+            || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
         {
             return await _steps.HandleUnverifiedFailureStepAsync(
                     run,
                     modelStepId,
                     step,
-                    failureCode,
+                    string.IsNullOrEmpty(failureCode) ? "model_reported_blocker" : failureCode,
                     modelDroppedCount,
                     context,
                     promptReceiptPayload,

@@ -12,6 +12,37 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class AgentOutboxDeliveryTests
 {
+    private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
+    {
+        public AgentRunCoordinator Create(string workspaceRoot, RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,
+            RunId? runId = null, string? agentSessionId = null, RuAgent.Harness.Core.Context.ContextBudgetPolicy? contextBudgetPolicy = null) => throw new InvalidOperationException("Terminal history must not recreate runtime.");
+        public Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,
+            RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Terminal history must not recreate runtime.");
+        public void DropRetainedApproval(RunId runId) { }
+    }
+
+    [Fact]
+    public async Task Terminal_blocker_history_is_delivered_after_runtime_root_is_released()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var run = await SeedOutboxAsync(fixture, ConversationOutboxRole.Assistant, "Access denied; no change was verified.");
+        var failedAt = run.UpdatedAt.AddSeconds(1);
+        var failed = new AgentRun(run.RunId, run.SessionId, run.WorkspaceId, new HarnessRunStatus(HarnessRunState.Failed),
+            run.Version + 1, run.LastSequence + 1, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow,
+            run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256, run.CreatedAt, failedAt,
+            terminalAt: failedAt, terminalErrorCode: "approval_denied");
+        await fixture.EventStore.CommitAsync(new HarnessCommit(run.RunId, run.Version, failed,
+            [new HarnessEventIntent(new EventId("evt_" + Guid.NewGuid().ToString("N")), HarnessEventKind.RunFailed, safeCode: "approval_denied")],
+            [], []), CancellationToken.None);
+        var (sessions, _) = await CreateSessionStoreAsync(fixture, createSession: true);
+        var sink = new AgentRunHistoryTransitionSink(new UnusedCoordinatorFactory(), new AgentRuntimeRootRegistry(), fixture.EventStore);
+        var dispatcher = Dispatcher(fixture, sessions, sink, new MutableTimeProvider(BackendHarnessTestFixture.Timestamp.AddMinutes(1)));
+        Assert.Equal(AgentOutboxDispatchOutcome.Delivered, (await dispatcher.DispatchOnceAsync(CancellationToken.None)).Outcome);
+        var document = await sessions.GetAsync(SessionIdValue, CancellationToken.None);
+        Assert.Equal("Access denied; no change was verified.", Assert.Single(document!.Messages).Content);
+        Assert.Equal(HarnessRunState.Failed, (await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None))!.State);
+    }
+
     [Fact]
     public async Task Transient_session_failure_retries_then_delivers_once()
     {

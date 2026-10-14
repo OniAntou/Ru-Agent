@@ -102,13 +102,12 @@ public sealed class FileReadAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Read_respects_max_bytes_cap_of_512KiB()
+    public void Read_respects_max_bytes_cap_of_4MiB()
     {
         var schema = RuAgent.Protocol.AgentModelToolContractCatalog.Get("read", "1.0.0").InputSchema;
-        // limit 600 KiB should be rejected by schema
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = 600 * 1024 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = FileToolLimits.MaxReadBytes + 1 }));
         // valid limit passes
-        ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = 512 * 1024 });
+        ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = FileToolLimits.MaxReadBytes });
     }
 
     [Fact]

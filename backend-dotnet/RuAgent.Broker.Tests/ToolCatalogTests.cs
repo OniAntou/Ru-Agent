@@ -27,7 +27,7 @@ public sealed class ToolCatalogTests
         Assert.Equal(networkAllowed, manifest.NetworkAllowed);
         Assert.Equal(workspaceRequired, manifest.WorkspaceRequired);
         Assert.InRange(manifest.TimeoutMs, 1, 30_000);
-        Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
+        Assert.InRange(manifest.MaxOutputBytes, 1, 4 * 1024 * 1024);
     }
 
     [Theory]
@@ -112,7 +112,7 @@ public sealed class ToolCatalogTests
         Assert.True(properties.ContainsKey("timeout_ms"));
         Assert.True(properties.ContainsKey("network_intent"));
         Assert.True(properties.ContainsKey("background"));
-        Assert.False(properties.ContainsKey("shell"));
+        Assert.True(properties.ContainsKey("shell"));
         Assert.False(properties.ContainsKey("network"));
 
         var timeoutSchema = properties["timeout_ms"]!.AsObject();
@@ -219,7 +219,7 @@ public sealed class ToolCatalogTests
         // The discriminator is gone: op is not a declared property any more, so the
         // strict schema rejects it instead of dispatching on it.
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "read", ["path"] = "a.txt" }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "a.txt", ["limit"] = 600 * 1024 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "a.txt", ["limit"] = 4 * 1024 * 1024 + 1 }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "list", ["path"] = "." }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "help", ["query"] = "approvals" }));
 

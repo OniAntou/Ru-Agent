@@ -47,13 +47,16 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
 {
     private readonly IAgentRuntimeCoordinatorFactory _factory;
     private readonly IAgentRuntimeRootRegistry _roots;
+    private readonly IHarnessEventStore? _events;
 
     public AgentRunHistoryTransitionSink(
         IAgentRuntimeCoordinatorFactory factory,
-        IAgentRuntimeRootRegistry roots)
+        IAgentRuntimeRootRegistry roots,
+        IHarnessEventStore? events = null)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _roots = roots ?? throw new ArgumentNullException(nameof(roots));
+        _events = events;
     }
 
     public async Task AcknowledgeAsync(
@@ -61,6 +64,11 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
         HistoryWaitKind historyWaitKind,
         CancellationToken cancellationToken)
     {
+        // A failed/cancelled run may still have a durable final report to deliver.
+        // Delivery does not resurrect its runtime or transition it to success.
+        if (_events is not null
+            && (await _events.GetRunAsync(runId, cancellationToken).ConfigureAwait(false))?.State.IsTerminal() == true)
+            return;
         if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null
             || !_roots.TryGetPolicySnapshot(runId, out var policySnapshot) || policySnapshot is null)
         {

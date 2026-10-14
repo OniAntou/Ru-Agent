@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
@@ -24,7 +24,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 
     // Conversation blocks stay small; untrusted runtime references carry bounded
     // source output and explicit cursors when more can be fetched.
-    private const int MaxConversationBlockChars = 30_000;
+    private const int MaxConversationBlockChars = ModelInputLimits.MaxToolResultChars;
     private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
     private const string ConversationTruncationNote =
         "\nâ€¦(truncated at conversation block limit; inspect the untrusted tool reference and continue at projection_next_offset when present)";
@@ -617,15 +617,16 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         List<List<ModelTurn>> units)
     {
         var selected = new List<List<ModelTurn>>();
+        var selectedCount = 0;
+        long selectedBytes = 2; // JSON array brackets.
         for (var index = units.Count - 1; index >= 0; index--)
         {
             var unit = units[index];
-            var candidateMessages = selected
-                .SelectMany(selectedUnit => selectedUnit)
-                .Concat(unit)
-                .ToArray();
-            var candidateCount = candidateMessages.Length;
-            var candidateBytes = ModelRequest.MeasureModelMessagesBytes(candidateMessages);
+            // Measure each complete batch once; reserializing all selected history
+            // on every iteration becomes quadratic as the history ceiling grows.
+            var candidateCount = selectedCount + unit.Count;
+            var candidateBytes = selectedBytes + ModelRequest.MeasureModelMessagesBytes(unit) - 2
+                + (selectedCount > 0 && unit.Count > 0 ? 1 : 0);
             if (candidateCount > ModelGenerationBounds.MaxModelMessages
                 || candidateBytes > ModelGenerationBounds.MaxModelMessagesBytes)
             {
@@ -638,6 +639,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             }
 
             selected.Add(unit);
+            selectedCount = candidateCount;
+            selectedBytes = candidateBytes;
         }
 
         selected.Reverse();
@@ -753,7 +756,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         {
             ["tool_id"] = toolId,
             ["tool_version"] = version,
-            ["description"] = description,
+            ["description"] = description + (AgentToolDefinitionCatalog.Find(toolId, version)?.ExampleArguments is { } example
+                ? "\nExample arguments: " + example.ToJsonString() : string.Empty),
             ["scopes"] = new JsonArray(scope),
             ["availability"] = "executable",
             ["model_enabled"] = true,

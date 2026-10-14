@@ -211,7 +211,9 @@ public sealed class ModelStepService
         JsonObject settings;
         try
         {
-            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling);
+            var nativeResultIds = request.ModelMessages.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
+                .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
+            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling, nativeResultIds);
             snapshot.Receipt.ValidateAgainst(request.SystemPromptContext, snapshot.Text);
             settings = BuildWireSettings(request.Settings);
             var requestTurns = nativeToolCalling

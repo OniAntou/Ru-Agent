@@ -8,6 +8,25 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class SystemPromptComposerTests
 {
     [Fact]
+    public void Native_history_deduplicates_tool_data_but_text_mode_retains_it_and_its_schema()
+    {
+        var capability = new PromptCapability("read", "1.0.0", "Read.", "workspace.read",
+            "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), "{\"path\":\"x\"}", "enabled");
+        var original = PromptFixtures.ValidContext(capabilities: [capability]);
+        var context = new SystemPromptContext(original.SchemaVersion, original.AgentProfile, original.Preset,
+            original.Environment, original.InstructionBlocks, original.Capabilities,
+            new PromptRuntimeContext(null, null, [new PromptReference("tool_result", "untrusted tool result:provider_read", "UNIQUE_TOOL_DATA")]));
+        Assert.DoesNotContain("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context, nativeToolCalling: true,
+            nativeToolResultIds: new HashSet<string>(["provider_read"])).Text);
+        Assert.Contains("UNIQUE_TOOL_DATA", SystemPromptComposer.Compose(context, nativeToolCalling: true,
+            nativeToolResultIds: new HashSet<string>()).Text);
+        var text = SystemPromptComposer.Compose(context).Text;
+        Assert.Contains("UNIQUE_TOOL_DATA", text);
+        Assert.Contains(capability.InputSchemaJson, text);
+        Assert.Contains(capability.ExampleArgumentsJson!, text);
+    }
+
+    [Fact]
     public void Native_listing_is_brief_while_text_selection_keeps_full_tool_guidance()
     {
         const string description = "Read src/App.cs. Continue paging with the returned cursor.";
@@ -205,8 +224,8 @@ public sealed class SystemPromptComposerTests
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
 
         Assert.Contains("read@1.0.0", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("input_schema:", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("example_arguments:", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("input_schema:", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("example_arguments:", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("\"tool_id\": \"read\"", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);

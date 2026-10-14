@@ -711,7 +711,7 @@ public sealed class OpenAiResponsesModelProviderTests
         settings ?? new JsonObject(),
         new Uri("https://provider.invalid/v1/responses"),
         "synthetic-openai",
-        maximumOutputTokens);
+        maximumOutputTokens, nativeToolCalling: true);
 
     private sealed class RecordingHandler : HttpMessageHandler
     {

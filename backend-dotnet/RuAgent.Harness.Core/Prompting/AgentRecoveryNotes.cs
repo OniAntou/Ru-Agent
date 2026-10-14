@@ -34,6 +34,16 @@ public static class AgentRecoveryNotes
     // Model-visible marker shared by every recovery note, so the global cap can
     // count notes from every case, including ones added later.
     public const string NotePrefix = "[HARNESS RECOVERY]";
+    public const string BlockedReplyPrefix = "[BLOCKED]";
+
+    public static bool TryReadBlockedReply(AssistantStep step, out string report)
+    {
+        report = string.Empty;
+        if (step.ToolCalls.Count != 0 || step.FinishReason != AssistantFinishReason.Stop
+            || step.Text is not { } text || !text.StartsWith(BlockedReplyPrefix, StringComparison.Ordinal)) return false;
+        report = text[BlockedReplyPrefix.Length..].Trim();
+        return report.Length > 0;
+    }
 
     // Bounded self-repair budgets per case: a model that ignores the note still
     // fails, but a weak model gets a real chance to answer or change course. The
@@ -58,7 +68,8 @@ public static class AgentRecoveryNotes
         var code = string.IsNullOrWhiteSpace(receiptCode) ? "tool_failed" : receiptCode;
         return $"{NotePrefix} {KindMarker(AgentRecoveryKind.UnverifiedAfterToolFailure)} "
             + $"(code: {code}) - the final reply was suppressed because a tool call failed "
-            + "and its result is still unverified. " + RecoveryAction(code);
+            + "and its result is still unverified. " + RecoveryAction(code)
+            + " If no safe repair remains, start your final text with [BLOCKED] and explain the blocker or partial outcome. This ends the run as unsuccessful; do not claim the failed action succeeded.";
     }
 
     private static string RecoveryAction(string code) => code switch

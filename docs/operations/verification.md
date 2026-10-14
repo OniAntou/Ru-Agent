@@ -9,7 +9,7 @@
 | .NET tests | **Full 13-project Debug matrix: 6,284 passed / 0 failed / 0 skipped** (2026-10-14, commit `4d197228`). Broker 931; CLI 1,427; Client 239; Core 489; Persistence 177; Hosting 41; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Updates 25; Backend 1,092; GUI 1,423. [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) and [CI](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202229) passed. Earlier local aggregate coverage and failures remain under `artifacts/release-verification/`. |
 | Python suite | **215 passed, 1 skipped** (2026-10-14), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/release-verification/python-final.log`. Ruff and current-doc/distribution guards also pass. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
-| Release build | **11/11 stages passed** on the disposable Windows runner, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS attached to the draft prerelease. [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) passed packaging, production install/update/uninstall and both packaged Host smokes. Packages remain unsigned and the draft is not publicly published. |
+| Release build | **11/11 stages passed** on the disposable Windows runner, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS attached to the [public prerelease](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1). [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) passed packaging, production install/update/uninstall and both packaged Host smokes. Packages remain unsigned. |
 | Managed runtime smoke | **PASS** from both product trees: matching `/status` software version and maintenance protocol, isolated temporary data and authenticated idle-only shutdown with acknowledgement before process exit. Logs: `artifacts/release-verification/cli-host-smoke.log` and `desktop-host-smoke.log`. No provider generation was invoked. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
@@ -36,9 +36,10 @@ acceptance uses a synthetic older marker with the candidate's binaries, so it
 does not prove compatibility with an older published release. Native GUI
 click/restart and Authenticode/SmartScreen acceptance remain unverified.
 
-The draft `v0.1.0-preview.1` targets commit `4d197228` and contains five assets:
-Desktop/CLI Setup executables, Desktop/CLI ZIPs and `SHA256SUMS.txt`. It is kept
-unpublished for maintainer review. Initial hosted failures exposed a missing
+The public prerelease `v0.1.0-preview.1` targets commit `4d197228` and contains
+five assets: Desktop/CLI Setup executables, Desktop/CLI ZIPs and `SHA256SUMS.txt`.
+The unauthenticated GitHub API exposes its CLI installer, digest and canonical
+download URL. No Stable release is published yet. Initial hosted failures exposed a missing
 ripgrep prerequisite, stripped PowerShell module paths, a delayed glob deadline
 timer, missing runtime packs before a fresh GUI clean, and PATH separator loss.
 Those issues were fixed before the final green pipeline; resize and ConPTY

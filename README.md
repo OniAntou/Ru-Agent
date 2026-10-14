@@ -17,7 +17,7 @@ Describe a change. Ru reads your project, edits files, runs commands and keeps
 the work visible in the conversation. Your project and conversation storage
 stay on your machine; prompts and tool results go to the provider you select.
 
-> **Early development.** Ru is currently built from source on Windows x64.
+> **Early development.** A Windows x64 Preview is available; source builds are also supported.
 > Expect rough edges; reproducible bug reports help shape the next version.
 
 ## Why Ru?
@@ -36,15 +36,24 @@ a bundled local model.
 
 ## Install and update
 
-Separate Windows x64 Desktop and CLI installers are being prepared for the
-[first release](https://github.com/OniAntou/Ru-Agent/releases). Each includes its
+Separate Windows x64 Desktop and CLI installers are available in
+[0.1.0-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1). Each includes its
 matching backend; the .NET SDK is only needed when building from source. Desktop
 updates from **Settings → General → Updates**; CLI uses `ru update` and TUI uses
 `/update`. Stable is the default, with Preview available by choice.
 
 See [installation, channels and recovery](docs/operations/distribution-and-updates.md)
 for package names, CLI bootstrap instructions and release verification limits.
-Until release assets are published, use the source-build instructions below.
+Install CLI from Command Prompt:
+
+```cmd
+curl -fsSL https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -o ru-install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ru-install.ps1 -Channel Preview
+```
+
+Open a new terminal and run `ru`. The script downloads, verifies and installs the
+CLI package without a setup wizard. Preview is opt-in; no Stable release is
+published yet. The initial packages are unsigned.
 
 ## Quick start
 

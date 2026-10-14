@@ -8,9 +8,9 @@ SDK on the user's computer. Source builds still use `build.bat`.
 
 Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or
 `Ru-CLI-VERSION-win-x64-Setup.exe` from the official
-[releases](https://github.com/OniAntou/Ru-Agent/releases). These asset names become
-available when the first release is published; packaging code alone does not
-publish them. Default installation roots are `%LOCALAPPDATA%\Programs\Ru\Desktop`
+[releases](https://github.com/OniAntou/Ru-Agent/releases). The first public release
+is [0.1.0-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1);
+no Stable release is published yet. Default installation roots are `%LOCALAPPDATA%\Programs\Ru\Desktop`
 and `%LOCALAPPDATA%\Programs\Ru\CLI`, without administrator rights. Use a
 dedicated empty directory for a new installation. Desktop adds a Start-menu
 shortcut; CLI adds only its own directory to the user's PATH. Open a new terminal
@@ -19,15 +19,25 @@ and run `ru` after installing CLI. ZIP archives provide the matching portable tr
 If `ru` already points to a source checkout or another installation, use `where ru`
 to select the intended command. The installer preserves other PATH entries.
 
-For CLI command-based installation after release publication, download and inspect
+For CLI command-based installation, download and inspect
 `scripts/install.ps1` from this repository, then run it with Windows PowerShell:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -OutFile .\install.ps1
 # Inspect install.ps1 before running it.
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Channel Preview
 ```
+
+Command Prompt equivalent:
+
+```cmd
+curl -fsSL https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -o ru-install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ru-install.ps1 -Channel Preview
+```
+
+The script runs the verified installer silently and adds the CLI to the user
+PATH. Omitting `-Channel Preview` selects Stable, which needs a published Stable
+release. Open a new terminal after installation.
 
 The bootstrap selects a compatible release, bounds its download and checks its
 GitHub-provided SHA-256 digest. It fails if no matching release exists. It never

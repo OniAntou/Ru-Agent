@@ -328,6 +328,9 @@ reconciliation surfaces from Phase 3:
   argv, cwd, timeout and classified metadata are rebound before consuming each
   authorization token. No OS confinement is claimed. Structured protected-path
   denial and credential storage/redaction are unchanged.
+  Terminal children retain the trusted parent's `PSModulePath` for PowerShell
+  module discovery; model input cannot supply or override environment entries.
+  Secret variables remain stripped and seeded into output redaction.
   Read-only Git preparation and the managed-commit temporary-index workflow remain
   execution behavior, not separate authority. Legacy adapter-only callers retain
   their older approval contract; production v2 calls use Broker authorization.

@@ -36,6 +36,7 @@ public sealed class AgentCommandEnvironmentTests
             ("PATH", @"C:\Tools;C:\Windows"),
             ("PATHEXT", ".COM;.EXE;.BAT;.CMD"),
             ("COMSPEC", @"C:\WINDOWS\system32\cmd.exe"),
+            ("PSModulePath", @"C:\Windows\System32\WindowsPowerShell\v1.0\Modules"),
             ("PROCESSOR_ARCHITECTURE", "AMD64"),
             ("NUMBER_OF_PROCESSORS", "8"),
             ("DOTNET_ROOT", @"C:\dotnet"),

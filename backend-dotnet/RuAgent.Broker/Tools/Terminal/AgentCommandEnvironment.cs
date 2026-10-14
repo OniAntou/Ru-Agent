@@ -25,6 +25,9 @@ public sealed class AgentCommandEnvironment
         "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432",
         "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
         "PATH", "PATHEXT", "COMSPEC",
+        // Preserve the trusted parent's module search path. Removing it can
+        // stall Windows PowerShell's module discovery on hosted Windows images.
+        "PSMODULEPATH",
         "PROCESSOR_ARCHITECTURE", "PROCESSOR_IDENTIFIER", "PROCESSOR_LEVEL",
         "PROCESSOR_REVISION", "NUMBER_OF_PROCESSORS",
         "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",

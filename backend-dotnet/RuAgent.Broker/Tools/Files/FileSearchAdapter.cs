@@ -133,25 +133,37 @@ public sealed class FileSearchAdapter
         // Consume batches in ordinal path order. Bound collection by the requested
         // offset/page plus a lookahead; stop opening later files once the page is known.
         candidates.Sort((left, right) => StringComparer.Ordinal.Compare(left.Relative, right.Relative));
-        var outcomes = new List<FileSearchOutcome>();
+        var scannedFiles = 0;
+        var skippedFiles = 0;
+        var searchIncomplete = false;
         var results = new List<JsonObject>();
         for (var index = 0; index < candidates.Count && results.Count < collectLimit; index += _maxSearchConcurrency)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
             var remaining = collectLimit - results.Count;
-            var batch = candidates.Skip(index).Take(_maxSearchConcurrency)
-                .Select(candidate => SearchCandidateAsync(candidate.Path, candidate.Relative, query,
-                    queryRegex, caseSensitive, remaining, stopwatch, cancellationToken));
+            var batchSize = Math.Min(_maxSearchConcurrency, candidates.Count - index);
+            var batch = new Task<FileSearchOutcome>[batchSize];
+            for (var batchIndex = 0; batchIndex < batchSize; batchIndex++)
+            {
+                var candidate = candidates[index + batchIndex];
+                batch[batchIndex] = SearchCandidateAsync(candidate.Path, candidate.Relative, query,
+                    queryRegex, caseSensitive, remaining, stopwatch, cancellationToken);
+            }
             var completed = await Task.WhenAll(batch).ConfigureAwait(false);
-            outcomes.AddRange(completed);
+            // Retain only page matches; per-file outcomes can be released after this batch.
+            scannedFiles += completed.Length;
             foreach (var outcome in completed)
+            {
+                if (outcome.Skipped) skippedFiles++;
+                searchIncomplete |= outcome.Incomplete;
                 results.AddRange(outcome.Matches.Take(collectLimit - results.Count));
+            }
         }
 
         var final = results.Skip(offset).Take(maxResults).ToList();
         var hasMore = results.Count > offset + maxResults;
-        var incomplete = traversalCapped || outcomes.Any(outcome => outcome.Incomplete);
+        var incomplete = traversalCapped || searchIncomplete;
         int? nextOffset = hasMore && offset + final.Count <= FileToolLimits.MaxOffset ? offset + final.Count : null;
         stopwatch.Stop();
         return new JsonObject
@@ -163,9 +175,9 @@ public sealed class FileSearchAdapter
             ["next_offset"] = nextOffset,
             ["scan_incomplete"] = incomplete,
             ["discovered_files"] = candidates.Count,
-            ["scanned_files"] = outcomes.Count,
+            ["scanned_files"] = scannedFiles,
             ["scanned_directories"] = visited.Count,
-            ["skipped"] = outcomes.Count(outcome => outcome.Skipped),
+            ["skipped"] = skippedFiles,
             ["duration_ms"] = (int)stopwatch.ElapsedMilliseconds,
         };
     }

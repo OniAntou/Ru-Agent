@@ -185,6 +185,29 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
 
     // ---------- inaccessible entry skip metadata ----------
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public async Task Search_preserves_statistics_and_order_across_batches(int concurrency)
+    {
+        for (var index = 0; index < 9; index++)
+            File.WriteAllText(Path.Combine(_root, "src", $"a{index}.txt"), index % 2 == 0 ? "needle" : "other");
+        File.WriteAllBytes(Path.Combine(_root, "src", "b0.bin"), new byte[] { 0, 1 });
+        File.WriteAllBytes(Path.Combine(_root, "src", "b1.bin"), new byte[] { 0, 1 });
+
+        var result = await new FileSearchAdapter(_root, concurrency).ExecuteAsync(
+            new JsonObject { ["path"] = "src", ["query"] = "needle", ["max_results"] = 20 },
+            CancellationToken.None);
+
+        Assert.Equal(11, result["discovered_files"]!.GetValue<int>());
+        Assert.Equal(11, result["scanned_files"]!.GetValue<int>());
+        Assert.Equal(2, result["skipped"]!.GetValue<int>());
+        Assert.False(result["scan_incomplete"]!.GetValue<bool>());
+        Assert.False(result["truncated"]!.GetValue<bool>());
+        Assert.Equal(new[] { "src/a0.txt", "src/a2.txt", "src/a4.txt", "src/a6.txt", "src/a8.txt" },
+            result["results"]!.AsArray().Select(row => row!["path"]!.GetValue<string>()).ToArray());
+    }
+
     [Fact]
     public void List_skips_protected_and_counts_skipped()
     {

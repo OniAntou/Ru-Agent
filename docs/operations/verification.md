@@ -15,6 +15,32 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Workspace maintenance (2026-10-14)
+
+Removed 9,694 obsolete generated binary files (8,321,298,592 bytes) from historical
+publish copies, superseded local release archives and native installer fixture
+setup directories. The exact removal manifest is local-only at
+`artifacts/cleanup/obsolete-binaries-20261014.json`. Logs, acceptance reports,
+checksums, the current release, compiler tools and source-tree publish outputs
+were retained. Binary paths in earlier verification entries describe the
+original checks; obsolete payloads at those paths are no longer retained.
+
+The scoped source changes accumulate grep statistics per batch and extract CLI
+input/run-state helpers. They do not change permissions, contracts or chat
+behavior. No runtime speed benchmark, full release build or native UI acceptance
+was performed for this maintenance change.
+
+Scoped verification passed:
+
+- `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter Broker -NoRestore`:
+  933 passed, including two additional multi-batch statistics/order cases. The
+  initial run before those cases were added also passed all 931 tests.
+- `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter RuAgent.Cli.Tests -NoRestore`:
+  1,427 passed; the changed CLI and its dependencies built successfully.
+- `pytest tests/test_current_documentation.py tests/test_guidance_route_counts.py -q`:
+  15 passed.
+- `git diff --check`: passed.
+
 ## Product packages and explicit updates (2026-10-14)
 
 Workspace-only native installer checks passed for both products: install,

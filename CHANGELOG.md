@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(grep)**: Accumulate scan statistics per batch instead of retaining every file's search outcome. Keep ordinal result ordering, pagination, cancellation and permission checks unchanged.
+- **refactor(cli)**: Move chat input-request parsing and run-state helpers into dedicated partial files without changing the chat workflow.
+
 - **feat(distribution)**: Add separate per-user Desktop and CLI installers and portable packages with matching self-contained Hosts. CLI installation adds its own user PATH entry; uninstall preserves the Ru profile.
 - **feat(updates)**: Add Settings update controls with progress/cancel, `ru update` and TUI `/update`. Stable is the default; Preview includes prereleases. Updates verify official release origins, size and SHA-256, refuse unfinished runs, and install after the caller exits without terminating other applications. Desktop restarts after success; previous outcomes remain visible.
 - **build(release)**: Stamp and validate package versions, create draft-release artifacts, and remove whitespace reported by the shallow-checkout CI gate.

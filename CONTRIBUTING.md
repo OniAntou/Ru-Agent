@@ -42,6 +42,19 @@ cleaning; even `dotnet clean` needs those assets on a fresh checkout.
 gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 ```
 
+## Workspace maintenance
+
+Historical publish copies and installer fixtures under `artifacts/` can retain
+several copies of the self-contained runtime. Remove obsolete binary payloads
+only after checking the exact paths and confirming no running process uses
+them. Preserve acceptance reports, logs and checksums as verification evidence.
+Keep the current release, `artifacts/tools` and the publish directories used by
+`bin/ru.cmd` and the development launch scripts.
+
+Ignored files are not necessarily disposable: retain local scripts, Python
+environments, models, credentials and profile databases. Do not use a blanket
+`git clean -fdx` for routine workspace cleanup.
+
 ## Testing
 
 Terminal integration tests require `rg` (ripgrep) on PATH in addition to Windows

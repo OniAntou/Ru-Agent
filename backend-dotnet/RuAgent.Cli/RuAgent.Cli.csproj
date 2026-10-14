@@ -18,6 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="RuAgent.Cli.Tests" />
+    <EmbeddedResource Include="UninstallWorker.ps1" LogicalName="RuAgent.Cli.UninstallWorker.ps1" />
   </ItemGroup>
   <!-- Publish Properties -->
   <PropertyGroup>

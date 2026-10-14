@@ -122,7 +122,7 @@ public sealed class ProviderSetupActionSourceContractTests
     [Fact]
     public void The_provider_section_is_reachable_from_outside_the_settings_view()
     {
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        string code = GuiSource.ViewText("SettingsView");
 
         Assert.True(
             GuiSource.HasMember(code, "ShowProviders"),

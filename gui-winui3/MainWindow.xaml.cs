@@ -302,6 +302,7 @@ namespace RuApp
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
 
                 _settingsView = new SettingsView();
+                _settingsView.UpdateAvailabilityChanged += OnUpdateAvailabilityChanged;
                 _settingsView.CanInstallUpdate = () => _agentController?.IsBusy != true && _agentController?.CanCancel != true;
                 _settingsView.UpdateRestartRequested += () => { _updateHandOff = true; Close(); };
                 _settingsView.Initialize(_apiService, _providerCatalogController);
@@ -321,6 +322,7 @@ namespace RuApp
                 };
                 SettingsModalContent.Content = _settingsView;
                 TitleBarUpdateButton.IsEnabled = true;
+                _settingsView.StartUpdateAvailabilityChecks();
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);

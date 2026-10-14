@@ -9,12 +9,21 @@ were removed on 2026-09-13.
 
 Desktop and CLI ship as separate per-user Windows x64 packages. Each carries the
 matching Public Host and runtime; both use the canonical Ru profile. Installed
-clients require an exact Host software-version match. Updates are user initiated
-from Settings or `ru update` (`/update` in TUI), with Stable as the default and
+clients require an exact Host software-version match. Update installation is user initiated
+from Settings → About or `ru update` (`/update` in TUI), with Stable as the default and
 Preview opt-in. The authenticated `when_idle` shutdown handshake denies unfinished
 runs and prevents new requests during the durable-state check. See
 [distribution and updates](docs/operations/distribution-and-updates.md) and
 [ADR-0019](docs/adr/0019-product-packages-and-explicit-updates.md).
+
+`ru uninstall` uses the same idle-only maintenance handshake, then opens the
+registered Windows CLI uninstaller after the caller exits. Removal keeps the
+shared profile and does not target Desktop, portable folders or source builds.
+
+Installed Desktop checks release availability at startup and every 30 minutes;
+the title-bar Update shortcut appears only for a newer compatible release on
+the selected channel. About contains version/build/platform details and update
+controls. Source builds do not run automatic release checks.
 
 ## Language
 

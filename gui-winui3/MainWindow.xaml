@@ -68,7 +68,7 @@
                         FontFamily="{StaticResource RuUiFontFamily}" FontSize="12"
                         Background="{StaticResource RuAccentSoftBrush}"
                         Foreground="{StaticResource RuAccentBrush}"
-                        IsEnabled="False" Click="OnTitleBarUpdateClick"
+                        IsEnabled="False" Visibility="Collapsed" Click="OnTitleBarUpdateClick"
                         ToolTipService.ToolTip="Check for updates"
                         AutomationProperties.Name="Check for updates" />
                 <Button x:Name="SidePanelToggleButton"

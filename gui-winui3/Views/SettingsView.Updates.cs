@@ -13,26 +13,63 @@ public sealed partial class SettingsView
     private InstalledRelease? _installedRelease;
     private bool _updatesInitializing;
     private CancellationTokenSource? _updateDownload;
+    private DispatcherTimer? _updateCheckTimer;
     public Func<bool>? CanInstallUpdate { get; set; }
     public event Action? UpdateRestartRequested;
+    public event Action<bool>? UpdateAvailabilityChanged;
+
+    public void StartUpdateAvailabilityChecks()
+    {
+        if (_installedRelease is null || _updateCheckTimer is not null || _updateLifetime.IsCancellationRequested) return;
+        _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
+        _updateCheckTimer.Tick += OnAutomaticUpdateCheck;
+        _updateCheckTimer.Start();
+        CheckForUpdates();
+    }
+
+    private void OnAutomaticUpdateCheck(object? sender, object e) => CheckForUpdates();
+
+    private void StopUpdateAvailabilityChecks()
+    {
+        if (_updateCheckTimer is null) return;
+        _updateCheckTimer.Stop();
+        _updateCheckTimer.Tick -= OnAutomaticUpdateCheck;
+        _updateCheckTimer = null;
+    }
+
+    private void CheckForUpdates()
+    {
+        if (CheckUpdatesButton.IsEnabled && !_updateLifetime.IsCancellationRequested)
+            OnCheckUpdatesClick(this, new RoutedEventArgs());
+    }
+
+    private void SetAvailableUpdate(ReleaseUpdate? release)
+    {
+        _availableUpdate = release;
+        InstallUpdateButton.IsEnabled = release is not null;
+        UpdateAvailabilityChanged?.Invoke(release is not null);
+    }
 
     public void ShowUpdates()
     {
-        SelectTab(isGeneral: true);
-        PanelGeneralScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
-        CheckUpdatesButton.Focus(FocusState.Programmatic);
-        if (CheckUpdatesButton.IsEnabled)
-            OnCheckUpdatesClick(this, new RoutedEventArgs());
+        SelectTab(SettingsTab.About);
+        PanelAboutScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
+        (_availableUpdate is null ? CheckUpdatesButton : InstallUpdateButton).Focus(FocusState.Programmatic);
+        if (_availableUpdate is null) CheckForUpdates();
     }
 
     private void InitializeUpdates()
     {
         _updatesInitializing = true;
+        AboutVersionText.Text = "Version " + InstalledRelease.SoftwareVersion;
+        AboutBuildText.Text = "Source build";
+        AboutPlatformText.Text = "Windows · " + System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture;
         try
         {
             UpdateChannelCombo.SelectedIndex = _updatePreferences.LoadChannel() == UpdateChannel.Preview ? 1 : 0;
             _installedRelease = InstalledRelease.Load(AppContext.BaseDirectory);
-            UpdateVersionText.Text = "Ru " + (_installedRelease?.Version ?? InstalledRelease.SoftwareVersion + " · source build");
+            AboutVersionText.Text = "Version " + (_installedRelease?.Version ?? InstalledRelease.SoftwareVersion);
+            AboutBuildText.Text = _installedRelease is null ? "Source build" : "Installed Desktop release";
             UpdateStatusText.Text = _installedRelease is null
                 ? "Install a release package to enable in-app updates. Source builds are updated by rebuilding."
                 : "Updates install only when you choose. Sessions and API keys are kept.";
@@ -40,26 +77,27 @@ public sealed partial class SettingsView
             CheckUpdatesButton.IsEnabled = _installedRelease is not null;
         }
         catch (Exception ex) when (ex is UpdateException or IOException or UnauthorizedAccessException)
-        { UpdateStatusText.Text = "The installation information could not be read. Reinstall a release package."; CheckUpdatesButton.IsEnabled = false; }
+        { AboutBuildText.Text = "Installation details unavailable"; UpdateStatusText.Text = "The installation information could not be read. Reinstall a release package."; CheckUpdatesButton.IsEnabled = false; }
         finally { _updatesInitializing = false; }
     }
 
     private void OnUpdateChannelChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatesInitializing || UpdateStatusText is null) return;
+        SetAvailableUpdate(null);
         try
         {
             _updatePreferences.SaveChannel(UpdateChannelCombo.SelectedIndex == 1 ? UpdateChannel.Preview : UpdateChannel.Stable);
-            _availableUpdate = null;
-            InstallUpdateButton.IsEnabled = false;
             UpdateStatusText.Text = "Channel changed. Check for updates to see available releases.";
+            CheckForUpdates();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { UpdateStatusText.Text = "Could not save the update channel."; }
     }
 
     private async void OnCheckUpdatesClick(object sender, RoutedEventArgs e)
     {
-        if (_installedRelease is null) return;
+        if (_installedRelease is null || !CheckUpdatesButton.IsEnabled || _updateLifetime.IsCancellationRequested) return;
+        SetAvailableUpdate(null);
         CheckUpdatesButton.IsEnabled = false;
         InstallUpdateButton.IsEnabled = false;
         UpdateChannelCombo.IsEnabled = false;
@@ -69,7 +107,10 @@ public sealed partial class SettingsView
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_updateLifetime.Token);
             deadline.CancelAfter(TimeSpan.FromSeconds(30));
             using var client = new ReleaseUpdateClient();
-            _availableUpdate = await client.CheckAsync(_installedRelease, _updatePreferences.LoadChannel(), deadline.Token);
+            var channel = UpdateChannelCombo.SelectedIndex == 1 ? UpdateChannel.Preview : UpdateChannel.Stable;
+            var release = await client.CheckAsync(_installedRelease, channel, deadline.Token);
+            if (_updateLifetime.IsCancellationRequested) return;
+            SetAvailableUpdate(release);
             UpdateStatusText.Text = _availableUpdate is null ? "No newer compatible release is available on this channel." : $"Ru {_availableUpdate.Version} is available.";
             InstallUpdateButton.IsEnabled = _availableUpdate is not null;
         }

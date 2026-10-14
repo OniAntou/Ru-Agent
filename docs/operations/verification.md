@@ -79,6 +79,54 @@ all 11 stages and regenerated the self-contained flat publish directory at
 Log: `artifacts/gui-titlebar-update-build.log`. Native visual/click/DPI acceptance
 and release installer packaging were not run for this shortcut.
 
+## CLI uninstall and download feedback (2026-10-14)
+
+Added the registered CLI uninstall shortcut, a one-command bootstrap example,
+and interactive download progress for bootstrap/update. Registry/path validation
+binds removal to the calling CLI installation. The embedded worker waits for
+the exact parent process, honours request revocation and rechecks registration
+before opening the native confirmation wizard. No process is terminated by the
+helper and no profile deletion or direct PATH editing was added.
+
+The CLI Debug suite passed all 1,444 tests (eight uninstall/progress cases).
+After extending bounded error reporting, those eight cases passed again under
+the shared matrix lock. Registration tests use private fixture paths; the
+worker cancellation test never launches an uninstaller or reads live registration.
+Documentation/route/distribution guards passed 18 tests. PowerShell parser checks
+passed for bootstrap, worker and the one-line example. `git diff --check` passed.
+
+Self-contained win-x64 CLI publish passed; log:
+`artifacts/cli-maintenance-publish.log`. The published executable's
+`uninstall --help` returned 0. No live installation was removed, no native
+successful uninstall or terminal visual acceptance was performed, and no new
+public release was published. Public `0.1.0-preview.1` predates this CLI command.
+
+## About and conditional GUI update action (2026-10-14)
+
+Settings now has General, Models & Providers and About tabs. About owns the
+version, source/installed build label, Windows architecture, repository link and
+update controls. The title-bar shortcut starts collapsed and is shown only after
+the selected channel yields a newer compatible release. Channel changes and
+failed/empty checks clear availability. Installed Desktop checks at startup and
+every 30 minutes, with a 30-second check deadline and no automatic installation;
+source builds do not poll. Disposal stops the timer and cancels pending checks.
+
+The Debug GUI build passed with zero warnings/errors; the GUI project matrix
+passed all 1,426 tests, including three About/availability/lifetime contracts.
+The first matrix had 1 failure / 1,425 passes because a provider-navigation
+contract read only `SettingsView.xaml.cs` after navigation moved to a partial.
+Using `GuiSource.ViewText("SettingsView")` restored complete class coverage and
+kept the provider-entry assertions unchanged. After binding checks directly to
+the displayed channel, the final GUI matrix also passed all 1,426 tests.
+Documentation/route/distribution guards passed 18 tests; `git diff --check`
+passed. Native About/indicator visual acceptance and live background release
+checks were not exercised in this scoped verification.
+
+The subsequent combined `build.bat` Release build completed all 11 stages and
+regenerated the flat GUI/CLI/Host publish tree with the pending maintenance
+features. Log: `artifacts/about-cli-maintenance-release-build.log`. This is a
+local self-contained build; no new public installer release was published.
+
 ## Product packages and explicit updates (2026-10-14)
 
 Workspace-only native installer checks passed for both products: install,

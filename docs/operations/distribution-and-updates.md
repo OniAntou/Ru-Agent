@@ -19,8 +19,14 @@ and run `ru` after installing CLI. ZIP archives provide the matching portable tr
 If `ru` already points to a source checkout or another installation, use `where ru`
 to select the intended command. The installer preserves other PATH entries.
 
-For CLI command-based installation, download and inspect
-`scripts/install.ps1` from this repository, then run it with Windows PowerShell:
+Install CLI with one command in Command Prompt (also works in PowerShell):
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1'))) -Channel Preview"
+```
+
+This runs the bootstrap from the official repository. To inspect it first, use
+the manual alternative:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -OutFile .\install.ps1
@@ -28,27 +34,48 @@ Invoke-WebRequest https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/script
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Channel Preview
 ```
 
-Command Prompt equivalent:
-
-```cmd
-curl -fsSL https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -o ru-install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File ru-install.ps1 -Channel Preview
-```
-
 The script runs the verified installer silently and adds the CLI to the user
 PATH. Omitting `-Channel Preview` selects Stable, which needs a published Stable
 release. Open a new terminal after installation.
+
+Interactive bootstrap downloads and `ru update` show a progress bar with
+percent, transferred megabytes and average speed. Redirected output stays plain
+text. The bar describes transfer progress; SHA-256 verification completes before
+installation.
 
 The bootstrap selects a compatible release, bounds its download and checks its
 GitHub-provided SHA-256 digest. It fails if no matching release exists. It never
 fetches from an arbitrary model-provided URL.
 
+## Uninstall
+
+`ru uninstall` opens the registered Windows CLI uninstaller after the caller
+exits. Confirm in that wizard to remove CLI files and its user PATH entry.
+Sessions, API keys and the shared Ru profile remain. It refuses unknown or
+mismatched registrations and never removes the source checkout, a portable
+folder or Desktop. Close other CLI windows before uninstalling; active runs
+block the existing idle-only maintenance handshake. Failures are recorded in
+`%LOCALAPPDATA%\Ru\updates\last-uninstall.json`.
+
+This command is included in builds after `0.1.0-preview.1`; that original
+release can be removed through **Windows Settings → Apps → Ru CLI → Uninstall**.
+Portable users delete their extracted application folder themselves.
+
 ## Update
 
-In Desktop, the title-bar **Update** button opens the Updates section and checks
-the selected channel. It does not install automatically. You can also open
-**Settings → General → Updates**, choose Stable or Preview,
-then **Check for updates**. **Install and restart** downloads with progress and
+In Desktop, **Settings → About** shows the application version, build type,
+Windows architecture and repository link alongside Updates. Installed releases
+check the selected channel at startup and every 30 minutes while Ru is open.
+Checks time out after 30 seconds and never download or install automatically.
+Source builds keep their rebuild guidance and do not poll releases.
+
+The title-bar **Update** button appears only after a newer compatible release
+is found. It opens About without discarding that result. No result, channel
+changes or failed checks hide it. You can always open
+**Settings → About → Updates**, choose Stable or Preview,
+then **Check for updates**. In the original `0.1.0-preview.1`, this section is
+still under General; About and the conditional title-bar button are later
+source changes. **Install and restart** downloads with progress and
 cancellation, verifies the asset and exits before replacing files. In a terminal:
 
 ```text

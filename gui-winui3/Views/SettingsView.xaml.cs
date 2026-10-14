@@ -1115,6 +1115,7 @@ namespace RuApp.Views
         public void Dispose()
         {
             _updateLifetime.Cancel();
+            StopUpdateAvailabilityChecks();
             _modelsDevKeyEditGeneration++;
             DisposeEventHandlers();
             DisposeOwnedProviderCatalogController();
@@ -1232,74 +1233,5 @@ namespace RuApp.Views
             PresetChanged?.Invoke(preset);
         }
 
-        private void InitializeSettingsHoverEffects()
-        {
-            SelectTab(isGeneral: true);
-        }
-
-        private void OnNavGeneralClick(object sender, RoutedEventArgs e)
-        {
-            SelectTab(isGeneral: true);
-        }
-
-        private void OnNavModelsClick(object sender, RoutedEventArgs e)
-        {
-            SelectTab(isGeneral: false);
-            _ = _providerCatalogController?.RefreshAsync(force: true);
-        }
-
-        /// <summary>
-        /// Opens the provider section from outside the settings surface, for a
-        /// failure message whose fix lives here.
-        /// </summary>
-        /// <remarks>
-        /// Deliberately the same path as clicking the Models tab: a deep link that
-        /// skipped the catalog refresh would show stale providers.
-        /// </remarks>
-        public void ShowProviders()
-        {
-            OnNavModelsClick(this, new RoutedEventArgs());
-        }
-
-        private void SelectTab(bool isGeneral)
-        {
-            if (PanelGeneralScrollViewer != null)
-            {
-                PanelGeneralScrollViewer.Visibility = isGeneral ? Visibility.Visible : Visibility.Collapsed;
-            }
-            if (PanelModelsScrollViewer != null)
-            {
-                PanelModelsScrollViewer.Visibility = isGeneral ? Visibility.Collapsed : Visibility.Visible;
-            }
-
-            if (isGeneral)
-            {
-                if (CategoryTitleText != null) CategoryTitleText.Text = "General";
-                if (CategorySubtitleText != null) CategorySubtitleText.Text = "Manage application theme and agent defaults.";
-                HighlightNavButton(NavGeneralBtn, NavModelsBtn);
-            }
-            else
-            {
-                if (CategoryTitleText != null) CategoryTitleText.Text = "Models & Providers";
-                if (CategorySubtitleText != null) CategorySubtitleText.Text = "Configure cloud AI model providers, API credentials, and server connections.";
-                HighlightNavButton(NavModelsBtn, NavGeneralBtn);
-            }
-        }
-
-        private void HighlightNavButton(Button? active, Button? inactive)
-        {
-            if (active != null)
-            {
-                active.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
-                active.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
-                active.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-            }
-            if (inactive != null)
-            {
-                inactive.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                inactive.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-                inactive.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
-            }
-        }
     }
 }

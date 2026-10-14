@@ -17,14 +17,16 @@ public static class Program
             // Best effort when redirected
         }
 
-        if (args.Length > 0 && args[0] is "update")
+        if (args.Length > 0 && args[0] is "update" or "uninstall")
         {
             using var updateCts = new CancellationTokenSource();
             ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; updateCts.Cancel(); };
             Console.CancelKeyPress += cancel;
             try
             {
-                var result = await UpdateCommands.RunAsync(args[1..], Console.Out, Console.Error, updateCts.Token).ConfigureAwait(false);
+                var result = args[0] == "uninstall"
+                    ? await UninstallCommands.RunAsync(args[1..], Console.Out, Console.Error, updateCts.Token).ConfigureAwait(false)
+                    : await UpdateCommands.RunAsync(args[1..], Console.Out, Console.Error, updateCts.Token).ConfigureAwait(false);
                 return result == 10 ? 0 : result;
             }
             finally { Console.CancelKeyPress -= cancel; }
@@ -171,6 +173,7 @@ public static class Program
     {
         Console.Error.WriteLine("Usage:");
         Console.Error.WriteLine("  ru update [--check] [--channel stable|preview] [--yes]");
+        Console.Error.WriteLine("  ru uninstall");
         Console.Error.WriteLine("  ru --version");
         Console.Error.WriteLine("  agent run [--preset plan|standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--image PATH]... [--json] [--trust-workspace] [--confirm-full-access]");
         Console.Error.WriteLine("  agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--image PATH]... [--json] [--classic] [--trust-workspace] [--confirm-full-access]");

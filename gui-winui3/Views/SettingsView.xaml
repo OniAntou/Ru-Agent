@@ -118,6 +118,9 @@
                             AutomationProperties.Name="Models and providers settings"
                             Click="OnNavModelsClick"
                             Style="{StaticResource SidebarNavButtonStyle}" />
+                    <Button x:Name="NavAboutBtn" Content="About"
+                            AutomationProperties.Name="About Ru"
+                            Click="OnNavAboutClick" Style="{StaticResource SidebarNavButtonStyle}" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -152,24 +155,6 @@
                           VerticalScrollBarVisibility="Auto"
                           Visibility="Visible">
                 <StackPanel Spacing="16">
-                    <Border Style="{StaticResource FluentCardStyle}">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Updates" Style="{StaticResource SettingLabelStyle}" />
-                            <TextBlock x:Name="UpdateVersionText" Style="{StaticResource SettingDescStyle}" />
-                            <ComboBox x:Name="UpdateChannelCombo" Header="Release channel" SelectedIndex="0"
-                                      SelectionChanged="OnUpdateChannelChanged" HorizontalAlignment="Stretch">
-                                <ComboBoxItem Content="Stable" />
-                                <ComboBoxItem Content="Preview — includes early releases" />
-                            </ComboBox>
-                            <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" Style="{StaticResource SettingDescStyle}" />
-                            <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="100" Visibility="Collapsed" />
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="CheckUpdatesButton" Content="Check for updates" Click="OnCheckUpdatesClick" />
-                                <Button x:Name="InstallUpdateButton" Content="Install and restart" IsEnabled="False" Click="OnInstallUpdateClick" />
-                                <Button x:Name="CancelUpdateButton" Content="Cancel" Visibility="Collapsed" Click="OnCancelUpdateClick" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
                     <!-- Appearance Card -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">
@@ -770,6 +755,43 @@
                         </StackPanel>
                     </Border>
 
+                </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer x:Name="PanelAboutScrollViewer" Grid.Row="1"
+                          Padding="28,20,28,32" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <StackPanel Spacing="16">
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Ru Agent" FontSize="22" FontWeight="SemiBold"
+                                       FontFamily="{StaticResource RuDisplayFontFamily}" Foreground="{StaticResource RuInkBrush}" />
+                            <TextBlock Text="Windows coding agent" Style="{StaticResource SettingDescStyle}" />
+                            <TextBlock x:Name="AboutVersionText" Style="{StaticResource SettingLabelStyle}" />
+                            <TextBlock x:Name="AboutBuildText" Style="{StaticResource SettingDescStyle}" />
+                            <TextBlock x:Name="AboutPlatformText" Style="{StaticResource SettingDescStyle}" />
+                            <HyperlinkButton Content="GitHub · OniAntou/Ru-Agent"
+                                             NavigateUri="https://github.com/OniAntou/Ru-Agent"
+                                             HorizontalAlignment="Left" Padding="0" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Updates" Style="{StaticResource SettingLabelStyle}" />
+                            <ComboBox x:Name="UpdateChannelCombo" Header="Release channel" SelectedIndex="0"
+                                      SelectionChanged="OnUpdateChannelChanged" HorizontalAlignment="Stretch">
+                                <ComboBoxItem Content="Stable" />
+                                <ComboBoxItem Content="Preview — includes early releases" />
+                            </ComboBox>
+                            <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" Style="{StaticResource SettingDescStyle}" />
+                            <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="100" Visibility="Collapsed" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="CheckUpdatesButton" Content="Check for updates" Click="OnCheckUpdatesClick" />
+                                <Button x:Name="InstallUpdateButton" Content="Install and restart" IsEnabled="False" Click="OnInstallUpdateClick" />
+                                <Button x:Name="CancelUpdateButton" Content="Cancel" Visibility="Collapsed" Click="OnCancelUpdateClick" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </Grid>

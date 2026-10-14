@@ -2,6 +2,13 @@ namespace RuApp;
 
 public sealed partial class MainWindow
 {
+    private void OnUpdateAvailabilityChanged(bool available)
+    {
+        TitleBarUpdateButton.Visibility = available
+            ? Microsoft.UI.Xaml.Visibility.Visible
+            : Microsoft.UI.Xaml.Visibility.Collapsed;
+    }
+
     private void OnTitleBarUpdateClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         if (_settingsView is null) return;

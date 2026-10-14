@@ -63,7 +63,13 @@ public static class UpdateCommands
             await output.WriteLineAsync("Downloading and verifying update…");
             using var downloadDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             downloadDeadline.CancelAfter(TimeSpan.FromMinutes(10));
-            var downloaded = await client.DownloadAsync(release, staging, null, downloadDeadline.Token).ConfigureAwait(false);
+            DownloadedUpdate downloaded;
+            using (var progress = new CliDownloadProgress(output, release.Size,
+                ReferenceEquals(output, Console.Out) && !Console.IsOutputRedirected))
+            {
+                progress.Report(0);
+                downloaded = await client.DownloadAsync(release, staging, progress, downloadDeadline.Token).ConfigureAwait(false);
+            }
             await UpdateMaintenance.PrepareAsync(ct).ConfigureAwait(false);
             await UpdateLauncher.StartAsync(downloaded, AppContext.BaseDirectory, preferences.DirectoryPath, restartDesktop: false, ct).ConfigureAwait(false);
             await output.WriteLineAsync("Verified. Installing after Ru exits. Run ru again after installation; details are in the update status file.");

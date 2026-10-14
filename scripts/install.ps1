@@ -1,8 +1,10 @@
-# Windows PowerShell 5.1+. Download from the official repository and inspect
-# this file before running it. No administrator or .NET SDK is required.
+# Windows PowerShell 5.1+. Official CLI bootstrap; download this file first
+# for manual review if desired. No administrator or .NET SDK is required.
 [CmdletBinding()]
 param([ValidateSet('Stable','Preview')][string]$Channel = 'Stable')
 $ErrorActionPreference = 'Stop'
+$interactiveDownload = -not [Console]::IsOutputRedirected
+$downloadLineOpen = $false
 Add-Type -AssemblyName System.Net.Http
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -82,8 +84,26 @@ try {
     $stream=$response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
     $output=[IO.File]::Open($path,[IO.FileMode]::CreateNew)
     $buffer=New-Object byte[] 81920; $written=0L
-    while (($count=$stream.ReadAsync($buffer,0,$buffer.Length,$deadline.Token).GetAwaiter().GetResult()) -gt 0) { $written+=$count; if ($written -gt $selected.size) { throw 'download_size_mismatch' }; $output.Write($buffer,0,$count) }
+    Write-Host "Downloading Ru CLI $($selectedVersion.Text)..."
+    $downloadTimer = [Diagnostics.Stopwatch]::StartNew()
+    $lastDraw = -100L
+    while (($count=$stream.ReadAsync($buffer,0,$buffer.Length,$deadline.Token).GetAwaiter().GetResult()) -gt 0) {
+        $written+=$count
+        if ($written -gt $selected.size) { throw 'download_size_mismatch' }
+        $output.Write($buffer,0,$count)
+        if ($interactiveDownload -and ($downloadTimer.ElapsedMilliseconds - $lastDraw -ge 100 -or $written -eq $selected.size)) {
+            $lastDraw = $downloadTimer.ElapsedMilliseconds
+            $percent = [int][Math]::Floor(100.0 * $written / $selected.size)
+            $filled = [int][Math]::Floor(24.0 * $written / $selected.size)
+            $bar = ('=' * $filled) + (' ' * (24-$filled))
+            $speed = $written / 1MB / [Math]::Max(0.001,$downloadTimer.Elapsed.TotalSeconds)
+            Write-Host -NoNewline -ForegroundColor Cyan ("`r  Downloading [{0}] {1,3}%  {2,6:0.0}/{3:0.0} MB  {4,5:0.0} MB/s   " -f $bar,$percent,($written/1MB),($selected.size/1MB),$speed)
+            $downloadLineOpen = $true
+        }
+    }
+    if ($downloadLineOpen) { Write-Host ''; $downloadLineOpen = $false }
     $output.Dispose(); $output=$null
+    Write-Host 'Verifying SHA-256...'
     if ($written -ne $selected.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $selected.digest.Substring(7)) { throw 'download_verification_failed' }
     Write-Host "Verified Ru CLI $($selectedVersion.Text). Installing for the current user."
     $setup = Start-Process -FilePath $path -WindowStyle Hidden -Wait -PassThru -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOCLOSEAPPLICATIONS')
@@ -93,6 +113,7 @@ try {
     Set-Content -LiteralPath (Join-Path $preferences 'channel.txt') -Value $Channel.ToLowerInvariant() -Encoding ascii
     Write-Host 'Installed. Open a new terminal and run ru. Future updates: ru update.'
 } finally {
+    if ($downloadLineOpen) { Write-Host '' }
     if ($output) { $output.Dispose() }; if ($stream) { $stream.Dispose() }; if ($response) { $response.Dispose() }; $http.Dispose(); $deadline.Dispose()
     # Delete only the private, direct temporary child created by this invocation.
     if ((Split-Path -Parent ([IO.Path]::GetFullPath($staging))) -eq [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') -and (Test-Path -LiteralPath $staging)) { Remove-Item -LiteralPath $staging -Recurse -Force }

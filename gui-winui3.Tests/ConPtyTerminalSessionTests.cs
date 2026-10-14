@@ -125,9 +125,24 @@ public sealed class ConPtyTerminalSessionTests
 
     private static void Cleanup(string root)
     {
-        if (Directory.Exists(root))
+        var canonical = Path.GetFullPath(root);
+        var testParent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "ru-conpty-tests")) + Path.DirectorySeparatorChar;
+        if (!canonical.StartsWith(testParent, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("cleanup escaped the ConPTY fixture directory");
+        var cleanupBudget = Stopwatch.StartNew();
+        while (Directory.Exists(canonical))
         {
-            Directory.Delete(root, recursive: true);
+            try
+            {
+                Directory.Delete(canonical, recursive: true);
+                return;
+            }
+            catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33
+                && cleanupBudget.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                // Shell exit can precede conhost releasing its working directory.
+                Thread.Sleep(50);
+            }
         }
     }
 }

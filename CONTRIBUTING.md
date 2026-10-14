@@ -55,6 +55,8 @@ other collections retain parallel execution. This prevents unrelated test load
 from interfering with process startup, pipe drains and cancellation probes.
 ANSI snapshot fixtures wait for view coordinates to match the driver's resized
 buffer before asserting cells; a fixed timer alone does not guarantee layout.
+ConPTY fixtures retain their process-exit assertions and allow up to five seconds
+for Windows to release sharing locks on their own temporary directory during cleanup.
 
 Choose verification by impact. During iteration, run checks that exercise the
 changed behavior; expand for failures or cross-component dependencies. A small

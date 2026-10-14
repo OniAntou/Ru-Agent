@@ -16,6 +16,15 @@ public sealed partial class SettingsView
     public Func<bool>? CanInstallUpdate { get; set; }
     public event Action? UpdateRestartRequested;
 
+    public void ShowUpdates()
+    {
+        SelectTab(isGeneral: true);
+        PanelGeneralScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
+        CheckUpdatesButton.Focus(FocusState.Programmatic);
+        if (CheckUpdatesButton.IsEnabled)
+            OnCheckUpdatesClick(this, new RoutedEventArgs());
+    }
+
     private void InitializeUpdates()
     {
         _updatesInitializing = true;

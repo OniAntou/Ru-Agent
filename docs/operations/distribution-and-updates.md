@@ -45,7 +45,9 @@ fetches from an arbitrary model-provided URL.
 
 ## Update
 
-In Desktop, open **Settings → General → Updates**, choose Stable or Preview,
+In Desktop, the title-bar **Update** button opens the Updates section and checks
+the selected channel. It does not install automatically. You can also open
+**Settings → General → Updates**, choose Stable or Preview,
 then **Check for updates**. **Install and restart** downloads with progress and
 cancellation, verifies the asset and exits before replacing files. In a terminal:
 

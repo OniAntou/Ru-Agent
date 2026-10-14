@@ -59,26 +59,36 @@
                 </Style>
             </Grid.Resources>
 
-            <!-- Hides and restores the whole right side surface. Its right margin
-                 is the caption buttons' inset, set in code, so it sits immediately
-                 left of Minimize. -->
-            <Button x:Name="SidePanelToggleButton"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Top"
-                    IsEnabled="False"
-                    Click="OnSidePanelToggleClick"
-                    Style="{StaticResource TitleBarIconButtonStyle}"
-                    ToolTipService.ToolTip="Show side panel"
-                    AutomationProperties.Name="Show side panel">
-                <Viewbox Width="16" Height="16">
-                    <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
-                          Stroke="{StaticResource RuInkBrush}"
-                          StrokeThickness="1.2"
-                          StrokeLineJoin="Round"
-                          StrokeStartLineCap="Round"
-                          StrokeEndLineCap="Round" />
-                </Viewbox>
-            </Button>
+            <!-- Keep interactive actions immediately left of the system captions. -->
+            <StackPanel x:Name="TitleBarActions" Orientation="Horizontal" Spacing="2"
+                        HorizontalAlignment="Right" VerticalAlignment="Top">
+                <Button x:Name="TitleBarUpdateButton" Content="Update"
+                        Height="24" MinHeight="0" MinWidth="0" Padding="10,0"
+                        VerticalAlignment="Center" CornerRadius="{StaticResource AppMicroPillCornerRadius}" BorderThickness="0"
+                        FontFamily="{StaticResource RuUiFontFamily}" FontSize="12"
+                        Background="{StaticResource RuAccentSoftBrush}"
+                        Foreground="{StaticResource RuAccentBrush}"
+                        IsEnabled="False" Click="OnTitleBarUpdateClick"
+                        ToolTipService.ToolTip="Check for updates"
+                        AutomationProperties.Name="Check for updates" />
+                <Button x:Name="SidePanelToggleButton"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        IsEnabled="False"
+                        Click="OnSidePanelToggleClick"
+                        Style="{StaticResource TitleBarIconButtonStyle}"
+                        ToolTipService.ToolTip="Show side panel"
+                        AutomationProperties.Name="Show side panel">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M10.5,3.5 V12.5"
+                              Stroke="{StaticResource RuInkBrush}"
+                              StrokeThickness="1.2"
+                              StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round" />
+                    </Viewbox>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- Main Content Area -->

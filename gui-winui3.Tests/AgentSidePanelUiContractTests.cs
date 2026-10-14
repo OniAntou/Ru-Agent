@@ -227,6 +227,8 @@ public sealed class AgentSidePanelUiContractTests
     {
         var document = GuiSource.Xml("MainWindow.xaml");
         GuiSource.Require(document, "SidePanelToggleButton");
+        var update = GuiSource.Require(document, "TitleBarUpdateButton");
+        Assert.Equal("OnTitleBarUpdateClick", GuiSource.AttributeValue(update, "Click"));
 
         var code = GuiSource.ViewText("MainWindow");
         string layout = GuiSource.MethodBody(code, "UpdateTitleBarToggleLayout");
@@ -236,6 +238,8 @@ public sealed class AgentSidePanelUiContractTests
 
         string region = GuiSource.MethodBody(code, "ApplySidePanelToggleRegion");
         Assert.Contains("SetRegionRects", region, StringComparison.Ordinal);
+        Assert.Contains("TitleBarActions", region, StringComparison.Ordinal);
+        Assert.Contains("ShowUpdates", GuiSource.MethodBody(code, "OnTitleBarUpdateClick"), StringComparison.Ordinal);
 
         Assert.Contains(
             "ToggleSidePanel",

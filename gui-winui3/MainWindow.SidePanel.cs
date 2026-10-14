@@ -8,15 +8,16 @@ using RuApp.Services;
 namespace RuApp
 {
     /// <summary>
-    /// The title bar's side-surface toggle: the one control that hides and
-    /// restores the whole right side surface, parked immediately left of the
+    /// The title bar's side-surface toggle and update action sit left of the
     /// system caption buttons. Interactive title-bar content needs explicit
-    /// passthrough regions, so the button's rectangle is registered with the
+    /// passthrough regions, so the action group's rectangle is registered with the
     /// window's non-client input source and refreshed whenever the bar's layout
     /// changes.
     /// </summary>
     public sealed partial class MainWindow
     {
+        private Windows.Graphics.RectInt32? _titleBarActionsRegion;
+
         private void InitializeSidePanelToggle()
         {
             if (AppTitleBar is null || SidePanelToggleButton is null)
@@ -26,6 +27,13 @@ namespace RuApp
 
             AppTitleBar.Loaded += (_, _) => UpdateTitleBarToggleLayout();
             AppTitleBar.SizeChanged += (_, _) => UpdateTitleBarToggleLayout();
+            // Position-only layout changes need a fresh hit region; cache physical
+            // bounds so unrelated chat layout does not re-register the region.
+            AppTitleBar.LayoutUpdated += (_, _) =>
+            {
+                if (AppTitleBar.XamlRoot is { } root)
+                    ApplySidePanelToggleRegion(root.RasterizationScale);
+            };
             Activated += OnWindowActivatedForSidePanelToggle;
         }
 
@@ -45,7 +53,7 @@ namespace RuApp
                 SidePanelToggleButton.Height = captionHeight;
             }
 
-            SidePanelToggleButton.Margin = new Thickness(
+            TitleBarActions.Margin = new Thickness(
                 0,
                 0,
                 TitleBarLayout.InsetInLayoutUnits(_appWindow.TitleBar.RightInset, scale),
@@ -56,22 +64,25 @@ namespace RuApp
         private void ApplySidePanelToggleRegion(double scale)
         {
             if (_appWindow is null
-                || SidePanelToggleButton is null
-                || SidePanelToggleButton.ActualWidth <= 0)
+                || TitleBarActions is null
+                || TitleBarActions.ActualWidth <= 0)
             {
                 return;
             }
 
-            var bounds = SidePanelToggleButton.TransformToVisual(null).TransformBounds(
+            var bounds = TitleBarActions.TransformToVisual(null).TransformBounds(
                 new Windows.Foundation.Rect(
                     0,
                     0,
-                    SidePanelToggleButton.ActualWidth,
-                    SidePanelToggleButton.ActualHeight));
+                    TitleBarActions.ActualWidth,
+                    TitleBarActions.ActualHeight));
+            var region = TitleBarLayout.ToPhysicalRect(bounds, scale);
+            if (_titleBarActionsRegion is { } previous && previous.Equals(region)) return;
             var source = InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
             source.SetRegionRects(
                 NonClientRegionKind.Passthrough,
-                new[] { TitleBarLayout.ToPhysicalRect(bounds, scale) });
+                new[] { region });
+            _titleBarActionsRegion = region;
         }
 
         private void OnWindowActivatedForSidePanelToggle(object sender, WindowActivatedEventArgs args)

@@ -320,6 +320,7 @@ namespace RuApp
                     _chatView?.SetAgentPreset(nextPreset);
                 };
                 SettingsModalContent.Content = _settingsView;
+                TitleBarUpdateButton.IsEnabled = true;
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);

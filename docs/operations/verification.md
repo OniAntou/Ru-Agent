@@ -59,6 +59,26 @@ Current-documentation and route-count guards passed all 15 tests, and
 `git diff --check` passed. No full matrix, release publish, native UI acceptance
 or performance benchmark was run for this internal refactor.
 
+## GUI title-bar Update shortcut (2026-10-14)
+
+The compact title-bar Update button sits beside the side-panel toggle, before
+the system caption buttons. It opens General's Updates card, resets its scroll
+position and checks the selected channel when no check/download is in progress.
+Source builds show their existing installation guidance. The shortcut never
+starts installation; the existing explicit install/restart flow remains in use.
+The action group's DPI-aware non-client passthrough region follows layout.
+
+`dotnet build gui-winui3/RuApp.csproj -c Debug --no-restore` passed with zero
+warnings/errors. `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter gui-winui3 -NoRestore`
+passed all 1,423 tests. The initial test run found an off-scale literal corner
+radius (1 failed, 1,422 passed); using `AppMicroPillCornerRadius` corrected it
+without changing assertions. Documentation/route guards passed all 15 tests,
+and `git diff --check` passed. The subsequent `build.bat` Release build completed
+all 11 stages and regenerated the self-contained flat publish directory at
+`gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish`.
+Log: `artifacts/gui-titlebar-update-build.log`. Native visual/click/DPI acceptance
+and release installer packaging were not run for this shortcut.
+
 ## Product packages and explicit updates (2026-10-14)
 
 Workspace-only native installer checks passed for both products: install,

@@ -34,6 +34,18 @@ Ru's orchestration runs locally. It also supports web search/fetch, which make
 network requests when used. Local-first does **not** mean offline inference or
 a bundled local model.
 
+## Install and update
+
+Separate Windows x64 Desktop and CLI installers are being prepared for the
+[first release](https://github.com/OniAntou/Ru-Agent/releases). Each includes its
+matching backend; the .NET SDK is only needed when building from source. Desktop
+updates from **Settings → General → Updates**; CLI uses `ru update` and TUI uses
+`/update`. Stable is the default, with Preview available by choice.
+
+See [installation, channels and recovery](docs/operations/distribution-and-updates.md)
+for package names, CLI bootstrap instructions and release verification limits.
+Until release assets are published, use the source-build instructions below.
+
 ## Quick start
 
 ### 1. Build on Windows

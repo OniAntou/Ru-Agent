@@ -104,7 +104,7 @@
 
             <Button x:Name="ExportButton" AutomationProperties.Name="Export diagnostics as NDJSON" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="8,0,0,0"
                     Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
-                    BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
+                    BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"
                     HorizontalAlignment="Right"/>
             </VariableSizedWrapGrid>
         </Grid>
@@ -166,7 +166,7 @@
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}" 
+                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
                                 BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="14,10">
                             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*">
                                 <!-- Dot -->
@@ -194,7 +194,7 @@
                                     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
                                                FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
 
-                                    <Border Background="{StaticResource RuCanvasBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
+                                    <Border Background="{StaticResource RuCanvasBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
                                             CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                         <StackPanel Spacing="4">

@@ -212,12 +212,26 @@ public sealed class PublicHostStarter : IDisposable
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
             using var resp = await HealthProbeClient.SendAsync(req, ct).ConfigureAwait(false);
+            var installed = RuAgent.Updates.InstalledRelease.Load(AppContext.BaseDirectory);
+            if (resp.IsSuccessStatusCode && installed is not null)
+            {
+                using var versionRequest = new HttpRequestMessage(HttpMethod.Get, baseUrl.TrimEnd('/') + "/status");
+                versionRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+                using var versionResponse = await HealthProbeClient.SendAsync(versionRequest, ct).ConfigureAwait(false);
+                using var version = System.Text.Json.JsonDocument.Parse(await versionResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                if (!versionResponse.IsSuccessStatusCode
+                    || !version.RootElement.TryGetProperty("software_version", out var reported)
+                    || reported.ValueKind != System.Text.Json.JsonValueKind.String
+                    || reported.GetString() != installed.Version)
+                    throw new AgentApiException("host_version_mismatch", "Close the other Ru application before starting this version.");
+            }
             return resp.IsSuccessStatusCode;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
+        catch (AgentApiException) { throw; }
         catch
         {
             return false;

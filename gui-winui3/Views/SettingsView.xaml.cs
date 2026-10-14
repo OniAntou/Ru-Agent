@@ -414,6 +414,7 @@ namespace RuApp.Views
         public SettingsView()
         {
             this.InitializeComponent();
+            InitializeUpdates();
             InitDropdownOptions();
             InitTranscriptSizeOptions();
             InitializeSettingsHoverEffects();
@@ -1113,6 +1114,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            _updateLifetime.Cancel();
             _modelsDevKeyEditGeneration++;
             DisposeEventHandlers();
             DisposeOwnedProviderCatalogController();

@@ -31,6 +31,7 @@ public static class ChatCommandCatalog
         new("/history", "Show entered prompt history", "/history"),
         new("/clear", "Reset the transcript view", "/clear"),
         new("/help", "Show every command", "/help"),
+        new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
         new("/exit", "Quit", "/exit"),
         new("/quit", "Quit", "/quit"),
     ];

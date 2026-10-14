@@ -2411,6 +2411,16 @@ public sealed partial class AgentCommands
                 dispatcherExitCode = 0;
                 return true;
             }
+            if (slashCmd == "/update")
+            {
+                var updateArguments = arg?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                // TUI input is owned by its editor; never read Console.In here.
+                if (!updateArguments.Contains("--yes", StringComparer.Ordinal) && !updateArguments.Contains("--check", StringComparer.Ordinal))
+                    updateArguments = [.. updateArguments, "--check"];
+                var result = await UpdateCommands.RunAsync(updateArguments, humanOut, _err, cancellationToken).ConfigureAwait(false);
+                if (result == 10) dispatcherExitCode = 0;
+                return true;
+            }
             if (slashCmd == "/retry")
             {
                 if (submissions.Retryable is null)

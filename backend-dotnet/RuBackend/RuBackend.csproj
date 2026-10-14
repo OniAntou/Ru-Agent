@@ -7,6 +7,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\RuAgent.Updates\RuAgent.Updates.csproj" />
     <ProjectReference Include="..\RuAgent.Broker\RuAgent.Broker.csproj" />
     <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <ProjectReference Include="..\RuAgent.Harness.Persistence\RuAgent.Harness.Persistence.csproj" />

@@ -1,6 +1,11 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-13.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-14.
+
+Desktop/CLI distribution and explicit update lifecycle are described in
+[ADR-0019](adr/0019-product-packages-and-explicit-updates.md). The maintenance
+handshake extends `/status` and `/host/shutdown` without adding a route or changing
+the runtime descriptor schema.
 
 Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).

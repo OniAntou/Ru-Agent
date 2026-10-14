@@ -1,0 +1,98 @@
+name: Release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version without v (for example 0.1.0-preview.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  packages:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Resolve release version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = if ($env:INPUT_VERSION) { $env:INPUT_VERSION } else { $env:GITHUB_REF_NAME.TrimStart('v') }
+          if ($version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?\z') { throw 'Invalid release version' }
+          $tagRef = "refs/tags/v$version"
+          $existing = @(& git ls-remote --tags origin $tagRef ($tagRef + '^{}'))
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify release tag' }
+          $tagLine = $existing | Where-Object { $_.EndsWith('^{}') } | Select-Object -First 1
+          if (-not $tagLine) { $tagLine = $existing | Select-Object -First 1 }
+          $commit = (& git rev-parse HEAD).Trim()
+          if ($tagLine -and $tagLine.Split([char]9)[0] -ne $commit) { throw 'Release tag points to another commit; use a new version' }
+          "RU_PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+      - run: pip install -e ".[dev,tooling]"
+      - run: python -m pytest -q
+      - run: python scripts/check_aspnetcore_route_matrix.py
+      - run: python scripts/check_python_runtime_boundary.py
+      - run: python -m ruff check tests scripts tools
+      - name: Full .NET matrix
+        shell: pwsh
+        run: .\scripts\test_dotnet.ps1 -Configuration Debug
+      - name: Install compiler on disposable runner
+        shell: pwsh
+        run: choco install innosetup --version=6.5.3 --yes --no-progress
+      - name: Package Desktop and CLI
+        shell: pwsh
+        run: .\scripts\package_release.ps1 -Version $env:RU_PACKAGE_VERSION -IsccPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+      - name: Install, update and uninstall on disposable runner
+        shell: pwsh
+        run: .\scripts\installer_smoke.ps1 -Version $env:RU_PACKAGE_VERSION
+      - name: Boot the matching Host from both product packages
+        shell: pwsh
+        run: |
+          foreach ($product in @('Desktop','CLI')) {
+            .\scripts\publish_smoke.ps1 -PublishedDirectory "artifacts/releases/$env:RU_PACKAGE_VERSION/$product"
+            if ($LASTEXITCODE -ne 0) { throw "Packaged Host smoke failed for $product" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ru-windows-${{ env.RU_PACKAGE_VERSION }}
+          path: |
+            artifacts/releases/${{ env.RU_PACKAGE_VERSION }}/*.exe
+            artifacts/releases/${{ env.RU_PACKAGE_VERSION }}/*.zip
+            artifacts/releases/${{ env.RU_PACKAGE_VERSION }}/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Create draft release for maintainer review
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = "artifacts/releases/$env:RU_PACKAGE_VERSION"
+          $assets = @(Get-ChildItem -LiteralPath $root -File | Where-Object Extension -in @('.exe','.zip','.txt') | ForEach-Object FullName)
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          @(
+            'Separate per-user Windows x64 Desktop and CLI packages, with matching self-contained Hosts.',
+            'Updates: Settings > General > Updates, ru update, or /update in TUI. Stable is the default; Preview is opt-in.',
+            'These initial packages are unsigned. SHA256SUMS.txt verifies integrity, not publisher identity.',
+            'See docs/operations/distribution-and-updates.md for installation, recovery and verification limits.'
+          ) | Set-Content -LiteralPath $notes -Encoding utf8
+          $arguments = @('release','create',"v$env:RU_PACKAGE_VERSION",'--draft','--target',$env:GITHUB_SHA,'--title',"Ru $env:RU_PACKAGE_VERSION",'--notes-file',$notes)
+          if ($env:RU_PACKAGE_VERSION.Contains('-')) { $arguments += '--prerelease' }
+          & gh @arguments @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed' }

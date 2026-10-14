@@ -224,4 +224,3 @@ function New-ScenarioWorkspace($Scenario, [string]$ScenarioRoot) {
     [System.IO.File]::WriteAllText($scriptPath, $scriptedJson, [System.Text.UTF8Encoding]::new($false))
     return [pscustomobject]@{ dataRoot = $dataRoot; workspace = $workspace; scriptPath = $scriptPath; files = $files; externalFiles = $externalFiles }
 }
-

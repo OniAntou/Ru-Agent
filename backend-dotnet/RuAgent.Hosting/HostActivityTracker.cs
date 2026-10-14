@@ -9,6 +9,8 @@ public sealed class HostActivityTracker
     private readonly TimeProvider _clock;
     private long _lastActivityUtcTicks;
     private int _openRequests;
+    private readonly object _admissionGate = new();
+    private bool _maintenance;
 
     public HostActivityTracker(TimeProvider clock)
     {
@@ -23,8 +25,35 @@ public sealed class HostActivityTracker
 
     public void Enter()
     {
-        Interlocked.Increment(ref _openRequests);
-        Touch();
+        if (!TryEnter()) throw new InvalidOperationException("host_update_in_progress");
+    }
+
+    public bool TryEnter()
+    {
+        lock (_admissionGate)
+        {
+            if (_maintenance) return false;
+            Interlocked.Increment(ref _openRequests);
+            Touch();
+            return true;
+        }
+    }
+
+    // The one admitted request is the authenticated maintenance caller.
+    // While it checks durable runs, no new request can create a run behind it.
+    public bool TryBeginMaintenance()
+    {
+        lock (_admissionGate)
+        {
+            if (_maintenance || OpenRequests != 1) return false;
+            _maintenance = true;
+            return true;
+        }
+    }
+
+    public void CancelMaintenance()
+    {
+        lock (_admissionGate) _maintenance = false;
     }
 
     public void Exit() => Interlocked.Decrement(ref _openRequests);

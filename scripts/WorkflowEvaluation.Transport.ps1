@@ -328,4 +328,3 @@ function Get-PublicRunHistory($HostSession, [string]$RunId, [long]$ThroughSequen
         $client.Dispose()
     }
 }
-

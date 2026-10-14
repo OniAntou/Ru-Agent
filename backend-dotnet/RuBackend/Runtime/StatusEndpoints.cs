@@ -26,6 +26,8 @@ public static class StatusEndpoints
                 status = "ok",
                 message = "Backend is running and ready for the WinUI3 UI.",
                 backend = current.Backend,
+                maintenance_protocol = 1,
+                software_version = RuAgent.Updates.InstalledRelease.SoftwareVersion,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -87,17 +89,44 @@ public static class StatusEndpoints
         }
     }
 
-    private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)
+    private static async Task<IResult> ShutdownAsync(HttpContext context, IHostApplicationLifetime lifetime,
+        RuAgent.Hosting.HostActivityTracker activity, CancellationToken ct)
     {
+        if (context.Request.Query["when_idle"] == "true")
+        {
+            if (!activity.TryBeginMaintenance())
+                return Results.Json(new { error_code = "update_busy" }, statusCode: 409);
+            bool accepted = false;
+            try
+            {
+                var options = context.RequestServices.GetService<RuAgent.Harness.Persistence.HarnessSqliteOptions>();
+                if (options is null) return Results.Json(new { error_code = "update_state_unavailable" }, statusCode: 503);
+                var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+                {
+                    DataSource = options.DatabasePath, Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly, Pooling = false,
+                }.ToString();
+                await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+                await connection.OpenAsync(ct);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_runs WHERE terminal_at_utc IS NULL)";
+                if (Convert.ToInt64(await command.ExecuteScalarAsync(ct)) != 0)
+                    return Results.Json(new { error_code = "update_busy" }, statusCode: 409);
+                accepted = true;
+                context.Response.Headers["X-Ru-Update-Ready"] = "1";
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException)
+            {
+                return Results.Json(new { error_code = "update_state_unavailable" }, statusCode: 503);
+            }
+            finally { if (!accepted) activity.CancelMaintenance(); }
+        }
         // Auth already enforced by DesktopTokenMiddleware.
-        // HTTP delivery completes before the host stops: Minimal-API IResult
-        // execution flushes the response before this handler returns, so stop
-        // on the next thread-pool yield instead of a wall-clock delay.
-        _ = Task.Factory.StartNew(
-            () => lifetime.StopApplication(),
-            CancellationToken.None,
-            TaskCreationOptions.None,
-            TaskScheduler.Default);
+        // Stop only after the maintenance acknowledgement has been delivered.
+        context.Response.OnCompleted(() =>
+        {
+            lifetime.StopApplication();
+            return Task.CompletedTask;
+        });
         return Results.Json(new { status = "ok" });
     }
 }

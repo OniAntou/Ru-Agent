@@ -18,18 +18,24 @@ ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime, one process)
         |
         |-- in-process execution authority (BrokerExecutionRuntime behind IToolGatewayFactory)
         |     |-- policy, approvals, profile-scoped structured file tools
-        |     `-- AppContainer-sandboxed terminal/git children in standard
+        |     `-- terminal/git children as the current Windows user
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
+```
+
 The Public Host is one process with no managed child; RuApp/CLI only own the
 Public Host descriptor lease and long-lived SSE client leases.
-```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay, or
 automatic fallback. Managed startup is unconditional; the retired runtime
 selector and its diagnostic were hard-deleted. The current Harness uses a
 dependency-free test fixture. Git commit
 `e023fd3` remains a historical recovery checkpoint, not a supported runtime.
+
+Desktop and CLI release packages each carry the matching Host; an installed
+client requires an exact software-version match before attaching. The update
+maintenance handshake reuses the existing authenticated shutdown route and
+refuses unfinished runs. See [distribution and updates](../docs/operations/distribution-and-updates.md).
 
 ## Ownership
 

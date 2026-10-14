@@ -315,3 +315,11 @@ Policy JSON (version 1):
 }
 ```
 Unknown version or fields are rejected. Matcher values are encrypted at rest; only decrypted snapshot contains them.
+
+## Installed CLI updates
+
+`ru update --check` checks the selected channel; `ru update` asks before
+installation and `ru update --yes` explicitly installs. `/update` in TUI is
+check-only unless `--yes` is supplied. Stable is the default;
+`--channel preview` opts into prereleases. Source builds use `build.bat` instead.
+See [distribution and updates](../../docs/operations/distribution-and-updates.md).

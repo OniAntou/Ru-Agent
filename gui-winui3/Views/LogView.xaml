@@ -61,22 +61,22 @@
             <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
             <ToggleButton x:Name="FilterChat" Content="Chat" FontSize="12.5" Padding="14,6" Margin="0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="{StaticResource RuInfoBrush}"
-                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuInfoBrush}" BorderThickness="1" 
+                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuInfoBrush}" BorderThickness="1"
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
-            
+
             <ToggleButton x:Name="FilterEmotion" Content="Emotion" FontSize="12.5" Padding="14,6" Margin="0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="{StaticResource RuVioletBrush}"
-                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuVioletBrush}" BorderThickness="1" 
+                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuVioletBrush}" BorderThickness="1"
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
-            
+
             <ToggleButton x:Name="FilterVts" Content="VTS" FontSize="12.5" Padding="14,6" Margin="0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="{StaticResource RuPinkBrush}"
-                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuPinkBrush}" BorderThickness="1" 
+                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource RuPinkBrush}" BorderThickness="1"
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
-            
+
             <Button x:Name="ClearButton" Content="Clear Logs" FontSize="12.5" Padding="14,6" Margin="0"
                     Click="OnClearClicked" Foreground="{StaticResource AppDangerBrush}" Background="{StaticResource AppDangerSubtleBrush}"
-                    BorderBrush="{StaticResource AppDangerBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
+                    BorderBrush="{StaticResource AppDangerBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"
                     HorizontalAlignment="Right"/>
             </StackPanel>
         </Grid>
@@ -104,7 +104,7 @@
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}" 
+                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
                                 BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="14,10">
                             <Grid ColumnDefinitions="Auto,Auto,Auto,*">
                                 <!-- Dot -->
@@ -127,7 +127,7 @@
                                     <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
                                                FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
 
-                                    <Border Background="{StaticResource RuCanvasBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
+                                    <Border Background="{StaticResource RuCanvasBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
                                             CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                         <StackPanel Spacing="4">

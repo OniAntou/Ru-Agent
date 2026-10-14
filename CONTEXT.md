@@ -5,6 +5,17 @@ in-process runtime, and persistent conversation state are maintained in this
 repository. The media surfaces (voice/STT, VTube Studio, screen observation)
 were removed on 2026-09-13.
 
+## Distribution
+
+Desktop and CLI ship as separate per-user Windows x64 packages. Each carries the
+matching Public Host and runtime; both use the canonical Ru profile. Installed
+clients require an exact Host software-version match. Updates are user initiated
+from Settings or `ru update` (`/update` in TUI), with Stable as the default and
+Preview opt-in. The authenticated `when_idle` shutdown handshake denies unfinished
+runs and prevents new requests during the durable-state check. See
+[distribution and updates](docs/operations/distribution-and-updates.md) and
+[ADR-0019](docs/adr/0019-product-packages-and-explicit-updates.md).
+
 ## Language
 
 **Public Host**:

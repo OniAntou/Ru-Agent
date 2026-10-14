@@ -12,6 +12,7 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 
 ## Current system
 
+- [Windows distributions and updates](operations/distribution-and-updates.md)
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
@@ -35,6 +36,7 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 
 ## Decisions
 
+- [Product packages and explicit updates](adr/0019-product-packages-and-explicit-updates.md)
 - [Architecture decision records](adr/)
 - [ASP.NET Core Public Host](adr/0001-aspnet-core-public-host.md)
 - [Typed Worker protocol v2 (superseded by 0012)](adr/0002-typed-worker-protocol-v2.md)

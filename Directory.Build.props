@@ -14,6 +14,7 @@
     baseline that fails on an unrelated toolchain update teaches people to ignore it.
   -->
   <PropertyGroup>
+    <Version Condition="'$(RuReleaseVersion)' != ''">$(RuReleaseVersion)</Version>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- Pinned so a newer SDK cannot silently enable a larger analyzer set on the
          same source and turn the warning-free build red on another machine. -->

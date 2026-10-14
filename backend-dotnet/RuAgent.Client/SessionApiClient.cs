@@ -78,7 +78,7 @@ public sealed class SessionApiClient
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new AgentApiException("invalid_session_id", "Missing session_id");
 
-        // Bounded validation: 1..64 chars, pattern a-zA-Z0-9_- 
+        // Bounded validation: 1..64 chars, pattern a-zA-Z0-9_-
         if (sessionId.Length > 64 || sessionId.Length < 1)
             throw new AgentApiException("invalid_session_id", "Length invalid");
         foreach (var c in sessionId)

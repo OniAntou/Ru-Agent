@@ -69,7 +69,7 @@ namespace RuApp
             {
                 this.InitializeComponent();
                 this.Title = "Ru — Conversational Runtime";
-                
+
                 try
                 {
                     this.ExtendsContentIntoTitleBar = true;
@@ -302,6 +302,8 @@ namespace RuApp
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
 
                 _settingsView = new SettingsView();
+                _settingsView.CanInstallUpdate = () => _agentController?.IsBusy != true && _agentController?.CanCancel != true;
+                _settingsView.UpdateRestartRequested += () => { _updateHandOff = true; Close(); };
                 _settingsView.Initialize(_apiService, _providerCatalogController);
                 _settingsView.SetCurrentTheme(_currentTheme);
                 if (_chatView is not null)
@@ -336,7 +338,7 @@ namespace RuApp
                 _groupedCatalogs?.SetPollingActive(true);
                 _ = _groupedCatalogs?.RefreshIfDueAsync();
                 _providerCatalogTimer.Start();
-                
+
                 _sessionsRefreshController = new RefreshController<SessionListResponse?>(
                     token => _apiService!.GetSessionsAsync(token),
                     result => { if (result != null) ApplySessions(result); },
@@ -856,7 +858,7 @@ namespace RuApp
             // GUI owns Host lifetime: closing GUI should terminate the shared Host (and its Broker Job).
             // Shutdown POST runs first on a single chain, then disposal, so the
             // HttpClient cannot be disposed while the shutdown request is in flight.
-            if (_apiService != null)
+            if (_apiService != null && !_updateHandOff)
             {
                 var shutdownService = _apiService;
                 _ = Task.Run(async () =>

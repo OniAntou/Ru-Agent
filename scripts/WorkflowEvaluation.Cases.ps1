@@ -439,4 +439,3 @@ function Invoke-ScriptedScenario($Scenario, $BuildEvidence) {
         invocation_contract = "RuAgent.Cli agent run --preset <fixture-preset> --workspace <temporary-workspace> --json --trust-workspace <fixture-input>"
     }
 }
-

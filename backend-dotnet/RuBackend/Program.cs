@@ -181,7 +181,12 @@ app.UseMiddleware<DiagnosticRequestMiddleware>();
 app.Use(async (context, next) =>
 {
     var activity = context.RequestServices.GetRequiredService<RuAgent.Hosting.HostActivityTracker>();
-    activity.Enter();
+    if (!activity.TryEnter())
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(new { status = "error", error_code = "update_in_progress" });
+        return;
+    }
     try
     {
         await next().ConfigureAwait(false);

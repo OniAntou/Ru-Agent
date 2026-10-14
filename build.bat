@@ -210,7 +210,9 @@ set "RU_FLAT_FAIL=0"
 REM The GUI is already at the destination, so only the two service trees are
 REM copied. Including %PUBLISH_DIR% here made xcopy copy a directory into itself
 REM and fail with "Cannot perform a cyclic copy".
-for %%S in ("%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
+set "RU_COPY_SOURCES="%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%""
+if "%RU_RELEASE_SPLIT%"=="1" set "RU_COPY_SOURCES="%BACKEND_PUBLISH_DIR%""
+for %%S in (%RU_COPY_SOURCES%) do (
     if not exist "%%~S" (
         echo BUILD FAILED: publish directory not found: %%~S
         set "RU_FLAT_FAIL=1"
@@ -223,7 +225,9 @@ for %%S in ("%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
     )
 )
 if "!RU_FLAT_FAIL!"=="1" exit /b 1
-for %%E in (RuBackend.exe RuAgent.Cli.exe) do (
+set "RU_REQUIRED_EXES=RuBackend.exe RuAgent.Cli.exe"
+if "%RU_RELEASE_SPLIT%"=="1" set "RU_REQUIRED_EXES=RuBackend.exe"
+for %%E in (%RU_REQUIRED_EXES%) do (
     if not exist "%PUBLISH_DIR%\%%E" (
         echo BUILD FAILED: %%E is missing from the flat layout at "%PUBLISH_DIR%".
         exit /b 1
@@ -258,7 +262,7 @@ REM RuBackend.exe failing at startup with "Could not load file or assembly
 REM Microsoft.Extensions.Logging.Abstractions, Version=10.0.0.0". The build only
 REM fails when the flat layout is missing an assembly some tree needs.
 set "RU_FLAT_MISMATCH=0"
-for %%S in ("%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
+for %%S in (%RU_COPY_SOURCES%) do (
     for %%F in ("%%~S\Microsoft.Extensions.*.dll") do (
         if not exist "%PUBLISH_DIR%\%%~nxF" (
             echo BUILD FAILED: flat layout is missing %%~nxF, which %%~S provides.
@@ -267,7 +271,11 @@ for %%S in ("%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
     )
 )
 if "!RU_FLAT_MISMATCH!"=="1" exit /b 1
-echo Flattened: RuApp, RuBackend, CLI in one directory.
+if "%RU_RELEASE_SPLIT%"=="1" (
+    echo Flattened: Desktop and its backend; CLI published separately.
+) else (
+    echo Flattened: RuApp, RuBackend, CLI in one directory.
+)
 
 REM The GUI must carry the Windows App Runtime itself. Without it the publish
 REM output holds only the bootstrap shim, which fails at startup on a machine with

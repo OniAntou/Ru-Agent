@@ -1,19 +1,49 @@
 # Verification
 
-> **The table below records the latest full-matrix evidence; entries under it are history or scoped checks.** Figures are maintained by hand. Run the scripts for authoritative current figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
+> **The table below records the latest verification coverage, including investigated scoped reruns; entries under it are history or scoped checks.** Figures are maintained by hand. Run the scripts for authoritative current figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
 > Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 43 routes, 13 tools, and an in-process model runner.
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **12-project** Debug matrix: **6,213 passed / 0 failed / 0 skipped** (2026-10-14, filled composer and medium busy wave). Broker 930; CLI 1,420; Client 235; Core 489; Persistence 177; Hosting 39; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Backend 1,087; GUI 1,396. Log: `artifacts/tui-audit/composer-wave-matrix.log`. |
-| Python suite | **212 passed, 1 skipped** (2026-10-14, filled composer and medium busy wave), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/tui-audit/composer-wave-python.log`. The skip is the POSIX process-group kill test on Windows; the total dropped from 216 with the deleted README count guard and the README entries removed from the matrix/reason lists. |
-| TypeScript SDK | **32 passed / 0 failed**, plus typecheck and SDK build (2026-10-13, review remediation rebuild). Covers response correlation before stdin drain, serialized writes, cancellation of completed response deadlines, queued expiry and transport shutdown. Log: `artifacts/review-release-sdk-test.log`. |
-| Release build | `build.bat` passed **11/11 stages** (2026-10-14, filled composer and medium busy wave). Complete self-contained GUI/backend/CLI package replaced the canonical publish directory. Log: `artifacts/tui-audit/composer-wave-build.log`. |
-| Managed runtime smoke | **PASS** (2026-10-14, filled composer and medium busy wave) on the actual flat Release package: published `RuBackend.exe` booted managed with isolated temporary data, published its descriptor with a matching base_url/bearer, answered authenticated `/status` and `/host/shutdown`, exited within 15 s, and the published CLI apphost reached its parser (bounded `missing_subcommand`, exit 1) with its assembly hash matching the Release publish. Logs: `artifacts/tui-audit/composer-wave-publish-smoke.log`, `artifacts/tui-audit/composer-wave-launcher-smoke.log`. Interactive launcher startup, native UI appearance and live-provider behavior remain manual acceptance. |
+| .NET tests | **13-project Debug coverage: 6,283 passed** after investigated failures and scoped reruns (2026-10-14, installers/updates). Broker 930; CLI 1,427; Client 239; Core 489; Persistence 177; Hosting 41; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Updates 25; Backend 1,092; GUI 1,423. Logs and initial failures: `artifacts/release-verification/`. This is aggregate coverage, not one uninterrupted green matrix. |
+| Python suite | **215 passed, 1 skipped** (2026-10-14), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/release-verification/python-final.log`. Ruff and current-doc/distribution guards also pass. |
+| TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
+| Release build | **11/11 stages passed**, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS. Logs: `artifacts/release-verification/package-build.log` and `package-final.log`. Packages are local unsigned previews; not published. |
+| Managed runtime smoke | **PASS** from both product trees: matching `/status` software version and maintenance protocol, isolated temporary data and authenticated idle-only shutdown with acknowledgement before process exit. Logs: `artifacts/release-verification/cli-host-smoke.log` and `desktop-host-smoke.log`. No provider generation was invoked. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Product packages and explicit updates (2026-10-14)
+
+Workspace-only native installer checks passed for both products: install,
+locked-file refusal, helper handoff, upgrade with owned-file cleanup, unowned-file
+preservation and uninstall. Fixtures include spaces and a trailing separator in
+the install directory. The test build has a separate AppId and no uninstall
+registration, shortcuts, user PATH changes or GUI launch. Evidence:
+`artifacts/release-verification/native-local-final.log` and its private
+`acceptance.json`. Synthetic old markers test installer mechanics; they are not
+old-release binary compatibility evidence.
+
+The packaged CLI checked the real GitHub release API and defaulted to Stable;
+no newer compatible release was available. Live asset replacement awaits a
+published successor. Production registry/PATH behavior is wired into the
+release workflow's disposable CI checks but has not run remotely. Native GUI
+click/restart and Authenticode/SmartScreen acceptance remain unverified.
+
+Initial failures were retained: a TUI resize timing check passed alone and in
+the rerun; maintenance fixtures initially raced their synthetic approval rows
+with recovery, replaced an unsupported Host lifetime, or accessed an already
+disposed provider. Fixtures now isolate pending state and capture the tracker
+before shutdown. The handoff fixture now awaits its owned child before cleanup.
+A local-only Inno preprocessor flag initially used the wrong unary operator;
+conditional compilation was corrected before native acceptance. The first
+packaged-host probe used `process_id`; it now checks the actual descriptor `pid`.
+No product policy assertions were weakened.
+
+See [distribution and updates](distribution-and-updates.md) for package ownership,
+channels, recovery and commands.
 
 ## Combined GUI fixes before integration (2026-10-14)
 
@@ -3030,7 +3060,7 @@ retirement changes:
 | Runtime-boundary scan | `865` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
 | Historical backend deterministic Harness | `contract` / `passed`; owned cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| Release build | **11/11 stages passed**, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS. Logs: `artifacts/release-verification/package-build.log` and `package-final.log`. Packages are local unsigned previews; not published. |
 
 Managed startup is now unconditional. The legacy runtime setting, parser, and
 special retirement error were removed in the first legacy cleanup wave.
@@ -3070,7 +3100,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 
 | Gate | Result |
 | --- | --- |
-| Python suite | **211 passed, 1 skipped** (2026-10-11, terminal OS sandbox retirement), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/remove-sandbox-pytest-final.log`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
+| Python suite | **215 passed, 1 skipped** (2026-10-14), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/release-verification/python-final.log`. Ruff and current-doc/distribution guards also pass. |
 | Ruff | passed |
 | Mypy | passed (`50` source files) |
 | Dependency check | `pip check` passed |
@@ -3081,7 +3111,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 | Historical backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| Release build | **11/11 stages passed**, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS. Logs: `artifacts/release-verification/package-build.log` and `package-final.log`. Packages are local unsigned previews; not published. |
 | `git diff --check` | passed |
 
 The retired selector and no-op live diagnostic were subsequently hard-deleted.

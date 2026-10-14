@@ -147,7 +147,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{x:Bind Title, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
-                           TextTrimming="CharacterEllipsis" 
+                           TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <!-- The clock owns the right edge. The row's … control shares the
                      same cell and stays hidden until the row is hovered, at which
@@ -444,7 +444,7 @@
                             </Button>
                         </StackPanel>
 
-                        
+
                         <!-- Workspaces Header -->
                         <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,0,14,0">
                             <Grid.RowDefinitions>
@@ -557,7 +557,7 @@
             </controls:SidebarResizerControl>
 
             <!-- Content Frame with Smooth Native Transition -->
-            <ContentControl x:Name="ContentFrame" Grid.Column="2" Margin="0" 
+            <ContentControl x:Name="ContentFrame" Grid.Column="2" Margin="0"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
                             Background="Transparent">
                 <ContentControl.ContentTransitions>

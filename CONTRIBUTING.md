@@ -70,7 +70,7 @@ dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug
 Choose the build target and `-ProjectFilter` for the changed module. Full matrices:
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # currently 12 projects
+.\scripts\test_dotnet.ps1 -Configuration Debug   # currently 13 projects
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
@@ -171,3 +171,6 @@ execution-authority changes. Start general questions from
 [docs/README.md](docs/README.md) and the [decision register](docs/adr/).
 When code and docs disagree, identify which is outdated and correct it with the
 affected change.
+
+Release packaging and update verification are documented in
+[distribution and updates](docs/operations/distribution-and-updates.md).

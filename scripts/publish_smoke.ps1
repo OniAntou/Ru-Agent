@@ -8,11 +8,14 @@
 #
 # Usage: .\scripts\publish_smoke.ps1            (Release, free loopback port)
 #        .\scripts\publish_smoke.ps1 -Port N    (pin a port for debugging)
+#        .\scripts\publish_smoke.ps1 -PublishedDirectory PATH (test an existing package)
 param(
     [int]$Port = 0,
 
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    # Exercise an existing product package without rebuilding or changing it.
+    [string]$PublishedDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +28,7 @@ if (-not [string]::Equals((Split-Path -Parent $work), $smokeTempRoot, [StringCom
     throw "Publish smoke work directory must be a direct child of the temporary directory."
 }
 $publishDir = Join-Path $work "publish"
+if ($PublishedDirectory) { $publishDir = (Resolve-Path -LiteralPath $PublishedDirectory).Path }
 $dataRoot = Join-Path $work "data"
 $logRoot = Join-Path $work "logs"
 $hostStdoutPath = Join-Path $work "host.stdout.log"
@@ -170,6 +174,7 @@ function Invoke-SmokeRequest([System.Net.Http.HttpMethod]$Method, [string]$Url, 
                 return [pscustomobject]@{
                     StatusCode = [int]$response.StatusCode
                     Body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                    UpdateReady = if ($response.Headers.Contains('X-Ru-Update-Ready')) { @($response.Headers.GetValues('X-Ru-Update-Ready'))[0] } else { $null }
                 }
             } finally {
                 $response.Dispose()
@@ -193,10 +198,10 @@ try {
 
     New-Item -ItemType Directory -Path $dataRoot, $logRoot -Force | Out-Null
 
-    Write-Smoke "publishing RuBackend ($Configuration, win-x64, self-contained) to $publishDir..."
-    & dotnet publish $projectPath -c $Configuration -r win-x64 --self-contained true -o $publishDir --nologo
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet publish failed with exit code $LASTEXITCODE."
+    if (-not $PublishedDirectory) {
+        Write-Smoke "publishing RuBackend ($Configuration, win-x64, self-contained) to $publishDir..."
+        & dotnet publish $projectPath -c $Configuration -r win-x64 --self-contained true -o $publishDir --nologo
+        if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE." }
     }
 
     $backendExe = Join-Path $publishDir "RuBackend.exe"
@@ -251,16 +256,23 @@ try {
     if ([string]::IsNullOrWhiteSpace($descriptor.bearer_token)) {
         throw "descriptor carries no bearer_token."
     }
+    if ($descriptor.pid -ne $hostProcess.Id) { throw 'Descriptor does not belong to the owned smoke process.' }
 
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
     # The descriptor is published before Kestrel binds, so the first GET can
     # race the listener on a loaded runner. Poll on a bounded budget instead of
     # failing on the first connection-refused, like rpc_smoke's Wait-HostReady.
-    $null = Wait-StatusReady -HostProcess $hostProcess -Url $baseUrl -Bearer $descriptor.bearer_token -TimeoutSeconds 30
+    $ready = Wait-StatusReady -HostProcess $hostProcess -Url $baseUrl -Bearer $descriptor.bearer_token -TimeoutSeconds 30
+    if ($ready.maintenance_protocol -ne 1) { throw 'Published host does not support idle-only maintenance.' }
+    $markerPath = Join-Path $publishDir 'ru-install.json'
+    if (Test-Path -LiteralPath $markerPath) {
+        $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+        if ($ready.software_version -ne $marker.Version) { throw 'Packaged Host version does not match its frontend marker.' }
+    }
 
     Write-Smoke "status ok; asking the host to shut down..."
-    $shutdownResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Post) -Url "$baseUrl/host/shutdown" -Bearer $descriptor.bearer_token
-    if ($shutdownResponse.StatusCode -ne 200) {
+    $shutdownResponse = Invoke-SmokeRequest -Method ([System.Net.Http.HttpMethod]::Post) -Url "$baseUrl/host/shutdown?when_idle=true" -Bearer $descriptor.bearer_token
+    if ($shutdownResponse.StatusCode -ne 200 -or $shutdownResponse.UpdateReady -ne '1') {
         throw "POST /host/shutdown returned $($shutdownResponse.StatusCode); expected 200. body: $($shutdownResponse.Body)"
     }
 

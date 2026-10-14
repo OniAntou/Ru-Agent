@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/backend-dotnet/">
+    <Project Path="backend-dotnet/RuAgent.Updates/RuAgent.Updates.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Updates.Tests/RuAgent.Updates.Tests.csproj" />
     <Project Path="backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj" />
     <Project Path="backend-dotnet/RuAgent.Broker/RuAgent.Broker.csproj" />
     <Project Path="backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj" />

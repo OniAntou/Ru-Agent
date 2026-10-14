@@ -126,4 +126,3 @@ public sealed class HarnessOutputDeltaTests
             string.Empty, ToolCallId, ExecutionId, FrameSequence: 1, "stdout", "text", Redacted: false)));
     }
 }
-

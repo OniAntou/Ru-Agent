@@ -17,6 +17,24 @@ public static class Program
             // Best effort when redirected
         }
 
+        if (args.Length > 0 && args[0] is "update")
+        {
+            using var updateCts = new CancellationTokenSource();
+            ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; updateCts.Cancel(); };
+            Console.CancelKeyPress += cancel;
+            try
+            {
+                var result = await UpdateCommands.RunAsync(args[1..], Console.Out, Console.Error, updateCts.Token).ConfigureAwait(false);
+                return result == 10 ? 0 : result;
+            }
+            finally { Console.CancelKeyPress -= cancel; }
+        }
+        if (args.Length == 1 && args[0] is "--version" or "version")
+        {
+            Console.WriteLine(RuAgent.Updates.InstalledRelease.SoftwareVersion);
+            return 0;
+        }
+
         var parseResult = AgentCliParser.Parse(args);
         if (!parseResult.Success || parseResult.Command is null)
         {
@@ -152,6 +170,8 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("Usage:");
+        Console.Error.WriteLine("  ru update [--check] [--channel stable|preview] [--yes]");
+        Console.Error.WriteLine("  ru --version");
         Console.Error.WriteLine("  agent run [--preset plan|standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--image PATH]... [--json] [--trust-workspace] [--confirm-full-access]");
         Console.Error.WriteLine("  agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--image PATH]... [--json] [--classic] [--trust-workspace] [--confirm-full-access]");
         Console.Error.WriteLine("  --image: attach an image file (repeatable, max 4); also /attach, /attachments, /detach and ctrl+v in chat.");

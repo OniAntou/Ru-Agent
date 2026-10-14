@@ -190,4 +190,3 @@ function Wait-HostReady($Process, $Capture, [string]$DataRoot, [string]$BaseUrl,
     }
     throw "Managed Host did not become ready within $TimeoutSeconds seconds."
 }
-

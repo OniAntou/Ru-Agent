@@ -78,4 +78,3 @@ public sealed class HarnessFileSearchTests
             FilesAdapter.ReadSearchText(stream, 1024, 8000, cts.Token));
     }
 }
-

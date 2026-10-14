@@ -54,7 +54,7 @@ jobs:
         shell: pwsh
       - name: Install terminal test prerequisite
         shell: pwsh
-        run: choco install ripgrep --version=14.1.1 --yes --no-progress
+        run: .\scripts\prepare_ci_terminal.ps1
       - name: Run all .NET tests
         shell: pwsh
         run: .\scripts\test_dotnet.ps1 -Configuration Debug

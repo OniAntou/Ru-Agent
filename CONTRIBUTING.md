@@ -42,7 +42,8 @@ gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 ## Testing
 
 Terminal integration tests require `rg` (ripgrep) on PATH in addition to Windows
-PowerShell and Git. Windows CI explicitly installs ripgrep 14.1.1. The release
+PowerShell and Git. Windows CI extracts the official ripgrep 14.1.1 archive,
+verifies its pinned SHA-256, and adds it to the runner's PATH. The release
 workflow also checks a PowerShell child process in isolation before running the
 complete .NET matrix.
 

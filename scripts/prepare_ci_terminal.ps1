@@ -17,7 +17,8 @@ $toolDirectory | Out-File -LiteralPath $env:GITHUB_PATH -Encoding utf8 -Append
 
 # Compare ordinary Windows PowerShell startup and the same minimal environment
 # used by terminal children; print only fixed probe output, never environment values.
-foreach ($minimal in @($false, $true)) {
+foreach ($mode in @('parent', 'minimal', 'module-path', 'module-cache')) {
+    $minimal = $mode -ne 'parent'
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
     $start.UseShellExecute = $false
@@ -30,6 +31,8 @@ foreach ($minimal in @($false, $true)) {
     $start.ArgumentList.Add("[Console]::WriteLine('before-module'); Start-Sleep -Milliseconds 100; [Console]::WriteLine('after-module')")
     if ($minimal) {
         $allowed = @('SYSTEMROOT','WINDIR','TEMP','TMP','USERPROFILE','HOME','LOCALAPPDATA','APPDATA','PROGRAMDATA','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','COMMONPROGRAMFILES','COMMONPROGRAMFILES(X86)','PATH','PATHEXT','COMSPEC','PROCESSOR_ARCHITECTURE','PROCESSOR_IDENTIFIER','PROCESSOR_LEVEL','PROCESSOR_REVISION','NUMBER_OF_PROCESSORS','GIT_CONFIG_GLOBAL','GIT_CONFIG_SYSTEM','DOTNET_ROOT','NUGET_PACKAGES','PYTHONHOME','PYTHONPATH','VIRTUAL_ENV','PIP_CACHE_DIR')
+        if ($mode -eq 'module-path') { $allowed += 'PSModulePath' }
+        if ($mode -eq 'module-cache') { $allowed += 'PSModuleAnalysisCachePath' }
         foreach ($name in @($start.Environment.Keys)) {
             if ($name -notin $allowed) { $start.Environment.Remove($name) | Out-Null }
         }
@@ -42,9 +45,10 @@ foreach ($minimal in @($false, $true)) {
         if (-not $process.WaitForExit(20000)) {
             $process.Kill($true)
             $process.WaitForExit()
-            throw "PowerShell probe timed out (minimal=$minimal)."
+            Write-Host "PowerShell probe timed out (mode=$mode)."
+            continue
         }
-        Write-Host "PowerShell probe minimal=$minimal elapsed_ms=$($watch.ElapsedMilliseconds) exit=$($process.ExitCode)"
+        Write-Host "PowerShell probe mode=$mode elapsed_ms=$($watch.ElapsedMilliseconds) exit=$($process.ExitCode)"
         Write-Host $stdout.GetAwaiter().GetResult()
         Write-Host $stderr.GetAwaiter().GetResult()
         if ($process.ExitCode -ne 0) { throw 'PowerShell probe failed.' }

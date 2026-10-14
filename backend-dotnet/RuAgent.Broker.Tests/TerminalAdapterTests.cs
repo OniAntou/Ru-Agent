@@ -9,6 +9,7 @@ using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tests;
 
+[Collection(nameof(WindowsProcessCollection))]
 public sealed class TerminalAdapterTests
 {
     [Fact]

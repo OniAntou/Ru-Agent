@@ -7,6 +7,7 @@ using Xunit;
 
 namespace RuAgent.Broker.Tests;
 
+[Collection(nameof(WindowsProcessCollection))]
 public sealed class StreamingProcessRunnerTests
 {
     private static ProcessRunSpec Spec(

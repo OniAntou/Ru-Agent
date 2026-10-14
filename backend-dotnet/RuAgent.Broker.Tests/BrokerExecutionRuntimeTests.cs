@@ -18,6 +18,7 @@ namespace RuAgent.Broker.Tests;
 /// lifecycle, session tasks, cancellation, gate serialization and the
 /// full_access boundaries that the deleted wire suite exercised.
 /// </summary>
+[Collection(nameof(WindowsProcessCollection))]
 public sealed class BrokerExecutionRuntimeTests
 {
     [Theory]

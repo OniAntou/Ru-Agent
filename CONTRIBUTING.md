@@ -49,6 +49,9 @@ complete .NET matrix.
 Concurrency fixtures use independent workers for editor/cancellation probes so
 thread-pool load cannot suppress the action being tested. Real PowerShell startup
 budgets are separate from cancellation latency and production tool limits.
+Broker tests spawning terminal process trees share a nonparallel xUnit collection;
+other collections retain parallel execution. This prevents unrelated test load
+from interfering with process startup, pipe drains and cancellation probes.
 
 Choose verification by impact. During iteration, run checks that exercise the
 changed behavior; expand for failures or cross-component dependencies. A small

@@ -4,6 +4,11 @@ Ru targets Windows 10 build 17763 or newer on x64. Desktop and CLI are separate
 products with their own matching, self-contained Host. Neither requires a .NET
 SDK on the user's computer. Source builds still use `build.bat`.
 
+Source builds use the shared version `0.1.0` from `Directory.Build.props`,
+so CLI `ru --version` and GUI About agree. `RuReleaseVersion` overrides that
+default for Stable or Preview packaging; `package_release.ps1 -Version ...`
+sets it for every published project.
+
 ## Install
 
 Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or

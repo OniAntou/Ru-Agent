@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(build)**: Default source builds to Ru 0.1.0 instead of the .NET SDK's implicit 1.0.0. Keep explicit Stable/Preview release-version overrides shared by GUI and CLI.
+
 - **fix(agent)**: Preserve complete native tool guidance/examples across OpenAI and Anthropic; align the prompt date with local timezone, expose the supported PowerShell selector, and provide full schemas to legacy text selection without advertising native functions.
 - **fix(agent)**: Budget aggregate prompt context before preflight, report skipped instructions and deduplicate outputs already present in native history. Expand native history to 1,024 messages / 8 MiB and result pages to 128 Ki characters while retaining exact provider-token preflight and compaction.
 - **fix(tools)**: Allow read windows up to 4 MiB (default 1 MiB), fit encoded output into the Broker budget and preserve UTF-8 paging instead of discarding large or escaped content.

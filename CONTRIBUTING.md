@@ -33,6 +33,9 @@ interpreter produces a named failure. Bundling one requires an ADR.
 .\start_dev.bat      # development launch
 ```
 
+The first stage restores the GUI's self-contained win-x64 runtime packs before
+cleaning; even `dotnet clean` needs those assets on a fresh checkout.
+
 `build.bat` currently runs 11 stages and publishes the desktop executable to:
 
 ```powershell

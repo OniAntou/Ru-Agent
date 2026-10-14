@@ -20,7 +20,14 @@ set "BACKEND_PUBLISH_DIR=%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x
 set "PUBLISH_DIR=%PROJECT_DIR%\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish"
 set "OBJ_DIR=%PROJECT_DIR%\obj\x64\Release\net10.0-windows10.0.26100.0\win-x64"
 
-echo [1/11] Cleaning previous build...
+echo [1/11] Restoring GUI runtime packs and cleaning previous build...
+REM Even Clean resolves runtime assets; a fresh self-contained checkout must
+REM restore its win-x64 packs before that target can execute.
+call dotnet restore "%CSPROJ%" -r win-x64 -p:Configuration=Release -p:Platform=x64 -p:SelfContained=true
+if errorlevel 1 (
+    echo GUI RUNTIME RESTORE FAILED!
+    exit /b 1
+)
 call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64
 if errorlevel 1 (
     echo CLEAN FAILED!

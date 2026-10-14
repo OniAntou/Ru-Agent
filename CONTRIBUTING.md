@@ -50,6 +50,8 @@ budgets are separate from cancellation latency and production tool limits.
 Broker tests spawning terminal process trees share a nonparallel xUnit collection;
 other collections retain parallel execution. This prevents unrelated test load
 from interfering with process startup, pipe drains and cancellation probes.
+ANSI snapshot fixtures wait for view coordinates to match the driver's resized
+buffer before asserting cells; a fixed timer alone does not guarantee layout.
 
 Choose verification by impact. During iteration, run checks that exercise the
 changed behavior; expand for failures or cross-component dependencies. A small

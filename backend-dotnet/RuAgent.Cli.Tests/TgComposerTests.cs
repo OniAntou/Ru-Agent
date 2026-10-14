@@ -28,9 +28,20 @@ public sealed class TgComposerTests
             if (typed) window.Composer.Input.Text = "first line\nsecond line";
             return false;
         });
+        var layoutDeadline = DateTime.UtcNow.AddSeconds(5);
         app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
         {
             var frame = window.Composer.Frame;
+            var contents = app.Driver!.Contents!;
+            // The ANSI driver can resize between iterations. Wait for layout
+            // to match its buffer instead of sampling stale coordinates.
+            if (frame.Top < 0 || frame.Left < 0
+                || frame.Bottom > contents.GetLength(0) || frame.Right > contents.GetLength(1))
+            {
+                Assert.True(DateTime.UtcNow < layoutDeadline, "composer layout did not match the driver buffer");
+                return true;
+            }
+            Assert.True(frame.Height > 0 && frame.Width > 0, "composer frame was empty");
             for (var row = frame.Top; row < frame.Bottom; row++)
             {
                 for (var column = frame.Left; column < frame.Right; column++)

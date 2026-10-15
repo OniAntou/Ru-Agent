@@ -439,6 +439,26 @@ reconciliation surfaces from Phase 3:
   boundaries.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
+  Silent durable run/model metadata does not flush unfinished assistant prose.
+  Step-rewind callbacks read their row marker on the UI loop after the queued
+  step-start callback, so a worker-thread retry removes the superseded reply.
+  When durable text reveals a missing streamed head, the screen replaces the
+  current turn's prose with the complete step texts, separated by paragraphs,
+  retaining tool rows and earlier turns. Recovery declines after screen-retention
+  eviction or reset; sequential output keeps its explicit truncation notice.
+  Tool-result badges use typed completion activity: the public envelope's status
+  is a run status and `running` alone is not a tool failure. Without outcome
+  metadata the tool row remains neutral and says outcome unavailable.
+  Late completion details update that existing tool row in place. Row markers
+  are invalidated by retention, reset and rewinds rather than guessing at a
+  shifted row. Document panels own their paging keys while focused.
+  `/activity`, `/todos` and `/changes` open read-only snapshots even during a live
+  turn, bypassing submission ownership and the prompt queue. A bounded
+  `TuiInspectionState` keeps the latest 256 activity IDs and the latest complete
+  todo list received in the connection; session switches clear it. These panels
+  do not replay older run activities. Conversation replay retains the latest
+  20 nonempty messages, with a 100,000-character bound per message; screen
+  retention is independently bounded by `TgTranscriptView`.
   Command overlays follow the composer and remain bounded within the frame.
   Prose reflows across the full viewport width like the classic renderer; verified
   Markdown table blocks reflow

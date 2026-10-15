@@ -11,13 +11,87 @@ namespace RuAgent.Cli.TerminalGui;
 /// appends are marshalled onto the UI loop so a background turn can never mutate the
 /// view while the driver draws it.
 /// </summary>
-public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter
+public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
     private bool _projectedRow;
     private string? _assistantStepId;
     private int _assistantStepMark = -1;
+    private int _turnMark = -1;
+    private long _turnRetentionVersion;
+    private readonly Dictionary<string, (int Row, long Version)> _toolRows = new(StringComparer.Ordinal);
+
+    public void AppendToolRow(string activityId, string text)
+    {
+        var clean = TuiText.Strip(text);
+        var hidden = clean.Contains("ctrl+o", StringComparison.Ordinal)
+            ? RetainedLinesProvider?.Invoke().Select(TuiText.Strip).ToArray() : null;
+        try
+        {
+            app.Invoke(() =>
+            {
+                transcript.ClearLive();
+                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(clean, hidden, TranscriptStyle.Tool);
+                else transcript.Append(clean, TranscriptStyle.Tool);
+                _toolRows[activityId] = (transcript.CommittedRowCount - 1, transcript.RetentionVersion);
+                while (_toolRows.Count > 64) _toolRows.Remove(_toolRows.Keys.First());
+            });
+        }
+        catch (NotInitializedException) { }
+    }
+
+    public void UpdateToolRow(string activityId, string text)
+    {
+        var clean = TuiText.Strip(text);
+        try
+        {
+            app.Invoke(() =>
+            {
+                if (_toolRows.TryGetValue(activityId, out var mark) && mark.Version == transcript.RetentionVersion)
+                    transcript.ReplaceToolRow(mark.Row, clean);
+            });
+        }
+        catch (NotInitializedException) { }
+    }
+
+    public void BeginAssistantTurn()
+    {
+        try
+        {
+            app.Invoke(() =>
+            {
+                _turnMark = transcript.CommittedRowCount;
+                _turnRetentionVersion = transcript.RetentionVersion;
+            });
+        }
+        catch (NotInitializedException) { _turnMark = -1; }
+    }
+
+    public async Task<bool> ReplaceAssistantTurnAsync(IReadOnlyList<string> prose)
+    {
+        var clean = prose.Select(TuiText.Strip).ToArray();
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            app.Invoke(() =>
+            {
+                if (completion.Task.IsCompleted) return;
+                if (_turnMark < 0 || _turnMark > transcript.CommittedRowCount
+                    || _turnRetentionVersion != transcript.RetentionVersion)
+                {
+                    completion.TrySetResult(false);
+                    return;
+                }
+                transcript.ReplaceProseSince(_turnMark, clean);
+                _projectedRow = false;
+                completion.TrySetResult(true);
+            });
+        }
+        catch (NotInitializedException) { completion.TrySetResult(false); }
+        try { return await completion.Task.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }
+        catch (TimeoutException) { completion.TrySetResult(false); return false; }
+    }
 
     public void PreviewLine(string text) => ProjectLine(text.Length == 0 ? null : text, complete: false);
 
@@ -51,23 +125,23 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
     /// </summary>
     public void RewindAssistantStep(string? modelStepId = null)
     {
-        if (_assistantStepMark < 0
-            || (modelStepId is not null && !string.Equals(_assistantStepId, modelStepId, StringComparison.Ordinal)))
+        if (modelStepId is not null && !string.Equals(_assistantStepId, modelStepId, StringComparison.Ordinal))
         {
             return;
         }
 
-        var mark = _assistantStepMark;
         _assistantStepId = null;
-        _assistantStepMark = -1;
+        _pending.Clear();
+        _rowOpen = false;
         try
         {
             app.Invoke(() =>
             {
-                transcript.DropRowsSince(mark);
-                // Whatever was mid-flight belonged to the rows that just left.
-                _pending.Clear();
-                _rowOpen = false;
+                // Invoke queues worker-thread calls. Read the mark here, after
+                // BeginAssistantStep has executed, rather than before that queued
+                // callback has had a chance to record it.
+                if (_assistantStepMark >= 0) transcript.DropRowsSince(_assistantStepMark);
+                _assistantStepMark = -1;
                 _projectedRow = false;
             });
         }
@@ -313,7 +387,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
 
         var head = text.TrimStart(' ');
         return head.Length >= 2
-            && head[0] is '→' or '✱' or '←' or '$' or '%' or '⚙' or '✓' or '✗' or '▸'
+            && head[0] is '→' or '✱' or '←' or '$' or '%' or '⚙' or '✓' or '✗' or '▸' or '·'
             && head[1] == ' '
                 ? TranscriptStyle.Tool
                 : TranscriptStyle.Prose;

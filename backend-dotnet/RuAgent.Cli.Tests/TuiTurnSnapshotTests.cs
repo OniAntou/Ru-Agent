@@ -225,6 +225,7 @@ public sealed class TuiTurnSnapshotTests
         renderer.Width = 80;
         renderer.BeginTurn();
         renderer.RenderFrame(Activity("terminal", "started", 1, symbol: "dotnet", toolDisplay: "Terminal"));
+        renderer.RenderFrame(Activity("terminal", "failed", 2, symbol: "dotnet", toolDisplay: "Terminal"));
         renderer.RenderFrame(Durable("tool.execution_completed", "failed", "exit_1", 2));
         renderer.EndTurn();
 

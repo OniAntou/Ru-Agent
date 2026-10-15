@@ -166,7 +166,7 @@ internal sealed class TgChatKeyboardBindings
 
     private void OnApplicationKeyDown(object? sender, Key key)
     {
-        if (key.Handled || _window.IsModalPanelOpen)
+        if (key.Handled || _window.IsModalPanelOpen || _window.IsDocumentPanelOpen)
         {
             return;
         }

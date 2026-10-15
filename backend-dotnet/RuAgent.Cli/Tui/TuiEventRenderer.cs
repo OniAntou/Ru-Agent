@@ -35,6 +35,8 @@ public sealed class TuiSessionRenderer
 
     public TuiTranscript Transcript => _transcript;
 
+    public TuiInspectionState Inspection { get; } = new();
+
     /// <summary>Current viewport width, refreshed from the console when one is attached.</summary>
     public int Width
     {
@@ -57,6 +59,7 @@ public sealed class TuiSessionRenderer
 
     public void BeginTurn()
     {
+        if (_surface.Writer is ITranscriptTurnRewriter screen) screen.BeginAssistantTurn();
         _transcript.BeginTurn();
         _status.SetState(TuiRunState.Thinking);
         StartLiveRow();
@@ -154,6 +157,7 @@ public sealed class TuiSessionRenderer
 
         if (AgentActivityModel.TryParse(frame, out var activity) && activity is not null)
         {
+            Inspection.Observe(activity);
             _transcript.ApplyActivity(activity);
             return;
         }

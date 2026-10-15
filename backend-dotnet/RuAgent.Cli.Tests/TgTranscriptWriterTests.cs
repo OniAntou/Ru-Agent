@@ -13,6 +13,80 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgTranscriptWriterTests
 {
     [Fact]
+    public async Task LostHeadRecoveryReplacesTurnProseAndPreservesToolsAndEarlierTurns()
+    {
+        using var colours = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var renderer = AgentCommands.CreateSessionRenderer(writer);
+        Task<bool>? repair = null;
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            writer.WriteLine("Earlier answer");
+            renderer.BeginTurn();
+            renderer.Transcript.AppendAssistant("incomplete narration");
+            renderer.Flush();
+            writer.WriteLine("✓ Read sample.txt");
+            renderer.Transcript.AppendAssistant("tail of answer");
+            renderer.Flush();
+            repair = renderer.Transcript.RecoverAssistantTurnAsync("Complete answer.\n```powershell\nGet-Content sample.txt\n```\nAll done.");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
+        {
+            Assert.Contains(window.Transcript.Lines, row => row.Text == "Earlier answer");
+            Assert.Single(window.Transcript.Lines, row => row.Text == "✓ Read sample.txt");
+            Assert.Contains(window.Transcript.Lines, row => row.Text == "Complete answer.");
+            Assert.Contains(window.Transcript.Lines, row => row.Text.Contains("Get-Content sample.txt"));
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("incomplete narration") || row.Text == "tail of answer");
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains('\u001b'));
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+        Assert.NotNull(repair);
+        Assert.True(await repair);
+    }
+
+    [Fact]
+    public void BackgroundRetryRewindsAfterQueuedStepMarkHasReachedTheView()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var finished = false;
+        Task? worker = null;
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            worker = Task.Run(() =>
+            {
+                writer.BeginAssistantStep("old");
+                writer.WriteLine("SUPERSEDED answer");
+                writer.RewindAssistantStep("old");
+                writer.BeginAssistantStep("new");
+                writer.WriteLine("fresh answer");
+                app.Invoke(() => finished = true);
+            });
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            if (!finished) return true;
+            Assert.True(worker!.IsCompletedSuccessfully);
+            Assert.DoesNotContain(window.Transcript.Lines, row => row.Text.Contains("SUPERSEDED"));
+            Assert.Contains(window.Transcript.Lines, row => row.Text == "fresh answer");
+            app.RequestStop();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromSeconds(5), () => { app.RequestStop(); return false; });
+        app.Run(window);
+        Assert.True(finished);
+    }
+
+    [Fact]
     public void ReasoningStaysExpandableWithoutAddingThoughtRowsToTheFeed()
     {
         using IApplication app = Application.Create();

@@ -461,6 +461,15 @@ SQLite `agent_payloads` under kind `UserImage` (value 11) with dual audience
 providers through the typed model step and `ModelRequest.Images`.
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
+**TUI Inspection**:
+The terminal's `/activity`, `/todos` and `/changes` are read-only snapshots of
+activity received during the current session connection. They stay accessible
+while a model turn streams, never submit work to the model, and preserve pending
+attachments. Switching sessions clears these snapshots. Historical activity
+replay and background-process control remain separate capabilities.
+_Avoid_: Treating transient metadata as execution authority or implying that
+an empty connection snapshot means the session never performed work.
+
 **Protected User Data**:
 Settings, sessions and their message history, activity, credentials, and
 reviewed examples used by the active product. Business records live under

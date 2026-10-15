@@ -16,7 +16,7 @@ internal sealed record ChatSessionReplayResult(
 internal static class ChatSessionReplay
 {
     public const int MessageLimit = 20;
-    private const int MaxMessageChars = 2_000;
+    private const int MaxMessageChars = 100_000;
     private const int MaxTitleChars = 120;
 
     public static async Task<ChatSessionReplayResult> LoadAsync(
@@ -42,6 +42,11 @@ internal static class ChatSessionReplay
             return Failed($"session_get_failed: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), CliErrorText.MaxMessageChars)}");
         }
 
+        return Parse(root);
+    }
+
+    internal static ChatSessionReplayResult Parse(JsonElement root)
+    {
         var title = ReadTitle(root);
         var all = ReadMessages(root);
         var tail = all.Count > MessageLimit

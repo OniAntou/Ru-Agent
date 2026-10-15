@@ -6,14 +6,39 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **Full 13-project Debug matrix: 6,284 passed / 0 failed / 0 skipped** (2026-10-14, commit `4d197228`). Broker 931; CLI 1,427; Client 239; Core 489; Persistence 177; Hosting 41; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Updates 25; Backend 1,092; GUI 1,423. [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) and [CI](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202229) passed. Earlier local aggregate coverage and failures remain under `artifacts/release-verification/`. |
-| Python suite | **215 passed, 1 skipped** (2026-10-14), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/release-verification/python-final.log`. Ruff and current-doc/distribution guards also pass. |
+| .NET tests | **Full 13-project Debug matrix: 6,370 passed / 0 failed / 0 skipped** (2026-10-16, TUI feed/inspection repair). Broker 943; CLI 1,462; Client 239; Core 492; Persistence 177; Hosting 41; Protocol 86; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,101; GUI 1,444. Log: `artifacts/tui-release-qa/dotnet-debug-matrix.log`. The initial Release test invocation and its Debug-only test-seam failure are recorded below. Earlier evidence remains under `artifacts/release-verification/`. |
+| Python suite | **215 passed, 1 skipped** (2026-10-16), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/tui-release-qa/python.log`. Earlier evidence remains under `artifacts/release-verification/`. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
-| Release build | **11/11 stages passed** on the disposable Windows runner, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS attached to the [public prerelease](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1). [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) passed packaging, production install/update/uninstall and both packaged Host smokes. Packages remain unsigned. |
-| Managed runtime smoke | **PASS** from both product trees: matching `/status` software version and maintenance protocol, isolated temporary data and authenticated idle-only shutdown with acknowledgement before process exit. Logs: `artifacts/release-verification/cli-host-smoke.log` and `desktop-host-smoke.log`. No provider generation was invoked. |
+| Release build | **Local 11/11 stages passed** (2026-10-16), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
+| Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-release-qa/published-host-smoke.log`. Published CLI console panels and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## TUI Release verification (2026-10-16)
+
+The full documented Debug matrix passed all 6,370 tests across 13 projects,
+without failures or skips. Full Python verification passed 215 tests with the
+POSIX process-group test skipped on Windows. `build.bat` completed all 11 Release
+stages, producing self-contained win-x64 GUI, Host and CLI outputs. The source
+launcher now uses the rebuilt flat CLI; its assembly SHA-256 matches the standalone
+CLI publish output, and `bin/ru.cmd --version` reports `0.1.1`.
+
+`scripts/publish_smoke.ps1 -PublishedDirectory` verified the flat Host's startup,
+authenticated status and acknowledged idle shutdown. A ConPTY check of the
+published CLI opened `/activity`, `/todos` and `/changes` and exited with code 0.
+The probe needed inheritable console handles for the child executable; earlier
+probe-only quoting/handle and exit-code-query failures are retained alongside the
+final passing captures in `artifacts/tui-release-qa/`. Owned smoke processes were
+closed. No provider generation, installer packaging or remote release was invoked
+for these build checks.
+
+An initial full-matrix invocation with `-Configuration Release` stopped in Broker:
+942 passed and `Stale_approval_cannot_add_a_session_grant` failed. Its fixture sends
+`expected_intent_hash`, a test override compiled only under `#if DEBUG`; Release
+intentionally ignores that caller-supplied field. No permission rule or assertion
+was weakened. The documented Debug matrix was then run in full and passed, while
+the Release artifacts were validated through the build and runtime smokes above.
 
 ## Side surface state and presentation (2026-10-15, scoped)
 
@@ -34,6 +59,40 @@ fresh workspace required one trust approval without leaving a duplicate dialog;
 the accepted-turn callback no longer resets the dialog owner's guard. Terminal
 theme/scrollbars use the GUI palette. Screenshots cover Dark; Light visual
 acceptance remains unverified. QA apps, hosts and interactive shells were closed.
+
+## TUI feed and inspection repair (2026-10-16, scoped)
+
+`scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter RuAgent.Cli.Tests -NoRestore`
+built the affected CLI and passed all 1,462 tests. Documentation and route-count
+guards passed all 15 tests; `git diff --check` passed. Focused red/green logs and
+the final CLI log are retained under `artifacts/tui-repair-qa/`.
+
+Regression checks reproduce sentence splitting on silent metadata, a worker-thread
+retry leaving its superseded answer visible, and document paging scrolling the
+conversation behind the panel. Additional checks cover durable-text repair without
+dropping tool rows or earlier turns, late tool outcomes updating in place, session
+inspection reset, plan replacement and bounded long-message replay. The outcome
+fixtures distinguish a run status from the tool's typed completion state; durable
+tool ordering remains proposal order.
+
+Native checks used a real Windows ConPTY, isolated temporary profile and QA
+workspace, and the user-authorized saved provider. Three completed provider turns
+used a two-item todo/read task and a short Markdown table/code reply. The first
+exposed a missing streamed head; subsequent checks verified full-text recovery.
+Activity and Todo panels opened during streaming, the plan reached 2/2, and
+120×36 → 90×28 → 120×36 resizing preserved the session. Raw terminal captures and
+emulator reconstructions are local-only under `artifacts/tui-repair-qa/`; they are
+separate evidence from the Terminal.Gui driver-buffer tests, not native screenshots.
+An intermediate recovery capture exposed visible ANSI escapes, corrected by the
+same stripping used for normal transcript rows. The initial console probe inherited
+the tooling shell's NO_COLOR/dumb-terminal settings and exercised sequential output;
+interactive acceptance used valid console handles and explicit terminal settings.
+
+These checks do not establish full GUI feature parity: the new inspection panels
+cover received activity in the current connection, without historical activity
+replay or background-process control. These scoped checks initially preceded the
+follow-up Release build recorded above, which updates the source launcher's binary.
+No installer or remote release was published. Owned QA consoles and hosts were closed.
 
 ## Workspace maintenance (2026-10-14)
 

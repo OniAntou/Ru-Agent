@@ -796,6 +796,7 @@ public sealed partial class AgentCommands
             }
 
             var expected = new StringBuilder();
+            var completeSteps = new List<string>();
             try
             {
                 foreach (var payloadRef in payloadRefs)
@@ -807,6 +808,7 @@ public sealed partial class AgentCommands
                     if (!string.IsNullOrEmpty(text))
                     {
                         expected.Append(text);
+                        completeSteps.Add(text);
                     }
                 }
             }
@@ -838,6 +840,8 @@ public sealed partial class AgentCommands
 
             if (decision == Tui.AssistantTextRecovery.ReportTruncation)
             {
+                if (await sessionRenderer.Transcript.RecoverAssistantTurnAsync(string.Join("\n\n", completeSteps)).ConfigureAwait(false))
+                    return;
                 // Both output paths append text. Report missing history rather than
                 // clearing the screen or appending an older prefix after a newer tail.
                 await WriteDiagnosticLineAsync(
@@ -1895,6 +1899,7 @@ public sealed partial class AgentCommands
             sessionId = targetSessionId;
             sessionTitle = replay.Title;
             runSession.ResetSession();
+            sessionRenderer.Inspection.Clear();
             sessionTitleProbes = 0;
             turn = 0;
             lastTotalTokens = null;
@@ -2289,6 +2294,13 @@ public sealed partial class AgentCommands
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
+            if (Tui.TuiInspectionState.Handles(slashLine))
+            {
+                foreach (var row in sessionRenderer.Inspection.Rows(slashCmd))
+                    await humanOut.WriteLineAsync(row).ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd is "/exit" or "/quit")
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
@@ -2537,6 +2549,12 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
+            loop.SetInspectionHandler(line =>
+            {
+                if (!Tui.TuiInspectionState.Handles(line)) return false;
+                tgWindow!.ShowDocument(line.Trim().TrimStart('/'), sessionRenderer.Inspection.Rows(line));
+                return true;
+            });
             var guiDispatcher = new ChatLineDispatcher(
                 HandleSlashLineWithDocumentAsync,
                 (prompt, ct) => HandlePromptLineAsync(prompt, ct));

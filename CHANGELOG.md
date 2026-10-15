@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Keep streamed sentences and Markdown intact when silent run/model metadata arrives between deltas. Rewind superseded replies after the UI has recorded their step position, including retries initiated on background threads.
+- **fix(tui)**: Recover a completed reply from durable text when its streamed head is missing, preserving tool rows and earlier turns. Use completed tool activity for result badges instead of treating a running run as a failed tool; show an unavailable outcome neutrally when metadata is missing.
+- **fix(tui)**: Preserve ordinary long replies when reopening a session: replay now permits up to 100,000 characters per message instead of cutting at 2,000; the existing message and screen-retention bounds remain.
+- **feat(tui)**: Add `/activity`, `/todos` and `/changes` inspection panels that remain accessible while a reply streams without queuing a model request or consuming pending attachments. Keep panel paging keys from scrolling the conversation behind it. These bounded views cover activity received in the current connection and reset when switching sessions; historical activity replay remains a GUI capability.
 - **fix(gui)**: Restore session Changes after reopening, retain expanded diffs during live activity updates, and preserve panel/tab/fullscreen selections across narrow-window resizing. Cancel superseded hide/show animations so a restored panel stays visible.
 - **fix(gui)**: Keep the accepted run's workspace-trust dialog ownership when its reply starts, preventing a second stale trust prompt after approval.
 - **feat(gui)**: Add a menu to open or reopen Files, Changes, Background tasks and Terminal. Clarify process rows with bounded, credential-redacted command labels, a refresh action and live status updates while the side surface is visible. Synchronize the interactive terminal with the selected workspace without taking focus during background refreshes.

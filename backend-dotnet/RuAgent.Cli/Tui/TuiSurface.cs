@@ -48,6 +48,19 @@ public sealed class TuiSurface
 
     public bool HasLineProjection => Writer is ITranscriptLineWriter;
 
+    public void WriteActivityLine(string activityId, string text)
+    {
+        lock (Gate)
+        {
+            if (Writer is ITranscriptActivityWriter screen)
+            {
+                screen.AppendToolRow(activityId, text);
+                CompleteLine(text);
+            }
+            else WriteLine(text);
+        }
+    }
+
     public void PreviewLine(string text)
     {
         lock (Gate)

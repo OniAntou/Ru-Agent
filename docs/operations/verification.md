@@ -9,11 +9,44 @@
 | .NET tests | **Full 13-project Debug matrix: 6,370 passed / 0 failed / 0 skipped** (2026-10-16, TUI feed/inspection repair). Broker 943; CLI 1,462; Client 239; Core 492; Persistence 177; Hosting 41; Protocol 86; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,101; GUI 1,444. Log: `artifacts/tui-release-qa/dotnet-debug-matrix.log`. The initial Release test invocation and its Debug-only test-seam failure are recorded below. Earlier evidence remains under `artifacts/release-verification/`. |
 | Python suite | **215 passed, 1 skipped** (2026-10-16), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/tui-release-qa/python.log`. Earlier evidence remains under `artifacts/release-verification/`. |
 | TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
-| Release build | **Local 11/11 stages passed** (2026-10-16), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
-| Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-release-qa/published-host-smoke.log`. Published CLI console panels and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
+| Release build | **Local 11/11 stages passed** (2026-10-16, after core TUI simplification), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-core-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
+| Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-core-release-qa/published-host-smoke.log`. Published CLI core help/status/session navigation, removed-command refusal and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Core TUI simplification and Release rebuild (2026-10-16)
+
+Scoped Debug verification with `scripts/test_dotnet.ps1 -Configuration Debug
+-ProjectFilter RuAgent.Cli.Tests` rebuilt the affected CLI and passed all 1,465
+tests without failures or skips. This includes header context-meter cells,
+chat/session/attachment/approval/recovery coverage, removal from help/completion
+and compact plan progress without a streamed-word break. A subsequent focused
+run rebuilt the final prompt-recall/autocomplete test edits and passed both tests.
+The current-documentation and guidance-route guards passed all 15 checks.
+Logs: `artifacts/tui-core-tests.log`, `artifacts/tui-core-final-targeted.log` and
+`artifacts/tui-core-docs.log`.
+
+The TUI now omits dedicated activity/todo/change inspectors, file browsing,
+session tree/rewind/export and token/prompt-history reports. Context metering,
+Up/Down recall, inline tool/diff details and headless CLI/RPC remain. The release
+and ConPTY results below predate this simplification; they preserve historical
+evidence, including inspector commands that are now removed. This scoped check
+was followed by a Release rebuild and packaged runtime checks, recorded here.
+
+Final verification was scoped to the changed CLI: the runner with
+`-Configuration Release -ProjectFilter RuAgent.Cli.Tests` rebuilt and passed all
+1,465 tests without failures or skips. `build.bat` then completed all 11 stages.
+The flat published Host passed authenticated status/maintenance and acknowledged
+idle shutdown. The published CLI entered a real ConPTY alternate screen, opened
+core help/status/session views, refused the removed `/stats` command and exited
+with code 0. Its flat assembly SHA-256 matches the standalone CLI publish, and
+`bin/ru.cmd --version` reports `0.1.1`. Owned probe processes were closed.
+Logs: `artifacts/tui-core-release-qa/cli-release-tests.log`, `build-release.log`,
+`published-host-smoke.log`, `packaged-tui-smoke.log` and `ru-version.log` under
+that same directory. No installer, tag, GitHub release or provider generation was
+created. The full-matrix figures above remain the earlier baseline; the current
+change used scoped CLI and documentation checks.
 
 ## TUI Release verification (2026-10-16)
 

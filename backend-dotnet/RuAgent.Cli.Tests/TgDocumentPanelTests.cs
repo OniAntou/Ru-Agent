@@ -139,7 +139,7 @@ public sealed class TgDocumentPanelTests
     [Fact]
     public void ColumnAlignedOutput_KeepsItsShape()
     {
-        // /tree and /status align their columns with runs of spaces. Wrapping on word
+        // Status reports align their columns with runs of spaces. Wrapping on word
         // boundaries would collapse those and make the tree unreadable.
         var body = new[] { "root", "├─ child one   │ ok", "│   └─ leaf   │ ok", "└─ child two   │ ok" };
         using IApplication app = Application.Create();

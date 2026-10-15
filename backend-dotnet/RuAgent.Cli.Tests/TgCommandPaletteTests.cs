@@ -17,7 +17,7 @@ public sealed class TgCommandPaletteTests
 
         palette.SetQuery("/sta");
 
-        Assert.Equal(["/stats", "/status"], palette.Matches.Select(command => command.Command));
+        Assert.Equal(["/status"], palette.Matches.Select(command => command.Command));
         palette.Move(1);
         Assert.Equal("/status", palette.SelectedCommand);
     }

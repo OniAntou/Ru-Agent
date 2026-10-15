@@ -94,6 +94,33 @@ public sealed class TuiFeedContinuityTests
         app.Run(window);
     }
 
+    [Fact]
+    public void PlanProgressIsCompactDeduplicatedAndDoesNotSplitStreamingProse()
+    {
+        using var output = new StringWriter();
+        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface));
+        var plan = new AgentActivityModel("plan", AgentActivityKind.Todo, AgentActivityState.Completed,
+            null, null, null, null, null, null, null, null, "ok", null, null, null)
+        { Todos = [new("Finished task", "completed"), new("Next task", "pending")] };
+        transcript.BeginTurn();
+        transcript.AppendAssistant("Cấu trúc dự");
+        transcript.ApplyActivity(plan);
+        transcript.AppendAssistant(" án đã đầy đủ.");
+        transcript.Flush();
+        transcript.ApplyActivity(plan);
+        transcript.Flush();
+
+        var text = TuiText.Strip(output.ToString());
+        Assert.Contains("Cấu trúc dự án đã đầy đủ.", text);
+        Assert.Equal(1, text.Split("Plan · 1/2 complete").Length - 1);
+        Assert.DoesNotContain("Finished task", text);
+        transcript.BeginTurn();
+        transcript.ApplyActivity(plan with { Todos = [] });
+        transcript.Flush();
+        Assert.Contains("Plan · 0/0 complete", TuiText.Strip(output.ToString()));
+    }
+
     private static HarnessSafeEventEnvelope Event(string type, long sequence, string status = "running") =>
         new(1, $"evt_{sequence}", "run_test", "session_test", sequence, type,
             DateTimeOffset.UtcNow.ToString("O"), status, "ok");

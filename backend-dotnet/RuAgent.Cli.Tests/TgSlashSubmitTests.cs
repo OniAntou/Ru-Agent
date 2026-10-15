@@ -57,7 +57,7 @@ public sealed class TgSlashSubmitTests
     [InlineData("/model", "/model")]
     [InlineData("/reasoning", "/reasoning")]
     [InlineData("/clear", "/clear")]
-    [InlineData("/stats", "/stats")]
+    [InlineData("/status", "/status")]
     public void ACompleteCommand_RunsTheMomentItIsPicked(string typed, string expected)
     {
         using IApplication app = Application.Create();
@@ -72,7 +72,6 @@ public sealed class TgSlashSubmitTests
     }
 
     [Theory]
-    [InlineData("/rewind", "/rewind")]
     [InlineData("/attach", "/attach")]
     [InlineData("/detach", "/detach")]
     public void ACommandNeedingAnArgument_StaysInTheComposer(string typed, string expected)
@@ -130,12 +129,12 @@ public sealed class TgSlashSubmitTests
     [Fact]
     public void NeedsArgument_OnlyForCommandsThatCannotRunBare()
     {
-        foreach (var command in new[] { "/attach", "/detach", "/rewind" })
+        foreach (var command in new[] { "/attach", "/detach" })
         {
             Assert.True(ChatCommandCatalog.NeedsArgument(command), command);
         }
 
-        foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/help", "/tree" })
+        foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/help" })
         {
             Assert.False(ChatCommandCatalog.NeedsArgument(command), command);
         }

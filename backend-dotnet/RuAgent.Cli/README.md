@@ -81,13 +81,16 @@ rendering limits and do not alter durable model context.
 
 ## Project context and run continuity
 
-`/files [query]` searches the selected workspace and asks which file to attach.
-Search stops after 5,000 entries, two seconds or 50 matches; refine the query
-when the list is incomplete. Private/generated paths, reparse points and multiple
-hard links are refused. Selection validates the opened file's final path and
-reads through that same handle with the existing image/text size caps.
-Pending context retains at most eight attachments and 32 MiB of source bytes;
-queued submissions have their own retained-content budget.
+The TUI focuses on chat and coding, with inline tool activity and expandable
+errors/diffs, approvals, attachments, session/model controls and run recovery.
+The header keeps the live context meter. Plans show compact completed/total
+counts in the transcript; use the GUI for dedicated activity, plan and changes
+inspection or file browsing. Attach a known file with `/attach <path>` or paste
+it into the composer. Up/Down still recalls previous prompts.
+
+The interactive vocabulary omits `/activity`, `/todos`, `/changes`, `/files`,
+`/tree`, `/rewind`, `/export`, `/stats`, `/tokens` and `/history`. Headless CLI
+and RPC commands, including session interchange, remain available separately.
 
 `/follow` uses the retained run's durable provider/model metadata. Unknown pins
 show unknown and suppress catalog-based cost/context estimates. Pending approval
@@ -147,7 +150,7 @@ agent rpc
 
   Tables and nested lists are out of scope on purpose. Because a streamed delta can cut a marker in half, only the trailing run of marker characters is held back for the next delta, and a leading `*`/`_` is read as an opener only when a word character precedes it — so the text always arrives complete and in order, even when an emphasis spanning a delta boundary loses its styling.
 - Tool rows read as a sentence: provider names are nouns (`View`, `Terminal`), so a table of verbs turns them into `read`, `listed`, `searched`, `edited`, `wrote`, `ran`, `loaded` and so on. The live row uses the present tense (`⠋ reading app.cs`) and the settled row the past (`✓ read app.cs`). An unrecognised name keeps its own name, and a provider's name outranks the activity kind so precision is not lost.
-- Information surfaces share one framed panel: `/help` lists every command grouped by area (generated from the reader's own command table), and `/status` (also `/stats`, `/tokens`) prints the session card — session id, preset, backend, model, API-key state, turns, tools, tokens and the workspace leaf.
+- Information surfaces share one framed panel: `/help` lists every command grouped by area (generated from the reader's own command table), and `/status` prints the session card — session id, preset, backend, model, API-key state, turns, tools, tokens and the workspace leaf.
 - `/model` without an argument lists the live provider catalog for the active backend (current model first, then free models, then the rest A–Z, then dimmed unsupported rows; the footer names the backend and the row count as `backend · N rows`), falling back to configured models when the catalog is unreachable with a dim `catalog unavailable (<reason>) - showing configured models` line, the same reasoning `/backend` prints; pick with `↑↓`/digits/`Enter`, `Esc` cancels. Free-tier models carry a `free` tag (OpenRouter `:free` suffix) and long ids keep both ends so shared prefixes stay apart. Dropdown label columns size to the longest label on wide terminals (narrow screens clip with `…`); short lists keep the classic 12-cell column.
 - `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`); choosing one updates the settings immediately. `/backend openrouter` and `/model <id>` also work with explicit arguments. With no interactive console they print the same information as a panel, and `Esc` cancels silently.
 - Starting `chat` or `run` against a `models.dev:*` backend makes one best-effort catalog check. A model id the live catalog does not list prints one bounded `model_not_in_catalog: <id> - it may fail with a 404; choose another with /model` notice; an unreadable catalog prints `model_check_unavailable: <reason>`. The run continues either way — the catalog can be stale — and OpenAI, Anthropic and custom backends, whose id spaces are not catalog-bound, are not checked.

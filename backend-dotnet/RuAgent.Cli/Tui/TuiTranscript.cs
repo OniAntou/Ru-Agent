@@ -64,6 +64,8 @@ public sealed class TuiTranscript
     private string? _pausedRunId;
     private string? _lastParkReason;
     private bool _fullScreenCards;
+    private string? _pendingPlanProgress;
+    private string? _lastPlanProgress;
 
     /// <summary>
     /// Full-screen transcript rendering: tool results become inline <see cref="TuiToolRow"/>
@@ -212,6 +214,8 @@ public sealed class TuiTranscript
     public void BeginTurn()
     {
         _toolsSettled = 0;
+        _pendingPlanProgress = null;
+        _lastPlanProgress = null;
         _hasStreamedDelta = false;
         _lineBuffer = string.Empty;
         _proseLine.Clear();
@@ -339,6 +343,14 @@ public sealed class TuiTranscript
             RenderStyled(rest);
         }
         FlushProseLine();
+        // Metadata must not split an unfinished word. Publish progress only at an
+        // existing transcript boundary, retaining counts rather than a second task list.
+        if (_pendingPlanProgress is { } progress && progress != _lastPlanProgress)
+        {
+            WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
+            _lastPlanProgress = progress;
+        }
+        _pendingPlanProgress = null;
         _surface.Flush();
     }
 
@@ -575,6 +587,8 @@ public sealed class TuiTranscript
                 return;
 
             case AgentActivityKind.Todo:
+                if (activity.Todos is { } todos)
+                    _pendingPlanProgress = $"Plan · {todos.Count(todo => todo.Status == "completed")}/{todos.Count} complete";
                 if (!string.IsNullOrWhiteSpace(activity.ToolDisplay)) ApplyToolActivity(activity);
                 return;
 

@@ -39,47 +39,6 @@ public sealed class TgChatLoopTests
     }
 
     [Fact]
-    public void ReadOnlyInspectionDoesNotWaitBehindAStreamingTurnOrConsumeAttachments()
-    {
-        using IApplication app = Application.Create();
-        app.Init(DriverRegistry.Names.ANSI);
-        using var window = TgChatWindow.Build();
-        var loop = new TgChatLoop(window);
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var inspected = false;
-        loop.SetPromptHandler(async (_, _, ct) => { started.TrySetResult(); await Task.Delay(System.Threading.Timeout.Infinite, ct); });
-        loop.SetInspectionHandler(line =>
-        {
-            if (line != "/todos") return false;
-            inspected = true;
-            window.ShowDocument("todos", ["→ Current task"]);
-            return true;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
-        {
-            window.Composer.Input.Text = "work";
-            loop.Submit();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
-        {
-            if (!started.Task.IsCompleted) return true;
-            window.Composer.Input.Text = "/todos";
-            loop.Submit();
-            Assert.True(inspected);
-            Assert.True(window.IsDocumentPanelOpen);
-            Assert.Equal(string.Empty, window.Composer.Input.Text);
-            window.HideDocument();
-            loop.Stop();
-            app.RequestStop();
-            return false;
-        });
-        app.AddTimeout(TimeSpan.FromSeconds(5), () => { loop.Stop(); app.RequestStop(); return false; });
-        app.Run(window);
-        Assert.True(inspected);
-    }
-
-    [Fact]
     public async Task ExecuteSubmittedLine_DispatchesSlashCommandWithoutRendering()
     {
         var seen = new List<string>();

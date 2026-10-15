@@ -1632,90 +1632,6 @@ public sealed partial class AgentCommands
         Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
             sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);
 
-        async Task HandleProjectFilesAsync(string? query)
-        {
-            try
-            {
-                var choices = ChatProjectFileWorkflow.FindCandidates(canonicalWorkspace, query, cancellationToken);
-                if (choices.Count == 0)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "no safe project files match").ConfigureAwait(false);
-                    return;
-                }
-
-                if (cmd.Json || _slashCommands.Picker is null)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "Project files (interactive selection required to attach; limited results, refine the search):").ConfigureAwait(false);
-                    foreach (var choice in choices)
-                    {
-                        await WriteDiagnosticLineAsync(humanOut, $"  {choice.Display}").ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-
-                var selected = await _slashCommands.Picker(
-                    ChatProjectFileWorkflow.ToChoiceList(choices),
-                    cancellationToken).ConfigureAwait(false);
-                if (!int.TryParse(selected, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
-                    || index < 0
-                    || index >= choices.Count)
-                {
-                    return;
-                }
-
-                var loaded = await ChatProjectFileWorkflow.LoadSelectedAsync(
-                    choices[index].Path,
-                    canonicalWorkspace,
-                    cancellationToken).ConfigureAwait(false);
-                if (loaded.Error is not null)
-                {
-                    await WriteDiagnosticLineAsync(_err, loaded.Error).ConfigureAwait(false);
-                    return;
-                }
-
-                var image = loaded.Image;
-                var text = loaded.Text;
-                var count = submissions.Count;
-                var bytes = checked(submissions.SourceBytes
-                    + (image?.ByteSize ?? text?.ByteSize ?? 0));
-                if (count >= ChatProjectFileWorkflow.MaxPendingAttachments
-                    || bytes > ChatProjectFileWorkflow.MaxPendingAttachmentBytes
-                    || image is not null && pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
-                {
-                    await WriteDiagnosticLineAsync(_err, "project_file_limit: detach an attachment before selecting another file").ConfigureAwait(false);
-                    return;
-                }
-
-                if (image is not null)
-                {
-                    submissions.Add(image);
-                    if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
-                    {
-                        await WriteDiagnosticLineAsync(_err, $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
-                    }
-                }
-                else if (text is not null)
-                {
-                    submissions.Add(text);
-                }
-
-                RefreshAttachmentLabels();
-                var label = image?.Label ?? text?.Label ?? "file";
-                await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {label}").ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                await WriteDiagnosticLineAsync(
-                    _err,
-                    $"project_file_error: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), 180)}").ConfigureAwait(false);
-            }
-        }
-
         async Task FollowRetainedRunAsync(string? runIdArg)
         {
             if (runSession.IsTurnActive)
@@ -1899,7 +1815,6 @@ public sealed partial class AgentCommands
             sessionId = targetSessionId;
             sessionTitle = replay.Title;
             runSession.ResetSession();
-            sessionRenderer.Inspection.Clear();
             sessionTitleProbes = 0;
             turn = 0;
             lastTotalTokens = null;
@@ -2294,13 +2209,6 @@ public sealed partial class AgentCommands
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
-            if (Tui.TuiInspectionState.Handles(slashLine))
-            {
-                foreach (var row in sessionRenderer.Inspection.Rows(slashCmd))
-                    await humanOut.WriteLineAsync(row).ConfigureAwait(false);
-                return true;
-            }
-
             if (slashCmd is "/exit" or "/quit")
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
@@ -2328,26 +2236,6 @@ public sealed partial class AgentCommands
 
                 var retry = submissions.Retryable;
                 await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/history")
-            {
-                // The TG loop owns its own Up/Down history; the sequential reader never
-                // sees a TG line, so reading it there would always report an empty list.
-                var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
-                if (history.Count == 0)
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
-                }
-                else
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
-                    for (int i = 0; i < history.Count; i++)
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
-                    }
-                }
-                await humanOut.FlushAsync().ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/clear")
@@ -2378,29 +2266,6 @@ public sealed partial class AgentCommands
             if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
             {
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/rewind")
-            {
-                if (arg is null || !int.TryParse(arg, out var toIndex))
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
-                    return true;
-                }
-                try
-                {
-                    await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
-                }
-                catch (AgentApiException ex)
-                {
-                    await WriteDiagnosticLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await WriteDiagnosticLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
-                }
-                await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/attach")
@@ -2474,12 +2339,6 @@ public sealed partial class AgentCommands
                 }
                 return true;
             }
-            if (slashCmd == "/files")
-            {
-                await HandleProjectFilesAsync(arg).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                return true;
-            }
             if (slashCmd is "/follow")
             {
                 await FollowRetainedRunAsync(arg).ConfigureAwait(false);
@@ -2549,12 +2408,6 @@ public sealed partial class AgentCommands
         {
             var loop = new TgChatLoop(tgWindow!, cancellationToken);
             tgLoop = loop;
-            loop.SetInspectionHandler(line =>
-            {
-                if (!Tui.TuiInspectionState.Handles(line)) return false;
-                tgWindow!.ShowDocument(line.Trim().TrimStart('/'), sessionRenderer.Inspection.Rows(line));
-                return true;
-            });
             var guiDispatcher = new ChatLineDispatcher(
                 HandleSlashLineWithDocumentAsync,
                 (prompt, ct) => HandlePromptLineAsync(prompt, ct));

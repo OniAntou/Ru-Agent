@@ -452,11 +452,14 @@ reconciliation surfaces from Phase 3:
   Late completion details update that existing tool row in place. Row markers
   are invalidated by retention, reset and rewinds rather than guessing at a
   shifted row. Document panels own their paging keys while focused.
-  `/activity`, `/todos` and `/changes` open read-only snapshots even during a live
-  turn, bypassing submission ownership and the prompt queue. A bounded
-  `TuiInspectionState` keeps the latest 256 activity IDs and the latest complete
-  todo list received in the connection; session switches clear it. These panels
-  do not replay older run activities. Conversation replay retains the latest
+  The TUI intentionally keeps core chat, inline tools/diffs, approvals, attachments,
+  session/model controls, run recovery, help and updates. The live header context
+  meter remains. Plans render only completed/total counts at existing transcript
+  boundaries, without splitting streamed prose or retaining a separate task list.
+  Activity/todo/change inspectors, the project-file browser, session tree, rewind,
+  Markdown export and separate token/prompt-history reports are absent from the
+  interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
+  retain their own capabilities. Conversation replay retains the latest
   20 nonempty messages, with a 100,000-character bound per message; screen
   retention is independently bounded by `TgTranscriptView`.
   Command overlays follow the composer and remain bounded within the frame.

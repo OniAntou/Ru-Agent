@@ -14,24 +14,14 @@ public static class ChatCommandCatalog
         new("/attach", "Attach an image or text/code file", "/attach <path>"),
         new("/attachments", "List pending attachments", "/attachments"),
         new("/detach", "Remove a pending attachment", "/detach <n> | --all"),
-        new("/tree", "Show the session tree", "/tree"),
-        new("/stats", "Show token and session stats", "/stats"),
-        new("/tokens", "Show detailed token usage", "/tokens"),
-        new("/export", "Export the transcript to Markdown", "/export [filename]"),
         new("/status", "Show session status and preset", "/status"),
-        new("/rewind", "Rewind to an earlier message", "/rewind <index>"),
         new("/continue", "Resume a parked run", "/continue [run-id]"),
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Switch or delete sessions", "/sessions [query]"),
         new("/resume", "Resume a session", "/resume [session-id]"),
-        new("/files", "Browse or search project files", "/files [query]"),
-        new("/activity", "Inspect activity received in this connection", "/activity"),
-        new("/todos", "Inspect the latest received plan", "/todos"),
-        new("/changes", "Inspect file changes received in this connection", "/changes"),
         new("/follow", "Follow a retained run", "/follow [run-id]"),
         new("/retry", "Retry the last held submission", "/retry"),
         new("/delete", "Delete another session", "/delete [session-id]"),
-        new("/history", "Show entered prompt history", "/history"),
         new("/clear", "Reset the transcript view", "/clear"),
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
@@ -42,7 +32,7 @@ public static class ChatCommandCatalog
     private static readonly HashSet<string> ReportCommands =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "/tree", "/status", "/stats", "/tokens", "/help", "/export", "/attachments", "/history",
+            "/status", "/help", "/attachments",
         };
 
     /// <summary>True when <paramref name="slashCmd"/> is a report-only command.</summary>
@@ -55,7 +45,7 @@ public static class ChatCommandCatalog
     /// other command is complete on its own and runs as soon as it is picked.
     /// </summary>
     private static readonly HashSet<string> ArgumentCommands =
-        new(StringComparer.OrdinalIgnoreCase) { "/attach", "/detach", "/rewind" };
+        new(StringComparer.OrdinalIgnoreCase) { "/attach", "/detach" };
 
     /// <summary>True when <paramref name="slashCmd"/> cannot run without a typed argument.</summary>
     public static bool NeedsArgument(string? slashCmd) =>

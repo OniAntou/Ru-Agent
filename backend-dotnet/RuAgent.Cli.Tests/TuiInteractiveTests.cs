@@ -415,14 +415,14 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void ChatCommandCatalog_AutoCompletes_NewSlashCommands()
+    public void ChatCommandCatalog_AutoCompletesCoreCommands()
     {
-        string[] cmds = ["/help", "/model", "/backend", "/rewind", "/tree", "/stats", "/tokens", "/export", "/status", "/history", "/clear", "/exit", "/quit"];
-        Assert.Equal("/tree", ChatCommandCatalog.AutoComplete("/tr", cmds));
-        Assert.Null(ChatCommandCatalog.AutoComplete("/stat", cmds)); // ambiguous with /status
-        Assert.Equal("/stats", ChatCommandCatalog.AutoComplete("/stats", cmds));
-        Assert.Equal("/tokens", ChatCommandCatalog.AutoComplete("/tok", cmds));
-        Assert.Equal("/export", ChatCommandCatalog.AutoComplete("/exp", cmds));
+        var commands = ChatCommandCatalog.KnownCommands.Select(command => command.Command);
+        Assert.Equal("/continue", ChatCommandCatalog.AutoComplete("/cont", commands));
+        Assert.Null(ChatCommandCatalog.AutoComplete("/re", commands)); // resume, reasoning, retry
+        Assert.Equal("/status", ChatCommandCatalog.AutoComplete("/stat", commands));
+        Assert.Equal("/attach", ChatCommandCatalog.AutoComplete("/attach", ["/attach"]));
+        Assert.Equal("/update", ChatCommandCatalog.AutoComplete("/upd", commands));
     }
 
     [Fact]

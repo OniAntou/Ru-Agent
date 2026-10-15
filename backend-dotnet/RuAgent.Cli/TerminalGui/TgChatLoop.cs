@@ -49,7 +49,6 @@ public sealed class TgChatLoop
     private Func<Task>? _pasteHandler;
     private Func<string, Task<bool>>? _copyHandler;
     private Func<string, bool>? _dropHandler;
-    private Func<string, bool>? _inspectionHandler;
     private CancellationTokenSource? _turn;
     private TaskCompletionSource? _turnDone;
     private int _historyIndex;
@@ -175,9 +174,6 @@ public sealed class TgChatLoop
     /// </summary>
     public void SetDropHandler(Func<string, bool> handler) => _dropHandler = handler;
 
-    /// <summary>Local read-only views remain available while a turn streams.</summary>
-    public void SetInspectionHandler(Func<string, bool> handler) => _inspectionHandler = handler;
-
     /// <summary>Repaints the idle hint from the provider; a busy turn keeps its spinner.</summary>
     public void RefreshAttachmentLabel() =>
         Dispatch(() =>
@@ -193,14 +189,6 @@ public sealed class TgChatLoop
     public void Submit()
     {
         var line = _window.Composer.Input.Text?.ToString() ?? string.Empty;
-        if (_inspectionHandler?.Invoke(line) == true)
-        {
-            _window.Composer.Input.Text = string.Empty;
-            Remember(line);
-            _historyIndex = _history.Count;
-            _draft = string.Empty;
-            return;
-        }
         if (_dropHandler is not null)
         {
             var candidate = line.Trim();

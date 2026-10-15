@@ -14,7 +14,15 @@ namespace RuApp.Controls
         /// Points the terminal at the session workspace; a different directory
         /// restarts the shell the next time the tab is shown.
         /// </summary>
-        public void SetTerminalWorkingDirectory(string? path) => _terminalWorkingDirectory = path;
+        public void SetTerminalWorkingDirectory(string? path)
+        {
+            if (string.Equals(_terminalWorkingDirectory, path, System.StringComparison.OrdinalIgnoreCase)) return;
+            _terminalWorkingDirectory = path;
+            TerminalWorkspaceText.Text = path ?? "Default workspace";
+        }
+
+        private void SynchronizeTerminalWorkspace() =>
+            TerminalTabView.EnsureStarted(_terminalWorkingDirectory, focus: false);
 
         /// <summary>Starts or focuses the terminal when its tab opens.</summary>
         public void RevealTerminal() => TerminalTabView.EnsureStarted(_terminalWorkingDirectory);

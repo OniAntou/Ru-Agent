@@ -16,7 +16,8 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         string beforeText,
         string afterText,
         int? startLine,
-        string safeCode)
+        string safeCode,
+        string activityId = "")
     {
         FileName = fileName;
         Added = added;
@@ -25,7 +26,16 @@ public sealed class ChangesTabRow : INotifyPropertyChanged
         AfterText = afterText;
         StartLine = startLine;
         SafeCode = safeCode;
+        ActivityId = activityId;
     }
+
+    public string ActivityId { get; }
+
+    public bool HasSameContent(ChangesTabRow other) =>
+        ActivityId == other.ActivityId && FileName == other.FileName
+        && Added == other.Added && Removed == other.Removed
+        && BeforeText == other.BeforeText && AfterText == other.AfterText
+        && StartLine == other.StartLine && SafeCode == other.SafeCode;
 
     public string FileName { get; }
 

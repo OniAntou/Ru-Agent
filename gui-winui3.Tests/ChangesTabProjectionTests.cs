@@ -10,6 +10,66 @@ namespace RuApp.Tests;
 public sealed class ChangesTabProjectionTests
 {
     [Fact]
+    public void A_live_edit_also_present_in_history_is_counted_once()
+    {
+        var edit = Edit("same.txt", added: 3, removed: 1);
+        var result = ChangesTabProjection.Project(new[] { edit, edit });
+        Assert.Single(result.Rows);
+        Assert.Equal(3, result.Added);
+        Assert.Equal(1, result.Removed);
+    }
+
+    [Fact]
+    public void Reopened_history_and_the_next_live_run_share_session_totals()
+    {
+        var oldEdit = Edit("old.txt", added: 4);
+        var liveEdit = Edit("new.txt", added: 2);
+        var history = new[] { new ChatMessageItem
+        {
+            Role = "assistant",
+            AgentActivities = new System.Collections.ObjectModel.ObservableCollection<AgentActivityItem>(new[] { oldEdit }),
+        } };
+        var reopened = ChangesTabProjection.ProjectSession(history, Array.Empty<AgentActivityItem>());
+        Assert.Equal(4, reopened.Added);
+        var next = ChangesTabProjection.ProjectSession(history, new[] { liveEdit });
+        Assert.Equal(6, next.Added);
+        Assert.Equal(new[] { "new.txt", "old.txt" }, next.Rows.Select(row => row.FileName));
+    }
+
+    [Fact]
+    public void Refreshing_unchanged_edits_keeps_the_open_diff_and_sends_no_collection_reset()
+    {
+        var activity = Edit("file.txt", added: 2);
+        var rows = new System.Collections.ObjectModel.ObservableCollection<ChangesTabRow>();
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { activity }).Rows);
+        var retained = rows[0];
+        retained.IsExpanded = true;
+        int notifications = 0;
+        rows.CollectionChanged += (_, _) => notifications++;
+
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { activity }).Rows);
+        Assert.Same(retained, rows[0]);
+        Assert.True(rows[0].IsExpanded);
+        Assert.Equal(0, notifications);
+
+        ChangesTabReconciler.Apply(rows, ChangesTabProjection.Project(new[] { activity, Edit("later.txt") }).Rows);
+        Assert.Same(retained, rows[1]);
+        Assert.True(rows[1].IsExpanded);
+    }
+
+    [Fact]
+    public void Updated_diff_content_keeps_expansion_but_other_sessions_do_not_inherit_it()
+    {
+        var current = new ChangesTabRow("file.txt", 1, 0, "", "a", 1, "ok", "edit-1") { IsExpanded = true };
+        var rows = new System.Collections.ObjectModel.ObservableCollection<ChangesTabRow>(new[] { current });
+        ChangesTabReconciler.Apply(rows, new[] { new ChangesTabRow("file.txt", 2, 0, "", "b", 1, "ok", "edit-1") });
+        Assert.True(rows[0].IsExpanded);
+        Assert.Equal("b", rows[0].AfterText);
+        ChangesTabReconciler.Apply(rows, new[] { new ChangesTabRow("file.txt", 1, 0, "", "a", 1, "ok", "other-session") });
+        Assert.False(rows[0].IsExpanded);
+    }
+
+    [Fact]
     public void Non_edit_activities_are_ignored()
     {
         var projection = ChangesTabProjection.Project(new[]
@@ -106,7 +166,7 @@ public sealed class ChangesTabProjectionTests
         string? symbol = null,
         string? detail = null) =>
         new(
-            "act_22222222222222222222222222222222",
+            "act_" + System.Guid.NewGuid().ToString("N"),
             kind,
             state,
             fileName,

@@ -41,6 +41,7 @@ namespace RuApp.Controls
         public event EventHandler<SidePanelTabMove>? TabMoved;
 
         public event EventHandler<string>? TaskStopRequested;
+        public event EventHandler? TasksRefreshRequested;
 
         public event EventHandler<double>? WidthChanged;
 
@@ -83,11 +84,7 @@ namespace RuApp.Controls
 
         public void RenderChanges(IReadOnlyList<ChangesTabRow> rows, int added, int removed)
         {
-            Changes.Clear();
-            foreach (var row in rows)
-            {
-                Changes.Add(row);
-            }
+            ChangesTabReconciler.Apply(Changes, rows);
 
             CardAddedText.Text = "+" + added;
             CardRemovedText.Text = "−" + removed;
@@ -99,13 +96,14 @@ namespace RuApp.Controls
 
         public void RenderTasks(IReadOnlyList<AgentTaskRow> rows, string status)
         {
+            SetTasksStatus(status);
+            if (Tasks.SequenceEqual(rows)) return;
             Tasks.Clear();
             foreach (var row in rows)
             {
                 Tasks.Add(row);
             }
 
-            SetTasksStatus(status);
         }
 
         public void ApplyState(
@@ -115,6 +113,7 @@ namespace RuApp.Controls
             bool fullscreen,
             double panelWidth)
         {
+            CancelVisibilityExit();
             var previous = _mode;
             var previousActive = _activeTab;
             _mode = mode;
@@ -130,17 +129,33 @@ namespace RuApp.Controls
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
-            AddTabButton.Visibility = openTabs.Contains(SidePanelTabKind.Terminal)
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+            AddTabButton.Visibility = Visibility.Visible;
             SyncChipOrder(openTabs);
+            if (showPanel && (activeTab != previousActive || previous != mode))
+            {
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (_mode == AgentSidePanelMode.Panel)
+                    {
+                        TabStripScroll.UpdateLayout();
+                        var chip = ChipFor(_activeTab);
+                        var bounds = chip.TransformToVisual(ChipStrip).TransformBounds(
+                            new Windows.Foundation.Rect(0, 0, chip.ActualWidth, chip.ActualHeight));
+                        double offset = TabStripScroll.HorizontalOffset;
+                        if (bounds.Left < offset) offset = bounds.Left;
+                        else if (bounds.Right > offset + TabStripScroll.ViewportWidth)
+                            offset = bounds.Right - TabStripScroll.ViewportWidth;
+                        TabStripScroll.ChangeView(offset, null, null, disableAnimation: true);
+                    }
+                });
+            }
 
             ChangesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Changes ? Visibility.Visible : Visibility.Collapsed;
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
             FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
             TerminalBody.Visibility = showPanel && activeTab == SidePanelTabKind.Terminal ? Visibility.Visible : Visibility.Collapsed;
 
-            if (showPanel && activeTab != previousActive)
+            if (showPanel && (activeTab != previousActive || previous != AgentSidePanelMode.Panel))
             {
                 PlayBodyTransition(activeTab switch
                 {
@@ -154,6 +169,10 @@ namespace RuApp.Controls
                 {
                     RevealTerminal();
                 }
+            }
+            else if (showPanel && activeTab == SidePanelTabKind.Terminal)
+            {
+                SynchronizeTerminalWorkspace();
             }
 
             bool push = showPanel && !fullscreen;
@@ -180,64 +199,6 @@ namespace RuApp.Controls
             {
                 PlayEntrance(showPanel ? PanelHost : CardHost, showPanel ? PanelSlide : CardSlide);
             }
-        }
-
-        /// <summary>
-        /// Animates the visible surface back in after a hide. The mode-change
-        /// entrance cannot cover this case: hiding keeps the last mode, so showing
-        /// the same mode again compares equal and would appear instantly.
-        /// </summary>
-        public void PlayVisibilityEntrance()
-        {
-            bool showPanel = _mode == AgentSidePanelMode.Panel;
-            PlayEntrance(showPanel ? PanelHost : CardHost, showPanel ? PanelSlide : CardSlide);
-        }
-
-        /// <summary>
-        /// Fades the surface out and calls back once it has left the screen. The
-        /// caller collapses the host in the callback and re-checks its own desired
-        /// state there, because the surface can be asked back before it has gone.
-        /// </summary>
-        public void PlayVisibilityExit(Action completed)
-        {
-            ArgumentNullException.ThrowIfNull(completed);
-            bool showPanel = _mode == AgentSidePanelMode.Panel;
-            FrameworkElement host = showPanel ? PanelHost : CardHost;
-            var slide = showPanel ? PanelSlide : CardSlide;
-            if (!UiTiming.AnimationsEnabled)
-            {
-                host.Opacity = 1;
-                slide.X = 0;
-                completed();
-                return;
-            }
-
-            host.Opacity = 1;
-            slide.X = 0;
-
-            var fade = new DoubleAnimation
-            {
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(140),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn },
-            };
-            Storyboard.SetTarget(fade, host);
-            Storyboard.SetTargetProperty(fade, "Opacity");
-
-            var glide = new DoubleAnimation
-            {
-                To = 16,
-                Duration = TimeSpan.FromMilliseconds(140),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseIn },
-            };
-            Storyboard.SetTarget(glide, slide);
-            Storyboard.SetTargetProperty(glide, "X");
-
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fade);
-            storyboard.Children.Add(glide);
-            storyboard.Completed += (_, _) => completed();
-            storyboard.Begin();
         }
 
         private void RefreshChip(Border chip, TextBlock labelText, SidePanelTabKind kind)
@@ -444,65 +405,6 @@ namespace RuApp.Controls
             _draggingChip = null;
         }
 
-        private static void PlayBodyTransition(FrameworkElement body)
-        {
-            if (!UiTiming.AnimationsEnabled)
-            {
-                body.Opacity = 1;
-                return;
-            }
-
-            body.Opacity = 0;
-            var fade = new DoubleAnimation
-            {
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(140),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(fade, body);
-            Storyboard.SetTargetProperty(fade, "Opacity");
-
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fade);
-            storyboard.Begin();
-        }
-
-        private static void PlayEntrance(FrameworkElement host, TranslateTransform slide)
-        {
-            if (!UiTiming.AnimationsEnabled)
-            {
-                host.Opacity = 1;
-                slide.X = 0;
-                return;
-            }
-
-            host.Opacity = 0;
-            slide.X = 16;
-
-            var fade = new DoubleAnimation
-            {
-                To = 1,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(fade, host);
-            Storyboard.SetTargetProperty(fade, "Opacity");
-
-            var glide = new DoubleAnimation
-            {
-                To = 0,
-                Duration = TimeSpan.FromMilliseconds(180),
-                EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut },
-            };
-            Storyboard.SetTarget(glide, slide);
-            Storyboard.SetTargetProperty(glide, "X");
-
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fade);
-            storyboard.Children.Add(glide);
-            storyboard.Begin();
-        }
-
         private void OnExpandClick(object sender, RoutedEventArgs e) =>
             ExpandRequested?.Invoke(this, EventArgs.Empty);
 
@@ -542,8 +444,12 @@ namespace RuApp.Controls
         private void OnTerminalTabCloseClick(object sender, RoutedEventArgs e) =>
             TabClosed?.Invoke(this, SidePanelTabKind.Terminal);
 
-        private void OnAddTabClick(object sender, RoutedEventArgs e) =>
-            TabOpenRequested?.Invoke(this, SidePanelTabKind.Terminal);
+        private void OpenPanelTab(SidePanelTabKind kind) => TabOpenRequested?.Invoke(this, kind);
+
+        private void OnOpenPanelTabClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { Tag: string tag }) OpenPanelTab(KindFromTag(tag));
+        }
 
         private void OnChangeRowToggleClick(object sender, RoutedEventArgs e)
         {
@@ -560,6 +466,9 @@ namespace RuApp.Controls
                 TaskStopRequested?.Invoke(this, executionId);
             }
         }
+
+        private void OnTasksRefreshClick(object sender, RoutedEventArgs e) =>
+            TasksRefreshRequested?.Invoke(this, EventArgs.Empty);
 
         private void OnGripPointerEntered(object sender, PointerRoutedEventArgs e) =>
             PanelDivider.Opacity = 0.9;

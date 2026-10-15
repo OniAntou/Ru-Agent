@@ -174,7 +174,7 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void The_add_control_opens_the_interactive_terminal_tab()
+    public void The_add_menu_opens_or_reopens_every_panel_tab()
     {
         var document = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
         GuiSource.Require(document, "TerminalChip");
@@ -182,9 +182,11 @@ public sealed class AgentSidePanelUiContractTests
         GuiSource.Require(document, "TerminalTabView");
 
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
-        string click = GuiSource.MethodBody(code, "OnAddTabClick");
-        Assert.Contains("TabOpenRequested", click, StringComparison.Ordinal);
-        Assert.Contains("Terminal", click, StringComparison.Ordinal);
+        var add = GuiSource.Require(document, "AddTabButton");
+        var menuItems = add.Descendants().Where(element => element.Name.LocalName == "MenuFlyoutItem").ToArray();
+        Assert.Equal(new[] { "Files", "Changes", "Tasks", "Terminal" }, menuItems.Select(element => GuiSource.AttributeValue(element, "Tag")));
+        Assert.All(menuItems, element => Assert.Equal("OnOpenPanelTabClick", GuiSource.AttributeValue(element, "Click")));
+        Assert.Contains("OpenPanelTab", GuiSource.MethodBody(code, "OnOpenPanelTabClick"), StringComparison.Ordinal);
 
         Assert.Contains(
             "ConPtyTerminalSession.Start",

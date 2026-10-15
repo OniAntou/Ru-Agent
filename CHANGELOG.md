@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Restore session Changes after reopening, retain expanded diffs during live activity updates, and preserve panel/tab/fullscreen selections across narrow-window resizing. Cancel superseded hide/show animations so a restored panel stays visible.
+- **fix(gui)**: Keep the accepted run's workspace-trust dialog ownership when its reply starts, preventing a second stale trust prompt after approval.
+- **feat(gui)**: Add a menu to open or reopen Files, Changes, Background tasks and Terminal. Clarify process rows with bounded, credential-redacted command labels, a refresh action and live status updates while the side surface is visible. Synchronize the interactive terminal with the selected workspace without taking focus during background refreshes.
+
 ## [0.1.1-preview.1] - 2026-10-15
 
 - **fix(gui)**: Let expanded model thinking use the available reading column instead of a fixed 560-pixel left-aligned panel.

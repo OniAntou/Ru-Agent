@@ -5,8 +5,13 @@
 <title>Ru Terminal</title>
 <link rel="stylesheet" href="xterm.css" />
 <style>
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #101318; }
+    :root { --terminal-background: #1a1a1a; --terminal-scrollbar: #404040; color-scheme: dark; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--terminal-background); }
     #terminal { position: absolute; inset: 0; padding: 6px 2px 2px 8px; }
+    .xterm-viewport { scrollbar-width: thin; scrollbar-color: var(--terminal-scrollbar) transparent; }
+    .xterm-viewport::-webkit-scrollbar { width: 8px; }
+    .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+    .xterm-viewport::-webkit-scrollbar-thumb { background: var(--terminal-scrollbar); border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -23,7 +28,7 @@
         fontFamily: 'Cascadia Mono, Consolas, monospace',
         fontSize: 12.5,
         theme: {
-            background: '#101318',
+            background: '#1a1a1a',
             foreground: '#e6e9ee',
             cursor: '#7aa2f7',
             selectionBackground: '#2a3550'
@@ -74,6 +79,16 @@
             post({ type: 'resize', cols: term.cols, rows: term.rows });
         } else if (message.type === 'focus') {
             term.focus();
+        } else if (message.type === 'reset') {
+            term.reset();
+        } else if (message.type === 'theme') {
+            term.options.theme = {
+                background: message.background, foreground: message.foreground,
+                cursor: message.cursor, selectionBackground: message.selectionBackground
+            };
+            document.documentElement.style.setProperty('--terminal-background', message.background);
+            document.documentElement.style.setProperty('--terminal-scrollbar', message.scrollbar);
+            document.documentElement.style.colorScheme = message.light ? 'light' : 'dark';
         }
     });
 

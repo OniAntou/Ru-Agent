@@ -172,6 +172,7 @@ namespace RuApp.Views
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
         {
+            if (activity.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Edit) _sidePanelEditsDirty = true;
             if ((!allowWhenIdle && !HasRunInHand())
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
@@ -707,6 +708,7 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
+            _sidePanelEditsDirty = true;
             StopAllTextSweeps();
             _activityFlushTimer?.Stop();
             _replyTextApplyTimer?.Stop();

@@ -64,6 +64,15 @@ public sealed class TerminalAdapter
         _gitLocator = new GitRepositoryLocator(_gitCli);
     }
 
+    /// <summary>Same credential redaction as terminal output, before retaining a bounded UI label.</summary>
+    internal string DisplayCommand(string command)
+    {
+        var redactor = new ChunkRedactor(_environment.GetRedactionSeeds());
+        string safe = redactor.Push(command) + redactor.Flush();
+        safe = safe.Replace('\r', ' ').Replace('\n', ' ');
+        return safe.Length <= 512 ? safe : safe[..511] + "…";
+    }
+
     /// <summary>
     /// Resolves and classifies a bounded run request without executing anything.
     /// Structural violations throw <see cref="UnauthorizedAccessException"/> with a stable code.

@@ -218,6 +218,7 @@ public sealed partial class ToolExecutionService
                 ["background"] = snapshot.IsBackground,
                 ["exit_code"] = snapshot.ExitCode,
                 ["chars"] = snapshot.Text.Length,
+                ["command"] = snapshot.Command,
             });
         }
 
@@ -241,6 +242,7 @@ public sealed partial class ToolExecutionService
         int lifetimeMs,
         bool isBackground,
         string workingDirectory,
+        string displayCommand,
         CancellationToken cancellationToken,
         Func<CancellationToken, Action<string>, Task<StreamingProcessResult>> run)
     {
@@ -263,7 +265,8 @@ public sealed partial class ToolExecutionService
                     executionId,
                     lifetimeMs,
                     isBackground,
-                    out var lifetimeToken))
+                    out var lifetimeToken,
+                    displayCommand))
             {
                 throw new ArgumentException("background_task_limit_reached");
             }
@@ -473,6 +476,7 @@ public sealed partial class ToolExecutionService
             lifetimeMs,
             isBackground,
             workingDirectory,
+            tools.Terminal.DisplayCommand(TerminalRunPreview(arguments)),
             cancellationToken,
             (token, retain) => tools.Terminal.RunAsync(
                 grant,
@@ -538,6 +542,7 @@ public sealed partial class ToolExecutionService
             lifetimeMs,
             isBackground,
             workingDirectory,
+            tools.Terminal.DisplayCommand(shellRequest.Script),
             cancellationToken,
             (token, retain) => tools.Terminal.RunApprovedShellAsync(
                 shellRequest,

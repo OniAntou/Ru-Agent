@@ -227,6 +227,7 @@ namespace RuApp.Views
                     bool wasFollowing = _followOutput;
                     var preservedAnchor = CaptureTranscriptAnchor();
                     Messages.ReplaceAll(restored);
+                    RefreshSidePanelEdits();
 
                     if (history.Count > 0)
                     {
@@ -332,6 +333,7 @@ namespace RuApp.Views
 
         private void RegisterReplayedActivities(IEnumerable<ChatMessageItem> messages)
         {
+            _sidePanelEditsDirty = true;
             IReadOnlyList<TodoItemModel>? latestTodos = null;
             foreach (var message in messages)
                 if (message.AgentActivities is { } activities)
@@ -529,6 +531,8 @@ namespace RuApp.Views
                 generation = open.Generation;
                 var openToken = open.Cancellation;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
+                _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
+                    ?? _agentWorkspace;
                 ResetAgentState();
                 _sidePanelRunRunning = null;
                 UpdateSidePanel(false);
@@ -564,6 +568,8 @@ namespace RuApp.Views
                 // the live connection ends.
                 var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
+                _sidePanelTasksRunId = replayedRuns.LastOrDefault()?.RunId;
+                _ = RefreshAgentTasksAsync();
 
                 if (history != null)
                 {
@@ -571,6 +577,7 @@ namespace RuApp.Views
                     RegisterReplayedActivities(opened);
 
                     Messages.ReplaceAll(opened);
+                    RefreshSidePanelEdits();
 
                     if (history.Count > 0)
                     {
@@ -974,6 +981,8 @@ namespace RuApp.Views
         public void Dispose()
         {
             _modelSelectionSaves.Invalidate();
+            StopTaskRefreshTimer();
+            SidePanel?.CancelVisibilityAnimations();
             _taskRefreshCancellation?.Cancel();
             _taskRefreshCancellation?.Dispose();
             _taskRefreshCancellation = null;

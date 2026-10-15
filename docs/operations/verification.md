@@ -15,6 +15,26 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Side surface state and presentation (2026-10-15, scoped)
+
+On `dev` after `530f0f25`, GUI tests passed **1,444**, Broker tests **943** and
+Host tests **1,101**; the documentation guards passed **15**. GUI and Host Debug
+builds succeeded. The full release matrix and installer pipeline were not rerun
+for this scoped change. Logs and native screenshots are local-only under
+`artifacts/gui-sidepanel-fix-qa/`.
+
+With user authorization, native WinUI checks and existing-provider calls used a
+separate temporary profile and QA workspaces. Reopened Changes retained `+2`, an
+expanded historical diff stayed open through a new live run, closed Files reopened
+from the tab menu, and active tabs/fullscreen survived a narrow/wide resize. Rapid
+hide/show retained a painted panel. Background-task rows showed the command and
+live state, then cleared when the run's authority lease closed. Terminal switched
+between two session workspaces and back, showing the matching shell prompt. A
+fresh workspace required one trust approval without leaving a duplicate dialog;
+the accepted-turn callback no longer resets the dialog owner's guard. Terminal
+theme/scrollbars use the GUI palette. Screenshots cover Dark; Light visual
+acceptance remains unverified. QA apps, hosts and interactive shells were closed.
+
 ## Workspace maintenance (2026-10-14)
 
 Removed 9,694 obsolete generated binary files (8,321,298,592 bytes) from historical

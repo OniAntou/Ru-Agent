@@ -442,6 +442,16 @@ bound, while CLI progress can refill its retry budget. Consumer callback errors
 propagate and are not retried as transport failures.
 _Avoid_: replaying transient frames as durable history or hiding callback errors
 
+**Session Side Surface**:
+The WinUI floating summary card and adjacent details panel share session Changes
+and background-process data. Changes includes replayed and live edits once per
+activity identity; it is an edit history, not a Git working-tree diff. Background
+tasks are processes, distinct from the todo plan. Panel mode, active tab and
+fullscreen selection survive temporary hiding on narrow windows. The interactive
+terminal is one user-owned shell that follows the selected workspace, restarting
+on a workspace change; background refreshes do not take input focus.
+_Avoid_: treating the background-task list as the agent's todo plan
+
 **Multimodal Image Payload**:
 A client-attached image (`image/png`, `image/jpeg`, `image/webp`) resized to at
 most 2048px on client, validated against strict MIME and size bounds (max 4

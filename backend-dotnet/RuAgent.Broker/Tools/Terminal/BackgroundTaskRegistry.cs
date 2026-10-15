@@ -21,7 +21,8 @@ public sealed record BackgroundTaskSnapshot(
     BackgroundTaskState State,
     int? ExitCode,
     string Text,
-    bool IsBackground);
+    bool IsBackground,
+    string Command = "");
 
 public enum BackgroundKillOutcome
 {
@@ -148,7 +149,8 @@ public sealed class BackgroundTaskRegistry
         string executionId,
         int lifetimeMs,
         bool isBackground,
-        out CancellationToken lifetimeToken)
+        out CancellationToken lifetimeToken,
+        string displayCommand = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(executionId);
@@ -187,7 +189,11 @@ public sealed class BackgroundTaskRegistry
             }
 
             var lifetime = new CancellationTokenSource(Math.Max(1, lifetimeMs));
-            tasks[executionId] = new TaskEntry(executionId, lifetime, ++_sequence) { IsBackground = isBackground };
+            tasks[executionId] = new TaskEntry(executionId, lifetime, ++_sequence)
+            {
+                IsBackground = isBackground,
+                Command = displayCommand,
+            };
             EvictCompleted(tasks);
             lifetimeToken = lifetime.Token;
             return true;
@@ -277,7 +283,8 @@ public sealed class BackgroundTaskRegistry
                     entry.State,
                     entry.ExitCode,
                     entry.Text.ToString(),
-                    entry.IsBackground);
+                    entry.IsBackground,
+                    entry.Command);
                 return true;
             }
         }
@@ -328,7 +335,8 @@ public sealed class BackgroundTaskRegistry
                     entry.State,
                     entry.ExitCode,
                     entry.Text.ToString(),
-                    entry.IsBackground));
+                    entry.IsBackground,
+                    entry.Command));
             }
 
             return snapshots;
@@ -395,6 +403,7 @@ public sealed class BackgroundTaskRegistry
         public bool CancellationRequested { get; set; }
 
         public bool IsBackground { get; set; }
+        public string Command { get; init; } = string.Empty;
 
         public long Sequence { get; }
 

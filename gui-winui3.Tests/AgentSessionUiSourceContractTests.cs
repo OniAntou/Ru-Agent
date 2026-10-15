@@ -17,6 +17,14 @@ namespace RuApp.Tests;
 /// </summary>
 public sealed class AgentSessionUiSourceContractTests
 {
+    [Fact]
+    public void Beginning_reply_does_not_reset_a_trust_prompt_owned_by_the_accepted_run()
+    {
+        var reply = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "BeginAgentReply");
+        Assert.DoesNotContain("_workspaceTrustDialogRunId =", reply, StringComparison.Ordinal);
+        Assert.DoesNotContain("_workspaceTrustDialogController =", reply, StringComparison.Ordinal);
+    }
+
     /// <summary>Names of surfaces removed with the Agent-mode selector and the chat transport.</summary>
     private static readonly string[] RetiredXamlNames =
     [

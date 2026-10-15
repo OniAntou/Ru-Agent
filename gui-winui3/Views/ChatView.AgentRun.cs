@@ -545,6 +545,7 @@ namespace RuApp.Views
 
         private void ResetAgentState()
         {
+            _sidePanelTasksRunId = null;
             _agentTurnGeneration++;
             ClearAgentActivities();
             ClearTodoPanel();
@@ -1199,11 +1200,8 @@ namespace RuApp.Views
         private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
         {
             _activeAgentRunId = null;
-            _workspaceTrustDialogRunId = null;
-            _workspaceTrustDialogSessionId = null;
-            _workspaceTrustDialogHandledRunId = null;
-            _workspaceTrustDialogHandledSessionId = null;
-            _workspaceTrustDialogController = null;
+            // CurrentRun can request trust before the accepted-turn callback
+            // reaches this method. Only the run/session owner resets its dialog.
             _activeAgentReplyReceived = false;
             _sessionPresentation.BeginTurn();
             _activeAgentUsage = null;

@@ -139,8 +139,18 @@ saved assistant message gets its own bubble after its user turn, never an older
 turn's bubble. Replay preserves the saved final answer when payload reads omit
 it. Legacy messages without run identities permit ordinal replay only when the
 message/run counts match; unbalanced histories retain prose without guessing.
-GUI Tasks refreshes bind completion to session generation, current run and newest
-request. Interactive-terminal output/exit callbacks carry shell lifetime versions;
+The GUI right-side surface keeps its floating session summary and adjacent details
+panel; narrow windows temporarily hide it without replacing session mode, active
+tab or fullscreen selection. A tab menu opens or reopens every view. Changes joins
+replayed message activities with the live run by activity identity; unchanged diff
+rows retain expansion state. Visibility storyboards are owned and cancelled when
+superseded. Background tasks offer an explicit refresh action and refresh every two
+seconds while the surface is visible and the run or a background process is active.
+Their optional `command` metadata is bounded
+and credential-redacted by the existing terminal redactor before retention; it does
+not change execution authority. GUI task refreshes bind completion to session
+generation, the selected run and newest request. Interactive-terminal output/exit
+callbacks carry shell lifetime versions;
 workspace replacement and shutdown invalidate queued callbacks. Model selection
 settings saves are serialized, skipping superseded queued choices and publishing
 only the newest result. These UI ownership guards do not change execution policy.

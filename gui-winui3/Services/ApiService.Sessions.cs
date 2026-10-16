@@ -108,15 +108,17 @@ namespace RuApp.Services
                         sessionProp.TryGetProperty("messages", out var messagesProp))
                     {
                         var list = new List<SessionHistoryEntry>();
+                        int messageIndex = -1;
                         foreach (var item in messagesProp.EnumerateArray())
                         {
+                            messageIndex++;
                             string role = item.TryGetProperty("role", out var roleProp) ? roleProp.GetString() ?? "" : "";
                             string content = item.TryGetProperty("content", out var contentProp) ? contentProp.GetString() ?? "" : "";
                             if (role == "user" || role == "ai" || role == "assistant")
                             {
                                 string? runId = item.TryGetProperty("source_run_id", out var runProp)
                                     && runProp.ValueKind == JsonValueKind.String ? runProp.GetString() : null;
-                                list.Add(new SessionHistoryEntry(role == "user" ? "user" : "assistant", content, runId));
+                                list.Add(new SessionHistoryEntry(role == "user" ? "user" : "assistant", content, runId, messageIndex));
                             }
                         }
                         return list;

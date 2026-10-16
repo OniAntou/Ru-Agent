@@ -137,6 +137,28 @@ public sealed class AgentTurnQueue
         return Items.Count > 0;
     }
 
+    private object? _draining;
+
+    /// <summary>The queue keeps ownership until the Host acknowledges acceptance.</summary>
+    public async Task DrainAsync(Func<QueuedAgentTurn, Action, Task<bool>> send)
+    {
+        if (_draining is not null || !TryBeginAutoDrain()) return;
+        var next = Items.FirstOrDefault();
+        if (next is null) return;
+        var owner = new object();
+        _draining = owner;
+        try
+        {
+            // Removing by identity also makes a late acceptance harmless after Clear.
+            await send(next, () =>
+            {
+                Remove(next);
+                if (ReferenceEquals(_draining, owner)) _draining = null;
+            });
+        }
+        finally { if (ReferenceEquals(_draining, owner)) _draining = null; }
+    }
+
     /// <summary>The first turn in line, removed from the queue.</summary>
     public QueuedAgentTurn? TakeFirst()
     {

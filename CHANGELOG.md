@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Keep outgoing chat rows intact while loading another session, then replace the transcript without per-row entrance/exit animations. Ignore sends and rewind while history is loading; a failed load shows its own error instead of mixing sessions.
+- **fix(gui)**: Keep Host-owned runs alive when switching sessions; detach the local feed and adopt the run on reopening. Wait for pending creation to acknowledge before detaching, preserving unknown-outcome recovery and explicit Stop cancellation.
+- **perf(gui)**: Retain unchanged Markdown paragraphs, tables and code frames while a reply grows instead of rebuilding the whole native tree on every text refresh.
+- **fix(gui)**: Preserve code/list indentation and prevent nested code or quote blocks from reparenting attached inlines, which could raise a WinUI COM exception and close the app.
+- **fix(gui)**: Rewind by the saved message position, including hidden history rows, and discard stale results after switching sessions. Reload rewound history without restoring the removed live reply.
+- **fix(gui)**: Keep queued prompts and attachments until Host acceptance, and serialize reasoning changes so failed older saves cannot overwrite newer choices.
+- **fix(gui)**: Preserve the Cloudflare account ID during unrelated settings edits. Stack settings fields in narrow windows and keep keyboard focus inside the Settings dialog.
+- **fix(gui)**: Label bounded table previews and offer complete table viewing and copying. Preserve literal backslashes, whitespace and delimiters in new edit previews, with secret redaction and legacy replay compatibility.
 - **fix(tui)**: Keep streamed sentences and Markdown intact when silent run/model metadata arrives between deltas. Rewind superseded replies after the UI has recorded their step position, including retries initiated on background threads.
 - **fix(tui)**: Recover a completed reply from durable text when its streamed head is missing, preserving tool rows and earlier turns. Use completed tool activity for result badges instead of treating a running run as a failed tool; show an unavailable outcome neutrally when metadata is missing.
 - **fix(tui)**: Preserve ordinary long replies when reopening a session: replay now permits up to 100,000 characters per message instead of cutting at 2,000; the existing message and screen-retention bounds remain.

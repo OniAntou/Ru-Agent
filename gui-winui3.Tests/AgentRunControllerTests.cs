@@ -39,6 +39,65 @@ public sealed class AgentRunControllerTests
 
     private const string RunId = "run_12345678901234567890123456789012";
 
+    [Fact]
+    public async Task Queued_detach_cannot_clear_a_readopted_run_with_the_same_identity()
+    {
+        var stream = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queued = new List<Action>();
+        var fake = new FakeClient { Run = MakeRun(), SubscriptionGate = stream };
+        using var controller = new AgentRunController(fake, synchronize: queued.Add);
+        try
+        {
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            DrainUiQueue(queued);
+            await controller.DetachCurrentRunAsync();
+            await controller.DetachCurrentRunAsync();
+            // Two teardown callbacks can arrive out of order. Let the newer
+            // release run first, reopen, then deliver the stale release.
+            var staleRelease = queued[0];
+            var latestRelease = queued[^1];
+            queued.Clear();
+            latestRelease();
+            DrainUiQueue(queued); // SetBusy/SetStatus also marshal their assignments.
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            queued.Insert(0, staleRelease);
+            DrainUiQueue(queued);
+            Assert.Equal(RunId, controller.CurrentRun?.RunId);
+            Assert.True(controller.IsBusy);
+            Assert.Empty(fake.CancelledRunIds);
+        }
+        finally { stream.TrySetResult(true); }
+    }
+
+    [Fact]
+    public async Task Leaving_and_reopening_a_session_preserves_and_readopts_its_running_run()
+    {
+        var stream = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fake = new FakeClient { Run = MakeRun(), SubscriptionGate = stream };
+        using var controller = new AgentRunController(fake);
+        using var presentation = new ChatSessionPresentation();
+        try
+        {
+            presentation.Activate("sess_1");
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            var opened = await presentation.OpenAsync("sess_2", () => true,
+                () => controller.StopForSessionSwitchAsync(), () => true);
+            Assert.NotNull(opened);
+            Assert.Equal("sess_2", presentation.SessionId);
+            Assert.Null(controller.CurrentRun);
+            Assert.Empty(fake.CancelledRunIds);
+            Assert.Equal("running", fake.Run.Status);
+
+            await presentation.OpenAsync("sess_1", () => true,
+                () => controller.StopForSessionSwitchAsync(), () => true);
+            Assert.True(await controller.AdoptRunAsync(fake.Run));
+            Assert.Equal(RunId, controller.CurrentRun?.RunId);
+            Assert.True(controller.IsBusy);
+            Assert.Empty(fake.CancelledRunIds);
+        }
+        finally { stream.TrySetResult(true); }
+    }
+
     private static AgentRunModel MakeRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "running", "standard", "2026", "2026"));
@@ -480,7 +539,7 @@ public sealed class AgentRunControllerTests
 
         Assert.Equal(0, acceptedCallbacks);
         Assert.Null(controller.CurrentRun);
-        Assert.True(fake.CancelCalled);
+        Assert.False(fake.CancelCalled);
     }
 
     private static void DrainUiQueue(List<Action> queued)
@@ -1780,7 +1839,7 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
-    public async Task Switching_from_a_running_run_still_cancels()
+    public async Task Switching_from_a_running_run_detaches_without_cancelling()
     {
         var fake = new FakeClient { Run = MakeRun() };
         var controller = new AgentRunController(fake);
@@ -1789,13 +1848,13 @@ public sealed class AgentRunControllerTests
 
         await controller.StopForSessionSwitchAsync();
 
-        Assert.True(fake.CancelCalled);
+        Assert.False(fake.CancelCalled);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.CanCancel);
     }
 
     [Fact]
-    public async Task Switching_sessions_cancels_a_create_and_cancels_its_late_run_without_following_it()
+    public async Task Switching_sessions_waits_for_create_acknowledgement_then_detaches_without_cancel()
     {
         var fake = new FakeClient
         {
@@ -1806,9 +1865,10 @@ public sealed class AgentRunControllerTests
         var createTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
             "sess_1", "C:\\work", "first turn", "standard", null, "idem-switch-during-create"));
 
-        await controller.StopForSessionSwitchAsync();
+        var switching = controller.StopForSessionSwitchAsync();
+        Assert.False(switching.IsCompleted);
 
-        Assert.True(fake.CreateCancellationToken.IsCancellationRequested);
+        Assert.False(fake.CreateCancellationToken.IsCancellationRequested);
         Assert.True(controller.IsBusy);
         bool secondAcceptedCallback = false;
         bool secondAccepted = await controller.CreateAndRunAsync(
@@ -1819,10 +1879,10 @@ public sealed class AgentRunControllerTests
         Assert.Equal(1, fake.CreateCallCount);
 
         fake.CreateRunGate.SetResult(true);
-        Assert.False(await createTask);
+        await switching;
+        Assert.True(await createTask);
 
-        Assert.Equal(new[] { RunId }, fake.CancelledRunIds);
-        Assert.Null(fake.SubscribeRunId);
+        Assert.Empty(fake.CancelledRunIds);
         Assert.Null(controller.CurrentRun);
         Assert.False(controller.IsBusy);
     }
@@ -1903,10 +1963,12 @@ public sealed class AgentRunControllerTests
             await Task.Delay(1);
         }
         Assert.Equal(1, fake.CreateCallCount);
-        await controller.StopForSessionSwitchAsync();
+        var switching = controller.StopForSessionSwitchAsync();
         fake.CreateRunGate.SetResult(true);
 
         await Assert.ThrowsAsync<AgentApiException>(() => createTask);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => switching);
+        Assert.Empty(fake.CancelledRunIds);
 
         Assert.False(controller.IsBusy);
         Assert.Contains("agent_create_outcome_unknown", controller.StatusText, StringComparison.Ordinal);

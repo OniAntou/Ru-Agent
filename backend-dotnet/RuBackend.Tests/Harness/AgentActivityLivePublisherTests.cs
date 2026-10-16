@@ -9,6 +9,27 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentActivityLivePublisherTests
 {
     [Fact]
+    public async Task Structured_edit_preview_redacts_decoded_secrets_before_publishing()
+    {
+        const string secret = "synthetic\\secret\"with-quotes-123";
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub,
+            new RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor([secret]));
+        publisher.Publish(Run, new AgentActivity("act_dddddddddddddddddddddddddddddddd",
+            AgentActivityKind.Edit, AgentActivityState.Started,
+            Detail: RuAgent.Protocol.Harness.AgentEditPreviewCodec.Encode(@"C:\new\notes.txt", secret),
+            SafeCode: "in_progress"));
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+        using var document = JsonDocument.Parse(frame.Data);
+        Assert.True(RuAgent.Protocol.Harness.AgentEditPreviewCodec.TryDecode(
+            document.RootElement.GetProperty("detail").GetString(), out var before, out var after));
+        Assert.Equal(@"C:\new\notes.txt", before);
+        Assert.DoesNotContain(secret, after);
+        Assert.Contains(RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Replacement, after);
+    }
+
+    [Fact]
     public async Task Web_search_context_uses_the_existing_detail_secret_redaction()
     {
         var hub = new HarnessLiveEventHub();

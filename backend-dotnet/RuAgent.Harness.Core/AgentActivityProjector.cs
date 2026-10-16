@@ -232,13 +232,7 @@ public static class AgentActivityProjector
                     return null;
                 }
 
-                var afterSide = BoundPreviewSide(content, MaximumDetailLength - 8);
-                if (afterSide is null)
-                {
-                    return null;
-                }
-
-                return $"@@  ==> {afterSide}";
+                return RuAgent.Protocol.Harness.AgentEditPreviewCodec.Encode(string.Empty, content);
             }
 
             if (!string.Equals(proposal.ToolId, "edit", StringComparison.Ordinal))
@@ -261,40 +255,12 @@ public static class AgentActivityProjector
                 return null;
             }
 
-            const int sideBudget = 1_800;
-            var oldSide = BoundPreviewSide(oldString, sideBudget);
-            var newSide = BoundPreviewSide(newString, sideBudget);
-            if (oldSide is null || newSide is null)
-            {
-                return null;
-            }
-
-            return $"@@ {oldSide} ==> {newSide}";
+            return RuAgent.Protocol.Harness.AgentEditPreviewCodec.Encode(oldString, newString);
         }
         catch
         {
             return null;
         }
-    }
-
-    private static string? BoundPreviewSide(string value, int maxChars)
-    {
-        if (value.Contains('\0'))
-        {
-            return null;
-        }
-
-        var flattened = value.Replace("\r\n", "\\n").Replace("\r", "\\n").Replace("\n", "\\n");
-        foreach (var character in flattened)
-        {
-            if (char.IsControl(character) && character != '\t')
-            {
-                return null;
-            }
-        }
-
-        var trimmed = flattened.Trim();
-        return trimmed.Length <= maxChars ? trimmed : trimmed[..maxChars];
     }
 
     /// <summary>

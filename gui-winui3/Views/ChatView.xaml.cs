@@ -389,6 +389,7 @@ namespace RuApp.Views
             ProviderCatalogController? providerCatalogController,
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
+            _reasoningSelectionSaves.Invalidate();
             _apiService = apiService;
             if (_ownsProviderCatalogController && _providerCatalogController is not null)
             {

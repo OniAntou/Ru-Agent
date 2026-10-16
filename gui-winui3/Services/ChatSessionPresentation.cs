@@ -28,16 +28,16 @@ internal sealed class ChatSessionPresentation : IDisposable
     internal async Task<ChatSessionOpen?> OpenAsync(
         string sessionId,
         Func<bool> canRetainDraft,
-        Func<Task> stopOutgoingRun,
+        Func<Task> detachOutgoingRun,
         Func<bool> retainDraft)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var request = ++_openRequest;
         if (!canRetainDraft()) return null;
 
-        // The latest click owns the switch, irrespective of stop completion order.
-        // Retain the outgoing draft only after its run is stopped and still owned.
-        await stopOutgoingRun();
+        // The latest click owns the switch, irrespective of detach completion order.
+        // Retain the outgoing draft only after its follow is detached and still owned.
+        await detachOutgoingRun();
         if (_disposed || request != _openRequest || !retainDraft()) return null;
 
         Activate(sessionId);
@@ -49,7 +49,7 @@ internal sealed class ChatSessionPresentation : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Bootstrap/recovery may replace the outgoing session while a user's
-        // click waits for stop. Only another open request supersedes that click.
+        // click waits for detach. Only another open request supersedes that click.
         SessionId = sessionId;
         Generation++;
         BeginTurn();

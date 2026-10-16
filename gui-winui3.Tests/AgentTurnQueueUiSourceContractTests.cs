@@ -54,7 +54,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     }
 
     [Fact]
-    public void A_turn_that_did_not_start_is_put_back_in_the_queue()
+    public void Queue_handover_delegates_removal_to_host_acceptance()
     {
         // A handover that never became a run (a run still in hand, a declined
         // Full Access confirmation) must not consume the turn.
@@ -64,10 +64,10 @@ public sealed class AgentTurnQueueUiSourceContractTests
             "Task<bool> SendAgentTurnAsync",
             code,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "RequeueFirst",
-            GuiSource.MethodBody(code, "DrainQueuedTurnsAsync"),
-            StringComparison.Ordinal);
+        string handover = GuiSource.MethodBody(code, "DrainQueuedTurnsAsync");
+        Assert.Contains("_queuedTurns.DrainAsync", handover, StringComparison.Ordinal);
+        Assert.Contains("onAccepted: accepted", handover, StringComparison.Ordinal);
+        Assert.DoesNotContain("TakeFirst", handover, StringComparison.Ordinal);
     }
 
     [Fact]

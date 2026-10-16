@@ -64,13 +64,16 @@ public sealed class AgentSessionRecoveryTests
     }
 
     [Fact]
-    public void ChatView_delegates_switch_ownership_and_the_outgoing_run_stop()
+    public void ChatView_delegates_switch_ownership_and_detaches_the_outgoing_feed()
     {
         // Stop-before-switch and latest-click behavior are exercised by
         // ChatSessionPresentationTests; this only pins the view's ownership seam.
         var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
         Assert.Contains("await _sessionPresentation.OpenAsync(", body, StringComparison.Ordinal);
-        Assert.Contains("() => StopActiveAgentAsync(force: true)", body, StringComparison.Ordinal);
+        Assert.Contains("DetachAgentForSessionSwitchAsync", body, StringComparison.Ordinal);
+        var detach = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "DetachAgentForSessionSwitchAsync");
+        Assert.Contains("StopForSessionSwitchAsync", detach, StringComparison.Ordinal);
+        Assert.DoesNotContain("CancelAsync", detach, StringComparison.Ordinal);
         Assert.DoesNotContain("_activeSessionId =", body, StringComparison.Ordinal);
     }
 

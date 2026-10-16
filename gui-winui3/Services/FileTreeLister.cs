@@ -7,9 +7,8 @@ public sealed record FileTreeListing(IReadOnlyList<FileTreeRow> Rows, bool Trunc
 
 /// <summary>
 /// Lists one directory level for the side panel's Files tab: folders first,
-/// then files, ordinal case-insensitive, bounded per directory. The skip sets
-/// mirror the CLI's project-file scan (<c>ChatProjectFileWorkflow</c>), so the
-/// two surfaces hide the same build trees and credential-name files.
+/// then files, ordinal case-insensitive, bounded per directory. Build trees
+/// and credential-name files stay out of this presentation-only listing.
 /// </summary>
 public static class FileTreeLister
 {

@@ -390,15 +390,20 @@ namespace RuApp.Views
             return [new ProviderReasoningOption("default", "default")];
         }
 
+        private readonly ReasoningSelectionSaveQueue _reasoningSelectionSaves = new();
+
         private void SyncEffortFromCatalog(bool force = false)
         {
             if (TryGetSelectedCatalog(out var catalog) && catalog is not null)
             {
+                var context = $"{_selectedBackend}\n{_selectedModel}\n{catalog.Identity}";
+                _reasoningSelectionSaves.Synchronize(context, catalog.SelectedEffort ?? "default");
+                if (_reasoningSelectionSaves.IsPending) return;
                 if (!string.IsNullOrWhiteSpace(catalog.SelectedEffort) &&
                     (force ||
                     string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase)))
                 {
-                    _selectedReasoningEffort = catalog.SelectedEffort;
+                    _selectedReasoningEffort = _reasoningSelectionSaves.ConfirmedEffort;
                 }
             }
         }
@@ -598,13 +603,16 @@ namespace RuApp.Views
                 identity = catalogState.Identity;
             }
 
-            bool saved = await _apiService.SaveReasoningSettingsAsync(effort, model, identity);
-            if (!saved)
-            {
-                _selectedReasoningEffort = previousEffort;
-                ChatReasoningLabel.Text = previousEffort;
-                AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {previousEffort} (Save failed)");
-            }
+            var api = _apiService;
+            var context = $"{backend}\n{model}\n{identity}";
+            var settled = await _reasoningSelectionSaves.SaveAsync(context, effort, previousEffort,
+                () => api.SaveReasoningSettingsAsync(effort, model, identity));
+            if (settled is null || !ReferenceEquals(api, _apiService)
+                || backend != _selectedBackend || model != _selectedModel) return;
+            _selectedReasoningEffort = settled;
+            ChatReasoningLabel.Text = settled;
+            AutomationProperties.SetName(ChatReasoningButton,
+                $"Reasoning effort: {settled}{(settled != effort ? " (Save failed)" : "")}");
         }
 
         private void ShowModelSaveFailure()

@@ -7,6 +7,13 @@ namespace RuAgent.Harness.Core.Tests;
 
 public sealed class AgentActivityProjectorTests
 {
+    private static void AssertPreview(string? detail, string expectedBefore, string expectedAfter)
+    {
+        Assert.True(RuAgent.Protocol.Harness.AgentEditPreviewCodec.TryDecode(detail, out var before, out var after));
+        Assert.Equal(expectedBefore, before);
+        Assert.Equal(expectedAfter, after);
+    }
+
     [Fact]
     public void WebActivitiesRetainReadableContextWithoutUrlCredentialsOrQuery()
     {
@@ -127,7 +134,7 @@ public sealed class AgentActivityProjectorTests
         Assert.Equal(12, activity.LineEnd);
         Assert.Equal(2, activity.Added);
         Assert.Equal(1, activity.Removed);
-        Assert.Contains("@@ old\\ntext ==> new\\ntext\\nextra", activity.Detail, StringComparison.Ordinal);
+        AssertPreview(activity.Detail, "old\ntext", "new\ntext\nextra");
     }
 
     [Theory]
@@ -412,7 +419,7 @@ public sealed class AgentActivityProjectorTests
         var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
 
         Assert.Equal(AgentActivityKind.Edit, started.Kind);
-        Assert.Equal("@@ line one\\nline two ==> line one\\nline TWO", started.Detail);
+        AssertPreview(started.Detail, "line one\nline two", "line one\nline TWO");
 
         var completed = AgentActivityProjector.ProjectTool(
             proposal,
@@ -448,7 +455,7 @@ public sealed class AgentActivityProjectorTests
 
         Assert.Equal(AgentActivityKind.Edit, started.Kind);
         Assert.Equal("Write", started.ToolDisplay);
-        Assert.Equal("@@  ==> line one\\nline two", started.Detail);
+        AssertPreview(started.Detail, string.Empty, "line one\nline two");
 
         var completed = AgentActivityProjector.ProjectTool(
             proposal,

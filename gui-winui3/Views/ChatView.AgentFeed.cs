@@ -614,7 +614,7 @@ namespace RuApp.Views
             if (snapshot.ResetOffset is not null
                 || !string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
             {
-                // Every text render re-parses the whole reply and rebuilds its runs,
+                // Text renders retain unchanged Markdown blocks; throttle changed tails
                 // so a delta burst renders on a cadence instead of per delta. The
                 // newest text is deferred, never dropped: the scheduled render lands
                 // it within one interval, including after the final delta.
@@ -706,15 +706,20 @@ namespace RuApp.Views
             ApplyReplyText(message, text);
         }
 
-        private void ClearAgentActivities()
+        private void SuspendAgentFeedUpdates()
         {
-            _sidePanelEditsDirty = true;
             StopAllTextSweeps();
             _activityFlushTimer?.Stop();
             _replyTextApplyTimer?.Stop();
             _pendingReplyMessage = null;
             _pendingReplyText = null;
             _pendingAgentActivities.Clear();
+        }
+
+        private void ClearAgentActivities()
+        {
+            _sidePanelEditsDirty = true;
+            SuspendAgentFeedUpdates();
             _agentActivityById.Clear();
             _activitySplitOffsetById.Clear();
             _segmentFrozenLength = 0;

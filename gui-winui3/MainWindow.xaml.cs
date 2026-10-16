@@ -521,20 +521,23 @@ namespace RuApp
         {
             if (e.NewSize.Width > 0 && e.NewSize.Height > 0)
             {
-                SettingsModalCard.Width = Math.Min(880, Math.Max(400, e.NewSize.Width - 48));
-                SettingsModalCard.Height = Math.Min(560, Math.Max(360, e.NewSize.Height - 40));
+                SettingsModalCard.Width = Math.Max(0, Math.Min(880, e.NewSize.Width - 48));
+                SettingsModalCard.Height = Math.Max(0, Math.Min(560, e.NewSize.Height - 40));
             }
         }
 
         private void OpenSettingsPopup()
         {
+            if (!_isSettingsModalOpen)
+                _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             _isSettingsModalOpen = true;
+            ShellInteractionHost.IsEnabled = false;
             SettingsModalOverlay.Visibility = Visibility.Visible;
             Services.UiMotion.Enter(SettingsModalOverlay);
             if (SettingsModalOverlay.ActualWidth > 0 && SettingsModalOverlay.ActualHeight > 0)
             {
-                SettingsModalCard.Width = Math.Min(880, Math.Max(400, SettingsModalOverlay.ActualWidth - 48));
-                SettingsModalCard.Height = Math.Min(560, Math.Max(360, SettingsModalOverlay.ActualHeight - 40));
+                SettingsModalCard.Width = Math.Max(0, Math.Min(880, SettingsModalOverlay.ActualWidth - 48));
+                SettingsModalCard.Height = Math.Max(0, Math.Min(560, SettingsModalOverlay.ActualHeight - 40));
             }
             _settingsView?.SetCurrentTheme(_currentTheme);
             if (_chatView is not null)
@@ -545,7 +548,6 @@ namespace RuApp
 
             Services.UiMotion.FadeBrush(NavSettings, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
             Services.UiMotion.FadeBrush(NavSettings, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
-            _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSettingsButton?.Focus(FocusState.Programmatic);
         }
 
@@ -564,6 +566,7 @@ namespace RuApp
             if (!_isSettingsModalOpen) return;
 
             _isSettingsModalOpen = false;
+            ShellInteractionHost.IsEnabled = true;
 
             if (_activeNavButton != NavSettings)
             {

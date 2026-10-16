@@ -30,6 +30,7 @@ namespace RuApp.Views
 {
     public sealed partial class ChatView
     {
+        private bool _isSessionHistoryLoading;
         /// <summary>
         /// Applies the conversation typography to a message row once its template has
         /// been realised.
@@ -138,7 +139,7 @@ namespace RuApp.Views
                 exception => ShowAgentInlineStatus($"Could not refresh the Coding Agent run: {exception.Message}"));
         }
 
-        private async Task<string?> ReloadSessionHistoryAsync(CancellationToken cancellationToken)
+        private async Task<string?> ReloadSessionHistoryAsync(CancellationToken cancellationToken, bool preserveLiveTurn = true)
         {
             if (_apiService is null)
             {
@@ -170,7 +171,7 @@ namespace RuApp.Views
             string? latestAssistant = projectedHistory
                 .LastOrDefault(row => string.Equals(row.Role, "assistant", StringComparison.Ordinal))
                 ?.Content ?? string.Empty;
-            bool preserveStreamedReply = ChatHistoryReloadPolicy.ShouldPreserveStreamedReply(
+            bool preserveStreamedReply = preserveLiveTurn && ChatHistoryReloadPolicy.ShouldPreserveStreamedReply(
                 normalizedHistory,
                 streamedReply);
 
@@ -193,6 +194,10 @@ namespace RuApp.Views
                         }
 
                         streamedMessage.Content = streamedReply ?? string.Empty;
+                        int assistantIndex = Messages.IndexOf(streamedMessage);
+                        var user = assistantIndex > 0 && Messages[assistantIndex - 1].Role == "user"
+                            ? Messages[assistantIndex - 1] : null;
+                        SessionTranscriptBuilder.BindPersistedLiveTurn(history, runId, user, streamedMessage);
                         streamedMessage.IsStreaming = false;
                         streamedMessage.Usage = _activeAgentUsage;
                         UpdateLiveTailText(streamedMessage);
@@ -202,8 +207,8 @@ namespace RuApp.Views
                     }
 
                     DetachAgentActivitiesFromMessages();
-                    var restored = SessionTranscriptBuilder.Build(history, replayedRuns);
-                    if (runId is not null && AgentActivities.Count > 0)
+                    var restored = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    if (preserveLiveTurn && runId is not null && AgentActivities.Count > 0)
                     {
                         var current = restored.LastOrDefault(item => item.Role == "assistant"
                             && string.Equals(item.SourceRunId, runId, StringComparison.Ordinal));
@@ -409,23 +414,30 @@ namespace RuApp.Views
 
         private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
 
-        private async Task StopActiveAgentAsync(bool force = false)
+        private async Task DetachAgentForSessionSwitchAsync()
         {
-            if (force)
+            var sessionId = _activeSessionId;
+            var generation = _sessionOpenGeneration;
+            bool OwnsView() => !_scrollingDisposed && sessionId == _activeSessionId
+                && generation == _sessionOpenGeneration;
+            try { await (_agentController?.StopForSessionSwitchAsync() ?? Task.CompletedTask); }
+            catch (InvalidOperationException)
             {
-                // Session replacement must not be blocked by another UI action
-                // already in flight; the old run still has to be closed first. A
-                // parked run is the user's to resume, though: the switch detaches
-                // from it and leaves it parked on the host instead of cancelling
-                // work the switch did not mean to stop.
-                await (_agentController?.StopForSessionSwitchAsync() ?? Task.CompletedTask);
+                if (OwnsView())
+                    ShowAgentInlineStatus("The pending run could not be identified. Reconcile it with Stop before switching sessions.");
+                throw;
             }
-            else
-            {
-                await RunAgentActionAsync(
-                    () => _agentController?.CancelAsync() ?? Task.CompletedTask,
-                    "Stopping Coding Agent…");
-            }
+            if (!OwnsView()) return;
+            SuspendAgentFeedUpdates();
+            AbandonActiveAgentReply(preservePresentation: true);
+            UpdateSendButtonMode(isAgentRunning: false);
+        }
+
+        private async Task StopActiveAgentAsync()
+        {
+            await RunAgentActionAsync(
+                () => _agentController?.CancelAsync() ?? Task.CompletedTask,
+                "Stopping Coding Agent…");
             // Stopping is an interrupt: queued turns stay put until the user asks for
             // them, instead of a new run starting underneath the click that meant stop.
             if (!_queuedTurns.IsEmpty)
@@ -525,15 +537,16 @@ namespace RuApp.Views
                 var openedSession = await _sessionPresentation.OpenAsync(
                     sessionId,
                     () => RetainComposerDraft(checkOnly: true),
-                    () => StopActiveAgentAsync(force: true),
+                    DetachAgentForSessionSwitchAsync,
                     () => RetainComposerDraft(checkOnly: false));
                 if (openedSession is not { } open) return;
                 generation = open.Generation;
+                _isSessionHistoryLoading = true;
                 var openToken = open.Cancellation;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 _agentWorkspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
                     ?? _agentWorkspace;
-                ResetAgentState();
+                ResetAgentState(preserveTranscript: true);
                 _sidePanelRunRunning = null;
                 UpdateSidePanel(false);
                 // A preset belongs to the session it was set for. The send path
@@ -547,10 +560,8 @@ namespace RuApp.Views
                     SetAgentPreset(AgentPermissionPreset.Standard);
                 }
 
-                JumpToLatestForNewTurn();
                 RestoreComposerDraft(sessionId);
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
-                DetachAgentActivitiesFromMessages();
                 // Bulk load: one reset notification for the whole transcript
                 // instead of one add notification per row.
                 var opened = new List<ChatMessageItem>();
@@ -560,6 +571,8 @@ namespace RuApp.Views
                 // up on a different session than the one on screen.
                 var history = await _apiService.GetSessionHistoryAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
+                if (history is null)
+                    throw new InvalidOperationException("Session history is unavailable.");
                 // Durable replay: messages carry source_run_id, while a session
                 // opened fresh would show a transcript of prose with every tool row missing.
                 // Rebuild the settled rows from each terminal run's durable events. This is
@@ -573,9 +586,12 @@ namespace RuApp.Views
 
                 if (history != null)
                 {
-                    opened = SessionTranscriptBuilder.Build(history, replayedRuns);
+                    opened = SessionTranscriptBuilder.Build(history, replayedRuns, sessionId);
+                    // No await between clearing the old feed and replacing its rows:
+                    // the outgoing transcript remains intact throughout history I/O.
+                    ClearAgentActivities();
                     RegisterReplayedActivities(opened);
-
+                    JumpToLatestForNewTurn();
                     Messages.ReplaceAll(opened);
                     RefreshSidePanelEdits();
 
@@ -637,18 +653,21 @@ namespace RuApp.Views
                     return;
                 }
 
-                Messages.Add(new ChatMessageItem
+                ClearAgentActivities();
+                Messages.ReplaceAll(new[] { new ChatMessageItem
                 {
                     Role = "assistant",
                     Content = "**SESSION LOAD ERROR:** Could not load chat session. Please check backend and try again.",
                     IsError = true
-                });
+                } });
             }
             finally
             {
-                // The clear above repaints zero while the refills arrive inside
-                // the throttle window, so repaint by force with history in place.
-                UpdateContextUsage(force: true);
+                if (IsCurrentOpen(generation))
+                {
+                    _isSessionHistoryLoading = false;
+                    UpdateContextUsage(force: true);
+                }
             }
         }
 
@@ -950,37 +969,48 @@ namespace RuApp.Views
             }
         }
 
+        private bool _rewindInProgress;
+
         private async void OnRewindToMessageClick(object sender, RoutedEventArgs e)
         {
-            if (_apiService == null) return;
-            if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg)
+            if (_isSessionHistoryLoading) return;
+            if (_apiService is not { } api || _rewindInProgress
+                || sender is not FrameworkElement { Tag: ChatMessageItem message }) return;
+            if (IsActiveAgentRunPending())
             {
-                int index = Messages.IndexOf(msg);
-                if (index < 0) return;
-
-                try
-                {
-                    var ok = await _apiService.RewindSessionAsync(_activeSessionId, index);
-                    if (ok)
-                    {
-                        while (Messages.Count > index + 1)
-                        {
-                            Messages.RemoveAt(Messages.Count - 1);
-                        }
-                        ScrollChatToBottom();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error rewinding session: {ex.Message}");
-                    ShowAgentInlineStatus($"Could not rewind the session: {ex.Message}");
-                }
+                ShowAgentInlineStatus("Finish or stop the current turn before rewinding.");
+                return;
             }
+            if (message.SourceMessageIndex is null || !Messages.Contains(message)
+                || message.SessionId != _activeSessionId)
+            {
+                ShowAgentInlineStatus("This row has no saved message to rewind to. Reopen the session to refresh history.");
+                return;
+            }
+            var sessionId = _activeSessionId;
+            var generation = _sessionOpenGeneration;
+            bool OwnsSession() => !_scrollingDisposed && generation == _sessionOpenGeneration
+                && sessionId == _activeSessionId && ReferenceEquals(api, _apiService);
+            _rewindInProgress = true;
+            try
+            {
+                bool rewound = await SessionRewindWorkflow.RunAsync(sessionId, message.SourceMessageIndex, OwnsSession,
+                    api.RewindSessionAsync, async () =>
+                        await ReloadSessionHistoryAsync(CancellationToken.None, preserveLiveTurn: false) is not null);
+                if (!rewound && OwnsSession()) ShowAgentInlineStatus("Could not rewind the session. Try again.");
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error rewinding session: {ex.Message}");
+                if (OwnsSession()) ShowAgentInlineStatus("Could not rewind the session. Try again.");
+            }
+            finally { _rewindInProgress = false; }
         }
 
         public void Dispose()
         {
             _modelSelectionSaves.Invalidate();
+            _reasoningSelectionSaves.Invalidate();
             StopTaskRefreshTimer();
             SidePanel?.CancelVisibilityAnimations();
             _taskRefreshCancellation?.Cancel();

@@ -14,7 +14,6 @@ namespace RuApp.Controls
     public sealed partial class MarkdownBlock : UserControl
     {
         private const double MonoFontSize = 13;
-        private const int MaxTableRows = 50;
 
         private static readonly FontFamily UiFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji");
         private static readonly FontFamily DisplayFont = new FontFamily("ms-appx:///Assets/Fonts/Inter-Variable.ttf#Inter, Segoe UI Variable, Segoe UI, Segoe UI Emoji");
@@ -79,9 +78,10 @@ namespace RuApp.Controls
         // InlineUIContainer measures its child to content, even in a stretched
         // paragraph. Supply the reading-column width and update it on resize
         // without reparsing Markdown or interrupting text selection.
-        private void FitEmbeddedBlock(FrameworkElement element, double inset)
+        private void FitEmbeddedBlock(FrameworkElement element, double inset,
+            List<(FrameworkElement Element, double Inset)> embedded)
         {
-            _embeddedBlocks.Add((element, inset));
+            embedded.Add((element, inset));
             if (_richTextBlock.ActualWidth > 0)
                 element.Width = Math.Max(0, _richTextBlock.ActualWidth - inset);
         }
@@ -108,7 +108,7 @@ namespace RuApp.Controls
 
         private void RenderMarkdown()
         {
-            string source = (MarkdownText ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            string source = MarkdownRenderPlan.PrepareSource(MarkdownText ?? string.Empty);
             double bodySize = FontSize > 0 ? FontSize : 14;
 
             if (string.Equals(source, _lastRenderedText, StringComparison.Ordinal)
@@ -120,37 +120,11 @@ namespace RuApp.Controls
             // The arrival fade belongs to the first text this block ever shows:
             // later streaming renders only grow the block and must stand still.
             bool wasEmpty = string.IsNullOrEmpty(_lastRenderedText);
-            _lastRenderedText = source;
-            _lastRenderedSize = bodySize;
-
-            _richTextBlock.Blocks.Clear();
-            _embeddedBlocks.Clear();
             _richTextBlock.FontFamily = UiFont;
             _richTextBlock.FontSize = bodySize;
-
-            // Collapsed pre-fix walls arrive as single overlong lines; recover
-            // their section breaks first so the parser below sees real blocks.
-            // Fences pass through untouched so recovery never splits code.
-            var recovered = new List<string>();
-            foreach (string rawLine in source.Split('\n'))
-            {
-                if (rawLine.Trim().StartsWith("```", StringComparison.Ordinal))
-                {
-                    recovered.Add(rawLine);
-                    continue;
-                }
-
-                recovered.AddRange(Services.MarkdownRecovery.SplitLine(rawLine.Trim()));
-            }
-
-            var renderer = new BlockRenderer(bodySize, Foreground, FitEmbeddedBlock);
-            foreach (var block in MarkdownEngine.Parse(string.Join('\n', recovered)))
-            {
-                foreach (var paragraph in renderer.BuildBlocks(block, indent: 0))
-                {
-                    _richTextBlock.Blocks.Add(paragraph);
-                }
-            }
+            UpdateRenderedBlocks(source, bodySize);
+            _lastRenderedText = source;
+            _lastRenderedSize = bodySize;
 
             if (wasEmpty && source.Length > 0 && IsStreaming)
             {
@@ -365,23 +339,9 @@ namespace RuApp.Controls
         /// </summary>
         internal static string TableCellsToTsv(IReadOnlyList<IReadOnlyList<string>> rows, int columns)
         {
-            var builder = new System.Text.StringBuilder();
-            foreach (var row in rows)
-            {
-                for (int index = 0; index < columns; index++)
-                {
-                    if (index > 0)
-                    {
-                        builder.Append('\t');
-                    }
-
-                    builder.Append(index < row.Count ? row[index].Replace('\t', ' ') : string.Empty);
-                }
-
-                builder.Append('\n');
-            }
-
-            return builder.ToString().TrimEnd('\n');
+            return string.Join("\n", rows.Select(row => string.Join("\t",
+                Enumerable.Range(0, columns).Select(index =>
+                    index < row.Count ? row[index].Replace('\t', ' ') : string.Empty))));
         }
 
         private sealed partial class BlockRenderer(double bodySize, Brush? foreground, Action<FrameworkElement, double> fitBlock)
@@ -464,6 +424,7 @@ namespace RuApp.Controls
                 {
                     if (child is ParagraphBlock itemPara)
                     {
+                        Flush();
                         AddInlines(Current(), itemPara.Inline, bodySize, null, UiFont);
                     }
                     else if (child is ListBlock nested)
@@ -473,13 +434,8 @@ namespace RuApp.Controls
                     }
                     else
                     {
-                        foreach (var extra in BuildBlocks(child, indent + 1))
-                        {
-                            foreach (var inline in extra.Inlines.ToArray())
-                            {
-                                Current().Inlines.Add(inline);
-                            }
-                        }
+                        Flush();
+                        rows.AddRange(BuildBlocks(child, indent + 1));
                     }
                 }
 

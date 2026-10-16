@@ -89,6 +89,16 @@ The GUI's `ChatSessionPresentation` owns the active session identity, asynchrono
 open/load cancellation, run-monitor lifetime and once-per-turn completion.
 It keeps the latest session click authoritative; WinUI renders the transcript
 and retains/restores composer drafts through that owner.
+During history I/O the outgoing transcript stays intact; replacement happens as
+one collection reset without row entrance/exit transitions. Sends and rewind
+wait until the current session load finishes.
+Leaving a session detaches the GUI feed without cancelling its Host-owned run;
+reopening adopts the newest non-terminal run. Only explicit Stop cancels work.
+An in-flight create must acknowledge before detachment; an unknown outcome keeps
+its request identity and requires reconciliation before switching.
+Persisted GUI rows retain the Host's raw message index for rewind independently
+of hidden history or synthetic activity rows. A rewind result may update only
+the session that requested it; queued prompts remain local until Host acceptance.
 Sidebar placement is separate UI state: app-root sessions default to Recents;
 manual grouping/reordering survives refresh and restart but never changes the
 Conversation Session's actual working directory or execution permissions.

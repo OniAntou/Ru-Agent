@@ -17,6 +17,7 @@ namespace RuApp.Models
     {
         // Durable run ownership for history/replay reconciliation, not display.
         public string? SourceRunId { get; set; }
+        public int? SourceMessageIndex { get; set; }
 
         private string _id = Guid.NewGuid().ToString();
         private string _role = "user";

@@ -107,13 +107,36 @@ scrolling; wide tables scroll within the column. Plain table-cell extraction
 walks nested inline containers so emphasis and link labels survive display and
 TSV copy. Rich-block layout lives in `MarkdownBlock.RichBlocks.cs`, separate
 from prose and inline rendering.
+`MarkdownRenderPlan` identifies unchanged blocks, including resolved reference
+links; `MarkdownBlock.Rendering.cs` retains their native paragraphs and embedded
+controls and replaces only the changed suffix. Code/list indentation and hard
+breaks survive normalization. Nested list blocks keep their own Paragraph and
+InlineUIContainer ownership rather than reparenting attached inlines.
+Large tables render at most 50 rows (including the header) and eight columns;
+the preview states its visible and total counts. Copy and the full-table dialog
+use the complete TSV content. Edit activity previews use Protocol's bounded
+`AgentEditPreviewCodec` (`@@json` plus a two-string JSON array), preserving
+literal backslashes and delimiters. The live publisher redacts decoded values
+before re-encoding; the GUI also reads legacy `@@ old ==> new` session details.
 
 GUI conversation ownership lives in the WinUI-independent
-`ChatSessionPresentation`. It waits for the outgoing run stop, retains its
+`ChatSessionPresentation`. It detaches the outgoing event feed, retains its
 composer draft, then activates only the latest requested session. Activation
 cancels the previous history load; monitor callbacks and turn completion are
 scoped to the active session/turn. `AgentRunController` retains HTTP/SSE run
 ownership, while `ChatView` renders history, activities and scroll effects.
+Switching sessions never posts cancellation for an acknowledged run. The Host
+keeps executing and reopening adopts the newest non-terminal run. A switch waits
+for an in-flight create acknowledgement before detaching; unknown create outcomes
+retain the pinned request identity and block the switch until reconciliation.
+Explicit Stop still reconciles and cancels through the existing command path.
+While the incoming history and durable activities load, the view suspends pending
+feed timers without clearing or settling the outgoing message graph. Once the
+latest load is ready, it clears the old activity registry and replaces history
+in the same dispatcher turn. The transcript explicitly has no item-container
+transitions, so a bulk reset cannot animate every removed/added row. Sends and
+rewind are ignored during loading, and load errors replace rather than append
+to the outgoing history. Superseded loads cannot reset the new load's state.
 The shell renders sidebar sections and persisted workspace pins before Host
 startup, independently of session polling. An unchanged poll retains rendered
 rows, but rebuilds them if the sidebar has not been populated.
@@ -139,6 +162,11 @@ saved assistant message gets its own bubble after its user turn, never an older
 turn's bubble. Replay preserves the saved final answer when payload reads omit
 it. Legacy messages without run identities permit ordinal replay only when the
 message/run counts match; unbalanced histories retain prose without guessing.
+Persisted transcript rows retain their raw server message index independently
+of hidden or synthetic display rows. Rewind uses that index, then reloads only
+while the requesting session still owns the view, without restoring live text
+removed by the rewind. Synthetic rows cannot be rewind targets. Queued turns
+remain queued until the Host's acceptance callback, including pre-accept errors.
 The GUI right-side surface keeps its floating session summary and adjacent details
 panel; narrow windows temporarily hide it without replacing session mode, active
 tab or fullscreen selection. A tab menu opens or reopens every view. Changes joins
@@ -154,6 +182,10 @@ callbacks carry shell lifetime versions;
 workspace replacement and shutdown invalidate queued callbacks. Model selection
 settings saves are serialized, skipping superseded queued choices and publishing
 only the newest result. These UI ownership guards do not change execution policy.
+Reasoning saves likewise serialize writes; the latest edit alone settles the
+label, with the last successful write as its failure fallback. Settings preserves
+hidden provider fields on load, stacks labels and controls below 700 pixels of
+content width, and confines keyboard navigation to the open modal.
 The TUI keeps raw Markdown lines until completion and uses a replaceable live tail
 projection on Terminal.Gui. Preview parsing runs at frame cadence; completed code
 lines remain intact for viewport reflow. Plain output commits at newline or Flush.
@@ -390,7 +422,7 @@ reconciliation surfaces from Phase 3:
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
 - Existing-file mutation: canonical ancestor handles are retained; one validated target handle excludes competing writes and rename-over through hash validation and update/delete. Updates retain at most 32 MiB of rollback bytes (`file_too_large` above the cap), write in place and flush; ordinary write failures attempt restoration, but power-loss crash atomicity is not claimed. Missing-file creation stays staged with no overwrite. Patch rollback restores only still-matching applied output, preserving intervening editor changes.
-- Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading and project-file discovery refuse unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
+- Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading refuses unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - Interactive and headless CLI: `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run execution to HTTP/SSE. Its Terminal.Gui TUI owns terminal presentation, command navigation, attachment submission and run-following interaction; it also exposes headless commands and safe event envelopes. Model execution and execution policy remain Harness/Broker owned. Commands include `agent approve`/`deny`, policy management, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
   Terminal.Gui is the sole interactive screen engine. Redirected input/output,

@@ -134,7 +134,9 @@
         </Grid>
 
         <!-- Main Content Area -->
-        <Grid x:Name="RootLayoutGrid" Grid.Row="1" SizeChanged="RootLayoutGrid_SizeChanged">
+        <ContentControl x:Name="ShellInteractionHost" Grid.Row="1" IsTabStop="False"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+        <Grid x:Name="RootLayoutGrid" SizeChanged="RootLayoutGrid_SizeChanged">
             <VisualStateManager.VisualStateGroups>
                 <VisualStateGroup x:Name="ResponsiveStates">
                     <VisualState x:Name="Wide">
@@ -642,11 +644,15 @@
             </ContentControl>
         </Grid>
 
+        </ContentControl>
+
         <!-- Settings Modal Overlay Popup -->
         <Grid x:Name="SettingsModalOverlay"
               Grid.Row="0"
               Grid.RowSpan="2"
               Canvas.ZIndex="500"
+              TabFocusNavigation="Cycle"
+              AutomationProperties.Name="Settings dialog"
               Visibility="Collapsed"
               SizeChanged="OnSettingsModalOverlaySizeChanged">
             <Grid.ChildrenTransitions>
@@ -679,6 +685,7 @@
                 <Grid>
                     <!-- Modal Body (Hosts SettingsView with Sidebar + Content) -->
                     <ContentControl x:Name="SettingsModalContent"
+                                    IsTabStop="False"
                                     HorizontalContentAlignment="Stretch"
                                     VerticalContentAlignment="Stretch"
                                     Background="Transparent" />

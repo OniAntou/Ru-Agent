@@ -13,7 +13,7 @@ public static class ChatScrollPolicy
         IsConsistent(offset, maximum) && maximum > 0 && (IsNearBottom(offset, maximum) || following);
 
     public static bool FollowAfterViewChange(double offset, double maximum, bool following) =>
-        !IsConsistent(offset, maximum) || maximum == 0 ? following : following || IsNearBottom(offset, maximum);
+        !IsConsistent(offset, maximum) || maximum == 0 ? following : following || maximum - offset <= 1;
 
     public static double RestoreAnchorOffset(double offset, double currentY, double savedY, double maximum) =>
         Math.Clamp(offset + currentY - savedY, 0, maximum);

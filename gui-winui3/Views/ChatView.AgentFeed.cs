@@ -13,7 +13,6 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
@@ -856,43 +855,16 @@ namespace RuApp.Views
 
         private void AttachActivityItem(Grid grid)
         {
-            DetachActivityItem(grid, clearEntrance: false);
+            DetachActivityItem(grid);
             ApplyTranscriptTypography(grid);
 
             if (grid.DataContext is not AgentActivityItem item)
                 return;
 
-            if (grid.Tag == null && Services.UiTiming.AnimationsEnabled)
-            {
-                grid.Opacity = 0;
-                var translate = new TranslateTransform { Y = 4 };
-                grid.RenderTransform = translate;
-
-                var fadeIn = new DoubleAnimation
-                {
-                    From = 0.0,
-                    To = 1.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                Storyboard.SetTarget(fadeIn, grid);
-                Storyboard.SetTargetProperty(fadeIn, "Opacity");
-
-                var slideIn = new DoubleAnimation
-                {
-                    From = 4.0,
-                    To = 0.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                Storyboard.SetTarget(slideIn, translate);
-                Storyboard.SetTargetProperty(slideIn, "Y");
-
-                var entranceSb = new Storyboard();
-                entranceSb.Children.Add(fadeIn);
-                entranceSb.Children.Add(slideIn);
-                entranceSb.Begin();
-            }
+            // Loading/recycling a visual row is not a new agent event. Replaying
+            // entrance fades here makes settled history flash on every revisit.
+            grid.Opacity = 1;
+            grid.RenderTransform = null;
 
             TextBlock? displayText = grid.FindName(ActivityLabelElementName(item)) as TextBlock;
             if (displayText == null) return;
@@ -947,17 +919,14 @@ namespace RuApp.Views
                     ? Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Assertive
                     : Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
 
-        private void DetachActivityItem(Grid grid, bool clearEntrance = true)
+        private void DetachActivityItem(Grid grid)
         {
             if (grid.Tag is ValueTuple<PropertyChangedEventHandler, TextBlock, AgentActivityItem> tuple)
             {
                 tuple.Item3.PropertyChanged -= tuple.Item1;
                 StopTextSweep(tuple.Item2);
             }
-            if (clearEntrance)
-            {
-                grid.Tag = null;
-            }
+            grid.Tag = null;
         }
 
         /// <summary>

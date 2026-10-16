@@ -238,14 +238,17 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void Motion_respects_the_os_animation_setting()
+    public void Activity_rows_stay_visible_and_the_running_sweep_respects_os_motion()
     {
-        // Sweep and entrance stay off when the user disables animations: the
-        // running row falls back to a static tint.
+        // Replaying/recycling a visual must not replay an entrance animation.
+        // Only a running label sweeps, respecting the OS animation setting.
         string code = GuiSource.ViewText("ChatView");
 
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
-        Assert.Contains("AnimationsEnabled", attach, StringComparison.Ordinal);
+        Assert.Contains("grid.Opacity = 1", attach, StringComparison.Ordinal);
+        Assert.Contains("grid.RenderTransform = null", attach, StringComparison.Ordinal);
+        Assert.DoesNotContain("DoubleAnimation", attach, StringComparison.Ordinal);
+        Assert.DoesNotContain("grid.Opacity = 0", attach, StringComparison.Ordinal);
 
         string sweep = GuiSource.MethodBody(code, "StartTextSweep");
         Assert.Contains("AnimationsEnabled", sweep, StringComparison.Ordinal);

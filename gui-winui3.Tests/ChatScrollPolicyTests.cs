@@ -33,6 +33,33 @@ public sealed class ChatScrollPolicyTests
         Assert.True(ChatScrollPolicy.CanFollow(1000, 1100, following: true));
     }
 
+    [Theory]
+    [InlineData(940)]
+    [InlineData(980)]
+    [InlineData(998)]
+    public void Manual_reading_near_the_bottom_does_not_rearm_layout_follow(double offset)
+    {
+        Assert.True(ChatScrollPolicy.IsNearBottom(offset, 1000));
+        Assert.False(ChatScrollPolicy.FollowAfterViewChange(offset, 1000, following: false));
+        Assert.True(ChatScrollPolicy.FollowAfterViewChange(1000, 1000, following: false));
+    }
+
+    [Fact]
+    public void Layout_follow_tracks_real_tail_geometry_and_unsubscribes_on_disposal()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        Assert.Contains("LayoutUpdated += OnTranscriptLayoutUpdated", GuiSource.MethodBody(code, "InitializeChatScrolling"));
+        Assert.Contains("LayoutUpdated -= OnTranscriptLayoutUpdated", GuiSource.MethodBody(code, "DisposeChatScrolling"));
+        var layout = GuiSource.MethodBody(code, "OnTranscriptLayoutUpdated");
+        Assert.Contains("!_followOutput", layout);
+        Assert.Contains("_handlingTranscriptLayout", layout);
+        Assert.Contains("TransformToVisual", layout);
+        Assert.Contains("RestoreAnchorOffset", layout);
+        Assert.Contains("disableAnimation: true", layout);
+        Assert.DoesNotContain("UpdateLayout()", layout);
+        Assert.Contains("if (!_followOutput && e.IsIntermediate) return", GuiSource.MethodBody(code, "OnChatScrollViewChanged"));
+    }
+
     [Fact]
     public void New_layout_extent_does_not_stop_following_without_reader_input()
     {
@@ -82,6 +109,35 @@ public sealed class ChatScrollPolicyTests
     {
         var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ScrollToLatestAfterLayout");
         Assert.Contains("ScrollIntoView", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Session_open_positions_after_layout_in_the_replacement_dispatcher_turn()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var open = GuiSource.MethodBody(code, "OpenSessionAsync");
+        Assert.True(open.IndexOf("Messages.ReplaceAll(opened)", StringComparison.Ordinal)
+            < open.IndexOf("PositionOpenedTranscript()", StringComparison.Ordinal));
+        var position = GuiSource.MethodBody(code, "PositionOpenedTranscript");
+        Assert.True(position.IndexOf("UpdateLayout()", StringComparison.Ordinal)
+            < position.IndexOf("ScrollToLatestAfterLayout()", StringComparison.Ordinal));
+        Assert.DoesNotContain("TryEnqueue", position);
+        Assert.DoesNotContain("await ", position);
+    }
+
+    [Fact]
+    public void Latest_row_stays_anchored_until_reader_input_releases_it()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var latest = GuiSource.MethodBody(code, "ScrollToLatestAfterLayout");
+        Assert.Contains("ItemsUpdatingScrollMode.KeepLastItemInView", latest);
+        Assert.Contains("disableAnimation: true", latest);
+        var stop = GuiSource.MethodBody(code, "StopFollowingTranscript");
+        Assert.Contains("ItemsUpdatingScrollMode.KeepScrollOffset", stop);
+        Assert.Contains("_followOutput = false", stop);
+        Assert.Contains("_scrollInteractionGeneration++", stop);
+        Assert.Contains("StopFollowingTranscript()", GuiSource.MethodBody(code, "OnTranscriptScrollKey"));
+        Assert.Contains("=> StopFollowingTranscript()", code);
     }
 
     [Theory]

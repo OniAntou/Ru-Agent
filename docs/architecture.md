@@ -137,6 +137,21 @@ in the same dispatcher turn. The transcript explicitly has no item-container
 transitions, so a bulk reset cannot animate every removed/added row. Sends and
 rewind are ignored during loading, and load errors replace rather than append
 to the outgoing history. Superseded loads cannot reset the new load's state.
+Opening positions the last row synchronously after flushing replacement layout,
+before yielding for further I/O or first paint. `ItemsStackPanel` switches from
+`KeepScrollOffset` to `KeepLastItemInView` for that jump, preserving the actual
+last row as virtualized height estimates change without a `ViewChanged` event.
+Pointer and scroll-key input restore `KeepScrollOffset` and invalidate deferred
+follow work. A guarded, constant-work `LayoutUpdated` handler anchors measured
+tail geometry, covering nested activity templates that complete after the first
+positioning pass. It never forces recursive layout or polls a timer, and detaches
+on disposal. All programmatic follow scrolls are unanimated: a native animation
+can otherwise outlive the layout/session it targeted. Reader scrolling resumes
+follow only at the actual bottom, after intermediate view changes finish, rather
+than anywhere inside streaming's 100-pixel proximity allowance.
+Activity row attachment only binds typography, status and live announcements;
+it does not fade or translate the row. Visual realization/recycling is not a new
+agent event. Running label sweeps still respect the OS animation setting.
 The shell renders sidebar sections and persisted workspace pins before Host
 startup, independently of session polling. An unchanged poll retains rendered
 rows, but rebuilds them if the sidebar has not been populated.

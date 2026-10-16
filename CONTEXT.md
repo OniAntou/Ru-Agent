@@ -92,6 +92,12 @@ and retains/restores composer drafts through that owner.
 During history I/O the outgoing transcript stays intact; replacement happens as
 one collection reset without row entrance/exit transitions. Sends and rewind
 wait until the current session load finishes.
+Opening history completes its initial layout and positions the last row in the
+replacement dispatcher turn. The last row stays anchored as virtualized heights
+settle; reader scroll input releases that anchor and preserves manual navigation.
+Follow uses the final row's measured geometry on layout updates, including nested
+activity replay. Automatic scrolls are unanimated; manual reading near the end
+does not resume follow until the viewport reaches the actual bottom.
 Leaving a session detaches the GUI feed without cancelling its Host-owned run;
 reopening adopts the newest non-terminal run. Only explicit Stop cancels work.
 An in-flight create must acknowledge before detachment; an unknown outcome keeps

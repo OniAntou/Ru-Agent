@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Position opened sessions at the latest message and anchor the real final row as nested activity layouts settle. Keep automatic follow unanimated so obsolete native scroll animations cannot move a replacement transcript. Release the anchor on reader input and resume only at the actual bottom.
+- **fix(gui)**: Show activity rows immediately when loading history or recycling transcript items instead of fading and sliding them in again. Keep the running-label sweep and its reduced-motion setting.
 - **fix(gui)**: Keep outgoing chat rows intact while loading another session, then replace the transcript without per-row entrance/exit animations. Ignore sends and rewind while history is loading; a failed load shows its own error instead of mixing sessions.
 - **fix(gui)**: Keep Host-owned runs alive when switching sessions; detach the local feed and adopt the run on reopening. Wait for pending creation to acknowledge before detaching, preserving unknown-outcome recovery and explicit Stop cancellation.
 - **perf(gui)**: Retain unchanged Markdown paragraphs, tables and code frames while a reply grows instead of rebuilding the whole native tree on every text refresh.

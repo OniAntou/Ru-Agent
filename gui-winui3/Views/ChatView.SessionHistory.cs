@@ -597,10 +597,7 @@ namespace RuApp.Views
 
                     if (history.Count > 0)
                     {
-                        // A fresh open always lands on the latest, after layout:
-                        // the reset above dropped the panel, so a synchronous
-                        // scroll would read the previous session's numbers.
-                        RunAfterLayout(ScrollToLatestAfterLayout);
+                        PositionOpenedTranscript();
                     }
                 }
 

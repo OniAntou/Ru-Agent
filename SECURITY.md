@@ -9,8 +9,8 @@ minimal reproduction if you can. Expect an acknowledgement within a few days;
 this is a volunteer-run project, so there is no paid response window.
 
 Please do not open a public issue for anything that lets code escape the
-permission model, reads credentials or protected paths, or turns a bounded tool
-result into unbounded execution or output.
+permission model, reads credentials or protected paths the active preset does
+not authorize, or turns a bounded tool result into unbounded execution or output.
 
 ## What is in scope
 

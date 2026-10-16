@@ -107,12 +107,14 @@ public static class SessionWorkspaceResolver
         }
     }
 
-    private static async Task<SqliteConnection> OpenHarnessConnectionAsync(
+    internal static async Task<SqliteConnection> OpenHarnessConnectionAsync(
         HarnessSqliteOptions sqliteOptions,
         CancellationToken cancellationToken)
     {
         // No pooling: the handle must be fully closed on dispose so test and
-        // host data directories can be cleaned up deterministically.
+        // host data directories can be cleaned up deterministically. Shared by the
+        // workspace and run-activity resolvers so both reads obey the same
+        // busy_timeout before the sidebar query runs.
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = sqliteOptions.DatabasePath,

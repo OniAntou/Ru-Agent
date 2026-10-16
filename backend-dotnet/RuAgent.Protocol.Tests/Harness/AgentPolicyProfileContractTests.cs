@@ -30,7 +30,7 @@ public sealed class AgentPolicyProfileContractTests
     [InlineData("full_access", AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Allow)]
-    [InlineData("full_access", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny)]
+    [InlineData("full_access", AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Allow)]
     [InlineData("full_access", AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny)]
     public void Catalog_returns_canonical_decision(
         string preset,

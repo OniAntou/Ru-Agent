@@ -596,7 +596,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             {
                 // The trust challenge is past its lifetime, so no client can resolve it
                 // any more. The startup sweep used to be the only path that noticed, which
-                // left the run parked — and its workspace's active-run lock held — for as
+                // left the run parked — and its session's active-run slot held — for as
                 // long as the host stayed up.
                 await ReleaseExpiredWorkspaceTrustAsync(runIdValue, run, cancellationToken)
                     .ConfigureAwait(false);
@@ -606,7 +606,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             {
                 // The durable approval is past its lifetime, so no client can
                 // resolve it any more. Fail the run now instead of leaving it
-                // parked with the workspace's unique active-run lock.
+                // parked while it still holds its session's active-run slot.
                 await ReleaseExpiredApprovalAsync(runIdValue, run, cancellationToken)
                     .ConfigureAwait(false);
                 return;

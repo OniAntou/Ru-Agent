@@ -121,9 +121,10 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
     public async Task<NewAgentRun> SeedRunWithEncryptedWorkspaceAsync(
         HarnessRunStatus status,
         string runId,
-        string sessionId)
+        string sessionId,
+        string? workspaceRoot = null)
     {
-        var workspaceRoot = Path.Combine(RootPath, "workspace-" + runId);
+        workspaceRoot ??= Path.Combine(RootPath, "workspace-" + runId);
         Directory.CreateDirectory(workspaceRoot);
         var resolver = new WindowsWorkspaceIdentityResolver();
         var trustService = new WorkspaceTrustService(

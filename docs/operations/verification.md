@@ -2611,9 +2611,9 @@ The current session-scoped matrix is: `plan` auto workspace read + Web, denies
 terminal/mutation outright (read-only, no per-change asks), and asks for
 external structured access; `standard` auto bounded-local in-workspace mutation
 and asks external/escape; `full_access` is the skip-all mode — external
-structured files + arbitrary terminal auto while only structured protected
-paths (harness key/database files and runtime descriptors, plus
-`RU_PROTECTED_PATHS` additions) deny. Workspace trust is explicit once
+structured files, arbitrary terminal, and structured protected paths (harness
+key/database files and runtime descriptors, plus `RU_PROTECTED_PATHS`
+additions) are automatic. Workspace trust is explicit once
 per canonical identity: the GUI confirms it, while CLI `run`/`chat` require
 `--trust-workspace`; Full Access additionally requires the GUI gate or CLI
 `--confirm-full-access`. Full-access terminal runs as the current Windows user,

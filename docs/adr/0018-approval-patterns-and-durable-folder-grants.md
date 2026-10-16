@@ -2,9 +2,17 @@
 title: Remembered approval patterns and durable folder grants
 status: accepted
 date: 2026-10-13
+amended_by: ADR-0021 full access is literally full
+  (`0021-full-access-is-literally-full.md`, accepted 2026-10-17), for the
+  structured protected-path statements only.
 ---
 
 # ADR 0018: Approval patterns and durable folder grants
+
+> Amended by [ADR 0021](0021-full-access-is-literally-full.md) on 2026-10-17:
+> `full_access` is literally full, so the statements below that the structured
+> protected path "still deny at every preset" or that a remembered pattern
+> remains subject to "protected paths" apply to `plan` and `standard` only.
 
 ## Context
 
@@ -41,8 +49,8 @@ never wider than the reviewed shape:
   structured targets (`external_directory_rule_allow`). Previously only deny
   rules were taken from the ordered rules outside the workspace. Precedence is
   unchanged: deny before ask before allow, the plan read-only gate applies
-  before the rule verdict, and structured protected paths still deny at every
-  preset.
+  before the rule verdict, and structured protected paths still deny in `plan`
+  and `standard` (ADR-0021).
 - `rule_asks` and `terminal_protected_path_requires_approval` never become a
   durable rule. The Host refuses the save (degrading to `allow_once` with
   `rule_saved: false`) instead of relying on clients to hide the choice. The
@@ -58,8 +66,9 @@ folder choice it already documented.
 ## Boundary and consequences
 
 A remembered pattern is a permission the user explicitly chose in one review.
-It remains subject to deny rules, ask rules, the plan gate, protected paths,
-hard-invalid requests, and every execution-time invariant; the in-flight call
+It remains subject to deny rules, ask rules, the plan gate, protected paths
+(in `plan` and `standard`), hard-invalid requests, and every execution-time
+invariant; the in-flight call
 is still authorized by the Broker's single-use token, not by the saved rule.
 Permission lifetime changes: an external folder approval can now outlive the
 session and the host process for the same canonical workspace identity, and a

@@ -2,12 +2,22 @@
 status: partially superseded
 date: 2026-10-10
 superseded_by: ADR-0015 for terminal sandbox decision only
+amended_by: ADR-0021 full access is literally full
+  (`0021-full-access-is-literally-full.md`, accepted 2026-10-17), for the
+  "protected paths stay denied in every preset" guarantee only.
 ---
 
 # Run tool execution in-process and sandbox `standard` terminal children
 
 > Historical decision record. ADR-0015 retires the terminal OS sandbox portion.
 > The in-process execution authority and other guarantees below remain active.
+>
+> Amended by [ADR 0021](0021-full-access-is-literally-full.md) on 2026-10-17:
+> the "protected paths stay denied in every preset" guarantee below is
+> historical — the structured protected-path denial belongs to `plan` and
+> `standard`, and `full_access` evaluates catalog-protected paths like any
+> other target. Canonical path containment and the in-process authority remain
+> in force.
 
 [ADR-0009](0009-broker-execution-authority.md) chose one tool execution
 authority behind the `IToolGateway` seam and enforced it with a separate

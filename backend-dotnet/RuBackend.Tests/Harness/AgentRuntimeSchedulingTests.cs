@@ -13,6 +13,38 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentRuntimeSchedulingTests
 {
     [Fact]
+    public async Task Two_sessions_are_driven_simultaneously_in_the_same_workspace_with_default_membership_policy()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        string workspaceRoot = Path.Combine(fixture.RootPath, "shared-workspace");
+        var first = await fixture.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), workspaceRoot);
+        var second = await fixture.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), workspaceRoot);
+        Assert.Equal(first.Run.WorkspaceId, second.Run.WorkspaceId);
+        var roots = new AgentRuntimeRootRegistry();
+        roots.Register(first.Run.RunId, workspaceRoot);
+        roots.Register(second.Run.RunId, workspaceRoot);
+        var factory = new BlockingFactory(null);
+        var sessions = new SessionStore(new DataPaths(Path.Combine(fixture.RootPath, "settings.json"),
+            Path.Combine(fixture.RootPath, "sessions"), Path.Combine(fixture.RootPath, "activity.log")), TimeProvider.System);
+        var dispatcher = new AgentConversationOutboxDispatcher(new HarnessOutboxStore(fixture.Options), fixture.PayloadStore,
+            sessions, new HarnessModelContextBootstrapper(sessions, fixture.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
+            new AgentRunHistoryTransitionSink(factory, roots), TimeProvider.System);
+        using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots,
+            NullLogger<AgentRuntimeLoopService>.Instance, workspaceCoordinatorStore: new WorkspaceCoordinatorStore(fixture.Options));
+        await loop.StartAsync(CancellationToken.None);
+        try
+        {
+            await factory.TwoEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(2, factory.Calls);
+            Assert.Equal(0, factory.Cancelled);
+        }
+        finally { await loop.StopAsync(CancellationToken.None); }
+        Assert.Equal(2, factory.Cancelled);
+    }
+
+    [Fact]
     public async Task New_registration_starts_while_an_older_run_is_blocked()
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
@@ -76,12 +108,15 @@ public sealed class AgentRuntimeSchedulingTests
         public int Calls;
         public int Cancelled;
         public TaskCompletionSource<bool> FourEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> TwoEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> FirstEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, ContextBudgetPolicy? contextBudgetPolicy = null) => throw new NotSupportedException();
         public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Increment(ref Calls) == 4) FourEntered.TrySetResult(true);
+            int count = Interlocked.Increment(ref Calls);
+            if (count == 4) FourEntered.TrySetResult(true);
+            if (count == 2) TwoEntered.TrySetResult(true);
             if (first is null || runId == first)
             {
                 FirstEntered.TrySetResult(true);

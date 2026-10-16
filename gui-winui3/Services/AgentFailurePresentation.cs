@@ -167,7 +167,7 @@ internal static class AgentFailurePresentation
                 return $"Run {runId} is waiting to continue. Send Continue to resume it, then try again.";
             }
 
-            return $"Run {runId} ({status}) still owns this workspace. Answer its pending prompt, or cancel it and try again.";
+            return $"Run {runId} ({status}) still owns this session. Answer its pending prompt, or cancel it and try again.";
         }
 
         switch (code)
@@ -175,7 +175,7 @@ internal static class AgentFailurePresentation
             case "invalid_workspace":
                 return "Invalid or non-existent workspace folder.";
             case "workspace_busy":
-                return "Workspace is currently in use by another Agent session.";
+                return "This session already has an active Agent run. Wait for it to finish, or cancel it and try again.";
             case "preset_mismatch":
             case "preset_version_conflict":
                 return "Permission preset has changed. Please select a preset and try again.";

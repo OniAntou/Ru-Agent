@@ -850,6 +850,7 @@ namespace RuApp
         {
             if (_closed) return;
             _closed = true;
+            StopSessionTitleWaves();
             _reconnectTimer?.Stop();
             _reconnectTimer = null;
             _startup.Cancel();
@@ -1011,6 +1012,7 @@ namespace RuApp
 
         private void ApplySessions(SessionListResponse result)
         {
+            _sessionWaveAnimationsEnabled = Services.UiTiming.AnimationsEnabled;
             var warningVisibility = result.SessionsTruncated ? Visibility.Visible : Visibility.Collapsed;
             if (SidebarSessionTruncationWarning.Visibility != warningVisibility)
             {
@@ -1034,6 +1036,7 @@ namespace RuApp
                     existing.CreatedAt = incoming.CreatedAt;
                     existing.UpdatedAt = incoming.UpdatedAt;
                     existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
+                    existing.IsAgentRunning = incoming.IsAgentRunning;
                     existing.ParentSessionId = incoming.ParentSessionId;
                     existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                     existing.WorkspaceId = incoming.WorkspaceId;
@@ -1072,6 +1075,7 @@ namespace RuApp
             {
                 RenderWorkspaceSidebar();
             }
+            RefreshSessionTitleWaves();
         }
 
         private void SyncSidebarSelection(string sessionId)

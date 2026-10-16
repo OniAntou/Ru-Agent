@@ -559,23 +559,25 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Full_access_cannot_bypass_protected_paths_or_malformed_input()
+    public void Full_access_opens_protected_paths_and_still_denies_malformed_input()
     {
         var lease = CreateLease("full_access", _root);
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        // Full-access cannot override the harness self-protection deny.
+        // full_access is literally full: the harness self-protection deny is a
+        // plan/standard guard, and the preset evaluates catalog-protected names
+        // like any other target.
         var protCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = "runtime_descriptor.json" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
-        Assert.Equal("deny", protEval.Decision);
-        Assert.Equal("protected_path", protEval.ReasonCode);
+        Assert.Equal("allow", protEval.Decision);
+        Assert.Equal("full_access_allow", protEval.ReasonCode);
 
         // Malformed path should deny before adapter (invalid_path)
         Assert.Throws<PolicyContextException>(() => factory.Create("read", "1.0.0", new JsonObject { ["path"] = "" }));
         Assert.Throws<PolicyContextException>(() => factory.Create("read", "1.0.0", new JsonObject { ["path"] = "a\0b" }));
 
-        // Adapter also denies if forced
+        // A tool set built without the full-access flag stays fail-closed.
         var ex = Assert.Throws<UnauthorizedAccessException>(() => _read.Execute(new JsonObject { ["path"] = "runtime_descriptor.json" }));
         Assert.Contains("protected_path", ex.Message);
     }

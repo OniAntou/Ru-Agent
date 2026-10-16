@@ -110,8 +110,8 @@ public sealed partial class AgentV1Service
         var now = _time.UtcNow;
         return new WorkspaceCoordinatorRecord(
             workspaceId.Value,
-            "exclusive",
-            1,
+            "shared",
+            32,
             30,
             true,
             true,

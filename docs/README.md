@@ -36,6 +36,8 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 
 ## Decisions
 
+- [Full access is literally full](adr/0021-full-access-is-literally-full.md)
+- [Always allow parallel sessions in one workspace](adr/0020-always-parallel-workspace-sessions.md)
 - [Product packages and explicit updates](adr/0019-product-packages-and-explicit-updates.md)
 - [Architecture decision records](adr/)
 - [ASP.NET Core Public Host](adr/0001-aspnet-core-public-host.md)
@@ -63,8 +65,9 @@ reviews and verification records.
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles defined in [`../CONTEXT.md`](../CONTEXT.md) — that file
 is the single source for the matrix, and this page does not restate it. Under
-`full_access` everything else runs automatically while the structured protected
-paths still deny. Workspace trust is explicit once per canonical identity: the
+`full_access` everything else runs automatically, and structured protected
+paths are allowed like any other target. Workspace trust is explicit once per
+canonical identity: the
 GUI confirms it and CLI `run`/`chat` use `--trust-workspace`. Full Access
 requires the GUI gate or CLI `--confirm-full-access`.
 
@@ -83,6 +86,6 @@ Flag-first invocations and shell-mode scripts stay exact, and `rule_asks` /
 A folder grant can stay session-scoped (the Broker grant) or be remembered for
 the project; workspace trust follows the canonical identity. Terminal children in both `standard` and `full_access` run as the
 current Windows user without OS filesystem or network confinement. Standard authorizes workspace launch directories under
-[ADR 0017](adr/0017-workspace-terminal-policy.md); structured protections remain. Hard timeout,
+[ADR 0017](adr/0017-workspace-terminal-policy.md); the structured protections hold in `plan` and `standard`. Hard timeout,
 output cap, cancellation, process-tree cleanup, credential storage and
 diagnostic redaction remain enforced.

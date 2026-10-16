@@ -201,6 +201,8 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{x:Bind Title, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
+                           Loaded="OnSessionTitleLoaded" Unloaded="OnSessionTitleUnloaded" DataContextChanged="OnSessionTitleDataContextChanged"
+                           AutomationProperties.ItemStatus="{x:Bind AgentStatusText, Mode=OneWay}"
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <!-- The clock owns the right edge. The row's … control shares the

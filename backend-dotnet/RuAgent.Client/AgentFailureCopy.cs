@@ -251,8 +251,8 @@ public static class AgentFailureCopy
             "the turn ended in failure",
             "retry the turn; run /status for details");
         Add(table, ["workspace_busy", "session_busy"],
-            "Workspace busy",
-            "another Agent run still owns this workspace",
+            "Session busy",
+            "another Agent run still owns this session",
             "release the blocking run with 'ru agent cancel <run-id>'");
         Add(table, ["reconciliation_required"],
             "Run paused for inspection",

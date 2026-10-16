@@ -9,11 +9,11 @@ public sealed class FileGlobAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
-    public FileGlobAdapter(string workspaceRoot)
+    public FileGlobAdapter(string workspaceRoot, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
     }
 
     public JsonObject Execute(JsonObject arguments, CancellationToken cancellationToken = default, int? deadlineMs = null)

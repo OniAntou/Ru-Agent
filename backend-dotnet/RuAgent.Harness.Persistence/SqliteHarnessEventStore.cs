@@ -80,25 +80,9 @@ public sealed partial class SqliteHarnessEventStore : IHarnessEventStore
                 return CreateRunResult.Conflict(activeSession, "session_busy");
             }
 
-            var concurrencyMode = await HarnessSqliteQueries.GetWorkspaceConcurrencyModeAsync(
-                    connection,
-                    transaction,
-                    request.Run.WorkspaceId,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            var activeWorkspace = string.Equals(concurrencyMode, "shared", StringComparison.Ordinal)
-                ? null
-                : await HarnessSqliteQueries.FindActiveWorkspaceRunAsync(
-                    connection,
-                    transaction,
-                    request.Run.WorkspaceId,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (activeWorkspace is not null)
-            {
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return CreateRunResult.Conflict(activeWorkspace, "workspace_busy");
-            }
+            // Sessions share a workspace. Session ownership above still prevents
+            // two active runs from racing within the same conversation; runtime
+            // membership leases bound how many different sessions execute at once.
 
             if (!await HarnessSqliteQueries.WorkspaceExistsAsync(
                     connection,

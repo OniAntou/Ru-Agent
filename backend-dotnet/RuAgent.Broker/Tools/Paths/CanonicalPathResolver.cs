@@ -7,10 +7,19 @@ namespace RuAgent.Broker.Tools.Paths;
 public sealed class CanonicalPathResolver
 {
     private readonly string _canonicalRoot;
+    private readonly bool _allowProtectedPaths;
 
-    public CanonicalPathResolver(string workspaceRoot)
+    /// <param name="allowProtectedPaths">
+    /// When true, catalog-protected paths (harness key/database files, runtime
+    /// descriptors, RU_PROTECTED_PATHS entries) classify like any other target
+    /// instead of <see cref="PathClassification.Protected"/>. Only the
+    /// full_access preset turns this on when it builds tool sets; every other
+    /// caller keeps the fail-closed default.
+    /// </param>
+    public CanonicalPathResolver(string workspaceRoot, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        _allowProtectedPaths = allowProtectedPaths;
         // Resolve the workspace root to its final canonical form if it exists, otherwise normalize.
         var full = Path.GetFullPath(workspaceRoot);
         if (Directory.Exists(full) || File.Exists(full))
@@ -78,7 +87,7 @@ public sealed class CanonicalPathResolver
         }
 
         PathClassification classification;
-        if (ProtectedPathCatalog.IsProtected(canonical))
+        if (!_allowProtectedPaths && ProtectedPathCatalog.IsProtected(canonical))
         {
             classification = PathClassification.Protected;
         }

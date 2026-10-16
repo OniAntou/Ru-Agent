@@ -92,6 +92,21 @@ and retains/restores composer drafts through that owner.
 New GUI sessions without an explicitly selected workspace use the parent of the
 application working root; backend startup still uses the application root.
 Explicit selections, restored sessions and harness workspaces retain their paths.
+Different sessions can always run in the same workspace in GUI and CLI; one
+session still owns at most one non-terminal run. Workspace coordination uses
+shared membership leases (32 slots by default, configurable from 2 to 32 through
+the existing API), with excess runnable work waiting for runtime capacity.
+Schema v19 upgrades legacy exclusive/single-slot coordinators in place while
+preserving active runs, approvals and workspace trust. Parallel mode cannot be
+disabled through workspace policy updates. Sessions share real files: this is
+not a worktree sandbox or automatic conflict merge. Existing file hash checks,
+external-change detection and per-session execution permissions still apply.
+The session listing adds `is_agent_running` from a bounded active-run query.
+Created, history-waiting and running states animate their sidebar title; terminal
+and user/approval/trust/reconciliation waits do not. The existing three-second
+poll updates this flag independently of row layout. Visible title waves share
+one timer and private cached brushes; unload/close stops them, and Windows
+reduced motion uses a static tint with the same accessible Running label.
 The Files tree hides installer-owned payload using `ru-install.json` and
 `ru-files.lst`, including payload-only subfolders. Unknown files and mixed folders
 remain visible; unreadable or missing inventories leave files visible. This is
@@ -248,11 +263,12 @@ Broker grant), and remembered ask decisions store a bounded reviewed pattern
 argv-path, network-declaration or executable-install-location approval list.
 Both terminal modes run as the Windows user and can affect outside files and the
 network; workspace launch permission is not an OS confinement boundary.
-`full_access` also permits external structured files and arbitrary terminal
-launches automatically; structured protected paths and hard-invalid requests
-remain denied.
-Explicit deny/ask rules, exact single-use authorization, protected structured
-paths, hard-invalid requests and process lifetime/output bounds remain enforced.
+`full_access` also permits external structured files, arbitrary terminal
+launches, and the structured protected paths (harness key/database files and
+runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries)
+automatically; hard-invalid requests remain denied.
+Explicit deny/ask rules, exact single-use authorization, hard-invalid requests
+and process lifetime/output bounds remain enforced.
 Foreground launches above fifteen minutes still ask in Standard; background
 launches use their bounded lifetime instead. Every running terminal task reserves
 a session slot at launch, retained when foreground moves to background. The
@@ -261,8 +277,8 @@ invalid explicit values fail initialization. A full session refuses new launches
 as `background_task_limit_reached` without cancelling existing tasks.
 API keys remain in credential storage
 and diagnostics redact secrets. See [ADR 0017](docs/adr/0017-workspace-terminal-policy.md).
-Structured protected paths and hard-invalid requests remain
-denied. Standard is the
+Hard-invalid requests remain denied; structured protected paths stay denied in
+`plan` and `standard`. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
 thirteen Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
@@ -358,8 +374,8 @@ with the denial code. Any allow decision remembers the approved intent for
 the Agent session — materialized into the session's later policy
 snapshots, so a later matching call authorizes without a
 new prompt; the memory is in-process and dies with the session or a host
-restart, and a session allow still passes every protected-path denial and
-Broker evaluation. The explicit `allow_always` decision additionally remembers
+restart, and a session allow still passes every protected-path denial (in
+`plan` and `standard`) and Broker evaluation. The explicit `allow_always` decision additionally remembers
 a bounded pattern as a durable project-scope allow rule: a terminal run call
 stores its requested executable plus at most two leading non-flag argv tokens
 with the exact launch directory, while flag-first invocations and shell-mode
@@ -438,7 +454,9 @@ Windows volume serial, root-file identity, and display hash
 per canonical identity, validated by final-path resolution, and independent of
 the session preset. The GUI requires an explicit confirmation; CLI `run` and
 `chat` require `--trust-workspace`. A moved or recreated identity is untrusted
-again. No preset or clean-repository state grants trust.
+again, and the GUI presents that re-approval as a one-click "trust again" prompt
+naming the identity change; `--trust-workspace` re-approves the same way for
+automation. No preset or clean-repository state grants trust.
 _Avoid_: repository-marker, path-only, or preset-implied trust
 
 **Workspace Terminal**:

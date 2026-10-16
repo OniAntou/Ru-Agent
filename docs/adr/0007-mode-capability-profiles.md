@@ -19,8 +19,9 @@ superseded_by: ADR-0011 model autonomy and workspace trust boundary
 
 > Current decision: [ADR 0011](0011-model-autonomy-and-workspace-trust-boundary.md)
 > defines the canonical `plan` / `standard` / `full_access` matrix, explicit
-> canonical-identity trust, and native multi-call behavior. The sections below
-> preserve this ADR's superseded rationale and history.
+> canonical-identity trust, and native multi-call behavior; [ADR 0021](0021-full-access-is-literally-full.md)
+> moves the structured protected-path denial to `plan` and `standard` only. The
+> sections below preserve this ADR's superseded rationale and history.
 
 Ru exposes one generation mode: Agent. The Worker v2 settings currently
 advertise the same ten file/terminal bindings in Standard and Full Access.

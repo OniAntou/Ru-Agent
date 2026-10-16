@@ -685,7 +685,7 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Releases a run the operator declined to trust. The challenge cannot be answered
         /// later — it is single-use and the workspace is not on the allow list — so leaving
-        /// the run parked would hold the workspace's active-run lock for the whole sweep
+        /// the run parked would hold the session's active-run slot for the whole sweep
         /// interval. Trust is a pre-execution gate, so cancelling rolls back no tool effect.
         /// </summary>
         async Task CancelUntrustedRunAsync(string runId, CancellationToken trustToken)
@@ -707,8 +707,8 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Runs the in-composer workspace-trust ask end to end: validate the binding, prompt,
         /// then post the server-issued challenge. A decline cancels the run, because the
-        /// challenge is single-use and the run would otherwise sit on the workspace's
-        /// active-run lock until the host swept it.
+        /// challenge is single-use and the run would otherwise sit on the session's
+        /// active-run slot until the host swept it.
         /// </summary>
         async Task<(bool Trusted, bool Declined)> ResolveWorkspaceTrustInPlaceAsync(
             CreateAgentRunResponse response,
@@ -744,7 +744,7 @@ public sealed partial class AgentCommands
                 // --json consumer owns it. --json owns stdout, and TG owns the screen, so
                 // the notice follows humanOut instead of the raw console writer.
                 await (json ? _err : humanOut).WriteLineAsync(
-                        $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
+                        RunStartCore.WorkspaceTrustRequiredMessage(response.RunId))
                     .ConfigureAwait(false);
                 return (false, false);
             }
@@ -1321,7 +1321,7 @@ public sealed partial class AgentCommands
 
         /// <summary>
         /// Shared wind-down for a cancelled turn: distinguishes a user interruption (the
-        /// server run is cancelled so it releases the workspace lock) from a run that
+        /// server run is cancelled so it releases the session) from a run that
         /// parked itself (nothing is executing; the user resumes it explicitly).
         /// </summary>
         async Task ReportInterruptionAsync()
@@ -2618,9 +2618,11 @@ public sealed partial class AgentCommands
         tgMode && tgWriter is not null ? tgWriter : fallback;
 
     /// <summary>
-    /// A busy workspace is operator-recoverable: name the run that owns it and how to
-    /// release it instead of printing the raw error envelope. Every line goes through
-    /// <paramref name="writeLineAsync"/> so it lands on the resolved writer.
+    /// A busy session is operator-recoverable: name the run that holds it and how to
+    /// release it instead of printing the raw error envelope. The wire code stays
+    /// `workspace_busy` for compatibility; the conflict itself is session-scoped.
+    /// Every line goes through <paramref name="writeLineAsync"/> so it lands on the
+    /// resolved writer.
     /// </summary>
     private async Task WriteBusyConflictAsync(
         AgentApiException error,
@@ -2631,7 +2633,7 @@ public sealed partial class AgentCommands
         var blockingRunId = error.BlockingRunId;
         if (string.IsNullOrWhiteSpace(blockingRunId))
         {
-            await writeLineAsync(_err, Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
+            await writeLineAsync(_err, Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this session.")).ConfigureAwait(false);
             await writeLineAsync(_err, Tui.TuiPalette.DimPaint("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
             await _err.FlushAsync().ConfigureAwait(false);
             return;
@@ -2639,7 +2641,7 @@ public sealed partial class AgentCommands
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
         markBusy?.Invoke(blockingRunId, status);
-        await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
+        await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this session.")).ConfigureAwait(false);
         var hint = IsParkedRunStatus(status)
             ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."
             : $"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.";

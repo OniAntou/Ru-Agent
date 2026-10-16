@@ -163,7 +163,7 @@ public static class ApprovalState
     /// <summary>
     /// True once the approval requested at <paramref name="requestedAt"/> can no
     /// longer be resolved by any client. Callers use this to fail an abandoned
-    /// waiting run instead of leaving it parked with its workspace lock.
+    /// waiting run instead of leaving it parked with its active-session ownership.
     /// </summary>
     public static bool IsExpired(DateTimeOffset requestedAt, DateTimeOffset now) =>
         now - requestedAt > DefaultLifetime;

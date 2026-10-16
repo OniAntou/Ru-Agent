@@ -283,7 +283,7 @@ public sealed class HarnessRecoveryStartupServiceTests
     /// <summary>
     /// One run read fails as it would when the Broker holds the database while the
     /// runtime starts: the sweep must report the parked run so the startup service
-    /// retries instead of leaving the workspace locked until the next restart.
+    /// retries instead of leaving the session blocked until the next restart.
     /// </summary>
     private sealed class FlakyStore(IHarnessEventStore inner) : IHarnessEventStore
     {

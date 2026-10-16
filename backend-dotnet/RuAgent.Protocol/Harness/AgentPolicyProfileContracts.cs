@@ -229,7 +229,7 @@ public static class AgentPolicyProfileCatalog
         (FullAccessPresetWireValue, AgentPolicySubject.WorkspaceTerminal) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.ExternalStructuredFile) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.ExternalTerminal) => AgentPolicyDecision.Allow,
-        (FullAccessPresetWireValue, AgentPolicySubject.StructuredProtectedPath) => AgentPolicyDecision.Deny,
+        (FullAccessPresetWireValue, AgentPolicySubject.StructuredProtectedPath) => AgentPolicyDecision.Allow,
         (FullAccessPresetWireValue, AgentPolicySubject.HardInvalid) => AgentPolicyDecision.Deny,
         _ => null,
     };
@@ -259,6 +259,19 @@ public static class AgentPolicyProfileCatalog
         }
 
         return ProfilesByPreset.TryGetValue(presetWire, out profile);
+    }
+
+    /// <summary>
+    /// Whether this profile treats catalog-protected paths (harness key/database
+    /// files, runtime descriptors, and RU_PROTECTED_PATHS entries) as ordinary
+    /// targets. True only for <c>full_access</c>: the skip-all preset is
+    /// literally full, while plan and standard keep the structured
+    /// protected-path denial.
+    /// </summary>
+    public static bool OpensProtectedPaths(AgentPolicyProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return profile.DecisionFor(AgentPolicySubject.StructuredProtectedPath) == AgentPolicyDecision.Allow;
     }
 
     public static string Describe(AgentPolicySubject subject) => subject switch
@@ -380,7 +393,7 @@ public static class AgentPolicyProfileCatalog
                     new AgentPolicyRule(AgentPolicySubject.WorkspaceTerminal, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.ExternalStructuredFile, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.ExternalTerminal, AgentPolicyDecision.Allow),
-                    new AgentPolicyRule(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Deny),
+                    new AgentPolicyRule(AgentPolicySubject.StructuredProtectedPath, AgentPolicyDecision.Allow),
                     new AgentPolicyRule(AgentPolicySubject.HardInvalid, AgentPolicyDecision.Deny),
                 ]),
         };

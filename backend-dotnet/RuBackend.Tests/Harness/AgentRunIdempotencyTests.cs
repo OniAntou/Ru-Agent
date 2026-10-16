@@ -192,7 +192,7 @@ public sealed class AgentRunIdempotencyTests
     }
 
     [Fact]
-    public async Task Active_workspace_conflict_returns_workspace_busy()
+    public async Task Different_sessions_share_one_workspace_without_configuration()
     {
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
@@ -224,13 +224,45 @@ public sealed class AgentRunIdempotencyTests
         };
 
         using var r2 = await client.PostAsJsonAsync("/agent/v1/runs", body2);
-        Assert.Equal((HttpStatusCode)409, r2.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, r2.StatusCode);
         var j = await r2.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("workspace_busy", j.GetProperty("error_code").GetString());
-        // The client needs the owning run to point the operator at the exact run to
-        // cancel or attach to instead of only reporting a bare busy code.
-        Assert.Equal(blockingRunId, j.GetProperty("blocking_run_id").GetString());
-        Assert.False(string.IsNullOrWhiteSpace(j.GetProperty("blocking_run_status").GetString()));
+        Assert.NotEqual(blockingRunId, j.GetProperty("run_id").GetString());
+        Assert.Equal(created.GetProperty("workspace_id").GetString(), j.GetProperty("workspace_id").GetString());
+        Assert.Equal("waiting_workspace_trust", j.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Parallel_workspaces_cannot_be_disabled_and_keep_each_session_single_run()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var firstSession = await CreateSessionAsync(client);
+        var secondSession = await CreateSessionAsync(client);
+        object Request(string session) => new
+        {
+            session_id = session, workspace_path = tmp.Path, prompt = "independent task",
+            preset = "standard", idempotency_key = Guid.NewGuid().ToString("N"),
+        };
+        using var first = await client.PostAsJsonAsync("/agent/v1/runs", Request(firstSession));
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var firstRun = await first.Content.ReadFromJsonAsync<JsonElement>();
+        string workspaceId = firstRun.GetProperty("workspace_id").GetString()!;
+        string policyUrl = $"/agent/v1/workspaces/{workspaceId}/concurrency";
+        var policy = await client.GetFromJsonAsync<WorkspaceConcurrencyResponse>(policyUrl);
+        Assert.Equal("shared", policy!.Policy.Mode);
+        Assert.Equal(32, policy.Policy.MaxConcurrentRuns);
+        using var disable = await client.PutAsJsonAsync(policyUrl, new WorkspaceConcurrencyUpdateRequest("exclusive", 1));
+        Assert.Equal(HttpStatusCode.Conflict, disable.StatusCode);
+        using var singleSlot = await client.PutAsJsonAsync(policyUrl, new WorkspaceConcurrencyUpdateRequest("shared", 1));
+        Assert.Equal(HttpStatusCode.Conflict, singleSlot.StatusCode);
+        using var second = await client.PostAsJsonAsync("/agent/v1/runs", Request(secondSession));
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        using var duplicateSession = await client.PostAsJsonAsync("/agent/v1/runs", Request(firstSession));
+        Assert.Equal(HttpStatusCode.Conflict, duplicateSession.StatusCode);
+        var existing = await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{firstRun.GetProperty("run_id").GetString()}");
+        Assert.Equal("waiting_workspace_trust", existing.GetProperty("status").GetString());
+        Assert.Equal("standard", existing.GetProperty("preset").GetString());
     }
 
     [Fact]

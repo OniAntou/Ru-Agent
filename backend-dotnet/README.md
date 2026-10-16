@@ -96,13 +96,15 @@ read-only: workspace read and Web auto while terminal and mutation deny outright
 and external structured access asks. `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;
 external structured paths and external launch directories ask. `full_access` is the skip-all mode: external structured
-files and arbitrary terminal auto-allow while structured protected paths
-(harness key/database files and runtime descriptors) and hard-invalid requests
-remain denied. Repository cleanliness and prompt text never change this matrix.
+files, arbitrary terminal, and structured protected paths (harness key/database
+files and runtime descriptors) are allowed automatically, while hard-invalid
+requests remain denied. Repository cleanliness and prompt text never change this matrix.
 
 Workspace trust is explicit once per canonical `WorkspaceIdentity`, independent
 of the session-scoped preset. The Host requires a challenge-bound decision; a
-moved or recreated identity is untrusted again. The GUI presents a guarded
+moved or recreated identity is untrusted again, and the GUI re-asks with a
+one-click "trust again" prompt that names the change while `--trust-workspace`
+re-approves it for scripts. The GUI presents a guarded
 confirmation and CLI `run`/`chat` use `--trust-workspace`. Full Access requires
 the GUI gate or CLI `--confirm-full-access`.
 
@@ -119,8 +121,8 @@ exact launch directory — while flag-first invocations and shell-mode scripts
 stay exact. `rule_asks` and `terminal_protected_path_requires_approval` never
 become a reusable rule. Full Access uses an ephemeral per-call external
 structured root and does not persist a reusable folder grant.
-Canonical/symlink/junction/hard-link checks and structured protected-path
-denial remain active.
+Canonical/symlink/junction/hard-link checks remain active in every preset, and
+the structured protected-path denial stays active in `plan` and `standard`.
 
 Both terminal modes run as the current Windows user, can read or change data
 outside the workspace, and can open sockets. There is no OS-enforced

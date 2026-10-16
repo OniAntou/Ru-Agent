@@ -126,6 +126,8 @@ namespace RuApp.Views
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private string? _requestedWorkspace;
+        /// <summary>Last approved identity hash per workspace path; drives the re-trust copy only.</summary>
+        private readonly WorkspaceTrustMemoryStore _workspaceTrustMemory = new();
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
         private string? _focusedApprovalId;

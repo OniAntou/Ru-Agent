@@ -2,9 +2,17 @@
 title: Workspace terminal permission replaces command-form heuristics
 status: accepted
 date: 2026-10-12
+amended_by: ADR-0021 full access is literally full
+  (`0021-full-access-is-literally-full.md`, accepted 2026-10-17), for the
+  structured protected-path boundary statement only.
 ---
 
 # ADR 0017: Workspace terminal policy
+
+> Amended by [ADR 0021](0021-full-access-is-literally-full.md) on 2026-10-17:
+> `full_access` is literally full, so the structured protected-path denial
+> below applies to `plan` and `standard` only. The terminal classifier and
+> approval reasons in this ADR are unchanged.
 
 ## Context
 
@@ -49,8 +57,9 @@ rather than silently widening them.
 Workspace launch permission is not a restriction on subsequent process effects:
 programs may access outside files and network as the Windows user. This policy
 intentionally allows package installation and network commands in a workspace.
-Structured file tools still deny harness key/database/descriptor paths at every
-preset. Credential storage, child-environment key filtering, diagnostic redaction,
+Structured file tools deny harness key/database/descriptor paths in `plan` and
+`standard` (`full_access` is literally full, ADR-0021). Credential storage,
+child-environment key filtering, diagnostic redaction,
 timeout/output bounds, cancellation and process cleanup are retained. These
 measures do not claim that arbitrary user processes are unable to read credentials.
 

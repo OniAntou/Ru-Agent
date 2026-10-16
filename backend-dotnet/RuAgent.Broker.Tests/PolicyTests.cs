@@ -147,7 +147,7 @@ public sealed class PolicyEvaluationTests
         { "full_access", AgentPolicySubject.WorkspaceTerminal, "allow" },
         { "full_access", AgentPolicySubject.ExternalStructuredFile, "allow" },
         { "full_access", AgentPolicySubject.ExternalTerminal, "allow" },
-        { "full_access", AgentPolicySubject.StructuredProtectedPath, "deny" },
+        { "full_access", AgentPolicySubject.StructuredProtectedPath, "allow" },
         { "full_access", AgentPolicySubject.HardInvalid, "deny" },
     };
 
@@ -364,10 +364,10 @@ public sealed class PolicyEvaluationTests
     }
 
     [Theory]
-    [InlineData("plan")]
-    [InlineData("standard")]
-    [InlineData("full_access")]
-    public void Protected_structured_file_target_remains_a_hard_deny(string preset)
+    [InlineData("plan", "deny", "protected_path")]
+    [InlineData("standard", "deny", "protected_path")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Protected_structured_file_target_follows_the_preset(string preset, string decision, string reasonCode)
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
 
@@ -377,7 +377,8 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
 
-        AssertDeny(evaluation, "protected_path");
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reasonCode, evaluation.ReasonCode);
     }
 
     [Fact]
@@ -1284,7 +1285,7 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, networked, valid, Now).Decision);
 
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
-        AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", "runtime_descriptor.json"), valid, Now), "protected_path");
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", "runtime_descriptor.json"), valid, Now).Decision);
         AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", "a.txt"), Inv(schemaValid: false), Now), "schema_invalid");
     }
 

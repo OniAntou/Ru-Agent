@@ -9,6 +9,14 @@ public static class AgentActivityPalette
     public const double BeamRadius = 0.35;
     public const double TintBlend = 0.85;
 
+    public static Windows.UI.Color SampleSidebarAuroraColor(double u, double center, Windows.UI.Color baseColor)
+    {
+        var wave = SampleAuroraColor(u, center, baseColor);
+        // The bright activity palette needs less tint over the light sidebar;
+        // its pale peak must not wash dark session names into the background.
+        return baseColor.R + baseColor.G + baseColor.B < 384 ? LerpColor(baseColor, wave, 0.4) : wave;
+    }
+
     public static Windows.UI.Color SampleAuroraColor(double u, double center, Windows.UI.Color baseColor)
     {
         double dist = Math.Abs(u - center);

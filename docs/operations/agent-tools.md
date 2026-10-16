@@ -188,9 +188,9 @@ boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, harness-protected path deny |
+| `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
 | `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
-| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, harness-protected path deny; preimage mismatch returns `workspace_changed` |
+| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
@@ -306,8 +306,9 @@ the plan read-only gate still applies, and no grant ever authorizes terminal
 intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
 Structured protected paths (harness key/database files and runtime descriptors,
-plus user-added `RU_PROTECTED_PATHS` entries) remain denied in every preset,
-and canonical, symlink, junction, and hard-link checks stay active. An ambiguous
+plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
+`standard` and allowed in `full_access`, and canonical, symlink, junction, and
+hard-link checks stay active. An ambiguous
 mutation pauses for inspection until explicit Continue.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
@@ -386,15 +387,17 @@ cancellation commit before creating a run for the replacement session. A
 workspace-trust run that was abandoned past its ten-minute trust window is
 cancelled (startup recovery and the running host's drive loop, safe code
 `workspace_trust_expired`), so an interrupted prompt cannot keep the
-workspace's active-run lock indefinitely. The drive loop covers the long-lived
+session's active-run ownership indefinitely. The drive loop covers the long-lived
 desktop host, where no restart would otherwise arrive to notice the expired
 challenge. The same rule covers approvals: a run
 still parked in `WaitingApproval` past the 30-minute approval lifetime fails as
 `approval_expired` (startup recovery and the running host's drive loop), because
 no client can resolve an older approval — the endpoint refuses it as
 `approval_stale`. The gated tool call is pre-dispatch, so failing that run cannot
-roll back a side effect. A `409 workspace_busy` (or the session-scoped variant)
-names the run that owns the resource in `blocking_run_id`/`blocking_run_status`,
+roll back a side effect. Different sessions always run in the same workspace
+without an exclusive workspace lock. The compatibility `409 workspace_busy`
+(or the session-scoped variant) for a second run in the same session
+names the run that owns that session in `blocking_run_id`/`blocking_run_status`,
 so a client can point the operator at the exact run to cancel
 (`ru agent cancel <run-id>`), attach to (`ru agent attach <run-id>`), or — when
 `blocking_run_status` is `waiting_user` or `reconciliation_required` — resume
@@ -459,9 +462,10 @@ arbitrary `bash` as the current Windows user against any path and may open
 sockets, including outside the workspace; terminal execution has no OS
 filesystem/network confinement. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
-cancellation, redaction, and process-tree cleanup. Structured protected paths
-(harness key/database files and runtime descriptors) remain denied, but they do
-not re-impose terminal confinement.
+cancellation, redaction, and process-tree cleanup. The structured protected
+paths (harness key/database files and runtime descriptors) are denied in `plan`
+and `standard` and allowed in `full_access`, but they never re-impose terminal
+confinement.
 
 Background terminal tasks are session-scoped and owned by the execution authority: at most
 `TerminalLimits.MaxBackgroundTasksPerSession` run at once, a task that reaches
@@ -619,9 +623,9 @@ asks. Standard auto-allows workspace mutations and workspace executable/shell la
 external structured targets and external terminal cwd ask. Terminal/git children
 in both execution presets run as the current Windows user without OS
 filesystem/network confinement. Full
-Access is the skip-all mode: external structured files and arbitrary terminal
-auto while only structured protected paths (harness key/database files and
-runtime descriptors) remain denied.
+Access is the skip-all mode: external structured files, arbitrary terminal, and
+structured protected paths (harness key/database files and runtime descriptors)
+are automatic, while hard-invalid requests remain denied.
 
 Workspace trust is not a preset. It is explicit once per canonical identity:
 the GUI requires a guarded Approve action, while CLI `run`/`chat` require
@@ -773,7 +777,8 @@ the exact intent otherwise), and the runtime loop materializes those
 entries as run-scope allow rules when it builds the next policy snapshot for
 the session, so a later matching call — including later in the same run —
 evaluates as allowed without another prompt. The ledger never widens the
-approval: protected-path denials still apply, the Broker still decides every
+approval: protected-path denials (where the preset carries them) still apply,
+the Broker still decides every
 call, external-directory approvals keep the session directory grant (plus the
 durable rule) and write no entry, each
 entry expires after 30 minutes under a per-session cap, and the memory dies

@@ -80,7 +80,7 @@ public sealed partial class AgentCommands
             }
             catch (Exception ex)
             {
-                // The operator must know the run may still hold its workspace: a
+                // The operator must know the run may still hold its session: a
                 // swallowed failure here would resurface later as workspace_busy
                 // with no explanation.
                 await _err.WriteLineAsync($"run_cancel_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);

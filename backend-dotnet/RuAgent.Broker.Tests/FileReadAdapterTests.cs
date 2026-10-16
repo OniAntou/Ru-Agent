@@ -130,11 +130,24 @@ public sealed class FileReadAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Read_protected_path_is_denied()
+    public void Read_protected_path_is_denied_without_the_full_access_flag()
     {
         File.WriteAllText(FullPath("runtime_descriptor.json"), "secret");
         var ex = Assert.Throws<UnauthorizedAccessException>(() => _adapter.Execute(new JsonObject { ["path"] = "runtime_descriptor.json" }));
         Assert.Contains("protected_path", ex.Message);
+    }
+
+    [Fact]
+    public void Read_protected_path_is_allowed_when_the_tool_set_opens_them()
+    {
+        // full_access builds its tool sets with allowProtectedPaths: true, so a
+        // catalog-protected name resolves like any other target in the root.
+        File.WriteAllText(FullPath("runtime_descriptor.json"), "secret");
+        var adapter = new FileReadAdapter(_root, allowProtectedPaths: true);
+
+        var result = adapter.Execute(new JsonObject { ["path"] = "runtime_descriptor.json" });
+
+        Assert.Equal("secret", result["content"]!.GetValue<string>());
     }
 
     [Fact]

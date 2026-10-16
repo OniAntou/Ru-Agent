@@ -10,9 +10,14 @@ public sealed record WorkspaceTrustApiState(
     bool IsTrusted,
     string UpdatedAtUtc);
 
+/// <summary>
+/// Workspace coordination mode carried by <see cref="WorkspaceConcurrencyPolicy"/>.
+/// Only <see cref="Shared"/> is accepted since ADR 0020; a legacy <c>exclusive</c>
+/// value survives only in pre-v19 coordinator rows, which the schema migration
+/// rewrites to the always-parallel default at startup.
+/// </summary>
 public static class WorkspaceConcurrencyMode
 {
-    public const string Exclusive = "exclusive";
     public const string Shared = "shared";
 }
 
@@ -24,19 +29,19 @@ public static class WorkspaceWriterKind
 
 public sealed record WorkspaceConcurrencyPolicy(
     [property: JsonPropertyName("mode")] string Mode,
-    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 1,
+    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 32,
     [property: JsonPropertyName("lease_ttl_seconds")] int LeaseTtlSeconds = 30,
     [property: JsonPropertyName("merge_text_conflicts")] bool MergeTextConflicts = true,
     [property: JsonPropertyName("external_writer_detection")] bool ExternalWriterDetection = true)
 {
     public void Validate()
     {
-        if (Mode is not (WorkspaceConcurrencyMode.Exclusive or WorkspaceConcurrencyMode.Shared))
+        if (Mode != WorkspaceConcurrencyMode.Shared)
         {
             throw new AgentProtocolException("invalid_workspace_concurrency_mode");
         }
 
-        if (MaxConcurrentRuns is < 1 or > 32 || LeaseTtlSeconds is < 5 or > 600)
+        if (MaxConcurrentRuns is < 2 or > 32 || LeaseTtlSeconds is < 5 or > 600)
         {
             throw new AgentProtocolException("invalid_workspace_concurrency_policy");
         }

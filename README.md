@@ -96,7 +96,7 @@ shortcuts and session navigation.
 | --- | --- |
 | `plan` | Explore and plan with read-only tools. |
 | `standard` | Work with the workspace under the standard policy; requests beyond it can require approval. |
-| `full_access` | Allow broader tool access; structured tools still deny protected paths. |
+| `full_access` | Allow broader tool access; external structured files, arbitrary terminal, and structured protected paths are automatic. |
 
 Workspace trust and explicit approvals are part of the workflow. Instructions
 and skills guide the agent; they do not grant execution authority.

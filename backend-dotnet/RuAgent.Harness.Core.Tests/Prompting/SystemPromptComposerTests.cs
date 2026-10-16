@@ -102,19 +102,21 @@ public sealed class SystemPromptComposerTests
     }
 
     [Theory]
-    [InlineData("standard", "terminal_authority: workspace_current_user", "workspace_terminal=allow", "external_terminal=ask")]
-    [InlineData("full_access", "terminal_authority: windows_current_user", "external_terminal=allow", "external_structured_file=allow")]
+    [InlineData("standard", "terminal_authority: workspace_current_user", "workspace_terminal=allow", "external_terminal=ask", "structured_protected_path=deny")]
+    [InlineData("full_access", "terminal_authority: windows_current_user", "external_terminal=allow", "external_structured_file=allow", "structured_protected_path=allow")]
     public void Compose_projects_the_canonical_effective_policy_summary(
         string preset,
         string terminalAuthority,
         string boundedTerminal,
-        string externalFile)
+        string externalFile,
+        string protectedPath)
     {
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(preset: preset));
 
         Assert.Contains(terminalAuthority, snapshot.Text, StringComparison.Ordinal);
         Assert.Contains(boundedTerminal, snapshot.Text, StringComparison.Ordinal);
         Assert.Contains(externalFile, snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains(protectedPath, snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]

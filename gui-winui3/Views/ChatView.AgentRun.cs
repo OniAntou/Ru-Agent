@@ -378,11 +378,13 @@ namespace RuApp.Views
             Exception? failure = null;
             try
             {
+                var prompt = WorkspaceTrustPromptPolicy.For(
+                    _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash));
                 var dialog = new ContentDialog
                 {
-                    Title = "Trust this workspace?",
-                    Content = "This run needs explicit workspace trust before it can start. Approve only if you trust this workspace and the Coding Agent.",
-                    PrimaryButtonText = "Approve",
+                    Title = prompt.Title,
+                    Content = prompt.Content,
+                    PrimaryButtonText = prompt.PrimaryButtonText,
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
                     XamlRoot = XamlRoot,
@@ -403,6 +405,10 @@ namespace RuApp.Views
                 if (result == ContentDialogResult.Primary)
                 {
                     await controller.TrustAsync(approve: true);
+                    // Only an accepted approval reaches this line: the client throws
+                    // on a rejected decision, so the memory cannot claim a trust the
+                    // Host never recorded.
+                    _workspaceTrustMemory.Remember(_agentWorkspace, run.DisplayIdentityHash);
                 }
                 else
                 {

@@ -391,8 +391,8 @@ read and Web but denies terminal and mutation outright (read-only, no
 per-change asks) and asks for external structured access; `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;
 external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
-structured files and arbitrary terminal auto-allow while structured protected
-paths (harness key/database files and runtime descriptors) and hard-invalid
+structured files, arbitrary terminal, and structured protected paths (harness
+key/database files and runtime descriptors) are automatic, while hard-invalid
 requests remain denied.
 Repository cleanliness never changes the decision.
 
@@ -409,7 +409,9 @@ uses launch-directory permission under ADR-0017, with explicit ask/deny rules;
 Full Access also permits external launch directories. The
 `bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
 Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
-remain. Structured file tools retain their independent path protections. API
+remain. Structured file tools retain their independent path protections: the
+protected-path denial holds in `plan` and `standard`, and `full_access` is
+literally full. API
 keys remain in credential storage and diagnostics redact secrets.
 Web is automatic in all canonical presets; `web_approval_required` remains only
 as an explicit-rule compatibility reason.
@@ -467,7 +469,8 @@ materialized as a run-scope allow rule into the session's later policy
 snapshots, so an identical call — including later in the same run — evaluates
 as allowed without another prompt. The memory is in-process, expires and is
 capped per session, and dies with the session or a host restart; protected-path
-denials and Broker evaluation still decide every call. A
+denials (where the preset carries them) and Broker evaluation still decide
+every call. A
 repeated `policy_denied` tool receipt followed by prose is not an approval
 decision: it may still take the bounded `unverified_after_tool_failure` notes,
 with the denial code as the terminal code.

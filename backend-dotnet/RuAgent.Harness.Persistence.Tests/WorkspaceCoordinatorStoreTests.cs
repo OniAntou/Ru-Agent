@@ -21,7 +21,8 @@ public sealed class WorkspaceCoordinatorStoreTests
         var firstSequence = await AppendChangeSequenceAsync(store, identity.WorkspaceId, protector, "chg_41_a", "src/a.cs");
         var secondSequence = await AppendChangeSequenceAsync(store, identity.WorkspaceId, protector, "chg_41_b", "src/b.cs");
 
-        Assert.Equal("exclusive", first.Mode);
+        Assert.Equal("shared", first.Mode);
+        Assert.Equal(32, first.MaxConcurrentRuns);
         Assert.Equal(first, second);
         Assert.Equal(1, firstSequence);
         Assert.Equal(2, secondSequence);
@@ -250,12 +251,14 @@ public sealed class WorkspaceCoordinatorStoreTests
         var store = new WorkspaceCoordinatorStore(fixture.Options);
         var workspaceId = new WorkspaceId("ws_00000000000000000000000000000030");
         var policy = await store.GetOrCreateAsync(workspaceId, CancellationToken.None);
-        await store.UpdatePolicyAsync(workspaceId, policy.Version, "shared", 1, 30, true, true, CancellationToken.None);
+        await store.UpdatePolicyAsync(workspaceId, policy.Version, "shared", 2, 30, true, true, CancellationToken.None);
         var first = fixture.NewRun(48, 48, 48);
         var second = fixture.NewRun(49, 49, 48);
+        var third = fixture.NewRun(50, 50, 48);
         var eventStore = fixture.CreateEventStore();
         Assert.Equal(CreateRunOutcome.Created, (await eventStore.TryCreateRunAsync(first, CancellationToken.None)).Outcome);
         Assert.Equal(CreateRunOutcome.Created, (await eventStore.TryCreateRunAsync(second, CancellationToken.None)).Outcome);
+        Assert.Equal(CreateRunOutcome.Created, (await eventStore.TryCreateRunAsync(third, CancellationToken.None)).Outcome);
         var now = DateTimeOffset.UtcNow;
 
         var membership = await store.AcquireRunMembershipAsync(
@@ -266,9 +269,11 @@ public sealed class WorkspaceCoordinatorStoreTests
             TimeSpan.FromSeconds(10),
             CancellationToken.None);
         Assert.Equal("active", membership.State);
+        await store.AcquireRunMembershipAsync(second.Run.WorkspaceId, second.Run.RunId,
+            "ru_peer", now, TimeSpan.FromSeconds(10), CancellationToken.None);
         await Assert.ThrowsAsync<HarnessStoreException>(() => store.AcquireRunMembershipAsync(
-            second.Run.WorkspaceId,
-            second.Run.RunId,
+            third.Run.WorkspaceId,
+            third.Run.RunId,
             "ru_peer",
             now,
             TimeSpan.FromSeconds(10),
@@ -277,13 +282,13 @@ public sealed class WorkspaceCoordinatorStoreTests
         await store.ReleaseRunMembershipAsync(first.Run.WorkspaceId, first.Run.RunId, now, CancellationToken.None);
         await store.ReleaseRunMembershipAsync(first.Run.WorkspaceId, first.Run.RunId, now, CancellationToken.None);
         var released = await store.AcquireRunMembershipAsync(
-            second.Run.WorkspaceId,
-            second.Run.RunId,
+            third.Run.WorkspaceId,
+            third.Run.RunId,
             "ru_peer",
             now,
             TimeSpan.FromSeconds(10),
             CancellationToken.None);
-        Assert.Equal(second.Run.RunId.Value, released.RunId);
+        Assert.Equal(third.Run.RunId.Value, released.RunId);
     }
 
     [Fact]

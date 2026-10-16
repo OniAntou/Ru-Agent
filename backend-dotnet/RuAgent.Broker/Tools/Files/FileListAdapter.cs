@@ -9,11 +9,11 @@ public sealed class FileListAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
-    public FileListAdapter(string workspaceRoot)
+    public FileListAdapter(string workspaceRoot, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
     }
 
     public JsonObject Execute(JsonObject arguments)

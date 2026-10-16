@@ -3,7 +3,7 @@ using RuApp.Models;
 namespace RuApp.Services;
 
 /// <summary>One directory level's listing and whether the cap cut it short.</summary>
-public sealed record FileTreeListing(IReadOnlyList<FileTreeRow> Rows, bool Truncated);
+public sealed record FileTreeListing(IReadOnlyList<FileTreeRow> Rows, bool Truncated, bool InstallationFilesHidden = false);
 
 /// <summary>
 /// Lists one directory level for the side panel's Files tab: folders first,
@@ -30,8 +30,11 @@ public static class FileTreeLister
 
     public static FileTreeListing List(string directoryPath, int depth, int maxEntries = MaxEntriesPerDirectory)
     {
+        directoryPath = Path.GetFullPath(directoryPath);
         var entries = new List<FileTreeRow>();
+        var installation = InstalledFileTreeFilter.ForDirectory(directoryPath);
         bool truncated = false;
+        bool installationFilesHidden = false;
         foreach (var path in Directory.EnumerateFileSystemEntries(directoryPath))
         {
             string name;
@@ -57,6 +60,11 @@ public static class FileTreeLister
             {
                 continue;
             }
+            if ((!isDirectory || canExpand) && installation?.Hides(path, isDirectory) == true)
+            {
+                installationFilesHidden = true;
+                continue;
+            }
 
             if (entries.Count >= maxEntries)
             {
@@ -68,7 +76,7 @@ public static class FileTreeLister
         }
 
         entries.Sort(Compare);
-        return new FileTreeListing(entries, truncated);
+        return new FileTreeListing(entries, truncated, installationFilesHidden);
     }
 
     private static int Compare(FileTreeRow left, FileTreeRow right)

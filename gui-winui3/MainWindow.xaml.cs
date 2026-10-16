@@ -248,7 +248,7 @@ namespace RuApp
                 return;
             }
 
-            _sidebarAppRoot = projectRoot;
+            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
             InitializeSidebarMotion();
             // Section chrome and persisted workspace pins do not depend on a
             // successful session fetch or a change in the session fingerprint.
@@ -291,7 +291,7 @@ namespace RuApp
                     _composition.HarnessEvents,
                     _composition.HarnessScenario,
                     _agentController,
-                    projectRoot,
+                    _sidebarAppRoot,
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
@@ -762,7 +762,7 @@ namespace RuApp
 
         private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
         {
-            _sidebarAppRoot = projectRoot;
+            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
             StatusDot.Fill = successBrush;

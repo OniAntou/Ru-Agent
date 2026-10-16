@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Default new work to the parent of Ru's application root while keeping backend discovery, explicit workspaces and existing sessions unchanged. Hide installer-owned files in the Files tree using `ru-files.lst`; retain user files and mixed subfolders instead of filtering binary extensions.
 - **fix(gui)**: Position opened sessions at the latest message and anchor the real final row as nested activity layouts settle. Keep automatic follow unanimated so obsolete native scroll animations cannot move a replacement transcript. Release the anchor on reader input and resume only at the actual bottom.
 - **fix(gui)**: Show activity rows immediately when loading history or recycling transcript items instead of fading and sliding them in again. Keep the running-label sweep and its reduced-motion setting.
 - **fix(gui)**: Keep outgoing chat rows intact while loading another session, then replace the transcript without per-row entrance/exit animations. Ignore sends and rewind while history is loading; a failed load shows its own error instead of mixing sessions.

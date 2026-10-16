@@ -64,7 +64,9 @@ namespace RuApp.Controls
             }
             foreach (var row in listing.Rows) Files.Add(row);
             if (listing.Truncated) Files.Add(FileTreeRow.Note("… more entries not listed", 0));
-            ShowFilesStatus(Files.Count == 0 ? "This folder is empty." : null);
+            ShowFilesStatus(listing.InstallationFilesHidden
+                ? "Application files hidden. Your files remain visible."
+                : Files.Count == 0 ? "This folder is empty." : null);
         }
 
         private async void OnFileRowClick(object sender, ItemClickEventArgs e)

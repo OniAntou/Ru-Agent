@@ -89,6 +89,13 @@ The GUI's `ChatSessionPresentation` owns the active session identity, asynchrono
 open/load cancellation, run-monitor lifetime and once-per-turn completion.
 It keeps the latest session click authoritative; WinUI renders the transcript
 and retains/restores composer drafts through that owner.
+New GUI sessions without an explicitly selected workspace use the parent of the
+application working root; backend startup still uses the application root.
+Explicit selections, restored sessions and harness workspaces retain their paths.
+The Files tree hides installer-owned payload using `ru-install.json` and
+`ru-files.lst`, including payload-only subfolders. Unknown files and mixed folders
+remain visible; unreadable or missing inventories leave files visible. This is
+presentation filtering, not execution permission or filesystem confinement.
 During history I/O the outgoing transcript stays intact; replacement happens as
 one collection reset without row entrance/exit transitions. Sends and rewind
 wait until the current session load finishes.

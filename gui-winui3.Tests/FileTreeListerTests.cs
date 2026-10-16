@@ -85,6 +85,62 @@ public sealed class FileTreeListerTests
     }
 
     [Fact]
+    public void Installed_payload_is_hidden_but_user_files_and_mixed_subfolders_remain()
+    {
+        var root = TempRoot();
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "runtime"));
+            Directory.CreateDirectory(Path.Combine(root, "mixed"));
+            File.WriteAllText(Path.Combine(root, "ru-install.json"), "{}");
+            File.WriteAllLines(Path.Combine(root, "ru-files.lst"), new[]
+            {
+                "RuApp.exe", @"runtime\framework.dll", @"mixed\owned.dll", @"..\outside.txt",
+            });
+            foreach (string name in new[] { "RuApp.exe", @"runtime\framework.dll", @"mixed\owned.dll", @"mixed\work.txt", "my-output.exe", "report.md" })
+                File.WriteAllText(Path.Combine(root, name), string.Empty);
+
+            var listing = FileTreeLister.List(root, depth: 0);
+            Assert.Equal(new[] { "mixed", "my-output.exe", "report.md" }, listing.Rows.Select(row => row.Name));
+            var expanded = FileTreeLister.List(Path.Combine(root, "mixed"), depth: 1);
+            Assert.Equal(new[] { "work.txt" }, expanded.Rows.Select(row => row.Name));
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void Missing_inventory_does_not_guess_from_binary_extensions()
+    {
+        var root = TempRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, "ru-install.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "RuApp.exe"), string.Empty);
+            File.WriteAllText(Path.Combine(root, "custom.dll"), string.Empty);
+            Assert.Contains(FileTreeLister.List(root, 0).Rows, row => row.Name == "RuApp.exe");
+            Assert.Contains(FileTreeLister.List(root, 0).Rows, row => row.Name == "custom.dll");
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void An_inventory_without_installation_marker_does_not_hide_project_files()
+    {
+        var root = TempRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, "ru-files.lst"), "project.dll");
+            File.WriteAllText(Path.Combine(root, "project.dll"), string.Empty);
+            var listing = FileTreeLister.List(root, 0);
+            Assert.False(listing.InstallationFilesHidden);
+            Assert.Contains(listing.Rows, row => row.Name == "project.dll");
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
     public void Rows_carry_their_depth_and_icon()
     {
         var row = new FileTreeRow("src", @"C:\x\src", isDirectory: true, canExpand: true, depth: 2);

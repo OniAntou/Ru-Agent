@@ -136,7 +136,7 @@ public sealed partial class TgTranscriptView : View
             text += " · ctrl+o";
         var bounded = BoundLine(text);
         _retainedCharacters += CharacterCount(bounded) - CharacterCount(_lines[index].Text);
-        _lines[index] = (bounded, TranscriptStyle.Tool);
+        _lines[index] = new TgTranscriptRow(bounded, TranscriptStyle.Tool);
         _wrapWidth = -1;
         EnforceRetention();
         SetNeedsDraw();

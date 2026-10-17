@@ -49,7 +49,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
     {
         var runId = new RunId("run_" + new string('5', 32));
         var snapshot = Snapshot(1);
-        var first = Create(runId, snapshot, "session-inprocess-reuse");
+        var first = await Create(runId, snapshot, "session-inprocess-reuse");
 
         var proposal = ExternalReadProposal(runId);
         var ask = await first.EvaluateAsync(proposal, CancellationToken.None);
@@ -63,7 +63,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
 
         // Same scope: the same gateway comes back and its cached approval
         // state survives, so the resumed proposal allows without a new ask.
-        var replacement = Create(runId, snapshot, "session-inprocess-reuse");
+        var replacement = await Create(runId, snapshot, "session-inprocess-reuse");
         Assert.Same(first, replacement);
         var resumed = await replacement.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, resumed.Decision);
@@ -72,14 +72,14 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         // the old cached approval/token are gone (the new policy never saw
         // the intent).
         var generationBeforeRebind = first.Lease.Generation;
-        var changed = Create(runId, Snapshot(2), "session-inprocess-reuse");
+        var changed = await Create(runId, Snapshot(2), "session-inprocess-reuse");
         Assert.Same(first, changed);
         Assert.True(changed.Lease.Generation > generationBeforeRebind);
         Assert.Equal(2, changed.Lease.PolicyVersion);
         var reevaluated = await changed.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, reevaluated.Decision);
 
-        _fixture.Factory.CloseRun(runId.Value);
+        await _fixture.Factory.CloseRunAsync(runId.Value);
     }
 
     [Fact]
@@ -93,21 +93,21 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         var runId = new RunId("run_" + new string('6', 32));
         var snapshot = Snapshot(1);
         File.WriteAllText(Path.Combine(_fixture.WorkspaceRoot, "notes.txt"), "in-process");
-        var first = Create(runId, snapshot, "session-inprocess-a");
+        var first = await Create(runId, snapshot, "session-inprocess-a");
         Assert.Equal("session-inprocess-a", first.Lease.SessionId);
 
         var proposal = WorkspaceReadProposal(runId);
         var initial = await first.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, initial.Decision);
 
-        var rebound = Create(runId, snapshot, agentSessionId: null);
+        var rebound = await Create(runId, snapshot, agentSessionId: null);
         Assert.Same(first, rebound);
         Assert.Equal("session_" + runId.Value, rebound.Lease.SessionId);
 
         var afterRebind = await rebound.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, afterRebind.Decision);
 
-        _fixture.Factory.CloseRun(runId.Value);
+        await _fixture.Factory.CloseRunAsync(runId.Value);
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         var snapshot = Snapshot(1);
         var writePath = Path.Combine(_fixture.WorkspaceRoot, "toctou.txt");
         File.WriteAllText(writePath, "before");
-        var gateway = Create(runId, snapshot, "session-inprocess-generation");
+        var gateway = await Create(runId, snapshot, "session-inprocess-generation");
 
         var proposal = new ToolProposal(
             runId,
@@ -138,7 +138,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         Assert.Equal(PolicyDecision.Allow, allow.Decision);
         Assert.Equal(allow.GatewayGeneration, gateway.Lease.Generation);
 
-        var rebound = Create(runId, Snapshot(2), "session-inprocess-generation");
+        var rebound = await Create(runId, Snapshot(2), "session-inprocess-generation");
         Assert.Same(gateway, rebound);
         Assert.True(rebound.Lease.Generation > allow.GatewayGeneration);
 
@@ -152,7 +152,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         Assert.Equal("broker_lease_generation_changed", error.Message);
         Assert.Equal("before", await File.ReadAllTextAsync(writePath));
 
-        _fixture.Factory.CloseRun(runId.Value);
+        await _fixture.Factory.CloseRunAsync(runId.Value);
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
     {
         var runId = new RunId("run_" + new string('c', 32));
         const string sessionId = "session-inprocess-close";
-        Create(runId, Snapshot(1), sessionId);
+        await Create(runId, Snapshot(1), sessionId);
         Assert.True(_fixture.Session.Owns(sessionId));
         Assert.True(_fixture.Session.TryGetRunLease(runId.Value, out _));
 
@@ -209,10 +209,10 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
     {
         var runId = new RunId("run_" + new string('d', 32));
         const string sessionId = "session-inprocess-close-run";
-        Create(runId, Snapshot(1), sessionId);
+        await Create(runId, Snapshot(1), sessionId);
         Assert.True(_fixture.Session.TryGetRunLease(runId.Value, out _));
 
-        _fixture.Factory.CloseRun(runId.Value);
+        await _fixture.Factory.CloseRunAsync(runId.Value);
 
         // The run teardown released the authority lease; the session itself
         // stays open for any other run of the chat.
@@ -221,7 +221,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
     }
 
     [Fact]
-    public void Create_throws_when_snapshot_hash_is_missing()
+    public async Task Create_throws_when_snapshot_hash_is_missing()
     {
         var runId = new RunId("run_" + new string('7', 32));
         var snapshot = new PolicySnapshot(
@@ -236,8 +236,8 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
             DateTimeOffset.UtcNow,
             string.Empty);
 
-        Assert.Throws<InvalidOperationException>(
-            () => _fixture.Factory.Create(_fixture.WorkspaceRoot, snapshot, runId, "session-inprocess-hash"));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _fixture.Factory.CreateAsync(_fixture.WorkspaceRoot, snapshot, runId, "session-inprocess-hash", CancellationToken.None));
     }
 
     [Fact]
@@ -246,7 +246,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         var runId = new RunId("run_" + new string('8', 32));
         var writePath = Path.Combine(_fixture.WorkspaceRoot, "racing.txt");
         File.WriteAllText(writePath, "before");
-        var gateway = Create(runId, Snapshot(1), "session-inprocess-racing");
+        var gateway = await Create(runId, Snapshot(1), "session-inprocess-racing");
         var proposal = new ToolProposal(
             runId,
             new ModelStepId("step_" + new string('0', 32)),
@@ -274,7 +274,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         // A rebind rotates the generation and drops the prepared execution, so
         // executing the stale preparation must fail closed without touching
         // the file.
-        var rebound = Create(runId, Snapshot(2), "session-inprocess-racing");
+        var rebound = await Create(runId, Snapshot(2), "session-inprocess-racing");
         Assert.Same(gateway, rebound);
 
         var receipt = await rebound.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
@@ -283,15 +283,39 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
         Assert.Equal("decision_stale", receipt.Code);
         Assert.Equal("before", await File.ReadAllTextAsync(writePath));
 
-        _fixture.Factory.CloseRun(runId.Value);
+        await _fixture.Factory.CloseRunAsync(runId.Value);
     }
 
-    private global::RuBackend.Harness.Broker.InProcessToolGateway Create(
+    [Fact]
+    public async Task CreateAsync_propagates_cancellation_and_leaves_no_lease()
+    {
+        // The run never drives: a cancelled token must refuse the create
+        // closed through the runtime's own open path, and must not leave
+        // Host-side lease or gateway state behind.
+        var runId = new RunId("run_" + new string('e', 32));
+        var snapshot = Snapshot(1);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _fixture.Factory.CreateAsync(
+                _fixture.WorkspaceRoot,
+                snapshot,
+                runId,
+                "session-inprocess-cancel",
+                cancellation.Token));
+        Assert.False(_fixture.Session.TryGetRunLease(runId.Value, out _));
+        Assert.False(_fixture.Session.Owns("session-inprocess-cancel"));
+
+        await _fixture.Factory.CloseRunAsync(runId.Value);
+    }
+
+    private async Task<global::RuBackend.Harness.Broker.InProcessToolGateway> Create(
         RunId runId,
         PolicySnapshot snapshot,
         string? agentSessionId) =>
         Assert.IsType<global::RuBackend.Harness.Broker.InProcessToolGateway>(
-            _fixture.Factory.Create(_fixture.WorkspaceRoot, snapshot, runId, agentSessionId));
+            await _fixture.Factory.CreateAsync(_fixture.WorkspaceRoot, snapshot, runId, agentSessionId, CancellationToken.None));
 
     private ToolProposal ExternalReadProposal(RunId runId) =>
         new(

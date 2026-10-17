@@ -91,10 +91,6 @@ public sealed class WorkspaceWatchLifetimeTests
         public TaskCompletionSource<bool> SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> ReleaseFirst { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null,
-            RunId? runId = null, string? agentSessionId = null, ContextBudgetPolicy? contextBudgetPolicy = null) =>
-            throw new NotSupportedException();
-
         public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null,
             RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)
         {

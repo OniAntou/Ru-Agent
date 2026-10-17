@@ -200,8 +200,36 @@ public static class AgentPolicyProfileCatalog
         AgentPolicyDecision decision) =>
         CanonicalDecision(preset, subject) == decision;
 
-    private static bool IsKnownPreset(string preset) =>
+    /// <summary>
+    /// Whether <paramref name="preset"/> is an exact canonical wire value
+    /// (plan / standard / full_access). Wire-facing payloads validate with
+    /// this: no trim, no case folding, no alias — only the values the
+    /// protocol carries between Host and runtime.
+    /// </summary>
+    public static bool IsKnownPreset(string? preset) =>
         preset is PlanPresetWireValue or StandardPresetWireValue or FullAccessPresetWireValue;
+
+    /// <summary>
+    /// Normalizes a locally-typed preset selection from a CLI flag, RPC
+    /// parameter or Host request body to its canonical wire value: surrounding
+    /// whitespace trimmed, case folded, the historical "full" alias resolved
+    /// to full_access. Unknown or blank input fails with an empty out value.
+    /// </summary>
+    public static bool TryNormalizePresetInput(string? raw, out string preset)
+    {
+        preset = raw is null
+            ? string.Empty
+            : raw.Trim().ToLowerInvariant();
+        preset = preset switch
+        {
+            PlanPresetWireValue => PlanPresetWireValue,
+            StandardPresetWireValue => StandardPresetWireValue,
+            FullAccessPresetWireValue => FullAccessPresetWireValue,
+            BrokerPolicyContracts.FullAccessInputAlias => FullAccessPresetWireValue,
+            _ => string.Empty,
+        };
+        return preset.Length != 0;
+    }
 
     private static AgentPolicyDecision? CanonicalDecision(
         string preset,

@@ -58,7 +58,7 @@ public sealed record BrokerRunLeaseRequest(
             throw new AgentProtocolException("invalid_display_hash");
         }
 
-        if (Preset is not ("plan" or "standard" or "full_access"))
+        if (!AgentPolicyProfileCatalog.IsKnownPreset(Preset))
         {
             throw new AgentProtocolException("invalid_preset");
         }

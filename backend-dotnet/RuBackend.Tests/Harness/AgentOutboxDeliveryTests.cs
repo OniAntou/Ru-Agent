@@ -14,8 +14,6 @@ public sealed class AgentOutboxDeliveryTests
 {
     private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
     {
-        public AgentRunCoordinator Create(string workspaceRoot, RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,
-            RunId? runId = null, string? agentSessionId = null, RuAgent.Harness.Core.Context.ContextBudgetPolicy? contextBudgetPolicy = null) => throw new InvalidOperationException("Terminal history must not recreate runtime.");
         public Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,
             RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Terminal history must not recreate runtime.");
         public void DropRetainedApproval(RunId runId) { }

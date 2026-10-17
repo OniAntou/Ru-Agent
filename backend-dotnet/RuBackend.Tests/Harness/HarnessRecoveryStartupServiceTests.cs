@@ -233,17 +233,6 @@ public sealed class HarnessRecoveryStartupServiceTests
 
         public int Calls => Volatile.Read(ref _calls);
 
-        public AgentRunCoordinator Create(
-            string workspaceRoot,
-            RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,
-            RunId? runId = null,
-            string? agentSessionId = null,
-            RuAgent.Harness.Core.Context.ContextBudgetPolicy? contextBudgetPolicy = null)
-        {
-            Interlocked.Increment(ref _calls);
-            throw new NotSupportedException("the test only observes drive attempts");
-        }
-
         public Task<AgentRunCoordinator> CreateAsync(
             string workspaceRoot,
             RuAgent.Harness.Core.Policy.PolicySnapshot? policySnapshot = null,

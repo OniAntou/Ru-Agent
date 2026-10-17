@@ -1027,7 +1027,7 @@ public sealed class HarnessRecoveryScannerTests
                 [],
                 DateTimeOffset.UtcNow);
             authorityA = new InProcessExecutionFixture(workspaceRoot);
-            var gatewayA = authorityA.Factory.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value);
+            var gatewayA = await authorityA.Factory.CreateAsync(workspaceRoot, snapshot, run.RunId, run.SessionId.Value, CancellationToken.None);
             var model = new RestartModelRunner(externalFile);
             var first = NewRestartCoordinator(
                 model,
@@ -1059,7 +1059,7 @@ public sealed class HarnessRecoveryScannerTests
             authorityA.Dispose();
             authorityA = null;
             authorityB = new InProcessExecutionFixture(workspaceRoot);
-            var gatewayB = authorityB.Factory.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value);
+            var gatewayB = await authorityB.Factory.CreateAsync(workspaceRoot, snapshot, run.RunId, run.SessionId.Value, CancellationToken.None);
             var second = NewRestartCoordinator(
                 model,
                 gatewayB,
@@ -1480,14 +1480,6 @@ public sealed class HarnessRecoveryScannerTests
 
     private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
     {
-        public AgentRunCoordinator Create(
-            string workspaceRoot,
-            PolicySnapshot? policySnapshot = null,
-            RunId? runId = null,
-            string? agentSessionId = null,
-            ContextBudgetPolicy? contextBudgetPolicy = null) =>
-            throw new NotSupportedException();
-
         public Task<AgentRunCoordinator> CreateAsync(
             string workspaceRoot,
             PolicySnapshot? policySnapshot = null,

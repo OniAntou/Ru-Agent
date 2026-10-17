@@ -12,6 +12,12 @@ public static class BrokerPolicyContracts
     public const string StandardPresetWireValue = "standard";
     public const string FullAccessPresetWireValue = "full_access";
 
+    /// <summary>
+    /// Locally-typed alias for the full-access preset: historical CLI and Host
+    /// request input accepted "full"; never carried on the wire.
+    /// </summary>
+    public const string FullAccessInputAlias = "full";
+
     public const string AllowWireValue = "allow";
     public const string AskWireValue = "ask";
     public const string DenyWireValue = "deny";

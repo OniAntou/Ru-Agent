@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Microsoft.UI.Dispatching;
+using RuApp.Services;
 
 namespace RuApp.Views;
 
@@ -33,11 +34,27 @@ public sealed partial class ChatView
 
     private async void OnSidePanelTaskTimerTick(DispatcherQueueTimer timer, object args)
     {
-        if (!_taskRefreshInProgress) await RefreshAgentTasksAsync();
+        try
+        {
+            if (!_taskRefreshInProgress) await RefreshAgentTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Side panel task tick failed: {ex.Message}");
+        }
     }
 
-    private async void OnSidePanelTasksRefreshRequested(object? sender, EventArgs args) =>
-        await RefreshAgentTasksAsync();
+    private async void OnSidePanelTasksRefreshRequested(object? sender, EventArgs args)
+    {
+        try
+        {
+            await RefreshAgentTasksAsync();
+        }
+        catch (Exception ex)
+        {
+            GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Side panel task refresh failed: {ex.Message}");
+        }
+    }
 
     private void StopTaskRefreshTimer()
     {

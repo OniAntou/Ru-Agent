@@ -66,11 +66,12 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
         _fixtures.Add(fixture);
         var runId = new RunId("run_" + new string('a', 31) + "1");
         const string sessionId = "session-concurrency";
-        var gateway = fixture.Factory.Create(
+        var gateway = await fixture.Factory.CreateAsync(
             fixture.WorkspaceRoot,
             Snapshot(StandardPreset),
             runId,
-            sessionId);
+            sessionId,
+            CancellationToken.None);
         var first = gateway.EvaluateAsync(
             ListProposal(runId, "provider_call_1"),
             CancellationToken.None);
@@ -93,12 +94,12 @@ public sealed class InProcessToolGatewayConformanceTests : ToolGatewayConformanc
         // The shared suite builds proposals with a fixed run id; the factory
         // opens its lease for that same run so approval state keys line up.
         var runId = new RunId("run_" + new string('0', 32));
-        var gateway = fixture.Factory.Create(
+        return fixture.Factory.CreateAsync(
             workspaceRoot,
             Snapshot(preset),
             runId,
-            agentSessionId: "session-conformance");
-        return Task.FromResult(gateway);
+            agentSessionId: "session-conformance",
+            CancellationToken.None);
     }
 
     private static ToolProposal ListProposal(RunId runId, string providerCallId) =>

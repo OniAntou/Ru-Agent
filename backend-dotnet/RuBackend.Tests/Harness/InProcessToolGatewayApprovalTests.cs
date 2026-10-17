@@ -45,7 +45,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
     [Fact]
     public async Task Ask_session_directory_grant_resumes_executes_and_replays_through_the_grant()
     {
-        var gateway = CreateGateway();
+        var gateway = await CreateGateway();
         var ask = await gateway.EvaluateAsync(ReadProposal(), CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, ask.Decision);
         Assert.Equal("external_directory_required", ask.SafeCode);
@@ -84,7 +84,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
     [Fact]
     public async Task RevokeApproval_denies_pending_and_unknown_answers_false()
     {
-        var gateway = CreateGateway();
+        var gateway = await CreateGateway();
         var ask = await gateway.EvaluateAsync(ReadProposal(), CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, ask.Decision);
 
@@ -102,7 +102,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
     [Fact]
     public async Task Factory_lists_session_tasks_and_revokes_grants()
     {
-        CreateGateway();
+        await CreateGateway();
 
         var tasks = await _fixture.Factory.ListSessionTasksAsync(
             _runId.Value,
@@ -134,7 +134,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
     [Fact]
     public async Task RespondApprovalAsync_unknown_approval_answers_false()
     {
-        CreateGateway();
+        await CreateGateway();
 
         var (authorized, token) = await _fixture.Factory.RespondApprovalAsync(
             _runId.Value,
@@ -158,7 +158,7 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
         var notePath = Path.Combine(externalDir, "note.md");
         try
         {
-            var gateway = CreateGateway();
+            var gateway = await CreateGateway();
             var editProposal = new ToolProposal(
                 _runId,
                 new ModelStepId("step_" + new string('0', 32)),
@@ -271,13 +271,14 @@ public sealed class InProcessToolGatewayApprovalTests : IDisposable
         return await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
     }
 
-    private global::RuBackend.Harness.Broker.InProcessToolGateway CreateGateway() =>
+    private async Task<global::RuBackend.Harness.Broker.InProcessToolGateway> CreateGateway() =>
         Assert.IsType<global::RuBackend.Harness.Broker.InProcessToolGateway>(
-            _fixture.Factory.Create(
+            await _fixture.Factory.CreateAsync(
                 _fixture.WorkspaceRoot,
                 Snapshot(),
                 _runId,
-                agentSessionId: "session-inprocess-approval"));
+                agentSessionId: "session-inprocess-approval",
+                CancellationToken.None));
 
     private ToolProposal ReadProposal() =>
         new(

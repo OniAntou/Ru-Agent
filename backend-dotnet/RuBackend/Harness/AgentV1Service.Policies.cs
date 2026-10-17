@@ -557,12 +557,17 @@ public sealed partial class AgentV1Service
                 return BoundedError(400, "invalid_preset", "preset required.");
             }
 
-            var presetRaw = presetProp.GetString()!.Trim().ToLowerInvariant();
-            AgentPermissionPreset preset;
-            if (presetRaw == "plan") preset = AgentPermissionPreset.Plan;
-            else if (presetRaw == "standard") preset = AgentPermissionPreset.Standard;
-            else if (presetRaw == "full_access" || presetRaw == "full") preset = AgentPermissionPreset.FullAccess;
-            else return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
+            if (!AgentPolicyProfileCatalog.TryNormalizePresetInput(presetProp.GetString()!, out var normalizedPreset))
+            {
+                return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
+            }
+
+            var preset = normalizedPreset switch
+            {
+                AgentPolicyProfileCatalog.PlanPresetWireValue => AgentPermissionPreset.Plan,
+                AgentPolicyProfileCatalog.StandardPresetWireValue => AgentPermissionPreset.Standard,
+                _ => AgentPermissionPreset.FullAccess,
+            };
 
             long expectedVersion = 0;
             if (body.TryGetProperty("expected_version", out var verProp))

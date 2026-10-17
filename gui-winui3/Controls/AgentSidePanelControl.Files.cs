@@ -44,7 +44,14 @@ namespace RuApp.Controls
 
         private async void OnFilesRefreshClick(object sender, RoutedEventArgs e)
         {
-            await RefreshFilesAsync();
+            try
+            {
+                await RefreshFilesAsync();
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[AgentSidePanel] Files refresh failed: {ex.Message}");
+            }
         }
 
         private Task RefreshFilesAsync()
@@ -71,40 +78,49 @@ namespace RuApp.Controls
 
         private async void OnFileRowClick(object sender, ItemClickEventArgs e)
         {
-            if (e.ClickedItem is not FileTreeRow row || !row.CanExpand)
-            {
-                return;
-            }
-
-            if (row.IsExpanded)
-            {
-                CollapseFileRow(row);
-                return;
-            }
-
-            row.IsExpanded = true;
-            var generation = FilesRefresh.Generation;
-            FileTreeListing listing;
             try
             {
-                string path = row.FullPath;
-                int depth = row.Depth + 1;
-                listing = await Task.Run(() => FileTreeLister.List(path, depth));
-            }
-            catch (Exception)
-            {
-                if (generation != FilesRefresh.Generation) return;
-                row.IsExpanded = false;
-                InsertAfter(row, new[] { FileTreeRow.Note("Cannot read this folder.", row.Depth + 1) });
-                return;
-            }
+                if (e.ClickedItem is not FileTreeRow row || !row.CanExpand)
+                {
+                    return;
+                }
 
-            if (generation != FilesRefresh.Generation || !row.IsExpanded)
-            {
-                return;
-            }
+                if (row.IsExpanded)
+                {
+                    CollapseFileRow(row);
+                    return;
+                }
 
-            InsertAfter(row, BoundFileRows(row, listing));
+                row.IsExpanded = true;
+                var generation = FilesRefresh.Generation;
+                FileTreeListing listing;
+                try
+                {
+                    string path = row.FullPath;
+                    int depth = row.Depth + 1;
+                    listing = await Task.Run(() => FileTreeLister.List(path, depth));
+                }
+                catch (Exception)
+                {
+                    if (generation != FilesRefresh.Generation) return;
+                    row.IsExpanded = false;
+                    InsertAfter(row, new[] { FileTreeRow.Note("Cannot read this folder.", row.Depth + 1) });
+                    return;
+                }
+
+                if (generation != FilesRefresh.Generation || !row.IsExpanded)
+                {
+                    return;
+                }
+
+                InsertAfter(row, BoundFileRows(row, listing));
+            }
+            catch (Exception ex)
+            {
+                // An async void must not throw: a slipped row render stays a
+                // trace line instead of an unhandled process crash.
+                GuiDiagnosticWriter.AppendTraceLine($"[AgentSidePanel] File row expand failed: {ex.Message}");
+            }
         }
 
         private IReadOnlyList<FileTreeRow> BoundFileRows(FileTreeRow parent, FileTreeListing listing)

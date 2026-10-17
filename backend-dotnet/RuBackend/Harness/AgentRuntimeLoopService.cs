@@ -144,16 +144,11 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
 /// </summary>
 public interface IAgentRuntimeCoordinatorFactory
 {
-    AgentRunCoordinator Create(
-        string workspaceRoot,
-        PolicySnapshot? policySnapshot = null,
-        RunId? runId = null,
-        string? agentSessionId = null,
-        ContextBudgetPolicy? contextBudgetPolicy = null);
-
     /// <summary>
     /// Creates a coordinator with the compaction budget policy resolved from
-    /// the current settings snapshot (fail-closed to policy defaults).
+    /// the current settings snapshot (fail-closed to policy defaults). The
+    /// gateway factory's authority open is awaited, so cancellation of the
+    /// creating run propagates.
     /// </summary>
     Task<AgentRunCoordinator> CreateAsync(
         string workspaceRoot,
@@ -245,13 +240,14 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 
     public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
 
-    public AgentRunCoordinator Create(
+    public async Task<AgentRunCoordinator> CreateAsync(
         string workspaceRoot,
         PolicySnapshot? policySnapshot = null,
         RunId? runId = null,
         string? agentSessionId = null,
-        ContextBudgetPolicy? contextBudgetPolicy = null)
+        CancellationToken cancellationToken = default)
     {
+        var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken).ConfigureAwait(false);
         var availability = _runtimeAvailability;
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null
@@ -261,7 +257,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 "broker_gateway_unavailable: every tool call must execute inside the Broker");
         }
 
-        IToolGateway gateway = _brokerGateways.Create(workspaceRoot, policySnapshot, brokerRunId, agentSessionId);
+        IToolGateway gateway = await _brokerGateways
+            .CreateAsync(workspaceRoot, policySnapshot, brokerRunId, agentSessionId, cancellationToken)
+            .ConfigureAwait(false);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -301,17 +299,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             promptContextProvider,
             contextBudgetPolicy,
             retainedStash: _retainedStash);
-    }
-
-    public async Task<AgentRunCoordinator> CreateAsync(
-        string workspaceRoot,
-        PolicySnapshot? policySnapshot = null,
-        RunId? runId = null,
-        string? agentSessionId = null,
-        CancellationToken cancellationToken = default)
-    {
-        var policy = await ResolveBudgetPolicyAsync(_settings, cancellationToken).ConfigureAwait(false);
-        return Create(workspaceRoot, policySnapshot, runId, agentSessionId, policy);
     }
 
     /// <summary>
@@ -578,14 +565,14 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 // The run row is gone (session deletion or retention). Drop the
                 // registration here or it would keep the host alive forever and
                 // hold a Broker gateway for a run nothing can ever drive again.
-                RemoveRunRegistration(new RunId(runIdValue));
+                await RemoveRunRegistrationAsync(new RunId(runIdValue)).ConfigureAwait(false);
                 return;
             }
 
             if (run.State.IsTerminal())
             {
                 _summaryPublisher?.TryPublishSummary(run);
-                RemoveRunRegistration(new RunId(runIdValue));
+                await RemoveRunRegistrationAsync(new RunId(runIdValue)).ConfigureAwait(false);
                 return;
             }
 
@@ -639,13 +626,16 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             if (_workerCancellation.TryGetValue(runId.Value, out var source)) source.Cancel();
         }
         await _roots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
-        RemoveRunRegistration(runId);
+        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
     }
 
-    private void RemoveRunRegistration(RunId runId)
+    private async Task RemoveRunRegistrationAsync(RunId runId)
     {
         _roots.Remove(runId);
-        _brokerGateways?.CloseRun(runId.Value);
+        if (_brokerGateways is { } gateways)
+        {
+            await gateways.CloseRunAsync(runId.Value).ConfigureAwait(false);
+        }
         _coordinatorFactory.DropRetainedApproval(runId);
     }
 
@@ -680,7 +670,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
         _logger.LogWarning("run {RunId} cancelled because its workspace trust challenge expired", runIdValue);
         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-        RemoveRunRegistration(runId);
+        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
     }
 
     private async Task ReleaseExpiredApprovalAsync(
@@ -709,7 +699,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
         _logger.LogWarning("run {RunId} failed because its approval expired", runIdValue);
         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-        RemoveRunRegistration(runId);
+        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
     }
 
     internal async Task<(bool Continue, RetainedApprovalStep? Retained)> ReconcileApprovalRefreshRaceAsync(
@@ -728,7 +718,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         if (racedRun.State.IsTerminal())
         {
             _summaryPublisher?.TryPublishSummary(racedRun);
-            RemoveRunRegistration(runId);
+            await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
             return (false, null);
         }
 
@@ -843,7 +833,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                             cancellationToken)
                         .ConfigureAwait(false);
                     await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-                    RemoveRunRegistration(runId);
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                     return;
                 }
 
@@ -881,7 +871,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     if (refreshed.Run.State.IsTerminal())
                     {
                         _summaryPublisher?.TryPublishSummary(refreshed.Run);
-                        RemoveRunRegistration(runId);
+                        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         return;
                     }
 
@@ -893,7 +883,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                                 cancellationToken)
                             .ConfigureAwait(false);
                         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-                        RemoveRunRegistration(runId);
+                        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         return;
                     }
 
@@ -908,7 +898,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                                 cancellationToken)
                             .ConfigureAwait(false);
                         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-                        RemoveRunRegistration(runId);
+                        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         return;
                     }
 
@@ -937,7 +927,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 if (resumed.Run.State.IsTerminal())
                 {
                     _summaryPublisher?.TryPublishSummary(resumed.Run);
-                    RemoveRunRegistration(runId);
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
                 return;
@@ -963,7 +953,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                         if (resumedInput.Run.State.IsTerminal())
                         {
                             _summaryPublisher?.TryPublishSummary(resumedInput.Run);
-                            RemoveRunRegistration(runId);
+                            await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         }
 
                         return;
@@ -998,7 +988,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
                         await coordinator.FailAsync(runId, "workspace_membership_expired", cancellationToken).ConfigureAwait(false);
                         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
-                        RemoveRunRegistration(runId);
+                        await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         break;
                     }
                 }
@@ -1040,7 +1030,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 if (result.Run.State.IsTerminal())
                 {
                     _summaryPublisher?.TryPublishSummary(result.Run);
-                    RemoveRunRegistration(runId);
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
                 break;
@@ -1070,7 +1060,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 // A missing/replaced workspace can make gateway construction fail
                 // before a coordinator exists. Park the registration instead of
                 // retrying the same bad root on every 250 ms poll.
-                RemoveRunRegistration(runId);
+                await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 return;
             }
 

@@ -13,11 +13,17 @@ public interface IToolGatewayFactory : IAsyncDisposable
 {
     bool IsConfigured { get; }
 
-    IToolGateway Create(
+    /// <summary>
+    /// Opens (or reuses) the run's gateway against the authority. The runtime
+    /// open is awaited, so cancellation of the creating run propagates instead
+    /// of parking a thread-pool thread on the 10s envelope.
+    /// </summary>
+    Task<IToolGateway> CreateAsync(
         string workspaceRoot,
         PolicySnapshot policySnapshot,
         RunId runId,
-        string? agentSessionId = null);
+        string? agentSessionId,
+        CancellationToken cancellationToken);
 
     Task<JsonObject> ListSessionTasksAsync(
         string runId,
@@ -40,5 +46,10 @@ public interface IToolGatewayFactory : IAsyncDisposable
     /// </summary>
     Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken);
 
-    void CloseRun(string runId);
+    /// <summary>
+    /// Drops the run's Host-side state and closes its authority run lease.
+    /// The close is awaited so teardown orders deterministically; it stays
+    /// best effort (an authority that already closed the run is not an error).
+    /// </summary>
+    Task CloseRunAsync(string runId);
 }

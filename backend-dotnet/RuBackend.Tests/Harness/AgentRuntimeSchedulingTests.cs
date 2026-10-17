@@ -111,9 +111,7 @@ public sealed class AgentRuntimeSchedulingTests
         public TaskCompletionSource<bool> TwoEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> FirstEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, ContextBudgetPolicy? contextBudgetPolicy = null) => throw new NotSupportedException();
-        public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)
-        {
+        public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)        {
             int count = Interlocked.Increment(ref Calls);
             if (count == 4) FourEntered.TrySetResult(true);
             if (count == 2) TwoEntered.TrySetResult(true);

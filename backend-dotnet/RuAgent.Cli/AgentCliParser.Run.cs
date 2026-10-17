@@ -62,10 +62,9 @@ public static partial class AgentCliParser
                     return Fail("missing_value", "Missing value for --preset.");
                 if (val.Length == 0 || val.Length > MaxPresetLength)
                     return Fail("invalid_preset", "Preset too long.");
-                if (val == "full")
-                    val = "full_access";
-                if (val != "plan" && val != "standard" && val != "full_access")
+                if (!RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.TryNormalizePresetInput(val, out var normalizedPreset))
                     return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'plan', 'standard', or 'full_access'.");
+                val = normalizedPreset;
                 preset = val;
                 presetSeen = true;
                 i++;
@@ -237,10 +236,9 @@ public static partial class AgentCliParser
                     return Fail("missing_value", "Missing value for --preset.");
                 if (val.Length == 0 || val.Length > MaxPresetLength)
                     return Fail("invalid_preset", "Preset too long.");
-                if (val == "full")
-                    val = "full_access";
-                if (val != "plan" && val != "standard" && val != "full_access")
+                if (!RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.TryNormalizePresetInput(val, out var normalizedPreset))
                     return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'plan', 'standard', or 'full_access'.");
+                val = normalizedPreset;
                 preset = val;
                 presetSeen = true;
                 i++;

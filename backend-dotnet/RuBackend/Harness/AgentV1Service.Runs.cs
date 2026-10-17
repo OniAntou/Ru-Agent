@@ -175,12 +175,12 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_prompt", "prompt invalid.");
         }
 
-        var presetRaw = request.Preset?.Trim().ToLowerInvariant() ?? string.Empty;
         // Session-backed preset ladder: plan / standard / full_access. Empty
         // means standard; the request string validates only and never elevates
         // a run — the stored session selection (see below) decides the preset.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
-        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "plan" && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full")
+        if (!string.IsNullOrWhiteSpace(request.Preset)
+            && !AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out _))
         {
             return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
         }

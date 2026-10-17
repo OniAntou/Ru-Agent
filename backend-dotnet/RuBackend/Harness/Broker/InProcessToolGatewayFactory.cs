@@ -35,6 +35,7 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
         new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, BrokerRunLeaseIdentity> _leases =
         new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _createGate = new(1, 1);
     private readonly object _sync = new();
 
     public InProcessToolGatewayFactory(BrokerExecutionRuntime runtime)
@@ -66,11 +67,12 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     /// <summary>Always true: the injected runtime is the configured authority.</summary>
     public bool IsConfigured => true;
 
-    public IToolGateway Create(
+    public async Task<IToolGateway> CreateAsync(
         string workspaceRoot,
         PolicySnapshot policySnapshot,
         RunId runId,
-        string? agentSessionId = null)
+        string? agentSessionId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(policySnapshot);
         if (policySnapshot.Sha256.Length != 64)
@@ -103,40 +105,106 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
             BrokerUrl: InertBrokerUrl,
             AuthTokenSha256: InertAuthTokenSha256);
 
-        lock (_sync)
+        // Same-scope replacement create/rebind cycles serialize exactly like
+        // the old lock did; only the open await leaves the lock now, so a
+        // cancelled open never parks a thread-pool thread and teardown cannot
+        // interleave between the runtime open and the lease install.
+        await _createGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            if (_leases.TryGetValue(runId.Value, out var existingLease)
-                && BrokerGatewayContracts.SameLeaseScope(existingLease!, requestedLease)
-                && _gateways.TryGetValue(runId.Value, out var reusableGateway)
-                && !reusableGateway.IsDisposed)
+            var existing = FindReusableGateway(runId.Value, requestedLease);
+            if (existing is not null)
             {
-                return reusableGateway;
+                return existing;
             }
 
-            var generation = _leases.TryGetValue(runId.Value, out var previousLease)
-                ? previousLease!.Generation + 1
-                : 1;
-            var lease = requestedLease with
+            BrokerRunLeaseIdentity lease;
+            lock (_sync)
             {
-                LeaseId = Guid.NewGuid().ToString("N"),
-                Generation = generation,
-            };
-            OpenLeaseThroughRuntime(lease, policySnapshot, canonicalRoot);
-            _approvals.ActivateLease(lease);
-            _leases[runId.Value] = lease;
-
-            if (_gateways.TryGetValue(runId.Value, out var existingGateway)
-                && !existingGateway.IsDisposed)
-            {
-                existingGateway.Rebind(lease);
-                return existingGateway;
+                var generation = _leases.TryGetValue(runId.Value, out var previousLease)
+                    ? previousLease!.Generation + 1
+                    : 1;
+                lease = requestedLease with
+                {
+                    LeaseId = Guid.NewGuid().ToString("N"),
+                    Generation = generation,
+                };
             }
 
-            _gateways.TryRemove(runId.Value, out _);
-            var gateway = new InProcessToolGateway(Runtime, lease, _approvals);
-            _gateways[runId.Value] = gateway;
+            await OpenLeaseThroughRuntimeAsync(lease, policySnapshot, canonicalRoot, cancellationToken)
+                .ConfigureAwait(false);
+
+            bool raced;
+            InProcessToolGateway gateway;
+            lock (_sync)
+            {
+                var racingGateway = FindReusableGateway(runId.Value, requestedLease);
+                if (racingGateway is not null)
+                {
+                    // A racing creator of the same scope installed first;
+                    // prefer its gateway over ours.
+                    raced = true;
+                    gateway = racingGateway;
+                }
+                else
+                {
+                    raced = false;
+                    _approvals.ActivateLease(lease);
+                    _leases[runId.Value] = lease;
+
+                    if (_gateways.TryGetValue(runId.Value, out var existingGateway)
+                        && !existingGateway.IsDisposed)
+                    {
+                        existingGateway.Rebind(lease);
+                        gateway = existingGateway;
+                    }
+                    else
+                    {
+                        _gateways.TryRemove(runId.Value, out _);
+                        var created = new InProcessToolGateway(Runtime, lease, _approvals);
+                        _gateways[runId.Value] = created;
+                        gateway = created;
+                    }
+                }
+            }
+
+            if (raced)
+            {
+                // Our freshly opened lease is surplus: close it so the
+                // authority does not accumulate open leases for one run. The
+                // close stays outside the lock because it awaits.
+                await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
+            }
+
             return gateway;
         }
+        finally
+        {
+            _createGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Returns the run's live gateway when its installed lease still matches
+    /// the requested policy scope, so a same-scope Create reuses it (and its
+    /// approval state) instead of rotating the lease.
+    /// </summary>
+    private InProcessToolGateway? FindReusableGateway(
+        string runIdValue,
+        BrokerRunLeaseIdentity requestedLease)
+    {
+        lock (_sync)
+        {
+            if (_leases.TryGetValue(runIdValue, out var existingLease)
+                && BrokerGatewayContracts.SameLeaseScope(existingLease!, requestedLease)
+                && _gateways.TryGetValue(runIdValue, out var gateway)
+                && !gateway.IsDisposed)
+            {
+                return gateway;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -145,10 +213,11 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     /// session binding and expiry; a refused open fails Create closed instead
     /// of returning a gateway that cannot execute.
     /// </summary>
-    private void OpenLeaseThroughRuntime(
+    private async Task OpenLeaseThroughRuntimeAsync(
         BrokerRunLeaseIdentity lease,
         PolicySnapshot policySnapshot,
-        string canonicalRoot)
+        string canonicalRoot,
+        CancellationToken cancellationToken)
     {
         var request = new AgentEnvelope(
             AgentEnvelopeCodec.ProtocolVersionV2,
@@ -162,7 +231,7 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
                 lease.RunId,
                 canonicalRoot,
                 policySnapshot));
-        var opened = Runtime.OpenRunAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+        var opened = await Runtime.OpenRunAsync(request, cancellationToken).ConfigureAwait(false);
         if (opened.Error is not null)
         {
             throw new InvalidOperationException(opened.Error.ErrorCode);
@@ -286,26 +355,34 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
             return;
         }
 
-        InProcessToolGateway[] sessionGateways;
-        lock (_sync)
+        await _createGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            sessionGateways = _gateways.Values
-                .Where(gateway => string.Equals(gateway.Lease.SessionId, sessionId, StringComparison.Ordinal))
-                .ToArray();
+            InProcessToolGateway[] sessionGateways;
+            lock (_sync)
+            {
+                sessionGateways = _gateways.Values
+                    .Where(gateway => string.Equals(gateway.Lease.SessionId, sessionId, StringComparison.Ordinal))
+                    .ToArray();
+                foreach (var gateway in sessionGateways)
+                {
+                    _approvals.ClearRun(gateway.Lease.RunId);
+                    _leases.TryRemove(gateway.Lease.RunId, out _);
+                    _gateways.TryRemove(gateway.Lease.RunId, out _);
+                }
+            }
+
             foreach (var gateway in sessionGateways)
             {
-                _approvals.ClearRun(gateway.Lease.RunId);
-                _leases.TryRemove(gateway.Lease.RunId, out _);
-                _gateways.TryRemove(gateway.Lease.RunId, out _);
+                await DisposeGatewayAsync(gateway).ConfigureAwait(false);
             }
-        }
 
-        foreach (var gateway in sessionGateways)
+            await Runtime.CloseSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
         {
-            await DisposeGatewayAsync(gateway).ConfigureAwait(false);
+            _createGate.Release();
         }
-
-        await Runtime.CloseSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -316,26 +393,34 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     /// shutdown. Closing is best effort: teardown must not fail on a run the
     /// authority has already closed.
     /// </summary>
-    public void CloseRun(string runId)
+    public async Task CloseRunAsync(string runId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-        InProcessToolGateway? gateway;
-        BrokerRunLeaseIdentity? lease;
-        lock (_sync)
+        await _createGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            _approvals.ClearRun(runId);
-            _leases.TryRemove(runId, out lease);
-            _gateways.TryRemove(runId, out gateway);
-        }
+            InProcessToolGateway? gateway;
+            BrokerRunLeaseIdentity? lease;
+            lock (_sync)
+            {
+                _approvals.ClearRun(runId);
+                _leases.TryRemove(runId, out lease);
+                _gateways.TryRemove(runId, out gateway);
+            }
 
-        if (lease is not null)
-        {
-            CloseLeaseThroughRuntime(lease);
-        }
+            if (lease is not null)
+            {
+                await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
+            }
 
-        if (gateway is not null)
+            if (gateway is not null)
+            {
+                await DisposeGatewayAsync(gateway).ConfigureAwait(false);
+            }
+        }
+        finally
         {
-            _ = DisposeGatewayAsync(gateway);
+            _createGate.Release();
         }
     }
 
@@ -343,7 +428,7 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     /// Closes the authority-side run lease through the runtime's own close
     /// path, which also cancels anything still running for the run.
     /// </summary>
-    private void CloseLeaseThroughRuntime(BrokerRunLeaseIdentity lease)
+    private async Task CloseLeaseThroughRuntimeAsync(BrokerRunLeaseIdentity lease)
     {
         var request = new AgentEnvelope(
             AgentEnvelopeCodec.ProtocolVersionV2,
@@ -355,7 +440,7 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
             new JsonObject { ["run_id"] = lease.RunId });
         try
         {
-            Runtime.CloseRunAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+            await Runtime.CloseRunAsync(request, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -379,18 +464,26 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
 
     public async ValueTask DisposeAsync()
     {
-        KeyValuePair<string, InProcessToolGateway>[] gateways;
-        lock (_sync)
+        await _createGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
         {
-            gateways = _gateways.ToArray();
-            _gateways.Clear();
-            _leases.Clear();
-            _approvals.Clear();
-        }
+            KeyValuePair<string, InProcessToolGateway>[] gateways;
+            lock (_sync)
+            {
+                gateways = _gateways.ToArray();
+                _gateways.Clear();
+                _leases.Clear();
+                _approvals.Clear();
+            }
 
-        foreach (var pair in gateways)
+            foreach (var pair in gateways)
+            {
+                await pair.Value.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        finally
         {
-            await pair.Value.DisposeAsync().ConfigureAwait(false);
+            _createGate.Release();
         }
     }
 }

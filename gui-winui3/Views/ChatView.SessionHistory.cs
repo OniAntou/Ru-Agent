@@ -1100,6 +1100,7 @@ namespace RuApp.Views
             ClearAgentActivities();
             if (_activityFlushTimer != null)
             {
+                _activityFlushTimer.Stop();
                 _activityFlushTimer.Tick -= OnActivityFlushTick;
                 _activityFlushTimer = null;
             }

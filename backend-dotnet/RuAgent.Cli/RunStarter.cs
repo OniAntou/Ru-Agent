@@ -451,11 +451,16 @@ public sealed class RunStarter
         _out.Reset();
         _err.Reset();
 
-        if (request.Preset is not ("plan" or "standard" or "full_access"))
+        if (!RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.TryNormalizePresetInput(request.Preset, out var normalizedPreset))
         {
             await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
             throw new RunStartException("invalid_preset", "invalid_preset: preset must be plan, standard, or full_access");
         }
+
+        // Every payload below binds the canonical wire value. Validating loosely
+        // while still sending the raw string ("Standard", " standard") would only
+        // move the failure from here to the server's response binding.
+        request = request with { Preset = normalizedPreset };
 
         if (request.Preset == "full_access" && !request.ConfirmFullAccess)
         {

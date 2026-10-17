@@ -303,14 +303,6 @@ public sealed class HarnessSessionDeletionCoordinatorTests
 
     private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
     {
-        public AgentRunCoordinator Create(
-            string workspaceRoot,
-            PolicySnapshot? policySnapshot = null,
-            RunId? runId = null,
-            string? agentSessionId = null,
-            RuAgent.Harness.Core.Context.ContextBudgetPolicy? contextBudgetPolicy = null) =>
-            throw new NotSupportedException();
-
         public Task<AgentRunCoordinator> CreateAsync(
             string workspaceRoot,
             PolicySnapshot? policySnapshot = null,
@@ -329,11 +321,12 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     {
         public bool IsConfigured => true;
 
-        public IToolGateway Create(
+        public Task<IToolGateway> CreateAsync(
             string workspaceRoot,
             PolicySnapshot policySnapshot,
             RunId runId,
-            string? agentSessionId = null) =>
+            string? agentSessionId,
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<System.Text.Json.Nodes.JsonObject> ListSessionTasksAsync(
@@ -361,7 +354,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             return Task.CompletedTask;
         }
 
-        public void CloseRun(string runId) => throw new NotSupportedException();
+        public Task CloseRunAsync(string runId) => throw new NotSupportedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

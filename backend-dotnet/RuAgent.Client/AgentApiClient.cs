@@ -742,7 +742,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
                 }
             }
             else if (versionValue <= 0
-                || preset.GetString() is not ("plan" or "standard" or "full_access"))
+                || !RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.IsKnownPreset(preset.GetString()))
             {
                 throw new AgentApiException("invalid_response", "Invalid restore selection.");
             }

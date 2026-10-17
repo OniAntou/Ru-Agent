@@ -38,11 +38,18 @@ public sealed partial class AgentCommands
 
     public async Task<int> ChatAsync(ChatCommand cmd, CancellationToken cancellationToken)
     {
-        if (cmd.Preset is not ("plan" or "standard" or "full_access"))
+        // Validate at the entry and carry the canonical wire value forward.
+        // Snapshot factories, header meta and handover presets all read
+        // cmd.Preset downstream, so a loosely-accepted "Standard" or
+        // " standard" must not survive as the raw string and push the real
+        // failure onto the server's response binding.
+        if (!RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.TryNormalizePresetInput(cmd.Preset, out var normalizedPreset))
         {
             await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
             return 1;
         }
+
+        cmd = cmd with { Preset = normalizedPreset };
 
         if (cmd.Preset == "full_access" && !cmd.ConfirmFullAccess)
         {
@@ -50,117 +57,29 @@ public sealed partial class AgentCommands
             return 1;
         }
 
-        string canonicalWorkspace;
-        try
+        await using var bootstrap = await PrepareChatAsync(cmd, cancellationToken).ConfigureAwait(false);
+        if (bootstrap is null)
         {
-            canonicalWorkspace = Path.GetFullPath(cmd.WorkspacePath);
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"invalid_workspace: {ex.Message}").ConfigureAwait(false);
             return 1;
         }
 
-        string sessionId = cmd.SessionId ?? string.Empty;
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            try
-            {
-                sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await _err.WriteLineAsync($"session_create_failed: {ex.Message}").ConfigureAwait(false);
-                return 1;
-            }
-        }
-
-        // The TUI header reports the provider the run is using. When settings cannot
-        // be read the header says so rather than naming a provider the run never
-        // picked: a substituted value here is indistinguishable from a real one.
-        string? backendName = null;
-        string activeModel = string.Empty;
-        string reasoningEffort = string.Empty;
-        try
-        {
-            var exePath = Environment.ProcessPath;
-            var exeStamp = exePath is not null && File.Exists(exePath)
-                ? File.GetLastWriteTimeUtc(exePath).ToString("O")
-                : "unknown";
-            Tui.TuiDebug.Log("build", $"exe={exePath} stamp={exeStamp}");
-        }
-        catch (Exception)
-        {
-            // Build stamp is diagnostics-only.
-        }
-        string? modelWarning = null;
-        try
-        {
-            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-            backendName = settings.TryGetProperty("backend", out var b) && !string.IsNullOrWhiteSpace(b.GetString())
-                ? b.GetString()
-                : null;
-            activeModel = backendName switch
-            {
-                "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
-                "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
-                _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
-            };
-            reasoningEffort = ReadReasoningEffort(settings);
-        }
-        catch (Exception)
-        {
-            // Settings backend unreachable; the header reports it as unknown.
-        }
-
-        // Engine selection happens once settings are known: --json, --classic, redirected
-        // output, NO_COLOR, a dumb TERM and a too-small viewport all stay sequential. In TG
-        // mode the window and its transcript writer are created before the session renderer
-        // so the shared run machinery renders into the Terminal.Gui transcript, never stdout.
-        var engine = TuiEngineSelection.Resolve(
-            Console.IsOutputRedirected,
-            cmd.Json,
-            Tui.TuiViewport.Width(),
-            Tui.TuiViewport.Height(),
-            Environment.GetEnvironmentVariable("NO_COLOR"),
-            Environment.GetEnvironmentVariable("TERM"),
-            cmd.Classic,
-            Console.IsInputRedirected || !ReferenceEquals(_in, Console.In));
-        bool tgMode = engine == TuiEngine.TerminalGui;
-        using IApplication? tgApp = tgMode ? Application.Create() : null;
-        if (tgApp is not null)
-        {
-            tgApp.Init();
-        }
-
-        using TgChatWindow? tgWindow = tgMode ? TgChatWindow.Build() : null;
-        TgTranscriptWriter? tgWriter = tgMode ? new TgTranscriptWriter(tgApp!, tgWindow!.Transcript) : null;
+        var tgMode = bootstrap.TgMode;
+        var tgApp = bootstrap.TgApp;
+        var tgWindow = bootstrap.TgWindow;
+        var tgWriter = bootstrap.TgWriter;
+        var humanOut = bootstrap.HumanOut;
+        var submissions = bootstrap.Submissions;
+        var canonicalWorkspace = bootstrap.CanonicalWorkspace;
+        var sessionId = bootstrap.SessionId;
+        var workspaceLabel = bootstrap.WorkspaceLabel;
+        var backendName = bootstrap.BackendName;
+        var activeModel = bootstrap.ActiveModel;
+        var modelWarning = bootstrap.ModelWarning;
+        var pendingImages = submissions.Images;
+        var pendingTexts = submissions.Texts;
         // The loop is created once the run handlers exist (RunTerminalGuiChatAsync);
         // attachment mutations below refresh its hint row through this seam.
         TgChatLoop? tgLoop = null;
-
-        if (backendName is not null)
-        {
-            // Best-effort and once per chat: a models.dev id that is not in the catalog
-            // would otherwise only surface mid-turn as model_unavailable.
-            modelWarning = await ModelPrecheck
-                .CheckAsync(_settingsClient, backendName, activeModel, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        backendName ??= "(provider unknown)";
-
-        // --json owns stdout: every human-facing line a command prints goes to
-        // stderr instead, so a consumer can parse stdout line by line as NDJSON.
-        // Terminal.Gui owns the screen: human lines land in the transcript view.
-        var humanOut = cmd.Json ? _err : (TextWriter?)tgWriter ?? _out;
-
-        var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
-        var workspaceLabel = ws;
-
-        using var submissions = new ChatSubmissionState();
-        var pendingImages = submissions.Images;
-        var pendingTexts = submissions.Texts;
         void HoldSubmissionForRetry(ChatSubmissionSnapshot? submission)
         {
             if (submission is null)
@@ -170,22 +89,6 @@ public sealed partial class AgentCommands
 
             submissions.HoldForRetry(submission);
             tgLoop?.PauseQueuedSubmissions();
-        }
-        if (cmd.Images is { Count: > 0 })
-        {
-            foreach (var image in cmd.Images)
-            {
-                var (attachment, imageError) = await Images.CliImageFiles
-                    .LoadAsync(image, canonicalWorkspace, cancellationToken)
-                    .ConfigureAwait(false);
-                if (attachment is null)
-                {
-                    await _err.WriteLineAsync(imageError).ConfigureAwait(false);
-                    return 1;
-                }
-
-                submissions.Add(attachment);
-            }
         }
 
         int ChatRenderWidth() => tgMode && tgWindow!.Transcript.Viewport.Width > 0
@@ -201,10 +104,6 @@ public sealed partial class AgentCommands
         }
 
         var lineReader = new Tui.PlainChatInput();
-        if (!cmd.Json && !tgMode)
-            await humanOut.WriteLineAsync($"Ru Agent · {ChatDisplayText.Sanitize(workspaceLabel, 64)}").ConfigureAwait(false);
-
-
 
         // Header state for the Terminal.Gui header. The title is read from the
         // session document (bounded probes) and the tally repaints as usage frames arrive.

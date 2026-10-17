@@ -212,7 +212,7 @@ public sealed class RpcDispatcher
         var workspace = RequireString(request, "workspace", AgentCliParser.MaxWorkspacePathLength);
         var prompt = RequireString(request, "prompt", AgentCliParser.MaxPromptLength);
         var preset = OptionalString(request, "preset", 16) ?? "standard";
-        if (preset is not ("plan" or "standard" or "full_access"))
+        if (!RuAgent.Protocol.Harness.AgentPolicyProfileCatalog.IsKnownPreset(preset))
         {
             throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_preset: preset must be plan, standard, or full_access.", "invalid_preset");
         }

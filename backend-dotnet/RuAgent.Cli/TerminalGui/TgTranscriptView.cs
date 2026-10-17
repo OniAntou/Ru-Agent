@@ -16,6 +16,14 @@ public enum TranscriptStyle
 }
 
 /// <summary>
+/// One committed transcript row. <see cref="Text"/> is the stripped visible text every
+/// consumer (classification, tables, bounds, copy) reads; <see cref="Spans"/>, when present,
+/// paints that same text as per-run Terminal.Gui attributes for markdown-rendered rows and
+/// always covers the whole text, so a row is either fully span-painted or plainly styled.
+/// </summary>
+internal sealed record TgTranscriptRow(string Text, TranscriptStyle Style, IReadOnlyList<TgSpan>? Spans = null);
+
+/// <summary>
 /// Append-only transcript with a tail pin and hard wrap — the Terminal.Gui analogue of the
 /// classic renderer's sticky transcript region — plus one live activity row pinned after the
 /// last committed row. Drawing stays custom so the OpenCode look (user block, inline tool
@@ -28,8 +36,8 @@ public sealed partial class TgTranscriptView : View
     public const int MaxRetainedLineCharacters = 16_000;
     private const string HistoryTruncatedText = "  · earlier transcript rows truncated ·";
 
-    private readonly List<(string Text, TranscriptStyle Style)> _lines = [];
-    private readonly List<(string Text, TranscriptStyle Style)> _wrapped = [];
+    private readonly List<TgTranscriptRow> _lines = [];
+    private readonly List<TgTranscriptRow> _wrapped = [];
     private int _wrapWidth = -1;
     private int _tailRows = 1;
     private bool _tailDirty;
@@ -105,7 +113,7 @@ public sealed partial class TgTranscriptView : View
     public event Action<bool>? FollowingTailChanged;
 
     /// <summary>Test seam: the committed rows in append order, before wrapping.</summary>
-    internal IReadOnlyList<(string Text, TranscriptStyle Style)> Lines => _lines;
+    internal IReadOnlyList<TgTranscriptRow> Lines => _lines;
 
     /// <summary>Rows committed so far; a step mark for <see cref="DropRowsSince"/>.</summary>
     internal int CommittedRowCount => _lines.Count;
@@ -172,12 +180,14 @@ public sealed partial class TgTranscriptView : View
         SetNeedsDraw();
     }
 
-    public void Append(string text, TranscriptStyle style)
+    public void Append(string text, TranscriptStyle style) => Append(text, style, null);
+
+    public void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans)
     {
         EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
         var bounded = BoundLine(text);
-        _lines.Add((bounded, style));
+        _lines.Add(new TgTranscriptRow(bounded, style, FitSpans(spans, text, bounded)));
         _retainedCharacters += CharacterCount(bounded);
         if (wasEmpty)
         {
@@ -192,7 +202,7 @@ public sealed partial class TgTranscriptView : View
         }
         else if (_wrapWidth > 0)
         {
-            _tailRows = AppendWrapped(_lines[^1].Text, style, _wrapWidth);
+            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, _wrapWidth);
         }
 
         MarkOutputUnseen();
@@ -202,22 +212,55 @@ public sealed partial class TgTranscriptView : View
     }
 
     /// <summary>Appends to the tail line, the way streamed prose grows in place.</summary>
-    public void AppendChunk(string text)
+    public void AppendChunk(string text) => AppendChunk(text, null);
+
+    /// <summary>
+    /// Grows the tail row, optionally painting the new tail segment. When spans first
+    /// reach a plain row the existing text becomes one ink span first, so the row keeps
+    /// the spans-cover-the-whole-text invariant its drawing relies on.
+    /// </summary>
+    public void AppendChunk(string text, IReadOnlyList<TgSpan>? chunkSpans)
     {
-        if (text.Length == 0)
+        if (text.Length == 0 && chunkSpans is not { Count: > 0 })
         {
             return;
         }
 
         if (_lines.Count == 0)
         {
-            Append(text, TranscriptStyle.Prose);
+            Append(text, TranscriptStyle.Prose, chunkSpans);
             return;
         }
 
         var last = _lines[^1];
         var grown = BoundLineParts(last.Text, text);
-        _lines[^1] = (grown, last.Style);
+        IReadOnlyList<TgSpan>? grownSpans;
+        if (chunkSpans is { Count: > 0 })
+        {
+            var combined = new List<TgSpan>();
+            if (last.Spans is { Count: > 0 } existing)
+            {
+                combined.AddRange(existing);
+            }
+            else
+            {
+                // The unspanned prefix is not part of any span yet, and spans must cover
+                // everything the row draws.
+                if (last.Text.Length > 0)
+                {
+                    combined.Add(new TgSpan(last.Text, StyleAttribute(last.Style)));
+                }
+            }
+
+            combined.AddRange(chunkSpans);
+            grownSpans = FitSpansToLength(combined, grown);
+        }
+        else
+        {
+            grownSpans = last.Spans;
+        }
+
+        _lines[^1] = new TgTranscriptRow(grown, last.Style, grownSpans);
         _retainedCharacters += last.Text.Length + (long)text.Length <= MaxRetainedLineCharacters
             ? CharacterCount(text)
             : CharacterCount(grown) - CharacterCount(last.Text);
@@ -236,7 +279,9 @@ public sealed partial class TgTranscriptView : View
         SetNeedsDraw();
     }
 
-    internal void ReplaceTail(string? text, TranscriptStyle style)
+    internal void ReplaceTail(string? text, TranscriptStyle style) => ReplaceTail(text, style, null);
+
+    internal void ReplaceTail(string? text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans)
     {
         if (_lines.Count == 0) return;
         var previous = _lines[^1];
@@ -245,7 +290,7 @@ public sealed partial class TgTranscriptView : View
         else
         {
             var bounded = BoundLineParts(string.Empty, text);
-            _lines[^1] = (bounded, style);
+            _lines[^1] = new TgTranscriptRow(bounded, style, FitSpans(spans, text, bounded));
             _retainedCharacters += CharacterCount(bounded);
         }
         if (text is null || HasExpandedBlocks || text.Contains('|')) _wrapWidth = -1;
@@ -327,8 +372,7 @@ public sealed partial class TgTranscriptView : View
         _scrollTop = offset;
         for (var i = 0; i < height && offset + i < _wrapped.Count; i++)
         {
-            var (text, style) = _wrapped[offset + i];
-            DrawRow(i, text, style, width);
+            DrawRow(i, _wrapped[offset + i], width);
         }
 
         // The live activity row is pinned after the last committed row: while the tail is
@@ -351,14 +395,26 @@ public sealed partial class TgTranscriptView : View
     }
 
     /// <summary>
-    /// One committed row. The user block fills its row and paints the prompt chevron,
-    /// tool rows split into glyph/label/rest with the outcome tone, everything else
-    /// draws as one run in its style attribute.
+    /// One committed row. Span-painted rows (markdown) draw run by run; the user block fills
+    /// its row and paints the prompt chevron, tool rows split into glyph/label/rest with the
+    /// outcome tone, everything else draws as one run in its style attribute.
     /// </summary>
-    private void DrawRow(int row, string text, TranscriptStyle style, int width)
+    private void DrawRow(int row, TgTranscriptRow rowModel, int width)
     {
-        SetAttribute(StyleAttribute(style));
+        var (text, style, spans) = rowModel;
         Move(0, row);
+        if (spans is { Count: > 0 })
+        {
+            foreach (var span in spans)
+            {
+                SetAttribute(span.Attr);
+                AddStr(span.Text);
+            }
+
+            return;
+        }
+
+        SetAttribute(StyleAttribute(style));
         if (style == TranscriptStyle.User)
         {
             AddStr(new string(' ', width));
@@ -415,18 +471,18 @@ public sealed partial class TgTranscriptView : View
         var rawRows = _lines.Select(row => row.Style == TranscriptStyle.Prose ? row.Text : string.Empty).ToArray();
         for (var i = 0; i < _lines.Count; i++)
         {
-            var (text, style) = _lines[i];
+            var (text, style, spans) = _lines[i];
             if (style == TranscriptStyle.Prose
                 && TuiMarkdownTable.TryRender(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
             {
-                _wrapped.AddRange(table.Select(row => (row, TranscriptStyle.Prose)));
+                _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose)));
                 i += consumed - 1;
                 _tailRows = 0;
                 AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);
                 continue;
             }
             var summaryTop = _wrapped.Count;
-            _tailRows = AppendWrapped(text, style, width);
+            _tailRows = AppendWrapped(text, style, spans, width);
             AppendCollapsedBlocksAfter(i + 1, summaryTop, width);
         }
 
@@ -463,7 +519,7 @@ public sealed partial class TgTranscriptView : View
         else if (_tailDirty && _lines.Count > 0)
         {
             _wrapped.RemoveRange(_wrapped.Count - _tailRows, _tailRows);
-            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, width);
+            _tailRows = AppendWrapped(_lines[^1].Text, _lines[^1].Style, _lines[^1].Spans, width);
             _tailDirty = false;
         }
     }
@@ -513,10 +569,10 @@ public sealed partial class TgTranscriptView : View
     {
         if (!_followingTail && _wrapWidth > 0)
         {
-            var removedRows = WrapLine(_lines[index].Text, _lines[index].Style, _wrapWidth).Count;
+            var removedRows = WrapLine(_lines[index].Text, _lines[index].Style, _lines[index].Spans, _wrapWidth).Count;
             foreach (var block in _collapsedBlocks.Where(block => block.AfterLine == index + 1 && block.Expanded))
             {
-                removedRows += block.Hidden.Sum(row => WrapLine(row.Text, row.Style, _wrapWidth).Count);
+                removedRows += block.Hidden.Sum(row => WrapLine(row.Text, row.Style, null, _wrapWidth).Count);
             }
 
             _scrollTop = Math.Max(0, _scrollTop - removedRows);
@@ -535,7 +591,7 @@ public sealed partial class TgTranscriptView : View
         }
 
         _historyTruncated = true;
-        _lines.Insert(0, (HistoryTruncatedText, TranscriptStyle.Meta));
+        _lines.Insert(0, new TgTranscriptRow(HistoryTruncatedText, TranscriptStyle.Meta));
         _retainedCharacters += CharacterCount(HistoryTruncatedText);
         if (!_followingTail && _wrapWidth > 0)
         {
@@ -607,27 +663,104 @@ public sealed partial class TgTranscriptView : View
 
     private static int CharacterCount(string text) => text.EnumerateRunes().Count();
 
-    private int AppendWrapped(string text, TranscriptStyle style, int width)
+    private int AppendWrapped(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, int width)
     {
-        var rows = WrapLine(text, style, width);
-        foreach (var row in rows)
+        if (spans is { Count: > 0 })
         {
-            _wrapped.Add((row, style));
+            var rows = proseLikeForSpans(text, style)
+                ? TgAnsiPaint.WordWrapSpans(text, spans, width)
+                : TgAnsiPaint.HardWrapSpans(text, spans, width);
+            foreach (var wrapped in rows)
+            {
+                _wrapped.Add(new TgTranscriptRow(wrapped.Row, style, wrapped.Spans));
+            }
+
+            return rows.Count;
         }
 
-        return rows.Count;
+        var plain = WrapLine(text, style, null, width);
+        foreach (var row in plain)
+        {
+            _wrapped.Add(new TgTranscriptRow(row, style, null));
+        }
+
+        return plain.Count;
     }
 
-    private static IReadOnlyList<string> WrapLine(string text, TranscriptStyle style, int width)
+    private static IReadOnlyList<string> WrapLine(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, int width)
     {
         // Reflow prose on words across the full viewport — the classic renderer wraps at
         // the same width, and a capped measure left wide terminals with a half-width
         // column and words breaking mid-sentence. Indented/code-gutter rows still retain
-        // their exact columns.
+        // their exact columns. Span-painted rows must slice their spans, so they route
+        // through the span-aware wrappers in AppendWrapped instead of these helpers.
         return style == TranscriptStyle.Prose && text.Length > 0
             && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal)
                 ? TuiText.Wrap(text, width)
                 : TuiText.HardWrapLine(text, width);
+    }
+
+    private static bool proseLikeForSpans(string text, TranscriptStyle style) =>
+        style == TranscriptStyle.Prose && text.Length > 0
+        && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Aligns spans parsed from <paramref name="source"/> onto the bounded text actually
+    /// stored. <see cref="BoundLine(string)"/> may have cut the tail runes or appended an
+    /// ellipsis, so the result is clipped to the bounded length and any covering gap is
+    /// padded with an ink span — a row either paints its whole text through spans or none.
+    /// </summary>
+    private static IReadOnlyList<TgSpan>? FitSpans(IReadOnlyList<TgSpan>? spans, string source, string bounded)
+    {
+        if (spans is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        return FitSpansToLength(spans, bounded);
+    }
+
+    private static IReadOnlyList<TgSpan>? FitSpansToLength(IReadOnlyList<TgSpan> spans, string bounded)
+    {
+        var total = 0;
+        foreach (var span in spans)
+        {
+            total += span.Text.Length;
+        }
+
+        if (total == 0)
+        {
+            return null;
+        }
+
+        var length = bounded.Length;
+        if (total == length)
+        {
+            return spans;
+        }
+
+        var fitted = new List<TgSpan>(spans.Count + 1);
+        var used = 0;
+        foreach (var span in spans)
+        {
+            if (used >= length)
+            {
+                break;
+            }
+
+            var take = Math.Min(length - used, span.Text.Length);
+            fitted.Add(span with { Text = span.Text[..take] });
+            used += take;
+        }
+
+        if (used < length)
+        {
+            // The bounder replaced dropped runes with an ellipsis: cover it in ink so the
+            // row still paints its whole text.
+            fitted.Add(new TgSpan(bounded[used..], TgPalette.Attr(TuiToken.Ink)));
+        }
+
+        return fitted.Count == 0 ? null : fitted;
     }
 
     private static Terminal.Gui.Drawing.Attribute StyleAttribute(TranscriptStyle style) => style switch

@@ -34,7 +34,7 @@ public sealed partial class TgTranscriptView
         ArgumentNullException.ThrowIfNull(hidden);
         var wasEmpty = _lines.Count == 0;
         var boundedSummary = BoundLine(summary);
-        _lines.Add((boundedSummary, style));
+        _lines.Add(new TgTranscriptRow(boundedSummary, style));
         _retainedCharacters += CharacterCount(boundedSummary);
         if (wasEmpty)
         {
@@ -218,7 +218,7 @@ public sealed partial class TgTranscriptView
 
             foreach (var (hiddenText, hiddenStyle) in block.Hidden)
             {
-                _tailRows = AppendWrapped(hiddenText, hiddenStyle, width);
+                _tailRows = AppendWrapped(hiddenText, hiddenStyle, null, width);
             }
         }
     }

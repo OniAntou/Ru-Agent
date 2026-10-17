@@ -91,7 +91,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
 
     private void ProjectLine(string? text, bool complete)
     {
-        var clean = text is null ? null : TuiText.Strip(text);
+        var (clean, spans) = text is null ? (null, (IReadOnlyList<TgSpan>?)null) : TgAnsiPaint.Parse(text);
         try
         {
             app.Invoke(() =>
@@ -104,9 +104,9 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
                     transcript.ClearLive();
                 }
 
-                if (_projectedRow) transcript.ReplaceTail(clean, style);
+                if (_projectedRow) transcript.ReplaceTail(clean, style, spans);
                 else if (clean is { Length: > 0 } || (complete && clean is not null))
-                    transcript.Append(clean!, style);
+                    transcript.Append(clean!, style, spans);
                 _projectedRow = !complete && clean is { Length: > 0 };
             });
         }
@@ -185,7 +185,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         var committed = CommitStream();
         if (!committed && !_rowOpen)
         {
-            Emit(string.Empty, TranscriptStyle.Prose, append: false);
+            Emit(string.Empty, null, TranscriptStyle.Prose, append: false);
         }
 
         _rowOpen = false;
@@ -212,26 +212,27 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
             return false;
         }
 
-        var text = TuiText.Strip(_pending.ToString());
+        var (text, spans) = TgAnsiPaint.Parse(_pending.ToString());
         _pending.Clear();
         if (text.Length == 0)
         {
             return false;
         }
 
-        Emit(text, Classify(text), append: _rowOpen);
+        Emit(text, spans, Classify(text), append: _rowOpen);
         _rowOpen = true;
         return true;
     }
 
     /// <summary>
-    /// One completed line: strips the palette escapes every path shares, and when the line
-    /// carries the classic <c>ctrl+o</c> affordance, bridges the renderer's retained rows
-    /// as a collapsed block so <see cref="TgTranscriptView.ToggleExpanded"/> reveals them.
+    /// One completed line: parses the palette escapes into spans (markdown rows keep their
+    /// paint), and when the line carries the classic <c>ctrl+o</c> affordance, bridges the
+    /// renderer's retained rows as a collapsed block so <see cref="TgTranscriptView.ToggleExpanded"/>
+    /// reveals them.
     /// </summary>
     private void EmitLine(string line)
     {
-        var text = TuiText.Strip(line);
+        var (text, spans) = TgAnsiPaint.Parse(line);
         if (text.EndsWith("ctrl+o", StringComparison.Ordinal)
             && RetainedLinesProvider?.Invoke() is { Count: > 0 } hidden)
         {
@@ -244,7 +245,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
             return;
         }
 
-        Emit(text, Classify(text), append: false);
+        Emit(text, spans, Classify(text), append: false);
     }
 
     private void EmitCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style)
@@ -266,11 +267,10 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
         }
     }
 
-    private void Emit(string text, TranscriptStyle style, bool append)
+    private void Emit(string text, IReadOnlyList<TgSpan>? spans, TranscriptStyle style, bool append)
     {
-        // Defensive strip: streamed fragments are stripped in CommitStream, but every
-        // full-line path (WriteBlock, Notice, tool rows) also lands here.
-        var clean = TuiText.Strip(text);
+        // Callers pre-parse the paint, so no defensive strip here. Unknown-escape rows and
+        // plain rows both arrive with null spans and keep their old single-attribute path.
         try
         {
             app.Invoke(() =>
@@ -284,11 +284,11 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
 
                 if (append)
                 {
-                    transcript.AppendChunk(clean);
+                    transcript.AppendChunk(text, spans);
                 }
                 else
                 {
-                    transcript.Append(clean, style);
+                    transcript.Append(text, style, spans);
                 }
             });
         }

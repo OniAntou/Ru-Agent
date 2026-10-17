@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Paint markdown in the Terminal.Gui chat transcript. The classic renderer's palette escapes now arrive as per-run attributes instead of being stripped at the bridge: bold (bright), inline code (green) and headings (yellow) keep their colour in `agent chat`'s TG mode, fenced code keeps its syntax colours and the line-number gutter, and painted notices keep their tone. Colourless output is byte-for-byte unchanged.
+
 ## [0.1.1-preview.1] - 2026-10-15
 
 - **fix(gui)**: Let expanded model thinking use the available reading column instead of a fixed 560-pixel left-aligned panel.

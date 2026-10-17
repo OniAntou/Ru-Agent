@@ -17,12 +17,13 @@ public enum ToolLineStatus
     Ok,
     Failed,
     Running,
+    Unknown,
 }
 
 /// <summary>
-/// Turns the event stream into finalised transcript lines. Outcome truth is the durable
-/// event stream; the transient activity frames only supply detail (verb, target, counts,
-/// duration), so a dropped transient frame degrades a line instead of losing it.
+/// Turns the event stream into finalised transcript lines. Durable events own completion
+/// records and their order. Typed activity supplies tool outcome/display metadata;
+/// without it a result stays neutral, since an envelope's run status is not a tool result.
 /// </summary>
 public sealed class TuiTranscript
 {
@@ -44,6 +45,7 @@ public sealed class TuiTranscript
     private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly Queue<string> _settledActivityIds = new();
+    private readonly Dictionary<string, ToolDetail> _settledToolRows = new(StringComparer.Ordinal);
     private readonly List<string> _retained = [];
     private readonly StringBuilder _streamedAssistant = new();
     private readonly Stopwatch _turnWatch = new();
@@ -62,6 +64,8 @@ public sealed class TuiTranscript
     private string? _pausedRunId;
     private string? _lastParkReason;
     private bool _fullScreenCards;
+    private string? _pendingPlanProgress;
+    private string? _lastPlanProgress;
 
     /// <summary>
     /// Full-screen transcript rendering: tool results become inline <see cref="TuiToolRow"/>
@@ -161,6 +165,19 @@ public sealed class TuiTranscript
         return true;
     }
 
+    public async Task<bool> RecoverAssistantTurnAsync(string fullText)
+    {
+        if (_surface.Writer is not ITranscriptTurnRewriter screen) return false;
+        Flush();
+        var markdown = new TuiMarkdown { HighlightCode = _fullScreenCards };
+        var rows = fullText.Replace("\r", string.Empty).Split('\n')
+            .SelectMany(line => markdown.RenderLogicalLine(line, Width)).ToArray();
+        if (!await screen.ReplaceAssistantTurnAsync(rows).ConfigureAwait(false)) return false;
+        _streamedAssistant.Clear();
+        _streamedAssistant.Append(fullText);
+        return true;
+    }
+
     public TuiTranscript(TuiSurface surface, TuiStatusLine status)
     {
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -197,6 +214,8 @@ public sealed class TuiTranscript
     public void BeginTurn()
     {
         _toolsSettled = 0;
+        _pendingPlanProgress = null;
+        _lastPlanProgress = null;
         _hasStreamedDelta = false;
         _lineBuffer = string.Empty;
         _proseLine.Clear();
@@ -211,6 +230,7 @@ public sealed class TuiTranscript
         _lastParkReason = null;
         _pendingTools.Clear();
         _settledActivityIds.Clear();
+        _settledToolRows.Clear();
         _retained.Clear();
         _markdown.Reset();
         _turnWatch.Restart();
@@ -323,6 +343,14 @@ public sealed class TuiTranscript
             RenderStyled(rest);
         }
         FlushProseLine();
+        // Metadata must not split an unfinished word. Publish progress only at an
+        // existing transcript boundary, retaining counts rather than a second task list.
+        if (_pendingPlanProgress is { } progress && progress != _lastPlanProgress)
+        {
+            WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
+            _lastPlanProgress = progress;
+        }
+        _pendingPlanProgress = null;
         _surface.Flush();
     }
 
@@ -559,6 +587,8 @@ public sealed class TuiTranscript
                 return;
 
             case AgentActivityKind.Todo:
+                if (activity.Todos is { } todos)
+                    _pendingPlanProgress = $"Plan · {todos.Count(todo => todo.Status == "completed")}/{todos.Count} complete";
                 if (!string.IsNullOrWhiteSpace(activity.ToolDisplay)) ApplyToolActivity(activity);
                 return;
 
@@ -578,7 +608,11 @@ public sealed class TuiTranscript
     private void ApplyToolActivity(AgentActivityModel activity)
     {
         var verb = TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay);
-        if (_settledActivityIds.Contains(activity.ActivityId)) return;
+        if (_settledActivityIds.Contains(activity.ActivityId))
+        {
+            UpdateSettledTool(activity);
+            return;
+        }
         var index = _pendingTools.FindIndex(tool => tool.ActivityId == activity.ActivityId);
 
         switch (activity.State)
@@ -638,6 +672,26 @@ public sealed class TuiTranscript
         }
     }
 
+    private void UpdateSettledTool(AgentActivityModel activity)
+    {
+        if (!_fullScreenCards || _surface.Writer is not ITranscriptActivityWriter screen
+            || activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed)
+            || !_settledToolRows.TryGetValue(activity.ActivityId, out var previous)) return;
+        var detail = previous with
+        {
+            State = activity.State,
+            Target = BuildTarget(activity) ?? previous.Target,
+            Count = activity.Count ?? previous.Count,
+            Added = activity.Added ?? previous.Added,
+            Removed = activity.Removed ?? previous.Removed,
+            DurationMs = activity.DurationMs ?? previous.DurationMs,
+        };
+        _settledToolRows[activity.ActivityId] = detail;
+        var status = activity.State == AgentActivityState.Completed ? ToolLineStatus.Ok : ToolLineStatus.Failed;
+        screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
+            detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
+    }
+
     private void TrimPending()
     {
         while (_pendingTools.Count > 32)
@@ -686,8 +740,6 @@ public sealed class TuiTranscript
     public void ApplyDurable(HarnessSafeEventEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        Flush();
-
         var type = envelope.EventType;
         var summary = Escape(envelope.SafeSummary);
 
@@ -747,6 +799,11 @@ public sealed class TuiTranscript
         {
             return;
         }
+
+        // Metadata can arrive between any two deltas. Only a visible boundary
+        // may commit the unfinished Markdown line; flushing above the silent
+        // event checks split sentences (and code fences) at network timing.
+        Flush();
 
         if (_hasStreamedDelta)
         {
@@ -885,8 +942,17 @@ public sealed class TuiTranscript
             while (_settledActivityIds.Count > 64) _settledActivityIds.Dequeue();
         }
 
-        var failed = !string.Equals(envelope.Status, "succeeded", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(envelope.Status, "completed", StringComparison.OrdinalIgnoreCase);
+        // The public envelope's status describes the RUN, not this tool's
+        // outcome. A running/completed run must not paint every tool as failed
+        // (or every failed tool as successful). Typed activity carries the result.
+        var status = envelope.Status.ToLowerInvariant() switch
+        {
+            "succeeded" => ToolLineStatus.Ok,
+            _ when detail?.State == AgentActivityState.Completed => ToolLineStatus.Ok,
+            _ when detail?.State == AgentActivityState.Failed => ToolLineStatus.Failed,
+            _ => ToolLineStatus.Unknown,
+        };
+        var failed = status == ToolLineStatus.Failed;
 
         var meta = ComposeToolMeta(detail?.Added, detail?.Removed, detail?.DurationMs);
         var target = detail?.Target;
@@ -907,7 +973,6 @@ public sealed class TuiTranscript
             }
         }
 
-        var status = failed ? ToolLineStatus.Failed : ToolLineStatus.Ok;
         if (_fullScreenCards)
         {
             WriteToolRow(status, detail, target, envelope.SafeSummary);
@@ -957,8 +1022,6 @@ public sealed class TuiTranscript
             meta = string.IsNullOrWhiteSpace(meta) ? "· ctrl+o" : meta + " · ctrl+o";
         }
 
-        WriteLines(TuiToolRow.Compose(status, display, target, meta, Width));
-
         if (diffLines.Count > 0)
         {
             // The expanded diff keeps its tinted rows between two dim rules, so the
@@ -974,6 +1037,23 @@ public sealed class TuiTranscript
         }
 
         TrimRetained();
+        var row = TuiToolRow.Compose(status, display, target, meta, Width);
+        if (detail is not null && _surface.Writer is ITranscriptActivityWriter)
+        {
+            _surface.WriteActivityLine(detail.ActivityId, row);
+            _settledToolRows[detail.ActivityId] = detail;
+            while (_settledToolRows.Count > 64) _settledToolRows.Remove(_settledToolRows.Keys.First());
+        }
+        else WriteLines(row);
+    }
+
+    private static string? ToolRowMetrics(ToolDetail detail)
+    {
+        var meta = ComposeToolRowMeta(detail.Count, detail.Added, detail.Removed);
+        if (detail.DurationMs is > 0)
+            meta = string.IsNullOrWhiteSpace(meta) ? FormatDuration(detail.DurationMs.Value)
+                : meta + " · " + FormatDuration(detail.DurationMs.Value);
+        return meta;
     }
 
     /// <summary>Metrics suffix for an inline tool row: counts and diff stats, no duration.</summary>
@@ -1013,6 +1093,7 @@ public sealed class TuiTranscript
         {
             ToolLineStatus.Ok => ("✓", TuiToken.Ok),
             ToolLineStatus.Failed => ("✗", TuiToken.Err),
+            ToolLineStatus.Unknown => ("·", TuiToken.Meta),
             _ => ("▸", TuiToken.Brand),
         };
 

@@ -42,7 +42,7 @@ public sealed class HarnessConcurrencyTests
     }
 
     [Fact]
-    public async Task Active_workspace_conflict_returns_workspace_busy_without_a_second_insert()
+    public async Task Different_sessions_in_one_workspace_are_admitted_atomically_without_configuration()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
@@ -55,10 +55,8 @@ public sealed class HarnessConcurrencyTests
             firstStore.TryCreateRunAsync(first, CancellationToken.None),
             secondStore.TryCreateRunAsync(second, CancellationToken.None));
 
-        Assert.Single(results, result => result.Outcome == CreateRunOutcome.Created);
-        var conflict = Assert.Single(results, result => result.Outcome == CreateRunOutcome.Conflict);
-        Assert.Equal("workspace_busy", conflict.ErrorCode);
-        Assert.Equal(1L, await CountRunsAsync(fixture));
+        Assert.All(results, result => Assert.Equal(CreateRunOutcome.Created, result.Outcome));
+        Assert.Equal(2L, await CountRunsAsync(fixture));
     }
 
     [Fact]

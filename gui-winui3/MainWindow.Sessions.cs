@@ -362,6 +362,8 @@ namespace RuApp
                 return;
             }
 
+            if (_isSettingsModalOpen) return;
+
             var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 

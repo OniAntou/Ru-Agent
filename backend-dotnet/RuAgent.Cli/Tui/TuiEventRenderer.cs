@@ -35,6 +35,7 @@ public sealed class TuiSessionRenderer
 
     public TuiTranscript Transcript => _transcript;
 
+
     /// <summary>Current viewport width, refreshed from the console when one is attached.</summary>
     public int Width
     {
@@ -57,6 +58,7 @@ public sealed class TuiSessionRenderer
 
     public void BeginTurn()
     {
+        if (_surface.Writer is ITranscriptTurnRewriter screen) screen.BeginAssistantTurn();
         _transcript.BeginTurn();
         _status.SetState(TuiRunState.Thinking);
         StartLiveRow();

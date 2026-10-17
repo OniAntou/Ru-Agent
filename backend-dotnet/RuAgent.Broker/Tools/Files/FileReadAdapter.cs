@@ -12,11 +12,11 @@ public sealed class FileReadAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
-    public FileReadAdapter(string workspaceRoot)
+    public FileReadAdapter(string workspaceRoot, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
     }
 
     public JsonObject Execute(JsonObject arguments) =>

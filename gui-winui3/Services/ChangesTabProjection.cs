@@ -24,10 +24,19 @@ public static class ChangesTabProjection
 {
     public const int MaxRows = 100;
 
+    public static ChangesTabProjectionResult ProjectSession(
+        IEnumerable<ChatMessageItem> messages,
+        IEnumerable<AgentActivityItem> liveActivities) =>
+        Project(messages.SelectMany(message =>
+            message.AgentActivities is { } activities
+                ? (IEnumerable<AgentActivityItem>)activities
+                : Array.Empty<AgentActivityItem>()).Concat(liveActivities));
+
     public static ChangesTabProjectionResult Project(IEnumerable<AgentActivityItem> activities)
     {
         ArgumentNullException.ThrowIfNull(activities);
         var edits = new List<AgentActivityItem>();
+        var positions = new Dictionary<string, int>(StringComparer.Ordinal);
         int added = 0;
         int removed = 0;
         foreach (var activity in activities)
@@ -37,7 +46,21 @@ public static class ChangesTabProjection
                 continue;
             }
 
-            edits.Add(activity);
+            // Replayed messages can share their current run's live collection.
+            // The live copy wins without moving that edit to a different turn.
+            if (positions.TryGetValue(activity.ActivityId, out int position))
+            {
+                edits[position] = activity;
+            }
+            else
+            {
+                positions.Add(activity.ActivityId, edits.Count);
+                edits.Add(activity);
+            }
+        }
+
+        foreach (var activity in edits)
+        {
             added += activity.Added ?? 0;
             removed += activity.Removed ?? 0;
         }
@@ -53,7 +76,8 @@ public static class ChangesTabProjection
                 activity.EditBeforeText,
                 activity.EditAfterText,
                 activity.LineStart,
-                activity.SafeCode));
+                activity.SafeCode,
+                activity.ActivityId));
         }
 
         return new ChangesTabProjectionResult(rows, added, removed);

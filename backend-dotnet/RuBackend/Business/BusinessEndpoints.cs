@@ -212,6 +212,8 @@ public static class BusinessEndpoints
                 .Take(SessionWorkspaceResolver.MaximumRequestedSessions)
                 .ToArray();
             var isTruncated = listing.IsTruncated || listing.Sessions.Count > values.Length;
+            var runningSessions = await SessionRunActivityResolver.ResolveAsync(
+                values.Select(value => value.Id).ToArray(), sqliteOptions, cancellationToken).ConfigureAwait(false);
             var workspaces = await SessionWorkspaceResolver.ResolveAsync(
                     values.Select(value => value.Id).ToArray(),
                     sqliteOptions,
@@ -248,6 +250,7 @@ public static class BusinessEndpoints
                         workspace_label = value.WorkspaceLabel,
                         workspace_path = value.WorkspacePath,
                         client_source = value.ClientSource,
+                        is_agent_running = runningSessions.Contains(value.Id),
                     };
                 }).ToArray(),
             });

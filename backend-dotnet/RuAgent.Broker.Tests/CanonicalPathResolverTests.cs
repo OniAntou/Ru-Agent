@@ -101,6 +101,36 @@ public sealed class CanonicalPathResolverTests : IDisposable
     }
 
     [Fact]
+    public void Full_access_resolver_treats_protected_targets_as_ordinary()
+    {
+        // full_access builds its tool sets with allowProtectedPaths: true, so a
+        // catalog-protected name classifies by root membership like any other
+        // target instead of being typed Protected.
+        var protectedInRoot = Path.Combine(_root, "harness_key");
+        Directory.CreateDirectory(protectedInRoot);
+        var outside = Path.Combine(Path.GetTempPath(), "ru-protected-open-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "runtime_descriptor.json"), "descriptor");
+        try
+        {
+            var resolver = new CanonicalPathResolver(_root, allowProtectedPaths: true);
+
+            var inside = resolver.Resolve("harness_key");
+            Assert.Equal(PathClassification.InsideWorkspace, inside.Classification);
+            Assert.False(inside.IsProtected);
+
+            var external = resolver.Resolve(Path.Combine(outside, "runtime_descriptor.json"));
+            Assert.Equal(PathClassification.OutsideWorkspace, external.Classification);
+            Assert.False(external.IsProtected);
+        }
+        finally
+        {
+            Directory.Delete(protectedInRoot, true);
+            Directory.Delete(outside, true);
+        }
+    }
+
+    [Fact]
     public void Missing_create_target_under_workspace_is_inside()
     {
         var missing = Path.Combine(_root, "newdir", "created.md");

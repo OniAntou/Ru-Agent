@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { EventEmitter } from "node:events";
 import path from "node:path";
 import { BridgeTransport } from "../src/transport.js";
+import { controlledTransport } from "./controlled-transport.js";
+
+const MAX_FRAME_BYTES = 1024 * 1024 + 64 * 1024;
 
 const fixture = path.join(import.meta.dirname, "fixtures", "fake-bridge.mjs");
 const cmdFixture = path.join(import.meta.dirname, "fixtures", "fake-bridge.cmd");
@@ -15,32 +17,86 @@ function start(mode = "echo") {
   });
 }
 
-function controlledTransport(write: (payload: string) => boolean) {
-  const child = new EventEmitter() as EventEmitter & {
-    stdout: EventEmitter & { setEncoding(encoding: string): void };
-    stderr: EventEmitter & { setEncoding(encoding: string): void };
-    stdin: EventEmitter & { write(payload: string): boolean; end(): void };
-    exitCode: number | null;
-    kill(): void;
-    killCount: number;
-  };
-  child.stdout = Object.assign(new EventEmitter(), { setEncoding: (_encoding: string) => {} });
-  child.stderr = Object.assign(new EventEmitter(), { setEncoding: (_encoding: string) => {} });
-  child.stdin = Object.assign(new EventEmitter(), {
-    write,
-    end: () => queueMicrotask(() => child.emit("exit", 0, null)),
-  });
-  child.exitCode = null;
-  child.killCount = 0;
-  child.kill = () => {
-    child.killCount++;
-    child.emit("exit", null, "SIGTERM");
-  };
-  const Transport = BridgeTransport as unknown as new (child: unknown) => BridgeTransport;
-  return { child, transport: new Transport(child) };
-}
-
 describe("BridgeTransport", () => {
+  it.each([null, [], "text", 12])("fails closed when stdout root is not an object: %s", async (root) => {
+    const controlled = controlledTransport(() => true);
+    let closeCalls = 0;
+    controlled.transport.onClose(() => closeCalls++);
+    const pending = controlled.transport.request("pending");
+    controlled.child.stdout.emit("data", `${JSON.stringify(root)}\n`);
+
+    await expect(pending).rejects.toThrow(/invalid json-rpc envelope/i);
+    expect(closeCalls).toBe(1);
+    expect(controlled.child.killCount).toBe(1);
+    controlled.child.stdout.emit("data", '{"jsonrpc":"2.0","id":1,"result":{}}\n');
+    expect(closeCalls).toBe(1);
+    expect(controlled.child.killCount).toBe(1);
+  });
+
+  it.each([
+    { jsonrpc: "2.0", method: "notify", params: null },
+    { jsonrpc: "2.0", method: "notify", params: [] },
+    { jsonrpc: "1.0", id: 1, result: {} },
+    { jsonrpc: "2.0", id: 1 },
+    { jsonrpc: "2.0", id: 1, result: {}, error: { code: 1, message: "bad" } },
+    { jsonrpc: "2.0", id: 1, error: { code: "bad", message: "bad" } },
+  ])("fails pending requests on invalid envelope %#", async (envelope) => {
+    const controlled = controlledTransport(() => true);
+    const pending = controlled.transport.request("pending");
+    controlled.child.stdout.emit("data", `${JSON.stringify(envelope)}\n`);
+
+    await expect(pending).rejects.toThrow(/invalid json-rpc envelope/i);
+    expect(controlled.child.killCount).toBe(1);
+  });
+
+  it("accepts a frame at the UTF-8 byte limit after CRLF removal", async () => {
+    const controlled = controlledTransport(() => true);
+    const pending = controlled.transport.request("pending");
+    const base = '{"jsonrpc":"2.0","id":1,"result":{}}';
+    const frame = base + " ".repeat(MAX_FRAME_BYTES - Buffer.byteLength(base, "utf8"));
+    controlled.child.stdout.emit("data", `${frame}\r\n`);
+
+    await expect(pending).resolves.toEqual({});
+    expect(controlled.child.killCount).toBe(0);
+    await controlled.transport.close();
+  });
+
+  it("assembles UTF-8 characters split across stdout byte chunks", async () => {
+    const controlled = controlledTransport(() => true);
+    const pending = controlled.transport.request("pending");
+    const frame = Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"text":"🧡"}}\r\n', "utf8");
+    const split = frame.indexOf(Buffer.from("🧡", "utf8")) + 2;
+    controlled.child.stdout.emitBytes(frame.subarray(0, split));
+    controlled.child.stdout.emitBytes(frame.subarray(split));
+
+    await expect(pending).resolves.toEqual({ text: "🧡" });
+    await controlled.transport.close();
+  });
+
+  it("rejects oversized complete frames and ignores later coalesced frames", async () => {
+    const controlled = controlledTransport(() => true);
+    let notifications = 0;
+    controlled.transport.onNotification(() => notifications++);
+    const pending = controlled.transport.request("pending");
+    const base = '{"jsonrpc":"2.0","id":1,"result":{}}';
+    const oversized = base + " ".repeat(MAX_FRAME_BYTES + 1 - Buffer.byteLength(base, "utf8"));
+    controlled.child.stdout.emit("data", `${oversized}\n{"jsonrpc":"2.0","method":"later","params":{}}\n`);
+
+    await expect(pending).rejects.toThrow(/oversized frame/i);
+    expect(notifications).toBe(0);
+    expect(controlled.child.killCount).toBe(1);
+  });
+
+  it("rejects an oversized partial multibyte frame before its newline", async () => {
+    const controlled = controlledTransport(() => true);
+    const pending = controlled.transport.request("pending");
+    const prefix = '{"jsonrpc":"2.0","id":1,"result":{"text":"';
+    const count = Math.ceil((MAX_FRAME_BYTES + 1 - Buffer.byteLength(prefix, "utf8")) / 4);
+    controlled.child.stdout.emit("data", prefix + "🧡".repeat(count));
+
+    await expect(pending).rejects.toThrow(/oversized frame/i);
+    expect(controlled.child.killCount).toBe(1);
+  });
   it("resolves a response received before a backpressured write drains", async () => {
     let child!: ReturnType<typeof controlledTransport>["child"];
     const controlled = controlledTransport((payload) => {

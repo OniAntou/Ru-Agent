@@ -84,14 +84,14 @@ public sealed class ChatFollowContractTests
     public void Bulk_reload_never_scrolls_on_pre_reset_numbers()
     {
         // A ReplaceAll drops the virtualized panel before it measures: offsets
-        // read synchronously right after it belong to the old content, so a
-        // fresh open parked at its oldest message and a turn-end reload yanked
-        // a parked reader to the top. Both paths settle after layout instead.
+        // read before layout belong to the old content. A fresh open flushes
+        // reset/realization before paint; a turn-end reload restores its anchor.
         var code = GuiSource.ViewText("ChatView");
 
         var open = GuiSource.MethodBody(code, "OpenSessionAsync");
         Assert.Contains("Messages.ReplaceAll(opened)", open, StringComparison.Ordinal);
-        Assert.Contains("RunAfterLayout(ScrollToLatestAfterLayout)", open, StringComparison.Ordinal);
+        Assert.Contains("PositionOpenedTranscript()", open, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunAfterLayout(ScrollToLatestAfterLayout)", open, StringComparison.Ordinal);
         Assert.DoesNotContain("ScrollChatToBottom()", open, StringComparison.Ordinal);
 
         var reload = GuiSource.MethodBody(code, "ReloadSessionHistoryAsync");

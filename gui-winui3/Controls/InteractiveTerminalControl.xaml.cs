@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 using RuApp.Services;
 
@@ -34,6 +35,7 @@ namespace RuApp.Controls
         private bool _isWebReady;
         private bool _isStarting;
         private bool _shutdown;
+        private bool _focusRequested;
         private readonly UiRequestLifetime _callbacks = new();
         private Action<byte[]>? _outputHandler;
         private Action? _exitHandler;
@@ -42,15 +44,17 @@ namespace RuApp.Controls
         {
             InitializeComponent();
             TerminalWebView.SizeChanged += (_, _) => PostFit();
+            ActualThemeChanged += (_, _) => PostTheme();
         }
 
         /// <summary>
         /// Shows the terminal for this working directory, starting the shell on
         /// first use. A different directory restarts the shell.
         /// </summary>
-        public void EnsureStarted(string? workingDirectory)
+        public void EnsureStarted(string? workingDirectory, bool focus = true)
         {
             _shutdown = false;
+            _focusRequested |= focus;
             string directory = ResolveWorkingDirectory(workingDirectory);
             bool directoryChanged = _workingDirectory is not null
                 && !string.Equals(_workingDirectory, directory, StringComparison.OrdinalIgnoreCase);
@@ -59,6 +63,13 @@ namespace RuApp.Controls
             if (directoryChanged)
             {
                 StopSession();
+                if (_isWebReady) PostMessage(new { type = "reset" });
+            }
+
+            if (_session is not null && _isWebReady)
+            {
+                ApplyRequestedFocus();
+                return;
             }
 
             _ = EnsureWebAndSessionAsync();
@@ -97,7 +108,7 @@ namespace RuApp.Controls
                 if (_isWebReady)
                 {
                     StartSession();
-                    PostFocus();
+                    ApplyRequestedFocus();
                 }
             }
             catch (Exception)
@@ -125,9 +136,10 @@ namespace RuApp.Controls
                 {
                     case "ready":
                         _isWebReady = true;
+                        PostTheme();
                         StartSession();
                         PostFit();
-                        PostFocus();
+                        ApplyRequestedFocus();
                         break;
                     case "input" when root.TryGetProperty("data", out var input):
                         if (input.GetString() is { Length: > 0 } encoded)
@@ -218,6 +230,33 @@ namespace RuApp.Controls
             {
                 PostMessage(new { type = "focus" });
             }
+        }
+
+        private void PostTheme()
+        {
+            if (!_isWebReady) return;
+            string Color(string key)
+            {
+                var color = ((SolidColorBrush)Application.Current.Resources[key]).Color;
+                return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            }
+            PostMessage(new
+            {
+                type = "theme",
+                background = Color("RuCanvasBrush"),
+                foreground = Color("RuInkBrush"),
+                cursor = Color("RuInkBrush"),
+                selectionBackground = Color("RuLineBrush"),
+                scrollbar = Color("RuLineBrush"),
+                light = ActualTheme == ElementTheme.Light,
+            });
+        }
+
+        private void ApplyRequestedFocus()
+        {
+            if (!_focusRequested) return;
+            _focusRequested = false;
+            PostFocus();
         }
 
         private void PostMessage(object payload)

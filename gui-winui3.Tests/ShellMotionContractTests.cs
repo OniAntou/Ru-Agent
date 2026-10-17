@@ -24,10 +24,13 @@ public sealed class ShellMotionContractTests
         // flight, so the column cannot jump under a panel that is still visible.
         Assert.Contains("SidePanel.CurrentMode", layout, StringComparison.Ordinal);
 
-        var control = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
-        var exit = GuiSource.MethodBody(control, "PlayVisibilityExit");
+        var control = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs")
+            + GuiSource.Text("Controls", "AgentSidePanelControl.Motion.cs");
+        var exit = GuiSource.MethodBody(control, "PlaySurfaceTransition");
         Assert.Contains("UiTiming.AnimationsEnabled", exit, StringComparison.Ordinal);
         Assert.Contains("completed", exit, StringComparison.Ordinal);
+        Assert.Contains("ReferenceEquals", exit, StringComparison.Ordinal);
+        Assert.Contains("CancelVisibilityExit", GuiSource.MethodBody(control, "ApplyState"), StringComparison.Ordinal);
 
         // A hide leaves the mode untouched, so a re-show must not rely on the
         // mode-change entrance.

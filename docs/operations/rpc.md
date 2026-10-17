@@ -28,9 +28,23 @@ session and run handles.
   instead of emitting a frame the client would reject; fetch those bytes with the CLI
   `agent output` command. Every other outbound frame is bounded by its method-level
   parameter and result caps.
-- The TypeScript SDK additionally rejects its read buffer past **1 MiB + 64 KiB of
-  UTF-8 bytes** (frame cap plus envelope/read-chunk slack), then kills the child and
-  fails every pending request.
+- The TypeScript SDK caps each complete or partial frame at **1 MiB + 64 KiB of
+  UTF-8 bytes**, excluding a trailing CR/LF, before parsing. Oversized frames or
+  invalid JSON-RPC envelopes (including null roots or non-object notification
+  params) fail all pending requests and event subscriptions and terminate the
+  child. Later frames in the same read chunk are ignored after failure.
+- Each SDK event iterator shares a **4,096-notification / 8 MiB serialized UTF-8**
+  buffer between events arriving before attach acknowledgement and events
+  waiting for the consumer. Overflow discards that iterator's backlog and throws
+  `BridgeTransportError` with `lastDeliveredSequence`. Cleanup targets its exact
+  subscription when peers exist; a pending attach acknowledgement defers that
+  cleanup until its ID arrives, without delaying the overflow error.
+  A malformed attach result fails the iterator. With peers and no usable
+  subscription ID, cleanup cannot target the unknown subscription safely, so
+  the SDK closes the bridge transport and fails its other iterators too. Host
+  runs continue; this does not send `run.cancel`.
+  Attach again using that value as `afterSequence` to replay durable events;
+  transient events cannot be replayed. Detach does not cancel the Host run.
 - A line that is not valid JSON is answered with `parse_error` (`-32700`) and skipped.
 - Requests without an `id` are notifications and get no response.
 - `$/cancelRequest` is accepted and ignored: v1 requests are short-lived, so there is no

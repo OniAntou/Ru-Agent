@@ -20,14 +20,14 @@ public sealed class TuiDocumentPanelTests
     [Fact]
     public void ReportCommands_AreTheReadOnlyOnes()
     {
-        foreach (var command in new[] { "/tree", "/status", "/stats", "/tokens", "/help", "/export", "/attachments", "/history" })
+        foreach (var command in new[] { "/status", "/help", "/attachments" })
         {
             Assert.True(ChatCommandCatalog.IsReportCommand(command), command);
         }
 
         // Anything that changes state or asks a question stays on the composer and the
         // modal pickers, because those need a decision rather than a reading.
-        foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/attach", "/rewind", "/continue" })
+        foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/attach", "/continue" })
         {
             Assert.False(ChatCommandCatalog.IsReportCommand(command), command);
         }

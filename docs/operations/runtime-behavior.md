@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current development branch, updated 2026-10-13.
+Status: operating contract for the current development branch, updated 2026-10-17.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -285,7 +285,9 @@ expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE
 path. Workspace trust is explicit once per canonical identity: the GUI shows a
 guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
-recreated identity requires trust again. Full Access requires the GUI gate or
+recreated identity requires trust again. Windows identity resolution requires
+native final-path, volume and directory file-ID evidence; an unavailable lookup
+fails instead of substituting a hash of the path. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
 bounded Agent status remain inline above the input. The terminal client keeps
 the same parked-run path: the status row reads `▲ run paused · <code> · /continue`
@@ -391,9 +393,12 @@ read and Web but denies terminal and mutation outright (read-only, no
 per-change asks) and asks for external structured access; `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;
 external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
-structured files and arbitrary terminal auto-allow while structured protected
-paths (harness key/database files and runtime descriptors) and hard-invalid
+structured files, arbitrary terminal, and structured protected paths (harness
+key/database files and runtime descriptors) are automatic, while hard-invalid
 requests remain denied.
+These defaults do not bypass explicit deny or ask rules: an external folder
+grant or Full Access fallback cannot override a matched ask. Hard invariants,
+including Plan's read-only gate, are evaluated first.
 Repository cleanliness never changes the decision.
 
 Standard structured-file access outside the trusted root may create a
@@ -409,7 +414,9 @@ uses launch-directory permission under ADR-0017, with explicit ask/deny rules;
 Full Access also permits external launch directories. The
 `bash` schema has no sandbox selector and rejects obsolete sandbox arguments.
 Hard timeout, output cap, cancellation, redaction, and process-tree cleanup
-remain. Structured file tools retain their independent path protections. API
+remain. Structured file tools retain their independent path protections: the
+protected-path denial holds in `plan` and `standard`, and `full_access` is
+literally full. API
 keys remain in credential storage and diagnostics redact secrets.
 Web is automatic in all canonical presets; `web_approval_required` remains only
 as an explicit-rule compatibility reason.
@@ -467,7 +474,8 @@ materialized as a run-scope allow rule into the session's later policy
 snapshots, so an identical call — including later in the same run — evaluates
 as allowed without another prompt. The memory is in-process, expires and is
 capped per session, and dies with the session or a host restart; protected-path
-denials and Broker evaluation still decide every call. A
+denials (where the preset carries them) and Broker evaluation still decide
+every call. A
 repeated `policy_denied` tool receipt followed by prose is not an approval
 decision: it may still take the bounded `unverified_after_tool_failure` notes,
 with the denial code as the terminal code.

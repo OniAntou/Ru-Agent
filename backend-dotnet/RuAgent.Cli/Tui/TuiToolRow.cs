@@ -22,16 +22,19 @@ public static class TuiToolRow
         ArgumentException.ThrowIfNullOrWhiteSpace(display);
         var w = Math.Max(MinWidth, width);
         var token = status == ToolLineStatus.Failed ? TuiToken.Err
+            : status == ToolLineStatus.Unknown ? TuiToken.Meta
             : status == ToolLineStatus.Running ? TuiToken.Brand : TuiToken.Ok;
         var label = DisplayLabel(display);
         var glyph = status switch
         {
             ToolLineStatus.Failed => "✗",
             ToolLineStatus.Running => "◐",
+            ToolLineStatus.Unknown => "·",
             _ => "✓",
         };
         var metrics = status == ToolLineStatus.Failed
             ? string.IsNullOrWhiteSpace(meta) ? "failed" : "failed · " + meta
+            : status == ToolLineStatus.Unknown ? "outcome unavailable"
             : meta ?? string.Empty;
         var head = glyph + " " + label;
         if (TuiText.VisibleWidth(head) + TuiText.VisibleWidth(metrics) + 3 > w)

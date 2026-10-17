@@ -13,19 +13,19 @@ public sealed class FileDeleteAdapter
     private readonly int _maxRecoveryBytes;
     private readonly InMemoryRecoveryStore _recoveryStore;
 
-    public FileDeleteAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
-        : this(workspaceRoot, new InMemoryRecoveryStore(), maxRecoveryBytes)
+    public FileDeleteAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes, bool allowProtectedPaths = false)
+        : this(workspaceRoot, new InMemoryRecoveryStore(), maxRecoveryBytes, allowProtectedPaths)
     {
     }
 
     // A shared store is required when delete and restore must observe the same
     // recovery ids (ToolExecutionService owns one per instance).
-    internal FileDeleteAdapter(string workspaceRoot, InMemoryRecoveryStore recoveryStore, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
+    internal FileDeleteAdapter(string workspaceRoot, InMemoryRecoveryStore recoveryStore, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         ArgumentNullException.ThrowIfNull(recoveryStore);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
         _maxRecoveryBytes = FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
         _recoveryStore = recoveryStore;
     }

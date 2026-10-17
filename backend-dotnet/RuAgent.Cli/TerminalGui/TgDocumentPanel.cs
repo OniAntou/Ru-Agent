@@ -7,7 +7,7 @@ namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
 /// The floating read-only window over a command's output: the slash commands that only report
-/// (/tree, /status, /stats, /tokens, /help, /attachments, /history, /export) open this instead
+/// (/status, /help, /attachments) open this instead
 /// of scrolling their report into the transcript straight away. Rows are wrapped hard so the
 /// column-aligned output a command prints keeps its shape, and the view owns the scroll offset
 /// so the owner only has to say when it closes.

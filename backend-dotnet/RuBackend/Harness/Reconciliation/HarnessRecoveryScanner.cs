@@ -17,7 +17,7 @@ public sealed record RecoveredRunSummary(RunId RunId, string Action);
 /// <summary>
 /// Outcome of one recovery sweep. <see cref="ParkedCount"/> counts runs the sweep
 /// could not handle at all (a store fault, a corrupt stream): they stay
-/// non-terminal and keep their workspace locked, so the caller retries.
+/// non-terminal and retain active-session ownership, so the caller retries.
 /// </summary>
 public sealed record RecoverySweepResult(
     IReadOnlyList<RecoveredRunSummary> Recovered,
@@ -55,7 +55,7 @@ public sealed class HarnessRecoveryScanner(
     /// True when a run waits on a workspace-trust challenge that has outlived
     /// <see cref="WorkspaceTrustTimeout"/>: the decision endpoint refuses it as
     /// <c>trust_request_expired</c>, so the run can never leave the wait through a
-    /// client and would hold its workspace's active-run lock forever.
+    /// client and would hold its session's active-run ownership forever.
     /// </summary>
     public static bool IsExpiredWorkspaceTrustWait(AgentRun run, DateTimeOffset now) =>
         run.State == HarnessRunState.WaitingWorkspaceTrust
@@ -85,7 +85,7 @@ public sealed class HarnessRecoveryScanner(
                 // One unreadable run (corrupt events, store fault) must not abort
                 // recovery of every other run: it stays non-terminal and the sweep
                 // reports it so the caller can retry. It must be visible though: a
-                // silently parked run keeps its workspace's active-run lock and
+                // silently parked run keeps its session's active-run ownership and
                 // refuses new runs in that workspace.
                 parked++;
                 logger?.LogWarning(
@@ -121,7 +121,7 @@ public sealed class HarnessRecoveryScanner(
 
         // Workspace trust requests expire after ten minutes. If the host died or
         // the client abandoned the prompt, leaving this row non-terminal would
-        // keep the workspace's unique active-run lock forever. Trust is a
+        // keep the session's unique active-run ownership forever. Trust is a
         // pre-execution gate, so cancelling an expired request cannot roll back
         // any tool side effect.
         if (IsExpiredWorkspaceTrustWait(run, time.UtcNow))
@@ -301,7 +301,7 @@ public sealed class HarnessRecoveryScanner(
     }
 
     /// <summary>
-    /// Fails an abandoned approval wait so its workspace's active-run lock is
+    /// Fails an abandoned approval wait so its session's active-run ownership is
     /// released. The approval gate is pre-execution: the gated tool call was never
     /// dispatched, so failing the run cannot roll back a tool side effect.
     /// </summary>
@@ -318,7 +318,7 @@ public sealed class HarnessRecoveryScanner(
     }
 
     /// <summary>
-    /// Cancels an abandoned workspace-trust wait so its workspace's active-run lock is
+    /// Cancels an abandoned workspace-trust wait so its session's active-run ownership is
     /// released. Trust is a pre-execution gate, so cancelling an expired challenge cannot
     /// roll back a tool side effect. Called both by the startup sweep and by the runtime
     /// loop, so a long-lived host does not park the run until the next restart.
@@ -369,8 +369,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
     /// <summary>
     /// A transient startup fault (a database lock while the Broker opens the same
     /// file, one unreadable run) must not leave every non-terminal run parked:
-    /// parked runs keep their workspace's active-run lock, so new runs in those
-    /// workspaces are refused until the next runtime start.
+    /// parked runs keep their session's active-run ownership, so new runs in those
+    /// sessions are refused until the next runtime start.
     /// </summary>
     private const int MaximumAttempts = 3;
 
@@ -419,11 +419,11 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
 
             if (attempt == MaximumAttempts)
             {
-                // A parked run keeps its workspace's active-run lock, so every new
-                // run in that workspace is refused until a later runtime start
+                // A parked run keeps its session's active-run ownership, so every new
+                // run in that session is refused until a later runtime start
                 // retries. Give up loudly instead of parking silently.
                 _logger.LogError(
-                    "startup recovery gave up after {Attempts} attempts; parked runs keep their workspaces locked until the next runtime start",
+                    "startup recovery gave up after {Attempts} attempts; parked runs retain session ownership until the next runtime start",
                     attempt);
                 return;
             }
@@ -506,7 +506,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         catch (Exception error)
         {
             // The run scan must not skip workspace membership reconciliation:
-            // stale leases alone can keep every workspace locked. The failed
+            // stale leases alone can exhaust workspace runtime capacity. The failed
             // attempt is reported so the sweep can retry it.
             _logger.LogError(error, "startup recovery run scan failed");
             return false;
@@ -666,7 +666,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
             {
                 // Keeping the run parked is the right outcome for an unreadable
                 // registration, but an unexpected fault must not abort the sweep:
-                // the remaining runs still need their workspace locks back.
+                // the remaining runs still need their runtime registrations back.
                 _logger.LogWarning(error, "run {RunId} could not be rehydrated; keeping it parked", runId.Value);
             }
         }

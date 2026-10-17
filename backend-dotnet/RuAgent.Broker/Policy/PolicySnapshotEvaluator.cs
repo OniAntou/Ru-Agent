@@ -68,7 +68,7 @@ public sealed record PolicyEvaluation(
 
 /// <summary>
 /// Authoritative decision point: non-overridable protocol invariants first, then ordered
-/// last-match-wins evaluation over the bound snapshot, then preset fallbacks. Terminal
+/// deny/ask/allow evaluation over the bound snapshot, then preset fallbacks. Terminal
 /// fallbacks use the canonical launch directory independently of command syntax.
 /// </summary>
 public sealed class PolicySnapshotEvaluator
@@ -132,7 +132,12 @@ public sealed class PolicySnapshotEvaluator
         }
 
         var structuredTarget = context.Target;
-        if (structuredTarget is { IsProtected: true })
+        // Catalog-protected targets (harness key/database files, runtime
+        // descriptors, user-added RU_PROTECTED_PATHS entries) are a preset-level
+        // guard: plan and standard deny them outright, while full_access is
+        // literally full and evaluates them like any other target.
+        if (structuredTarget is { IsProtected: true }
+            && !AgentPolicyProfileCatalog.OpensProtectedPaths(AgentPolicyProfileCatalog.Get(snapshot.Preset)))
         {
             return Deny("protected_path");
         }
@@ -142,9 +147,9 @@ public sealed class PolicySnapshotEvaluator
         // workspace. Precedence is deny, then ask, then allow regardless of
         // creation order, matching Claude-style rule semantics: a remembered
         // allow can never override an explicit ask or deny. An allow still
-        // cannot widen pre-rule invariants (plan gate, protected paths,
-        // timeouts); outside the workspace it is honored as a bounded
-        // folder grant whose matcher must carry the path pattern.
+        // cannot widen pre-rule invariants (plan gate, the preset's structured
+        // protected-path guard, timeouts); outside the workspace it is honored
+        // as a bounded folder grant whose matcher must carry the path pattern.
         string? matchedDecision = null;
         string? matchedRuleId = null;
         foreach (var rule in snapshot.OrderedRules)
@@ -185,6 +190,11 @@ public sealed class PolicySnapshotEvaluator
         if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
         {
             return Deny("plan_preset_read_only", matchedRuleId);
+        }
+
+        if (string.Equals(matchedDecision, "ask", StringComparison.Ordinal))
+        {
+            return Ask("rule_asks", matchedRuleId);
         }
 
         if (structuredTarget is { IsOutsideWorkspace: true })
@@ -228,8 +238,8 @@ public sealed class PolicySnapshotEvaluator
         // background call returns immediately and is bounded by its lifetime cap,
         // so the blocking-window gate does not apply. It is a profile-level gate,
         // so it is applied after the ordered rules: an explicit allow or deny the
-        // user wrote still decides, and the hard maximum and the protected-path
-        // deny have already been enforced above.
+        // user wrote still decides, and the hard maximum and the preset's
+        // structured protected-path guard have already been enforced above.
         if (IsTerminal(context)
             && !context.Background
             && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs

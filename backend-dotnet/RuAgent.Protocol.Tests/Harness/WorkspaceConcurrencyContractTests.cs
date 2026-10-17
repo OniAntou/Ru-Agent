@@ -6,6 +6,15 @@ namespace RuAgent.Protocol.Tests.Harness;
 
 public sealed class WorkspaceConcurrencyContractTests
 {
+    [Theory]
+    [InlineData("exclusive", 32)]
+    [InlineData("shared", 1)]
+    [InlineData("shared", 33)]
+    public void Parallel_mode_cannot_be_disabled_by_policy(string mode, int capacity)
+    {
+        Assert.Throws<AgentProtocolException>(() => new WorkspaceConcurrencyPolicy(mode, capacity).Validate());
+    }
+
     [Fact]
     public void Shared_policy_round_trips_with_snake_case_fields()
     {

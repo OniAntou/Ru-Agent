@@ -675,9 +675,8 @@
                           ScrollViewer.VerticalScrollMode="Auto"
                           ScrollViewer.IsVerticalRailEnabled="True">
                     <ListView.ItemContainerTransitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition />
-                        </TransitionCollection>
+                        <!-- History resets are a single replacement, not animated row removals. -->
+                        <TransitionCollection />
                     </ListView.ItemContainerTransitions>
                     <ListView.Resources>
                         <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />

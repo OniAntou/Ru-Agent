@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-14.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-17.
 
 Desktop/CLI distribution and explicit update lifecycle are described in
 [ADR-0019](adr/0019-product-packages-and-explicit-updates.md). The maintenance
@@ -107,16 +107,60 @@ scrolling; wide tables scroll within the column. Plain table-cell extraction
 walks nested inline containers so emphasis and link labels survive display and
 TSV copy. Rich-block layout lives in `MarkdownBlock.RichBlocks.cs`, separate
 from prose and inline rendering.
+`MarkdownRenderPlan` identifies unchanged blocks, including resolved reference
+links; `MarkdownBlock.Rendering.cs` retains their native paragraphs and embedded
+controls and replaces only the changed suffix. Code/list indentation and hard
+breaks survive normalization. Nested list blocks keep their own Paragraph and
+InlineUIContainer ownership rather than reparenting attached inlines.
+Large tables render at most 50 rows (including the header) and eight columns;
+the preview states its visible and total counts. Copy and the full-table dialog
+use the complete TSV content. Edit activity previews use Protocol's bounded
+`AgentEditPreviewCodec` (`@@json` plus a two-string JSON array), preserving
+literal backslashes and delimiters. The live publisher redacts decoded values
+before re-encoding; the GUI also reads legacy `@@ old ==> new` session details.
 
 GUI conversation ownership lives in the WinUI-independent
-`ChatSessionPresentation`. It waits for the outgoing run stop, retains its
+`ChatSessionPresentation`. It detaches the outgoing event feed, retains its
 composer draft, then activates only the latest requested session. Activation
 cancels the previous history load; monitor callbacks and turn completion are
 scoped to the active session/turn. `AgentRunController` retains HTTP/SSE run
 ownership, while `ChatView` renders history, activities and scroll effects.
+Switching sessions never posts cancellation for an acknowledged run. The Host
+keeps executing and reopening adopts the newest non-terminal run. A switch waits
+for an in-flight create acknowledgement before detaching; unknown create outcomes
+retain the pinned request identity and block the switch until reconciliation.
+Explicit Stop still reconciles and cancels through the existing command path.
+While the incoming history and durable activities load, the view suspends pending
+feed timers without clearing or settling the outgoing message graph. Once the
+latest load is ready, it clears the old activity registry and replaces history
+in the same dispatcher turn. The transcript explicitly has no item-container
+transitions, so a bulk reset cannot animate every removed/added row. Sends and
+rewind are ignored during loading, and load errors replace rather than append
+to the outgoing history. Superseded loads cannot reset the new load's state.
+Opening positions the last row synchronously after flushing replacement layout,
+before yielding for further I/O or first paint. `ItemsStackPanel` switches from
+`KeepScrollOffset` to `KeepLastItemInView` for that jump, preserving the actual
+last row as virtualized height estimates change without a `ViewChanged` event.
+Pointer and scroll-key input restore `KeepScrollOffset` and invalidate deferred
+follow work. A guarded, constant-work `LayoutUpdated` handler anchors measured
+tail geometry, covering nested activity templates that complete after the first
+positioning pass. It never forces recursive layout or polls a timer, and detaches
+on disposal. All programmatic follow scrolls are unanimated: a native animation
+can otherwise outlive the layout/session it targeted. Reader scrolling resumes
+follow only at the actual bottom, after intermediate view changes finish, rather
+than anywhere inside streaming's 100-pixel proximity allowance.
+Activity row attachment only binds typography, status and live announcements;
+it does not fade or translate the row. Visual realization/recycling is not a new
+agent event. Running label sweeps still respect the OS animation setting.
 The shell renders sidebar sections and persisted workspace pins before Host
 startup, independently of session polling. An unchanged poll retains rendered
 rows, but rebuilds them if the sidebar has not been populated.
+`/sessions` adds `is_agent_running`, resolved for the bounded requested session
+set through the existing active-session SQLite index. Working-state changes
+notify existing session rows without changing their layout fingerprint. The
+sidebar's color wave shares one timer across realized running titles and
+releases row subscriptions on recycling/window close; reduced motion uses a
+static tint and the Running accessibility label remains available.
 `AgentReplyAccumulator` is the view's sole reply-delta deduplication owner;
 rebinding the same run preserves delivered-frame and reset identities.
 Retries truncate only the failed model step's text, preserving earlier steps;
@@ -139,11 +183,30 @@ saved assistant message gets its own bubble after its user turn, never an older
 turn's bubble. Replay preserves the saved final answer when payload reads omit
 it. Legacy messages without run identities permit ordinal replay only when the
 message/run counts match; unbalanced histories retain prose without guessing.
-GUI Tasks refreshes bind completion to session generation, current run and newest
-request. Interactive-terminal output/exit callbacks carry shell lifetime versions;
+Persisted transcript rows retain their raw server message index independently
+of hidden or synthetic display rows. Rewind uses that index, then reloads only
+while the requesting session still owns the view, without restoring live text
+removed by the rewind. Synthetic rows cannot be rewind targets. Queued turns
+remain queued until the Host's acceptance callback, including pre-accept errors.
+The GUI right-side surface keeps its floating session summary and adjacent details
+panel; narrow windows temporarily hide it without replacing session mode, active
+tab or fullscreen selection. A tab menu opens or reopens every view. Changes joins
+replayed message activities with the live run by activity identity; unchanged diff
+rows retain expansion state. Visibility storyboards are owned and cancelled when
+superseded. Background tasks offer an explicit refresh action and refresh every two
+seconds while the surface is visible and the run or a background process is active.
+Their optional `command` metadata is bounded
+and credential-redacted by the existing terminal redactor before retention; it does
+not change execution authority. GUI task refreshes bind completion to session
+generation, the selected run and newest request. Interactive-terminal output/exit
+callbacks carry shell lifetime versions;
 workspace replacement and shutdown invalidate queued callbacks. Model selection
 settings saves are serialized, skipping superseded queued choices and publishing
 only the newest result. These UI ownership guards do not change execution policy.
+Reasoning saves likewise serialize writes; the latest edit alone settles the
+label, with the last successful write as its failure fallback. Settings preserves
+hidden provider fields on load, stacks labels and controls below 700 pixels of
+content width, and confines keyboard navigation to the open modal.
 The TUI keeps raw Markdown lines until completion and uses a replaceable live tail
 projection on Terminal.Gui. Preview parsing runs at frame cadence; completed code
 lines remain intact for viewport reflow. Plain output commits at newline or Flush.
@@ -295,13 +358,22 @@ source for the effective-policy prompt projection and Broker fallback:
 | --- | --- |
 | `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
 | `standard` | Workspace reads, Web, workspace mutations and executable/shell launches from a workspace cwd are automatic; external structured access and external terminal cwd ask. Explicit rules and long foreground approval still apply. |
-| `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
+| `full_access` | The skip-all mode: external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) are automatic; hard-invalid requests remain denied. |
+
+These are preset defaults. Explicit deny and ask rules still take precedence,
+including for external files covered by a session folder grant or Full Access.
+Hard invariants, including Plan's read-only gate, remain ahead of ask rules.
 
 Preset selection is session-scoped. Workspace trust is a separate explicit
 decision, once per canonical `WorkspaceIdentity`; the GUI presents a guarded
 confirmation and CLI `run`/`chat` require `--trust-workspace`. A moved or
 recreated identity must be trusted again. Full Access requires the GUI gate or
 CLI `--confirm-full-access`, and neither implies workspace trust.
+
+On Windows, trust resolution requires a real directory, its native final path,
+volume serial and file ID. Query-only handles avoid requiring directory listing
+access. An unverifiable native identity fails with `workspace_identity_unverified`
+inside the resolver; a path hash never substitutes for Windows trust identity.
 
 A native model step may contain optional narration and one or more ordered tool
 calls. If any call asks, the complete non-denied batch is retained durably and
@@ -322,7 +394,8 @@ is no OS filesystem or network sandbox (ADR-0015). Standard authorizes the canon
 (ADR-0017); Full Access also permits external launch directories. The `bash` schema rejects obsolete sandbox arguments. Hard
 timeout, output cap, cancellation, redaction, and process-tree cleanup remain
 active. Structured file tools independently retain canonical/symlink/junction/
-hard-link containment and protected-path denial. API keys remain in credential
+hard-link containment, and the protected-path denial holds in `plan` and
+`standard` (`full_access` is literally full). API keys remain in credential
 storage and diagnostics redact secrets.
 
 The current managed process flow (Phase 2 cutover) is:
@@ -343,8 +416,8 @@ reconciliation surfaces from Phase 3:
 
 - In-process model runner: one typed `ModelGenerationRequest` → one provider generation → `AssistantStep(text, tool_calls, finish_reason)`. A native provider may return optional narration plus one or more ordered calls; a text-selection provider still emits exactly one JSON object with no surrounding selection prose. Provider errors map to bounded stable codes without provider/model fallback. The runner composes one system message with composer `2.0.0` from seven ordered blocks: persona, execution contract, environment, profile/effective policy, instruction blocks, capabilities, and runtime context. It returns a receipt whose version, block ids/order, and per-instruction digests Core validates before completion or tool dispatch. What that receipt attests is bounded: the `instruction.*` digests bind the exact instruction bytes in the context, while the other block digests are checked for shape and the caller does not receive the rendered prompt text. The typed step result carries text, tool calls, finish reason, and the prompt receipt, plus optional bounded `usage` and `reasoning_text`.
 - Native capability listings summarize the first sentence; complete descriptions, schemas and argument examples travel in declarations for Chat Completions, Responses and Anthropic. Legacy text selection receives full descriptions, schemas and examples in the system prompt and does not advertise native functions. The environment date is converted to the advertised local timezone. Native runtime references omit only tool outputs already present in retained native history; unmatched references and paging notices remain available. Protocol schemas may carry string-valued `description` annotations, included in their canonical digests; Broker treats these as guidance metadata and retains required/type/enum/bounds/additional-property checks and rejection of unsupported validation keywords. An annotation never grants execution authority.
-- Agent API/SSE: 23 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) plus the stored session-preset read (`GET /agent/v1/sessions/{sessionId}/preset`, 404 when the session has no stored selection), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers a bounded pattern as a durable project rule — a terminal command prefix or an approved external folder's canonical path pattern — or `deny`; any allow also remembers the approved intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots — the durable pattern when one was saved, the exact intent otherwise, and external-directory approvals keep the Broker folder grant and write no entry — so a matching call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). A non-terminal parked run (`waiting_user`, `reconciliation_required`) keeps its workspace lock until the client continues or reconciles it; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; a final report explicitly prefixed `[BLOCKED]` is stored as visible assistant history with the marker removed and ends the run as failed, preserving the receipt error code (or `model_reported_blocker` when no failed receipt exists), without another recovery note; terminal outbox delivery does not recreate runtime or transition the run to success. Otherwise, after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
-- Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants or, when the user clicked "always", a durable project allow rule whose canonical path pattern (`<folder>\**`) the evaluator honors for external targets (`external_directory_rule_allow`; deny and ask still outrank it and the plan read-only gate still applies). Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools in every preset. Canonical fallback ask reasons are `external_directory_required`, `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval` and `terminal_timeout_requires_approval`; `rule_asks` identifies explicit ask rules. Legacy reason codes remain readable in retained activity; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
+- Agent API/SSE: 23 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) plus the stored session-preset read (`GET /agent/v1/sessions/{sessionId}/preset`, 404 when the session has no stored selection), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers a bounded pattern as a durable project rule — a terminal command prefix or an approved external folder's canonical path pattern — or `deny`; any allow also remembers the approved intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots — the durable pattern when one was saved, the exact intent otherwise, and external-directory approvals keep the Broker folder grant and write no entry — so a matching call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). Different sessions always share a workspace; a non-terminal parked run (`waiting_user`, `reconciliation_required`) retains its session ownership until the client continues or reconciles it, without blocking other sessions; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; a final report explicitly prefixed `[BLOCKED]` is stored as visible assistant history with the marker removed and ends the run as failed, preserving the receipt error code (or `model_reported_blocker` when no failed receipt exists), without another recovery note; terminal outbox delivery does not recreate runtime or transition the run to success. Otherwise, after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
+- Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants or, when the user clicked "always", a durable project allow rule whose canonical path pattern (`<folder>\**`) the evaluator honors for external targets (`external_directory_rule_allow`; deny and ask still outrank it and the plan read-only gate still applies). Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools; catalog protection is the preset guard that `plan` and `standard` deny and `full_access` is literally full about. Canonical fallback ask reasons are `external_directory_required`, `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval` and `terminal_timeout_requires_approval`; `rule_asks` identifies explicit ask rules. Legacy reason codes remain readable in retained activity; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
 - Tool Definition ownership: `RuAgent.Protocol` contains exactly 13 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `ask_user`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `ask_user` is Host-intercepted before gateway dispatch: it parks the run in `WaitingUser` with a durable `input.requested` event and never reaches the Broker. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and the model-step `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog, deliberately excluding the Host-intercepted `ask_user`. `RuAgentBroker` is the only tool execution authority.
 - File tools: `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator, defaults to a 1 MiB source window and accepts up to 4 MiB, fitting serialized output into 4 MiB before Broker normalization; clipped Unicode or escaped text carries source-byte continuation metadata; `list` enumerates one directory (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation); and `help` searches the five bundled offline documentation resources, is workspace-independent and never reads workspace files. `grep` (regex content search with `file_glob`/`case_sensitive`/`is_regex` filters and bounded results) and `glob` (ordinal path-pattern results with traversal caps) remain standalone tools, alongside Host-prepared hash-guarded `write` with `op=write`/`edit` and recoverable `write` with `op=delete`/`op=restore` (preimage hashes are captured internally, never supplied in model proposal JSON; encrypted recovery copy remains bounded, opaque, one-time, and never in diagnostics). Model-facing definitions require preservation of user-supplied absolute paths inside a session-granted directory; Broker canonicalization and containment remain authoritative. `edit` preserves CRLF style when LF markers are supplied; `grep` uses canonical `is_regex`, bounded concurrent reads, cancellation, and ordinal output ordering; recovery caps are configurable below a 4 MiB hard maximum. `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
 - Model surface: the thirteen Protocol definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request, except Host-intercepted `ask_user` which never dispatches. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Terminal children run as the current Windows user and have no OS filesystem/network confinement. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. MCP stdio bridge code remains test infrastructure and is not production-composed; mail/calendar/task connectors are not advertised Agent tools.
@@ -356,8 +429,9 @@ reconciliation surfaces from Phase 3:
   are not permission gates. User-installed tools resolve through sanitized absolute
   PATH directories without an install-directory allowlist. The real executable,
   argv, cwd, timeout and classified metadata are rebound before consuming each
-  authorization token. No OS confinement is claimed. Structured protected-path
-  denial and credential storage/redaction are unchanged.
+  authorization token. No OS confinement is claimed. The structured
+  protected-path denial holds in `plan` and `standard`, and credential
+  storage/redaction are unchanged.
   Terminal children retain the trusted parent's `PSModulePath` for PowerShell
   module discovery; model input cannot supply or override environment entries.
   Secret variables remain stripped and seeded into output redaction.
@@ -380,7 +454,7 @@ reconciliation surfaces from Phase 3:
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
 - Existing-file mutation: canonical ancestor handles are retained; one validated target handle excludes competing writes and rename-over through hash validation and update/delete. Updates retain at most 32 MiB of rollback bytes (`file_too_large` above the cap), write in place and flush; ordinary write failures attempt restoration, but power-loss crash atomicity is not claimed. Missing-file creation stays staged with no overwrite. Patch rollback restores only still-matching applied output, preserving intervening editor changes.
-- Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading and project-file discovery refuse unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
+- Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading refuses unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - Interactive and headless CLI: `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run execution to HTTP/SSE. Its Terminal.Gui TUI owns terminal presentation, command navigation, attachment submission and run-following interaction; it also exposes headless commands and safe event envelopes. Model execution and execution policy remain Harness/Broker owned. Commands include `agent approve`/`deny`, policy management, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
   Terminal.Gui is the sole interactive screen engine. Redirected input/output,
@@ -429,6 +503,29 @@ reconciliation surfaces from Phase 3:
   boundaries.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
+  Silent durable run/model metadata does not flush unfinished assistant prose.
+  Step-rewind callbacks read their row marker on the UI loop after the queued
+  step-start callback, so a worker-thread retry removes the superseded reply.
+  When durable text reveals a missing streamed head, the screen replaces the
+  current turn's prose with the complete step texts, separated by paragraphs,
+  retaining tool rows and earlier turns. Recovery declines after screen-retention
+  eviction or reset; sequential output keeps its explicit truncation notice.
+  Tool-result badges use typed completion activity: the public envelope's status
+  is a run status and `running` alone is not a tool failure. Without outcome
+  metadata the tool row remains neutral and says outcome unavailable.
+  Late completion details update that existing tool row in place. Row markers
+  are invalidated by retention, reset and rewinds rather than guessing at a
+  shifted row. Document panels own their paging keys while focused.
+  The TUI intentionally keeps core chat, inline tools/diffs, approvals, attachments,
+  session/model controls, run recovery, help and updates. The live header context
+  meter remains. Plans render only completed/total counts at existing transcript
+  boundaries, without splitting streamed prose or retaining a separate task list.
+  Activity/todo/change inspectors, the project-file browser, session tree, rewind,
+  Markdown export and separate token/prompt-history reports are absent from the
+  interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
+  retain their own capabilities. Conversation replay retains the latest
+  20 nonempty messages, with a 100,000-character bound per message; screen
+  retention is independently bounded by `TgTranscriptView`.
   Command overlays follow the composer and remain bounded within the frame.
   Prose reflows across the full viewport width like the classic renderer; verified
   Markdown table blocks reflow
@@ -569,8 +666,8 @@ prompt guidance only and never execute tools or grant anything; subagent
 orchestration, LSP, extension/plugin/MCP discovery, arbitrary system overrides,
 Chat compatibility, UI redesign, and OS filesystem/network confinement are
 outside this implementation. Terminal children run as the current Windows
-user; structured file tools stay in-process under canonical path containment
-and protected-path denial (ADR-0015).
+user; structured file tools stay in-process under canonical path containment,
+with the protected-path denial in `plan` and `standard` (ADR-0015).
 
 ## Harness ownership
 
@@ -661,6 +758,12 @@ ASP.NET Core owns business persistence in the existing
 `%LOCALAPPDATA%\Ru\agent_harness.db` SQLite WAL database; `RU_DATA_ROOT`
 selects an isolated root. Schema v18 adds settings, conversation sessions and
 Activity Timeline records alongside runs, events, workspaces and work state.
+Schema v19 upgrades exclusive/single-slot workspace coordinators to shared
+coordination without changing runs, trust or permission snapshots. Runtime
+membership defaults to 32 slots; the existing concurrency API accepts shared
+mode with 2–32 slots and cannot disable parallel sessions. Extra runnable work
+waits for available membership/worker capacity; one session still owns at most
+one active run. GUI and CLI use the same admission policy.
 Session documents retain their message/source-ledger representation, with
 separately indexed summary metadata; settings and activity keep bounded JSON
 payloads inside SQLite rows. No new ORM or second database is introduced.

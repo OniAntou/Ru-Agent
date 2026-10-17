@@ -248,7 +248,7 @@
                                   Foreground="{StaticResource RuMutedBrush}"
                                   VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1"
-                                   Text="Tasks"
+                                   Text="Background tasks"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="12"
                                    Foreground="{StaticResource RuInkBrush}"
@@ -258,7 +258,7 @@
 
                 <TextBlock x:Name="CardTasksStatusText"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="11.5"
+                           FontSize="12"
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="Wrap" />
 
@@ -268,10 +268,10 @@
                     <ItemsControl x:Name="CardTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:AgentTaskRow">
-                                <StackPanel Margin="0,0,0,6" Spacing="1">
+                                <StackPanel Margin="6,0,6,8" Spacing="3" ToolTipService.ToolTip="{x:Bind Label}">
                                     <TextBlock Text="{x:Bind Label}"
                                                FontFamily="{StaticResource RuMonoFontFamily}"
-                                               FontSize="11.5"
+                                               FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}"
                                                TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{x:Bind DetailText}"
@@ -311,11 +311,11 @@
                     Background="{StaticResource RuLineBrush}"
                     Opacity="0.6" />
 
-            <Grid RowDefinitions="40,*">
+            <Grid RowDefinitions="44,*">
                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2"
                       Margin="14,0,12,0"
                       VerticalAlignment="Center">
-                    <ScrollViewer Grid.Column="0"
+                    <ScrollViewer x:Name="TabStripScroll" Grid.Column="0"
                                   Height="28"
                                   VerticalAlignment="Center"
                                   HorizontalScrollBarVisibility="Hidden"
@@ -383,12 +383,12 @@
                             <Button x:Name="TasksTabButton"
                                     Click="OnTasksTabClick"
                                     Style="{StaticResource SidePanelChipButtonStyle}"
-                                    ToolTipService.ToolTip="Tasks"
-                                    AutomationProperties.Name="Tasks tab">
+                                    ToolTipService.ToolTip="Background tasks"
+                                    AutomationProperties.Name="Background tasks tab">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon Glyph="&#xE7C4;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                                     <TextBlock x:Name="TasksTabLabel"
-                                               Text="Tasks"
+                                               Text="Background tasks"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}" />
@@ -399,7 +399,7 @@
                                     Style="{StaticResource SidePanelChipButtonStyle}"
                                     Width="24"
                                     Padding="0"
-                                    ToolTipService.ToolTip="Close Tasks"
+                                    ToolTipService.ToolTip="Close Background tasks"
                                     AutomationProperties.Name="Close Tasks tab">
                                 <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
                             </Button>
@@ -500,12 +500,20 @@
 
                     <Button x:Name="AddTabButton"
                             Grid.Column="1"
-                            Click="OnAddTabClick"
                             Style="{StaticResource SidePanelStripButtonStyle}"
                             Width="28"
                             Padding="0"
-                            ToolTipService.ToolTip="New terminal"
-                            AutomationProperties.Name="New terminal tab">
+                            ToolTipService.ToolTip="Open panel tab"
+                            AutomationProperties.Name="Open panel tab">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Files" Tag="Files" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Files tab" />
+                                <MenuFlyoutItem Text="Changes" Tag="Changes" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Changes tab" />
+                                <MenuFlyoutItem Text="Background tasks" Tag="Tasks" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Background tasks tab" />
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutItem Text="Terminal" Tag="Terminal" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Terminal tab" />
+                            </MenuFlyout>
+                        </Button.Flyout>
                         <FontIcon Glyph="&#xE710;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
 
@@ -550,9 +558,9 @@
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                             <TextBlock Text="Changes"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       FontWeight="Bold"
-                                       Foreground="{StaticResource RuMutedBrush}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}"
                                        VerticalAlignment="Center" />
                             <TextBlock x:Name="PanelAddedText"
                                        Grid.Column="1"
@@ -591,7 +599,7 @@
                                                     HorizontalContentAlignment="Stretch"
                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     Padding="6,3"
-                                                    ToolTipService.ToolTip="Show the diff"
+                                                    ToolTipService.ToolTip="{x:Bind FileName}"
                                                     AutomationProperties.Name="Toggle change diff">
                                                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
                                                     <FontIcon Glyph="{x:Bind ExpansionGlyph, Mode=OneWay}"
@@ -632,29 +640,41 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,*">
+                    <Grid x:Name="TasksBody" Visibility="Collapsed" RowDefinitions="Auto,Auto,*">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                            <TextBlock Text="Background tasks" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" x:Name="TasksRefreshButton" Click="OnTasksRefreshClick"
+                                    Style="{StaticResource SidePanelStripButtonStyle}" Width="28" Padding="0"
+                                    ToolTipService.ToolTip="Refresh background tasks" AutomationProperties.Name="Refresh background tasks">
+                                <FontIcon Glyph="&#xE72C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                            </Button>
+                        </Grid>
                         <TextBlock x:Name="PanelTasksStatusText"
+                                   Grid.Row="1" Margin="0,0,0,12"
                                    FontFamily="{StaticResource RuUiFontFamily}"
                                    FontSize="11.5"
                                    Foreground="{StaticResource RuMutedBrush}"
                                    TextWrapping="Wrap" />
 
-                        <ScrollViewer Grid.Row="1"
+                        <ScrollViewer Grid.Row="2"
                                       HorizontalScrollBarVisibility="Disabled"
                                       VerticalScrollBarVisibility="Auto">
                             <ItemsControl x:Name="AgentTasksList" ItemsSource="{x:Bind Tasks, Mode=OneWay}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="models:AgentTaskRow">
-                                        <Grid ColumnSpacing="8" Margin="0,0,0,6">
+                                        <Grid ColumnSpacing="12" Margin="0,0,0,14">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Spacing="1">
+                                            <StackPanel Grid.Column="0" Spacing="5">
                                                 <TextBlock Text="{x:Bind Label}"
                                                            FontFamily="{StaticResource RuMonoFontFamily}"
-                                                           FontSize="11.5"
+                                                           FontSize="12"
                                                            Foreground="{StaticResource RuInkBrush}"
+                                                           TextWrapping="Wrap" MaxLines="2"
+                                                           ToolTipService.ToolTip="{x:Bind Label}"
                                                            TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{x:Bind DetailText}"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
@@ -665,7 +685,7 @@
                                                     Content="Stop"
                                                     Tag="{x:Bind ExecutionId}"
                                                     Click="OnTaskStopClick"
-                                                    Padding="8,3"
+                                                    Padding="10,4" CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     Visibility="{x:Bind StopVisibility}"
                                                     VerticalAlignment="Center"
                                                     AutomationProperties.Name="Stop background task" />
@@ -713,7 +733,7 @@
                             </ListView.ItemContainerTransitions>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:FileTreeRow">
-                                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="6"
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6"
                                           Margin="{x:Bind IndentMargin}"
                                           MinHeight="26"
                                           AutomationProperties.Name="{x:Bind Name}"
@@ -755,8 +775,11 @@
                                    Visibility="Collapsed" />
                     </Grid>
 
-                    <Grid x:Name="TerminalBody" Visibility="Collapsed">
-                        <controls:InteractiveTerminalControl x:Name="TerminalTabView"
+                    <Grid x:Name="TerminalBody" Visibility="Collapsed" RowDefinitions="Auto,*">
+                        <TextBlock x:Name="TerminalWorkspaceText" Margin="0,0,0,8" FontSize="12"
+                                   Foreground="{StaticResource RuMutedBrush}" TextTrimming="CharacterEllipsis"
+                                   ToolTipService.ToolTip="The terminal follows this workspace. Changing workspace restarts the shell." />
+                        <controls:InteractiveTerminalControl x:Name="TerminalTabView" Grid.Row="1"
                                                              HorizontalAlignment="Stretch"
                                                              VerticalAlignment="Stretch" />
                     </Grid>

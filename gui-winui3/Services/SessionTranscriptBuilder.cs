@@ -3,7 +3,7 @@ using RuApp.Models;
 
 namespace RuApp.Services;
 
-public sealed record SessionHistoryEntry(string Role, string Content, string? SourceRunId);
+public sealed record SessionHistoryEntry(string Role, string Content, string? SourceRunId, int? MessageIndex = null);
 
 internal sealed record SessionRunReplay(
     string RunId,
@@ -13,8 +13,24 @@ internal sealed record SessionRunReplay(
 /// <summary>Joins durable messages and run replay by identity, never by tail position.</summary>
 internal static class SessionTranscriptBuilder
 {
+    internal static void BindPersistedLiveTurn(IReadOnlyList<SessionHistoryEntry> history,
+        string? runId, ChatMessageItem? user, ChatMessageItem assistant)
+    {
+        if (string.IsNullOrEmpty(runId)) return;
+        var projected = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
+        for (int index = 0; index < history.Count; index++)
+        {
+            var row = history[index];
+            if (row.SourceRunId != runId || !projected[index].Render) continue;
+            var target = row.Role == "assistant" ? assistant : row.Role == "user" ? user : null;
+            if (target is null) continue;
+            target.SourceRunId = runId;
+            target.SourceMessageIndex = row.MessageIndex;
+        }
+    }
+
     public static List<ChatMessageItem> Build(
-        IReadOnlyList<SessionHistoryEntry> history, IReadOnlyList<SessionRunReplay> runs)
+        IReadOnlyList<SessionHistoryEntry> history, IReadOnlyList<SessionRunReplay> runs, string? sessionId = null)
     {
         var byId = runs.ToDictionary(run => run.RunId, StringComparer.Ordinal);
         var projected = SessionHistoryProjection.Project(history.Select(row => (row.Role, row.Content)));
@@ -60,6 +76,7 @@ internal static class SessionTranscriptBuilder
             var item = new ChatMessageItem
             {
                 Role = row.Role, Content = projected[i].Content, SourceRunId = row.SourceRunId,
+                SourceMessageIndex = row.MessageIndex ?? i, SessionId = sessionId,
             };
             if (row.Role == "assistant")
             {

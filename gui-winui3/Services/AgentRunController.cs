@@ -50,6 +50,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private AgentRunModel? _currentRun;
     private string? _currentRunId;
     private CreateAgentRunRequest? _pendingCreateRequest;
+    private TaskCompletionSource? _pendingCreateSettled;
     private string? _waitKind;
     private long _runOwnershipGeneration;
 
@@ -268,6 +269,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         ArgumentNullException.ThrowIfNull(request);
         var requestSnapshot = SnapshotCreateRequest(request);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
+        var createSettled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         bool alreadyBusy;
         long ownershipGeneration = 0;
         lock (_gate)
@@ -278,6 +280,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 _isBusy = true;
                 _subscriptionCts = cts;
                 _pendingCreateRequest = requestSnapshot;
+                _pendingCreateSettled = createSettled;
                 ownershipGeneration = ++_runOwnershipGeneration;
                 _assistantDeltaKeys.Clear();
                 _toolOutputKeys.Clear();
@@ -340,6 +343,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
             PublishCreatedRun(run, ownershipGeneration, token, onAccepted);
             accepted = true;
+            createSettled.TrySetResult();
             await FollowRunStreamAsync(run.RunId, 0, ownershipGeneration, token).ConfigureAwait(false);
             return true;
         }
@@ -433,8 +437,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
         finally
         {
+            createSettled.TrySetResult();
             lock (_gate)
             {
+                if (ReferenceEquals(_pendingCreateSettled, createSettled)) _pendingCreateSettled = null;
                 if (ReferenceEquals(_subscriptionCts, cts))
                 {
                     _subscriptionCts = null;
@@ -790,24 +796,46 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     }
 
     /// <summary>
-    /// Ends this controller's involvement for a session switch: a parked run is left
-    /// parked on the host (it is the user's to resume from its transcript) and only
-    /// the follow is detached; a live run is still cancelled, which is what a session
-    /// switch always did.
+    /// Leaves Host execution running and releases only this view's subscription.
+    /// A pending create must settle before detaching: cancelling its HTTP request
+    /// could lose the identity of a run the Host already accepted.
     /// </summary>
-    public Task StopForSessionSwitchAsync(CancellationToken cancellationToken = default) =>
-        IsCurrentRunParked ? DetachCurrentRunAsync() : CancelAsync(cancellationToken);
+    public async Task StopForSessionSwitchAsync(CancellationToken cancellationToken = default)
+    {
+        Task pending;
+        long generation;
+        lock (_gate)
+        {
+            pending = _pendingCreateSettled?.Task ?? Task.CompletedTask;
+            generation = _runOwnershipGeneration;
+        }
+        await pending.WaitAsync(cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (_runOwnershipGeneration != generation) return;
+            if (_isPendingCreateOutcomeUnknown)
+                throw new InvalidOperationException("Create outcome unknown. Reconcile the pending run before leaving this session.");
+        }
+        await DetachCurrentRunAsync(generation).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Drops the current run without cancelling it on the host: the follow stream is
     /// torn down, the run reference is cleared, and no cancel request is posted. The
-    /// run keeps its parked state server-side, so opening the session again adopts
+    /// run keeps its current state server-side, so opening the session again adopts
     /// it. The async shape matches <see cref="CancelAsync"/> for a session-switch
     /// site that awaits the teardown.
     /// </summary>
     public Task DetachCurrentRunAsync()
     {
-        string? runId = BeginRunTeardown();
+        long generation;
+        lock (_gate) generation = _runOwnershipGeneration;
+        return DetachCurrentRunAsync(generation);
+    }
+
+    private Task DetachCurrentRunAsync(long generation)
+    {
+        string? runId = BeginRunTeardown(generation);
         if (runId is null)
         {
             return Task.CompletedTask;
@@ -815,7 +843,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
         // The non-cancel half of CancelAsync's teardown: same clearing and same
         // idle transition, minus the POST and with copy that says the run survives.
-        ReleaseCurrentRun(runId, "Run detached. It stays parked on the host.");
+        ReleaseCurrentRun(runId, "Run detached. Execution continues on the host.", generation + 1);
         return Task.CompletedTask;
     }
 
@@ -824,10 +852,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// run is marked as no longer driven. Shared by cancel and detach; returns the
     /// run id being torn down, or null when there is nothing to tear down.
     /// </summary>
-    private string? BeginRunTeardown()
+    private string? BeginRunTeardown(long? expectedGeneration = null)
     {
         lock (_gate)
         {
+            if (expectedGeneration.HasValue && expectedGeneration.Value != _runOwnershipGeneration) return null;
             string? runId = _currentRunId;
             if (_subscriptionCts is not null || runId is not null)
             {

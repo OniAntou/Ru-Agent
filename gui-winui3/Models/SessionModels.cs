@@ -25,6 +25,13 @@ namespace RuApp.Models
         [JsonPropertyName("last_agent_activity_at")]
         public string? LastAgentActivityAt { get => _lastAgentActivityAt; set => SetField(ref _lastAgentActivityAt, value); }
 
+        private bool _isAgentRunning;
+        [JsonPropertyName("is_agent_running")]
+        public bool IsAgentRunning { get => _isAgentRunning; set => SetField(ref _isAgentRunning, value); }
+
+        [JsonIgnore]
+        public string AgentStatusText => IsAgentRunning ? "Running" : string.Empty;
+
         [JsonPropertyName("client_source")]
         public string? ClientSource { get; set; }
 
@@ -62,6 +69,7 @@ namespace RuApp.Models
             get
             {
                 var title = IsForked ? $"{Title} (Branch)" : Title;
+                if (IsAgentRunning) title += " · Running";
                 return string.IsNullOrEmpty(WorkspacePath) ? title : $"{title}\nWorking directory: {WorkspacePath}";
             }
         }
@@ -90,8 +98,9 @@ namespace RuApp.Models
             if (EqualityComparer<T>.Default.Equals(storage, value)) return;
             storage = value;
             PropertyChanged?.Invoke(this, new(property));
-            if (property is nameof(Title) or nameof(WorkspacePath))
+            if (property is nameof(Title) or nameof(WorkspacePath) or nameof(IsAgentRunning))
                 PropertyChanged?.Invoke(this, new(nameof(TooltipText)));
+            if (property == nameof(IsAgentRunning)) PropertyChanged?.Invoke(this, new(nameof(AgentStatusText)));
             if (property is nameof(UpdatedAt) or nameof(LastAgentActivityAt))
             {
                 PropertyChanged?.Invoke(this, new(nameof(DisplayTime)));

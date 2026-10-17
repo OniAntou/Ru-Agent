@@ -14,9 +14,13 @@ public sealed class WindowsWorkspaceIdentityResolver
     public async Task<WorkspaceIdentity> ResolveAsync(string workspacePath, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
-        var canonicalRoot = GetCanonicalRoot(workspacePath);
+        cancellationToken.ThrowIfCancellationRequested();
+        var canonicalRoot = GetIdentityCanonicalRoot(workspacePath);
+        cancellationToken.ThrowIfCancellationRequested();
         var volumeSerial = await GetVolumeSerialAsync(canonicalRoot, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         var rootFileId = await GetRootFileIdAsync(canonicalRoot, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         var displayHash = ComputeDisplayIdentityHash(canonicalRoot, volumeSerial, rootFileId);
         var workspaceId = ComputeWorkspaceId(canonicalRoot, volumeSerial, rootFileId);
         return new WorkspaceIdentity(workspaceId, volumeSerial, rootFileId, displayHash);
@@ -140,21 +144,28 @@ public sealed class WindowsWorkspaceIdentityResolver
             full = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        // Resolve final path via GetFinalPathNameByHandle if possible (avoid symlink/junction intermediate)
-        try
+        // Resolve the final path to avoid binding trust to an intermediate symlink or junction.
+        if (Directory.Exists(full) || File.Exists(full))
         {
-            if (Directory.Exists(full) || File.Exists(full))
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                var final = GetFinalPath(full);
-                if (!string.IsNullOrWhiteSpace(final))
+                full = GetFinalPath(full);
+            }
+            else
+            {
+                try
                 {
-                    full = final;
+                    var final = GetFinalPath(full);
+                    if (!string.IsNullOrWhiteSpace(final))
+                    {
+                        full = final;
+                    }
+                }
+                catch
+                {
+                    // Non-Windows tooling keeps its deterministic lexical-path behavior.
                 }
             }
-        }
-        catch
-        {
-            // Fallback to GetFullPath result
         }
 
         // Ensure rooted and not empty
@@ -165,6 +176,27 @@ public sealed class WindowsWorkspaceIdentityResolver
 
         // Repository markers grant nothing; we do not use .git etc to influence identity.
         return full;
+    }
+
+    private static string GetIdentityCanonicalRoot(string workspacePath)
+    {
+        var full = Path.GetFullPath(workspacePath);
+        if (full.Length > 3 && full.EndsWith(Path.DirectorySeparatorChar))
+        {
+            full = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        if (!Directory.Exists(full))
+        {
+            throw WorkspaceIdentityUnverified();
+        }
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return GetCanonicalRoot(full);
+        }
+
+        return GetFinalPath(full);
     }
 
     public static string ComputeDisplayIdentityHash(string canonicalRoot, string volumeSerial, string rootFileId)
@@ -185,53 +217,31 @@ public sealed class WindowsWorkspaceIdentityResolver
     private static async Task<string> GetVolumeSerialAsync(string canonicalRoot, CancellationToken ct)
     {
         await Task.Yield();
+        ct.ThrowIfCancellationRequested();
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             return FallbackVolumeSerial(canonicalRoot);
         }
 
-        try
+        var root = Path.GetPathRoot(canonicalRoot);
+        if (string.IsNullOrWhiteSpace(root))
         {
-            var root = Path.GetPathRoot(canonicalRoot);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                return FallbackVolumeSerial(canonicalRoot);
-            }
-
-            var serial = GetVolumeSerialNative(root);
-            if (serial is not null)
-            {
-                return serial;
-            }
-        }
-        catch
-        {
+            throw WorkspaceIdentityUnverified();
         }
 
-        return FallbackVolumeSerial(canonicalRoot);
+        return GetVolumeSerialNative(root) ?? throw WorkspaceIdentityUnverified();
     }
 
     private static async Task<string> GetRootFileIdAsync(string canonicalRoot, CancellationToken ct)
     {
         await Task.Yield();
+        ct.ThrowIfCancellationRequested();
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             return FallbackFileId(canonicalRoot);
         }
 
-        try
-        {
-            var fileId = GetFileIdNative(canonicalRoot);
-            if (fileId is not null)
-            {
-                return fileId;
-            }
-        }
-        catch
-        {
-        }
-
-        return FallbackFileId(canonicalRoot);
+        return GetFileIdNative(canonicalRoot);
     }
 
     private static string FallbackVolumeSerial(string canonicalRoot)
@@ -259,19 +269,18 @@ public sealed class WindowsWorkspaceIdentityResolver
         return null;
     }
 
-    private static string? GetFileIdNative(string path)
+    private static string GetFileIdNative(string path)
     {
-        const uint GENERIC_READ = 0x80000000;
         const uint FILE_SHARE_READ = 0x00000001;
         const uint FILE_SHARE_WRITE = 0x00000002;
         const uint FILE_SHARE_DELETE = 0x00000004;
         const uint OPEN_EXISTING = 3;
         const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
 
-        using var handle = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+        using var handle = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
         if (handle.IsInvalid)
         {
-            return null;
+            throw WorkspaceIdentityUnverified(new IOException("native directory open failed", Marshal.GetHRForLastWin32Error()));
         }
 
         if (GetFileInformationByHandle(handle, out var info))
@@ -282,12 +291,11 @@ public sealed class WindowsWorkspaceIdentityResolver
             return $"{volume}-{fileIndex}";
         }
 
-        return null;
+        throw WorkspaceIdentityUnverified(new IOException("native directory identity query failed", Marshal.GetHRForLastWin32Error()));
     }
 
-    private static string? GetFinalPath(string path)
+    private static string GetFinalPath(string path)
     {
-        const uint GENERIC_READ = 0x80000000;
         const uint FILE_SHARE_READ = 0x00000001;
         const uint FILE_SHARE_WRITE = 0x00000002;
         const uint FILE_SHARE_DELETE = 0x00000004;
@@ -295,28 +303,41 @@ public sealed class WindowsWorkspaceIdentityResolver
         const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
         const int FILE_NAME_NORMALIZED = 0x0;
 
-        using var handle = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+        using var handle = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
         if (handle.IsInvalid)
         {
-            return null;
+            throw WorkspaceIdentityUnverified(new IOException("native final-path handle open failed", Marshal.GetHRForLastWin32Error()));
         }
 
-        var sb = new StringBuilder(1024);
+        var sb = new StringBuilder(32_768);
         var result = GetFinalPathNameByHandle(handle, sb, sb.Capacity, FILE_NAME_NORMALIZED);
-        if (result == 0 || result > sb.Capacity)
+        if (result == 0 || result >= sb.Capacity)
         {
-            return null;
+            throw WorkspaceIdentityUnverified(new IOException("native final-path query failed", Marshal.GetHRForLastWin32Error()));
         }
 
         var final = sb.ToString();
-        // Strip \\?\ prefix if present
-        if (final.StartsWith(@"\\?\", StringComparison.Ordinal))
+        if (final.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            final = @"\\" + final[8..];
+        }
+        else if (final.StartsWith(@"\\?\", StringComparison.Ordinal))
         {
             final = final.Substring(4);
         }
 
-        return Path.GetFullPath(final);
+        try
+        {
+            return Path.GetFullPath(final);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            throw WorkspaceIdentityUnverified(exception);
+        }
     }
+
+    private static IOException WorkspaceIdentityUnverified(Exception? innerException = null) =>
+        new("workspace_identity_unverified", innerException);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern bool GetVolumeInformation(string lpRootPathName, StringBuilder lpVolumeNameBuffer, int nVolumeNameSize, out uint lpVolumeSerialNumber, out uint lpMaximumComponentLength, out uint lpFileSystemFlags, StringBuilder lpFileSystemNameBuffer, int nFileSystemNameSize);

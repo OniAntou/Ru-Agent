@@ -116,11 +116,9 @@ namespace RuApp.Views
                     if (now - _lastScrollChangeTick >= ScrollChangeMinIntervalMs)
                     {
                         _lastScrollChangeTick = now;
-                        // The follow scroll glides with the growing reply instead of
-                        // snapping each batch; a reader with animations off keeps the
-                        // instant jump, and every deliberate jump elsewhere still
-                        // disables animation explicitly.
-                        scroller.ChangeView(null, maximum, null, disableAnimation: !UiTiming.AnimationsEnabled);
+                        // An animated request outlives the layout it targeted and can
+                        // pull a replacement transcript toward an obsolete offset.
+                        scroller.ChangeView(null, maximum, null, disableAnimation: true);
                     }
                     else
                     {
@@ -173,7 +171,7 @@ namespace RuApp.Views
                 if (ChatScrollPolicy.CanFollow(offset, maximum, _followOutput))
                 {
                     _lastScrollChangeTick = Environment.TickCount64;
-                    scroller.ChangeView(null, maximum, null, disableAnimation: !UiTiming.AnimationsEnabled);
+                    scroller.ChangeView(null, maximum, null, disableAnimation: true);
                 }
                 else
                 {
@@ -228,6 +226,10 @@ namespace RuApp.Views
         private void ScrollToLatestAfterLayout()
         {
             if (Messages.Count == 0) return;
+            // Keep the actual last row anchored while virtualization refines
+            // estimated heights. An extent change need not raise ViewChanged.
+            if (ChatListView.ItemsPanelRoot is ItemsStackPanel panel)
+                panel.ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepLastItemInView;
             ChatListView.ScrollIntoView(Messages[Messages.Count - 1], ScrollIntoViewAlignment.Default);
             ChatListView.UpdateLayout();
             var scroller = ChatScrollViewer;
@@ -242,12 +244,59 @@ namespace RuApp.Views
             _followOutput = true;
         }
 
+        private void PositionOpenedTranscript()
+        {
+            // Finish reset/realization in the same dispatcher turn as replacement,
+            // so the first painted frame cannot expose the previous offset or top.
+            ChatListView.UpdateLayout();
+            EnsureNewMessagesPillWired();
+            ScrollToLatestAfterLayout();
+        }
+
 
         private void InitializeChatScrolling()
         {
+            ChatListView.LayoutUpdated += OnTranscriptLayoutUpdated;
             ChatListView.AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(OnTranscriptScrollInput), true);
             ChatListView.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnTranscriptScrollInput), true);
             ChatListView.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnTranscriptScrollKey), true);
+        }
+
+        private bool _handlingTranscriptLayout;
+
+        private void OnTranscriptLayoutUpdated(object? sender, object e)
+        {
+            if (_handlingTranscriptLayout || _scrollingDisposed || !_followOutput
+                || Messages.Count == 0 || ChatContentGrid.Visibility != Visibility.Visible
+                || ChatScrollViewer is not { } scroller || scroller.ViewportHeight <= 0
+                || !ChatScrollPolicy.IsConsistent(scroller.VerticalOffset, scroller.ScrollableHeight))
+                return;
+
+            _handlingTranscriptLayout = true;
+            try
+            {
+                // Nested activity templates can finish measuring after the initial
+                // jump without raising ViewChanged. Anchor real geometry before paint
+                // instead of launching another animated, estimated-extent retry.
+                if (ChatListView.ContainerFromIndex(Messages.Count - 1) is not FrameworkElement tail)
+                {
+                    ChatListView.ScrollIntoView(Messages[Messages.Count - 1], ScrollIntoViewAlignment.Default);
+                    return;
+                }
+
+                if (scroller.ScrollableHeight <= 0) return;
+                double bottom = tail.TransformToVisual(scroller)
+                    .TransformPoint(new Windows.Foundation.Point(0, tail.ActualHeight)).Y;
+                double targetY = scroller.ViewportHeight - ChatListView.Padding.Bottom;
+                if (!double.IsFinite(bottom) || Math.Abs(bottom - targetY) <= 1) return;
+                double target = ChatScrollPolicy.RestoreAnchorOffset(
+                    scroller.VerticalOffset, bottom, targetY, scroller.ScrollableHeight);
+                scroller.ChangeView(null, target, null, disableAnimation: true);
+            }
+            finally
+            {
+                _handlingTranscriptLayout = false;
+            }
         }
 
         private void EnsureNewMessagesPillWired()
@@ -276,6 +325,7 @@ namespace RuApp.Views
             }
 
             double maxOffset = scroller.ScrollableHeight;
+            if (!_followOutput && e.IsIntermediate) return;
             _followOutput = ChatScrollPolicy.FollowAfterViewChange(scroller.VerticalOffset, maxOffset, _followOutput);
             if (_followOutput)
             {
@@ -288,7 +338,12 @@ namespace RuApp.Views
         }
 
         private void OnTranscriptScrollInput(object sender, PointerRoutedEventArgs e)
+            => StopFollowingTranscript();
+
+        private void StopFollowingTranscript()
         {
+            if (ChatListView.ItemsPanelRoot is ItemsStackPanel panel)
+                panel.ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepScrollOffset;
             _scrollInteractionGeneration++;
             _followOutput = false;
         }
@@ -297,14 +352,14 @@ namespace RuApp.Views
         {
             if (e.Key is VirtualKey.Up or VirtualKey.Down or VirtualKey.PageUp or VirtualKey.PageDown or VirtualKey.Home or VirtualKey.End)
             {
-                _scrollInteractionGeneration++;
-                _followOutput = false;
+                StopFollowingTranscript();
             }
         }
 
         private void DisposeChatScrolling()
         {
             _scrollingDisposed = true;
+            ChatListView.LayoutUpdated -= OnTranscriptLayoutUpdated;
             if (_chatScrollViewer is not null) _chatScrollViewer.ViewChanged -= OnChatScrollViewChanged;
             ChatListView.RemoveHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(OnTranscriptScrollInput));
             ChatListView.RemoveHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnTranscriptScrollInput));

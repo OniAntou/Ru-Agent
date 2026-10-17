@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Client;
@@ -109,15 +108,9 @@ public sealed class AgentSlashCommands
             return true;
         }
 
-        if (slashCmd is "/tree")
+        if (slashCmd is "/status")
         {
-            await HandleTreeAsync(currentSessionId, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        if (slashCmd is "/status" or "/stats" or "/tokens")
-        {
-            await HandleStatsAsync(currentSessionId, preset, workspacePath, cancellationToken).ConfigureAwait(false);
+            await HandleStatusAsync(currentSessionId, preset, workspacePath, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -125,12 +118,6 @@ public sealed class AgentSlashCommands
         {
             WriteHelpPanel();
             await _humanOut.FlushAsync().ConfigureAwait(false);
-            return true;
-        }
-
-        if (slashCmd is "/export")
-        {
-            await HandleExportAsync(arg, currentSessionId, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -802,100 +789,7 @@ public sealed class AgentSlashCommands
         await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
-    private async Task HandleTreeAsync(string? currentSessionId, CancellationToken cancellationToken)
-    {
-        if (_sessionClient == null)
-        {
-            await _err.WriteLineAsync("tree_unavailable: session client not configured").ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            var listJson = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
-            if (!listJson.TryGetProperty("sessions", out var sessionsProp) || sessionsProp.ValueKind != JsonValueKind.Array)
-            {
-                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
-                return;
-            }
-
-            var sessions = new List<SessionTreeNode>();
-            foreach (var item in sessionsProp.EnumerateArray())
-            {
-                var id = item.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
-                var title = item.TryGetProperty("title", out var tProp) ? tProp.GetString() ?? "Untitled" : "Untitled";
-                var parentId = item.TryGetProperty("parent_session_id", out var pProp) && pProp.ValueKind == JsonValueKind.String ? pProp.GetString() : null;
-                var count = item.TryGetProperty("message_count", out var mcProp) && mcProp.TryGetInt32(out var mc) ? mc : 0;
-                sessions.Add(new SessionTreeNode(id, title, parentId, count));
-            }
-
-            if (sessions.Count == 0)
-            {
-                await _humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
-                return;
-            }
-
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Accent("Session Tree (DAG):"))).ConfigureAwait(false);
-
-            var sessionMap = sessions.ToDictionary(s => s.Id);
-            var childrenMap = new Dictionary<string, List<SessionTreeNode>>();
-            var roots = new List<SessionTreeNode>();
-
-            foreach (var s in sessions)
-            {
-                if (!string.IsNullOrEmpty(s.ParentId) && sessionMap.ContainsKey(s.ParentId))
-                {
-                    if (!childrenMap.TryGetValue(s.ParentId, out var chList))
-                    {
-                        chList = new List<SessionTreeNode>();
-                        childrenMap[s.ParentId] = chList;
-                    }
-                    chList.Add(s);
-                }
-                else
-                {
-                    roots.Add(s);
-                }
-            }
-
-            void PrintNode(SessionTreeNode node, string indent, bool isLast)
-            {
-                var marker = isLast ? "└── " : "├── ";
-                bool isCurrent = string.Equals(node.Id, currentSessionId, StringComparison.Ordinal);
-                var currentTag = isCurrent ? Tui.TuiPalette.Ok(" * (current)") : "";
-                var shortId = node.Id.Length > 8 ? node.Id[..8] : node.Id;
-                var titleText = string.IsNullOrWhiteSpace(node.Title) ? "Untitled" : node.Title;
-
-                var line = $"{indent}{marker}{Tui.TuiPalette.BoldPaint(shortId)} - {titleText} ({node.MessageCount} msgs){currentTag}";
-                _humanOut.WriteLine(line);
-
-                if (childrenMap.TryGetValue(node.Id, out var children))
-                {
-                    var childIndent = indent + (isLast ? "    " : "│   ");
-                    for (int i = 0; i < children.Count; i++)
-                    {
-                        PrintNode(children[i], childIndent, i == children.Count - 1);
-                    }
-                }
-            }
-
-            for (int i = 0; i < roots.Count; i++)
-            {
-                PrintNode(roots[i], "", i == roots.Count - 1);
-            }
-        }
-        catch (AgentApiException ex)
-        {
-            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"tree_error: {ex.Message}").ConfigureAwait(false);
-        }
-        await _humanOut.FlushAsync().ConfigureAwait(false);
-    }
-
-    private async Task HandleStatsAsync(string? currentSessionId, string? preset, string? workspacePath, CancellationToken cancellationToken)
+    private async Task HandleStatusAsync(string? currentSessionId, string? preset, string? workspacePath, CancellationToken cancellationToken)
     {
         JsonElement? settings = null;
         try
@@ -912,7 +806,7 @@ public sealed class AgentSlashCommands
     }
 
     /// <summary>
-    /// One card for <c>/status</c>, <c>/stats</c> and <c>/tokens</c>: what the session is, what
+    /// The <c>/status</c> card: what the session is, what
     /// it is running on, and what this run has done so far.
     /// </summary>
     private void WriteStatusCard(string? currentSessionId, string? preset, string? workspacePath, JsonElement? settings)
@@ -1021,76 +915,4 @@ public sealed class AgentSlashCommands
         await _humanOut.FlushAsync().ConfigureAwait(false);
     }
 
-    private async Task HandleExportAsync(string? arg, string? currentSessionId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(currentSessionId) || _sessionClient == null)
-        {
-            await _err.WriteLineAsync("export_failed: no active session to export").ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            var sessionDoc = await _sessionClient.GetSessionAsync(currentSessionId, cancellationToken).ConfigureAwait(false);
-            var title = "RuAgent Conversation";
-            var messages = new List<(string Role, string Content, string Time)>();
-
-            if (sessionDoc.TryGetProperty("session", out var sessProp))
-            {
-                if (sessProp.TryGetProperty("title", out var tProp) && tProp.ValueKind == JsonValueKind.String)
-                {
-                    title = tProp.GetString() ?? title;
-                }
-
-                if (sessProp.TryGetProperty("messages", out var msgsProp) && msgsProp.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var m in msgsProp.EnumerateArray())
-                    {
-                        var role = m.TryGetProperty("role", out var r) ? r.GetString() ?? "user" : "user";
-                        var content = m.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
-                        var time = m.TryGetProperty("timestamp", out var ts) ? ts.GetString() ?? "" : "";
-                        messages.Add((role, content, time));
-                    }
-                }
-            }
-
-            var exportPath = string.IsNullOrWhiteSpace(arg)
-                ? $"session-{(currentSessionId.Length > 8 ? currentSessionId[..8] : currentSessionId)}.md"
-                : arg.Trim();
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"# {title}");
-            sb.AppendLine();
-            sb.AppendLine($"- **Session ID**: `{currentSessionId}`");
-            sb.AppendLine($"- **Exported At**: `{DateTime.UtcNow:u}`");
-            sb.AppendLine($"- **Total Messages**: {messages.Count}");
-            sb.AppendLine();
-            sb.AppendLine("---");
-            sb.AppendLine();
-
-            foreach (var msg in messages)
-            {
-                var roleIcon = msg.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "🤖 Assistant" : "👤 User";
-                var timeInfo = string.IsNullOrWhiteSpace(msg.Time) ? "" : $" *({msg.Time})*";
-                sb.AppendLine($"### {roleIcon}{timeInfo}");
-                sb.AppendLine();
-                sb.AppendLine(msg.Content);
-                sb.AppendLine();
-            }
-
-            await File.WriteAllTextAsync(exportPath, sb.ToString(), cancellationToken).ConfigureAwait(false);
-            await _humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Conversation exported to: {exportPath}")).ConfigureAwait(false);
-        }
-        catch (AgentApiException ex)
-        {
-            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await _err.WriteLineAsync($"export_error: {ex.Message}").ConfigureAwait(false);
-        }
-        await _humanOut.FlushAsync().ConfigureAwait(false);
-    }
-
-    private sealed record SessionTreeNode(string Id, string Title, string? ParentId, int MessageCount);
 }

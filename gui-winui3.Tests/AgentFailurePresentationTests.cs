@@ -181,7 +181,7 @@ public sealed class AgentFailurePresentationTests
 
     [Theory]
     [InlineData("invalid_workspace", "Invalid or non-existent workspace folder.")]
-    [InlineData("workspace_busy", "Workspace is currently in use by another Agent session.")]
+    [InlineData("workspace_busy", "This session already has an active Agent run. Wait for it to finish, or cancel it and try again.")]
     [InlineData("preset_mismatch", "Permission preset has changed. Please select a preset and try again.")]
     [InlineData("preset_version_conflict", "Permission preset has changed. Please select a preset and try again.")]
     [InlineData("session_create_failed", "Failed to create a session for Coding Agent. Check backend and try again.")]
@@ -196,7 +196,7 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void A_busy_workspace_names_the_blocking_run_when_the_server_sends_it()
+    public void A_busy_session_names_the_blocking_run_when_the_server_sends_it()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure(
             "workspace_busy", message: "Workspace busy.", blockingRunId: "run_abc", blockingStatus: "waiting_approval");
@@ -206,7 +206,7 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void A_busy_workspace_paused_for_reconciliation_points_at_continue()
+    public void A_busy_session_paused_for_reconciliation_points_at_continue()
     {
         // A reconciled run has no pending prompt to answer, and cancelling it loses
         // the read-only inspection: Continue is the only move that keeps the work.
@@ -222,7 +222,7 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void A_busy_workspace_waiting_user_points_at_continue()
+    public void A_busy_session_waiting_user_points_at_continue()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure(
             "workspace_busy",
@@ -236,11 +236,11 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
-    public void A_busy_workspace_without_a_run_id_keeps_the_generic_sentence()
+    public void A_busy_session_without_a_run_id_keeps_the_generic_sentence()
     {
         string rendered = AgentFailurePresentation.RenderStartFailure("workspace_busy", message: null);
 
-        Assert.Equal("Workspace is currently in use by another Agent session.", rendered);
+        Assert.Equal("This session already has an active Agent run. Wait for it to finish, or cancel it and try again.", rendered);
     }
 
     [Fact]

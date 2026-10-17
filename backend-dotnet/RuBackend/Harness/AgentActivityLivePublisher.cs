@@ -34,6 +34,10 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         // transient surface is client-visible, so it gets the same secret
         // redaction as streamed assistant text.
         var detail = activity.Detail is { Length: > 0 } raw ? _secrets.Redact(raw) : activity.Detail;
+        if (AgentEditPreviewCodec.TryDecode(activity.Detail, out var before, out var after))
+        {
+            detail = AgentEditPreviewCodec.Encode(_secrets.Redact(before), _secrets.Redact(after));
+        }
         var wire = new ProtocolActivityWire(
             activity.ActivityId,
             MapKind(activity.Kind),

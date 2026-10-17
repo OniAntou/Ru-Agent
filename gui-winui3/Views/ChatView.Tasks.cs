@@ -1,10 +1,9 @@
 using System;
-using System.Collections.Generic;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading;
 using RuApp.Models;
 using RuApp.Services;
+using RuAgent.Client;
 
 namespace RuApp.Views;
 
@@ -17,16 +16,17 @@ namespace RuApp.Views;
 /// </summary>
 public sealed partial class ChatView
 {
-    private const int MaxRenderedAgentTasks = 16;
-
     private bool? _sidePanelRunRunning;
+    private bool _sidePanelEditsDirty = true;
+    private string? _sidePanelTasksRunId;
+    private bool _taskRefreshInProgress;
     private readonly UiRequestLifetime _taskRefreshRequests = new();
     private CancellationTokenSource? _taskRefreshCancellation;
 
     /// <summary>
     /// Keeps the surface fresh from run-state updates: the title and edit
-    /// projections are cheap, and the task list refreshes only when the run
-    /// starts or settles so the panel never polls while streaming.
+    /// projections retain unchanged rows. Visible task summaries also refresh
+    /// periodically so processes can settle independently of the model's run.
     /// </summary>
     private void UpdateSidePanel(bool isRunRunning)
     {
@@ -38,6 +38,7 @@ public sealed partial class ChatView
         SidePanel.SetSessionTitle(_activeSessionTitle);
         SidePanel.SetWorkspace(_agentWorkspace);
         SidePanel.SetTerminalWorkingDirectory(_agentWorkspace);
+        ApplySidePanelState();
         UpdateWelcomeWorkspaceText();
         RefreshSidePanelEdits();
 
@@ -46,23 +47,26 @@ public sealed partial class ChatView
             _sidePanelRunRunning = isRunRunning;
             _ = RefreshAgentTasksAsync();
         }
+        UpdateTaskRefreshTimer(IsSidePanelDesiredVisible());
     }
 
     /// <summary>Rebuilds the Changes tab rows and the shared +added −removed totals.</summary>
     private void RefreshSidePanelEdits()
     {
-        if (SidePanel is null)
+        if (SidePanel is null || !_sidePanelEditsDirty)
         {
             return;
         }
 
-        var projection = ChangesTabProjection.Project(AgentActivities);
+        var projection = ChangesTabProjection.ProjectSession(Messages, AgentActivities);
         SidePanel.RenderChanges(projection.Rows, projection.Added, projection.Removed);
+        _sidePanelEditsDirty = false;
     }
 
     private async Task RefreshAgentTasksAsync()
     {
         var version = _taskRefreshRequests.Replace();
+        _taskRefreshInProgress = false;
         _taskRefreshCancellation?.Cancel();
         _taskRefreshCancellation?.Dispose();
         _taskRefreshCancellation = null;
@@ -71,22 +75,23 @@ public sealed partial class ChatView
             return;
         }
 
-        var runId = _agentController?.CurrentRun?.RunId ?? _activeAgentRunId;
+        var runId = ResolveSidePanelTaskRunId();
         var controller = _agentController;
         var sessionGeneration = _sessionOpenGeneration;
         bool OwnsRefresh() => !_scrollingDisposed
             && _taskRefreshRequests.Owns(version)
             && sessionGeneration == _sessionOpenGeneration
             && ReferenceEquals(controller, _agentController)
-            && string.Equals(runId, _agentController?.CurrentRun?.RunId ?? _activeAgentRunId, StringComparison.Ordinal);
+            && string.Equals(runId, ResolveSidePanelTaskRunId(), StringComparison.Ordinal);
         if (string.IsNullOrWhiteSpace(runId) || _agentController is null)
         {
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active run in this session.");
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks.");
             return;
         }
 
         try
         {
+            _taskRefreshInProgress = true;
             _taskRefreshCancellation = new CancellationTokenSource();
             var response = await controller!
                 .DispatchCommandAsync(runId, "/tasks", _taskRefreshCancellation.Token)
@@ -94,63 +99,42 @@ public sealed partial class ChatView
             if (!OwnsRefresh()) return;
             if (!string.Equals(response.Status, "succeeded", StringComparison.Ordinal))
             {
+                if (response.Code == "broker_gateway_unavailable" && runId == _sidePanelTasksRunId
+                    && _agentController.CurrentRun?.RunId != runId)
+                {
+                    SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active background tasks.");
+                    return;
+                }
                 SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), $"Tasks unavailable ({response.Code}).");
                 return;
             }
 
             RenderAgentTasks(response.Data);
         }
+        catch (AgentApiException error) when (error.ErrorCode == "broker_gateway_unavailable")
+        {
+            if (!OwnsRefresh()) return;
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active background tasks.");
+        }
         catch (Exception)
         {
             if (!OwnsRefresh()) return;
             SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "Tasks unavailable; the host did not answer.");
         }
+        finally
+        {
+            if (_taskRefreshRequests.Owns(version))
+            {
+                _taskRefreshInProgress = false;
+                UpdateTaskRefreshTimer(IsSidePanelDesiredVisible());
+            }
+        }
     }
 
     private void RenderAgentTasks(object? data)
     {
-        var rows = ParseAgentTasks(data);
-        SidePanel.RenderTasks(
-            rows,
-            rows.Count == 0 ? "No background tasks for this session." : $"{rows.Count} task(s).");
+        var projection = AgentTaskProjection.Project(data);
+        SidePanel.RenderTasks(projection.Rows, projection.Status);
     }
 
-    private static List<AgentTaskRow> ParseAgentTasks(object? data)
-    {
-        var rows = new List<AgentTaskRow>();
-        if (data is not JsonElement element
-            || element.ValueKind != JsonValueKind.Object
-            || !element.TryGetProperty("tasks", out var tasks)
-            || tasks.ValueKind != JsonValueKind.Array)
-        {
-            return rows;
-        }
-
-        foreach (var task in tasks.EnumerateArray())
-        {
-            if (rows.Count >= MaxRenderedAgentTasks)
-            {
-                break;
-            }
-
-            if (task.ValueKind != JsonValueKind.Object
-                || !task.TryGetProperty("execution_id", out var idProperty)
-                || idProperty.GetString() is not { Length: > 0 } executionId)
-            {
-                continue;
-            }
-
-            var state = task.TryGetProperty("state", out var stateProperty)
-                ? stateProperty.GetString() ?? "unknown"
-                : "unknown";
-            int? exitCode = task.TryGetProperty("exit_code", out var exitProperty)
-                && exitProperty.ValueKind == JsonValueKind.Number
-                && exitProperty.TryGetInt32(out var parsedExit)
-                    ? parsedExit
-                    : null;
-            rows.Add(new AgentTaskRow(executionId, state, exitCode));
-        }
-
-        return rows;
-    }
 }

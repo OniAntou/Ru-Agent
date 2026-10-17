@@ -137,7 +137,7 @@ public sealed class PolicySnapshotLoaderTests
         var loader = new PolicySnapshotLoader(fixture.Options, keyStore);
         var eventStore = fixture.CreateEventStore();
 
-        // create two runs on separate workspaces to avoid workspace_busy
+        // one run per workspace, two isolated workspaces for the two identities
         await eventStore.TryCreateRunAsync(fixture.NewRun(40, 40, 5), CancellationToken.None);
         await eventStore.TryCreateRunAsync(fixture.NewRun(41, 41, 6), CancellationToken.None);
         var runActive = HarnessStoreTestFixture.Run(40);

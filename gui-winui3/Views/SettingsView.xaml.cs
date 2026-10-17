@@ -414,6 +414,7 @@ namespace RuApp.Views
         public SettingsView()
         {
             this.InitializeComponent();
+            InitializeSettingsLayout();
             InitializeUpdates();
             InitDropdownOptions();
             InitTranscriptSizeOptions();
@@ -539,6 +540,7 @@ namespace RuApp.Views
                     _lastSettings = settings;
 
                     CustomEndpointUrlBox.Text = settings.CustomUrl;
+                    CloudflareAccountIdBox.Text = settings.CloudflareAccountId;
                     CustomApiKeyBox.Password = string.Empty;
                     CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
                         ? "Saved (leave blank to keep unchanged)"

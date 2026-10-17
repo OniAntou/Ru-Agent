@@ -206,12 +206,16 @@ def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> 
 # force; this keeps the drift guard where it belongs.
 def _assert_contract_docs_restate_canonical_policy() -> None:
     required = (
-        # Full Access is skip-all but protected paths stay denied. This is the
-        # single claim a reader could act on wrongly, so it is the one that
-        # every doc naming the preset must carry. The read-only intent of plan
-        # and the external-ask intent of standard are pinned by the ban-lists
-        # below and by the owning-doc vocabulary above.
-        (r"\bfull_access\b[^.\n]{0,400}\bprotected paths?\b", "full_access keeps protected-path denial"),
+        # Full Access is literally full: the catalog-protected set joins the
+        # skip-all preset, so every doc naming it must say protected paths are
+        # allowed rather than denied. The read-only intent of plan and the
+        # external-ask intent of standard are pinned by the ban-lists below and
+        # by the owning-doc vocabulary above.
+        (
+            r"\bfull_access\b[^.\n]{0,400}\bprotected paths?\b[^.\n]{0,200}\b"
+            r"(?:allowed|ordinary|auto\w*|open\w*|no longer)\b",
+            "full_access opens protected paths",
+        ),
     )
     stale: list[str] = []
     for path in CURRENT_CONTRACT_DOCS:

@@ -6,13 +6,14 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:RuApp.Views"
     xmlns:models="using:RuApp.Models"
-    mc:Ignorable="d">
+    mc:Ignorable="d" IsTabStop="False">
 
     <UserControl.Resources>
         <ResourceDictionary>
             <Style x:Key="SettingLabelStyle" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
                 <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextWrapping" Value="Wrap" />
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
                 <Setter Property="VerticalAlignment" Value="Center" />
@@ -90,22 +91,22 @@
     </UserControl.Resources>
 
     <!-- Main 2-Column Settings Modal Container -->
-    <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+    <Grid x:Name="SettingsLayout" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" RowDefinitions="Auto,*">
         <Grid.ColumnDefinitions>
             <!-- Left Sidebar Navigation -->
-            <ColumnDefinition Width="200" />
+            <ColumnDefinition x:Name="SettingsNavigationColumn" Width="200" />
             <!-- Right Content Area -->
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <!-- ==================== LEFT COLUMN: SIDEBAR ==================== -->
-        <Border Grid.Column="0"
+        <Border x:Name="SettingsNavigation" Grid.Column="0" Grid.RowSpan="2"
                 Background="{StaticResource RuCanvasBrush}"
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="0,0,1,0">
             <Grid Padding="12,16,12,16">
-                <StackPanel Spacing="4">
-                    <TextBlock Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
+                <StackPanel x:Name="SettingsNavigationButtons" Spacing="4">
+                    <TextBlock x:Name="SettingsNavigationHeading" Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
                     <!-- General Tab Button -->
                     <Button x:Name="NavGeneralBtn"
                             Content="General"
@@ -126,7 +127,7 @@
         </Border>
 
         <!-- ==================== RIGHT COLUMN: CONTENT ==================== -->
-        <Grid Grid.Column="1" Background="{StaticResource RuSurfaceBrush}" RowDefinitions="Auto,*">
+        <Grid x:Name="SettingsBody" Grid.Column="1" Grid.RowSpan="2" Background="{StaticResource RuSurfaceBrush}" RowDefinitions="Auto,*">
             <!-- Header Bar (Category Title & Subtitle) -->
             <Grid Grid.Row="0" Padding="28,20,56,16" BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
                 <StackPanel Spacing="4">
@@ -158,7 +159,7 @@
                     <!-- Appearance Card -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">
-                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Appearance" Style="{StaticResource SettingLabelStyle}" />
                                     <TextBlock Text="Choose Light, Dark, Meteor Shower, or Starry Night" Style="{StaticResource SettingDescStyle}" />
@@ -311,7 +312,7 @@
                     <!-- Agent Capabilities Card -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">
-                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
                                 </StackPanel>
@@ -441,7 +442,7 @@
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
                         <StackPanel Spacing="16">
                             <!-- Provider Dropdown Row -->
-                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Active Provider" Style="{StaticResource SettingLabelStyle}" />
                                     <TextBlock Text="Choose cloud AI provider or custom server" Style="{StaticResource SettingDescStyle}" />
@@ -630,7 +631,7 @@
                             <!-- Provider API key row: the key comes before the test. -->
                             <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                         <TextBlock x:Name="ModelsDevApiKeyLabel" Text="API key" Style="{StaticResource SettingLabelStyle}" />
                                         <TextBlock Text="Stored in Windows Credential Manager; saving is automatic." Style="{StaticResource SettingDescStyle}" />
@@ -674,7 +675,7 @@
                               The status sits in the same grid so it reads as the result
                               of the button beside it.
                             -->
-                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
@@ -706,7 +707,7 @@
                             <!-- Custom Endpoint URL Row -->
                             <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                         <TextBlock x:Name="CustomServerUrlLabel" Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}" />
                                         <TextBlock Text="OpenAI-compatible endpoint URL" Style="{StaticResource SettingDescStyle}" />
@@ -724,7 +725,7 @@
                             <!-- Custom API Key Row -->
                             <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                         <TextBlock x:Name="CustomApiKeyLabel" Text="Custom API Key" Style="{StaticResource SettingLabelStyle}" />
                                         <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />

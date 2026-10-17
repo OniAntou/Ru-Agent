@@ -100,18 +100,27 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.Contains("gpt-4o", text, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Stats_And_Tokens_ShareTheStatusCard()
+    [Theory]
+    [InlineData("/activity")]
+    [InlineData("/todos")]
+    [InlineData("/changes")]
+    [InlineData("/files")]
+    [InlineData("/tree")]
+    [InlineData("/stats")]
+    [InlineData("/tokens")]
+    [InlineData("/export")]
+    [InlineData("/rewind")]
+    [InlineData("/history")]
+    public async Task RemovedCommands_AreAbsentFromHelpAndDoNotCallTheHost(string command)
     {
-        foreach (var command in new[] { "/stats", "/tokens" })
-        {
-            var output = new StringWriter();
-            var commands = Create(output);
+        var output = new StringWriter();
+        var requests = 0;
+        var commands = Create(output, _ => { requests++; return Json("{}"); });
 
-            Assert.True(await commands.TryHandleAsync(command, null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
-
-            Assert.Contains("╭─ status", output.ToString(), StringComparison.Ordinal);
-        }
+        Assert.False(await commands.TryHandleAsync(command, null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+        Assert.Equal(0, requests);
+        Assert.Empty(ChatCommandCatalog.FindMatches(command));
+        Assert.DoesNotContain(command, string.Join('\n', TuiSurfaces.Help(120)), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -69,18 +69,6 @@ internal static class HarnessSqliteQueries
             sessionId.Value,
             cancellationToken);
 
-    internal static Task<AgentRun?> FindActiveWorkspaceRunAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        WorkspaceId workspaceId,
-        CancellationToken cancellationToken) =>
-        FindActiveAsync(
-            connection,
-            transaction,
-            "workspace_id",
-            workspaceId.Value,
-            cancellationToken);
-
     internal static async Task<bool> WorkspaceExistsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -105,19 +93,6 @@ internal static class HarnessSqliteQueries
         command.CommandText = "SELECT 1 FROM agent_session_tombstones WHERE session_id = $session_id";
         command.Parameters.AddWithValue("$session_id", sessionId.Value);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
-    }
-
-    internal static async Task<string?> GetWorkspaceConcurrencyModeAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        WorkspaceId workspaceId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT mode FROM workspace_coordinators WHERE workspace_id = $workspace_id";
-        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-        return (string?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<AgentRun?> FindActiveAsync(

@@ -13,7 +13,6 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
@@ -172,6 +171,7 @@ namespace RuApp.Views
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
         {
+            if (activity.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Edit) _sidePanelEditsDirty = true;
             if ((!allowWhenIdle && !HasRunInHand())
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
@@ -613,7 +613,7 @@ namespace RuApp.Views
             if (snapshot.ResetOffset is not null
                 || !string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
             {
-                // Every text render re-parses the whole reply and rebuilds its runs,
+                // Text renders retain unchanged Markdown blocks; throttle changed tails
                 // so a delta burst renders on a cadence instead of per delta. The
                 // newest text is deferred, never dropped: the scheduled render lands
                 // it within one interval, including after the final delta.
@@ -705,7 +705,7 @@ namespace RuApp.Views
             ApplyReplyText(message, text);
         }
 
-        private void ClearAgentActivities()
+        private void SuspendAgentFeedUpdates()
         {
             StopAllTextSweeps();
             _activityFlushTimer?.Stop();
@@ -713,6 +713,12 @@ namespace RuApp.Views
             _pendingReplyMessage = null;
             _pendingReplyText = null;
             _pendingAgentActivities.Clear();
+        }
+
+        private void ClearAgentActivities()
+        {
+            _sidePanelEditsDirty = true;
+            SuspendAgentFeedUpdates();
             _agentActivityById.Clear();
             _activitySplitOffsetById.Clear();
             _segmentFrozenLength = 0;
@@ -849,43 +855,16 @@ namespace RuApp.Views
 
         private void AttachActivityItem(Grid grid)
         {
-            DetachActivityItem(grid, clearEntrance: false);
+            DetachActivityItem(grid);
             ApplyTranscriptTypography(grid);
 
             if (grid.DataContext is not AgentActivityItem item)
                 return;
 
-            if (grid.Tag == null && Services.UiTiming.AnimationsEnabled)
-            {
-                grid.Opacity = 0;
-                var translate = new TranslateTransform { Y = 4 };
-                grid.RenderTransform = translate;
-
-                var fadeIn = new DoubleAnimation
-                {
-                    From = 0.0,
-                    To = 1.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                Storyboard.SetTarget(fadeIn, grid);
-                Storyboard.SetTargetProperty(fadeIn, "Opacity");
-
-                var slideIn = new DoubleAnimation
-                {
-                    From = 4.0,
-                    To = 0.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                Storyboard.SetTarget(slideIn, translate);
-                Storyboard.SetTargetProperty(slideIn, "Y");
-
-                var entranceSb = new Storyboard();
-                entranceSb.Children.Add(fadeIn);
-                entranceSb.Children.Add(slideIn);
-                entranceSb.Begin();
-            }
+            // Loading/recycling a visual row is not a new agent event. Replaying
+            // entrance fades here makes settled history flash on every revisit.
+            grid.Opacity = 1;
+            grid.RenderTransform = null;
 
             TextBlock? displayText = grid.FindName(ActivityLabelElementName(item)) as TextBlock;
             if (displayText == null) return;
@@ -940,17 +919,14 @@ namespace RuApp.Views
                     ? Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Assertive
                     : Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
 
-        private void DetachActivityItem(Grid grid, bool clearEntrance = true)
+        private void DetachActivityItem(Grid grid)
         {
             if (grid.Tag is ValueTuple<PropertyChangedEventHandler, TextBlock, AgentActivityItem> tuple)
             {
                 tuple.Item3.PropertyChanged -= tuple.Item1;
                 StopTextSweep(tuple.Item2);
             }
-            if (clearEntrance)
-            {
-                grid.Tag = null;
-            }
+            grid.Tag = null;
         }
 
         /// <summary>

@@ -105,6 +105,47 @@ public sealed class HarnessSqliteSchemaTests
             (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
     }
 
+    [Theory]
+    [InlineData("exclusive", 1, 32, 8)]
+    [InlineData("exclusive", 4, 4, 8)]
+    [InlineData("shared", 1, 32, 8)]
+    [InlineData("shared", 4, 4, 7)]
+    public async Task Version_18_upgrades_parallel_policy_without_changing_runs(
+        string mode, int oldCapacity, int expectedCapacity, long expectedVersion)
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var identity = await fixture.RegisterWorkspaceAsync(95);
+        var coordinator = new WorkspaceCoordinatorStore(fixture.Options);
+        await coordinator.GetOrCreateAsync(identity.WorkspaceId, default);
+        var run = fixture.NewRun(95, 95, 95);
+        await fixture.CreateEventStore().TryCreateRunAsync(run, default);
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE workspace_coordinators SET mode = $mode, max_concurrent_runs = $capacity,
+                policy_json = $policy, version = 7;
+            PRAGMA user_version = 18;
+            """;
+        command.Parameters.AddWithValue("$mode", mode);
+        command.Parameters.AddWithValue("$capacity", oldCapacity);
+        command.Parameters.AddWithValue("$policy", System.Text.Json.JsonSerializer.Serialize(new { mode, max_concurrent_runs = oldCapacity }));
+        await command.ExecuteNonQueryAsync();
+
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        var migrated = await coordinator.GetOrCreateAsync(identity.WorkspaceId, default);
+        Assert.Equal("shared", migrated.Mode);
+        Assert.Equal(expectedCapacity, migrated.MaxConcurrentRuns);
+        Assert.Equal(expectedVersion, migrated.Version);
+        using var policy = System.Text.Json.JsonDocument.Parse(migrated.PolicyJson);
+        Assert.Equal("shared", policy.RootElement.GetProperty("mode").GetString());
+        Assert.Equal(expectedCapacity, policy.RootElement.GetProperty("max_concurrent_runs").GetInt32());
+        Assert.Equal(run.Run, await fixture.CreateEventStore().GetRunAsync(run.Run.RunId, default));
+        await HarnessSqliteSchema.InitializeAsync(fixture.Options, default);
+        Assert.Equal(migrated, await coordinator.GetOrCreateAsync(identity.WorkspaceId, default));
+    }
+
     [Fact]
     public async Task Initialize_upgrades_version_17_without_removing_harness_records()
     {

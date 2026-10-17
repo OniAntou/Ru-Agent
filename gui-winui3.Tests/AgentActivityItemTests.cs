@@ -8,6 +8,17 @@ namespace RuApp.Tests;
 public sealed class AgentActivityItemTests
 {
     [Fact]
+    public void Structured_preview_keeps_literal_backslashes_and_delimiters()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: AgentEditPreviewCodec.Encode(@"C:\new\notes.txt", "a ==> b\nnext")));
+        Assert.True(item.HasEditPreview);
+        Assert.Equal(@"C:\new\notes.txt", item.EditBeforeText);
+        Assert.Equal("a ==> b\nnext", item.EditAfterText);
+    }
+
+    [Fact]
     public void A_settled_row_keeps_its_producer_duration()
     {
         var item = new AgentActivityItem(Activity(AgentActivityState.Started));

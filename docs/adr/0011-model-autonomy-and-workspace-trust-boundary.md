@@ -1,9 +1,19 @@
 ---
 status: accepted
 date: 2026-09-24
+amended_by: ADR-0021 full access is literally full
+  (`0021-full-access-is-literally-full.md`, accepted 2026-10-17), for the
+  `full_access` structured protected-path cell; plan, standard, trust and the
+  remaining invariants below stay in force.
 ---
 
 # Model autonomy and workspace trust boundary
+
+> Amended by [ADR 0021](0021-full-access-is-literally-full.md) on
+> 2026-10-17: `full_access` opens the structured protected paths, so the matrix
+> cell and the hard-invariant bullet below that deny them in that preset are
+> superseded. The denial belongs to `plan` and `standard`; hard-invalid
+> requests stay denied everywhere, and explicit workspace trust is unchanged.
 
 Ru treats the model as the primary autonomous planner while keeping execution
 authority in RuAgentBroker. The model may inspect context, narrate intent, and
@@ -26,7 +36,7 @@ The accepted matrix is:
 | --- | --- |
 | `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
 | `standard` | Workspace mutation and executable/shell launches from a workspace cwd are automatic; external structured paths and external launch directories ask (terminal semantics updated by ADR-0017). |
-| `full_access` | The skip-all mode: external structured files and arbitrary terminal are automatic; structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests remain denied. |
+| `full_access` | The skip-all mode: external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) are automatic; hard-invalid requests remain denied. |
 
 `standard` is the session-scoped default. `full_access` requires an explicit
 GUI confirmation or CLI `--confirm-full-access`; `--json` does not bypass that
@@ -51,8 +61,9 @@ The `full_access` terminal authority is `windows_current_user`. It delegates
 arbitrary terminal execution to the current Windows user, including paths
 outside the workspace and network access. It is not a path or network sandbox.
 Execution retains hard timeout, output cap, cancellation, redaction, and
-process-tree cleanup. Structured protected-path denial remains a structured
-file-tool invariant and does not silently turn terminal back into a sandbox.
+process-tree cleanup. The structured protected-path denial remains a
+structured file-tool guard in `plan` and `standard`, and it does not silently
+turn terminal back into a sandbox.
 
 For structured file tools, `standard` uses a session-scoped canonical directory
 grant after approval. `full_access` selects an ephemeral nearest external
@@ -109,7 +120,7 @@ selection without making it a Broker execution authority.
 The following remain true for every preset and client:
 
 - RuAgentBroker is the sole execution authority.
-- Structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) and hard-invalid requests are denied.
+- Hard-invalid requests are denied in every preset. Structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and `standard` and allowed in `full_access` (ADR-0021).
 - Canonical/symlink/junction/hard-link checks remain active for structured file tools.
 - Terminal hard timeout, output cap, cancellation, and process-tree cleanup remain enforced.
 - Workspace trust is explicit and bound to the canonical identity independently of the active lease.

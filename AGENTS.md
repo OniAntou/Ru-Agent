@@ -37,7 +37,9 @@ Use CONTEXT.md's domain language and update it when concepts change.
 - **Scoped permissions.** Permissions are session-scoped; approval tokens are
   single-use, bound to exact canonical arguments and lost on restart.
   Structured file tools deny harness key/database files and runtime descriptors
-  at every preset; `RU_PROTECTED_PATHS` adds protected paths. Terminal authority
+  in `plan` and `standard`; `full_access` is literally full and treats those
+  protected paths (`RU_PROTECTED_PATHS` entries included) as ordinary targets.
+  Terminal authority
   follows profile v2: Standard permits executable/shell launches from a workspace
   cwd; external cwd and explicit ask rules require approval. This is launch
   permission, not filesystem or network confinement. `standard` and

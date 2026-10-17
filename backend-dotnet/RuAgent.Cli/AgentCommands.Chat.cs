@@ -685,7 +685,7 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Releases a run the operator declined to trust. The challenge cannot be answered
         /// later — it is single-use and the workspace is not on the allow list — so leaving
-        /// the run parked would hold the workspace's active-run lock for the whole sweep
+        /// the run parked would hold the session's active-run slot for the whole sweep
         /// interval. Trust is a pre-execution gate, so cancelling rolls back no tool effect.
         /// </summary>
         async Task CancelUntrustedRunAsync(string runId, CancellationToken trustToken)
@@ -707,8 +707,8 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Runs the in-composer workspace-trust ask end to end: validate the binding, prompt,
         /// then post the server-issued challenge. A decline cancels the run, because the
-        /// challenge is single-use and the run would otherwise sit on the workspace's
-        /// active-run lock until the host swept it.
+        /// challenge is single-use and the run would otherwise sit on the session's
+        /// active-run slot until the host swept it.
         /// </summary>
         async Task<(bool Trusted, bool Declined)> ResolveWorkspaceTrustInPlaceAsync(
             CreateAgentRunResponse response,
@@ -744,7 +744,7 @@ public sealed partial class AgentCommands
                 // --json consumer owns it. --json owns stdout, and TG owns the screen, so
                 // the notice follows humanOut instead of the raw console writer.
                 await (json ? _err : humanOut).WriteLineAsync(
-                        $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
+                        RunStartCore.WorkspaceTrustRequiredMessage(response.RunId))
                     .ConfigureAwait(false);
                 return (false, false);
             }
@@ -796,6 +796,7 @@ public sealed partial class AgentCommands
             }
 
             var expected = new StringBuilder();
+            var completeSteps = new List<string>();
             try
             {
                 foreach (var payloadRef in payloadRefs)
@@ -807,6 +808,7 @@ public sealed partial class AgentCommands
                     if (!string.IsNullOrEmpty(text))
                     {
                         expected.Append(text);
+                        completeSteps.Add(text);
                     }
                 }
             }
@@ -838,6 +840,8 @@ public sealed partial class AgentCommands
 
             if (decision == Tui.AssistantTextRecovery.ReportTruncation)
             {
+                if (await sessionRenderer.Transcript.RecoverAssistantTurnAsync(string.Join("\n\n", completeSteps)).ConfigureAwait(false))
+                    return;
                 // Both output paths append text. Report missing history rather than
                 // clearing the screen or appending an older prefix after a newer tail.
                 await WriteDiagnosticLineAsync(
@@ -1317,7 +1321,7 @@ public sealed partial class AgentCommands
 
         /// <summary>
         /// Shared wind-down for a cancelled turn: distinguishes a user interruption (the
-        /// server run is cancelled so it releases the workspace lock) from a run that
+        /// server run is cancelled so it releases the session) from a run that
         /// parked itself (nothing is executing; the user resumes it explicitly).
         /// </summary>
         async Task ReportInterruptionAsync()
@@ -1627,90 +1631,6 @@ public sealed partial class AgentCommands
 
         Task<bool> HandleSessionWorkflowAsync(string slashCmd, string? arg) =>
             sessionCommands.TryHandleAsync(slashCmd, arg, cancellationToken);
-
-        async Task HandleProjectFilesAsync(string? query)
-        {
-            try
-            {
-                var choices = ChatProjectFileWorkflow.FindCandidates(canonicalWorkspace, query, cancellationToken);
-                if (choices.Count == 0)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "no safe project files match").ConfigureAwait(false);
-                    return;
-                }
-
-                if (cmd.Json || _slashCommands.Picker is null)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "Project files (interactive selection required to attach; limited results, refine the search):").ConfigureAwait(false);
-                    foreach (var choice in choices)
-                    {
-                        await WriteDiagnosticLineAsync(humanOut, $"  {choice.Display}").ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-
-                var selected = await _slashCommands.Picker(
-                    ChatProjectFileWorkflow.ToChoiceList(choices),
-                    cancellationToken).ConfigureAwait(false);
-                if (!int.TryParse(selected, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
-                    || index < 0
-                    || index >= choices.Count)
-                {
-                    return;
-                }
-
-                var loaded = await ChatProjectFileWorkflow.LoadSelectedAsync(
-                    choices[index].Path,
-                    canonicalWorkspace,
-                    cancellationToken).ConfigureAwait(false);
-                if (loaded.Error is not null)
-                {
-                    await WriteDiagnosticLineAsync(_err, loaded.Error).ConfigureAwait(false);
-                    return;
-                }
-
-                var image = loaded.Image;
-                var text = loaded.Text;
-                var count = submissions.Count;
-                var bytes = checked(submissions.SourceBytes
-                    + (image?.ByteSize ?? text?.ByteSize ?? 0));
-                if (count >= ChatProjectFileWorkflow.MaxPendingAttachments
-                    || bytes > ChatProjectFileWorkflow.MaxPendingAttachmentBytes
-                    || image is not null && pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
-                {
-                    await WriteDiagnosticLineAsync(_err, "project_file_limit: detach an attachment before selecting another file").ConfigureAwait(false);
-                    return;
-                }
-
-                if (image is not null)
-                {
-                    submissions.Add(image);
-                    if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
-                    {
-                        await WriteDiagnosticLineAsync(_err, $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
-                    }
-                }
-                else if (text is not null)
-                {
-                    submissions.Add(text);
-                }
-
-                RefreshAttachmentLabels();
-                var label = image?.Label ?? text?.Label ?? "file";
-                await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {label}").ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                await WriteDiagnosticLineAsync(
-                    _err,
-                    $"project_file_error: {ChatDisplayText.Sanitize(CliErrorText.ShortMessage(ex.Message), 180)}").ConfigureAwait(false);
-            }
-        }
 
         async Task FollowRetainedRunAsync(string? runIdArg)
         {
@@ -2318,26 +2238,6 @@ public sealed partial class AgentCommands
                 await HandlePromptLineAsync(retry.Prompt, cancellationToken, retry).ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/history")
-            {
-                // The TG loop owns its own Up/Down history; the sequential reader never
-                // sees a TG line, so reading it there would always report an empty list.
-                var history = tgMode ? tgLoop?.History ?? [] : lineReader.History;
-                if (history.Count == 0)
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
-                }
-                else
-                {
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
-                    for (int i = 0; i < history.Count; i++)
-                    {
-                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
-                    }
-                }
-                await humanOut.FlushAsync().ConfigureAwait(false);
-                return true;
-            }
             if (slashCmd is "/clear")
             {
                 turn = 0;
@@ -2366,29 +2266,6 @@ public sealed partial class AgentCommands
             if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
             {
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/rewind")
-            {
-                if (arg is null || !int.TryParse(arg, out var toIndex))
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /rewind <message_index>").ConfigureAwait(false);
-                    return true;
-                }
-                try
-                {
-                    await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                    await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
-                }
-                catch (AgentApiException ex)
-                {
-                    await WriteDiagnosticLineAsync(_err, $"{CliErrorText.Format(ex)}").ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    await WriteDiagnosticLineAsync(_err, $"rewind_error: {ex.Message}").ConfigureAwait(false);
-                }
-                await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/attach")
@@ -2460,12 +2337,6 @@ public sealed partial class AgentCommands
                     dispatcherExitCode = 0;
                     return true;
                 }
-                return true;
-            }
-            if (slashCmd == "/files")
-            {
-                await HandleProjectFilesAsync(arg).ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/follow")
@@ -2747,9 +2618,11 @@ public sealed partial class AgentCommands
         tgMode && tgWriter is not null ? tgWriter : fallback;
 
     /// <summary>
-    /// A busy workspace is operator-recoverable: name the run that owns it and how to
-    /// release it instead of printing the raw error envelope. Every line goes through
-    /// <paramref name="writeLineAsync"/> so it lands on the resolved writer.
+    /// A busy session is operator-recoverable: name the run that holds it and how to
+    /// release it instead of printing the raw error envelope. The wire code stays
+    /// `workspace_busy` for compatibility; the conflict itself is session-scoped.
+    /// Every line goes through <paramref name="writeLineAsync"/> so it lands on the
+    /// resolved writer.
     /// </summary>
     private async Task WriteBusyConflictAsync(
         AgentApiException error,
@@ -2760,7 +2633,7 @@ public sealed partial class AgentCommands
         var blockingRunId = error.BlockingRunId;
         if (string.IsNullOrWhiteSpace(blockingRunId))
         {
-            await writeLineAsync(_err, Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
+            await writeLineAsync(_err, Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this session.")).ConfigureAwait(false);
             await writeLineAsync(_err, Tui.TuiPalette.DimPaint("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
             await _err.FlushAsync().ConfigureAwait(false);
             return;
@@ -2768,7 +2641,7 @@ public sealed partial class AgentCommands
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
         markBusy?.Invoke(blockingRunId, status);
-        await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
+        await writeLineAsync(_err, Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this session.")).ConfigureAwait(false);
         var hint = IsParkedRunStatus(status)
             ? $"  answer it with 'ru agent attach {blockingRunId}', continue it with 'ru agent continue {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'."
             : $"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.";

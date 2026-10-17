@@ -42,6 +42,7 @@ public sealed partial class TgTranscriptView : View
     private int _tailRows = 1;
     private bool _tailDirty;
     private bool _historyTruncated;
+    internal long RetentionVersion { get; private set; }
     private int _scrollTop;
     private bool _followingTail = true;
     private int _retainedCharacters;
@@ -118,6 +119,29 @@ public sealed partial class TgTranscriptView : View
     /// <summary>Rows committed so far; a step mark for <see cref="DropRowsSince"/>.</summary>
     internal int CommittedRowCount => _lines.Count;
 
+    internal void ReplaceProseSince(int mark, IReadOnlyList<string> prose)
+    {
+        RetentionVersion++;
+        for (var index = _lines.Count - 1; index >= mark; index--)
+            if (_lines[index].Style == TranscriptStyle.Prose) RemoveLine(index);
+        _wrapWidth = -1;
+        foreach (var line in prose) Append(line, TranscriptStyle.Prose);
+        SetNeedsDraw();
+    }
+
+    internal void ReplaceToolRow(int index, string text)
+    {
+        if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return;
+        if (_lines[index].Text.Contains("ctrl+o", StringComparison.Ordinal) && !text.Contains("ctrl+o", StringComparison.Ordinal))
+            text += " · ctrl+o";
+        var bounded = BoundLine(text);
+        _retainedCharacters += CharacterCount(bounded) - CharacterCount(_lines[index].Text);
+        _lines[index] = (bounded, TranscriptStyle.Tool);
+        _wrapWidth = -1;
+        EnforceRetention();
+        SetNeedsDraw();
+    }
+
     /// <summary>
     /// Drops every row appended since <paramref name="mark"/> (a
     /// <see cref="CommittedRowCount"/> reading). The host suppresses a dead-end reply
@@ -133,6 +157,7 @@ public sealed partial class TgTranscriptView : View
             return;
         }
 
+        if (mark < _lines.Count) RetentionVersion++;
         for (var i = mark; i < _lines.Count; i++)
         {
             _retainedCharacters -= CharacterCount(_lines[i].Text);
@@ -164,6 +189,7 @@ public sealed partial class TgTranscriptView : View
     /// </summary>
     public void Clear()
     {
+        RetentionVersion++;
         _lines.Clear();
         _wrapped.Clear();
         ClearCollapsedBlocks();
@@ -448,6 +474,7 @@ public sealed partial class TgTranscriptView : View
             {
                 '✗' => TuiToken.Err,
                 '✓' => TuiToken.Ok,
+                '·' => TuiToken.Meta,
                 _ => TuiToken.Brand,
             };
             var labelEnd = text.IndexOf(' ', 2);
@@ -561,6 +588,7 @@ public sealed partial class TgTranscriptView : View
         RemoveBlocksAfter(_lines.Count);
         if (didTrim)
         {
+            RetentionVersion++;
             _wrapWidth = -1;
         }
     }

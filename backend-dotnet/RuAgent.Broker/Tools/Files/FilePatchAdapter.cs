@@ -13,11 +13,11 @@ public sealed class FilePatchAdapter
     private readonly CanonicalPathResolver _resolver;
     private readonly Func<string, bool>? _simulateFailure;
 
-    public FilePatchAdapter(string workspaceRoot, Func<string, bool>? simulateFailure = null)
+    public FilePatchAdapter(string workspaceRoot, Func<string, bool>? simulateFailure = null, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
         _simulateFailure = simulateFailure;
     }
 

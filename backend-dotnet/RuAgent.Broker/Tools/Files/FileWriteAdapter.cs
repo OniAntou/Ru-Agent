@@ -13,11 +13,11 @@ public sealed class FileWriteAdapter
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
-    public FileWriteAdapter(string workspaceRoot)
+    public FileWriteAdapter(string workspaceRoot, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
     }
 
     public JsonObject Prepare(JsonObject arguments)

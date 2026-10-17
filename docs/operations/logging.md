@@ -29,7 +29,7 @@ The Ru logging system is split into two cleanly separated subsystems:
 ## 3. Correlation ID Propagation
 
 Every user turn or background action generates a correlation ID matching `^c_[a-zA-Z0-9_-]{8,64}$`:
-- **WinUI GUI**: Generates `c_{Guid:N}` and sends it via `X-Correlation-Id` header or WebSocket payload.
+- **WinUI GUI**: Generates `c_{Guid:N}` and sends it via the `X-Correlation-Id` HTTP header.
 - **ASP.NET Core**: `CorrelationMiddleware` extracts `X-Correlation-Id` and scopes async flow via `CorrelationContext.Current`.
 - **Model step**: Carries the correlation ID through the typed in-process step;
   the deterministic scripted runner follows the same bounded shape.

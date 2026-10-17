@@ -81,15 +81,18 @@ public sealed class StreamingMotionContractTests
     }
 
     [Fact]
-    public void The_follow_scroll_glides_unless_animations_are_off()
+    public void Automatic_follow_does_not_animate_obsolete_offsets_across_layouts()
     {
         var code = GuiSource.ViewText("ChatView");
 
-        var follow = GuiSource.MethodBody(code, "ScrollChatToBottom");
-        Assert.Contains(
-            "disableAnimation: !UiTiming.AnimationsEnabled",
-            follow,
-            StringComparison.Ordinal);
+        // Native animations can outlive their measured layout or session. Every
+        // automatic follow path uses immediate positioning, even with motion on.
+        foreach (var member in new[] { "ScrollChatToBottom", "RetryScrollAfterLayout", "OnTranscriptLayoutUpdated" })
+        {
+            var follow = GuiSource.MethodBody(code, member);
+            Assert.Contains("disableAnimation: true", follow, StringComparison.Ordinal);
+            Assert.DoesNotContain("disableAnimation: !UiTiming", follow, StringComparison.Ordinal);
+        }
 
         // Session opens remain a deliberate instant landing.
         var landing = GuiSource.MethodBody(code, "ScrollToLatestAfterLayout");

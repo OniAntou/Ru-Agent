@@ -218,12 +218,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// <summary>Chevron for the thinking toggle: down when open, right when closed.</summary>
     public string ThinkingChevronGlyph => IsThinkingExpanded ? "\uE70D" : "\uE76C";
 
-    /// <summary>Two-pane edit preview marker: "@@ old ==&gt; new" with escaped newlines.</summary>
-    public bool IsEditPreview =>
-        Kind == AgentActivityKind.Edit
-        && Detail is { } detail
-        && detail.StartsWith("@@ ", StringComparison.Ordinal)
-        && detail.Contains(" ==> ", StringComparison.Ordinal);
+    /// <summary>Versioned edit preview, with legacy session compatibility.</summary>
+    public bool IsEditPreview => Kind == AgentActivityKind.Edit
+        && AgentEditPreviewCodec.TryDecode(Detail, out _, out _);
 
     public bool HasEditPreview => IsEditPreview;
 
@@ -764,7 +761,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         DurationMs = activity.DurationMs;
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
-        // Producer only sends @@ old ==> new on Started; Completed carries
+        // Producer only sends the edit preview on Started; Completed carries
         // Detail=null. Keep the preview so a fast edit stays visible after settle.
         if (!string.IsNullOrWhiteSpace(activity.Detail) || !IsEditPreview)
         {
@@ -860,21 +857,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     private (string Before, string After) SplitEditPreview()
     {
-        var detail = Detail ?? string.Empty;
-        var body = detail.StartsWith("@@ ", StringComparison.Ordinal) ? detail[3..] : detail;
-        var separator = body.IndexOf(" ==> ", StringComparison.Ordinal);
-        if (separator < 0)
-        {
-            return (UnescapePreview(body), string.Empty);
-        }
-
-        return (
-            UnescapePreview(body[..separator]),
-            UnescapePreview(body[(separator + 5)..]));
+        AgentEditPreviewCodec.TryDecode(Detail, out var before, out var after);
+        return (before, after);
     }
-
-    private static string UnescapePreview(string value) =>
-        value.Replace("\\n", "\n", StringComparison.Ordinal);
 
     private void OnPropertyChanged(string? propertyName) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

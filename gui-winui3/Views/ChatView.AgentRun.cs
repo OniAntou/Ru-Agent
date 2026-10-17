@@ -378,11 +378,13 @@ namespace RuApp.Views
             Exception? failure = null;
             try
             {
+                var prompt = WorkspaceTrustPromptPolicy.For(
+                    _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash));
                 var dialog = new ContentDialog
                 {
-                    Title = "Trust this workspace?",
-                    Content = "This run needs explicit workspace trust before it can start. Approve only if you trust this workspace and the Coding Agent.",
-                    PrimaryButtonText = "Approve",
+                    Title = prompt.Title,
+                    Content = prompt.Content,
+                    PrimaryButtonText = prompt.PrimaryButtonText,
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
                     XamlRoot = XamlRoot,
@@ -403,6 +405,10 @@ namespace RuApp.Views
                 if (result == ContentDialogResult.Primary)
                 {
                     await controller.TrustAsync(approve: true);
+                    // Only an accepted approval reaches this line: the client throws
+                    // on a rejected decision, so the memory cannot claim a trust the
+                    // Host never recorded.
+                    _workspaceTrustMemory.Remember(_agentWorkspace, run.DisplayIdentityHash);
                 }
                 else
                 {
@@ -543,10 +549,14 @@ namespace RuApp.Views
         private bool IsControllerRunPending() =>
             AgentRunActivityPolicy.IsControllerRunPending(SnapshotRunActivity());
 
-        private void ResetAgentState()
+        private void ResetAgentState(bool preserveTranscript = false)
         {
+            _sidePanelTasksRunId = null;
             _agentTurnGeneration++;
-            ClearAgentActivities();
+            if (preserveTranscript)
+                SuspendAgentFeedUpdates();
+            else
+                ClearAgentActivities();
             ClearTodoPanel();
             // The queue belongs to the session that was on screen; a queue that
             // followed the user into another conversation would send a turn into the
@@ -570,7 +580,7 @@ namespace RuApp.Views
             // narrowed what the user had chosen.
             _agentPresetSessionId = null;
             _agentPresetVersion = null;
-            AbandonActiveAgentReply();
+            AbandonActiveAgentReply(preservePresentation: preserveTranscript);
 
             UpdateAgentComposerVisuals();
             Services.UiMotion.SetVisible(AgentInlinePanel, false);
@@ -769,7 +779,7 @@ namespace RuApp.Views
 
         private async Task SendCurrentMessageAsync()
         {
-            if (_isSendingUserTurn)
+            if (_isSendingUserTurn || _isSessionHistoryLoading)
             {
                 return;
             }
@@ -984,43 +994,25 @@ namespace RuApp.Views
         /// </summary>
         private async Task DrainQueuedTurnsAsync(CancellationToken cancellationToken)
         {
-            if (_agentController is null || !_queuedTurns.TryBeginAutoDrain())
-            {
-                UpdateQueuedTurnsPanel();
-                return;
-            }
-
-            var next = _queuedTurns.TakeFirst();
-            if (next is null)
-            {
-                UpdateQueuedTurnsPanel();
-                return;
-            }
-
+            if (_agentController is null) return;
+            var sessionId = _activeSessionId;
+            var generation = _agentTurnGeneration;
             try
             {
-                bool started = await SendAgentTurnAsync(
-                    BuildEffectivePrompt(next.Text, next.Attachments),
-                    cancellationToken,
-                    attachments: next.Attachments.ToList(),
-                    displayUserText: next.DisplayText);
-                if (!started)
-                {
-                    // The turn never became a run (a run is still in hand, or the
-                    // Full Access confirmation was declined). Put it back at the
-                    // head so it is not silently lost.
-                    _queuedTurns.RequeueFirst(next);
-                }
+                await _queuedTurns.DrainAsync((next, accepted) => SendAgentTurnAsync(
+                    BuildEffectivePrompt(next.Text, next.Attachments), cancellationToken,
+                    attachments: next.Attachments.ToList(), displayUserText: next.DisplayText,
+                    onAccepted: accepted));
             }
             catch (Exception exception)
             {
-                FailActiveAgentReply(exception);
-                ShowAgentError(exception);
+                if (generation == _agentTurnGeneration && sessionId == _activeSessionId)
+                {
+                    FailActiveAgentReply(exception);
+                    ShowAgentError(exception);
+                }
             }
-            finally
-            {
-                UpdateQueuedTurnsPanel();
-            }
+            finally { UpdateQueuedTurnsPanel(); }
         }
 
         private void UpdateQueuedTurnsPanel()
@@ -1062,6 +1054,12 @@ namespace RuApp.Views
             if (_agentController is null)
             {
                 throw new InvalidOperationException("Agent controller is unavailable.");
+            }
+
+            if (_rewindInProgress)
+            {
+                ShowAgentInlineStatus("Wait for the history rewind to finish before sending.");
+                return false;
             }
 
             if (IsControllerRunPending())
@@ -1199,11 +1197,8 @@ namespace RuApp.Views
         private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
         {
             _activeAgentRunId = null;
-            _workspaceTrustDialogRunId = null;
-            _workspaceTrustDialogSessionId = null;
-            _workspaceTrustDialogHandledRunId = null;
-            _workspaceTrustDialogHandledSessionId = null;
-            _workspaceTrustDialogController = null;
+            // CurrentRun can request trust before the accepted-turn callback
+            // reaches this method. Only the run/session owner resets its dialog.
             _activeAgentReplyReceived = false;
             _sessionPresentation.BeginTurn();
             _activeAgentUsage = null;
@@ -1342,7 +1337,7 @@ namespace RuApp.Views
             _activeAgentRunId = null;
         }
 
-        private void AbandonActiveAgentReply(bool removeUserMessage = false)
+        private void AbandonActiveAgentReply(bool removeUserMessage = false, bool preservePresentation = false)
         {
             _replyRenderScheduler.Invalidate();
 
@@ -1355,7 +1350,7 @@ namespace RuApp.Views
                 }
             }
 
-            if (_activeAgentAssistantMessage is not null)
+            if (!preservePresentation && _activeAgentAssistantMessage is not null)
             {
                 var abandonedMessage = _activeAgentAssistantMessage;
                 abandonedMessage.IsStreaming = false;

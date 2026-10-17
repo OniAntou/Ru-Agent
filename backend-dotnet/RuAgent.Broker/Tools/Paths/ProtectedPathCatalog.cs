@@ -1,19 +1,20 @@
 namespace RuAgent.Broker.Tools.Paths;
 
 /// <summary>
-/// The hard deny list: the harness's own key material and runtime descriptors,
-/// plus any paths the user adds through <see cref="ExtraPathsEnvironmentVariable"/>.
-/// Credential stores and developer files (.ssh, .env, .git, cloud CLI homes) are
-/// ordinary paths: they follow the preset profile like any other target, matching
-/// the mainstream agents that read them through normal permission rules. The core
-/// rules stay anchored to the files that would let a tool impersonate the Broker
-/// or read the harness key, so no preset or approval can open them.
+/// The catalog-protected paths: the harness's own key material and runtime
+/// descriptors, plus any paths the user adds through
+/// <see cref="ExtraPathsEnvironmentVariable"/>. Credential stores and developer
+/// files (.ssh, .env, .git, cloud CLI homes) are ordinary paths: they follow the
+/// preset profile like any other target, matching the mainstream agents that
+/// read them through normal permission rules. Plan and standard deny the
+/// catalog entries outright; full_access is literally full and treats them like
+/// any other target.
 /// </summary>
 public static class ProtectedPathCatalog
 {
     public const string Version = "2";
 
-    /// <summary>Semicolon-separated absolute paths that join the hard deny list.</summary>
+    /// <summary>Semicolon-separated absolute paths that join the catalog-protected set.</summary>
     public const string ExtraPathsEnvironmentVariable = "RU_PROTECTED_PATHS";
 
     /// <summary>Environment variables the extra-path rules resolve against.</summary>

@@ -14,11 +14,11 @@ public sealed class FileSearchAdapter
     private readonly CanonicalPathResolver _resolver;
     private readonly int _maxSearchConcurrency;
 
-    public FileSearchAdapter(string workspaceRoot, int maxSearchConcurrency = 4)
+    public FileSearchAdapter(string workspaceRoot, int maxSearchConcurrency = 4, bool allowProtectedPaths = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
-        _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _resolver = new CanonicalPathResolver(_workspaceRoot, allowProtectedPaths);
         _maxSearchConcurrency = Math.Clamp(maxSearchConcurrency, 1, MaxSearchConcurrency);
     }
 

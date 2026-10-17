@@ -6,14 +6,152 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **Full 13-project Debug matrix: 6,284 passed / 0 failed / 0 skipped** (2026-10-14, commit `4d197228`). Broker 931; CLI 1,427; Client 239; Core 489; Persistence 177; Hosting 41; Protocol 86; Adapters 221; Worker 90; SessionInterchange 43; Updates 25; Backend 1,092; GUI 1,423. [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) and [CI](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202229) passed. Earlier local aggregate coverage and failures remain under `artifacts/release-verification/`. |
-| Python suite | **215 passed, 1 skipped** (2026-10-14), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/release-verification/python-final.log`. Ruff and current-doc/distribution guards also pass. |
-| TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
-| Release build | **11/11 stages passed** on the disposable Windows runner, version-stamped `0.1.0-preview.1`; separate Desktop/CLI Setup and ZIP artifacts with SHA256SUMS attached to the [public prerelease](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.0-preview.1). [Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482) passed packaging, production install/update/uninstall and both packaged Host smokes. Packages remain unsigned. |
-| Managed runtime smoke | **PASS** from both product trees: matching `/status` software version and maintenance protocol, isolated temporary data and authenticated idle-only shutdown with acknowledgement before process exit. Logs: `artifacts/release-verification/cli-host-smoke.log` and `desktop-host-smoke.log`. No provider generation was invoked. |
+| .NET tests | **Full 13-project Debug matrix: 6,464 passed / 0 failed / 0 skipped** (2026-10-17, codebase review remediation). Broker 957; CLI 1,465; Client 239; Core 492; Persistence 181; Hosting 41; Protocol 98; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,110; GUI 1,496. Log: `artifacts/codebase-fixes-2026-10-17/dotnet-full.log`. The earlier review's four Backend failures and later focused pass are preserved below; the fresh full matrix passed without a retry. |
+| Python suite | **215 passed, 1 skipped** (2026-10-17), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/codebase-fixes-2026-10-17/python-full.log`. Earlier evidence remains under `artifacts/release-verification/`. |
+| TypeScript SDK | **60 passed / 0 failed**, plus typecheck and build (2026-10-17, codebase review remediation). Bounded event buffers, validated envelopes/attach results, complete-frame limits and peer-safe cleanup. Log: `artifacts/codebase-fixes-2026-10-17/sdk-final.log`. |
+| Release build | **Local 11/11 stages passed** (2026-10-16, after core TUI simplification), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-core-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
+| Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-core-release-qa/published-host-smoke.log`. Published CLI core help/status/session navigation, removed-command refusal and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Codebase review remediation (2026-10-17)
+
+Starting from `dev` at `2315b0d8`, regression checks reproduced native identity
+fallback, explicit ask bypass for external files, shared workspace baseline
+cleanup, unbounded SDK buffering, malformed envelope handling and the complete
+frame size bypass. Focused checks passed after the fixes. The fresh full Debug
+matrix passed all 6,464 tests across 13 projects without failures or skips.
+Logs and regression sources are under `artifacts/codebase-fixes-2026-10-17/`.
+Full Python verification passed 215 tests with the POSIX process-group test
+skipped on Windows. The TypeScript SDK passed typecheck, all 60 tests and build.
+Route/runtime-boundary guards and Ruff passed; final documentation guards passed
+all 15 checks. SDK tests use controlled transports and child-process fixtures,
+not real-provider generation.
+
+The initial review matrix had four Backend failures involving temporary roots
+and sharing violations. The related isolated checks subsequently passed all ten
+tests; their precise cause was not established. Those original failures remain
+in `artifacts/codebase-review-2026-10-17-2315b0d8/dotnet-matrix.log`, alongside
+the targeted result. The later remediation matrix is a new full run after code
+changes, not evidence that the original failure cause was diagnosed or fixed.
+No failing assertion was weakened or automatic retry introduced.
+
+These deterministic checks do not establish native UI acceptance, real-provider
+quality or release packaging. The Release and published-runtime rows above
+remain their dated historical evidence.
+
+## Core TUI simplification and Release rebuild (2026-10-16)
+
+Scoped Debug verification with `scripts/test_dotnet.ps1 -Configuration Debug
+-ProjectFilter RuAgent.Cli.Tests` rebuilt the affected CLI and passed all 1,465
+tests without failures or skips. This includes header context-meter cells,
+chat/session/attachment/approval/recovery coverage, removal from help/completion
+and compact plan progress without a streamed-word break. A subsequent focused
+run rebuilt the final prompt-recall/autocomplete test edits and passed both tests.
+The current-documentation and guidance-route guards passed all 15 checks.
+Logs: `artifacts/tui-core-tests.log`, `artifacts/tui-core-final-targeted.log` and
+`artifacts/tui-core-docs.log`.
+
+The TUI now omits dedicated activity/todo/change inspectors, file browsing,
+session tree/rewind/export and token/prompt-history reports. Context metering,
+Up/Down recall, inline tool/diff details and headless CLI/RPC remain. The release
+and ConPTY results below predate this simplification; they preserve historical
+evidence, including inspector commands that are now removed. This scoped check
+was followed by a Release rebuild and packaged runtime checks, recorded here.
+
+Final verification was scoped to the changed CLI: the runner with
+`-Configuration Release -ProjectFilter RuAgent.Cli.Tests` rebuilt and passed all
+1,465 tests without failures or skips. `build.bat` then completed all 11 stages.
+The flat published Host passed authenticated status/maintenance and acknowledged
+idle shutdown. The published CLI entered a real ConPTY alternate screen, opened
+core help/status/session views, refused the removed `/stats` command and exited
+with code 0. Its flat assembly SHA-256 matches the standalone CLI publish, and
+`bin/ru.cmd --version` reports `0.1.1`. Owned probe processes were closed.
+Logs: `artifacts/tui-core-release-qa/cli-release-tests.log`, `build-release.log`,
+`published-host-smoke.log`, `packaged-tui-smoke.log` and `ru-version.log` under
+that same directory. No installer, tag, GitHub release or provider generation was
+created. The full-matrix figures above remain the earlier baseline; the current
+change used scoped CLI and documentation checks.
+
+## TUI Release verification (2026-10-16)
+
+The full documented Debug matrix passed all 6,370 tests across 13 projects,
+without failures or skips. Full Python verification passed 215 tests with the
+POSIX process-group test skipped on Windows. `build.bat` completed all 11 Release
+stages, producing self-contained win-x64 GUI, Host and CLI outputs. The source
+launcher now uses the rebuilt flat CLI; its assembly SHA-256 matches the standalone
+CLI publish output, and `bin/ru.cmd --version` reports `0.1.1`.
+
+`scripts/publish_smoke.ps1 -PublishedDirectory` verified the flat Host's startup,
+authenticated status and acknowledged idle shutdown. A ConPTY check of the
+published CLI opened `/activity`, `/todos` and `/changes` and exited with code 0.
+The probe needed inheritable console handles for the child executable; earlier
+probe-only quoting/handle and exit-code-query failures are retained alongside the
+final passing captures in `artifacts/tui-release-qa/`. Owned smoke processes were
+closed. No provider generation, installer packaging or remote release was invoked
+for these build checks.
+
+An initial full-matrix invocation with `-Configuration Release` stopped in Broker:
+942 passed and `Stale_approval_cannot_add_a_session_grant` failed. Its fixture sends
+`expected_intent_hash`, a test override compiled only under `#if DEBUG`; Release
+intentionally ignores that caller-supplied field. No permission rule or assertion
+was weakened. The documented Debug matrix was then run in full and passed, while
+the Release artifacts were validated through the build and runtime smokes above.
+
+## Side surface state and presentation (2026-10-15, scoped)
+
+On `dev` after `530f0f25`, GUI tests passed **1,444**, Broker tests **943** and
+Host tests **1,101**; the documentation guards passed **15**. GUI and Host Debug
+builds succeeded. The full release matrix and installer pipeline were not rerun
+for this scoped change. Logs and native screenshots are local-only under
+`artifacts/gui-sidepanel-fix-qa/`.
+
+With user authorization, native WinUI checks and existing-provider calls used a
+separate temporary profile and QA workspaces. Reopened Changes retained `+2`, an
+expanded historical diff stayed open through a new live run, closed Files reopened
+from the tab menu, and active tabs/fullscreen survived a narrow/wide resize. Rapid
+hide/show retained a painted panel. Background-task rows showed the command and
+live state, then cleared when the run's authority lease closed. Terminal switched
+between two session workspaces and back, showing the matching shell prompt. A
+fresh workspace required one trust approval without leaving a duplicate dialog;
+the accepted-turn callback no longer resets the dialog owner's guard. Terminal
+theme/scrollbars use the GUI palette. Screenshots cover Dark; Light visual
+acceptance remains unverified. QA apps, hosts and interactive shells were closed.
+
+## TUI feed and inspection repair (2026-10-16, scoped)
+
+`scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter RuAgent.Cli.Tests -NoRestore`
+built the affected CLI and passed all 1,462 tests. Documentation and route-count
+guards passed all 15 tests; `git diff --check` passed. Focused red/green logs and
+the final CLI log are retained under `artifacts/tui-repair-qa/`.
+
+Regression checks reproduce sentence splitting on silent metadata, a worker-thread
+retry leaving its superseded answer visible, and document paging scrolling the
+conversation behind the panel. Additional checks cover durable-text repair without
+dropping tool rows or earlier turns, late tool outcomes updating in place, session
+inspection reset, plan replacement and bounded long-message replay. The outcome
+fixtures distinguish a run status from the tool's typed completion state; durable
+tool ordering remains proposal order.
+
+Native checks used a real Windows ConPTY, isolated temporary profile and QA
+workspace, and the user-authorized saved provider. Three completed provider turns
+used a two-item todo/read task and a short Markdown table/code reply. The first
+exposed a missing streamed head; subsequent checks verified full-text recovery.
+Activity and Todo panels opened during streaming, the plan reached 2/2, and
+120×36 → 90×28 → 120×36 resizing preserved the session. Raw terminal captures and
+emulator reconstructions are local-only under `artifacts/tui-repair-qa/`; they are
+separate evidence from the Terminal.Gui driver-buffer tests, not native screenshots.
+An intermediate recovery capture exposed visible ANSI escapes, corrected by the
+same stripping used for normal transcript rows. The initial console probe inherited
+the tooling shell's NO_COLOR/dumb-terminal settings and exercised sequential output;
+interactive acceptance used valid console handles and explicit terminal settings.
+
+These checks do not establish full GUI feature parity: the new inspection panels
+cover received activity in the current connection, without historical activity
+replay or background-process control. These scoped checks initially preceded the
+follow-up Release build recorded above, which updates the source launcher's binary.
+No installer or remote release was published. Owned QA consoles and hosts were closed.
 
 ## Workspace maintenance (2026-10-14)
 
@@ -2499,9 +2637,9 @@ The current session-scoped matrix is: `plan` auto workspace read + Web, denies
 terminal/mutation outright (read-only, no per-change asks), and asks for
 external structured access; `standard` auto bounded-local in-workspace mutation
 and asks external/escape; `full_access` is the skip-all mode — external
-structured files + arbitrary terminal auto while only structured protected
-paths (harness key/database files and runtime descriptors, plus
-`RU_PROTECTED_PATHS` additions) deny. Workspace trust is explicit once
+structured files, arbitrary terminal, and structured protected paths (harness
+key/database files and runtime descriptors, plus `RU_PROTECTED_PATHS`
+additions) are automatic. Workspace trust is explicit once
 per canonical identity: the GUI confirms it, while CLI `run`/`chat` require
 `--trust-workspace`; Full Access additionally requires the GUI gate or CLI
 `--confirm-full-access`. Full-access terminal runs as the current Windows user,

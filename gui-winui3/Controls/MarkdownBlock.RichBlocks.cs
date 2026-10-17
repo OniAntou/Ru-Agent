@@ -162,41 +162,11 @@ namespace RuApp.Controls
                 return rows;
             }
 
-            private const int MaxTableColumns = 8;
-
             private Paragraph Table(Markdig.Extensions.Tables.Table table, int indent)
             {
-                var rows = new List<IReadOnlyList<string>>();
-                foreach (var rowBlock in table)
-                {
-                    if (rowBlock is not Markdig.Extensions.Tables.TableRow row)
-                    {
-                        continue;
-                    }
-
-                    var cells = new List<string>();
-                    foreach (var cellBlock in row)
-                    {
-                        if (cellBlock is Markdig.Extensions.Tables.TableCell cell)
-                        {
-                            cells.Add(MarkdownEngine.TableCellText(cell).Replace('\n', ' ').Trim());
-                        }
-                    }
-
-                    rows.Add(cells);
-                    if (rows.Count >= MaxTableRows)
-                    {
-                        break;
-                    }
-                }
-
-                int columns = 0;
-                foreach (var row in rows)
-                {
-                    columns = Math.Max(columns, row.Count);
-                }
-
-                columns = Math.Min(columns, MaxTableColumns);
+                var presentation = MarkdownTablePresentation.Create(table);
+                var rows = presentation.PreviewRows;
+                int columns = presentation.PreviewColumns;
                 var line = ThemeBrush("RuLineBrush", 203, 213, 225);
                 var grid = new Grid { MinWidth = columns * 120 };
                 for (int index = 0; index < columns; index++)
@@ -254,10 +224,10 @@ namespace RuApp.Controls
                     Content = new FontIcon { Glyph = "\uE8C8", FontSize = 12 },
                     Style = (Style?)Application.Current?.Resources["RuToolbarButtonStyle"],
                     Padding = new Thickness(6, 4, 6, 4),
-                    Tag = TableCellsToTsv(rows, columns),
+                    Tag = presentation.FullText,
                 };
-                ToolTipService.SetToolTip(copy, "Copy table");
-                copy.SetValue(AutomationProperties.NameProperty, "Copy table");
+                ToolTipService.SetToolTip(copy, presentation.IsTruncated ? "Copy full table" : "Copy table");
+                copy.SetValue(AutomationProperties.NameProperty, presentation.IsTruncated ? "Copy full table" : "Copy table");
                 copy.Click += OnCopyCodeClick;
                 var tableHeader = new Grid { Margin = new Thickness(12, 8, 12, 0) };
                 tableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -277,6 +247,25 @@ namespace RuApp.Controls
 
                 var tableFrame = new StackPanel();
                 tableFrame.Children.Add(tableHeader);
+                if (presentation.IsTruncated)
+                {
+                    var notice = new TextBlock
+                    {
+                        Text = presentation.Notice, FontSize = 12,
+                        Foreground = MutedOrDefault(), TextWrapping = TextWrapping.Wrap,
+                    };
+                    var showAll = new Button
+                    {
+                        Content = "View full table", Tag = presentation.FullText,
+                        Padding = new Thickness(8, 4, 8, 4),
+                    };
+                    AutomationProperties.SetName(showAll, "View full table");
+                    showAll.Click += OnViewFullTableClick;
+                    var summary = new StackPanel { Spacing = 6, Margin = new Thickness(12, 8, 12, 8) };
+                    summary.Children.Add(notice);
+                    summary.Children.Add(showAll);
+                    tableFrame.Children.Add(summary);
+                }
                 tableFrame.Children.Add(new ScrollViewer
                 {
                     Content = grid,
@@ -299,6 +288,31 @@ namespace RuApp.Controls
                 return paragraph;
             }
 
+            private static async void OnViewFullTableClick(object sender, RoutedEventArgs e)
+            {
+                if (sender is not Button { Tag: string text, XamlRoot: { } root }) return;
+                var body = new TextBox
+                {
+                    IsReadOnly = true, AcceptsReturn = true,
+                    TextWrapping = TextWrapping.NoWrap, FontFamily = MonoFont,
+                    FontSize = MonoFontSize, MinHeight = 180, MaxHeight = 420,
+                };
+                // WinUI discards subsequent lines if Text is assigned before AcceptsReturn.
+                body.Text = text;
+                ScrollViewer.SetHorizontalScrollBarVisibility(body, ScrollBarVisibility.Auto);
+                ScrollViewer.SetVerticalScrollBarVisibility(body, ScrollBarVisibility.Auto);
+                AutomationProperties.SetName(body, "Complete table as tab-separated text");
+                var dialog = new ContentDialog
+                {
+                    Title = "Full table", Content = body, CloseButtonText = "Close",
+                    XamlRoot = root, DefaultButton = ContentDialogButton.Close,
+                };
+                try { await Services.ContentDialogGate.ShowAsync(dialog); }
+                catch (Exception error)
+                {
+                    Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] Full table could not open: {error.GetType().Name}");
+                }
+            }
         }
     }
 }

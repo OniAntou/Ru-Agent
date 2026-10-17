@@ -10,6 +10,35 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgChatLoopTests
 {
     [Fact]
+    public void DocumentPagingDoesNotScrollTheConversationBehindIt()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        app.AddTimeout(TimeSpan.FromMilliseconds(150), () =>
+        {
+            for (var i = 0; i < 100; i++) window.Transcript.Append($"chat {i}", TranscriptStyle.Prose);
+            window.ShowDocument("activity", Enumerable.Range(0, 100).Select(i => $"tool {i}").ToArray());
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(300), () =>
+        {
+            app.InjectKey(Key.PageDown);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(450), () =>
+        {
+            Assert.True(window.Document.Offset > 0);
+            Assert.True(window.Transcript.IsFollowingTail);
+            loop.Stop();
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    [Fact]
     public async Task ExecuteSubmittedLine_DispatchesSlashCommandWithoutRendering()
     {
         var seen = new List<string>();

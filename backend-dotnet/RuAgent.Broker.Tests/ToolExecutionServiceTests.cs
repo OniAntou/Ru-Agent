@@ -1143,6 +1143,9 @@ public sealed class ToolExecutionServiceTests
             Assert.Equal(runRequestId, started.Output["execution_id"]!.GetValue<string>());
             Assert.Equal("running", started.Output["state"]!.GetValue<string>());
             Assert.Equal(runRequestId, started.Output["spool_id"]!.GetValue<string>());
+            var listed = Assert.Single(service.HandleSessionTasks(sessionId, null)["tasks"]!.AsArray());
+            Assert.Contains("bg-hello", listed!["command"]!.GetValue<string>());
+            Assert.DoesNotContain("command", service.HandleSessionTasks("foreign-session", null).ToJsonString());
 
             // While the task runs, a read reports the live state. The output
             // itself may still be in flight under a loaded test host; the

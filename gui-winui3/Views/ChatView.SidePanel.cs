@@ -39,6 +39,7 @@ public sealed partial class ChatView
         SidePanel.TabClosed += OnSidePanelTabClosed;
         SidePanel.TabMoved += OnSidePanelTabMoved;
         SidePanel.TaskStopRequested += OnSidePanelTaskStopRequested;
+        SidePanel.TasksRefreshRequested += OnSidePanelTasksRefreshRequested;
         SidePanel.WidthChanged += OnSidePanelWidthChanged;
         SidePanel.WidthCommitted += OnSidePanelWidthCommitted;
     }
@@ -84,11 +85,8 @@ public sealed partial class ChatView
 
         bool canShow = CanShowSidePanel();
         var mode = _sidePanelPolicy.GetMode(_activeSessionId);
-        if (!canShow && mode == AgentSidePanelMode.Panel)
-        {
-            _sidePanelPolicy.CollapseToCard(_activeSessionId);
-            mode = _sidePanelPolicy.GetMode(_activeSessionId);
-        }
+        // A narrow window temporarily suppresses presentation, not the user's
+        // selected mode, tab or fullscreen state.
 
         bool isVisible = canShow && mode != AgentSidePanelMode.Hidden;
         bool wasVisible = SidePanel.Visibility == Visibility.Visible;
@@ -108,7 +106,7 @@ public sealed partial class ChatView
                 SidePanel.PlayVisibilityEntrance();
             }
         }
-        else if (wasVisible)
+        else if (wasVisible && !SidePanel.IsVisibilityExiting)
         {
             // The fade runs over the space the panel still reserves; the collapse
             // and the column's shift follow it, unless the surface was asked back
@@ -130,13 +128,14 @@ public sealed partial class ChatView
         // it. The policy already reads Hidden, so the last rendered mode decides.
         _sidePanelReserveWidth = isVisible
             ? ReserveFor(mode)
-            : wasVisible ? ReserveFor(SidePanel.CurrentMode) : 0;
+            : SidePanel.Visibility == Visibility.Visible ? ReserveFor(SidePanel.CurrentMode) : 0;
         if (ApprovalHostGrid is not null)
         {
             ApprovalHostGrid.Margin = new Thickness(16, 0, 16 + _sidePanelReserveWidth, 24);
         }
 
         MainWindow.Instance?.UpdateSidePanelToggleState(canShow, mode == AgentSidePanelMode.Hidden);
+        UpdateTaskRefreshTimer(isVisible);
     }
 
     private double ReserveFor(AgentSidePanelMode mode) =>
@@ -233,20 +232,29 @@ public sealed partial class ChatView
             return;
         }
 
-        var runId = _agentController.CurrentRun?.RunId ?? _activeAgentRunId;
+        var runId = ResolveSidePanelTaskRunId();
         if (string.IsNullOrWhiteSpace(runId))
         {
             return;
         }
 
+        long generation = _sessionOpenGeneration;
+        var controller = _agentController;
         try
         {
-            await _agentController
+            var result = await controller
                 .DispatchCommandAsync(runId, "/tasks kill " + executionId)
                 .ConfigureAwait(true);
+            if (generation != _sessionOpenGeneration) return;
+            if (!string.Equals(result.Status, "succeeded", StringComparison.Ordinal))
+            {
+                SidePanel.SetTasksStatus($"Could not stop task ({result.Code}). Refresh to check its state.");
+                return;
+            }
         }
         catch (Exception)
         {
+            if (generation != _sessionOpenGeneration) return;
             SidePanel.SetTasksStatus("Stop failed; the host did not answer.");
             return;
         }

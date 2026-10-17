@@ -118,7 +118,9 @@ public sealed partial class ToolExecutionService
             }
 
             var shouldCache = profile is null || !IsFullAccessProfile(profile);
-            return ToolsForRoot(selectedRoot, shouldCache);
+            var opensProtectedPaths = profile is not null
+                && AgentPolicyProfileCatalog.OpensProtectedPaths(profile);
+            return ToolsForRoot(selectedRoot, opensProtectedPaths, shouldCache);
         }
         catch (ArgumentException)
         {
@@ -179,10 +181,12 @@ public sealed partial class ToolExecutionService
             return _defaultTools;
         }
 
-        return ToolsForRoot(lease.CanonicalRoot);
+        return ToolsForRoot(
+            lease.CanonicalRoot,
+            AgentPolicyProfileCatalog.OpensProtectedPaths(AgentPolicyProfileCatalog.Get(lease.Preset)));
     }
 
-    private RootToolSet ToolsForRoot(string canonicalRoot, bool cache = true)
+    private RootToolSet ToolsForRoot(string canonicalRoot, bool allowProtectedPaths = false, bool cache = true)
     {
         var root = Path.GetFullPath(canonicalRoot);
         if (!cache)
@@ -190,15 +194,22 @@ public sealed partial class ToolExecutionService
             return RootToolSet.Create(
                 root,
                 _approvalTokens,
-                _recoveryStore);
+                _recoveryStore,
+                allowProtectedPaths);
         }
 
+        // The root alone cannot key a tool set once protected-path handling is
+        // preset-derived: the same root serves a different classifier per
+        // preset, so the open and fail-closed sets stay apart. The suffix is
+        // not a valid path character, so it can never collide with a root.
+        var cacheKey = allowProtectedPaths ? root + "\u0000protected-open" : root;
         return _toolSetsByRoot.GetOrAdd(
-            root,
-            resolvedRoot => RootToolSet.Create(
-                resolvedRoot,
+            cacheKey,
+            _ => RootToolSet.Create(
+                root,
                 _approvalTokens,
-                _recoveryStore));
+                _recoveryStore,
+                allowProtectedPaths));
     }
 
     private static bool IsFullAccessProfile(AgentPolicyProfile profile) =>
@@ -225,19 +236,20 @@ public sealed partial class ToolExecutionService
         public static RootToolSet Create(
             string canonicalRoot,
             ApprovalTokenService approvalTokens,
-            InMemoryRecoveryStore recoveryStore)
+            InMemoryRecoveryStore recoveryStore,
+            bool allowProtectedPaths = false)
         {
             return new RootToolSet
             {
-                List = new FileListAdapter(canonicalRoot),
-                Glob = new FileGlobAdapter(canonicalRoot),
-                Search = new FileSearchAdapter(canonicalRoot),
-                Read = new FileReadAdapter(canonicalRoot),
-                Write = new FileWriteAdapter(canonicalRoot),
-                Delete = new FileDeleteAdapter(canonicalRoot, recoveryStore),
-                Restore = new FileRestoreAdapter(canonicalRoot, recoveryStore),
-                Edit = new FileEditAdapter(canonicalRoot),
-                MutationResolver = new CanonicalPathResolver(canonicalRoot),
+                List = new FileListAdapter(canonicalRoot, allowProtectedPaths),
+                Glob = new FileGlobAdapter(canonicalRoot, allowProtectedPaths),
+                Search = new FileSearchAdapter(canonicalRoot, allowProtectedPaths: allowProtectedPaths),
+                Read = new FileReadAdapter(canonicalRoot, allowProtectedPaths),
+                Write = new FileWriteAdapter(canonicalRoot, allowProtectedPaths),
+                Delete = new FileDeleteAdapter(canonicalRoot, recoveryStore, allowProtectedPaths: allowProtectedPaths),
+                Restore = new FileRestoreAdapter(canonicalRoot, recoveryStore, allowProtectedPaths: allowProtectedPaths),
+                Edit = new FileEditAdapter(canonicalRoot, allowProtectedPaths),
+                MutationResolver = new CanonicalPathResolver(canonicalRoot, allowProtectedPaths),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
                     approvalTokens,

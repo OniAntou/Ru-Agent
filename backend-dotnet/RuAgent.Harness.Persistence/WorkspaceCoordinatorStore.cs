@@ -85,8 +85,8 @@ public sealed partial class WorkspaceCoordinatorStore
             var now = DateTimeOffset.UtcNow;
             var policyJson = JsonSerializer.Serialize(new
             {
-                mode = "exclusive",
-                max_concurrent_runs = 1,
+                mode = "shared",
+                max_concurrent_runs = 32,
                 lease_ttl_seconds = 30,
                 merge_text_conflicts = true,
                 external_writer_detection = true,
@@ -99,7 +99,7 @@ public sealed partial class WorkspaceCoordinatorStore
                     merge_text_conflicts, external_writer_detection, commit_sequence,
                     policy_json, version, created_at_utc, updated_at_utc)
                 VALUES(
-                    $workspace_id, 'exclusive', 1, 30, 1, 1, 0,
+                    $workspace_id, 'shared', 32, 30, 1, 1, 0,
                     $policy_json, 1, $created_at, $updated_at)
                 """;
             insert.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
@@ -110,8 +110,8 @@ public sealed partial class WorkspaceCoordinatorStore
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return new WorkspaceCoordinatorRecord(
                 workspaceId.Value,
-                "exclusive",
-                1,
+                "shared",
+                32,
                 30,
                 true,
                 true,
@@ -146,8 +146,8 @@ public sealed partial class WorkspaceCoordinatorStore
         CancellationToken cancellationToken)
     {
         _ = workspaceId.Value;
-        if (mode is not ("exclusive" or "shared")
-            || maxConcurrentRuns is < 1 or > 32
+        if (mode != "shared"
+            || maxConcurrentRuns is < 2 or > 32
             || leaseTtlSeconds is < 5 or > 600
             || expectedVersion < 1)
         {

@@ -248,7 +248,7 @@ namespace RuApp
                 return;
             }
 
-            _sidebarAppRoot = projectRoot;
+            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
             InitializeSidebarMotion();
             // Section chrome and persisted workspace pins do not depend on a
             // successful session fetch or a change in the session fingerprint.
@@ -291,7 +291,7 @@ namespace RuApp
                     _composition.HarnessEvents,
                     _composition.HarnessScenario,
                     _agentController,
-                    projectRoot,
+                    _sidebarAppRoot,
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
@@ -521,20 +521,23 @@ namespace RuApp
         {
             if (e.NewSize.Width > 0 && e.NewSize.Height > 0)
             {
-                SettingsModalCard.Width = Math.Min(880, Math.Max(400, e.NewSize.Width - 48));
-                SettingsModalCard.Height = Math.Min(560, Math.Max(360, e.NewSize.Height - 40));
+                SettingsModalCard.Width = Math.Max(0, Math.Min(880, e.NewSize.Width - 48));
+                SettingsModalCard.Height = Math.Max(0, Math.Min(560, e.NewSize.Height - 40));
             }
         }
 
         private void OpenSettingsPopup()
         {
+            if (!_isSettingsModalOpen)
+                _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             _isSettingsModalOpen = true;
+            ShellInteractionHost.IsEnabled = false;
             SettingsModalOverlay.Visibility = Visibility.Visible;
             Services.UiMotion.Enter(SettingsModalOverlay);
             if (SettingsModalOverlay.ActualWidth > 0 && SettingsModalOverlay.ActualHeight > 0)
             {
-                SettingsModalCard.Width = Math.Min(880, Math.Max(400, SettingsModalOverlay.ActualWidth - 48));
-                SettingsModalCard.Height = Math.Min(560, Math.Max(360, SettingsModalOverlay.ActualHeight - 40));
+                SettingsModalCard.Width = Math.Max(0, Math.Min(880, SettingsModalOverlay.ActualWidth - 48));
+                SettingsModalCard.Height = Math.Max(0, Math.Min(560, SettingsModalOverlay.ActualHeight - 40));
             }
             _settingsView?.SetCurrentTheme(_currentTheme);
             if (_chatView is not null)
@@ -545,7 +548,6 @@ namespace RuApp
 
             Services.UiMotion.FadeBrush(NavSettings, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
             Services.UiMotion.FadeBrush(NavSettings, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
-            _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSettingsButton?.Focus(FocusState.Programmatic);
         }
 
@@ -564,6 +566,7 @@ namespace RuApp
             if (!_isSettingsModalOpen) return;
 
             _isSettingsModalOpen = false;
+            ShellInteractionHost.IsEnabled = true;
 
             if (_activeNavButton != NavSettings)
             {
@@ -759,7 +762,7 @@ namespace RuApp
 
         private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
         {
-            _sidebarAppRoot = projectRoot;
+            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
             StatusDot.Fill = successBrush;
@@ -847,6 +850,7 @@ namespace RuApp
         {
             if (_closed) return;
             _closed = true;
+            StopSessionTitleWaves();
             _reconnectTimer?.Stop();
             _reconnectTimer = null;
             _startup.Cancel();
@@ -1008,6 +1012,7 @@ namespace RuApp
 
         private void ApplySessions(SessionListResponse result)
         {
+            _sessionWaveAnimationsEnabled = Services.UiTiming.AnimationsEnabled;
             var warningVisibility = result.SessionsTruncated ? Visibility.Visible : Visibility.Collapsed;
             if (SidebarSessionTruncationWarning.Visibility != warningVisibility)
             {
@@ -1031,6 +1036,7 @@ namespace RuApp
                     existing.CreatedAt = incoming.CreatedAt;
                     existing.UpdatedAt = incoming.UpdatedAt;
                     existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
+                    existing.IsAgentRunning = incoming.IsAgentRunning;
                     existing.ParentSessionId = incoming.ParentSessionId;
                     existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                     existing.WorkspaceId = incoming.WorkspaceId;
@@ -1069,6 +1075,7 @@ namespace RuApp
             {
                 RenderWorkspaceSidebar();
             }
+            RefreshSessionTitleWaves();
         }
 
         private void SyncSidebarSelection(string sessionId)

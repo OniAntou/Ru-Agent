@@ -652,7 +652,7 @@ public sealed class TgRunLoopTests
         app.Dispose();
     }
 
-    /// <summary>I3: `/history` reads this snapshot instead of the always-empty classic reader.</summary>
+    /// <summary>Prompt recall retains insertion order and avoids consecutive duplicates.</summary>
     [Fact]
     public void History_ExposesRememberedPrompts_NewestLast()
     {

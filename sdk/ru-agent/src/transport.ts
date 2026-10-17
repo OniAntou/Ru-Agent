@@ -26,9 +26,9 @@ interface QueuedWrite {
 
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void;
 
-// Matches the bridge's 1 MiB UTF-8 byte frame cap plus 64 KiB of slack for the
-// frame envelope and text-mode read chunks; measured in bytes, not JS chars.
-const MAX_BUFFER_BYTES = 1024 * 1024 + 64 * 1024;
+// Bound each frame before JSON.parse. The extra 64 KiB above the bridge's
+// payload cap allows its bounded envelope and read chunks.
+const MAX_FRAME_BYTES = 1024 * 1024 + 64 * 1024;
 const STDERR_TAIL_CHARS = 8 * 1024;
 
 /**
@@ -50,6 +50,7 @@ export class BridgeTransport {
   #closed = false;
   #exitError: Error | undefined = undefined;
   #stderrTail = "";
+  #killRequested = false;
 
   private constructor(child: ChildProcessWithoutNullStreams) {
     this.#child = child;
@@ -276,7 +277,22 @@ export class BridgeTransport {
     this.#closed = true;
     this.#fail(error);
     this.#cancelDrainWait?.(error);
+    this.#killChild();
+  }
+
+  #killChild(): void {
+    if (this.#killRequested) return;
+    this.#killRequested = true;
     this.#child.kill();
+  }
+
+  #protocolFailure(message: string, detail?: string): void {
+    if (this.#exitError) return;
+    const error = new BridgeTransportError(message, detail);
+    this.#closed = true;
+    this.#fail(error);
+    this.#cancelDrainWait?.(error);
+    this.#killChild();
   }
 
   #clearWriteQueue(): void {
@@ -315,17 +331,39 @@ export class BridgeTransport {
   }
 
   #onData(chunk: string): void {
-    this.#buffer += chunk;
-    let newline = this.#buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = this.#buffer.slice(0, newline).replace(/\r$/, "");
-      this.#buffer = this.#buffer.slice(newline + 1);
+    if (this.#closed || this.#exitError) return;
+    let offset = 0;
+    while (offset < chunk.length) {
+      const newline = chunk.indexOf("\n", offset);
+      if (newline < 0) {
+        const suffix = chunk.slice(offset);
+        const suffixBytes = Buffer.byteLength(suffix, "utf8");
+        const bufferedBytes = Buffer.byteLength(this.#buffer, "utf8");
+        const partial = this.#buffer + suffix;
+        const measuredPartial = partial.endsWith("\r") ? partial.slice(0, -1) : partial;
+        if (suffixBytes + bufferedBytes > MAX_FRAME_BYTES + 1 || Buffer.byteLength(measuredPartial, "utf8") > MAX_FRAME_BYTES) {
+          this.#protocolFailure("bridge emitted an oversized frame");
+          return;
+        }
+        this.#buffer = partial;
+        return;
+      }
+
+      const segment = chunk.slice(offset, newline);
+      if (Buffer.byteLength(this.#buffer, "utf8") + Buffer.byteLength(segment, "utf8") > MAX_FRAME_BYTES + 1) {
+        this.#protocolFailure("bridge emitted an oversized frame");
+        return;
+      }
+      const candidate = this.#buffer + segment;
+      const line = candidate.endsWith("\r") ? candidate.slice(0, -1) : candidate;
+      if (Buffer.byteLength(line, "utf8") > MAX_FRAME_BYTES) {
+        this.#protocolFailure("bridge emitted an oversized frame");
+        return;
+      }
+      this.#buffer = "";
       if (line.length > 0) this.#handleLine(line);
-      newline = this.#buffer.indexOf("\n");
-    }
-    if (Buffer.byteLength(this.#buffer, "utf8") > MAX_BUFFER_BYTES) {
-      this.#rejectAll(new BridgeTransportError("bridge emitted an oversized frame"));
-      this.#child.kill();
+      if (this.#closed || this.#exitError) return;
+      offset = newline + 1;
     }
   }
 
@@ -345,17 +383,22 @@ export class BridgeTransport {
   }
 
   #handleLine(line: string): void {
-    let message: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      message = JSON.parse(line) as Record<string, unknown>;
+      parsed = JSON.parse(line) as unknown;
     } catch {
-      this.#rejectAll(new BridgeTransportError("bridge emitted invalid json on stdout", line.slice(0, 200)));
-      this.#child.kill();
+      this.#protocolFailure("bridge emitted invalid json on stdout", line.slice(0, 200));
       return;
     }
 
+    if (!this.#isRecord(parsed) || !this.#isValidEnvelope(parsed)) {
+      this.#protocolFailure("bridge emitted invalid json-rpc envelope");
+      return;
+    }
+    const message = parsed;
+
     if (typeof message.method === "string") {
-      const params = (message.params as Record<string, unknown>) ?? {};
+      const params = message.params as Record<string, unknown>;
       // Iterate a snapshot: a handler may subscribe or unsubscribe while it
       // runs. Each handler is isolated -- a throwing listener must not become
       // an uncaughtException or stop the remaining frames from being processed.
@@ -379,12 +422,34 @@ export class BridgeTransport {
       clearTimeout(this.#activeWrite.writeTimer);
       delete this.#activeWrite.writeTimer;
     }
-    if (message.error) {
+    if ("error" in message) {
       const error = message.error as { code: number; message: string; data?: { ruCode?: string; httpStatus?: number } };
       pending.reject(new RuRpcError(error.message, error.code, error.data?.ruCode, error.data?.httpStatus));
     } else {
-      pending.resolve(message.result ?? {});
+      pending.resolve(message.result);
     }
+  }
+
+  #isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  #isValidEnvelope(message: Record<string, unknown>): boolean {
+    if (message.jsonrpc !== "2.0") return false;
+    if ("method" in message) {
+      return typeof message.method === "string" && this.#isRecord(message.params);
+    }
+    if (!("id" in message) || !(typeof message.id === "string" || typeof message.id === "number" || message.id === null)) {
+      return false;
+    }
+    const hasResult = "result" in message;
+    const hasError = "error" in message;
+    if (hasResult === hasError) return false;
+    if (!hasError) return true;
+    if (!this.#isRecord(message.error)) return false;
+    const error = message.error;
+    if (typeof error.code !== "number" || !Number.isFinite(error.code) || typeof error.message !== "string") return false;
+    return !("data" in error) || this.#isRecord(error.data);
   }
 
   #rejectAll(error: Error): void {
@@ -401,6 +466,12 @@ export class BridgeTransport {
     if (this.#closeHandlers.length === 0) return;
     const handlers = this.#closeHandlers;
     this.#closeHandlers = [];
-    for (const handler of handlers) handler(failure);
+    for (const handler of handlers) {
+      try {
+        handler(failure);
+      } catch (error) {
+        this.#reportHandlerError("close", error);
+      }
+    }
   }
 }

@@ -308,10 +308,9 @@ public sealed partial class AgentV1Service
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
 
-        // Materialize the durable coordinator before inserting the run. This
-        // makes shared-mode policy visible to the event store for this very
-        // first run and keeps the legacy exclusive fallback intact when the
-        // coordinator is not registered (for compatibility test hosts).
+        // Materialize shared-workspace lease settings before inserting the run.
+        // Different sessions are admitted independently; the runtime coordinator
+        // bounds concurrent execution without an exclusive workspace gate.
         if (_workspaceCoordinatorStore is not null)
         {
             try
@@ -466,7 +465,6 @@ public sealed partial class AgentV1Service
         return code switch
         {
             "idempotency_conflict" => BoundedError(409, "idempotency_conflict", "Idempotency key conflict."),
-            "workspace_busy" => BusyConflict("workspace_busy", "Workspace busy.", storeResult.Run),
             "session_busy" => BusyConflict("workspace_busy", "Session busy.", storeResult.Run),
             "preset_mismatch" => BoundedError(409, "preset_mismatch", "Preset mismatch."),
             "preset_selection_required" => BoundedError(409, "preset_mismatch", "Preset selection required."),

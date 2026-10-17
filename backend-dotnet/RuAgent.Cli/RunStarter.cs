@@ -296,6 +296,17 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         && string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
         && IsKnownCreateStatus(response.Status);
 
+    /// <summary>
+    /// The non-interactive trust-required notice, kept in one place so the run
+    /// and chat paths cannot drift. The bounded code stays first; the recovery
+    /// hints name the automation flag before the manual approve command, and the
+    /// parenthetical covers the moved/recreated case that reads a known folder
+    /// as a brand-new identity.
+    /// </summary>
+    internal static string WorkspaceTrustRequiredMessage(string runId) =>
+        "workspace_trust_required: this workspace identity is not trusted yet (a first-seen, moved, or recreated root needs one explicit approval). "
+        + $"Rerun with --trust-workspace for automation, or use 'ru agent trust {runId} --approve'.";
+
     internal async Task<bool> HandleWorkspaceTrustAsync(
         CreateAgentRunResponse response,
         string expectedSessionId,
@@ -315,7 +326,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             if (!trustWorkspace)
             {
                 await (json ? _err : _out).WriteLineAsync(
-                    $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.").ConfigureAwait(false);
+                    WorkspaceTrustRequiredMessage(response.RunId)).ConfigureAwait(false);
                 return false;
             }
 

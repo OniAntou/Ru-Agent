@@ -59,4 +59,11 @@ public sealed class AgentTasksUiContractTests
         Assert.Equal("exit 0", done.DetailText);
         Assert.Contains("req-1", running.Label, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Narrow_layout_does_not_overwrite_the_sessions_selected_panel_mode()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        Assert.DoesNotContain("CollapseToCard", GuiSource.MethodBody(code, "UpdateSidePanelLayout"), StringComparison.Ordinal);
+    }
 }

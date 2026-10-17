@@ -147,7 +147,7 @@ public sealed class PolicyEvaluationTests
         { "full_access", AgentPolicySubject.WorkspaceTerminal, "allow" },
         { "full_access", AgentPolicySubject.ExternalStructuredFile, "allow" },
         { "full_access", AgentPolicySubject.ExternalTerminal, "allow" },
-        { "full_access", AgentPolicySubject.StructuredProtectedPath, "deny" },
+        { "full_access", AgentPolicySubject.StructuredProtectedPath, "allow" },
         { "full_access", AgentPolicySubject.HardInvalid, "deny" },
     };
 
@@ -364,10 +364,10 @@ public sealed class PolicyEvaluationTests
     }
 
     [Theory]
-    [InlineData("plan")]
-    [InlineData("standard")]
-    [InlineData("full_access")]
-    public void Protected_structured_file_target_remains_a_hard_deny(string preset)
+    [InlineData("plan", "deny", "protected_path")]
+    [InlineData("standard", "deny", "protected_path")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Protected_structured_file_target_follows_the_preset(string preset, string decision, string reasonCode)
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
 
@@ -377,7 +377,8 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
 
-        AssertDeny(evaluation, "protected_path");
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reasonCode, evaluation.ReasonCode);
     }
 
     [Fact]
@@ -634,6 +635,74 @@ public sealed class PolicyEvaluationTests
 
         Assert.Equal("ask", evaluation.Decision);
         Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("plan", false, false, "ask", "rule_asks")]
+    [InlineData("plan", false, true, "ask", "rule_asks")]
+    [InlineData("plan", true, false, "deny", "plan_preset_read_only")]
+    [InlineData("plan", true, true, "deny", "plan_preset_read_only")]
+    [InlineData("standard", false, false, "ask", "rule_asks")]
+    [InlineData("standard", false, true, "ask", "rule_asks")]
+    [InlineData("standard", true, false, "ask", "rule_asks")]
+    [InlineData("standard", true, true, "ask", "rule_asks")]
+    [InlineData("full_access", false, false, "ask", "rule_asks")]
+    [InlineData("full_access", false, true, "ask", "rule_asks")]
+    [InlineData("full_access", true, false, "ask", "rule_asks")]
+    [InlineData("full_access", true, true, "ask", "rule_asks")]
+    public void Explicit_external_ask_precedes_directory_grants_and_preset_fallbacks(
+        string preset,
+        bool write,
+        bool hasDirectoryGrant,
+        string expectedDecision,
+        string expectedReason)
+    {
+        var external = Path.Combine(Path.GetTempPath(), "ru-policy-explicit-ask-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            var path = Path.Combine(external, "target.txt");
+            var ruleId = "r-explicit-external-ask";
+            var snapshot = new BrokerPolicySnapshotWire(
+                1,
+                preset,
+                new BrokerPolicyWorkspaceIdentityWire(
+                    PolicyEvalSnapshots.WorkspaceId,
+                    PolicyEvalSnapshots.VolumeSerial,
+                    PolicyEvalSnapshots.RootFileId,
+                    PolicyEvalSnapshots.DisplayHash),
+                [PolicyEvalSnapshots.Rule(
+                    ruleId,
+                    "ask",
+                    PolicyEvalSnapshots.Matcher(pathPattern: Path.Combine(external, "**")))],
+                PolicyEvalSnapshots.CreatedAt);
+            var (lease, factory) = Bind(snapshot);
+            var grants = new SessionDirectoryGrantRegistry();
+            if (hasDirectoryGrant)
+            {
+                grants.Add(
+                    PolicyEvalSnapshots.SessionId,
+                    CanonicalDirectoryIdentity.CreateExisting(external));
+            }
+
+            var arguments = write
+                ? new JsonObject { ["op"] = "write", ["path"] = path, ["content"] = "synthetic" }
+                : new JsonObject { ["path"] = path };
+            var context = factory.Create(write ? "write" : "read", "1.0.0", arguments);
+            var evaluation = new PolicySnapshotEvaluator(grants).Evaluate(
+                lease.Snapshot,
+                context,
+                PolicyRequestInvariants.Valid,
+                Now);
+
+            Assert.Equal(expectedDecision, evaluation.Decision);
+            Assert.Equal(expectedReason, evaluation.ReasonCode);
+            Assert.Equal(ruleId, evaluation.MatchedRuleId);
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
     }
 
     [Fact]
@@ -1284,7 +1353,7 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, networked, valid, Now).Decision);
 
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
-        AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", "runtime_descriptor.json"), valid, Now), "protected_path");
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", "runtime_descriptor.json"), valid, Now).Decision);
         AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", "a.txt"), Inv(schemaValid: false), Now), "schema_invalid");
     }
 

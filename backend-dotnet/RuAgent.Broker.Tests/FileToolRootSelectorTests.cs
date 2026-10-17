@@ -122,30 +122,39 @@ public sealed class FileToolRootSelectorTests : IDisposable
     }
 
     [Fact]
-    public void Full_access_protected_target_remains_denied()
+    public void Full_access_protected_target_inside_the_lease_root_selects_the_lease_root()
     {
-        var error = Assert.Throws<UnauthorizedAccessException>(() => FileToolRootSelector.SelectRoot(
-            _leaseResolver,
-            _leaseResolver.CanonicalRoot,
+        // full_access builds its resolvers with protected paths treated as
+        // ordinary targets, so an in-root protected name stays in the workspace
+        // tool set like any other relative path.
+        var resolver = new CanonicalPathResolver(_leaseRoot, allowProtectedPaths: true);
+        var selected = FileToolRootSelector.SelectRoot(
+            resolver,
+            resolver.CanonicalRoot,
             Array.Empty<string>(),
             AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
-            Path.Combine(_leaseRoot, "runtime_descriptor.json")));
+            Path.Combine(_leaseRoot, "runtime_descriptor.json"));
 
-        Assert.Equal("protected_path", error.Message);
+        Assert.Equal(
+            Path.GetFullPath(_leaseRoot),
+            selected.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 
     [Fact]
-    public void Full_access_external_protected_target_remains_denied()
+    public void Full_access_external_protected_target_selects_nearest_existing_external_ancestor()
     {
         var protectedFile = Path.Combine(_granted, "harness_key.dat");
         File.WriteAllText(protectedFile, "secret");
-        var error = Assert.Throws<UnauthorizedAccessException>(() => FileToolRootSelector.SelectRoot(
-            _leaseResolver,
-            _leaseResolver.CanonicalRoot,
+        var resolver = new CanonicalPathResolver(_leaseRoot, allowProtectedPaths: true);
+        var selected = FileToolRootSelector.SelectRoot(
+            resolver,
+            resolver.CanonicalRoot,
             Array.Empty<string>(),
             AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
-            protectedFile));
+            protectedFile);
 
-        Assert.Equal("protected_path", error.Message);
+        Assert.Equal(
+            Path.GetFullPath(_granted),
+            selected.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 }

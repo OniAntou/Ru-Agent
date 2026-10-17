@@ -41,6 +41,15 @@ External tools such as Codex, Opencode, editors, and build processes are not
 identified by process name. Ru detects their file changes by comparing an
 authoritative SHA-256 hash with the expected workspace hash and records the
 event as `workspace_external_change_detected` with `writer_kind=unknown_external`.
+
+Driving runs in the same workspace share one captured baseline and watcher.
+Joining a drive does not recapture over a peer's baseline; parking, completion
+or setup failure only releases that drive's lease. The final release stops the
+watcher and clears its baseline, so a later drive captures fresh content.
+An already-running journal callback from a retired watcher cannot acknowledge
+its hash into a replacement baseline. This lifetime does not grant file access
+or provide filesystem isolation.
+
 The encrypted journal is visible through:
 
 - `GET /agent/v1/workspaces/{workspaceId}/activity`

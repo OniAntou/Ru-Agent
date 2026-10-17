@@ -68,7 +68,7 @@ public sealed record PolicyEvaluation(
 
 /// <summary>
 /// Authoritative decision point: non-overridable protocol invariants first, then ordered
-/// last-match-wins evaluation over the bound snapshot, then preset fallbacks. Terminal
+/// deny/ask/allow evaluation over the bound snapshot, then preset fallbacks. Terminal
 /// fallbacks use the canonical launch directory independently of command syntax.
 /// </summary>
 public sealed class PolicySnapshotEvaluator
@@ -190,6 +190,11 @@ public sealed class PolicySnapshotEvaluator
         if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
         {
             return Deny("plan_preset_read_only", matchedRuleId);
+        }
+
+        if (string.Equals(matchedDecision, "ask", StringComparison.Ordinal))
+        {
+            return Ask("rule_asks", matchedRuleId);
         }
 
         if (structuredTarget is { IsOutsideWorkspace: true })

@@ -36,6 +36,24 @@ sequence number (`{ afterSequence: n }`). It ends on a terminal event; if the
 bridge detaches the subscription first (`run.detached`) or shuts down, the
 iterator throws a bounded `BridgeTransportError` instead of hanging.
 
+Each iterator buffers at most 4,096 notifications and 8 MiB of serialized UTF-8,
+including notifications arriving before attach acknowledgement. A slow consumer
+that exceeds either limit stops buffering and receives a
+`BridgeTransportError` carrying `lastDeliveredSequence`; use it as `afterSequence`
+on a new iterator to replay durable events. Buffered events are discarded on
+overflow, and transient events are not replayable. This does not cancel the run.
+Known peer subscriptions do not consume its buffer. Cleanup detaches only this
+subscription when peers exist; if attach acknowledgement is still pending,
+cleanup waits for its subscription ID without delaying the overflow error.
+An invalid attach response also throws `BridgeTransportError`. If peers exist
+and the response omits a usable subscription ID, the SDK cannot detach that
+unknown subscription safely, so it closes the bridge transport. Other iterators
+on that transport fail too; this does not cancel their Host runs.
+
+Complete and partial RPC frames are bounded to 1 MiB + 64 KiB of UTF-8 before
+parsing. Invalid envelopes, including null roots and non-object notification
+params, close the transport and fail pending requests and iterators.
+
 RPC request deadlines include time queued behind stdin backpressure. Requests
 are correlated before their frames are written, so a response arriving before
 `drain` is retained. An unanswered write that remains backpressured through its

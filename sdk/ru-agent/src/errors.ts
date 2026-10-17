@@ -12,7 +12,7 @@ export class RuRpcError extends Error {
 }
 
 export class BridgeTransportError extends Error {
-  constructor(message: string, readonly detail?: string) {
+  constructor(message: string, readonly detail?: string, readonly lastDeliveredSequence?: number) {
     super(message);
     this.name = "BridgeTransportError";
   }

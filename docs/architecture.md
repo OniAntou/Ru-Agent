@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-14.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-17.
 
 Desktop/CLI distribution and explicit update lifecycle are described in
 [ADR-0019](adr/0019-product-packages-and-explicit-updates.md). The maintenance
@@ -360,11 +360,20 @@ source for the effective-policy prompt projection and Broker fallback:
 | `standard` | Workspace reads, Web, workspace mutations and executable/shell launches from a workspace cwd are automatic; external structured access and external terminal cwd ask. Explicit rules and long foreground approval still apply. |
 | `full_access` | The skip-all mode: external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) are automatic; hard-invalid requests remain denied. |
 
+These are preset defaults. Explicit deny and ask rules still take precedence,
+including for external files covered by a session folder grant or Full Access.
+Hard invariants, including Plan's read-only gate, remain ahead of ask rules.
+
 Preset selection is session-scoped. Workspace trust is a separate explicit
 decision, once per canonical `WorkspaceIdentity`; the GUI presents a guarded
 confirmation and CLI `run`/`chat` require `--trust-workspace`. A moved or
 recreated identity must be trusted again. Full Access requires the GUI gate or
 CLI `--confirm-full-access`, and neither implies workspace trust.
+
+On Windows, trust resolution requires a real directory, its native final path,
+volume serial and file ID. Query-only handles avoid requiring directory listing
+access. An unverifiable native identity fails with `workspace_identity_unverified`
+inside the resolver; a path hash never substitutes for Windows trust identity.
 
 A native model step may contain optional narration and one or more ordered tool
 calls. If any call asks, the complete non-denied batch is retained durably and

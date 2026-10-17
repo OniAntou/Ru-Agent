@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current development branch, updated 2026-10-13.
+Status: operating contract for the current development branch, updated 2026-10-17.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -285,7 +285,9 @@ expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE
 path. Workspace trust is explicit once per canonical identity: the GUI shows a
 guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
-recreated identity requires trust again. Full Access requires the GUI gate or
+recreated identity requires trust again. Windows identity resolution requires
+native final-path, volume and directory file-ID evidence; an unavailable lookup
+fails instead of substituting a hash of the path. Full Access requires the GUI gate or
 CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
 bounded Agent status remain inline above the input. The terminal client keeps
 the same parked-run path: the status row reads `▲ run paused · <code> · /continue`
@@ -394,6 +396,9 @@ external structured paths and external launch directories ask; `full_access` is 
 structured files, arbitrary terminal, and structured protected paths (harness
 key/database files and runtime descriptors) are automatic, while hard-invalid
 requests remain denied.
+These defaults do not bypass explicit deny or ask rules: an external folder
+grant or Full Access fallback cannot override a matched ask. Hard invariants,
+including Plan's read-only gate, are evaluated first.
 Repository cleanliness never changes the decision.
 
 Standard structured-file access outside the trusted root may create a

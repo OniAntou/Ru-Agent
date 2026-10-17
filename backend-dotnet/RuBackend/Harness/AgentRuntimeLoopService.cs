@@ -417,11 +417,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly ConcurrentDictionary<string, string> _recoveredApprovalIds =
         new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Which runs already hold a workspace baseline for the drive session now in progress.
-    /// See <see cref="WorkspaceBaselineTracker"/> for why capturing is once per session.
-    /// </summary>
-    private readonly WorkspaceBaselineTracker _capturedBaselines = new();
+    private readonly WorkspaceWatchRegistry? _workspaceWatches;
     private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
     private readonly RetainedInputRehydrator? _retainedInputRehydrator;
@@ -448,6 +444,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _summaryPublisher = summaryPublisher;
         _workspaceChangeMonitor = workspaceChangeMonitor;
+        _workspaceWatches = workspaceChangeMonitor is null ? null : new WorkspaceWatchRegistry(workspaceChangeMonitor);
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
         _brokerGateways = brokerGateways;
@@ -801,17 +798,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     cancellationToken);
             }
 
-            if (_workspaceChangeMonitor is not null)
+            if (_workspaceWatches is not null)
             {
-                // Once per drive session: see _capturedBaselines. Recorded only after the
-                // capture actually ran, and released when this pass stops driving, so a
-                // later re-entry takes a fresh baseline rather than trusting a stale one.
-                if (_capturedBaselines.ShouldCapture(runIdValue))
-                {
-                    _workspaceChangeMonitor.CaptureExpectedHashes(workspaceRoot);
-                }
-
-                workspaceWatcher = _workspaceChangeMonitor.StartWatchingAsync(
+                workspaceWatcher = _workspaceWatches.Acquire(
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
             }
@@ -1104,10 +1093,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             }
 
             workspaceWatcher?.Dispose();
-            _workspaceChangeMonitor?.ClearExpectedHashes(workspaceRoot);
-            // The baseline goes with the watcher, so the next drive session captures a new
-            // one instead of inheriting hashes nothing is watching any more.
-            _capturedBaselines.Release(runIdValue);
             if (membership is not null && _workspaceCoordinatorStore is not null)
             {
                 try
@@ -1130,7 +1115,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         }
     }
 
-    private async Task PersistExternalChangeAsync(
+    private async Task<bool> PersistExternalChangeAsync(
         WorkspaceId workspaceId,
         string workspaceRoot,
         WorkspaceExternalChangeEvent change,
@@ -1145,7 +1130,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
         if (_workspaceCoordinatorStore is null || _workspaceJournalProtector is null)
         {
-            return;
+            return false;
         }
 
         try
@@ -1178,11 +1163,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 "committed",
                 DateTimeOffset.UtcNow,
                 cancellationToken).ConfigureAwait(false);
-            _workspaceChangeMonitor?.RegisterExpectedHash(workspaceRoot, change.NormalizedPath, change.ObservedSha256);
+            return true;
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             _logger.LogError(error, "failed to persist external workspace change for {WorkspaceId}/{Path}", workspaceId.Value, change.NormalizedPath);
+            return false;
         }
     }
 

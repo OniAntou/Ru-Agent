@@ -6,14 +6,40 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **Full 13-project Debug matrix: 6,370 passed / 0 failed / 0 skipped** (2026-10-16, TUI feed/inspection repair). Broker 943; CLI 1,462; Client 239; Core 492; Persistence 177; Hosting 41; Protocol 86; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,101; GUI 1,444. Log: `artifacts/tui-release-qa/dotnet-debug-matrix.log`. The initial Release test invocation and its Debug-only test-seam failure are recorded below. Earlier evidence remains under `artifacts/release-verification/`. |
-| Python suite | **215 passed, 1 skipped** (2026-10-16), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/tui-release-qa/python.log`. Earlier evidence remains under `artifacts/release-verification/`. |
-| TypeScript SDK | **32 passed / 0 failed**, plus typecheck and build (2026-10-14, distribution integration). No SDK transport contract changes. |
+| .NET tests | **Full 13-project Debug matrix: 6,464 passed / 0 failed / 0 skipped** (2026-10-17, codebase review remediation). Broker 957; CLI 1,465; Client 239; Core 492; Persistence 181; Hosting 41; Protocol 98; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,110; GUI 1,496. Log: `artifacts/codebase-fixes-2026-10-17/dotnet-full.log`. The earlier review's four Backend failures and later focused pass are preserved below; the fresh full matrix passed without a retry. |
+| Python suite | **215 passed, 1 skipped** (2026-10-17), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/codebase-fixes-2026-10-17/python-full.log`. Earlier evidence remains under `artifacts/release-verification/`. |
+| TypeScript SDK | **60 passed / 0 failed**, plus typecheck and build (2026-10-17, codebase review remediation). Bounded event buffers, validated envelopes/attach results, complete-frame limits and peer-safe cleanup. Log: `artifacts/codebase-fixes-2026-10-17/sdk-final.log`. |
 | Release build | **Local 11/11 stages passed** (2026-10-16, after core TUI simplification), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-core-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
 | Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-core-release-qa/published-host-smoke.log`. Published CLI core help/status/session navigation, removed-command refusal and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Codebase review remediation (2026-10-17)
+
+Starting from `dev` at `2315b0d8`, regression checks reproduced native identity
+fallback, explicit ask bypass for external files, shared workspace baseline
+cleanup, unbounded SDK buffering, malformed envelope handling and the complete
+frame size bypass. Focused checks passed after the fixes. The fresh full Debug
+matrix passed all 6,464 tests across 13 projects without failures or skips.
+Logs and regression sources are under `artifacts/codebase-fixes-2026-10-17/`.
+Full Python verification passed 215 tests with the POSIX process-group test
+skipped on Windows. The TypeScript SDK passed typecheck, all 60 tests and build.
+Route/runtime-boundary guards and Ruff passed; final documentation guards passed
+all 15 checks. SDK tests use controlled transports and child-process fixtures,
+not real-provider generation.
+
+The initial review matrix had four Backend failures involving temporary roots
+and sharing violations. The related isolated checks subsequently passed all ten
+tests; their precise cause was not established. Those original failures remain
+in `artifacts/codebase-review-2026-10-17-2315b0d8/dotnet-matrix.log`, alongside
+the targeted result. The later remediation matrix is a new full run after code
+changes, not evidence that the original failure cause was diagnosed or fixed.
+No failing assertion was weakened or automatic retry introduced.
+
+These deterministic checks do not establish native UI acceptance, real-provider
+quality or release packaging. The Release and published-runtime rows above
+remain their dated historical evidence.
 
 ## Core TUI simplification and Release rebuild (2026-10-16)
 

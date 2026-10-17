@@ -637,6 +637,74 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("external_directory_required", evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("plan", false, false, "ask", "rule_asks")]
+    [InlineData("plan", false, true, "ask", "rule_asks")]
+    [InlineData("plan", true, false, "deny", "plan_preset_read_only")]
+    [InlineData("plan", true, true, "deny", "plan_preset_read_only")]
+    [InlineData("standard", false, false, "ask", "rule_asks")]
+    [InlineData("standard", false, true, "ask", "rule_asks")]
+    [InlineData("standard", true, false, "ask", "rule_asks")]
+    [InlineData("standard", true, true, "ask", "rule_asks")]
+    [InlineData("full_access", false, false, "ask", "rule_asks")]
+    [InlineData("full_access", false, true, "ask", "rule_asks")]
+    [InlineData("full_access", true, false, "ask", "rule_asks")]
+    [InlineData("full_access", true, true, "ask", "rule_asks")]
+    public void Explicit_external_ask_precedes_directory_grants_and_preset_fallbacks(
+        string preset,
+        bool write,
+        bool hasDirectoryGrant,
+        string expectedDecision,
+        string expectedReason)
+    {
+        var external = Path.Combine(Path.GetTempPath(), "ru-policy-explicit-ask-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            var path = Path.Combine(external, "target.txt");
+            var ruleId = "r-explicit-external-ask";
+            var snapshot = new BrokerPolicySnapshotWire(
+                1,
+                preset,
+                new BrokerPolicyWorkspaceIdentityWire(
+                    PolicyEvalSnapshots.WorkspaceId,
+                    PolicyEvalSnapshots.VolumeSerial,
+                    PolicyEvalSnapshots.RootFileId,
+                    PolicyEvalSnapshots.DisplayHash),
+                [PolicyEvalSnapshots.Rule(
+                    ruleId,
+                    "ask",
+                    PolicyEvalSnapshots.Matcher(pathPattern: Path.Combine(external, "**")))],
+                PolicyEvalSnapshots.CreatedAt);
+            var (lease, factory) = Bind(snapshot);
+            var grants = new SessionDirectoryGrantRegistry();
+            if (hasDirectoryGrant)
+            {
+                grants.Add(
+                    PolicyEvalSnapshots.SessionId,
+                    CanonicalDirectoryIdentity.CreateExisting(external));
+            }
+
+            var arguments = write
+                ? new JsonObject { ["op"] = "write", ["path"] = path, ["content"] = "synthetic" }
+                : new JsonObject { ["path"] = path };
+            var context = factory.Create(write ? "write" : "read", "1.0.0", arguments);
+            var evaluation = new PolicySnapshotEvaluator(grants).Evaluate(
+                lease.Snapshot,
+                context,
+                PolicyRequestInvariants.Valid,
+                Now);
+
+            Assert.Equal(expectedDecision, evaluation.Decision);
+            Assert.Equal(expectedReason, evaluation.ReasonCode);
+            Assert.Equal(ruleId, evaluation.MatchedRuleId);
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
     [Fact]
     public void Explicit_deny_rule_denies_an_external_file_under_full_access()
     {

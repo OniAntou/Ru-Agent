@@ -291,7 +291,8 @@ public sealed class StreamingProcessRunnerTests
         var startInfo = new ProcessStartInfo
         {
             FileName = comspec,
-            Arguments = "/d /s /c \"start /b cmd /c timeout /t 120 /nobreak > NUL & timeout /t 120 /nobreak > NUL\"",
+            // ping needs no console input; `timeout` exits at once when stdin is redirected.
+            Arguments = "/d /s /c \"start /b cmd /c ping -n 120 127.0.0.1 > NUL & ping -n 120 127.0.0.1 > NUL\"",
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -305,8 +306,8 @@ public sealed class StreamingProcessRunnerTests
         await parent.WaitForExitAsync(CancellationToken.None);
         await Task.Delay(2_000);
 
-        var stragglers = Process.GetProcessesByName("cmd")
-            .Count(process => SafeCommandLine(process)?.Contains("timeout /t 120", StringComparison.OrdinalIgnoreCase) == true);
+        var stragglers = Process.GetProcessesByName("cmd").Concat(Process.GetProcessesByName("PING"))
+            .Count(process => SafeCommandLine(process)?.Contains("ping -n 120", StringComparison.OrdinalIgnoreCase) == true);
         Assert.Equal(0, stragglers);
     }
 

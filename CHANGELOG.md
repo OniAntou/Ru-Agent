@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - **feat(tui)**: Paint markdown in the Terminal.Gui chat transcript. The classic renderer's palette escapes now arrive as per-run attributes instead of being stripped at the bridge: bold (bright), inline code (green) and headings (yellow) keep their colour in `agent chat`'s TG mode, fenced code keeps its syntax colours and the line-number gutter, and painted notices keep their tone. Colourless output is byte-for-byte unchanged.
+- **fix(tui)**: Keep markdown paint when a turn's reply is reconciled or recovered: `ReplaceAssistantTurnAsync` parses the renderer's rows into spans instead of stripping them, so replacement rows keep bold, inline code and heading colours.
+- **fix(agent)**: Filter step records out of reply recovery: a tool-calls-only step stores its JSON record (`text:null` with `tool_calls`), and the turn-end recovery no longer prints those raw records into the transcript as if they were the reply.
 - **fix(security)**: Require native Windows workspace identity instead of falling back to a path hash when lookup fails. Preserve explicit ask rules ahead of external folder grants and Full Access defaults.
 - **fix(agent)**: Share the external-change baseline and watcher across simultaneous runs in one workspace; keep journaling until the last drive leaves and prevent retired callbacks from changing a replacement baseline.
 - **fix(sdk)**: Bound event buffering by count and UTF-8 bytes, detach on overflow with a replay sequence, and reject malformed or oversized RPC frames before dispatch without uncaught handler errors.

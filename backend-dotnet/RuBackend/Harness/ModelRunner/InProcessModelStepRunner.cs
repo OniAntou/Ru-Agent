@@ -197,6 +197,10 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         CancellationToken cancellationToken)
     {
         var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        // A reply cut off by the output limit usually means the reasoning used the budget: once the
+        // context holds a truncation note, retry at the lowest effort the model offers.
+        if (AgentRecoveryNotes.NoteCount(request.Context, AgentRecoveryKind.OutputTruncated) > 0)
+            bootstrap = bootstrap.WithReducedEffort();
         var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0);
         var history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)

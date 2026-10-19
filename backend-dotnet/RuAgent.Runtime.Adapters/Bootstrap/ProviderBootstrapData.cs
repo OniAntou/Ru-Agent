@@ -24,7 +24,8 @@ public sealed record ProviderBootstrapData
         bool allowNativeAnthropic = false,
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
-        int? outputTokenReserve = null)
+        int? outputTokenReserve = null,
+        JsonObject? reducedEffortRequestOptions = null)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -39,6 +40,9 @@ public sealed record ProviderBootstrapData
         Credential = Require(credential, 4096, nameof(credential), allowEmpty: true);
         Endpoint = endpoint;
         RequestOptions = ProviderRequestOptionsValidator.ValidateAndClone(protocol, requestOptions, nameof(requestOptions));
+        ReducedEffortRequestOptions = reducedEffortRequestOptions is null
+            ? null
+            : ProviderRequestOptionsValidator.ValidateAndClone(protocol, reducedEffortRequestOptions, nameof(reducedEffortRequestOptions));
         MaximumOutputTokens = ValidateOutputCap(protocol, maximumOutputTokens);
         if (useMaxCompletionTokens && protocol != ProviderProtocols.ChatCompletions)
             throw new ArgumentException("The selected output-cap field is invalid for this protocol.", nameof(useMaxCompletionTokens));
@@ -71,7 +75,23 @@ public sealed record ProviderBootstrapData
 
     public string Credential { get; }
 
-    public JsonObject? RequestOptions { get; }
+    public JsonObject? RequestOptions { get; private set; }
+
+    /// <summary>
+    /// Request options for the lowest reasoning effort the model offers, when that differs from
+    /// <see cref="RequestOptions"/>. Used after a reply was cut off by the output limit.
+    /// </summary>
+    public JsonObject? ReducedEffortRequestOptions { get; private set; }
+
+    /// <summary>A copy that sends the reduced-effort options; this instance when there are none.</summary>
+    public ProviderBootstrapData WithReducedEffort()
+    {
+        if (ReducedEffortRequestOptions is not { } reduced) return this;
+        var copy = (ProviderBootstrapData)MemberwiseClone();
+        copy.RequestOptions = (JsonObject)reduced.DeepClone();
+        copy.ReducedEffortRequestOptions = null;
+        return copy;
+    }
 
     public int? MaximumOutputTokens { get; }
 

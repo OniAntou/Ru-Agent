@@ -135,7 +135,8 @@ public sealed class AgentProviderSnapshotFactory(
             useMaxCompletionTokens: selected.Alias == "openai"
                 && selected.Protocol == ProviderProtocols.ChatCompletions,
             contextWindowTokens: pin.ContextWindowTokens,
-            outputTokenReserve: pin.OutputTokenReserve);
+            outputTokenReserve: pin.OutputTokenReserve,
+            reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options));
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -252,7 +253,8 @@ public sealed class AgentProviderSnapshotFactory(
         bool allowNativeAnthropic = false,
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
-        int? outputTokenReserve = null)
+        int? outputTokenReserve = null,
+        JsonObject? reducedEffortRequestOptions = null)
     {
         try
         {
@@ -269,7 +271,8 @@ public sealed class AgentProviderSnapshotFactory(
                 allowNativeAnthropic,
                 useMaxCompletionTokens,
                 contextWindowTokens,
-                outputTokenReserve);
+                outputTokenReserve,
+                reducedEffortRequestOptions);
         }
         catch (ArgumentException)
         {

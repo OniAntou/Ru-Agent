@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **feat(cli)**: Add custom slash commands from `.ru/commands/<name>.md` (workspace) and `~/.ru/commands/<name>.md`, with `$ARGUMENTS` substitution. Templates expand to an ordinary prompt and confer no execution authority.
 
+- **feat(agent)**: After a reply is cut off by the output limit, retry at the lowest reasoning effort the model offers (taken from the provider catalog; no change for models without effort levels and no change to saved settings). In a live trial with a free reasoning model, 4 of 7 hard tasks that previously always ended in `model_output_truncated` completed after one truncation.
+
 - **feat(agent)**: `RU_REASONING_EFFORT` selects the reasoning effort for new runs of one Host process without editing saved settings (benchmarks and CI). A model without that level fails the run with `reasoning_unsupported`.
 
 - **fix(harness)**: Allow 3 empty-reply and 3 output-truncation recovery notes (was 2 each) under a 24-note per-run cap (was 12), and tell the model to keep reasoning brief and call a tool early after a truncated reply.

@@ -70,6 +70,25 @@ public static class ProviderReasoningPreferences
         return settings with { Raw = raw };
     }
 
+    private static readonly string[] EffortOrder = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+    /// <summary>
+    /// Wire options of the lowest-ranked effort the model offers, or null when the model offers none
+    /// or the current options already are that level. Efforts outside the known ranking are ignored.
+    /// </summary>
+    public static JsonObject? LowestEffortOptions(ProviderCatalogSnapshot snapshot, string model, JsonObject current)
+    {
+        var selected = snapshot.Catalog.FirstOrDefault(item => item.Id == model);
+        if (selected is null || selected.WireOptions.Count == 0) return null;
+        foreach (var effort in EffortOrder)
+        {
+            if (!selected.WireOptions.TryGetValue(effort, out var options)) continue;
+            return JsonNode.DeepEquals(options, current) ? null : (JsonObject)options.DeepClone();
+        }
+
+        return null;
+    }
+
     public static JsonObject Resolve(ProviderCatalogSnapshot snapshot, string model, string effort)
     {
         if (snapshot.Stale || snapshot.Status != "ok") throw new ProviderCatalogException(snapshot.ErrorCode ?? "catalog_unavailable");

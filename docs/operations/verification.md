@@ -6,14 +6,50 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **45 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 25 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **13-project Debug coverage: 6,874 passed across final project runs, 0 failed / 0 skipped** (2026-10-19, isolated Git staging snapshot). Broker 1,062; CLI 1,470; Client 241; Core 518; Persistence 267; Hosting 41; Protocol 151; Adapters 228; Model 91; SessionInterchange 43; Updates 25; Backend 1,223; GUI 1,514. Logs: `artifacts/subagent-commit-2026-10-19/dotnet.log` (Broker), `*.Tests.log` (other final projects). Initial TUI snapshot failures and staging compile failures are retained; see the delivery notes below. This is combined project evidence, not an uninterrupted green runner. |
+| .NET tests | **13-project Debug coverage: 6,884 passed across final project runs, 0 failed / 0 skipped** (2026-10-19, working tree including the subagent Git preparation fix and pending directory-handle/watcher fixes). Broker 1,064; CLI 1,470; Client 241; Core 518; Persistence 269; Hosting 41; Protocol 152; Adapters 228; Model 91; SessionInterchange 43; Updates 25; Backend 1,228; GUI 1,514. Evidence: `artifacts/subagent-git-failure-2026-10-19/verification.json`. The initial CLI run hung in Terminal.Gui input shutdown and was aborted; unchanged source/assertions passed on a PTY rerun. Stack and both outcomes are retained. This is combined project evidence, not an uninterrupted green runner. |
 | Python suite | **216 passed, 1 skipped** (2026-10-19), isolated staging snapshot. POSIX process-group case skipped on Windows. Log: `artifacts/subagent-commit-2026-10-19/python.log`; initial metadata failure retained separately. |
+| Subagent inbox recovery fix | **2,171 passed across four affected Debug assemblies** (2026-10-19): Core 518, Persistence 273, Backend 1,228, Protocol 152. Nine inbox cases include suppressed audit replies, no queued messages, pending native calls and missing payloads. A private snapshot of the reported failure reproduced `payload_model_forbidden` at inbox delivery; the same replay passed after the query fix. Evidence: `artifacts/subagent-drive-failure-2026-10-19/`. These are scoped checks after the full-matrix baseline above; no real-provider task outcome is claimed. |
 | TypeScript SDK | **61 passed / 0 failed**, typecheck and ESM/DTS build passed (2026-10-19), isolated staging snapshot. Logs: `artifacts/subagent-commit-2026-10-19/sdk-{test,typecheck,build}.log`. |
-| Release build | **Local 11/11 stages passed** (2026-10-19, Subagents GUI redesign), self-contained win-x64 GUI, Host and CLI in the flat runnable layout. Log: `artifacts/subagent-detail-polish-2026-10-19/release.log`. No installer or remote release published. |
-| Managed runtime smoke | **PASS** (2026-10-19) against that exact rebuilt flat Release tree: authenticated `/status` and clean shutdown. Log: `artifacts/subagent-detail-polish-2026-10-19/smoke.log`. |
+| Release build | **Local 11/11 stages passed** (2026-10-20 local time), self-contained win-x64 GUI, Host and CLI in the flat runnable layout, including inbox recovery, repeated-wait and partial-web-evidence fixes and pending working-tree fixes. Temporary layout diagnostics were removed. Log: `artifacts/subagent-live-gui-2026-10-19/release-build-delivery.log`. No installer or remote release published. |
+| Managed runtime smoke | **PASS** (2026-10-20 local time) against that exact rebuilt flat Release tree: authenticated `/status` and clean shutdown using an isolated data root. Log: `artifacts/subagent-live-gui-2026-10-19/release-smoke-delivery.log`. Native GUI and real-provider evidence is recorded separately below. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Subagent live GUI regression checks (2026-10-19, scoped)
+
+Native WinUI Automation used the signed-in Kilo provider and
+`nvidia/nemotron-3.5-super-vl:free` with high reasoning. The original gold-price
+prompt completed in root `run_7a6bd61bc4ca217253490fec43cec33d`; its first child
+attempt completed and published a readable report. The parent's follow-up attempt
+was cancelled on parent completion, as designed. Both attempts retained the entire
+parent provider/model/protocol/options selection. The parent successfully repeated
+wait timeouts without exhausting repetition-repair notes.
+
+Earlier real runs exposed repeated-wait blocking and final-answer suppression when
+one fetched page was empty despite other readable pages. Scoped guard fixes retain
+exact receipt bindings, fail-closed denial/unknown-result handling and existing
+family budgets. Core **535**, Backend **1,229** and GUI **1,514** tests passed
+(**3,278** total). The partial-web exception has nine behavioral cases; it does not
+establish that generated financial figures are accurate. A prior live run also
+continued after audit-only recovery without the reported inbox runtime crash.
+
+Native checks covered session switching/reopening, completed result version
+selection, read-only details and reader resizing. Numeric layout diagnostics and
+an unchanged-source comparison confirmed that Markdown already reflows; speculative
+layout changes and temporary diagnostic hooks were removed. Retained failure logs,
+run metadata, pinned-selection comparisons and screenshots are under
+`artifacts/subagent-live-gui-2026-10-19/`. These are scoped evidence, not a claim
+that every provider or every GUI action has been tested.
+
+At the end of this check (2026-10-20 local time), the main Stop button cancelled
+`run_6a9eea932a768af05cba5949bbf10c60` while its first provider step was pending.
+The run became terminal `Cancelled`, and the composer returned to Send. No child
+had been created after more than two minutes, so this is evidence of cancellation
+during provider wait, not a live Stop-of-active-child case. Child cancellation on
+parent completion was observed separately in the successful gold-price run above;
+family Stop coverage also remains in the deterministic Host suite. Provider latency
+and all provider/model combinations were not eliminated by these checks.
 
 ## Git delivery validation (2026-10-19)
 

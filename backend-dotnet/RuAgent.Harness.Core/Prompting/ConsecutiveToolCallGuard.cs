@@ -123,6 +123,15 @@ public static class ConsecutiveToolCallGuard
             }
         }
 
+        // A bounded wait can succeed while children are still working. Waiting
+        // again is normal progress, not an identical failed action. Keep the
+        // exemption tied to the exact native call and its terminal receipt;
+        // denied, completed, ambiguous or mixed batches remain guarded.
+        if (prior.Count == 1 && prior[0].ToolId == "agent_wait" && prior[0].ToolVersion == "1.0.0"
+            && receipts[0] is { Outcome: ToolExecutionOutcome.Succeeded, Code: "subagent_wait_timeout", SideEffectsPossible: false } wait
+            && wait.ProviderCallId == prior[0].ProviderCallId)
+            return false;
+
         // A single retry after an infrastructure failure that never executed
         // the tool is allowed through; a second consecutive identical
         // infra-failure still fails (bounded further by the step/call

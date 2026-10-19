@@ -40,10 +40,45 @@ a missing credential fails the pinned run instead of switching providers.
 
 ## Execution and permissions
 
+Use `role=review` for research, web searches (including current prices), analysis and
+code review. It uses the parent's workspace read-only and does not require Git.
+Use `role=coding` only when the task needs file changes. Coding requires a usable
+Git repository at the workspace root with an existing commit; Ru does not initialize
+Git or create a commit automatically to satisfy this prerequisite.
+
+`subagent_git_root_unavailable` means Git could not resolve the repository root
+(for example, the folder is not a repository, Git is unavailable, or access was denied).
+`subagent_git_root_required` means the selected workspace is below the repository root.
+`subagent_git_head_unavailable` means Git could not resolve an existing HEAD commit.
+When Broker proves a refusal occurred before any filesystem allocation started, Host
+releases the exact unchanged reservation and returns an ordinary tool failure. No
+child or workspace is created and the parent can continue, choosing review for a
+read-only task. The same Git failure after allocation starts remains subject to
+uncertain-write reconciliation; an interrupted run or a reserved journal row alone
+is never proof that nothing changed. Already paused runs retain their recovery state.
+
 The parent alone uses `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel` and
 `agent_apply`. Depth is one, with at most three runnable children/eight identities and
 three attempts each. Child role, immutable parent policy ceiling, budgets, deadlines and
 Broker lease lifetime intersect; none grant additional permissions.
+`agent_wait.timeout_ms` accepts 0 through 60,000 milliseconds. For longer tasks,
+the parent waits again after a timeout rather than passing a larger timeout.
+A successful native `subagent_wait_timeout` receipt permits repeating that single
+wait with the same arguments. It does not spend repetition-repair notes; model-step,
+tool-call and family budgets still apply. Failed, ambiguous or already-completed
+waits remain subject to the normal repetition guard.
+
+Harness recovery may suppress a model reply and retain it only for audit while asking
+the model to try again. Before the next child step, inbox checks use model-visible
+history rather than reading suppressed prose. This also applies when no follow-up
+messages are queued. Incomplete native dispatch still defers delivery; missing payload
+evidence fails closed instead of being treated as a completed step.
+For web research, a batch containing successful native `web_fetch` reads and only
+`web_content_empty` failures can support a final reply from the readable sources.
+The exception requires matching call/receipt identities, version 1.0.0, at least one
+successful `ok` receipt and no possible side effects. Other failures and batches with
+no readable source retain the normal verification/recovery behavior; unavailable
+pages are not evidence and must not be cited as successfully read.
 
 A child tool needing approval returns `subagent_parent_action_required`. The child reports
 the blocker to its parent. The parent may perform an action under its own normal approval

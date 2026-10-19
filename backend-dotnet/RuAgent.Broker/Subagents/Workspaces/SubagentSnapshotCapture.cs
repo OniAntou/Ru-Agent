@@ -14,7 +14,7 @@ public sealed partial class SubagentSnapshotCapture(SubagentGitAdapter? git = nu
     private readonly SubagentGitAdapter _git = git ?? new();
 
     private async Task<SubagentSnapshot> CaptureCoreAsync(BrokerRunLease parent, string stateDirectory,
-        Action<SnapshotAllocation> allocated, CancellationToken ct, ISubagentWorkspaceAllocationObserver? observer)
+        Action allocating, Action<SnapshotAllocation> allocated, CancellationToken ct, ISubagentWorkspaceAllocationObserver? observer)
     {
         if (parent.IsExpired(DateTimeOffset.UtcNow)) throw new SubagentWorkspaceException("subagent_parent_revoked");
         using var parentHandle = DirectoryHandleLease.Open(parent.CanonicalRoot, requireCanonicalPath: true);
@@ -35,6 +35,7 @@ public sealed partial class SubagentSnapshotCapture(SubagentGitAdapter? git = nu
         var paths = ParsePaths(index, untracked);
         var id = observer?.Reservation.SnapshotId ?? "snapshot_" + Guid.NewGuid().ToString("N");
         var directory = Path.Combine(Path.GetFullPath(stateDirectory), id);
+        allocating();
         using var stateHandle = DirectoryHandleLease.Open(directory, requireCanonicalPath: true, createMissing: true);
         allocated(new(directory, stateHandle.Identity));
         var baseDirectory = Path.Combine(directory, "base");

@@ -700,6 +700,11 @@ allocation and excludes file contents. Session deletion discovers allocations
 even without a child run or scope and reclaims only proved physical identities.
 Unproven or replaced identities fail closed; cleanup does not scan for orphans
 or reconstruct execution authority.
+For a live preparation refusal, Broker can explicitly attest that snapshot capture
+failed before starting any filesystem allocation. Only that attestation lets Host
+remove the exact still-reserved journal row and return a known tool failure without
+write reconciliation. A stage value alone, or any failure after allocation starts,
+cannot establish this condition. Research/review tasks skip Git preparation entirely.
 In-process snapshot failures reclaim the captured owned directory; provisioning
 failures after the worktree and Git identities are captured reclaim both trees.
 Cleanup has a separate ten-second deadline, preserves the original failure and

@@ -92,10 +92,11 @@ for controls. Permission expires on return and parent validity is rechecked afte
 dispatch, so a callback cannot swallow Stop and report success. Host performs
 durable metadata validation and orchestration only. Spawn/send/cancel schedule as
 mutations; wait is read-only and deferred through the existing native receipt path.
-Apply retains exact frozen-file authorization. The default inventory still omits
-all five controls; explicit test advertisements exercise both roles and the real
-gateway/persistence/apply chain. Explicit reconciliation, remaining resource/recovery
-gates and the public/client workflow are not complete.
+Apply retains exact frozen-file authorization. The root inventory exposes all five
+controls; child projections omit delegation. Public clients observe children through
+the two GET routes described in the operations guide. Deterministic tests exercise
+both roles and the real gateway/persistence/apply chain; they do not establish
+real-provider task quality.
 Pending or unknown outcomes require
 reconciliation; multiple file writes are not an atomic transaction.
 

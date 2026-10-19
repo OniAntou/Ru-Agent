@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+
+- **fix(agent)**: Permit a final answer from a native `web_fetch` batch with readable sources and only `web_content_empty` failures. Require exact call/receipt bindings and no possible side effects; other failures retain normal verification guards.
+
+- **fix(agent)**: Allow the main agent to repeat a successful, read-only `agent_wait` timeout while subagents are still working. Match the exact native call and receipt identity; keep other repeated actions guarded and preserve run/family budgets.
+
+- **fix(agent)**: Keep subagents running after harness recovery suppresses a model reply. Inbox boundary checks inspect model-visible history without reading audit-only prose; unfinished native calls and missing payloads still block delivery or fail closed. Clarify the existing 60-second maximum for each `agent_wait` call.
+
+- **fix(agent)**: Keep pre-allocation subagent Git failures from incorrectly pausing the parent for write reconciliation; release only the exact unused reservation with live Broker proof. Report repository-root/HEAD failures separately and guide research/web tasks to read-only review, which does not require Git.
+
 - **fix(sessions)**: Report successful artifact cleanup on deletion retry when the conversation is confirmed missing; keep cleanup failures pending and report primary storage failures without claiming deletion succeeded.
 
 - **feat(agent)**: Add bounded coding and read-only review subagents with private coding worktrees, durable follow-ups/results, shared budgets, Stop/recovery and guarded apply through Broker. Expose read-only HTTP/RPC/SDK, CLI `/subagents` and a WinUI task tree with result paging/export; only the main agent controls children. Inherit the exact parent model by default. Another model requires an explicit user prompt and availability in a signed-in provider catalog; report unavailable requests without fallback. Retire role-model settings and queued user applies while preserving uncertain-write reconciliation.

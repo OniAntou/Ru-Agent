@@ -26,8 +26,19 @@ public sealed class SubagentWorkspaceFactory(IToolGatewayFactory gateways, Works
         if (role != SubagentRole.Coding || parent.Preset == AgentPermissionPreset.Plan)
             throw new SubagentConfigurationException("subagent_role_denied");
         var reservation = await allocations.ReserveAsync(parent.RunId, agentId, ct).ConfigureAwait(false);
-        var manifest = await gateways.ProvisionSubagentWorkspaceAsync(parent.RunId, agentId, stateDirectory, ct,
-            PolicySnapshotMapper.ToWire(parentPolicy), new AllocationObserver(reservation, allocations)).ConfigureAwait(false);
+        RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceManifest manifest;
+        try
+        {
+            manifest = await gateways.ProvisionSubagentWorkspaceAsync(parent.RunId, agentId, stateDirectory, ct,
+                PolicySnapshotMapper.ToWire(parentPolicy), new AllocationObserver(reservation, allocations)).ConfigureAwait(false);
+        }
+        catch (RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceException error) when (error.NoWorkspaceAllocated)
+        {
+            // The Broker proved that no filesystem allocation started. Remove only
+            // this unchanged reservation; failure to do so must remain uncertain.
+            await allocations.ReleaseUnallocatedAsync(reservation, ct).ConfigureAwait(false);
+            throw new SubagentControlRejectedException(error.Code);
+        }
         if (!string.Equals(parentRoot, manifest.Snapshot.ParentRoot, StringComparison.OrdinalIgnoreCase)
             || manifest.Snapshot.ParentRunId != parent.RunId.Value || manifest.AgentId != agentId)
             throw new SubagentConfigurationException("subagent_workspace_invalid");

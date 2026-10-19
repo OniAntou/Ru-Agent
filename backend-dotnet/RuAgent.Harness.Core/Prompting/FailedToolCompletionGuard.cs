@@ -58,13 +58,38 @@ public static class FailedToolCompletionGuard
             }
         }
 
-        if (firstFailureCode is null || onlyFirstDeny)
+        if (firstFailureCode is null || onlyFirstDeny || HasPartialWebEvidence(context, startIndex, lastIndex))
         {
             return false;
         }
 
         errorCode = firstFailureCode;
         return true;
+    }
+
+    private static bool HasPartialWebEvidence(ModelContextSnapshot context, int assistantIndex, int lastReceipt)
+    {
+        if (assistantIndex < 0 || context.Entries[assistantIndex].Kind != ModelContextEntryKind.AssistantStep)
+            return false;
+        var calls = context.Entries[assistantIndex].AssistantStep!.ToolCalls;
+        if (calls.Count != lastReceipt - assistantIndex) return false;
+        var bindings = new HashSet<string>(StringComparer.Ordinal);
+        var readable = false;
+        var empty = false;
+        for (var index = 0; index < calls.Count; index++)
+        {
+            var call = calls[index];
+            var receipt = context.Entries[assistantIndex + index + 1].ToolReceipt;
+            if (call.ToolId != "web_fetch" || call.ToolVersion != "1.0.0"
+                || !bindings.Add(call.ProviderCallId) || receipt is null || receipt.SideEffectsPossible
+                || receipt.ProviderCallId != call.ProviderCallId) return false;
+            if (receipt.Outcome == ToolExecutionOutcome.Succeeded && receipt.Code == "ok") readable = true;
+            else if (receipt.Outcome == ToolExecutionOutcome.Failed && receipt.Code == "web_content_empty") empty = true;
+            else return false;
+        }
+        // Empty optional pages do not invalidate facts read from other pages.
+        // This exception cannot clear a denial, mutation, cancellation or unknown result.
+        return readable && empty;
     }
 
     private static bool IsTrailingRecoveryNote(ModelContextEntry entry) =>

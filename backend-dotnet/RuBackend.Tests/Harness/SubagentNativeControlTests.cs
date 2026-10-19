@@ -1,3 +1,5 @@
+extern alias Broker;
+
 using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
@@ -27,6 +29,8 @@ public sealed partial class SubagentNativeControlTests
     [InlineData(true, SubagentRole.Coding, "user_unknown", false)]
     [InlineData(true, SubagentRole.Coding, "user_approval", false)]
     [InlineData(true, SubagentRole.Coding, "family_e2e", false)]
+    [InlineData(true, SubagentRole.Coding, "non_git", false)]
+    [InlineData(true, SubagentRole.Coding, "unborn_git", false)]
     public async Task Native_gateway_controls_use_broker_callback_and_durable_identity(bool enabled, SubagentRole role, string? recoveryDecision, bool failFinish)
     {
         await using var storage = await BackendHarnessTestFixture.CreateAsync();
@@ -34,7 +38,12 @@ public sealed partial class SubagentNativeControlTests
         var repo = Path.Combine(storage.RootPath, "repo");
         Directory.CreateDirectory(repo);
         await File.WriteAllTextAsync(Path.Combine(repo, "a.txt"), "parent");
-        if (role == SubagentRole.Coding) await InitializeRepoAsync(repo);
+        if (role == SubagentRole.Coding && recoveryDecision is not ("non_git" or "unborn_git")) await InitializeRepoAsync(repo);
+        if (recoveryDecision == "unborn_git")
+        {
+            var init = await new Broker::RuAgent.Broker.Tools.Git.StreamingGitCli().RunAsync(["init"], repo, default);
+            Assert.True(init.Succeeded, init.FailureReason);
+        }
         SubagentControlDispatcher? dispatch = null;
         using var execution = new InProcessExecutionFixture(repo, subagentControls: enabled,
             subagents: new Lazy<SubagentControlDispatcher>(() => dispatch!));
@@ -59,9 +68,10 @@ public sealed partial class SubagentNativeControlTests
         var scopes = new SqliteSubagentScopeStore(storage.Options, protector);
         var pins = new SqliteAgentRunProviderSelectionStore(storage.Options);
         var paths = new SubagentWorkspaceStorage(Path.Combine(storage.RootPath, "workspaces"));
+        var allocations = new SqliteSubagentWorkspaceAllocationStore(storage.Options, protector);
         var workspace = new SubagentWorkspaceFactory(execution.Factory,
             new WorkspaceTrustService(resolver, new SqliteWorkspaceStore(storage.Options), new WorkspaceTrustRequestStore(storage.Options), storage.KeyStore),
-            paths.Root, new SqliteSubagentWorkspaceAllocationStore(storage.Options, protector));
+            paths.Root, allocations);
         using var children = new SubagentRunFactory(storage.EventStore, agents, pins, storage.PayloadStore, scopes,
             roots, new Selection(), workspace, new SystemTimeProvider());
         var cancel = new SubagentCancellationCoordinator(storage.EventStore, agents,
@@ -104,6 +114,22 @@ public sealed partial class SubagentNativeControlTests
             return;
         }
         var spawned = await Execute(spawn, ToolAccessKind.Mutation);
+        if (recoveryDecision is "non_git" or "unborn_git")
+        {
+            Assert.Equal(ToolExecutionOutcome.Failed, spawned.Outcome);
+            Assert.False(spawned.SideEffectsPossible);
+            Assert.Equal(recoveryDecision == "non_git" ? "subagent_git_root_unavailable" : "subagent_git_head_unavailable", spawned.Code);
+            Assert.Empty(await agents.ListAsync(root.RunId, default));
+            Assert.Empty(await allocations.ListAsync(root.RunId, default));
+            Assert.False(Directory.Exists(paths.Root));
+            Assert.Equal(ToolExecutionOutcome.Failed, (await Execute(spawn, ToolAccessKind.Mutation)).Outcome);
+            Assert.Empty(await allocations.ListAsync(root.RunId, default));
+            // The parent can recover by delegating research without a Git workspace.
+            var research = await Execute(Proposal("agent_spawn", new { role = "review", task = "Research today's gold price using web_search" }, 'e'), ToolAccessKind.Mutation);
+            Assert.Equal(ToolExecutionOutcome.Succeeded, research.Outcome);
+            Assert.Single(await agents.ListAsync(root.RunId, default));
+            return;
+        }
         Assert.Equal(ToolExecutionOutcome.Succeeded, spawned.Outcome);
         using var output = JsonDocument.Parse(spawned.ModelContent);
         var agentId = output.RootElement.GetProperty("agent_id").GetString()!;

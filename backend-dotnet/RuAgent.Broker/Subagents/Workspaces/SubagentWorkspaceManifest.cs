@@ -3,6 +3,8 @@ namespace RuAgent.Broker.Subagents.Workspaces;
 public sealed class SubagentWorkspaceException(string code, Exception? inner = null) : IOException(code, inner)
 {
     public string Code { get; } = code;
+    // Set only by snapshot capture before it starts creating any directory.
+    public bool NoWorkspaceAllocated { get; internal set; }
 }
 
 public sealed record SubagentSnapshotFile(string RelativePath, string Hash, int Mode, long Length);

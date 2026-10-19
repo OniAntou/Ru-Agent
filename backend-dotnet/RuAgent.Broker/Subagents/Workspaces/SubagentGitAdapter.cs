@@ -12,8 +12,10 @@ public sealed class SubagentGitAdapter
         new StreamingProcessRunner(outputLimitBytes: MetadataOutputLimitBytes, headCapacityChars: MetadataOutputLimitBytes, tailCapacityChars: 0),
         outputLimitBytes: MetadataOutputLimitBytes);
 
-    internal Task<string> Root(string root, CancellationToken ct) => Run(root, ["rev-parse", "--show-toplevel"], ct);
-    internal Task<string> Head(string root, CancellationToken ct) => Run(root, ["rev-parse", "--verify", "HEAD^{commit}"], ct);
+    internal Task<string> Root(string root, CancellationToken ct) => Run(root, ["rev-parse", "--show-toplevel"], ct,
+        failureCode: "subagent_git_root_unavailable");
+    internal Task<string> Head(string root, CancellationToken ct) => Run(root, ["rev-parse", "--verify", "HEAD^{commit}"], ct,
+        failureCode: "subagent_git_head_unavailable");
     internal Task<string> GitDirectory(string root, CancellationToken ct) => Run(root, ["rev-parse", "--absolute-git-dir"], ct);
     internal Task<string> CommonDirectory(string root, CancellationToken ct) => Run(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], ct);
     internal Task<string> Index(string root, CancellationToken ct) => Run(root, ["ls-files", "--stage", "-z"], ct, trim: false);
@@ -24,7 +26,8 @@ public sealed class SubagentGitAdapter
         Run(parent, ["worktree", "add", "--no-checkout", "--detach", "--", child, head], ct);
     internal Task<string> InitializeIndex(string child, CancellationToken ct) => Run(child, ["read-tree", "HEAD"], ct);
 
-    private async Task<string> Run(string root, string[] command, CancellationToken ct, bool trim = true, bool missingAllowed = false)
+    private async Task<string> Run(string root, string[] command, CancellationToken ct, bool trim = true, bool missingAllowed = false,
+        string failureCode = "subagent_git_failed")
     {
         string[] defenses = ["-c", "core.hooksPath=NUL", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
             "-c", "core.quotePath=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
@@ -33,7 +36,7 @@ public sealed class SubagentGitAdapter
                 ["GIT_CONFIG_NOSYSTEM"] = "1", ["GIT_NO_LAZY_FETCH"] = "1", ["GIT_OPTIONAL_LOCKS"] = "0" }).ConfigureAwait(false);
         if (!result.Succeeded && !(missingAllowed && result.ExitCode == 1))
             throw new SubagentWorkspaceException(result.FailureReason == "git_output_truncated"
-                ? "subagent_snapshot_too_large" : "subagent_git_failed");
+                ? "subagent_snapshot_too_large" : failureCode);
         return trim ? result.Stdout.Trim() : result.Stdout;
     }
 }

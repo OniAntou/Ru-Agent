@@ -23,9 +23,16 @@ public sealed partial class SqliteSubagentStore
                     AND completed.kind='tool.execution_completed'))
             """;
         if ((long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0) return false;
+        // Recovery can complete a step with suppressed, audit-only prose. It was
+        // never dispatched or added to model history. Inspect the latest visible
+        // step instead, preserving checks for earlier unproposed native calls.
+        command.Parameters.AddWithValue("$modelAudience", (int)HarnessPayloadAudience.ModelContext);
         command.CommandText = """
-            SELECT model_step_id,payload_id FROM agent_events WHERE run_id=$run
-            AND kind='model.step_completed' AND payload_id IS NOT NULL ORDER BY sequence DESC LIMIT 1
+            SELECT e.model_step_id,e.payload_id FROM agent_events e
+            LEFT JOIN agent_payloads p ON p.run_id=e.run_id AND p.payload_id=e.payload_id
+            WHERE e.run_id=$run AND e.kind='model.step_completed' AND e.payload_id IS NOT NULL
+                AND (p.payload_id IS NULL OR (p.audience & $modelAudience) != 0)
+            ORDER BY e.sequence DESC LIMIT 1
             """;
         string step;
         PayloadId payloadId;

@@ -19,6 +19,7 @@ public sealed partial class SubagentWorkspaceTests
         {
             var error = await Assert.ThrowsAsync<SubagentWorkspaceException>(() => capture.CaptureAsync(Lease(), State, cancel.Token));
             Assert.Equal("subagent_snapshot_cleanup_incomplete", error.Code);
+            Assert.False(error.NoWorkspaceAllocated);
             Assert.Equal("retained until retry", File.ReadAllText(Path.Combine(Assert.Single(Directory.GetDirectories(State)), "readonly.txt")));
             Assert.Contains(Assert.IsType<AggregateException>(error.InnerException).InnerExceptions,
                 e => e is OperationCanceledException canceled && canceled.CancellationToken == cancel.Token);

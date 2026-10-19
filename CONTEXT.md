@@ -229,7 +229,11 @@ metadata deletion; failures retain evidence for retry. Encrypted cleanup scope l
 with the owned run even after relation loss, and cannot restore execution authority.
 An encrypted, root-bound allocation journal reserves the identity before filesystem
 preparation and captures physical cleanup evidence before bulk copying and after
-Git registration. Session deletion can reclaim proved allocations after restart
+Git registration. A live Broker refusal before allocation starts can release only
+the exact still-reserved identity without requiring write reconciliation; journal
+stage alone is insufficient proof. Research/review tasks, including web searches,
+skip Git preparation; coding requires a repository root with an existing commit.
+Session deletion can reclaim proved allocations after restart
 even without a child run or execution scope. An unproven directory or interrupted
 Git registration without captured identity stays pending with a named error;
 the journal never restores execution authority. Public

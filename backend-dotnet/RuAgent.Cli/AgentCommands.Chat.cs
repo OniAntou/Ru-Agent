@@ -2250,7 +2250,16 @@ public sealed partial class AgentCommands
                 await _out.FlushAsync().ConfigureAwait(false);
                 return true;
             }
-            await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+            var custom = CustomPromptCommands.Find(
+                slashCmd, canonicalWorkspace, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            if (custom is not null)
+            {
+                await HandlePromptLineAsync(CustomPromptCommands.Expand(custom, arg), cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            var customNames = CustomPromptCommands.List(canonicalWorkspace, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            var customHint = customNames.Count == 0 ? string.Empty : " Custom: " + string.Join(' ', customNames.Select(name => "/" + name)) + ".";
+            await WriteDiagnosticLineAsync(_err, $"unknown_command: {slashCmd}. Type /help for assistance.{customHint}").ConfigureAwait(false);
             return true;
         }
 

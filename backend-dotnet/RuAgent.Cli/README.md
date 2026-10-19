@@ -335,3 +335,7 @@ results and usage. Add `agent-id result [version]` to read a versioned result.
 Only the main agent can send, cancel or integrate child work. Generic child run
 mutations and approvals are refused. RPC exposes `subagent.list` and `subagent.get`.
 See [subagent operations](../../docs/operations/subagents.md).
+
+## Custom slash commands
+
+Put a Markdown template at `<workspace>/.ru/commands/<name>.md` (or `~/.ru/commands/<name>.md`) and run it as `/<name> [arguments]`. Names are lowercase letters, digits, `_` and `-`. `$ARGUMENTS` in the template is replaced by the text after the command; without it, the text is appended after the template. An optional `---` front matter may carry `description:`. Built-in commands win over templates, workspace templates win over user templates, and files over 64 KB, links or non-UTF-8 files are ignored. The expanded text is sent as an ordinary prompt: a template grants no tool, path or approval authority.

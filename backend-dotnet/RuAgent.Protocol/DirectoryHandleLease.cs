@@ -7,6 +7,7 @@ namespace RuAgent.Protocol;
 public sealed class DirectoryHandleLease : IDisposable
 {
     private const uint ShareReadWrite = 3;
+    private const uint FileListDirectory = 1;
     private const uint OpenExisting = 3;
     private const uint BackupSemantics = 0x02000000;
     private const int PathBufferSize = 32_768;
@@ -52,7 +53,10 @@ public sealed class DirectoryHandleLease : IDisposable
             Identity = Path.GetFullPath(path);
             return;
         }
-        var handle = CreateFile(path, 0, ShareReadWrite, IntPtr.Zero, OpenExisting, BackupSemantics, IntPtr.Zero);
+        // Metadata-only (zero-access) handles do not participate in delete
+        // sharing checks. Read access makes omission of FILE_SHARE_DELETE hold
+        // this directory's name stable until the lease is released.
+        var handle = CreateFile(path, FileListDirectory, ShareReadWrite, IntPtr.Zero, OpenExisting, BackupSemantics, IntPtr.Zero);
         if (handle.IsInvalid)
         {
             var error = Marshal.GetHRForLastWin32Error();

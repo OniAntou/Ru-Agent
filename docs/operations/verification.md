@@ -3663,3 +3663,11 @@ uses the managed .NET suites, the filesystem-only Python boundary scanner, and
 the release build/native overlay checks above. Live provider, audio,
 microphone, subtitle, and VTube Studio acceptance remain explicit user-run
 gates.
+
+## Hard-task live run, 2026-10-20 (default settings)
+
+Nine hard Terminal/SWE tasks x 2 attempts on `minimax/minimax-m3.1-flash:free` with the saved settings: **10/18**.
+Both attempts passed: `cs-single-flight-cache`, `py-migration-rollback`, `py-stream-parser`. One of two: `cs-atomic-ledger`, `cs-lease-renewal`, `py-dependency-scheduler`, `ts-transaction-store`.
+Both failed: `ts-generation-pager` (grader requires unstated behavior) and `ts-session-replay` (malformed events are rejected without mutation).
+One `runtime_drive_failed` (`ArgumentException` right after a `tool.proposed`) was seen twice across all runs and did not reproduce in three further `cs-lease-renewal` attempts (0/3 drive failures, 1/3 passes). Cause still unknown; set `RU_DRIVE_FAILURE_DIAGNOSTIC` to a file path to capture the exception if it recurs.
+Single small sample on a free model; treat as variance-limited.

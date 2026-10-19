@@ -24,7 +24,20 @@ internal sealed class WorkspaceWatchRegistry(WorkspaceExternalChangeMonitor moni
                         monitor.CaptureExpectedHashes(root);
                         entry.Watcher = monitor.StartWatchingAsync(root, async change =>
                         {
-                            if (!await persistChange(change).ConfigureAwait(false)) return;
+                            bool persisted;
+                            try { persisted = await persistChange(change).ConfigureAwait(false); }
+                            catch
+                            {
+                                monitor.ForgetObservation(root, change.NormalizedPath);
+                                throw;
+                            }
+
+                            if (!persisted)
+                            {
+                                monitor.ForgetObservation(root, change.NormalizedPath);
+                                return;
+                            }
+
                             lock (entry.Gate)
                             {
                                 // A callback already persisting when its watch ends

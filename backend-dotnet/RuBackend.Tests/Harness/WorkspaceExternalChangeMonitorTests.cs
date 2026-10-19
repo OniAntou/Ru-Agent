@@ -5,6 +5,43 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class WorkspaceExternalChangeMonitorTests
 {
+    [Theory]
+    [InlineData("_handler")]
+    [InlineData("_renamed")]
+    [InlineData("_error")]
+    public void Already_captured_watcher_callback_is_safe_after_registration_disposal(string callbackField)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-watch-dispose-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var monitor = new WorkspaceExternalChangeMonitor();
+            var registration = monitor.StartWatching(root, _ => throw new InvalidOperationException("late_notification"));
+            // Model a notification already queued by the OS before event unsubscription.
+            var field = registration.GetType().GetField(callbackField,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var callback = (Delegate)field.GetValue(registration)!;
+            registration.Dispose();
+            var failure = Record.Exception(() =>
+            {
+                switch (callback)
+                {
+                    case FileSystemEventHandler changed:
+                        changed(null!, new(WatcherChangeTypes.Changed, root, "a.txt"));
+                        break;
+                    case RenamedEventHandler renamed:
+                        renamed(null!, new(WatcherChangeTypes.Renamed, root, "a.txt", "b.txt"));
+                        break;
+                    case ErrorEventHandler error:
+                        error(null!, new(new InternalBufferOverflowException()));
+                        break;
+                }
+            });
+            Assert.Null(failure);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public void Observe_emits_unknown_external_change_only_when_hash_changes()
     {

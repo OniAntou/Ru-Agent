@@ -37,6 +37,37 @@ public sealed class WorkspaceWatchRegistryTests
     }
 
     [Fact]
+    public async Task Change_that_failed_to_persist_is_reported_again_for_identical_content()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-watch-retry-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "app.txt");
+            File.WriteAllText(path, "original");
+            var monitor = new WorkspaceExternalChangeMonitor();
+            var registry = new WorkspaceWatchRegistry(monitor);
+            var calls = 0;
+            using var lease = registry.Acquire(root, _ => Task.FromResult(Interlocked.Increment(ref calls) > 1));
+
+            File.WriteAllText(path, "external edit");
+            await WaitForAsync(() => Volatile.Read(ref calls) >= 1);
+            await Task.Delay(300);
+            File.WriteAllText(path, "external edit");
+            await WaitForAsync(() => Volatile.Read(ref calls) >= 2);
+
+            Assert.True(Volatile.Read(ref calls) >= 2);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(25);
+    }
+
+    [Fact]
     public async Task Concurrent_acquisitions_keep_the_baseline_until_every_lease_is_released()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-watch-concurrent-" + Guid.NewGuid().ToString("N"));

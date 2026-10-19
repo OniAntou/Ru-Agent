@@ -38,6 +38,16 @@ public sealed class WorkspaceExternalChangeMonitor
         _lastObservedHashes.TryRemove(key, out _);
     }
 
+    /// <summary>
+    /// Drops the "already reported" mark after a change could not be journaled,
+    /// so the next watcher event or rescan reports the same content again.
+    /// </summary>
+    public void ForgetObservation(string workspaceRoot, string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        _lastObservedHashes.TryRemove(ExpectedKey(workspaceRoot, NormalizeRelativePath(path)), out _);
+    }
+
     public bool TryGetExpectedContent(string workspaceRoot, string path, out byte[]? content)
     {
         var key = ExpectedKey(workspaceRoot, NormalizeRelativePath(path));
@@ -229,15 +239,18 @@ public sealed class WorkspaceExternalChangeMonitor
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
         };
         var registrationCts = new CancellationTokenSource();
+        // Notifications already queued by the OS may arrive after disposal.
+        // The token remains usable after its source is disposed.
+        var registrationCancellation = registrationCts.Token;
         var debounceTimers = new ConcurrentDictionary<string, Timer>(StringComparer.OrdinalIgnoreCase);
         var rescanGate = new SemaphoreSlim(1, 1);
-        FileSystemEventHandler handler = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCts.Token);
-        RenamedEventHandler renamed = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCts.Token);
+        FileSystemEventHandler handler = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCancellation);
+        RenamedEventHandler renamed = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCancellation);
         ErrorEventHandler error = (_, _) => _ = RescanExpectedFilesAsync(
             root,
             onChange,
             rescanGate,
-            registrationCts.Token);
+            registrationCancellation);
         watcher.Changed += handler;
         watcher.Created += handler;
         watcher.Deleted += handler;
@@ -320,6 +333,12 @@ public sealed class WorkspaceExternalChangeMonitor
                 {
                     // The file may have become inaccessible between the watcher
                     // notification and the hash pass; retry on a later event.
+                }
+                catch (Exception error) when (error is NotSupportedException or ArgumentException
+                    or System.Security.SecurityException)
+                {
+                    // A timer callback has no caller: an exception here would
+                    // terminate the Host. Retry on the next event.
                 }
                 finally
                 {

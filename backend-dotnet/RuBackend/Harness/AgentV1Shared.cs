@@ -165,7 +165,8 @@ internal static class AgentV1Shared
             }
 
             var value = encoded.GetString();
-            if (string.IsNullOrWhiteSpace(value) || value.Length > 22_369_624)
+            // An empty string is a valid payload: the original file was empty.
+            if (value is null || value.Length > 22_369_624)
             {
                 return false;
             }

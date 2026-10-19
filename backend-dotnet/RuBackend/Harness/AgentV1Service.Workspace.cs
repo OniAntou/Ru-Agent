@@ -243,6 +243,7 @@ public sealed partial class AgentV1Service
     }
 
     private const long MaxRestoreSizeBytes = 16 * 1024 * 1024; // 16MB cap per restore
+    private static readonly string MissingFileSha256 = new('0', 64);
     private static readonly TimeSpan MinRestoreInterval = TimeSpan.FromSeconds(1); // Rate limit: max 1 restore/sec per workspace
     private static readonly ConcurrentDictionary<string, DateTimeOffset> _lastRestoreTime = new(StringComparer.Ordinal);
 
@@ -329,10 +330,16 @@ public sealed partial class AgentV1Service
                 throw new UnauthorizedAccessException("workspace_reparse_boundary");
             }
 
-            var currentSha = File.Exists(target)
+            var targetExists = File.Exists(target);
+            var currentSha = targetExists
                 ? await ComputeFileSha256Async(target, cancellationToken).ConfigureAwait(false)
                 : Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())).ToLowerInvariant();
-            if (!string.Equals(currentSha, request.ExpectedCurrentSha256, StringComparison.Ordinal))
+            // The external-change journal records a missing file as 64 zeros, so a
+            // client echoing that value must match a file that is still missing.
+            var matchesMissingMarker = !targetExists
+                && string.Equals(request.ExpectedCurrentSha256, MissingFileSha256, StringComparison.Ordinal);
+            if (!matchesMissingMarker
+                && !string.Equals(currentSha, request.ExpectedCurrentSha256, StringComparison.Ordinal))
             {
                 return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_stale"));
             }
@@ -383,8 +390,8 @@ public sealed partial class AgentV1Service
                 }
                 catch (IOException)
                 {
-                    // The durable journal is authoritative; an orphaned temp
-                    // file is harmless and is cleaned by the next retry/startup.
+                    // Best effort: a locked temp file stays behind as a
+                    // `.ru-restore-*` sibling; nothing removes it automatically.
                 }
             }
 
@@ -402,7 +409,7 @@ public sealed partial class AgentV1Service
                 runId: null,
                 restoreChangeId,
                 envelope.Change.NormalizedPath,
-                currentSha,
+                targetExists ? currentSha : MissingFileSha256,
                 restoredSha,
                 encrypted,
                 "restored",

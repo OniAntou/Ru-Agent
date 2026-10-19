@@ -36,6 +36,8 @@ public sealed class AgentCommandEnvironment
         "PIP_CACHE_DIR",
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    private const int MinimumRedactionSeedLength = 8;
+
     private static readonly (string Name, string Value)[] FixedChildValues =
     [
         ("GIT_TERMINAL_PROMPT", "0"),
@@ -60,7 +62,9 @@ public sealed class AgentCommandEnvironment
             if (SecretEnvironmentNamePolicy.IsSecretName(name))
             {
                 _strippedNames.Add(name);
-                if (!string.IsNullOrEmpty(value))
+                // Flag-like values ("1", "false") carry no secret and would
+                // corrupt unrelated output if treated as redaction seeds.
+                if (value is { Length: >= MinimumRedactionSeedLength })
                 {
                     _redactionSeeds.Add(value);
                 }

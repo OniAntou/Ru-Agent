@@ -190,4 +190,20 @@ public sealed class AgentCommandEnvironmentTests
         Assert.DoesNotContain("OPENROUTER_API_KEY", environment.ChildEnvironment.Keys);
         Assert.DoesNotContain(openRouterKey, environment.ChildEnvironment.Values);
     }
+
+    [Fact]
+    public void Redaction_seeds_skip_short_flag_like_values_of_secret_named_variables()
+    {
+        var snapshot = SnapshotWith(
+            ("PATH", @"C:\Windows"),
+            ("TOKENIZERS_PARALLELISM", "false"),
+            ("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1"),
+            ("REAL_API_KEY", "sk-long-enough-value"));
+        var environment = new AgentCommandEnvironment(snapshot);
+
+        var seeds = environment.GetRedactionSeeds();
+
+        Assert.Equal(["sk-long-enough-value"], seeds);
+        Assert.Contains("TOKENIZERS_PARALLELISM", environment.StrippedNames);
+    }
 }

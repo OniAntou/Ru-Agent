@@ -30,6 +30,7 @@ public static class DiagnosticEventPolicy
 
     private static readonly Regex SafeCodePattern = new("^[a-z0-9_.-]{1,64}$", RegexOptions.Compiled);
     private static readonly Regex SafeComponentPattern = new("^[a-z0-9_.-]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex SafeExceptionSitePattern = new("^[A-Za-z0-9_.`<>+]{1,160}$", RegexOptions.Compiled);
     private static readonly Regex SafeToolIdPattern = new("^[a-z0-9_.-]{1,128}$", RegexOptions.Compiled);
     private static readonly Regex SemanticVersionPattern = new(
         "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
@@ -95,6 +96,7 @@ public static class DiagnosticEventPolicy
             var byteCount = root.TryGetProperty("byte_count", out var pByte)
                 && pByte.ValueKind == JsonValueKind.Number
                 && pByte.TryGetInt64(out var vByte) ? (long?)vByte : null;
+            var exceptionSite = ReadOptionalString(root, "exception_site");
             var truncated = root.TryGetProperty("truncated", out var pTrunc)
                 && pTrunc.ValueKind is JsonValueKind.True or JsonValueKind.False
                 ? (bool?)pTrunc.GetBoolean() : null;
@@ -121,7 +123,8 @@ public static class DiagnosticEventPolicy
                 toolCallId,
                 executionId,
                 byteCount,
-                truncated);
+                truncated,
+                exceptionSite);
 
             return Sanitize(raw);
         }
@@ -259,6 +262,11 @@ public static class DiagnosticEventPolicy
             byteCount = evt.ByteCount;
         }
 
+        // Type and method only: this is where the exception was thrown, never its message or stack text.
+        var exceptionSite = !string.IsNullOrEmpty(evt.ExceptionSite) && SafeExceptionSitePattern.IsMatch(evt.ExceptionSite)
+            ? evt.ExceptionSite
+            : null;
+
         bool? truncated = null;
         if (evt.Truncated is not null)
         {
@@ -287,7 +295,8 @@ public static class DiagnosticEventPolicy
             toolCallId,
             executionId,
             byteCount,
-            truncated);
+            truncated,
+            exceptionSite);
     }
 
     private static string? ReadOptionalString(JsonElement root, string name) =>

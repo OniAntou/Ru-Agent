@@ -18,5 +18,6 @@ internal sealed class DiscardingDiagnosticEmitter : IDiagnosticEmitter
         string? toolVersion = null,
         string? verificationState = null,
         string? endpointRole = null,
-        string? endpointHash = null) => true;
+        string? endpointHash = null,
+        string? exceptionSite = null) => true;
 }

@@ -128,6 +128,25 @@ public sealed class StructuredDiagnosticLoggerProviderTests
         Assert.Equal("provider.payment_required", call.EventCode);
     }
 
+    [Fact]
+    public void Thrown_exception_records_the_throwing_method_but_never_its_message()
+    {
+        var emitter = new RecordingEmitter();
+        using var provider = new StructuredDiagnosticLoggerProvider(emitter);
+        var logger = provider.CreateLogger("RuBackend.Test");
+
+        try { ThrowFromNamedMethod(); }
+        catch (ArgumentException error) { logger.LogWarning(error, "run failed"); }
+        logger.LogWarning(new ArgumentException("never thrown"), "run failed");
+
+        Assert.Equal(2, emitter.Calls.Count);
+        Assert.EndsWith(nameof(ThrowFromNamedMethod), emitter.Calls[0].ExceptionSite);
+        Assert.DoesNotContain("secret prompt", emitter.Calls[0].ExceptionSite);
+        Assert.Null(emitter.Calls[1].ExceptionSite);
+    }
+
+    private static void ThrowFromNamedMethod() => throw new ArgumentException("secret prompt");
+
     private sealed class RecordingEmitter : IDiagnosticEmitter
     {
         public List<Call> Calls { get; } = [];
@@ -145,9 +164,10 @@ public sealed class StructuredDiagnosticLoggerProviderTests
             string? toolVersion = null,
             string? verificationState = null,
             string? endpointRole = null,
-            string? endpointHash = null)
+            string? endpointHash = null,
+            string? exceptionSite = null)
         {
-            Calls.Add(new Call(level, component, eventCode, errorCode, exceptionKind));
+            Calls.Add(new Call(level, component, eventCode, errorCode, exceptionKind, exceptionSite));
             return true;
         }
 
@@ -156,6 +176,7 @@ public sealed class StructuredDiagnosticLoggerProviderTests
             string Component,
             string EventCode,
             string? ErrorCode,
-            string? ExceptionKind);
+            string? ExceptionKind,
+            string? ExceptionSite = null);
     }
 }

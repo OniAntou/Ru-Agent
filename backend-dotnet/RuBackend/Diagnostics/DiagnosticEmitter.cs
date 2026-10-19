@@ -26,7 +26,8 @@ public sealed class DiagnosticEmitter : IDiagnosticEmitter
         string? toolVersion = null,
         string? verificationState = null,
         string? endpointRole = null,
-        string? endpointHash = null)
+        string? endpointHash = null,
+        string? exceptionSite = null)
     {
         try
         {
@@ -47,7 +48,8 @@ public sealed class DiagnosticEmitter : IDiagnosticEmitter
                 toolVersion,
                 verificationState,
                 endpointRole,
-                endpointHash));
+                endpointHash,
+                ExceptionSite: exceptionSite));
             return _writer.TryEnqueue(evt);
         }
         catch

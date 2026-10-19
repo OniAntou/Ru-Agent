@@ -15,5 +15,6 @@ public interface IDiagnosticEmitter
         string? toolVersion = null,
         string? verificationState = null,
         string? endpointRole = null,
-        string? endpointHash = null);
+        string? endpointHash = null,
+        string? exceptionSite = null);
 }

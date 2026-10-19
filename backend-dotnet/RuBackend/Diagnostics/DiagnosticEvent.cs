@@ -24,4 +24,5 @@ public sealed record DiagnosticEvent(
     [property: JsonPropertyName("tool_call_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolCallId = null,
     [property: JsonPropertyName("execution_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExecutionId = null,
     [property: JsonPropertyName("byte_count")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ByteCount = null,
-    [property: JsonPropertyName("truncated")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Truncated = null);
+    [property: JsonPropertyName("truncated")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Truncated = null,
+    [property: JsonPropertyName("exception_site")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExceptionSite = null);

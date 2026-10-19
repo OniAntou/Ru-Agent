@@ -59,7 +59,8 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 durationMs: ParseDuration(fields),
                 status: fields.TryGetValue("status", out var status) ? status : null,
                 errorCode: fields.TryGetValue("error_code", out var errorCode) ? errorCode : null,
-                exceptionKind: exceptionKind);
+                exceptionKind: exceptionKind,
+                exceptionSite: ExceptionSite(exception));
         }
 
         private static Dictionary<string, string> ReadFields<TState>(TState state)
@@ -102,6 +103,14 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
                 ? value
                 : null;
+        }
+
+        // The throwing method's type and name only: enough to find an unexplained failure
+        // without recording the message or any stack text.
+        private static string? ExceptionSite(Exception? exception)
+        {
+            var method = exception is null ? null : new System.Diagnostics.StackTrace(exception, false).GetFrame(0)?.GetMethod();
+            return method?.DeclaringType?.FullName is { } type ? $"{type}.{method.Name}" : null;
         }
 
         private static string ClassifyException(Exception? exception)

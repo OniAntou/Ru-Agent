@@ -99,7 +99,8 @@ public sealed class DiagnosticRequestMiddlewareTests
             string? toolVersion = null,
             string? verificationState = null,
             string? endpointRole = null,
-            string? endpointHash = null)
+            string? endpointHash = null,
+            string? exceptionSite = null)
         {
             Level = level;
             Component = component;

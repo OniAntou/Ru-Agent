@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **feat(agent)**: `RU_REASONING_EFFORT` selects the reasoning effort for new runs of one Host process without editing saved settings (benchmarks and CI). A model without that level fails the run with `reasoning_unsupported`.
 
+- **fix(harness)**: Bound output-truncation recovery by notes issued in a row instead of per run, so a long task that recovers and is cut off again much later keeps going; the 24-note per-run cap still applies.
+
 - **fix(harness)**: Allow 3 empty-reply and 3 output-truncation recovery notes (was 2 each) under a 24-note per-run cap (was 12), and tell the model to keep reasoning brief and call a tool early after a truncated reply.
 
 - **fix(diagnostics)**: Record the exception type bucket (`invalid_operation`, `invalid_argument`, `invalid_data`, `not_supported`, `key_not_found`, `null_reference`, `object_disposed`, `out_of_range`) instead of `unknown` in structured logs; messages and stacks are still never recorded.

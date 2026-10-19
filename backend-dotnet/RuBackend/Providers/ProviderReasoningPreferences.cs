@@ -8,6 +8,19 @@ public static class ProviderReasoningPreferences
     private const string Field = "reasoning_preferences";
     public const string InvalidChoice = "invalid_saved_choice";
 
+    public const string EffortOverrideVariable = "RU_REASONING_EFFORT";
+
+    /// <summary>
+    /// Per-process effort for new runs, taken from <c>RU_REASONING_EFFORT</c>, so benchmarks and CI
+    /// can pick an effort without editing saved settings. A model that does not offer the value
+    /// fails the run with <c>reasoning_unsupported</c>; an invalid value is ignored.
+    /// </summary>
+    public static string? EffortOverride(Func<string, string?>? environment = null)
+    {
+        var value = (environment ?? Environment.GetEnvironmentVariable)(EffortOverrideVariable)?.Trim();
+        return value is { Length: > 0 and <= 32 } && !value.Any(char.IsControl) ? value : null;
+    }
+
     public static string Read(SettingsSnapshot settings, ProviderSelection? selection = null)
     {
         if (string.IsNullOrWhiteSpace(settings.Backend)) return "default";

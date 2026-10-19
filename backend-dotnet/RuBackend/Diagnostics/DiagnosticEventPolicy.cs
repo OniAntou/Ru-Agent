@@ -24,7 +24,8 @@ public static class DiagnosticEventPolicy
 
     private static readonly HashSet<string> AllowedExceptionKinds = new(StringComparer.OrdinalIgnoreCase)
     {
-        "timeout", "network", "io", "invalid_argument", "unauthorized", "cancelled", "unknown"
+        "timeout", "network", "io", "invalid_argument", "unauthorized", "cancelled", "unknown",
+        "invalid_operation", "invalid_data", "not_supported", "key_not_found", "null_reference", "object_disposed", "out_of_range"
     };
 
     private static readonly Regex SafeCodePattern = new("^[a-z0-9_.-]{1,64}$", RegexOptions.Compiled);

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **feat(cli)**: Add custom slash commands from `.ru/commands/<name>.md` (workspace) and `~/.ru/commands/<name>.md`, with `$ARGUMENTS` substitution. Templates expand to an ordinary prompt and confer no execution authority.
 
+- **feat(agent)**: `RU_REASONING_EFFORT` selects the reasoning effort for new runs of one Host process without editing saved settings (benchmarks and CI). A model without that level fails the run with `reasoning_unsupported`.
+
+- **fix(harness)**: Allow 3 empty-reply and 3 output-truncation recovery notes (was 2 each) under a 24-note per-run cap (was 12), and tell the model to keep reasoning brief and call a tool early after a truncated reply.
+
+- **fix(diagnostics)**: Record the exception type bucket (`invalid_operation`, `invalid_argument`, `invalid_data`, `not_supported`, `key_not_found`, `null_reference`, `object_disposed`, `out_of_range`) instead of `unknown` in structured logs; messages and stacks are still never recorded.
+
 - **feat(agent)**: Add `PreToolUse`/`PostToolUse` hooks from `~/.ru/hooks.json` and `<workspace>/.ru/hooks.json`. Exit code 2 from a PreToolUse hook rejects the call (`hook_blocked`) before approval; other failures never block. See agent-tools.md.
 
 - **fix(terminal)**: Ignore credential-named environment values shorter than 8 characters as redaction seeds, so flag-like values (`1`, `false`) no longer corrupt command output.

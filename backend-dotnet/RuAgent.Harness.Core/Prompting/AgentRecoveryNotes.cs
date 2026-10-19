@@ -51,13 +51,13 @@ public static class AgentRecoveryNotes
     // edit or verification failure twice per case is ordinary work, not a bad
     // model, and the previous 2/2/1 spent the global cap on exactly that.
     public const int MaximumUnverifiedNotes = 4;
-    public const int MaximumEmptyNotes = 2;
+    public const int MaximumEmptyNotes = 3;
     public const int MaximumModelRepairableNotes = 4;
-    public const int MaximumTruncatedNotes = 2;
+    public const int MaximumTruncatedNotes = 3;
 
     // Global cap across every recovery case, counted from the context for the
     // whole run. This bounds recovery across all cases, including truncation.
-    public const int MaximumNotesPerRun = 12;
+    public const int MaximumNotesPerRun = 24;
 
     /// <summary>
     /// Names the failed receipt and gives recovery guidance for known effect codes.
@@ -93,7 +93,9 @@ public static class AgentRecoveryNotes
         $"{NotePrefix} {KindMarker(AgentRecoveryKind.OutputTruncated)} - the provider "
         + "hit its output limit. The incomplete reply was not accepted and none of "
         + "its tool calls executed. Use a shorter valid tool call or a concise reply; "
-        + "split large edits into smaller steps. Do not repeat the unfinished output.";
+        + "split large edits into smaller steps. Keep reasoning brief and call a tool "
+        + "early: write a minimal first version, then refine it with separate edits. "
+        + "Do not repeat the unfinished output.";
 
     /// <summary>
     /// Names the runner's model-repairable rejection and asks the model to redo

@@ -63,7 +63,7 @@ public sealed class AgentProviderSnapshotFactory(
         var options = ProviderReasoningPreferences.Resolve(
             models,
             selected.Model,
-            ProviderReasoningPreferences.Read(current, selected));
+            ProviderReasoningPreferences.EffortOverride() ?? ProviderReasoningPreferences.Read(current, selected));
         var maximumOutput = ResolveMaximumOutput(selected);
         var modelMetadata = models.Catalog.FirstOrDefault(model =>
             string.Equals(model.Id, selected.Model, StringComparison.OrdinalIgnoreCase));

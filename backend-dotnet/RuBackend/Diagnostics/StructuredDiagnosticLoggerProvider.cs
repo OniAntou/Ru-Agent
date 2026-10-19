@@ -111,17 +111,24 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 return "unknown";
             }
 
-            return exception is TimeoutException
-                ? "timeout"
-                : exception is UnauthorizedAccessException
-                    ? "unauthorized"
-                    : exception is HttpRequestException or System.Net.Sockets.SocketException
-                        ? "network"
-                        : exception is IOException or FileNotFoundException or DirectoryNotFoundException
-                            ? "io"
-                            : exception is OperationCanceledException
-                                ? "cancelled"
-                                : "unknown";
+            // Only the exception's type bucket is recorded, never its message or stack.
+            return exception switch
+            {
+                TimeoutException => "timeout",
+                UnauthorizedAccessException => "unauthorized",
+                HttpRequestException or System.Net.Sockets.SocketException => "network",
+                IOException => "io",
+                OperationCanceledException => "cancelled",
+                ArgumentOutOfRangeException => "out_of_range",
+                ArgumentException => "invalid_argument",
+                ObjectDisposedException => "object_disposed",
+                InvalidOperationException => "invalid_operation",
+                InvalidDataException or FormatException or System.Text.Json.JsonException => "invalid_data",
+                NotSupportedException => "not_supported",
+                KeyNotFoundException => "key_not_found",
+                NullReferenceException => "null_reference",
+                _ => "unknown",
+            };
         }
 
         private static string MapLevel(LogLevel level) => level switch

@@ -34,8 +34,35 @@ public sealed class StructuredDiagnosticLoggerProviderTests
         Assert.Equal("error", call.Level);
         Assert.Equal("RuBackend.Test", call.Component);
         Assert.Equal("diagnostic_unclassified", call.EventCode);
-        Assert.Equal("unknown", call.ExceptionKind);
+        Assert.Equal("invalid_operation", call.ExceptionKind);
         Assert.Null(call.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(typeof(ArgumentNullException), "invalid_argument")]
+    [InlineData(typeof(ArgumentOutOfRangeException), "out_of_range")]
+    [InlineData(typeof(ObjectDisposedException), "object_disposed")]
+    [InlineData(typeof(NotSupportedException), "not_supported")]
+    [InlineData(typeof(KeyNotFoundException), "key_not_found")]
+    [InlineData(typeof(NullReferenceException), "null_reference")]
+    [InlineData(typeof(InvalidDataException), "invalid_data")]
+    [InlineData(typeof(FormatException), "invalid_data")]
+    [InlineData(typeof(DirectoryNotFoundException), "io")]
+    [InlineData(typeof(DivideByZeroException), "unknown")]
+    public void Exception_kind_records_only_the_type_bucket_never_the_message(Type type, string expected)
+    {
+        var emitter = new RecordingEmitter();
+        using var provider = new StructuredDiagnosticLoggerProvider(emitter);
+        var exception = type == typeof(ArgumentNullException) ? new ArgumentNullException("secret-parameter")
+            : type == typeof(ArgumentOutOfRangeException) ? new ArgumentOutOfRangeException("secret-parameter")
+            : type == typeof(ObjectDisposedException) ? new ObjectDisposedException("secret-object")
+            : (Exception)Activator.CreateInstance(type, "secret message")!;
+
+        provider.CreateLogger("RuBackend.Test").LogWarning(exception, "raw {Body}", "user text");
+
+        var call = Assert.Single(emitter.Calls);
+        Assert.Equal(expected, call.ExceptionKind);
+        Assert.DoesNotContain("secret", call.ExceptionKind, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

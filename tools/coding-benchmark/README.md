@@ -166,6 +166,12 @@ Step 5 model, preset and 300-second deadlines. All three timed out, resolving
 0/3; Python and TypeScript produced empty patches. One attempt per task does
 not establish a causal effect of the fixes.
 
+## Running live trials correctly
+
+`run-live` starts the Host from the **published** tree (`backend-dotnet/RuBackend/bin/Release/net10.0/win-x64/publish`), not from `dotnet build` output. After changing Host or Broker code run `dotnet publish backend-dotnet/RuBackend/RuBackend.csproj -c Release -r win-x64 --self-contained true` first; otherwise the trial silently measures the old binary. Check that the DLL timestamp in that folder is newer than your change.
+
+Set `RU_REASONING_EFFORT` (for example `low`) in the environment of the benchmark command to pick the reasoning effort for the whole trial without editing saved settings; `request_options_json` in the run's pinned provider selection records what was applied. Set `RU_DRIVE_FAILURE_DIAGNOSTIC` to a file path to capture the full exception when a run ends with `runtime_drive_failed`.
+
 ## Environment and comparison limits
 
 The single-agent readiness diagnostic (2026-10-13, retained in git history)

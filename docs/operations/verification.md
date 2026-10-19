@@ -57,7 +57,7 @@ Users retain observation/export only; no model/provider/authority contract chang
   Eight GUI preference files restored and owned processes closed.
 - Luna review's unknown/waiting-state finding was fixed with coverage. Initial
   compile/menu/spacing corrections and scoped limitations are recorded in the
-  [design/delivery record](../plans/2026-10-19-subagent-gui-design.md).
+  [design/delivery record](https://github.com/OniAntou/Ru-Agent/blob/b3d7b2743cec6843abace89ef76b770465ac015a/docs/plans/2026-10-19-subagent-gui-design.md).
 
 Evidence: `artifacts/subagent-gui-redesign-2026-10-19/` (`gui-final.log`,
 `release-build.log`, `release-smoke.log`, `docs-guards.log`, native JSON/tree/PNG files).
@@ -102,7 +102,7 @@ outcome is claimed.
 
 The five tools, five root-owned HTTP controls, RPC/SDK, CLI tree and WinUI tree/role
 settings are implemented; usage and result/application status remain separate.
-See [operations](subagents.md) and the [implementation plan](../plans/2026-10-17-subagents-implementation.md).
+See [operations](subagents.md) and the [implementation plan](https://github.com/OniAntou/Ru-Agent/blob/b3d7b2743cec6843abace89ef76b770465ac015a/docs/plans/2026-10-17-subagents-implementation.md).
 
 - The full 13-project matrix passed 6,861 tests. A later description-only clarification
   of `agent_wait` passed Protocol 151, Core 518 and 48 focused Host tests, including

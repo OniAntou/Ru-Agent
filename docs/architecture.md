@@ -664,7 +664,7 @@ approvals, workspace trust, protected paths, external-directory grants, and
 cancellation remain authoritative. Workspace `SKILL.md` bodies are untrusted
 prompt guidance only and never execute tools or grant anything; subagent
 orchestration uses the existing Harness coordinator and Broker gateway, as recorded in
-[`docs/plans/2026-10-17-subagents-implementation.md`](plans/2026-10-17-subagents-implementation.md).
+[`docs/operations/subagents.md`](operations/subagents.md).
 The root catalog includes five subagent tools; child role projections omit delegation.
 Five root-owned HTTP routes back Client, RPC/SDK, CLI and the WinUI task tree.
 Unreleased schemas v20/v21/v22/v23/v24/v25/v26/v27/v28 add internal ownership, attempts, encrypted scope/message/result references,

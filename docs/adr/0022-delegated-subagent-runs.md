@@ -6,8 +6,9 @@ date: 2026-10-17
 # Delegate child runs through the existing execution authority
 
 The approved subagent design gives one root run bounded, independent coding and
-research/review children. The design is accepted; implementation and acceptance evidence are tracked in the
-[implementation plan](../plans/2026-10-17-subagents-implementation.md). The five
+research/review children. The decision is accepted; current operation is documented in
+[Subagents](../operations/subagents.md), with acceptance evidence in
+[verification](../operations/verification.md). The five
 root orchestration tools share the existing catalog and schema digest handshake.
 
 Harness owns stable agent identity, an internal session and bounded attempts,

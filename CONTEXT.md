@@ -270,7 +270,7 @@ Historical schema v28 user-apply records remain for receipt/reconciliation integ
 Unexecuted legacy user actions are cancelled by the root drive; already executing actions
 are reconciled without replay. New integrations only originate from the parent's `agent_apply` tool.
 See [ADR 0022](docs/adr/0022-delegated-subagent-runs.md) and the
-[implementation evidence](docs/plans/2026-10-17-subagents-implementation.md).
+[implementation evidence](docs/operations/verification.md).
 _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 **Markdown Skill**:

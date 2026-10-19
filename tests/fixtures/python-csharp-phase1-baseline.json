@@ -5,7 +5,7 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "78771a266a6ac3689c6eeb861ceb5adb9046b3318d224e1d1970bbb071f180b1"
+            "sha256": "fdeffdf9f15342b6f65af947b30e4acad18e98171be629b6d07f8a7e44c504f5"
           },
           {
             "block_id": "agent.contract",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "f1c6832a2e1ac36fae882eb7571ba6a7cd97fb32d16445981ccd375e0cffac43"
+        "prompt_sha256": "121e5b2bca13f143e3699a104c9bfba3525334f692f4f4cf8673473a04a758a4"
       },
       "group": "prompt",
       "id": "prompt.basic",

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Deterministic data tone in prose and rendered tables: comma-grouped numbers (`140,600`) tint blue and file-path-like tokens (`build.bat`, `CHANGELOG.md`) tint violet, no matter what the model emphasizes. Painted runs (bold, code, headings, fences) pass through untouched; dates, plain decimals and other numbers stay plain to avoid noise.
+- **feat(prompt)**: The core contract now teaches when emphasis is meaningful: short headings for distinct sections, bold for key numbers and decisions, inline code for paths and identifiers, tables for row data, and plain text for greetings and one-line answers. Both the terminal renderer and the GUI Markdown block consume the result.
 - **feat(tui)**: Paint markdown in the Terminal.Gui chat transcript. The classic renderer's palette escapes now arrive as per-run attributes instead of being stripped at the bridge: bold (bright), inline code (green) and headings (yellow) keep their colour in `agent chat`'s TG mode, fenced code keeps its syntax colours and the line-number gutter, and painted notices keep their tone. Colourless output is byte-for-byte unchanged.
 - **fix(tui)**: Keep markdown paint when a turn's reply is reconciled or recovered: `ReplaceAssistantTurnAsync` parses the renderer's rows into spans instead of stripping them, so replacement rows keep bold, inline code and heading colours.
 - **fix(agent)**: Filter step records out of reply recovery: a tool-calls-only step stores its JSON record (`text:null` with `tool_calls`), and the turn-end recovery no longer prints those raw records into the transcript as if they were the reply.

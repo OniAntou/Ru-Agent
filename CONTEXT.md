@@ -391,7 +391,7 @@ A durable `ModelContextNote` beginning with `[HARNESS RECOVERY]`, addressed to
 the `ModelContext` audience, that answers a dead-end model step instead of
 failing the run; the same model takes the next step with that feedback in
 context. Bounds are per kind — 4 `unverified_after_tool_failure` notes, 4
-`model_repairable` notes, 3 `empty_model_reply` notes and 3
+`model_repairable` notes, 3 `empty_model_reply` notes and 3 consecutive
 `model_output_truncated` notes — under a global cap of
 24 notes per run, measured over the recovery notes visible in the assembled
 context. A note is persisted with the system role and is therefore never folded

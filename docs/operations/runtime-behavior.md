@@ -437,7 +437,7 @@ A dead-end model step does not end the run by default. Ordinary prose after a
 failed or unverified tool receipt is suppressed and answered with a durable
 `[HARNESS RECOVERY]` note (up to 4 notes); empty final text gets up to 3 notes,
 and a runner-rejected malformed, unavailable or invalid selection gets up to 4.
-Incomplete `Length` finishes get up to 3 truncation notes. These kinds share a
+Incomplete `Length` finishes get up to 3 truncation notes in a row (a later truncation after progress starts a new count). These kinds share a
 cumulative cap of 24 notes per run. System recovery notes remain visible through
 compaction. Feedback keeps the same model/provider; spent bounds fail with the
 original code. Exact repeated calls and short failed cycles receive at most two

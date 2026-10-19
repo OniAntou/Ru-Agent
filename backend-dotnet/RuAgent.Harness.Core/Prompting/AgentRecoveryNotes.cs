@@ -144,8 +144,13 @@ public static class AgentRecoveryNotes
     public static bool CanAdvise(ModelContextSnapshot context, AgentRecoveryKind kind)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return NoteCount(context) < MaximumNotesPerRun
-            && NoteCount(context, kind) < MaximumNotes(kind);
+        // A truncated reply says nothing about later steps: a long run that recovers and then
+        // truncates again far later is still progressing, so truncation is bounded by the
+        // notes issued in a row, while the global cap still bounds the whole run.
+        var caseCount = kind == AgentRecoveryKind.OutputTruncated
+            ? ConsecutiveNoteCount(context, kind)
+            : NoteCount(context, kind);
+        return NoteCount(context) < MaximumNotesPerRun && caseCount < MaximumNotes(kind);
     }
 
     /// <summary>
@@ -181,6 +186,25 @@ public static class AgentRecoveryNotes
             {
                 count++;
             }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Notes of one case at the end of the context with no other entry between them and the
+    /// end; notes of other cases in that tail are skipped, any other entry stops the count.
+    /// </summary>
+    public static int ConsecutiveNoteCount(ModelContextSnapshot context, AgentRecoveryKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var marker = $"{NotePrefix} {KindMarker(kind)}";
+        var count = 0;
+        for (var index = context.Entries.Count - 1; index >= 0; index--)
+        {
+            var entry = context.Entries[index];
+            if (!IsRecoveryNote(entry)) break;
+            if (entry.Content!.StartsWith(marker, StringComparison.Ordinal)) count++;
         }
 
         return count;

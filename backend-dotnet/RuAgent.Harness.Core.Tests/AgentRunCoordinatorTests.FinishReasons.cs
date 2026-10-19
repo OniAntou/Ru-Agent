@@ -88,6 +88,46 @@ public sealed partial class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Truncations_separated_by_progress_do_not_exhaust_the_truncation_cap()
+    {
+        var entries = new List<ModelContextEntry>();
+        for (var i = 0; i < AgentRecoveryNotes.MaximumTruncatedNotes; i++)
+        {
+            entries.Add(ModelContextEntry.Text($"note-{i}", 2 * i + 1, ModelContextRole.System,
+                AgentRecoveryNotes.BuildTruncatedNote()));
+            entries.Add(ModelContextEntry.Text($"user-{i}", 2 * i + 2, ModelContextRole.User, "continue"));
+        }
+
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new AssistantStep("unfinished", [], AssistantFinishReason.Length, 16));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var result = await Coordinator(model, new FakeToolGateway(), store,
+                contextSource: new FixedContextSource(entries.ToArray()))
+            .RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Contains(store.Commits.SelectMany(c => c.Events), e => e.Kind == HarnessEventKind.RunNoteAdded);
+    }
+
+    [Fact]
+    public void Consecutive_count_stops_at_the_first_non_note_entry_and_skips_other_note_kinds()
+    {
+        var context = new ModelContextSnapshot(
+        [
+            ModelContextEntry.Text("n1", 1, ModelContextRole.System, AgentRecoveryNotes.BuildTruncatedNote()),
+            ModelContextEntry.Text("u1", 2, ModelContextRole.User, "work"),
+            ModelContextEntry.Text("n2", 3, ModelContextRole.System, AgentRecoveryNotes.BuildTruncatedNote()),
+            ModelContextEntry.Text("n3", 4, ModelContextRole.System, AgentRecoveryNotes.BuildEmptyNote()),
+            ModelContextEntry.Text("n4", 5, ModelContextRole.System, AgentRecoveryNotes.BuildTruncatedNote()),
+        ], Array.Empty<byte>());
+
+        Assert.Equal(2, AgentRecoveryNotes.ConsecutiveNoteCount(context, AgentRecoveryKind.OutputTruncated));
+        Assert.Equal(1, AgentRecoveryNotes.ConsecutiveNoteCount(context, AgentRecoveryKind.EmptyModelReply));
+        Assert.Equal(3, AgentRecoveryNotes.NoteCount(context, AgentRecoveryKind.OutputTruncated));
+    }
+
+    [Fact]
     public async Task Whitespace_reply_is_empty_rather_than_a_completed_turn()
     {
         var model = new FakeModelStepRunner();

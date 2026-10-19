@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **fix(agent)**: Keep pre-allocation subagent Git failures from incorrectly pausing the parent for write reconciliation; release only the exact unused reservation with live Broker proof. Report repository-root/HEAD failures separately and guide research/web tasks to read-only review, which does not require Git.
 
+- **perf(tools)**: `grep` drops plain files that cannot match `file_glob` before per-entry path resolution, so a search over a tree with large build output no longer exhausts the 5-second traversal budget with no results (about 5 s and zero files scanned to under 1 s for 1,444 files on this repository). Recursive `grep` also skips `.git`, `node_modules`, `__pycache__`, and `bin`/`obj` beside a project file (`*.csproj`, `*.fsproj`, `*.vbproj`, `package.json`); naming such a directory as `path` still searches it.
+
+- **feat(cli)**: Add custom slash commands from `.ru/commands/<name>.md` (workspace) and `~/.ru/commands/<name>.md`, with `$ARGUMENTS` substitution. Templates expand to an ordinary prompt and confer no execution authority.
+
+- **feat(agent)**: Add `PreToolUse`/`PostToolUse` hooks from `~/.ru/hooks.json` and `<workspace>/.ru/hooks.json`. Exit code 2 from a PreToolUse hook rejects the call (`hook_blocked`) before approval; other failures never block. See agent-tools.md.
+
 - **fix(terminal)**: Ignore credential-named environment values shorter than 8 characters as redaction seeds, so flag-like values (`1`, `false`) no longer corrupt command output.
 
 - **fix(agent)**: Report an external workspace change again when journaling it failed, instead of suppressing the identical content; accept an empty journaled file and the zero-hash missing-file marker when restoring a workspace change; keep the watcher timer from terminating the Host on unsupported-path errors.

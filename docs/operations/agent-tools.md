@@ -808,3 +808,16 @@ See [Verification](verification.md) for the separate contract, adapter, and
 explicit opt-in native evidence classes. Deterministic evidence does not prove
 that an arbitrary terminal command changed a live external application or
 device.
+
+## Hooks
+
+`~/.ru/hooks.json` and `<workspace>/.ru/hooks.json` can bind shell commands to tool calls:
+
+```json
+{"hooks":{"PreToolUse":[{"matcher":"bash|edit","command":"scripts\\check.cmd","timeout_seconds":30}],
+          "PostToolUse":[{"matcher":"write|edit","command":"scripts\\after-edit.cmd"}]}}
+```
+
+`matcher` is a case-insensitive regular expression over the whole tool id (omit or `*` for all tools); `timeout_seconds` is 1-120 (default 30). The Host decorates the tool gateway: a **PreToolUse** hook runs before policy evaluation, and exit code `2` rejects the call with the code `hook_blocked` and its stderr (first 200 characters) as the model-visible hint, so no approval is requested. Any other non-zero exit, a timeout or a start failure never blocks. A **PostToolUse** hook runs after the receipt and cannot change it.
+
+The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary.

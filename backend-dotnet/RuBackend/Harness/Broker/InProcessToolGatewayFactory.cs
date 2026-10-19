@@ -205,7 +205,12 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                 await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
             }
 
-            return gateway;
+            var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
+                canonicalRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            return hooks.IsEmpty
+                ? gateway
+                : new RuBackend.Harness.Hooks.HookToolGateway(
+                    gateway, hooks, new RuBackend.Harness.Hooks.HookProcessRunner(), canonicalRoot);
         }
         finally
         {

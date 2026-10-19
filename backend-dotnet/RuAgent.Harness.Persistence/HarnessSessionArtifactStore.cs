@@ -24,7 +24,7 @@ public interface IHarnessSessionArtifactStore
         CancellationToken cancellationToken);
 }
 
-public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
+public sealed partial class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
 {
     /// <summary>
     /// Non-terminal runs one delete pass cancels and unregisters. Past this the
@@ -182,6 +182,8 @@ public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
             var closedRuns = await close.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
 
+            await DeleteOwnedSubagentArtifactsAsync(connection, transaction, sessionId, deletedAt, cancellationToken)
+                .ConfigureAwait(false);
             await using var deleteRuns = connection.CreateCommand();
             deleteRuns.Transaction = transaction;
             deleteRuns.CommandText = "DELETE FROM agent_runs WHERE session_id = $session_id";

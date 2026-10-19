@@ -9,6 +9,7 @@ public enum SidePanelTabKind
     Tasks,
     Files,
     Terminal,
+    Subagents,
 }
 
 /// <summary>

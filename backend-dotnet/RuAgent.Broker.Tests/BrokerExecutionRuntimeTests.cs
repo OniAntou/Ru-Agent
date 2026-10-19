@@ -270,7 +270,7 @@ public sealed class BrokerExecutionRuntimeTests
             default);
         Assert.Null(opened.Error);
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait", "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             opened.AdvertisedCapabilities!.OrderBy(capability => capability, StringComparer.Ordinal).ToArray());
 
         var tamperedPayload = EnvelopeTestSnapshots.RunOpenPayload(

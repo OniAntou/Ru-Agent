@@ -32,6 +32,7 @@ public sealed class AgentToolDefinition
 public static class AgentToolDefinitionCatalog
 {
     public const string CurrentVersion = "1.0.0";
+    public const int MaximumModelTools = 18;
     private const string FilePathGuidance = " Use a workspace-relative path such as `src\\App.cs`; preserve a user-supplied absolute path only inside a directory granted for this session.";
 
     private sealed record Entry(string Id, string Description, string Scope, Func<JsonObject> Schema, Func<JsonObject>? Example = null);
@@ -118,6 +119,8 @@ public static class AgentToolDefinitionCatalog
             if (example is not null && !ExampleMatches(schema, example)) throw new AgentProtocolException("invalid_tool_definition");
             result.Add(new AgentToolDefinition(index, entry.Id, CurrentVersion, entry.Description, entry.Scope, entry.Schema, entry.Example));
         }
+        result.AddRange(Subagents.SubagentToolDefinitions.Get());
+        if (result.Count > MaximumModelTools) throw new AgentProtocolException("tool_catalog_capacity");
         return Array.AsReadOnly(result.ToArray());
     }
 

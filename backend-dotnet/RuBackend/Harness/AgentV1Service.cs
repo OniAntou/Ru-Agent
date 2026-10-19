@@ -31,6 +31,7 @@ public sealed record AgentServiceResult(int StatusCode, object? Body);
 public sealed partial class AgentV1Service
 {
     private readonly IHarnessEventStore _store;
+    private readonly Subagents.SubagentCancellationCoordinator? _subagentCancellation;
     private readonly HarnessSqliteOptions _options;
     private readonly WindowsWorkspaceIdentityResolver _resolver;
     private readonly SqliteWorkspaceStore _workspaceStore;
@@ -132,9 +133,11 @@ public sealed partial class AgentV1Service
         IMetadataPolicy? metadataPolicy = null,
         SqliteAgentRunProviderSelectionStore? providerSelectionStore = null,
         SessionWorkStateStore? workStateStore = null,
-        KnownSecretRedactor? workStateRedactor = null)
+        KnownSecretRedactor? workStateRedactor = null,
+        Subagents.SubagentCancellationCoordinator? subagentCancellation = null)
     {
         _store = store;
+        _subagentCancellation = subagentCancellation;
         _options = options;
         _resolver = resolver;
         _workspaceStore = workspaceStore;

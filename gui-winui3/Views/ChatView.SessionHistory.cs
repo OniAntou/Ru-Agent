@@ -582,6 +582,7 @@ namespace RuApp.Views
                 var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
                 _sidePanelTasksRunId = replayedRuns.LastOrDefault()?.RunId;
+                UpdateAgentInlineState();
                 _ = RefreshAgentTasksAsync();
 
                 if (history != null)
@@ -1006,6 +1007,8 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            SidePanel.SubagentsChanged -= OnSubagentsChanged;
+        SidePanel.DisposeSubagents();
             _modelSelectionSaves.Invalidate();
             _reasoningSelectionSaves.Invalidate();
             StopTaskRefreshTimer();

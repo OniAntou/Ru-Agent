@@ -24,7 +24,11 @@ def _contract_route_count() -> int:
 
 def _catalog_tool_count() -> int:
     text = TOOL_CATALOG.read_text(encoding="utf-8")
-    return len(re.findall(r'^\s*new\("[a-z_]+",', text, flags=re.MULTILINE))
+    assert "result.AddRange(Subagents.SubagentToolDefinitions.Get())" in text
+    delegated = (TOOL_CATALOG.parent / "Subagents" / "SubagentToolDefinitions.cs").read_text(encoding="utf-8")
+    return len(re.findall(r'^\s*new\("[a-z_]+",', text, flags=re.MULTILINE)) + len(
+        re.findall(r'\bDefine\(\d+, "[a-z_]+",', delegated)
+    )
 
 
 def test_agents_guidance_route_count_matches_the_contract() -> None:

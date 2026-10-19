@@ -291,6 +291,23 @@ public sealed class SessionStoreTests
         Assert.True(await store.DeleteAsync(sessionId, CancellationToken.None));
         Assert.False(await store.DeleteAsync(sessionId, CancellationToken.None));
         Assert.Null(await store.GetAsync(sessionId, CancellationToken.None));
+        Assert.Equal(SessionDeleteOutcome.NotFound, await store.DeleteWithOutcomeAsync(sessionId, default));
+        var another = (await store.CreateAsync(default))!;
+        Assert.Equal(SessionDeleteOutcome.Deleted, await store.DeleteWithOutcomeAsync(another, default));
+        Assert.Null(await store.GetAsync(another, default));
+    }
+
+    [Fact]
+    public async Task Unavailable_session_database_is_a_delete_failure_not_proof_of_absence()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(paths.AgentHarnessDatabase);
+        try
+        {
+            Assert.Equal(SessionDeleteOutcome.Failed, await store.DeleteWithOutcomeAsync(new string('a', 32), default));
+            Assert.False(await store.DeleteAsync(new string('a', 32), default));
+        }
+        finally { Directory.Delete(paths.BusinessDataRoot, recursive: true); }
     }
 
     [Fact]

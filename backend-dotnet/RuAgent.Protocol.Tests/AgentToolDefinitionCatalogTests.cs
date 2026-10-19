@@ -21,6 +21,11 @@ public sealed class AgentToolDefinitionCatalogTests
         "web_fetch",
         "skill",
         "ask_user",
+        "agent_spawn",
+        "agent_send",
+        "agent_wait",
+        "agent_cancel",
+        "agent_apply",
     ];
 
     private static readonly string[] RetiredIds =
@@ -50,7 +55,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(13, definitions.Count);
+        Assert.Equal(18, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

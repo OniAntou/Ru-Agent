@@ -27,6 +27,7 @@ internal sealed partial class AgentToolExecutionPipeline
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IAgentActivitySink? _activitySink;
     private readonly IRetainedApprovalStash _retainedStash;
+    private readonly bool _allowUserInput;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -38,7 +39,8 @@ internal sealed partial class AgentToolExecutionPipeline
         ITransientContentRedactor transientRedactor,
         ReconciliationInspectionGate? inspectionGate = null,
         IAgentActivitySink? activitySink = null,
-        IRetainedApprovalStash? retainedStash = null)
+        IRetainedApprovalStash? retainedStash = null,
+        bool allowUserInput = true)
     {
         _gateway = gateway;
         _store = store;
@@ -50,6 +52,7 @@ internal sealed partial class AgentToolExecutionPipeline
         _inspectionGate = inspectionGate;
         _activitySink = activitySink;
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
+        _allowUserInput = allowUserInput;
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(
@@ -74,7 +77,8 @@ internal sealed partial class AgentToolExecutionPipeline
                 .ConfigureAwait(false);
         }
 
-        var batch = new ProposalBatch(modelCalls.Count);
+        var batch = new ProposalBatch(modelCalls.Count)
+        { RejectWaitBatch = modelCalls.Count > 1 && modelCalls.Any(call => call.ToolId == "agent_wait") };
         try
         {
             for (var index = 0; index < modelCalls.Count; index++)
@@ -645,6 +649,9 @@ internal sealed partial class AgentToolExecutionPipeline
                 cancellationToken)
             .ConfigureAwait(false);
         var executionDropped = checked((int)(_frames.DroppedCount - droppedBeforeExecution));
+        if (rawReceipts.Any(receipt => receipt.IsDeferredSubagentWait))
+            return await ParkSubagentWaitAsync(run, modelStepId, prepared, proposals, denied, rawReceipts, cancellationToken)
+                .ConfigureAwait(false);
         if (executionDropped > 0)
         {
             AgentActivityProjector.PublishSafe(

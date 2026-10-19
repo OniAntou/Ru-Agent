@@ -200,6 +200,10 @@ namespace RuApp.Views
 
         private void UpdateAgentInlineState()
         {
+            // Read surfaces retain this session's last root after Stop releases the controller.
+            if (_agentController?.CurrentRun is { } presented && presented.SessionId == _activeSessionId)
+                _sidePanelTasksRunId = presented.RunId;
+            SidePanel.BindSubagents(_agentController?.SubagentClient, ResolveSidePanelTaskRunId());
             ResetWorkspaceTrustDialogIfRunChanged(_agentController);
             bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
             if (_agentBusySeen && !agentBusy)
@@ -552,6 +556,7 @@ namespace RuApp.Views
         private void ResetAgentState(bool preserveTranscript = false)
         {
             _sidePanelTasksRunId = null;
+            SidePanel.BindSubagents(_agentController?.SubagentClient, null);
             _agentTurnGeneration++;
             if (preserveTranscript)
                 SuspendAgentFeedUpdates();

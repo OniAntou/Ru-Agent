@@ -2108,6 +2108,12 @@ public sealed partial class AgentCommands
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
+            if (slashCmd == "/subagents")
+            {
+                await ShowSubagentsAsync(arg, runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId,
+                    cmd.Json ? _out : humanOut, cmd.Json, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
             if (slashCmd is "/exit" or "/quit")
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);

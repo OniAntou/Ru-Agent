@@ -1,3 +1,4 @@
+import { Subagents } from "./subagents.js";
 import { BridgeTransportError } from "./errors.js";
 import { BoundedQueue } from "./bounded-queue.js";
 import { RunSubscriptionOwnership } from "./run-subscription-ownership.js";
@@ -34,6 +35,8 @@ export class Run {
     readonly initialStatus: string,
     readonly workspaceId: string,
   ) {}
+
+  get subagents(): Subagents { return new Subagents(this.transport, this.runId); }
 
   async *events(options: { includeTransient?: boolean; afterSequence?: number } = {}): AsyncGenerator<RunEvent | RunTransient> {
     const queue = new BoundedQueue<BufferedNotification>(MAX_BUFFERED_EVENTS, MAX_BUFFERED_EVENT_BYTES);

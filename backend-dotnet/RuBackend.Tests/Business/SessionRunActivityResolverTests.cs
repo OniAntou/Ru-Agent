@@ -24,7 +24,7 @@ public sealed class SessionRunActivityResolverTests
             update.Parameters.AddWithValue("$history", state == HarnessRunState.WaitingHistory ? (int)HistoryWaitKind.UserBeforeFirstStep : DBNull.Value);
             await update.ExecuteNonQueryAsync();
             var running = await SessionRunActivityResolver.ResolveAsync([session, "unrelated"], fixture.Options, default);
-            Assert.Equal(state is HarnessRunState.Created or HarnessRunState.WaitingHistory or HarnessRunState.Running,
+            Assert.Equal(state is HarnessRunState.Created or HarnessRunState.WaitingHistory or HarnessRunState.Running or HarnessRunState.WaitingSubagents,
                 running.Contains(session));
             Assert.DoesNotContain("unrelated", running);
         }

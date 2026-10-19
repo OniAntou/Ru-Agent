@@ -97,46 +97,6 @@ public sealed partial class SessionStore : ISessionStore
         }
     }
 
-    public async Task<bool> DeleteAsync(
-        string sessionId,
-        CancellationToken cancellationToken)
-    {
-        if (!IsValidSessionId(sessionId))
-        {
-            return false;
-        }
-
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await using var connection = await OpenStoreAsync(cancellationToken).ConfigureAwait(false);
-            using var transaction = connection.BeginTransaction(deferred: false);
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = "DELETE FROM business_sessions WHERE session_id = $id;";
-            command.Parameters.AddWithValue("$id", sessionId);
-            var deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
-            transaction.Commit();
-            return deleted;
-        }
-        catch (SqliteException)
-        {
-            return false;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
     public async Task<bool> AppendAsync(
         string sessionId,
         IReadOnlyList<SessionMessage> messages,

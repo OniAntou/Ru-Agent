@@ -37,6 +37,7 @@ public sealed partial class SettingsStore : ISettingsStore
 
     private static readonly string[] RetiredSettingsFields =
     [
+        "subagents",
         "max_tokens",
         "max_new_tokens",
         "temperature",

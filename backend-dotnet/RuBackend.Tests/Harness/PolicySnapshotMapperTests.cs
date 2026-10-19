@@ -129,6 +129,10 @@ public sealed class PolicySnapshotMapperTests
 
         var wire = PolicySnapshotMapper.ToWire(snapshot);
         Assert.Equal(snapshot.Sha256, BrokerPolicyContracts.ComputeCanonicalSnapshotHash(wire));
+        var recovered = PolicySnapshotMapper.FromWire(wire);
+        Assert.Equal(snapshot.Sha256, recovered.Sha256);
+        Assert.Equal(BrokerPolicyContracts.WriteSnapshot(wire).ToJsonString(),
+            BrokerPolicyContracts.WriteSnapshot(PolicySnapshotMapper.ToWire(recovered)).ToJsonString());
     }
 
     [Fact]

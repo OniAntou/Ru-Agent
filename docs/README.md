@@ -58,6 +58,7 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 - [Standard workspace Python files](adr/0016-standard-workspace-python-files.md)
 - [Workspace terminal policy](adr/0017-workspace-terminal-policy.md)
 - [Approval patterns and durable folder grants](adr/0018-approval-patterns-and-durable-folder-grants.md)
+- [Delegated subagent runs (implementation in progress)](adr/0022-delegated-subagent-runs.md)
 
 Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.
@@ -89,3 +90,5 @@ current Windows user without OS filesystem or network confinement. Standard auth
 [ADR 0017](adr/0017-workspace-terminal-policy.md); the structured protections hold in `plan` and `standard`. Hard timeout,
 output cap, cancellation, process-tree cleanup, credential storage and
 diagnostic redaction remain enforced.
+
+- [Subagents](operations/subagents.md): coding/review task browser, explicit model requests, main-agent controls and guarded integration.

@@ -1,19 +1,162 @@
 # Verification
 
 > **The table below records the latest full-matrix and release-pipeline evidence; entries under it are history or scoped checks.** Figures are maintained by hand. Run the scripts for authoritative current figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
-> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 43 routes, 13 tools, and an in-process model runner.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 45 routes, 18 tools, and an in-process model runner.
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |
-| Public route | **43 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 23 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | **Full 13-project Debug matrix: 6,464 passed / 0 failed / 0 skipped** (2026-10-17, codebase review remediation). Broker 957; CLI 1,465; Client 239; Core 492; Persistence 181; Hosting 41; Protocol 98; Adapters 227; Worker 90; SessionInterchange 43; Updates 25; Backend 1,110; GUI 1,496. Log: `artifacts/codebase-fixes-2026-10-17/dotnet-full.log`. The earlier review's four Backend failures and later focused pass are preserved below; the fresh full matrix passed without a retry. |
-| Python suite | **215 passed, 1 skipped** (2026-10-17), full pytest run. The skip is the POSIX process-group test on Windows. Log: `artifacts/codebase-fixes-2026-10-17/python-full.log`. Earlier evidence remains under `artifacts/release-verification/`. |
-| TypeScript SDK | **60 passed / 0 failed**, plus typecheck and build (2026-10-17, codebase review remediation). Bounded event buffers, validated envelopes/attach results, complete-frame limits and peer-safe cleanup. Log: `artifacts/codebase-fixes-2026-10-17/sdk-final.log`. |
-| Release build | **Local 11/11 stages passed** (2026-10-16, after core TUI simplification), source version `0.1.1`, self-contained win-x64 GUI, Host and CLI, including the flat directory used by `bin/ru.cmd`. Log: `artifacts/tui-core-release-qa/build-release.log`. This build does not publish an installer or GitHub release. Historical installer evidence remains in the [earlier Release workflow](https://github.com/OniAntou/Ru-Agent/actions/runs/38553202482); packages remain unsigned. |
-| Managed runtime smoke | **PASS** for the rebuilt flat product tree (2026-10-16): authenticated `/status`, maintenance protocol and idle-only shutdown acknowledgement before exit. Log: `artifacts/tui-core-release-qa/published-host-smoke.log`. Published CLI core help/status/session navigation, removed-command refusal and clean exit also passed; no provider generation was invoked. Historical separate-product logs remain under `artifacts/release-verification/`. |
+| Public route | **45 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 25 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
+| .NET tests | **13-project Debug coverage: 6,874 passed across final project runs, 0 failed / 0 skipped** (2026-10-19, isolated Git staging snapshot). Broker 1,062; CLI 1,470; Client 241; Core 518; Persistence 267; Hosting 41; Protocol 151; Adapters 228; Model 91; SessionInterchange 43; Updates 25; Backend 1,223; GUI 1,514. Logs: `artifacts/subagent-commit-2026-10-19/dotnet.log` (Broker), `*.Tests.log` (other final projects). Initial TUI snapshot failures and staging compile failures are retained; see the delivery notes below. This is combined project evidence, not an uninterrupted green runner. |
+| Python suite | **216 passed, 1 skipped** (2026-10-19), isolated staging snapshot. POSIX process-group case skipped on Windows. Log: `artifacts/subagent-commit-2026-10-19/python.log`; initial metadata failure retained separately. |
+| TypeScript SDK | **61 passed / 0 failed**, typecheck and ESM/DTS build passed (2026-10-19), isolated staging snapshot. Logs: `artifacts/subagent-commit-2026-10-19/sdk-{test,typecheck,build}.log`. |
+| Release build | **Local 11/11 stages passed** (2026-10-19, Subagents GUI redesign), self-contained win-x64 GUI, Host and CLI in the flat runnable layout. Log: `artifacts/subagent-detail-polish-2026-10-19/release.log`. No installer or remote release published. |
+| Managed runtime smoke | **PASS** (2026-10-19) against that exact rebuilt flat Release tree: authenticated `/status` and clean shutdown. Log: `artifacts/subagent-detail-polish-2026-10-19/smoke.log`. |
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## Git delivery validation (2026-10-19)
+
+The commit snapshot includes subagents, the read-only clients/GUI and the primary
+session-deletion outcome handling required by the child cleanup retry tests.
+Independent directory-handle hardening and watcher callback repairs remain outside
+this snapshot, untouched in the user's working tree. That scope explains the
+Protocol/Backend count difference from earlier working-tree evidence.
+
+A detached checkout received the staged patch for verification. Final project
+runs cover all 13 .NET projects (6,874 passed); Python is 216 passed / 1 skipped,
+and SDK is 61 passed plus typecheck/build. The initial CLI run had three existing
+TgCopyParityTests return empty buffers; isolated cases passed with both pipes and
+PTY, and the entire CLI rerun passed unchanged. Timing/order/global terminal state
+remains a suspect rather than a proven cause. Logs are retained. Isolated Host
+compilation also exposed that cleanup tests require the full primary-deletion
+outcome dependency; it was included without weakening cleanup assertions. The
+initial Python failure identified a malformed plan status marker; metadata was
+corrected before retiring completed plans into Git history.
+
+Evidence: `artifacts/subagent-commit-2026-10-19/` (manifest, retained failures,
+per-project logs, staged-tree identity and SDK/Python results). Prior Release and
+native UI acceptance above belongs to the earlier complete working tree; Release
+and live-provider generation were not repeated in the isolated commit checkout.
+Completed design/implementation records are retained in the feature commit's
+history; current operation and authority are documented in the ADR and operations.
+
+## Subagents GUI redesign (2026-10-19, scoped)
+
+The session card now opens a dedicated Subagents panel with stable branch glyphs,
+grouped states and a version-bound Markdown reader. Narrow windows use an overlay.
+Users retain observation/export only; no model/provider/authority contract changed.
+
+- GUI project suite: **1,514 passed, 0 failed / 0 skipped** via
+  `scripts/test_dotnet.ps1 -Configuration Debug -ProjectFilter gui-winui3`.
+- Release: **11/11 stages passed**, exact flat-package smoke **PASS**.
+- Route/guidance guards: **22 passed**. Diff whitespace guard passed.
+- Native Release inspection: card/list/detail, wide/narrow layouts, Back/Escape,
+  historical version switching, Stop/root retention, Markdown export and read-only
+  controls passed using existing isolated fixtures. No new provider generation.
+  Eight GUI preference files restored and owned processes closed.
+- Luna review's unknown/waiting-state finding was fixed with coverage. Initial
+  compile/menu/spacing corrections and scoped limitations are recorded in the
+  [design/delivery record](../plans/2026-10-19-subagent-gui-design.md).
+
+Evidence: `artifacts/subagent-gui-redesign-2026-10-19/` (`gui-final.log`,
+`release-build.log`, `release-smoke.log`, `docs-guards.log`, native JSON/tree/PNG files).
+This does not replace the preceding full-matrix count or claim live-provider acceptance.
+
+Detail refinement after user feedback: fresh GUI **1,514 passed**, Release **11/11**
+and exact-package smoke **PASS** in `artifacts/subagent-detail-polish-2026-10-19/`.
+Native inspection verifies the compact header, task details/export disclosure,
+conditional version picker and expanded/narrow reader. An expanded-mode composer
+layer defect was found and fixed; final screenshot/pixel checks confirm it.
+UIA FromPoint was inconclusive because it returned the native input sink; the
+unsupported probe is retained and is not counted as passing evidence. Six saved
+interaction checks and the final read-only probe passed. Preferences restored,
+owned GUI/Host closed; no new provider generation. See that folder's native notes.
+
+
+## Read-only subagent revision (2026-10-19)
+
+The current user contract removes role-model settings and public child mutations.
+New children inherit exact parent pins unless the user explicitly requests another
+model in the main prompt. Only signed-in provider catalogs can supply that model;
+absence/ambiguity/catalog failure produces a named refusal before child allocation.
+The parent interprets explicit user intent; a prompt mention alone is not consent.
+
+Deterministic RED/GREEN covers version components (`4.5` cannot become `45`),
+untrusted provider IDs, signed-in catalog availability, original prompt evidence,
+legacy spawn hash compatibility, generic child run write rejection, retired user
+queues and preserved uncertain execution. Public route count is 45, with only two
+subagent GET endpoints. SDK/RPC/CLI and the native tree expose viewing only.
+
+Native UI Automation inspected the freshly built Release app with isolated data:
+role settings absent, child mutation controls absent, result ValuePattern read-only,
+and completed history still viewable. Screenshots and assertions are in
+`artifacts/subagent-readonly-2026-10-19/`. Eight GUI preference files were restored;
+owned GUI/Host processes closed. No new provider generation was attempted. The
+Settings view reported a provider connection failure, so deterministic alternate
+model selection is not presented as live provider acceptance. The attempted Luna
+review never started (`pending_init`) and was cancelled; no independent review
+outcome is claimed.
+
+## Historical pre-read-only subagent delivery (2026-10-19)
+
+The five tools, five root-owned HTTP controls, RPC/SDK, CLI tree and WinUI tree/role
+settings are implemented; usage and result/application status remain separate.
+See [operations](subagents.md) and the [implementation plan](../plans/2026-10-17-subagents-implementation.md).
+
+- The full 13-project matrix passed 6,861 tests. A later description-only clarification
+  of `agent_wait` passed Protocol 151, Core 518 and 48 focused Host tests, including
+  real native adapter fixtures, prompt/digest projection, both-role controls and
+  four parked parents. Schemas, versions and execution policy did not change.
+- Fresh Luna review found a Git metadata output-cap mismatch and a WinUI disposal
+  ordering defect. Both were reproduced, fixed and rechecked. Ordinary Git retains
+  256 KiB; internal snapshot listings use a bounded 8 MiB. Earlier failures remain
+  in the delivery evidence directory.
+- The final live fixture pair used `models.dev:kilo`,
+  `nvidia/nemotron-3.5-super-vl:free`, `chat_completions`: single 23.84 s;
+  delegated 55.80 s. Both passed their oracle unattended with unchanged checks/HEAD.
+  Both children completed, exactly one coding file was applied, and all persisted
+  provider/model/protocol pins matched. Log: `delivery-live-guidance.log` under
+  `artifacts/subagent-implementation-2026-10-17/`.
+- An earlier live root finished before review completed, correctly cancelling it.
+  The tool guidance now explains that a wait timeout is not completion. QA also
+  corrected an alias/backend comparison and now requires completed roles, not
+  merely spawned ones. Earlier setup failures (private-data ACL on D:) and QA
+  reports are retained; they are not counted as provider failures or strict passes.
+- One small fixture pair is functional evidence only. Delegation was slower here;
+  reported usage is incomplete, so neither cost savings nor quality/speed gains
+  are established. Native interaction was initially deferred; the later authorized
+  WinUI acceptance below records the direct GUI checks and corrections.
+
+## Historical pre-read-only native subagent GUI acceptance (2026-10-19)
+
+The user explicitly authorized GUI control. Windows UI Automation drove the actual
+Release app with isolated QA business data and a real configured provider. Evidence:
+`artifacts/subagent-gui-qa-2026-10-19/` (screenshots, UI trees, native assertions and logs).
+
+- Reopened completed conversations, switched sessions and inspected both role rows,
+  actual models, immutable result versions and applied/unapplied state. View and
+  native FileSavePicker export matched the exact immutable result text (525 characters).
+- Saved a Coding-only role override through Settings; Review inheritance and the
+  parent provider/model stayed unchanged. Reopened Settings and restored inheritance.
+- Sent an actual run through the chat composer, waited for coding/review completion,
+  sent a review follow-up and stopped only that child. The parent and coding sibling
+  remained intact. Queued Apply while the parent awaited input, verified no parent
+  write, then submitted its answer: the action applied exactly one file and completed.
+  The external oracle passed; the check-file hash and parent HEAD were unchanged.
+- Direct testing exposed a missing tree on reopened history and after Stop released
+  the controller. Read views now reuse and retain the existing session-owned root
+  selector; session reset clears it. Follow-ups also retained accepted text: they
+  now clear only after success, reset on child/session changes, and disable on ended
+  roots. Both defects have before/after native evidence. Root Stop now keeps its
+  view/export tree; switching back restores the correct two-child applied tree.
+- Final GUI project: **1,504 passed / 0 failed** (`gui-stop-retention-tests.log`).
+  Release rebuilt **11/11** and smoke passed again. Wide and 980x700 native windows
+  were inspected; this is targeted subagent acceptance, not a complete theme/DPI or
+  screen-reader certification.
+- The owned GUI/backend were closed. All eight backed-up GUI preference files were
+  restored byte-for-byte or removed if originally absent. Real business settings,
+  history and credentials were not modified. Nothing was committed or pushed.
 
 ## Codebase review remediation (2026-10-17)
 
@@ -3323,7 +3466,7 @@ retirement changes:
 | Runtime-boundary scan | `865` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
 | Historical backend deterministic Harness | `contract` / `passed`; owned cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| Release build | **Local 11/11 stages passed** (2026-10-19, Subagents GUI redesign), self-contained win-x64 GUI, Host and CLI in the flat runnable layout. Log: `artifacts/subagent-readonly-2026-10-19/release-build.log`. No installer or remote release published. |
 
 Managed startup is now unconditional. The legacy runtime setting, parser, and
 special retirement error were removed in the first legacy cleanup wave.
@@ -3363,7 +3506,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 
 | Gate | Result |
 | --- | --- |
-| Python suite | **211 passed, 1 skipped** (2026-10-11, terminal OS sandbox retirement), via `.venv\Scripts\python.exe -m pytest tests -q`. Log: `artifacts/remove-sandbox-pytest-final.log`. The skip is the POSIX process-group kill test on Windows. The retired `mypy src` gate is absent from CI. |
+| Python suite | **216 passed, 1 skipped** (2026-10-19), isolated staging snapshot. POSIX process-group case skipped on Windows. Log: `artifacts/subagent-commit-2026-10-19/python.log`; initial metadata failure retained separately. |
 | Ruff | passed |
 | Mypy | passed (`50` source files) |
 | Dependency check | `pip check` passed |
@@ -3374,7 +3517,7 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 | Historical backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
 | Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
-| Release build | `build.bat` passed all **11/11 stages** (2026-10-11, terminal OS sandbox retirement). Self-contained `RuApp.exe`, `RuBackend.exe` and `RuAgent.Cli.exe` are flattened into one directory with the .NET and Windows App Runtime payloads. No Broker executable ships. Log: `artifacts/remove-sandbox-release.log`. |
+| Release build | **Local 11/11 stages passed** (2026-10-19, Subagents GUI redesign), self-contained win-x64 GUI, Host and CLI in the flat runnable layout. Log: `artifacts/subagent-readonly-2026-10-19/release-build.log`. No installer or remote release published. |
 | `git diff --check` | passed |
 
 The retired selector and no-op live diagnostic were subsequently hard-deleted.

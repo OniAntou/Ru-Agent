@@ -6,7 +6,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
 
-public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
+public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
 {
     private readonly AgentApiClient _apiClient;
     private readonly Func<AgentSseClient> _sseFactory;

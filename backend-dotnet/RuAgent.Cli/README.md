@@ -219,7 +219,7 @@ and optional volume commands use the terminal; notes use `write` with
 Web results are bounded and marked untrusted. Workspace SKILL.md bodies are
 prompt guidance only and grant nothing; a `requires: python` frontmatter entry
 fails the model's `skill` load closed with `python_unavailable` when Python is
-not on PATH. Subagents, LSP, extensions, plugins,
+not on PATH. LSP, extensions, plugins,
 and MCP are not part of this CLI surface. All commands ensure the Public Host
 is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 `PublicHostSession`.
@@ -327,3 +327,11 @@ installation and `ru update --yes` explicitly installs. `/update` in TUI is
 check-only unless `--yes` is supplied. Stable is the default;
 `--channel preview` opts into prereleases. Source builds use `build.bat` instead.
 See [distribution and updates](../../docs/operations/distribution-and-updates.md).
+
+### Subagent tasks
+
+Use `/subagents [run-id]` to inspect coding/review children and their pinned models,
+results and usage. Add `agent-id result [version]` to read a versioned result.
+Only the main agent can send, cancel or integrate child work. Generic child run
+mutations and approvals are refused. RPC exposes `subagent.list` and `subagent.get`.
+See [subagent operations](../../docs/operations/subagents.md).

@@ -466,6 +466,9 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
 
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
+
         if (req is null || string.IsNullOrWhiteSpace(req.TrustRequestId) || string.IsNullOrWhiteSpace(req.DisplayIdentityHash) || string.IsNullOrWhiteSpace(req.Decision))
         {
             return BoundedError(400, "invalid_trust_request", "trust request invalid.");

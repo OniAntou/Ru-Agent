@@ -45,9 +45,16 @@ public sealed class AgentProviderSnapshotFactory(
     }
 
     private async Task<ProviderBootstrapData> PinCurrentSelectionAsync(
-        RunId runId,
-        SettingsSnapshot current,
-        CancellationToken ct)
+        RunId runId, SettingsSnapshot current, CancellationToken ct)
+    {
+        var proposed = await DescribeSelectionAsync(current, ct).ConfigureAwait(false);
+        var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
+        var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
+        return await BuildPinnedSnapshotAsync(pin, current, ct).ConfigureAwait(false);
+    }
+
+    public async Task<AgentRunProviderSelection> DescribeSelectionAsync(
+        SettingsSnapshot current, CancellationToken ct, bool requireCatalogModel = false)
     {
         var selected = await catalog.ResolveSelectionAsync(current, ct).ConfigureAwait(false);
         var key = await ReadCredentialAsync(selected, ct).ConfigureAwait(false);
@@ -92,21 +99,9 @@ public sealed class AgentProviderSnapshotFactory(
             contextWindowSource,
             contextWindowVersion,
             outputTokenReserve);
-        var snapshot = CreateSnapshot(selected, key, options, outputTokenReserve, toolCallingMode,
-            allowNativeResponses: true,
-            allowNativeAnthropic: true,
-            useMaxCompletionTokens: selected.Alias == "openai"
-                && selected.Protocol == ProviderProtocols.ChatCompletions,
-            contextWindowTokens,
-            outputTokenReserve);
-        var stored = await selectionStore.PinAsync(runId, proposed, ct).ConfigureAwait(false);
-        var pin = stored.Selection ?? throw new ProviderCatalogException("provider_selection_invalid");
-        if (pin != proposed)
-        {
-            return await BuildPinnedSnapshotAsync(pin, current, ct).ConfigureAwait(false);
-        }
-
-        return snapshot;
+        if (requireCatalogModel && modelMetadata is null)
+            throw new ProviderCatalogException("provider_model_unavailable");
+        return proposed;
     }
 
     private async Task<ProviderBootstrapData> BuildPinnedSnapshotAsync(

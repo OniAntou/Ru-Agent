@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Protocol.Subagents;
 
 namespace RuAgent.Broker.Policy;
 
@@ -29,6 +30,10 @@ public sealed class PolicyContextFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
+        if (SubagentContractValidator.IsControlTool(toolId)
+            && (toolVersion != "1.0.0" || !SubagentContractValidator.Validate(toolId,
+                System.Text.Json.JsonSerializer.SerializeToElement(arguments)).IsValid))
+            throw new PolicyContextException("invalid_subagent_arguments");
 
         if (arguments.ContainsKey("sandbox"))
         {
@@ -57,7 +62,7 @@ public sealed class PolicyContextFactory
 
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
         int? timeoutMs = null;
-        if (arguments.ContainsKey("timeout_ms"))
+        if (!SubagentContractValidator.IsControlTool(toolId) && arguments.ContainsKey("timeout_ms"))
         {
             if (arguments["timeout_ms"] is not JsonValue timeoutValue
                 || !timeoutValue.TryGetValue<int>(out var parsedTimeout)
@@ -247,6 +252,9 @@ public sealed class PolicyContextFactory
                 case "web_fetch":
                     op = "web_fetch";
                     break;
+                case var control when SubagentContractValidator.IsControlTool(control):
+                    op = control;
+                    break;
                 default:
                     throw new PolicyContextException(
                         "malformed_call",
@@ -385,6 +393,7 @@ public sealed class PolicyContextFactory
         // rules still match by tool id).
         "bash" => IsSpoolRead(arguments) || IsTaskKill(arguments) ? PolicyOperationClasses.Read : PolicyOperationClasses.Terminal,
         "web_search" or "web_fetch" => PolicyOperationClasses.Read,
+        _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
 
@@ -406,6 +415,7 @@ public sealed class PolicyContextFactory
         toolId == "help"
         || toolId == "todo_write"
         || toolId is "web_search" or "web_fetch"
+        || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task
         // kill names a session-scoped task id. The execution leg still fails
         // closed on unknown or foreign ids.

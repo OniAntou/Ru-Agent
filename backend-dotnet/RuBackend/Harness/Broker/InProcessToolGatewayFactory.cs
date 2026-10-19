@@ -16,7 +16,7 @@ namespace RuBackend.Harness.Broker;
 /// validator), and tracks open gateways so run teardown, session-task control
 /// and grants revoke can reach them.
 /// </summary>
-public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
+public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
 {
     /// <summary>
     /// The wire-only identity fields <see cref="BrokerApprovalState"/> validates
@@ -36,12 +36,13 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     private readonly ConcurrentDictionary<string, BrokerRunLeaseIdentity> _leases =
         new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _createGate = new(1, 1);
+    private readonly Lazy<Subagents.SubagentControlDispatcher>? _subagents;
     private readonly object _sync = new();
 
-    public InProcessToolGatewayFactory(BrokerExecutionRuntime runtime)
+    public InProcessToolGatewayFactory(BrokerExecutionRuntime runtime, Lazy<Subagents.SubagentControlDispatcher>? subagents = null)
         : this(new Lazy<BrokerExecutionRuntime>(
             CreateComposed(runtime),
-            LazyThreadSafetyMode.ExecutionAndPublication))
+            LazyThreadSafetyMode.ExecutionAndPublication), subagents)
     {
     }
 
@@ -57,15 +58,43 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
     /// the tool service and its spool cleanup — must not be composed until the
     /// first tool call.
     /// </summary>
-    internal InProcessToolGatewayFactory(Lazy<BrokerExecutionRuntime> runtime)
+    internal InProcessToolGatewayFactory(Lazy<BrokerExecutionRuntime> runtime, Lazy<Subagents.SubagentControlDispatcher>? subagents = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _subagents = subagents;
     }
 
     private BrokerExecutionRuntime Runtime => _runtime.Value;
 
     /// <summary>Always true: the injected runtime is the configured authority.</summary>
     public bool IsConfigured => true;
+
+    public Task ReclaimSubagentWorkspaceAsync(RuAgent.Protocol.Subagents.SubagentCollectionSource source, CancellationToken ct) =>
+        Runtime.ReclaimSubagentWorkspaceAsync(source, ct);
+
+    public Task ReclaimSubagentAllocationAsync(RuAgent.Protocol.Subagents.SubagentWorkspaceAllocation evidence,
+        string stateDirectory, CancellationToken ct) => Runtime.ReclaimSubagentAllocationAsync(evidence, stateDirectory, ct);
+
+    public Task<RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceManifest> ProvisionSubagentWorkspaceAsync(
+        RunId parentRunId, string agentId, string stateDirectory, CancellationToken cancellationToken,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null,
+        RuAgent.Protocol.Subagents.ISubagentWorkspaceAllocationObserver? observer = null) =>
+        Runtime.ProvisionSubagentWorkspaceAsync(parentRunId.Value, agentId, stateDirectory, cancellationToken, parentCeiling, observer);
+
+    public Task<RuAgent.Protocol.Subagents.SubagentChangeSet> CollectSubagentChangesAsync(
+        RuAgent.Protocol.Subagents.SubagentCollectionSource source, long resultVersion,
+        IReadOnlyDictionary<string, string> appliedBaseHashes, CancellationToken ct) =>
+        Runtime.CollectSubagentChangesAsync(source, resultVersion, appliedBaseHashes, ct);
+
+    public Task BindDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role, CancellationToken cancellationToken) =>
+        Runtime.BindDelegationAsync(parentRunId.Value, childRunId.Value, role, cancellationToken);
+
+    public Task BindDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role,
+        RuAgent.Protocol.Subagents.SubagentParentPolicyIdentity expectedParentPolicy, CancellationToken cancellationToken,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null) =>
+        Runtime.BindDelegationAsync(parentRunId.Value, childRunId.Value, role, cancellationToken, expectedParentPolicy, parentCeiling);
 
     public async Task<IToolGateway> CreateAsync(
         string workspaceRoot,
@@ -161,7 +190,7 @@ public sealed class InProcessToolGatewayFactory : IToolGatewayFactory
                     else
                     {
                         _gateways.TryRemove(runId.Value, out _);
-                        var created = new InProcessToolGateway(Runtime, lease, _approvals);
+                        var created = new InProcessToolGateway(Runtime, lease, _approvals, _subagents);
                         _gateways[runId.Value] = created;
                         gateway = created;
                     }

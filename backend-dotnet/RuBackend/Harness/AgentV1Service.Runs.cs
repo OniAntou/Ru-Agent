@@ -152,6 +152,11 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_session_id", "session_id invalid.");
         }
 
+        if (await IsInternalSubagentSessionAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false))
+        {
+            return BoundedError(409, "subagent_session_internal", "Internal sessions cannot create root runs.");
+        }
+
         var workspacePath = request.WorkspacePath?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(workspacePath) || workspacePath.Length > 4096)
         {
@@ -520,6 +525,11 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_session_id", "session_id invalid.");
         }
 
+        if (await IsInternalSubagentSessionAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false))
+        {
+            return BoundedError(404, "session_not_found", "Session not found.");
+        }
+
         var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
         if (sessionDoc is null)
         {
@@ -699,12 +709,19 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
 
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
+
         var runId = new RunId(runIdRaw);
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run is null)
         {
             return BoundedError(404, "run_not_found", "Run not found.");
         }
+
+        if (_subagentCancellation is not null
+            && await _subagentCancellation.CancelFamilyAsync(runId, cancellationToken).ConfigureAwait(false))
+            run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false) ?? run;
 
         if (run.State.IsTerminal())
         {
@@ -754,12 +771,16 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
 
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
+
         var runId = new RunId(runIdRaw);
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run is null)
         {
             return BoundedError(404, "run_not_found", "Run not found.");
         }
+
 
         if (run.State == HarnessRunState.ReconciliationRequired)
         {
@@ -852,6 +873,9 @@ public sealed partial class AgentV1Service
         {
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
+
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
 
         var strategyRaw = request?.Strategy?.Trim().ToLowerInvariant();
         var strategy = strategyRaw switch

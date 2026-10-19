@@ -45,6 +45,9 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
 
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
+
         if (!ReconciliationCommand.TryParse(outcome, out var command))
         {
             return BoundedError(400, "invalid_outcome", "outcome must be applied, not_applied, or unknown_continue.");
@@ -223,6 +226,9 @@ public sealed partial class AgentV1Service
         {
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
+
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
 
         if (request is null || request.Text is null)
         {

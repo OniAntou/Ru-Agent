@@ -16,6 +16,7 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
     private readonly BrokerExecutionRuntime _runtime;
     private readonly BrokerApprovalState? _approvals;
     private readonly string _runId;
+    private readonly Lazy<Subagents.SubagentControlDispatcher>? _subagents;
     private readonly object _sync = new();
     private readonly Dictionary<string, PendingExecution> _pending = new(StringComparer.Ordinal);
     private readonly HashSet<string> _cancelled = new(StringComparer.Ordinal);
@@ -30,12 +31,14 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
         string ToolVersion,
         ToolAccessKind AccessKind,
         string AuthorizationToken,
-        string ArgumentsJson);
+        string ArgumentsJson,
+        ToolProposal Proposal);
 
     public InProcessToolGateway(
         BrokerExecutionRuntime runtime,
         BrokerRunLeaseIdentity lease,
-        BrokerApprovalState? approvals = null)
+        BrokerApprovalState? approvals = null,
+        Lazy<Subagents.SubagentControlDispatcher>? subagents = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
@@ -47,6 +50,7 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
         }
 
         _approvals = approvals;
+        _subagents = subagents;
         _runId = lease.RunId;
         _generation = lease.Generation;
     }

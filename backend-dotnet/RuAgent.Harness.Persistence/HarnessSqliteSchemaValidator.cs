@@ -7,6 +7,24 @@ internal static class HarnessSqliteSchemaValidator
     private static readonly IReadOnlyDictionary<string, string[]> RequiredColumns =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["agent_subagent_user_applies"] = ["root_run_id", "agent_id", "result_version", "action_key", "status", "epoch", "approval_id", "code", "revision"],
+            ["agent_subagent_apply_resolutions"] = ["root_run_id", "agent_id", "result_version", "resolution_event_id", "model_step_id", "tool_call_id", "execution_id", "decision"],
+            ["agent_subagent_workspace_allocations"] = ["root_run_id", "agent_id", "snapshot_id", "stage", "protection_version", "nonce", "ciphertext", "authentication_tag"],
+            ["agent_subagent_change_sets"] = ["run_id", "protection_version", "nonce", "ciphertext", "authentication_tag"],
+            ["agent_subagent_change_chunks"] = ["run_id", "file_index", "chunk_index", "protection_version", "nonce", "ciphertext", "authentication_tag"],
+            ["agent_subagent_result_outcomes"] = ["agent_id", "run_id", "state", "code"],
+            ["agent_internal_runs"] = ["run_id", "root_run_id"],
+            ["agent_subagent_families"] = ["root_run_id", "canceled"],
+            ["agent_subagent_scopes"] = ["run_id", "protection_version", "nonce", "ciphertext", "authentication_tag"],
+            ["agent_subagent_waits"] = ["root_run_id", "invocation_id", "arguments_payload_id", "deadline_at_utc", "delivered"],
+            ["agent_subagent_apply_operations"] = ["root_run_id", "agent_id", "result_version", "fingerprint", "status", "applied_files", "code"],
+            ["agent_subagent_apply_files"] = ["root_run_id", "agent_id", "result_version", "file_index", "protection_version", "nonce", "ciphertext", "authentication_tag", "receipted"],
+            ["agent_subagents"] = ["agent_id", "root_run_id", "internal_session_id", "role", "canceled", "invocation_id", "request_hash"],
+            ["agent_subagent_attempts"] = ["agent_id", "attempt_number", "run_id", "created_at_utc", "admitted_at_utc", "deadline_at_utc"],
+            ["agent_subagent_messages"] = ["agent_id", "message_id", "payload_id", "consumed_run_id", "continuation_run_id", "continuation_error_code"],
+            ["agent_subagent_results"] = ["agent_id", "result_version", "run_id", "payload_id", "delivered"],
+            ["agent_subagent_budgets"] = ["root_run_id", "window", "model_steps", "tool_calls"],
+            ["agent_subagent_reservations"] = ["root_run_id", "window", "invocation_id", "kind", "amount"],
             ["business_migrations"] = ["name"],
             ["business_settings"] = ["id", "document"],
             ["business_sessions"] = ["session_id", "document", "summary", "updated_at_utc"],
@@ -194,6 +212,25 @@ internal static class HarnessSqliteSchemaValidator
                 return false;
             }
         }
+
+        // A current version with the old attempt FK would silently erase cleanup
+        // evidence on relation loss even though its columns look correct.
+        if (await ScalarLongAsync(connection, """
+                SELECT count(*) FROM pragma_foreign_key_list('agent_subagent_scopes')
+                WHERE "table"='agent_runs' AND "from"='run_id' AND "to"='run_id' AND on_delete='CASCADE'
+                """, cancellationToken).ConfigureAwait(false) != 1
+            || await ScalarLongAsync(connection, "SELECT count(*) FROM pragma_foreign_key_list('agent_subagent_scopes')",
+                cancellationToken).ConfigureAwait(false) != 1)
+            return false;
+
+        // Preparation proof must survive loss of optional family/child metadata.
+        if (await ScalarLongAsync(connection, """
+                SELECT count(*) FROM pragma_foreign_key_list('agent_subagent_workspace_allocations')
+                WHERE "table"='agent_runs' AND "from"='root_run_id' AND "to"='run_id' AND on_delete='CASCADE'
+                """, cancellationToken).ConfigureAwait(false) != 1
+            || await ScalarLongAsync(connection, "SELECT count(*) FROM pragma_foreign_key_list('agent_subagent_workspace_allocations')",
+                cancellationToken).ConfigureAwait(false) != 1)
+            return false;
 
         await using var indexCommand = connection.CreateCommand();
         indexCommand.CommandText = """

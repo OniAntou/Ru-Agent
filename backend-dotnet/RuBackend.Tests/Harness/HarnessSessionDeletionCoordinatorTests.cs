@@ -10,8 +10,46 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class HarnessSessionDeletionCoordinatorTests
+public sealed partial class HarnessSessionDeletionCoordinatorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Delete_cancels_owned_children_even_when_parent_is_already_terminal(bool terminalParent)
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var root = await fixture.SeedRunAsync(new(HarnessRunState.Running));
+        var agents = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
+        var child = new AgentRun(new("run_" + new string('b', 32)), new(new string('b', 32)), root.Run.WorkspaceId,
+            new(HarnessRunState.Created), 0, 1, 1, 0, 0, root.Run.Preset, root.Run.PolicySnapshotVersion,
+            root.Run.PolicySnapshotSha256, BackendHarnessTestFixture.Timestamp, BackendHarnessTestFixture.Timestamp);
+        await agents.CreateAsync(new("agent_one", root.Run.RunId, "spawn_one", RuAgent.Protocol.Subagents.SubagentRole.Review,
+            new(child, [new(new("evt_" + new string('b', 32)), HarnessEventKind.RunStateChanged)], [], [],
+                new(new string('a', 64), new string('b', 64), 1))), default);
+        if (terminalParent)
+            await fixture.EventStore.CommitAsync(RuAgent.Harness.Core.Subagents.SubagentAdmission.CreateTerminalCommit(root.Run,
+                new("evt_" + new string('c', 32)), false, "fixture_closed", DateTimeOffset.UtcNow), default);
+        var cleanup = new FamilyCleanup();
+        var cancellation = new RuBackend.Harness.Subagents.SubagentCancellationCoordinator(fixture.EventStore,
+            agents, cleanup, new SystemTimeProvider());
+        var coordinator = new HarnessSessionDeletionCoordinator(new HarnessSessionArtifactStore(fixture.Options),
+            new RecordingSessionStore([], true), TimeProvider.System, runCleanup: cleanup,
+            subagentCancellation: cancellation);
+        Assert.Equal(HarnessSessionDeletionOutcome.Deleted, await coordinator.DeleteAsync(root.Run.SessionId.Value, default));
+        Assert.Contains(child.RunId, cleanup.Runs);
+        Assert.Null(await fixture.EventStore.GetRunAsync(child.RunId, default));
+    }
+
+    private sealed class FamilyCleanup : IAgentRuntimeRunCleanup
+    {
+        public List<RunId> Runs { get; } = [];
+        public Task CancelAndRemoveRunAsync(RunId runId, CancellationToken ct)
+        {
+            Runs.Add(runId);
+            return Task.CompletedTask;
+        }
+    }
+
     [Fact]
     public async Task Harness_artifacts_are_closed_and_removed_before_the_session_file()
     {
@@ -365,6 +403,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
         public Exception? Error { get; init; }
 
         public Exception? MarkError { get; init; }
+        public HarnessSessionArtifactDeleteResult DeleteResult { get; init; } = new(1, 1);
 
         public IReadOnlyList<string> NonTerminalRunIds { get; init; } = [];
 
@@ -394,14 +433,20 @@ public sealed class HarnessSessionDeletionCoordinatorTests
         {
             trace.Add("harness");
             return Error is null
-                ? Task.FromResult(new HarnessSessionArtifactDeleteResult(1, 1))
+                ? Task.FromResult(DeleteResult)
                 : Task.FromException<HarnessSessionArtifactDeleteResult>(Error);
         }
     }
 
-    private sealed class RecordingSessionStore(List<string> trace, bool deleteResult)
+    internal sealed class RecordingSessionStore(List<string> trace, bool deleteResult)
         : ISessionStore
     {
+        public bool PrimaryMissing { get; init; }
+
+        public async Task<SessionDeleteOutcome> DeleteWithOutcomeAsync(string sessionId, CancellationToken cancellationToken) =>
+            await DeleteAsync(sessionId, cancellationToken) ? SessionDeleteOutcome.Deleted
+                : PrimaryMissing ? SessionDeleteOutcome.NotFound : SessionDeleteOutcome.Failed;
+
         public Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<SessionSummary>>([]);
 

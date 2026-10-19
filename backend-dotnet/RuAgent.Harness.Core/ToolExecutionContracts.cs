@@ -244,6 +244,13 @@ public sealed record ToolExecutionReceipt
 
     public string? ProviderCallId { get; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsDeferredSubagentWait { get; private init; }
+
+    public static ToolExecutionReceipt DeferredSubagentWait(ExecutionId executionId, ToolCallId toolCallId) =>
+        new(executionId, toolCallId, ToolExecutionOutcome.Succeeded, "subagent_wait_pending", null, false)
+        { IsDeferredSubagentWait = true };
+
     internal ToolExecutionReceipt WithProviderCallId(string providerCallId) =>
         new(
             ExecutionId,
@@ -258,7 +265,8 @@ public sealed record ToolExecutionReceipt
                 ? providerCallId
                 : string.Equals(ProviderCallId, providerCallId, StringComparison.Ordinal)
                     ? ProviderCallId
-                    : throw new ArgumentException("Provider call identifier mismatch.", nameof(providerCallId)));
+                    : throw new ArgumentException("Provider call identifier mismatch.", nameof(providerCallId)))
+        { IsDeferredSubagentWait = IsDeferredSubagentWait };
 
     /// <summary>
     /// Returns a copy of this receipt that names the payload its content was stored under.

@@ -386,7 +386,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         // protocol adapters: no tool is advertised, so there is nothing to
         // declare. Only a shape that cannot be projected stays fatal.
         if (modelTools is null || modelTools.Count == 0) return [];
-        if (modelTools.Count > 16) throw new ModelProviderException("malformed_payload", false);
+        if (modelTools.Count > RuAgent.Protocol.AgentToolDefinitionCatalog.MaximumModelTools)
+            throw new ModelProviderException("malformed_payload", false);
         var tools = new JsonArray();
         foreach (var item in modelTools.OfType<JsonObject>())
         {

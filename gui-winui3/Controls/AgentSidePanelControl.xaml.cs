@@ -72,6 +72,7 @@ namespace RuApp.Controls
         public AgentSidePanelControl()
         {
             InitializeComponent();
+            InitializeSubagents();
         }
 
         public void SetSessionTitle(string title) => CardTitleText.Text = title;
@@ -127,6 +128,7 @@ namespace RuApp.Controls
 
             RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
+            RefreshChip(SubagentsChip, SubagentsTabLabel, SidePanelTabKind.Subagents);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
             AddTabButton.Visibility = Visibility.Visible;
@@ -151,6 +153,7 @@ namespace RuApp.Controls
             }
 
             ChangesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Changes ? Visibility.Visible : Visibility.Collapsed;
+            SubagentBrowser.Visibility = showPanel && activeTab == SidePanelTabKind.Subagents ? Visibility.Visible : Visibility.Collapsed;
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
             FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
             TerminalBody.Visibility = showPanel && activeTab == SidePanelTabKind.Terminal ? Visibility.Visible : Visibility.Collapsed;
@@ -161,6 +164,7 @@ namespace RuApp.Controls
                 {
                     SidePanelTabKind.Changes => (FrameworkElement)ChangesBody,
                     SidePanelTabKind.Tasks => TasksBody,
+                    SidePanelTabKind.Subagents => SubagentBrowser,
                     SidePanelTabKind.Files => FilesBody,
                     _ => TerminalBody,
                 });
@@ -224,6 +228,7 @@ namespace RuApp.Controls
             {
                 SidePanelTabKind.Changes => _changesChipHovered,
                 SidePanelTabKind.Tasks => _tasksChipHovered,
+                SidePanelTabKind.Subagents => _subagentsChipHovered,
                 SidePanelTabKind.Files => _filesChipHovered,
                 _ => _terminalChipHovered,
             };
@@ -246,6 +251,9 @@ namespace RuApp.Controls
                 case "Changes":
                     _changesChipHovered = hovered;
                     break;
+                case "Subagents":
+                    _subagentsChipHovered = hovered;
+                    break;
                 case "Tasks":
                     _tasksChipHovered = hovered;
                     break;
@@ -259,6 +267,7 @@ namespace RuApp.Controls
 
             RefreshChip(ChangesChip, ChangesTabLabel, SidePanelTabKind.Changes);
             RefreshChip(TasksChip, TasksTabLabel, SidePanelTabKind.Tasks);
+            RefreshChip(SubagentsChip, SubagentsTabLabel, SidePanelTabKind.Subagents);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
         }
@@ -289,6 +298,7 @@ namespace RuApp.Controls
             {
                 SidePanelTabKind.Changes => ChangesChip,
                 SidePanelTabKind.Tasks => TasksChip,
+                SidePanelTabKind.Subagents => SubagentsChip,
                 SidePanelTabKind.Files => FilesChip,
                 _ => TerminalChip,
             };
@@ -297,6 +307,7 @@ namespace RuApp.Controls
             tag switch
             {
                 "Tasks" => SidePanelTabKind.Tasks,
+                "Subagents" => SidePanelTabKind.Subagents,
                 "Files" => SidePanelTabKind.Files,
                 "Terminal" => SidePanelTabKind.Terminal,
                 _ => SidePanelTabKind.Changes,

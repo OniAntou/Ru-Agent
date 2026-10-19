@@ -15,7 +15,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Providers;
 
-public sealed class AgentProviderSnapshotTests : IDisposable
+public sealed partial class AgentProviderSnapshotTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-run-provider-" + Guid.NewGuid().ToString("N"));
 

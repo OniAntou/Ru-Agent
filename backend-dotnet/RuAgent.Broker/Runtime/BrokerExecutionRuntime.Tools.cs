@@ -20,6 +20,8 @@ public sealed partial class BrokerExecutionRuntime
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            if (_delegations.Values.Any(scope => scope.ChildSessionId == request.SessionId))
+                return ToolExecutionReply.Error("subagent_legacy_denied", "delegated sessions require run-bound execution");
             if (!_session.Owns(request.SessionId))
             {
                 return ToolExecutionReply.Error("broker_not_ready", "session is not open");
@@ -163,6 +165,7 @@ public sealed partial class BrokerExecutionRuntime
         try
         {
             context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+            context = BindSubagentControlContext(request, lease, context);
         }
         catch (PolicyContextException error)
         {
@@ -171,6 +174,15 @@ public sealed partial class BrokerExecutionRuntime
 
         var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+
+        var delegation = EvaluateDelegation(lease, context);
+        if (delegation is { Decision: "deny" } || delegation is { Decision: "ask" } && evaluation.Decision == "allow")
+            evaluation = delegation;
+
+        // Users only observe children. Approval-required work returns to the main agent,
+        // which can perform its own policy-checked action; never issue a child approval.
+        if (delegation is not null && evaluation.Decision == "ask")
+            evaluation = new PolicyEvaluation("deny", "subagent_parent_action_required", null);
 
         string? authorizationToken = null;
         string? approvalId = null;
@@ -310,6 +322,7 @@ public sealed partial class BrokerExecutionRuntime
         try
         {
             authContext = new PolicyContextFactory(lease).Create(toolId, toolVersion, authArguments);
+            authContext = BindSubagentControlContext(request, lease, authContext);
         }
         catch (PolicyContextException error)
         {
@@ -319,6 +332,9 @@ public sealed partial class BrokerExecutionRuntime
                     error.Hint ?? "execution intent could not be re-resolved"),
                 null);
         }
+
+        if (EvaluateDelegation(lease, authContext) is { Decision: "deny" } delegatedDenial)
+            return new ToolExecutePreparation(ToolExecutionReply.Error(delegatedDenial.ReasonCode, "delegation denied execution"), null);
 
         var expected = new ApprovalBinding(
             RequestId: runId,

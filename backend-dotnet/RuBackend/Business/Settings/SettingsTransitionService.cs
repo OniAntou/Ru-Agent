@@ -16,7 +16,7 @@ public interface ISettingsTransitionService
         CancellationToken cancellationToken);
 }
 
-public sealed class SettingsTransitionService : ISettingsTransitionService
+public sealed partial class SettingsTransitionService : ISettingsTransitionService
 {
     private const string ServiceName = "Ru";
     private const string CustomAccount = "custom_api_key";
@@ -270,8 +270,11 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var cloudflareAccountId = OptionalString(payload, "cloudflare_account_id", 64)
             ?? current.CloudflareAccountId;
 
+        var raw = current.Raw.DeepClone().AsObject();
+        if (payload.ContainsKey("subagents")) throw new SettingsPayloadException();
+        raw.Remove("subagents");
         return new SettingsSnapshot(
-            current.Raw.DeepClone().AsObject(),
+            raw,
             backend,
             model,
             customModel,

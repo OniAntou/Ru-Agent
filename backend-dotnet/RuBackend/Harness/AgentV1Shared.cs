@@ -55,6 +55,7 @@ internal static class AgentV1Shared
             HarnessRunState.Running => "running",
             HarnessRunState.WaitingApproval => "waiting_approval",
             HarnessRunState.WaitingUser => isWaitingInput ? "waiting_input" : "waiting_user",
+            HarnessRunState.WaitingSubagents => "waiting_subagents",
             HarnessRunState.ReconciliationRequired => "reconciliation_required",
             HarnessRunState.Completed => "completed",
             HarnessRunState.Failed => "failed",

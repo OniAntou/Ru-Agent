@@ -22,6 +22,9 @@ public sealed class AgentV1EndpointTests
     {
         ("POST", "/agent/v1/runs"),
         ("GET", "/agent/v1/runs/{runId}"),
+        ("GET", "/agent/v1/runs/{runId}/subagents"),
+        ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}"),
+
         ("GET", "/agent/v1/runs/{runId}/events"),
         ("GET", "/agent/v1/runs/{runId}/activities"),
         ("GET", "/agent/v1/runs/{runId}/payloads/{payloadId}"),
@@ -58,7 +61,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(43, doc.RootElement.GetArrayLength()); // 43 HTTP routes (20 non-Agent + 23 /agent/v1/*), no websocket
+        Assert.Equal(45, doc.RootElement.GetArrayLength()); // 45 HTTP routes (20 non-Agent + 25 /agent/v1/*), no websocket
     }
 
     [Theory]

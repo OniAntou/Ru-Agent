@@ -35,6 +35,7 @@ public readonly record struct AgentTransientDropReport(
 public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 {
     private readonly IAgentRunClient _client;
+    public ISubagentClient? SubagentClient => _client as ISubagentClient;
     private readonly HarnessEventSink? _sink;
     private readonly Action<Action>? _synchronize;
     private readonly Action<AgentEventModel>? _auditSink;

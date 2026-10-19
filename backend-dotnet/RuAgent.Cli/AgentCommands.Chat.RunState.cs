@@ -21,7 +21,7 @@ public sealed partial class AgentCommands
             return false;
         }
 
-        return command.ToLowerInvariant() is not ("/help" or "/sessions" or "/status" or "/attachments");
+        return command.ToLowerInvariant() is not ("/help" or "/sessions" or "/status" or "/attachments" or "/subagents");
     }
 
     private static bool IsParkedRunStatus(string? status) =>

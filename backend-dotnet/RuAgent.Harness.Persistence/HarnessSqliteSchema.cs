@@ -15,7 +15,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static partial class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 28;
 
     /// <summary>
     /// Process-wide memo of a successful initialization, keyed by database path.
@@ -95,7 +95,7 @@ public static partial class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, transaction: null, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12 and not 13 and not 14 and not 15 and not 16 and not 17 and not 18 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not 10 and not 11 and not 12 and not 13 and not 14 and not 15 and not 16 and not 17 and not 18 and not 19 and not 20 and not 21 and not 22 and not 23 and not 24 and not 25 and not 26 and not 27 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -106,7 +106,7 @@ public static partial class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 3)
@@ -115,7 +115,7 @@ public static partial class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 4)
@@ -124,7 +124,7 @@ public static partial class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 5)
@@ -133,7 +133,7 @@ public static partial class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 6)
@@ -142,7 +142,7 @@ public static partial class HarnessSqliteSchema
                     connection,
                     existingVersion,
                     SchemaVersionSixToSeven + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 7)
@@ -150,7 +150,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 8)
@@ -158,7 +158,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 9)
@@ -166,7 +166,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 10)
@@ -174,7 +174,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 11)
@@ -182,7 +182,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 12)
@@ -190,16 +190,44 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     existingVersion,
-                    SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 27)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 26)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 25)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 24)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 23)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 22)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 21)
+            {
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 13)
             {
-                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen, cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 14)
             {
-                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen, cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(connection, existingVersion, SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
             {
@@ -215,7 +243,7 @@ public static partial class HarnessSqliteSchema
                     + SchemaVersionFiveToSix
                     + SchemaVersionSixToSeven
                     + SchemaVersionSevenToEight
-                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen + SchemaVersionTenToEleven + SchemaVersionElevenToTwelve + SchemaVersionTwelveToThirteen + SchemaVersionThirteenToFourteen + SchemaVersionFourteenToFifteen + SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -226,7 +254,7 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     migratedVersion,
-                    SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionFifteenToSixteen + SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (migratedVersion == 16)
@@ -234,19 +262,25 @@ public static partial class HarnessSqliteSchema
                 await ApplyMigrationAsync(
                     connection,
                     migratedVersion,
-                    SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen,
+                    SchemaVersionSixteenToSeventeen + SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight,
                     cancellationToken).ConfigureAwait(false);
             }
 
             if (migratedVersion == 17)
             {
-                await ApplyMigrationAsync(connection, migratedVersion, SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen, cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(connection, migratedVersion, SchemaVersionSeventeenToEighteen + SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
             }
 
             if (migratedVersion == 18)
             {
-                await ApplyMigrationAsync(connection, migratedVersion, SchemaVersionEighteenToNineteen, cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(connection, migratedVersion, SchemaVersionEighteenToNineteen + SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
             }
+
+            if (existingVersion == 19)
+                await ApplyMigrationAsync(connection, 19, SchemaVersionNineteenToTwenty + SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
+
+            if (existingVersion == 20)
+                await ApplyMigrationAsync(connection, 20, SchemaVersionTwentyToTwentyOne + SchemaVersionTwentyOneToTwentyTwo + SchemaVersionTwentyTwoToTwentyThree + SchemaVersionTwentyThreeToTwentyFour + SchemaVersionTwentyFourToTwentyFive + SchemaVersionTwentyFiveToTwentySix + SchemaVersionTwentySixToTwentySeven + SchemaVersionTwentySevenToTwentyEight, cancellationToken).ConfigureAwait(false);
 
             if (!await HarnessSqliteSchemaValidator.ValidateAsync(connection, cancellationToken)
                 .ConfigureAwait(false))

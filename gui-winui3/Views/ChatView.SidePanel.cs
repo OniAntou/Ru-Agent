@@ -31,6 +31,7 @@ public sealed partial class ChatView
     private void InitializeSidePanel()
     {
         _sidePanelWidth = _sidePanelWidthStore.Load();
+        SidePanel.SubagentsChanged += OnSubagentsChanged;
         SidePanel.ExpandRequested += OnSidePanelExpandRequested;
         SidePanel.TabOpenRequested += OnSidePanelTabOpenRequested;
         SidePanel.CollapseRequested += OnSidePanelCollapseRequested;
@@ -64,7 +65,7 @@ public sealed partial class ChatView
 
     /// <summary>The state the policy wants right now, re-checked after a fade-out.</summary>
     private bool IsSidePanelDesiredVisible() =>
-        CanShowSidePanel() && _sidePanelPolicy.GetMode(_activeSessionId) != AgentSidePanelMode.Hidden;
+        (CanShowSidePanel() || IsSubagentOverlay()) && _sidePanelPolicy.GetMode(_activeSessionId) != AgentSidePanelMode.Hidden;
 
     private void ApplySidePanelState()
     {
@@ -88,7 +89,14 @@ public sealed partial class ChatView
         // A narrow window temporarily suppresses presentation, not the user's
         // selected mode, tab or fullscreen state.
 
-        bool isVisible = canShow && mode != AgentSidePanelMode.Hidden;
+        bool overlay = IsSubagentOverlay();
+        bool isVisible = (canShow || overlay) && mode != AgentSidePanelMode.Hidden;
+        bool subagentReaderCoversChat = overlay || (mode == AgentSidePanelMode.Panel
+            && _sidePanelPolicy.GetActiveTab(_activeSessionId) == SidePanelTabKind.Subagents
+            && _sidePanelPolicy.IsFullscreen(_activeSessionId));
+        // Cover the composer while retaining the main approval/question overlay's priority (20).
+        Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(SidePanel, subagentReaderCoversChat ? 10 : 0);
+        UpdateSubagentPeek();
         bool wasVisible = SidePanel.Visibility == Visibility.Visible;
         if (isVisible)
         {
@@ -97,8 +105,9 @@ public sealed partial class ChatView
                 mode,
                 _sidePanelPolicy.GetOpenTabs(_activeSessionId),
                 _sidePanelPolicy.GetActiveTab(_activeSessionId),
-                _sidePanelPolicy.IsFullscreen(_activeSessionId),
+                _sidePanelPolicy.IsFullscreen(_activeSessionId) || overlay,
                 _sidePanelWidth);
+            SidePanel.SetSubagentOverlay(overlay);
             if (!wasVisible)
             {
                 // The control's own entrance only covers a mode *change*, and a
@@ -142,7 +151,7 @@ public sealed partial class ChatView
         mode switch
         {
             AgentSidePanelMode.Card => EffectiveSidePanelReserve(SidePanelCardWidth),
-            AgentSidePanelMode.Panel when _sidePanelPolicy.IsFullscreen(_activeSessionId) => 0,
+            AgentSidePanelMode.Panel when _sidePanelPolicy.IsFullscreen(_activeSessionId) || IsSubagentOverlay() => 0,
             AgentSidePanelMode.Panel => EffectiveSidePanelReserve(_sidePanelWidth),
             _ => 0,
         };

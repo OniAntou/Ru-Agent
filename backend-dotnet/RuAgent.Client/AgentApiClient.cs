@@ -7,7 +7,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Client;
 
-public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
+public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
 {
     private const int MaxCreateRunAttempts = 2;
     private static readonly TimeSpan CreateRunAttemptDeadline = TimeSpan.FromSeconds(15);
@@ -809,6 +809,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             "running" or
             "waiting_approval" or
             "waiting_user" or
+            "waiting_subagents" or
             "reconciliation_required" or
             "completed";
     }

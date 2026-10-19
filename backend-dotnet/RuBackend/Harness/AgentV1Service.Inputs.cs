@@ -42,6 +42,9 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
         }
 
+        if (await IsInternalSubagentRunAsync(new RunId(runIdRaw), cancellationToken).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
+
         if (!IsInputId(inputIdRaw))
         {
             return BoundedError(400, "invalid_input_id", "input_id invalid.");

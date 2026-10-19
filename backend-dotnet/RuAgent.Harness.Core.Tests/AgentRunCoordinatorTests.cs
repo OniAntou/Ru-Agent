@@ -2006,7 +2006,10 @@ public sealed partial class AgentRunCoordinatorTests
         IRetainedApprovalStash? retainedStash = null,
         Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null,
         IAgentActivitySink? activitySink = null,
-        IModelContextLimitProvider? contextLimit = null) =>
+        IModelContextLimitProvider? contextLimit = null,
+        bool internalRun = false,
+        RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? familyBudget = null,
+        RuAgent.Harness.Core.Subagents.ISubagentInbox? subagentInbox = null) =>
         new(
             model,
             gateway,
@@ -2023,7 +2026,10 @@ public sealed partial class AgentRunCoordinatorTests
             promptContextProvider: new FakeSystemPromptContextProvider(),
             retainedStash: retainedStash,
             approvalResolutionRaceHook: approvalResolutionRaceHook,
-            activitySink: activitySink);
+            activitySink: activitySink,
+            internalRun: internalRun,
+            familyBudget: familyBudget,
+            subagentInbox: subagentInbox);
 
     private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
         TransientFrameBuffer frames)

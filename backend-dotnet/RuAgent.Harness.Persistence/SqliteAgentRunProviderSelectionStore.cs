@@ -27,7 +27,7 @@ public sealed record AgentRunProviderSelectionState(
     bool Exists,
     AgentRunProviderSelection? Selection);
 
-public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions options)
+public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions options)
 {
     public async Task<AgentRunProviderSelectionState?> GetAsync(
         RunId runId,
@@ -35,7 +35,16 @@ public sealed class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions op
     {
         _ = runId.Value;
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await ReadAsync(connection, transaction: null, runId, cancellationToken).ConfigureAwait(false);
+        var state = await ReadAsync(connection, transaction: null, runId, cancellationToken).ConfigureAwait(false);
+        if (state is { Selection: null })
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_internal_runs WHERE run_id=$run) OR EXISTS(SELECT 1 FROM agent_subagent_attempts WHERE run_id=$run)";
+            command.Parameters.AddWithValue("$run", runId.Value);
+            if ((long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L) != 0)
+                return null; // A delegated run must never pin current global defaults during recovery.
+        }
+        return state;
     }
 
     public async Task<AgentRunProviderSelectionState> PinAsync(

@@ -51,7 +51,7 @@ internal sealed partial class AgentRunStepHandlers
         var next = run.Advance(transition.Next, run.BudgetWindow, run.ModelStepsInWindow,
             run.ToolCallsInWindow, events.Count, _time.UtcNow, errorCode);
         var committed = await CommitAsync(run, next, events, payloads,
-            [new ConversationOutboxIntent(_ids.NewEventId(), run.SessionId, payloadId,
+            _internalRun ? [] : [new ConversationOutboxIntent(_ids.NewEventId(), run.SessionId, payloadId,
                 ConversationOutboxRole.Assistant, HistoryWaitKind.FinalBeforeCompletion)], cancellationToken).ConfigureAwait(false);
         return AgentRunStepResult.Blocked(committed, errorCode);
     }

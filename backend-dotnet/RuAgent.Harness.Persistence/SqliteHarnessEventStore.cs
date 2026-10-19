@@ -267,6 +267,9 @@ public sealed partial class SqliteHarnessEventStore : IHarnessEventStore
                 .ConfigureAwait(false);
             await UpdateWorkStateFromReceiptsAsync(connection, transaction, commit, current, cancellationToken)
                 .ConfigureAwait(false);
+            if (commit.SubagentWait is not null)
+                await SaveSubagentWaitAsync(connection, transaction, current, commit, cancellationToken).ConfigureAwait(false);
+            await SaveSubagentReconciliationAsync(connection, transaction, current, commit, cancellationToken).ConfigureAwait(false);
             await HarnessSqliteWriteSet.InsertOutboxAsync(
                     connection,
                     transaction,

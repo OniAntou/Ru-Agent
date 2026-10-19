@@ -364,7 +364,7 @@ public sealed class HarnessRecoveryScanner(
 /// harness database. Runs whose workspace root this process does not hold stay parked
 /// until the runtime loop or an explicit reconcile resolves them.
 /// </summary>
-public sealed class HarnessRecoveryStartupService : BackgroundService
+public sealed partial class HarnessRecoveryStartupService : BackgroundService
 {
     /// <summary>
     /// A transient startup fault (a database lock while the Broker opens the same
@@ -395,7 +395,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         HarnessPolicySnapshotService? policySnapshots = null,
         IAgentRuntimeRootRegistry? runtimeRoots = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        ReconciliationInspectionGate? inspectionGate = null)
+        ReconciliationInspectionGate? inspectionGate = null,
+        Subagents.SubagentRecoveryCoordinator? subagentRecovery = null)
     {
         _store = store;
         _sqliteOptions = sqliteOptions;
@@ -406,6 +407,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         _runtimeRoots = runtimeRoots;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _inspectionGate = inspectionGate;
+        _subagentRecovery = subagentRecovery;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -462,11 +464,14 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
             }
 
             var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
-            var scanned = await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            var (ordinary, children) = await PartitionSubagentRunsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            var scanned = await ScanRunsStageAsync(ordinary, stoppingToken).ConfigureAwait(false);
             await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             var reconciled = await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
-            await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
-            return scanned && reconciled;
+            await RehydrateRuntimeRootsAsync(ordinary, stoppingToken).ConfigureAwait(false);
+            var childrenRecovered = await RecoverSubagentsStageAsync(children, stoppingToken).ConfigureAwait(false);
+            if (children.Count != 0) await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            return scanned && reconciled && childrenRecovered;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

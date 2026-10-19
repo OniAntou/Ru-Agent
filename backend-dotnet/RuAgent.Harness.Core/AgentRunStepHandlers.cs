@@ -14,6 +14,8 @@ namespace RuAgent.Harness.Core;
 internal sealed partial class AgentRunStepHandlers
 {
     private readonly IHarnessEventStore _store;
+    private readonly bool _internalRun;
+    private readonly Subagents.IAgentFamilyBudget? _familyBudget;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly IAgentReplyPolicy _replyPolicy;
@@ -28,7 +30,9 @@ internal sealed partial class AgentRunStepHandlers
         IAgentReplyPolicy replyPolicy,
         IAgentReplyEffectSink replyEffects,
         IAgentActivitySink? activitySink,
-        AgentToolExecutionPipeline tools)
+        AgentToolExecutionPipeline tools,
+        bool internalRun = false,
+        Subagents.IAgentFamilyBudget? familyBudget = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
@@ -37,6 +41,8 @@ internal sealed partial class AgentRunStepHandlers
         _replyEffects = replyEffects ?? throw new ArgumentNullException(nameof(replyEffects));
         _activitySink = activitySink;
         _tools = tools ?? throw new ArgumentNullException(nameof(tools));
+        _internalRun = internalRun;
+        _familyBudget = familyBudget;
     }
 
     public async Task<AgentRunStepResult> HandleUnverifiedFailureStepAsync(
@@ -550,10 +556,11 @@ internal sealed partial class AgentRunStepHandlers
         string? reasoningText = null,
         ProviderContinuation? providerContinuation = null)
     {
-        var reservation = AgentBudgetPolicy.ReserveToolCalls(
-            run,
-            step.ToolCalls.Count,
-            _time.UtcNow);
+        var reservation = _internalRun ? Subagents.SubagentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow)
+            : AgentBudgetPolicy.ReserveToolCalls(run, step.ToolCalls.Count, _time.UtcNow);
+        if (reservation.Granted && _familyBudget is not null
+            && !await _familyBudget.ReserveToolsAsync(run, modelStepId, step.ToolCalls.Count, cancellationToken).ConfigureAwait(false))
+            reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);
         if (!string.IsNullOrWhiteSpace(step.Text))
         {
             // The model said something before it reached for the tool. That sentence gets a
@@ -569,8 +576,8 @@ internal sealed partial class AgentRunStepHandlers
         var modelPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.AuthenticatedClient
-                | HarnessPayloadAudience.ModelContext,
+            !reservation.Granted && _internalRun ? HarnessPayloadAudience.InternalOnly
+                : HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
@@ -581,7 +588,7 @@ internal sealed partial class AgentRunStepHandlers
         // step recorded reasoning).
         var stepCompletedEvent = new HarnessEventIntent(
             _ids.NewEventId(),
-            reservation.Granted
+            reservation.Granted || _internalRun
                 ? HarnessEventKind.ModelStepCompleted
                 : HarnessEventKind.ContinueRequested,
             modelStepId: modelStepId,
@@ -590,6 +597,8 @@ internal sealed partial class AgentRunStepHandlers
             safeCode: reservation.ErrorCode);
         var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
         var stepEvents = new List<HarnessEventIntent> { promptComposedEvent, stepCompletedEvent };
+        if (!reservation.Granted && _internalRun)
+            stepEvents.Add(new(_ids.NewEventId(), HarnessEventKind.RunFailed, safeCode: reservation.ErrorCode));
         var stepPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, modelPayload };
         if (reservation.Granted) AddProviderContinuation(stepEvents, stepPayloads, modelStepId, providerContinuation);
         if (reasoningEvent is not null && reasoningPayload is not null)
@@ -657,7 +666,7 @@ internal sealed partial class AgentRunStepHandlers
 
         var stateChange = AgentRunStateMachine.TryTransition(
             run.Status,
-            HarnessRunTransition.BeginFinalHistory);
+            _internalRun ? HarnessRunTransition.CompleteSubagent : HarnessRunTransition.BeginFinalHistory);
         if (!stateChange.Accepted)
         {
             throw new InvalidOperationException(stateChange.ErrorCode);
@@ -740,7 +749,7 @@ internal sealed partial class AgentRunStepHandlers
                 next,
                 events,
                 payloads,
-                new[]
+                _internalRun ? Array.Empty<ConversationOutboxIntent>() : new[]
                 {
                     new ConversationOutboxIntent(
                         _ids.NewEventId(),

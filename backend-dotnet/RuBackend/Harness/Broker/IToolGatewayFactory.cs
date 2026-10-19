@@ -13,6 +13,50 @@ public interface IToolGatewayFactory : IAsyncDisposable
 {
     bool IsConfigured { get; }
 
+    Task ReclaimSubagentWorkspaceAsync(RuAgent.Protocol.Subagents.SubagentCollectionSource source, CancellationToken ct) =>
+        Task.FromException(new ToolTransportException("subagent_cleanup_unavailable"));
+
+    Task<RuAgent.Protocol.Subagents.SubagentApplyInspection> InspectSubagentApplyAsync(ToolProposal proposal,
+        RuAgent.Protocol.Subagents.SubagentChangeSet changes, RuAgent.Protocol.Subagents.SubagentApplyJournalState journal,
+        CancellationToken ct) => Task.FromException<RuAgent.Protocol.Subagents.SubagentApplyInspection>(
+            new ToolTransportException("subagent_inspection_unavailable"));
+
+    Task<ToolProposalDecision> EvaluateSubagentApplyAsync(ToolProposal proposal,
+        RuAgent.Protocol.Subagents.SubagentChangeSet changes, CancellationToken ct) =>
+        Task.FromException<ToolProposalDecision>(new ToolTransportException("subagent_apply_unavailable"));
+
+    Task<RuAgent.Protocol.Subagents.SubagentApplyOutcome> ApplySubagentChangesAsync(ToolProposal proposal,
+        RuAgent.Protocol.Subagents.SubagentChangeSet changes, string canonicalIntentToken, long? gatewayGeneration,
+        RuAgent.Protocol.Subagents.ISubagentApplyJournal journal, CancellationToken ct) =>
+        Task.FromException<RuAgent.Protocol.Subagents.SubagentApplyOutcome>(new ToolTransportException("subagent_apply_unavailable"));
+
+    Task<RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceManifest> ProvisionSubagentWorkspaceAsync(
+        RunId parentRunId, string agentId, string stateDirectory, CancellationToken cancellationToken,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null,
+        RuAgent.Protocol.Subagents.ISubagentWorkspaceAllocationObserver? observer = null) =>
+        Task.FromException<RuAgent.Broker.Subagents.Workspaces.SubagentWorkspaceManifest>(
+            new InvalidOperationException("subagent_workspace_unavailable"));
+
+    Task ReclaimSubagentAllocationAsync(RuAgent.Protocol.Subagents.SubagentWorkspaceAllocation evidence,
+        string stateDirectory, CancellationToken ct) =>
+        Task.FromException(new ToolTransportException("subagent_cleanup_unavailable"));
+
+    Task<RuAgent.Protocol.Subagents.SubagentChangeSet> CollectSubagentChangesAsync(
+        RuAgent.Protocol.Subagents.SubagentCollectionSource source, long resultVersion,
+        IReadOnlyDictionary<string, string> appliedBaseHashes, CancellationToken ct) =>
+        Task.FromException<RuAgent.Protocol.Subagents.SubagentChangeSet>(
+            new RuAgent.Protocol.AgentProtocolException("subagent_collection_unavailable"));
+
+    Task BindDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role, CancellationToken cancellationToken) =>
+        Task.FromException(new InvalidOperationException("subagent_delegation_unavailable"));
+
+    Task BindDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role,
+        RuAgent.Protocol.Subagents.SubagentParentPolicyIdentity expectedParentPolicy, CancellationToken cancellationToken,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null) =>
+        Task.FromException(new InvalidOperationException("subagent_delegation_unavailable"));
+
     /// <summary>
     /// Opens (or reuses) the run's gateway against the authority. The runtime
     /// open is awaited, so cancellation of the creating run propagates instead

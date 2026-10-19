@@ -262,6 +262,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             "running" or
             "waiting_approval" or
             "waiting_user" or
+            "waiting_subagents" or
             "reconciliation_required" or
             "completed";
     }
@@ -276,6 +277,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             "running" or
             "waiting_approval" or
             "waiting_user" or
+            "waiting_subagents" or
             "reconciliation_required" or
             "completed";
     }

@@ -43,6 +43,23 @@ public sealed class AnthropicMessagesModelProviderTests
     // ---------- request tests ----------
 
     [Fact]
+    public void ProjectRequestBody_accepts_the_entire_catalog_and_rejects_an_extra_definition()
+    {
+        var tools = new JsonArray(RuAgent.Protocol.AgentToolDefinitionCatalog.Get()
+            .Select(d => (JsonNode)new JsonObject
+            { ["tool_id"] = d.ToolId, ["input_schema"] = d.InputSchema }).ToArray());
+        var provider = new AnthropicMessagesModelProvider(new HttpClient());
+        var settings = new JsonObject { ["model_tools"] = tools };
+        var body = JsonNode.Parse(provider.ProjectRequestBody(
+            Request(settings, 8192, nativeToolCalling: true)))!.AsObject();
+        Assert.Equal(tools.Count, body["tools"]!.AsArray().Count);
+        tools.Add(tools[0]!.DeepClone());
+        var error = Assert.Throws<ModelProviderException>(() => provider.ProjectRequestBody(
+            Request(settings, 8192, nativeToolCalling: true)));
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
     public async Task GenerateAsync_sends_anthropic_json_fields_with_thinking()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(FullLifecycle(), Encoding.UTF8, "text/event-stream") });

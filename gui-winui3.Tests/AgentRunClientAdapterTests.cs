@@ -10,7 +10,7 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-public sealed class AgentRunClientAdapterTests
+public sealed partial class AgentRunClientAdapterTests
 {
     private const string RunId = "run_12345678901234567890123456789012";
     private const string Bearer = "test-token";

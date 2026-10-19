@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
 ## [Unreleased]
+- **fix(sessions)**: Report successful artifact cleanup on deletion retry when the conversation is confirmed missing; keep cleanup failures pending and report primary storage failures without claiming deletion succeeded.
 
+- **feat(agent)**: Add bounded coding and read-only review subagents with private coding worktrees, durable follow-ups/results, shared budgets, Stop/recovery and guarded apply through Broker. Expose read-only HTTP/RPC/SDK, CLI `/subagents` and a WinUI task tree with result paging/export; only the main agent controls children. Inherit the exact parent model by default. Another model requires an explicit user prompt and availability in a signed-in provider catalog; report unavailable requests without fallback. Retire role-model settings and queued user applies while preserving uncertain-write reconciliation.
+- **feat(gui)**: Move subagents into the session summary and a dedicated side-panel tab. Add stable branch glyphs, Working/Needs attention/Finished groups, explicit Stopped labels, and a read-only Markdown result reader with version selection/export. Narrow windows open the same reader from a compact Subagents button. Refine the detail reader with a compact header, secondary details/export in `…`, and version selection only when multiple results exist; keep the expanded reader above the chat composer.
+- **fix(gui)**: Restore subagent results when reopening a completed conversation and retain them after Stop releases the controller. Keep the tree read-only across active and ended roots.
 - **fix(security)**: Require native Windows workspace identity instead of falling back to a path hash when lookup fails. Preserve explicit ask rules ahead of external folder grants and Full Access defaults.
 - **fix(agent)**: Share the external-change baseline and watcher across simultaneous runs in one workspace; keep journaling until the last drive leaves and prevent retired callbacks from changing a replacement baseline.
 - **fix(sdk)**: Bound event buffering by count and UTF-8 bytes, detach on overflow with a replay sequence, and reject malformed or oversized RPC frames before dispatch without uncaught handler errors.

@@ -76,7 +76,7 @@ public sealed record V2ApprovalBinding
         if (!AllowedOperations.Contains(OperationClass, StringComparer.Ordinal)) throw new ArgumentOutOfRangeException(nameof(OperationClass));
         if (!AllowedNetworkIntents.Contains(NetworkIntent, StringComparer.Ordinal)) throw new ArgumentOutOfRangeException(nameof(NetworkIntent));
         if (string.IsNullOrWhiteSpace(IntentHash) || IntentHash.Length > 128) throw new ArgumentException("IntentHash bounded.", nameof(IntentHash));
-        if (ApprovalKind is not ("external_directory" or "terminal_risk")) throw new ArgumentOutOfRangeException(nameof(ApprovalKind));
+        if (ApprovalKind is not ("external_directory" or "terminal_risk" or "subagent_apply")) throw new ArgumentOutOfRangeException(nameof(ApprovalKind));
         if (BoundaryDirectory is { Length: > 4096 }) throw new ArgumentException("BoundaryDirectory bounded.", nameof(BoundaryDirectory));
 
         this.RunId = RunId;

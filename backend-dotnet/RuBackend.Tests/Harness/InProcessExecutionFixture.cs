@@ -18,7 +18,8 @@ internal sealed class InProcessExecutionFixture : IDisposable
     private readonly string _spoolRoot;
     private readonly bool _ownsWorkspace;
 
-    public InProcessExecutionFixture(string? workspaceRoot = null)
+    public InProcessExecutionFixture(string? workspaceRoot = null, bool subagentControls = true,
+        Lazy<global::RuBackend.Harness.Subagents.SubagentControlDispatcher>? subagents = null)
     {
         _ownsWorkspace = workspaceRoot is null;
         WorkspaceRoot = workspaceRoot ?? Path.Combine(
@@ -34,6 +35,9 @@ internal sealed class InProcessExecutionFixture : IDisposable
             "ru-inprocess-spool-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_spoolRoot);
         Session = BrokerSession.CreateForHost(_spoolRoot, DateTimeOffset.UtcNow.AddMinutes(30));
+        if (!subagentControls)
+            Session.ConfigureAdvertisedCapabilities(Session.AdvertisedCapabilities.Where(id =>
+                !id.StartsWith("agent_", StringComparison.Ordinal)).ToArray());
         Tools = new BrokerToolExecutionService(
             Session,
             WorkspaceRoot,
@@ -42,7 +46,7 @@ internal sealed class InProcessExecutionFixture : IDisposable
             Session,
             Tools,
             advertisedCapabilities: Session.AdvertisedCapabilities);
-        Factory = new global::RuBackend.Harness.Broker.InProcessToolGatewayFactory(Runtime);
+        Factory = new global::RuBackend.Harness.Broker.InProcessToolGatewayFactory(Runtime, subagents);
     }
 
     public string WorkspaceRoot { get; }

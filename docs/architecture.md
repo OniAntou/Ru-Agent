@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-17.
+Status: current ownership plus accepted architecture-v2 targets, updated 2026-10-19.
 
 Desktop/CLI distribution and explicit update lifecycle are described in
 [ADR-0019](adr/0019-product-packages-and-explicit-updates.md). The maintenance
@@ -416,7 +416,7 @@ reconciliation surfaces from Phase 3:
 
 - In-process model runner: one typed `ModelGenerationRequest` → one provider generation → `AssistantStep(text, tool_calls, finish_reason)`. A native provider may return optional narration plus one or more ordered calls; a text-selection provider still emits exactly one JSON object with no surrounding selection prose. Provider errors map to bounded stable codes without provider/model fallback. The runner composes one system message with composer `2.0.0` from seven ordered blocks: persona, execution contract, environment, profile/effective policy, instruction blocks, capabilities, and runtime context. It returns a receipt whose version, block ids/order, and per-instruction digests Core validates before completion or tool dispatch. What that receipt attests is bounded: the `instruction.*` digests bind the exact instruction bytes in the context, while the other block digests are checked for shape and the caller does not receive the rendered prompt text. The typed step result carries text, tool calls, finish reason, and the prompt receipt, plus optional bounded `usage` and `reasoning_text`.
 - Native capability listings summarize the first sentence; complete descriptions, schemas and argument examples travel in declarations for Chat Completions, Responses and Anthropic. Legacy text selection receives full descriptions, schemas and examples in the system prompt and does not advertise native functions. The environment date is converted to the advertised local timezone. Native runtime references omit only tool outputs already present in retained native history; unmatched references and paging notices remain available. Protocol schemas may carry string-valued `description` annotations, included in their canonical digests; Broker treats these as guidance metadata and retains required/type/enum/bounds/additional-property checks and rejection of unsupported validation keywords. An annotation never grants execution authority.
-- Agent API/SSE: 23 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) plus the stored session-preset read (`GET /agent/v1/sessions/{sessionId}/preset`, 404 when the session has no stored selection), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers a bounded pattern as a durable project rule — a terminal command prefix or an approved external folder's canonical path pattern — or `deny`; any allow also remembers the approved intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots — the durable pattern when one was saved, the exact intent otherwise, and external-directory approvals keep the Broker folder grant and write no entry — so a matching call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). Different sessions always share a workspace; a non-terminal parked run (`waiting_user`, `reconciliation_required`) retains its session ownership until the client continues or reconciles it, without blocking other sessions; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; a final report explicitly prefixed `[BLOCKED]` is stored as visible assistant history with the marker removed and ends the run as failed, preserving the receipt error code (or `model_reported_blocker` when no failed receipt exists), without another recovery note; terminal outbox delivery does not recreate runtime or transition the run to success. Otherwise, after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
+- Agent API/SSE: 25 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, typed command dispatch (`/compact`, `/help`, `/skills`, `/skill`, `/tasks [kill <execution_id>]`) without history insertion, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) plus the stored session-preset read (`GET /agent/v1/sessions/{sessionId}/preset`, 404 when the session has no stored selection), workspace concurrency/activity/changes reads and policy update, continuously renewed workspace membership while a run is driven, encrypted external-change journal entries, and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (exactly `allow_once`, `allow_session_directory` for external folders only, `allow_always` which additionally remembers a bounded pattern as a durable project rule — a terminal command prefix or an approved external folder's canonical path pattern — or `deny`; any allow also remembers the approved intent for the Agent session in an in-process, expiring ledger that the runtime loop materializes into the session's later policy snapshots — the durable pattern when one was saved, the exact intent otherwise, and external-directory approvals keep the Broker folder grant and write no entry — so a matching call — including later in the same run — evaluates as allowed without another prompt; first-writer-wins `approval_stale`, matcher preview, 30-min expiry, old-snapshot execution ordering, explicit rules deny before ask before allow); `reconcile` is active on the Agent v2 headless path (Phase 3). Different sessions always share a workspace; a non-terminal parked run (`waiting_user`, `reconciliation_required`) retains its session ownership until the client continues or reconciles it, without blocking other sessions; after restart the startup recovery sweep re-registers `ReconciliationRequired` runtime roots so a later Continue actually resumes the run (the drive loop starts `Running` runs and rehydrates `WaitingApproval` ones). Exact consecutive tool calls terminate as `repeated_tool_call` before another Broker dispatch. Ordinary assistant prose immediately following any failed or unverified tool receipt is suppressed from conversation outbox, recorded internally for audit as an `InternalOnly` payload, and answered with a bounded durable `[HARNESS RECOVERY]` note in the model context so the run can redo, reroute, or report the blocker; a final report explicitly prefixed `[BLOCKED]` is stored as visible assistant history with the marker removed and ends the run as failed, preserving the receipt error code (or `model_reported_blocker` when no failed receipt exists), without another recovery note; terminal outbox delivery does not recreate runtime or transition the run to success. Otherwise, after the case budget (4 unverified notes) or the global cap (12 notes per run) is spent the run fails as before with the tool error code. An empty or whitespace-only final step is answered the same way up to 2 notes before failing as `empty_model_reply`; a `Length` finish suppresses the whole incomplete step before tool dispatch and gets up to 2 same-model notes requesting smaller output before `model_output_truncated`; `ContentFilter` and `Error` finishes fail immediately as `model_content_filtered` and `model_reply_error`; a model step the runner rejects with a repairable tool-call/selection code (`model_tool_call_invalid`, `model_tool_call_unavailable`, `invalid_selection`) is answered the same way up to 4 notes before failing with the original code, while a provider-transient code whose bounded retries were spent (`provider_rate_limited`, `provider_timeout`, `provider_server_error`, `provider_transport_error`) parks the run in `waiting_user` with a `ContinueRequested` naming the provider code so an explicit Continue retries a fresh step, and the remaining provider/prompt/history/image codes still fail immediately. Subsequent different recovery tool calls remain allowed.
 - Broker v2: immutable `PolicySnapshot` and `BrokerRunLease` bind the run, session, canonical workspace identity, profile version, preset, and SHA-256 snapshot before capabilities are advertised. `PolicySnapshotEvaluator` applies hard invariants, ordered explicit rules, then the canonical `AgentPolicyProfileCatalog`; repository cleanliness and prompt text are never fallback inputs. Standard external structured access uses session-scoped `CanonicalDirectoryIdentity` grants or, when the user clicked "always", a durable project allow rule whose canonical path pattern (`<folder>\**`) the evaluator honors for external targets (`external_directory_rule_allow`; deny and ask still outrank it and the plan read-only gate still applies). Full Access selects an ephemeral per-call external root and never creates a reusable folder grant. Structured `CanonicalPathResolver`/`ProtectedPathCatalog` and adapter hard-link checks apply to structured file tools; catalog protection is the preset guard that `plan` and `standard` deny and `full_access` is literally full about. Canonical fallback ask reasons are `external_directory_required`, `terminal_external_cwd_requires_approval`, `terminal_protected_path_requires_approval` and `terminal_timeout_requires_approval`; `rule_asks` identifies explicit ask rules. Legacy reason codes remain readable in retained activity; timeout above the protocol hard maximum is denied. Pending approvals and exact single-use authorization tokens bind to the active lease/snapshot and cannot be replayed.
 - Tool Definition ownership: `RuAgent.Protocol` contains exactly 13 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `ask_user`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `ask_user` is Host-intercepted before gateway dispatch: it parks the run in `WaitingUser` with a durable `input.requested` event and never reaches the Broker. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and the model-step `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog, deliberately excluding the Host-intercepted `ask_user`. `RuAgentBroker` is the only tool execution authority.
 - File tools: `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator, defaults to a 1 MiB source window and accepts up to 4 MiB, fitting serialized output into 4 MiB before Broker normalization; clipped Unicode or escaped text carries source-byte continuation metadata; `list` enumerates one directory (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation); and `help` searches the five bundled offline documentation resources, is workspace-independent and never reads workspace files. `grep` (regex content search with `file_glob`/`case_sensitive`/`is_regex` filters and bounded results) and `glob` (ordinal path-pattern results with traversal caps) remain standalone tools, alongside Host-prepared hash-guarded `write` with `op=write`/`edit` and recoverable `write` with `op=delete`/`op=restore` (preimage hashes are captured internally, never supplied in model proposal JSON; encrypted recovery copy remains bounded, opaque, one-time, and never in diagnostics). Model-facing definitions require preservation of user-supplied absolute paths inside a session-granted directory; Broker canonicalization and containment remain authoritative. `edit` preserves CRLF style when LF markers are supplied; `grep` uses canonical `is_regex`, bounded concurrent reads, cancellation, and ordinal output ordering; recovery caps are configurable below a 4 MiB hard maximum. `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
@@ -663,7 +663,142 @@ Prompt composition is not an authority boundary. Execution-authority policy,
 approvals, workspace trust, protected paths, external-directory grants, and
 cancellation remain authoritative. Workspace `SKILL.md` bodies are untrusted
 prompt guidance only and never execute tools or grant anything; subagent
-orchestration, LSP, extension/plugin/MCP discovery, arbitrary system overrides,
+orchestration uses the existing Harness coordinator and Broker gateway, as recorded in
+[`docs/plans/2026-10-17-subagents-implementation.md`](plans/2026-10-17-subagents-implementation.md).
+The root catalog includes five subagent tools; child role projections omit delegation.
+Five root-owned HTTP routes back Client, RPC/SDK, CLI and the WinUI task tree.
+Unreleased schemas v20/v21/v22/v23/v24/v25/v26/v27/v28 add internal ownership, attempts, encrypted scope/message/result references,
+admission deadlines, family budgets, waits and integration journals. A separate
+root-bound internal-run marker survives loss of child relation metadata: restart
+fails that child by name, budget admission denies it, and Stop/session deletion
+still reach its run. Internal attempt cleanup closes the authority session and
+drains its background terminal processes before releasing registration; the
+stable internal session ID, encrypted history and worktree remain available for
+continuation, while transient authority resources are recreated. Generic Continue cannot reset a child attempt's budget.
+On explicit session deletion, Host cancels the family and waits for runtime cleanup
+before asking Broker to reclaim prepared coding artifacts. Broker checks captured
+physical identities, removes only the owned snapshot/worktree and its per-worktree
+Git metadata, and never follows junctions or runs global Git pruning.
+Cleanup also waits while any session has an open run rooted in either owned tree;
+it does not cancel that session. Unrelated and similarly prefixed sibling roots
+do not block deletion. Partial
+filesystem failures retain encrypted evidence and harness rows for retry and return
+the existing artifacts-pending outcome. A successful retry reports deletion when
+it reclaims retained runs even if the conversation record is already gone; another
+cleanup failure stays pending. No automatic expiry retry is implemented.
+The primary conversation store reports deletion, confirmed absence and failure
+separately. Only confirmed absence can complete a retained-artifact retry; a
+storage failure stays an error even if harness rows were successfully removed.
+Legacy stores returning an ambiguous false are treated as failures.
+Schema v25 retains scope evidence with the
+owned run after relation loss, without restoring execution authority. Schema v26
+adds a root-bound preparation journal: reservation precedes filesystem creation,
+physical snapshot evidence precedes bulk copying, and Git registration is bracketed
+by durable checkpoints. Reservations and completed child identities share the
+eight-identity family limit. Minimal encrypted evidence is bounded to 64 KiB per
+allocation and excludes file contents. Session deletion discovers allocations
+even without a child run or scope and reclaims only proved physical identities.
+Unproven or replaced identities fail closed; cleanup does not scan for orphans
+or reconstruct execution authority.
+In-process snapshot failures reclaim the captured owned directory; provisioning
+failures after the worktree and Git identities are captured reclaim both trees.
+Cleanup has a separate ten-second deadline, preserves the original failure and
+reports a named cleanup error if removal fails. After restart, an existing directory
+without a captured physical identity returns `subagent_cleanup_allocation_unproven`;
+interrupted Git registration before identity capture returns
+`subagent_cleanup_registration_unknown`. Both retain evidence for an explicit
+recovery decision rather than inferring ownership from paths or Git backlinks.
+Windows directory leases request list access and omit delete sharing for every
+held ancestor so their names stay stable during guarded operations. Failure to
+obtain that handle denies the operation; metadata-only handles are not a fallback.
+Delegated scopes capture the parent and child lease generations. Revocation is
+monotonic within a generation and survives duplicate opens and policy rebinds.
+Session close revokes its runs before removing leases and releases only its own
+child bindings; surviving children stay classified and revoked. Reopening a closed
+parent with identical IDs and policy cannot revive them. Retained bindings are
+bounded to 1,024; capacity returns `subagent_delegation_capacity` without evicting
+existing proof. Cancellation of unknown runs retains no history. Control and apply
+intent hashes include a lease generation identifier. A closed root denies apply;
+an old token presented after a fresh trusted lease open returns `decision_stale`
+and requires a new authorization before any journal or file mutation.
+Children inherit the parent's entire pinned model/provider/protocol selection. There
+is no subagent setting; legacy role preferences are retired. An explicit model
+request in the authenticated root prompt may select another signed-in provider's
+current catalog model. Workspace/tool output cannot opt in. Model absence, catalog
+failure and unresolved ambiguity are named refusals before workspace preparation;
+no provider/model/protocol substitution occurs. Existing attempts and continuations
+keep their pins. See [operations](operations/subagents.md) for errors and matching.
+Public root creation rejects an internal session even if a matching conversation
+document exists; ordinary session-run history also excludes that session before
+pagination. Durable internal markers preserve the boundary after relation loss.
+The parent waiting state is `waiting_subagents` in run/SSE projections and remains
+active in session activity; clients accept it as an automatically resumed wait.
+An internal family usage reader uses one SQLite read snapshot to stream usage
+receipts for the root and all owned attempts, including marker-only children.
+Absent or invalid reports and partial fields yield an incomplete known subtotal;
+missing values stay null and numeric zero stays zero. No price estimate is derived.
+Internal apply inspection also passes through `IToolGatewayFactory` to the Broker:
+the Host loads the exact frozen result and encrypted journal, and the Broker checks
+their fingerprint and each recorded intent before reading bounded current hashes.
+Read ask/deny rules remain in force. Unopened ancestor directories are unavailable,
+not proof of absence. The observation hash binds current root identity, binding version,
+policy and journal outcome; it is neither an approval token nor a write receipt.
+Matching proposed bytes never change the journal or resolve uncertainty. Schema
+v27 projects the existing explicit user reconciliation decision into a bounded
+per-root/agent/result acknowledgment. The latest required native model/tool/execution
+and encrypted original `agent_apply` arguments must match. Acknowledgment and the
+resolution event commit atomically; missing proof or storage failure leaves the
+run parked. User assertions never rewrite apply status or create file receipts.
+After acknowledgment, later result collection uses only durable per-file receipts
+as integration bases; unreceipted writes keep the old base and may conflict with
+current parent files. Unknown Continue retains its read-inspection mutation gate.
+Duplicate apply still returns the saved uncertain outcome without replaying writes.
+Startup rehydrates children from their immutable delegation and model pin after
+parents; ambiguous mutations retain the existing reconciliation requirement.
+Internal children cannot use the Host's `ask_user` interception. The model-facing
+tool projection uses their durable role, removes questions/delegation controls,
+and removes filesystem mutations/terminal execution for review. Role eligibility
+is shared with the Broker; it does not replace execution policy. Single-child Stop
+atomically marks only the owning identity cancelled before runtime cleanup, so
+late messages/admission/continuations cannot revive it and siblings remain usable.
+Cleanup failures retain the tombstone for explicit retry. Schema v23 adds
+an encrypted immutable coding change-set store: manifests and ordered 1 MiB
+content chunks commit together, with a 32 MiB per-file integration limit and the
+256 MiB snapshot size limit. Completed coding result publication requires this
+stored change set; result versions follow attempt numbers. The internal publication
+tick now collects through the Broker from encrypted scope and configured owned
+storage after the child session drains. It freezes bytes once and reuses them on
+restart, with one coding collection per tick and cursor progress across deferred
+children. Collection rechecks Git directory/common-directory/root identity and
+every observed file hash, including files initially unchanged, before sealing
+the result. Schema v24 separates result outcome from execution state: permanent
+collection errors publish durable failed results without rewriting completed
+model history; a parent wait receives that outcome. Coding continuations wait
+for sealed bytes or a recorded failure before reusing the worktree. Pending or
+unknown prior apply operations still require reconciliation before collection.
+Internal guarded apply loads successful frozen coding results from SQLite and uses
+the existing gateway approval mapping to reach the Broker. Broker checks every
+target before issuing a batch decision; authorization binds the result fingerprint,
+resolved targets, physical root and current lease/policy generation. A batch ask
+accepts Allow Once or Deny, never directory or remembered grants. Each held-file
+mutation rechecks the lease under the lifecycle gate, and cancellation is observed
+between writes. File conflicts preserve parent edits. Intent/receipt persistence
+failure produces an unknown outcome; loss of final durable reporting raises an
+explicit reconciliation exception. Duplicate commands return the saved outcome
+without writing again. The internal prepared-execution receipt bridge preserves
+native call IDs and maps partial/unknown or lost final reporting to the existing
+Core reconciliation state; ordinary Continue cannot replay it. Internal native
+spawn/send/wait/cancel dispatch now runs inside a live Broker authorization callback,
+bound to the committed native tool-call ID and arguments. It expires on return
+and rechecks parent cancellation/policy after the callback. Host validates durable
+ownership; it cannot manufacture that permission. Spawn/send/cancel are scheduled
+as orchestration mutations, wait is read-only and must be alone, and apply keeps
+its separate frozen-file authority. Explicit test advertisements exercise both
+roles, deferred parent wait and coding file integration through the real gateway;
+the production inventory exposes all five controls to the parent. Public/client/UI
+workflows expose read-only snapshots and results. Unproven artifact recovery retains
+evidence and fails by name. LSP,
+extension/plugin/MCP discovery, arbitrary system overrides,
 Chat compatibility, UI redesign, and OS filesystem/network confinement are
 outside this implementation. Terminal children run as the current Windows
 user; structured file tools stay in-process under canonical path containment,
@@ -690,13 +825,47 @@ JSONL event sink. The WinUI shell, API clients, Agent SSE client, session
 history path, and reply lifecycle remain the same. Harness mode never takes over
 an existing RuApp instance and drives only the `agent-*` scenarios.
 
+
+Only the parent model's Broker-authorized tools interact with children. Public
+HTTP exposes two GET snapshots/result-page endpoints; RPC/SDK and CLI/WinUI expose
+observation/export only. Generic run mutation endpoints also reject internal
+children (including marker-only ownership). A child tool requiring approval is
+denied with `subagent_parent_action_required` so the parent can handle the blocker
+under its own normal policy; no child approval is auto-granted.
+
+Historical schema v28 user-action rows retain immutable root/agent/result bindings
+and uncertain-write proof. Unexecuted queued/approval-waiting actions are cancelled;
+already executing rows are reconciled through the existing parent gate without
+replay. No new public action can enqueue integration. Journal receipts and
+model-only context notes remain valid for historical reconciliation.
+
+A single SQLite read snapshot binds child identities, attempts, exact pinned model,
+original spawn task, publication outcome and journal acknowledgments. Internal
+session IDs, provider credentials/options and selected context are omitted from
+public transport. Result pages are root/agent/version-bound byte cursors that
+preserve UTF-8 boundaries. Historical approval details in read snapshots remain
+bounded to 8 KiB; larger proposals retain identity and a named details-too-large
+state. Child output remains readable; child approval writes are refused. Per-attempt and family usage sum only
+actual durable reports, with nullable totals and explicit incompleteness.
+`subagent.changed` SSE frames are transient hints, carry attempt/result identities,
+and never commit a parent run version. List/detail reads resync reconnecting clients;
+WinUI also polls while its view is loaded. Detach/unload never cancels server work.
+The SubagentTreeView observer owns its read lifetime and stale-response gate separately
+from ChatView. AgentSidePanelControl bridges its snapshots into the session summary card
+and hosts a closable Subagents tab. SubagentPresentation supplies grouped task labels;
+SubagentTreeModel binds root/selection/version read tickets. Detail and export have separate
+partials, and the existing MarkdownBlock renders a bounded 256 KiB preview. A compact
+ChatView entry opens the same reader as an overlay at narrow widths. Users can inspect
+and export only; no child mutation controls or additional public endpoints are introduced.
+
+
 ## Ownership
 
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own any execution process. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 43 HTTP routes (20 non-Agent + 23 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`ModelStepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and the in-process execution authority (`BrokerExecutionRuntime` behind `IToolGatewayFactory`). The managed Host exits after the configured idle window when no request or run remains active. |
-| RuAgentBroker | In-process execution authority for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; the run's immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root bind to the run lease, and the hash is validated before capabilities are advertised. The Host projects thirteen Protocol definitions; the authority binds twelve of them as separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, and `skill` tools, deliberately excluding the Host-intercepted `ask_user`, which never reaches it. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity` or a durable project allow rule whose folder pattern was remembered with `allow_always`; the session grant is lost on restart, while the durable rule survives and is reused within the same workspace identity. Neither authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. Terminal children run as the current Windows user without OS filesystem/network confinement; policy approvals, timeout, output and Job Object process-tree bounds remain. `files.apply_patch` is not advertised. The authority has no public HTTP contract and no child process. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 45 HTTP routes (20 non-Agent + 25 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, in-process model generation (`ModelStepService` behind `IModelStepRunner`), Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`, approval ordering `validate explicit trust → re-evaluate exact retained proposals → consume single-use token or validate session folder grant → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and the in-process execution authority (`BrokerExecutionRuntime` behind `IToolGatewayFactory`). The managed Host exits after the configured idle window when no request or run remains active. |
+| RuAgentBroker | In-process execution authority for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; the run's immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root bind to the run lease, and the hash is validated before capabilities are advertised. The Host projects eighteen Protocol definitions; the authority binds seventeen of them as separate `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`, `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel`, and `agent_apply` tools, deliberately excluding the Host-intercepted `ask_user`, which never reaches it. Standard outside-root structured targets resolve through a session-scoped `CanonicalDirectoryIdentity` or a durable project allow rule whose folder pattern was remembered with `allow_always`; the session grant is lost on restart, while the durable rule survives and is reused within the same workspace identity. Neither authorizes terminal. Full Access instead selects an ephemeral nearest external ancestor for each structured call and does not retain a directory grant. Structured hard-link/protected-path checks remain active. Terminal children run as the current Windows user without OS filesystem/network confinement; policy approvals, timeout, output and Job Object process-tree bounds remain. `files.apply_patch` is not advertised. The authority has no public HTTP contract and no child process. |
 
 Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
 route ownership selector, or alternate host mode.
@@ -705,7 +874,7 @@ route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-43 HTTP method/path pairs with no WebSocket route (23 `/agent/v1/*` and 20
+45 HTTP method/path pairs with no WebSocket route (25 `/agent/v1/*` and 20
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

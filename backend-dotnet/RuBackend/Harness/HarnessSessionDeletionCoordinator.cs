@@ -10,6 +10,7 @@ public enum HarnessSessionDeletionOutcome
     Deleted,
     SessionNotFound,
     ArtifactsPending,
+    SessionDeleteFailed,
 }
 
 public interface IHarnessSessionDeletionCoordinator
@@ -26,19 +27,25 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
     private readonly TimeProvider _clock;
     private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly IAgentRuntimeRunCleanup? _runCleanup;
+    private readonly Subagents.SubagentCancellationCoordinator? _subagentCancellation;
+    private readonly Subagents.SubagentArtifactCleanupCoordinator? _subagentArtifacts;
 
     public HarnessSessionDeletionCoordinator(
         IHarnessSessionArtifactStore artifacts,
         ISessionStore sessions,
         TimeProvider clock,
         Broker.IToolGatewayFactory? brokerGateways = null,
-        IAgentRuntimeRunCleanup? runCleanup = null)
+        IAgentRuntimeRunCleanup? runCleanup = null,
+        Subagents.SubagentCancellationCoordinator? subagentCancellation = null,
+        Subagents.SubagentArtifactCleanupCoordinator? subagentArtifacts = null)
     {
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _brokerGateways = brokerGateways;
         _runCleanup = runCleanup;
+        _subagentCancellation = subagentCancellation;
+        _subagentArtifacts = subagentArtifacts;
     }
 
     public async Task<HarnessSessionDeletionOutcome> DeleteAsync(
@@ -58,7 +65,7 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         }
 
         // The tombstone must land before any artifact row is removed: a create
-        // that read the session file before this delete would otherwise insert
+        // that read the conversation record before this delete would otherwise insert
         // a run (and recreate the permission row) after cleanup. A failure here
         // fails the whole delete closed, so a session that stays usable keeps no
         // tombstone instead of a delete that leaves a writable hole.
@@ -72,7 +79,10 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         // Stop in-flight runs before the artifact store marks them cancelled:
         // changing SQLite alone leaves the tool process running, and the drive
         // loop cannot notice a deleted run while it is blocked inside a step.
+        if (_subagentCancellation is not null)
+            await _subagentCancellation.CancelSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
         bool artifactsDeleted;
+        var deletedRunCount = 0;
         try
         {
             if (_runCleanup is not null)
@@ -88,33 +98,34 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
                 }
             }
 
-            await _artifacts.CloseAndDeleteAsync(
+            if (_subagentArtifacts is not null)
+                await _subagentArtifacts.ReclaimSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+
+            var deletedArtifacts = await _artifacts.CloseAndDeleteAsync(
                     sessionId,
                     _clock.GetUtcNow().ToUniversalTime(),
                     cancellationToken)
                 .ConfigureAwait(false);
+            deletedRunCount = deletedArtifacts.DeletedRuns;
             artifactsDeleted = true;
         }
         catch (HarnessStoreException ex)
         {
             // Harness artifacts are secondary, but their failure must be visible:
-            // the session file is still deleted (primary), while the caller gets
+            // the conversation record is still deleted (primary), while the caller gets
             // ArtifactsPending so the UI can report partial cleanup and retry.
-            // The leftover harness row is also reclaimed on next expiry.
-            System.Diagnostics.Debug.WriteLine($"[Delete] Harness artifacts issue for {sessionId}: {ex.Code}, session file delete continues");
+            System.Diagnostics.Debug.WriteLine($"[Delete] Harness artifacts issue for {sessionId}: {ex.Code}, conversation delete continues");
             artifactsDeleted = false;
         }
-        var sessionDeleted = await _sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
-        if (!sessionDeleted)
-        {
-            return HarnessSessionDeletionOutcome.SessionNotFound;
-        }
-
+        var primary = await _sessions.DeleteWithOutcomeAsync(sessionId, cancellationToken).ConfigureAwait(false);
         // Session memory dies with the session: a deleted session starts from
         // zero approvals even if its id were ever observed again.
         SessionApprovalLedger.ClearSession(sessionId);
-        return artifactsDeleted
-            ? HarnessSessionDeletionOutcome.Deleted
-            : HarnessSessionDeletionOutcome.ArtifactsPending;
+        if (primary == SessionDeleteOutcome.Failed) return HarnessSessionDeletionOutcome.SessionDeleteFailed;
+        if (!artifactsDeleted) return HarnessSessionDeletionOutcome.ArtifactsPending;
+        // A retry can finish retained harness cleanup after the conversation
+        // record was deleted by the first pass. Report that completed work.
+        return primary == SessionDeleteOutcome.Deleted || deletedRunCount > 0
+            ? HarnessSessionDeletionOutcome.Deleted : HarnessSessionDeletionOutcome.SessionNotFound;
     }
 }

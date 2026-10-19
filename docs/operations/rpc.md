@@ -71,7 +71,7 @@ The first request must be `initialize`:
 ```
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.continue","run.status","run.command","run.reconcile","run.output","subagent.list","subagent.get","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
 ```
 
 - `protocolVersion` must be `1`. Any other value is rejected with `-32000` and
@@ -108,6 +108,8 @@ truncating it.
 | `run.command` | `runId`, `command` | command payload (passthrough) | `POST /agent/v1/runs/{runId}/commands` |
 | `run.reconcile` | `runId`, `outcome`, `hash` | reconcile payload (passthrough) | `POST /agent/v1/runs/{runId}/reconcile` |
 | `run.output` | `runId`, `payloadId` | `{ "encoding": "base64", "data", "byte_length" }` | `GET /agent/v1/runs/{runId}/payloads/{payloadId}` |
+| `subagent.list` | `runId` (root) | root-owned snapshot and usage | `GET /agent/v1/runs/{runId}/subagents` |
+| `subagent.get` | `runId`, `agentId`, `resultVersion`?, `offset`?, `limit`? | child detail and optional UTF-8 result page | `GET .../subagents/{agentId}` |
 | `policy.list` | `scope`? | array of policy rules | `GET /agent/v1/policies` |
 | `policy.import` | `file`, `confirm` | `{ "imported": [ ... ] }` | `POST /agent/v1/policies` (one request per rule) |
 | `policy.remove` | `ruleId`, `confirm` | `{ "removed": "<ruleId>" }` | `DELETE /agent/v1/policies/{ruleId}` |
@@ -261,3 +263,9 @@ The SDK spawns the bridge, manages request ids and cancellation, and surfaces
 throws a bounded `BridgeTransportError` if the subscription ends first
 (`run.detached`) or the bridge shuts down/exits, instead of waiting forever. See
 [`sdk/ru-agent/README.md`](../../sdk/ru-agent/README.md) for the full API.
+
+Subagent methods are read-only. Only the parent model's orchestration tools send,
+cancel or apply. Generic child run mutations (including approval) are refused.
+Pages use returned UTF-8 byte offsets and immutable result versions. Root
+`run.transient` frames may contain `subagent.changed` hints; fetch snapshots after
+attach/reconnect because hints are not durable. See [Subagents](subagents.md) for bounds and recovery.

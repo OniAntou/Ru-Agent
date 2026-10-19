@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:RuApp.Controls"
+    xmlns:views="using:RuApp.Views"
     xmlns:models="using:RuApp.Models"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -237,6 +238,20 @@
 
                 <Border Height="1" Background="{StaticResource RuLineBrush}" />
 
+                <Button x:Name="CardSubagentsRow" Click="OnCardSubagentsRowClick"
+                        Style="{StaticResource SidePanelCardRowStyle}"
+                        ToolTipService.ToolTip="View subagents" AutomationProperties.Name="View subagents">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Subagents" FontSize="12" Foreground="{StaticResource RuInkBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" />
+                            <TextBlock x:Name="CardSubagentsSummary" Text="No subagents yet" FontSize="11"
+                                       VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource RuMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Button>
+                <Border Height="1" Background="{StaticResource RuLineBrush}" />
+
                 <Button x:Name="CardTasksRow"
                         Click="OnCardTasksRowClick"
                         Style="{StaticResource SidePanelCardRowStyle}"
@@ -406,6 +421,46 @@
                         </StackPanel>
                     </Border>
 
+                    <Border x:Name="SubagentsChip"
+                            Tag="Subagents"
+                            VerticalAlignment="Center"
+                            PointerEntered="OnChipPointerEntered"
+                            PointerExited="OnChipPointerExited"
+                            PointerPressed="OnChipPointerPressed"
+                            PointerMoved="OnChipPointerMoved"
+                            PointerReleased="OnChipPointerReleased"
+                            PointerCaptureLost="OnChipPointerCaptureLost"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
+                            BorderThickness="1"
+                            BorderBrush="Transparent"
+                            Background="Transparent">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button x:Name="SubagentsTabButton"
+                                    Click="OnSubagentsTabClick"
+                                    Style="{StaticResource SidePanelChipButtonStyle}"
+                                    ToolTipService.ToolTip="Subagents"
+                                    AutomationProperties.Name="Subagents tab">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8D4;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <TextBlock x:Name="SubagentsTabLabel"
+                                               Text="Subagents"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="SubagentsTabCloseButton"
+                                    Click="OnSubagentsTabCloseClick"
+                                    Style="{StaticResource SidePanelChipButtonStyle}"
+                                    Width="24"
+                                    Padding="0"
+                                    ToolTipService.ToolTip="Close Subagents"
+                                    AutomationProperties.Name="Close Subagents tab">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
                     <Border x:Name="FilesChip"
                             Tag="Files"
                             VerticalAlignment="Center"
@@ -510,6 +565,7 @@
                                 <MenuFlyoutItem Text="Files" Tag="Files" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Files tab" />
                                 <MenuFlyoutItem Text="Changes" Tag="Changes" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Changes tab" />
                                 <MenuFlyoutItem Text="Background tasks" Tag="Tasks" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Background tasks tab" />
+                                <MenuFlyoutItem Text="Subagents" Tag="Subagents" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Subagents tab" />
                                 <MenuFlyoutSeparator />
                                 <MenuFlyoutItem Text="Terminal" Tag="Terminal" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Terminal tab" />
                             </MenuFlyout>
@@ -554,6 +610,7 @@
                         Opacity="0.7" />
 
                 <Grid Grid.Row="1" Margin="14,10,12,0">
+                    <views:SubagentTreeView x:Name="SubagentBrowser" Visibility="Collapsed" />
                     <Grid x:Name="ChangesBody" Visibility="Collapsed" RowDefinitions="Auto,*">
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                             <TextBlock Text="Changes"

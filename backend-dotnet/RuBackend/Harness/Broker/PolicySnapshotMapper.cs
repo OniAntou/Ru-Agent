@@ -14,6 +14,43 @@ namespace RuBackend.Harness.Broker;
 /// </summary>
 public static class PolicySnapshotMapper
 {
+    public static PolicySnapshot FromWire(BrokerPolicySnapshotWire snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        BrokerPolicyContracts.ValidateSnapshot(snapshot);
+        var workspace = new global::RuAgent.Harness.Core.Workspace.WorkspaceIdentity(new(snapshot.Workspace.WorkspaceId),
+            snapshot.Workspace.VolumeSerialNumber, snapshot.Workspace.RootFileId, snapshot.Workspace.DisplayIdentityHash);
+        var rules = snapshot.OrderedRules.Select(rule => new PolicyRule(new(rule.RuleId), rule.Scope switch
+        {
+            "global" => PolicyRuleScope.Global,
+            "project" => PolicyRuleScope.Project,
+            "run" => PolicyRuleScope.Run,
+            "once" => PolicyRuleScope.Once,
+            _ => throw new ArgumentException("Invalid policy scope."),
+        }, rule.Decision switch
+        {
+            "allow" => PolicyDecision.Allow,
+            "ask" => PolicyDecision.Ask,
+            "deny" => PolicyDecision.Deny,
+            _ => throw new ArgumentException("Invalid policy decision."),
+        }, new PolicyMatcher(rule.Matcher.ToolId, rule.Matcher.ToolVersion, rule.Matcher.CanonicalPathPattern,
+            rule.Matcher.ResolvedExecutable, rule.Matcher.ArgvPattern, rule.Matcher.CwdPattern,
+            rule.Matcher.OperationClass, rule.Matcher.NetworkIntent), rule.CreationOrder,
+            rule.ExpiresAt is null ? null : DateTimeOffset.Parse(rule.ExpiresAt, CultureInfo.InvariantCulture))).ToArray();
+        var preset = snapshot.Preset switch
+        {
+            "plan" => AgentPermissionPreset.Plan,
+            "standard" => AgentPermissionPreset.Standard,
+            "full_access" => AgentPermissionPreset.FullAccess,
+            _ => throw new ArgumentException("Invalid permission preset."),
+        };
+        var recovered = PolicySnapshotCanonicalizer.Create(snapshot.Version, preset, workspace, rules,
+            DateTimeOffset.Parse(snapshot.CreatedAt, CultureInfo.InvariantCulture));
+        if (recovered.Sha256 != BrokerPolicyContracts.ComputeCanonicalSnapshotHash(snapshot))
+            throw new ArgumentException("Policy recovery hash mismatch.");
+        return recovered;
+    }
+
     public static BrokerPolicySnapshotWire ToWire(PolicySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);

@@ -135,6 +135,7 @@ public sealed class ToolBindingRegistryTests
         Assert.Equal(
             new[]
             {
+                "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
                 "bash", "edit", "glob", "grep", "help", "list",
                 "read", "skill", "todo_write", "web_fetch", "web_search", "write",
             },
@@ -151,6 +152,12 @@ public sealed class ToolBindingRegistryTests
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {
         ["read"] = Succeeded,
+        ["agent_spawn"] = Succeeded,
+        ["agent_send"] = Succeeded,
+        ["agent_wait"] = Succeeded,
+        ["agent_cancel"] = Succeeded,
+        ["agent_apply"] = Succeeded,
+
         ["list"] = Succeeded,
         ["help"] = Succeeded,
         ["todo_write"] = Succeeded,

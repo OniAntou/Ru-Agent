@@ -58,6 +58,8 @@ def _factory_for(method: str, path: str) -> RequestFactory:
         # Agent route placeholders – use synthetic deterministic IDs that satisfy bounded validation
         if "{runId}" in resolved_path:
             resolved_path = resolved_path.replace("{runId}", "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        if "{agentId}" in resolved_path:
+            resolved_path = resolved_path.replace("{agentId}", "agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         if "{payloadId}" in resolved_path:
             resolved_path = resolved_path.replace("{payloadId}", "payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         if "{approvalId}" in resolved_path:
@@ -90,6 +92,7 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             body = {"decision": "approve", "scope": "once"}
         elif path.startswith("/agent/v1/runs/") and path.endswith("/reconcile"):
             body = {"outcome": "applied", "snapshot_hash": "probe"}
+
         elif path == "/agent/v1/policies" and method == "POST":
             # Global policy writes intentionally require an explicit interactive
             # confirmation header. The deterministic route probe exercises the

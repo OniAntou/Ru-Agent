@@ -41,5 +41,7 @@
   {"method":"PUT","path":"/agent/v1/workspaces/{workspaceId}/concurrency","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/activity","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/changes","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
-  {"method":"POST","path":"/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]}
+  {"method":"POST","path":"/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"GET","path":"/agent/v1/runs/{runId}/subagents","transport":"http","source":"backend-dotnet/RuBackend/Harness/Subagents/SubagentEndpoints.cs","classification":"aspnet-direct","winui_callers":["AgentRunClientAdapter.ListSubagentsAsync"]},
+  {"method":"GET","path":"/agent/v1/runs/{runId}/subagents/{agentId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/Subagents/SubagentEndpoints.cs","classification":"aspnet-direct","winui_callers":["AgentRunClientAdapter.GetSubagentAsync"]}
 ]

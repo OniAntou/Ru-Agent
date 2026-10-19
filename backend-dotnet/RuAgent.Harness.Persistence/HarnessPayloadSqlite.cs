@@ -8,6 +8,15 @@ namespace RuAgent.Harness.Persistence;
 
 public sealed partial class HarnessPayloadStore
 {
+    internal async Task<HarnessPayloadContent> ReadForClientAsync(SqliteConnection connection,
+        SqliteTransaction transaction, RunId runId, PayloadId payloadId, CancellationToken ct)
+    {
+        var stored = await LoadAsync(connection, transaction, runId, payloadId, requireActiveRun: false, ct).ConfigureAwait(false);
+        if (!CanReadForClient(stored.Intent)) throw new HarnessStoreException("payload_client_forbidden");
+        var plaintext = await _cryptography.DecryptAsync(runId, stored.Intent, stored.Encrypted, ct).ConfigureAwait(false);
+        return Content(runId, stored.Intent, plaintext);
+    }
+
     internal async Task<HarnessPayloadContent> ReadForModelAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,

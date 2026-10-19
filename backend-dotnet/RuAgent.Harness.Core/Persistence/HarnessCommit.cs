@@ -11,7 +11,8 @@ public sealed record HarnessCommit
         IReadOnlyList<HarnessEventIntent> events,
         IReadOnlyList<HarnessPayloadIntent> payloads,
         IReadOnlyList<ConversationOutboxIntent> conversationOutbox,
-        ContextCompactionIntent? contextCompaction = null)
+        ContextCompactionIntent? contextCompaction = null,
+        Subagents.SubagentWaitIntent? subagentWait = null)
     {
         _ = runId.Value;
         if (expectedVersion < 0)
@@ -70,6 +71,9 @@ public sealed record HarnessCommit
         Payloads = copiedPayloads;
         ConversationOutbox = copiedOutbox;
         ContextCompaction = contextCompaction;
+        if (subagentWait is not null && (nextRun.State != HarnessRunState.WaitingSubagents || copiedOutbox.Count != 0))
+            throw new ArgumentException("subagent_wait_projection_invalid");
+        SubagentWait = subagentWait;
     }
 
     public RunId RunId { get; }
@@ -85,6 +89,8 @@ public sealed record HarnessCommit
     public IReadOnlyList<ConversationOutboxIntent> ConversationOutbox { get; }
 
     public ContextCompactionIntent? ContextCompaction { get; }
+
+    public Subagents.SubagentWaitIntent? SubagentWait { get; }
 
     private static IReadOnlyList<T> Copy<T>(IReadOnlyList<T> source, string parameterName)
         where T : class

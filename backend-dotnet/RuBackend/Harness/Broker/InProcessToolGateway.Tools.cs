@@ -11,9 +11,11 @@ public sealed partial class InProcessToolGateway
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(proposal);
+        var native = await EvaluateNativeSubagentAsync(proposal, cancellationToken).ConfigureAwait(false);
+        if (native is not null) return native;
         var proposalArgs = BrokerGatewayContracts.ParseArguments(proposal.Arguments);
         var accessKind = BrokerGatewayContracts.AccessKindForTool(proposal.ToolId, proposalArgs);
-        var argsKey = BrokerGatewayContracts.ApprovalArgsKey(proposal.ToolId, proposal.Arguments);
+        var argsKey = BrokerGatewayContracts.ProposalApprovalArgsKey(proposal);
 
         BrokerRunLeaseIdentity lease;
         long generation;
@@ -155,7 +157,8 @@ public sealed partial class InProcessToolGateway
                 execution.Proposal.ToolVersion,
                 accessKind,
                 authorizationToken,
-                execution.Proposal.Arguments.GetRawText());
+                execution.Proposal.Arguments.GetRawText(),
+                execution.Proposal);
         }
 
         return Task.FromResult(new PreparedToolExecution(
@@ -206,6 +209,12 @@ public sealed partial class InProcessToolGateway
             pending = found;
             sessionId = _lease.SessionId;
         }
+
+        if (RuAgent.Protocol.Subagents.SubagentContractValidator.IsControlTool(pending.ToolId))
+            return await ExecuteNativeSubagentAsync(pending, execution, sessionId, cancellationToken).ConfigureAwait(false);
+        if (pending.ToolId == "agent_apply")
+            return _subagents is null ? BrokerGatewayContracts.FailedReceipt(execution, "phase_not_available")
+                : await _subagents.Value.ApplyAsync(pending.Proposal, execution, cancellationToken).ConfigureAwait(false);
 
         var reply = await _runtime
             .ExecuteAuthorizedAsync(

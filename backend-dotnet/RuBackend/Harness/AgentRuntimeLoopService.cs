@@ -182,6 +182,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly Broker.IToolGatewayFactory? _brokerGateways;
     private readonly InMemoryRetainedApprovalStash _retainedStash;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
+    private readonly Subagents.SubagentRuntimeBinder? _subagentBinder;
+    private readonly RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? _familyBudget;
+    private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox? _subagentInbox;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -202,8 +205,13 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         Broker.IToolGatewayFactory? brokerGateways = null,
         IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
-        SessionWorkStateStore? workStates = null)
+        SessionWorkStateStore? workStates = null,
+        Subagents.SubagentRuntimeBinder? subagentBinder = null,
+        RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? familyBudget = null,
+        RuAgent.Harness.Core.Subagents.ISubagentInbox? subagentInbox = null)
     {
+        _familyBudget = familyBudget;
+        _subagentInbox = subagentInbox;
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
@@ -236,6 +244,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _brokerGateways = brokerGateways;
         _runModelMetadataResolver = pinnedModelMetadataResolver;
         _retainedStash = new InMemoryRetainedApprovalStash(_time);
+        _subagentBinder = subagentBinder;
     }
 
     public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
@@ -248,7 +257,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         CancellationToken cancellationToken = default)
     {
         var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken).ConfigureAwait(false);
-        var availability = _runtimeAvailability;
+        var availability = _runtimeAvailability with { ChildRole = null };
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null
             || runId is not { } brokerRunId)
@@ -257,9 +266,34 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 "broker_gateway_unavailable: every tool call must execute inside the Broker");
         }
 
+        var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
+        var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
+        var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
+        if (internalRun && (_subagentBinder is null || agentSessionId != storedRun!.SessionId.Value))
+            throw new HarnessStoreException("subagent_runtime_unavailable");
+        if (internalRun)
+        {
+            var owner = await subagentStore.FindOwnerAsync(storedRun!.SessionId, cancellationToken).ConfigureAwait(false)
+                ?? throw new HarnessStoreException("subagent_scope_missing");
+            if (!Enum.IsDefined(owner.Role)) throw new HarnessStoreException("subagent_role_invalid");
+            availability = availability with { ChildRole = owner.Role };
+        }
         IToolGateway gateway = await _brokerGateways
             .CreateAsync(workspaceRoot, policySnapshot, brokerRunId, agentSessionId, cancellationToken)
             .ConfigureAwait(false);
+        if (internalRun)
+        {
+            try
+            {
+                if (!await _subagentBinder!.BindAsync(brokerRunId, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false))
+                    throw new HarnessStoreException("subagent_scope_missing");
+            }
+            catch
+            {
+                await _brokerGateways.CloseRunAsync(brokerRunId.Value).ConfigureAwait(false);
+                throw;
+            }
+        }
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -294,11 +328,14 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _contextLimit,
             _inspectionGate,
             activitySink,
-            _replyPolicy,
-            _replyEffects,
+            internalRun ? null : _replyPolicy,
+            internalRun ? null : _replyEffects,
             promptContextProvider,
             contextBudgetPolicy,
-            retainedStash: _retainedStash);
+            retainedStash: _retainedStash,
+            internalRun: internalRun,
+            familyBudget: _familyBudget,
+            subagentInbox: _subagentInbox);
     }
 
     /// <summary>
@@ -409,6 +446,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
     private readonly RetainedInputRehydrator? _retainedInputRehydrator;
     private readonly HarnessRecoveryScanner _recoveryScanner;
+    private readonly Subagents.SubagentScheduler? _subagents;
+    private readonly Subagents.SubagentWaitCoordinator? _subagentWaits;
+    private readonly Subagents.SubagentContinuationCoordinator? _subagentContinuations;
+    private readonly Subagents.SubagentUserApplyCoordinator? _userApplies;
+    private readonly Subagents.SubagentLivePublisher? _subagentLive;
 
     public AgentRuntimeLoopService(
         AgentConversationOutboxDispatcher dispatcher,
@@ -422,7 +464,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         WorkspaceJournalProtector? workspaceJournalProtector = null,
         Broker.IToolGatewayFactory? brokerGateways = null,
         RetainedApprovalRehydrator? retainedApprovalRehydrator = null,
-        RetainedInputRehydrator? retainedInputRehydrator = null)
+        RetainedInputRehydrator? retainedInputRehydrator = null,
+        Subagents.SubagentScheduler? subagents = null,
+        Subagents.SubagentWaitCoordinator? subagentWaits = null,
+        Subagents.SubagentContinuationCoordinator? subagentContinuations = null,
+        Subagents.SubagentUserApplyCoordinator? userApplies = null,
+        Subagents.SubagentLivePublisher? subagentLive = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -438,6 +485,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         _retainedApprovalRehydrator = retainedApprovalRehydrator;
         _retainedInputRehydrator = retainedInputRehydrator;
         _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
+        _subagents = subagents;
+        _subagentWaits = subagentWaits;
+        _subagentContinuations = subagentContinuations;
+        _userApplies = userApplies;
+        _subagentLive = subagentLive;
     }
 
     /// <summary>Registered runs the loop is driving; surfaced to the idle-shutdown probe.</summary>
@@ -489,12 +541,18 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     {
         // Outbox delivery first so history transitions land before any new model step.
         var dispatch = await _dispatcher.DispatchOnceAsync(cancellationToken).ConfigureAwait(false);
+        if (_subagentContinuations is not null) await _subagentContinuations.TickAsync(cancellationToken).ConfigureAwait(false);
+        if (_subagents is not null) await _subagents.TickAsync(this, cancellationToken).ConfigureAwait(false);
+        if (_subagentWaits is not null) await _subagentWaits.TickAsync(cancellationToken).ConfigureAwait(false);
 
         // Drive every registered running run on every iteration: state can become
         // runnable without an outbox write too (e.g. approval_resolved after a V1
         // approve), so delivery alone is not a sufficient trigger.
         _ = dispatch;
         var registrations = _roots.Snapshot();
+        if (_subagentLive is not null)
+            foreach (var registration in registrations)
+                await _subagentLive.PublishAsync(new(registration.RunId), cancellationToken).ConfigureAwait(false);
         // Published for the managed host's idle-shutdown policy: a registered run (even
         // parked) keeps the host alive so a detached turn keeps progressing.
         ActiveWorkCount = registrations.Count;
@@ -571,10 +629,13 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
             if (run.State.IsTerminal())
             {
+                if (_userApplies is not null) await _userApplies.DriveAsync(run, cancellationToken).ConfigureAwait(false);
                 _summaryPublisher?.TryPublishSummary(run);
                 await RemoveRunRegistrationAsync(new RunId(runIdValue)).ConfigureAwait(false);
                 return;
             }
+
+            if (_userApplies is not null && await _userApplies.DriveAsync(run, cancellationToken).ConfigureAwait(false)) return;
 
             if (HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(run, DateTimeOffset.UtcNow))
             {
@@ -631,6 +692,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
     private async Task RemoveRunRegistrationAsync(RunId runId)
     {
+        if (_userApplies is not null) await _userApplies.CancelPendingAsync(runId, CancellationToken.None).ConfigureAwait(false);
+        if (_subagents is not null)
+            await _subagents.CancelChildrenBeforeReleaseAsync(runId, this, CancellationToken.None).ConfigureAwait(false);
+        _subagentLive?.Forget(runId);
         _roots.Remove(runId);
         if (_brokerGateways is { } gateways)
         {
@@ -1009,6 +1074,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
                 if (result.Run.State == HarnessRunState.Running && result.ErrorCode is null)
                 {
+                    if (_subagents?.ShouldYield(runId) == true) break;
                     continue;
                 }
 

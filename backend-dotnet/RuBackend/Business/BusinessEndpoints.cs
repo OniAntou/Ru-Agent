@@ -356,6 +356,7 @@ public static class BusinessEndpoints
             {
                 HarnessSessionDeletionOutcome.Deleted => Results.Ok(new { status = "ok" }),
                 HarnessSessionDeletionOutcome.ArtifactsPending => Results.Ok(new { status = "error", message = "Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại." }),
+                HarnessSessionDeletionOutcome.SessionDeleteFailed => Results.Ok(new { status = "error", message = "Không xoá được session, hãy thử lại." }),
                 _ => Results.Ok(new { status = "error", message = "Session không tồn tại." }),
             };
         }

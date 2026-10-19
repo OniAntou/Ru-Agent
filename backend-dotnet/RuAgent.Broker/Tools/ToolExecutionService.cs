@@ -199,6 +199,11 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["web_fetch"] = ExecuteWebFetchAsync,
         };
 
+        // Native orchestration consumes exact authorization through Runtime callbacks.
+        // Ordinary/legacy dispatch must never substitute an execution adapter for it.
+        foreach (var tool in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
+            executors[tool.ToolId] = (_, _, _) => ValueTask.FromResult(ToolExecutionOutcome.Failed(
+                "subagent_native_control_required", "Use the run-bound orchestration gateway."));
         return executors;
     }
 

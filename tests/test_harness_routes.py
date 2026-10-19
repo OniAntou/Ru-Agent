@@ -22,8 +22,8 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
-    # 43 HTTP routes with no WebSocket transport remaining.
-    assert len(registry) == 43
+    # 45 HTTP routes with no WebSocket transport remaining.
+    assert len(registry) == 45
     assert all(
         entry.safety
         in {
@@ -74,6 +74,17 @@ def test_registry_exposes_no_websocket_or_chat_route() -> None:
         if entry["path"] == "/chat" or entry["path"].startswith(retired_prefixes)
     ] == []
     assert all(entry["transport"] == "http" for entry in contract)
+
+
+def test_subagent_probes_expand_owned_ids_for_read_only_observation() -> None:
+    root = "/agent/v1/runs/{runId}/subagents"
+    routes = build_route_registry([
+        _contract_entry("GET", root),
+        _contract_entry("GET", root + "/{agentId}"),
+    ])
+    requests = [entry.request_factory() for entry in routes]
+    assert all("{" not in request.path for request in requests)
+    assert len(requests) == 2
 
 
 class FakeHttpClient:

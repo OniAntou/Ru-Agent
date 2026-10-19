@@ -86,6 +86,8 @@ public sealed class FakeToolGateway : IToolGateway, IApprovalCleanupGateway
         _trace?.Add("execute");
         if (ForcedReceipt is { } forced)
         {
+            if (forced.IsDeferredSubagentWait)
+                return ToolExecutionReceipt.DeferredSubagentWait(execution.ExecutionId, execution.ToolCallId);
             return new ToolExecutionReceipt(
                 execution.ExecutionId,
                 execution.ToolCallId,

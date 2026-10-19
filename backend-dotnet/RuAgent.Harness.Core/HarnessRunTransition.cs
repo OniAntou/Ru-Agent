@@ -20,4 +20,8 @@ public enum HarnessRunTransition
     Cancel,
     Fail,
     Interrupt,
+    WaitForSubagents,
+    SubagentsReady,
+    CompleteSubagent,
+    AdmitSubagent,
 }

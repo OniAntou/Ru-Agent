@@ -882,8 +882,8 @@
                 </StackPanel>
             </Border>
 
+            <StackPanel Grid.Row="2">
             <StackPanel x:Name="AgentInlinePanel"
-                        Grid.Row="2"
                         Visibility="Collapsed"
                         Spacing="6"
                         Margin="8,0,8,6">
@@ -899,6 +899,14 @@
                          AutomationProperties.AutomationId="AgentStopButton"
                          AutomationProperties.Name="Stop Coding Agent" />
 
+            </StackPanel>
+            <Button x:Name="SubagentPeekButton" Margin="8,0,8,6" HorizontalAlignment="Right"
+                    Visibility="Collapsed" Click="OnSubagentPeekClick" AutomationProperties.Name="View subagents">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE8D4;" FontSize="12" />
+                    <TextBlock x:Name="SubagentPeekText" Text="Subagents" FontSize="12" />
+                </StackPanel>
+            </Button>
             </StackPanel>
 
             <Border x:Name="InputBorder"

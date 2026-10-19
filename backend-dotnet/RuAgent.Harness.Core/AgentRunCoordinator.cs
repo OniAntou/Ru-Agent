@@ -26,6 +26,9 @@ public sealed class AgentRunCoordinator
     private readonly AgentModelInvocation _invocation;
     private readonly IRetainedApprovalStash _retainedStash;
     private readonly Func<RunId, CancellationToken, Task>? _approvalResolutionRaceHook;
+    private readonly bool _internalRun;
+    private readonly Subagents.IAgentFamilyBudget? _familyBudget;
+    private readonly Subagents.ISubagentInbox? _subagentInbox;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -45,11 +48,17 @@ public sealed class AgentRunCoordinator
         ISystemPromptContextProvider? promptContextProvider = null,
         ContextBudgetPolicy? contextBudgetPolicy = null,
         IRetainedApprovalStash? retainedStash = null,
-        Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null)
+        Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null,
+        bool internalRun = false,
+        Subagents.IAgentFamilyBudget? familyBudget = null,
+        Subagents.ISubagentInbox? subagentInbox = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
         _approvalResolutionRaceHook = approvalResolutionRaceHook;
+        _internalRun = internalRun;
+        _familyBudget = familyBudget;
+        _subagentInbox = subagentInbox;
         _contextAssembler = contextAssembler
             ?? throw new ArgumentNullException(nameof(contextAssembler));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
@@ -72,7 +81,8 @@ public sealed class AgentRunCoordinator
             transientRedactor ?? PassthroughTransientContentRedactor.Instance,
             inspectionGate,
             activitySink,
-            _retainedStash);
+            _retainedStash,
+            allowUserInput: !internalRun);
         _lifecycle = new AgentRunLifecycle(
             _store,
             _ids,
@@ -86,7 +96,9 @@ public sealed class AgentRunCoordinator
             replyPolicy ?? new PassthroughAgentReplyPolicy(),
             replyEffects ?? new NoopAgentReplyEffectSink(),
             activitySink,
-            _tools);
+            _tools,
+            internalRun,
+            familyBudget);
         _invocation = new AgentModelInvocation(
             model ?? throw new ArgumentNullException(nameof(model)),
             promptContextProvider ?? throw new ArgumentNullException(nameof(promptContextProvider)),
@@ -132,6 +144,8 @@ public sealed class AgentRunCoordinator
         RunId runId,
         CancellationToken cancellationToken)
     {
+        if (_internalRun && _subagentInbox is not null)
+            await _subagentInbox.DeliverMessagesAsync(runId, _time.UtcNow, cancellationToken).ConfigureAwait(false);
         var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run.State != HarnessRunState.Running)
         {
@@ -189,12 +203,16 @@ public sealed class AgentRunCoordinator
 
         context = preflight.Context ?? context;
 
-        var reservation = AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
+        var reservation = _internalRun ? Subagents.SubagentBudgetPolicy.ReserveModelStep(run, _time.UtcNow)
+            : AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
+        if (reservation.Granted && _familyBudget is not null
+            && !await _familyBudget.ReserveModelAsync(run, modelStepId, cancellationToken).ConfigureAwait(false))
+            reservation = Subagents.SubagentBudgetPolicy.Reject(run, _internalRun, "subagent_family_budget_exhausted", _time.UtcNow);
         var startEvent = new HarnessEventIntent(
             _ids.NewEventId(),
             reservation.Granted
                 ? HarnessEventKind.ModelStepStarted
-                : HarnessEventKind.ContinueRequested,
+                : reservation.NextRun.State == HarnessRunState.Failed ? HarnessEventKind.RunFailed : HarnessEventKind.ContinueRequested,
             modelStepId: modelStepId,
             safeCode: reservation.ErrorCode);
         run = await CommitAsync(
@@ -242,6 +260,12 @@ public sealed class AgentRunCoordinator
         }
         catch (ProviderTransientPauseException error)
         {
+            if (_internalRun)
+            {
+                await _invocation.FailStepAsync(run, modelStepId, error.Code).ConfigureAwait(false);
+                return AgentRunStepResult.Blocked(
+                    await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false), error.Code);
+            }
             // The runner's bounded retries are spent and the provider is still
             // transiently unavailable. The provider may recover while the user
             // waits, so park the run for an explicit Continue keeping the

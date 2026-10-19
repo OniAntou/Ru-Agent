@@ -4,7 +4,8 @@ namespace RuAgent.Harness.Core;
 /// A model step the runner reported with a stable provider-transient code after
 /// its bounded in-step retries were exhausted (rate limit, timeout, server or
 /// transport error). The provider may recover while the user waits, so the
-/// coordinator parks the run for an explicit Continue instead of failing it.
+/// coordinator parks a root for explicit Continue; an internal child returns a
+/// terminal failure to its parent after the same bounded retries.
 /// Carries the provider's code plus the original exception.
 /// </summary>
 public sealed class ProviderTransientPauseException : Exception

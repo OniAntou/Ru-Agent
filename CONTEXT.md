@@ -1,6 +1,6 @@
 # Ru Assistant
 
-Ru is a local Vietnamese-English coding assistant whose desktop, public host,
+Ru is a local coding assistant whose desktop, public host,
 in-process runtime, and persistent conversation state are maintained in this
 repository. The media surfaces (voice/STT, VTube Studio, screen observation)
 were removed on 2026-09-13.
@@ -49,8 +49,8 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 43 HTTP method/path pairs with no WebSocket
-route (20 non-Agent plus 23 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 45 HTTP method/path pairs with no WebSocket
+route (20 non-Agent plus 28 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC
@@ -201,6 +201,77 @@ _Avoid_: treating projected output as a new receipt, complete history, or author
 The declarative, bounded description of an allowed workflow, its named tools,
 scopes, ordered steps, schemas, and approval policy.
 _Avoid_: executable plugin or self-modifying workflow
+
+**Subagent**:
+A stable child identity owned by one root run, with an internal session and bounded
+attempts. Coding children use private worktrees; research/review children read the
+parent workspace and cannot mutate or launch terminals. Child tool projections
+follow the stored role and omit user questions and delegation controls. A single
+child Stop persists its tombstone before runtime cleanup and preserves siblings.
+Delegation is tied to the exact live lease generation: cancellation survives
+duplicate opens and policy rebinds, and reopening a closed parent cannot revive
+its old children. Session close releases that session's bindings; retained bindings
+are capped at 1,024 without eviction. Control and apply authorizations include the
+lease generation so tokens from a closed lease cannot authorize a new one.
+Harness orchestrates them
+through the existing coordinator; Broker owns delegated authority and integration.
+Model selection is pinned per attempt and defaults to the parent's exact provider/model/protocol.
+There is no subagent setting. Only an explicit user request in the owning root's authenticated
+prompt may opt into another model; workspace/tool/child content cannot opt in. Overrides
+resolve exact model identities in current catalogs of signed-in providers. Unavailable,
+ambiguous or unreadable catalogs fail by name, with no substitute. Existing attempts and
+continuations retain their pins.
+A durable root-bound internal-run marker preserves classification and cleanup ownership if
+child relation metadata is lost; it never grants execution authority. Public
+session deletion reclaims prepared coding artifacts through Broker after cancellation
+and runtime drain. Captured physical identities constrain snapshot/worktree and Git
+metadata deletion; failures retain evidence for retry. Encrypted cleanup scope lives
+with the owned run even after relation loss, and cannot restore execution authority.
+An encrypted, root-bound allocation journal reserves the identity before filesystem
+preparation and captures physical cleanup evidence before bulk copying and after
+Git registration. Session deletion can reclaim proved allocations after restart
+even without a child run or execution scope. An unproven directory or interrupted
+Git registration without captured identity stays pending with a named error;
+the journal never restores execution authority. Public
+root creation and ordinary session-run listing reject internal sessions, including
+marker-only ownership. `waiting_subagents` remains active in session activity and
+has an exact public run/SSE status; clients accept it without requiring Continue.
+The internal family usage reader sums only durable provider usage receipts across
+the root and owned attempts. Missing/corrupt reports or partial token fields leave
+the snapshot incomplete; token totals do not imply a monetary cost estimate. Generic
+Continue cannot reset an internal attempt's budget. Execution completion and result
+collection have distinct outcomes: a completed child may yield a durable failed
+result if its artifact cannot be collected. Coding followups wait until the prior
+result is sealed before reusing the worktree. Internal apply loads an exact frozen
+coding result and obtains Broker authorization for that file set; a batch approval
+is single-use and cannot create remembered rules or directory grants. Ambiguous
+write/journal outcomes require reconciliation and never trigger automatic replay. Internal
+inspection loads the frozen result and encrypted journal through the same gateway;
+Broker reads bounded current hashes under read policy and reports existing intents
+and receipts separately. A hash matching the proposal never creates a receipt or
+resolves an uncertain apply. Schema v27 projects an explicit user reconciliation
+decision into the apply journal in the same transaction as the targeted native
+resolution event. Later coding results use only actual per-file receipts as bases;
+unknown/pending outcomes and unreceipted writes remain unchanged. Unknown Continue
+retains the existing inspection gate, and duplicate apply never replays the batch. Internal
+native control dispatch requires an exact call-bound Broker callback permission that
+expires when dispatch returns; metadata validation alone grants no authority.
+The root catalog exposes `agent_spawn`, `agent_send`, `agent_wait`, `agent_cancel`
+and `agent_apply`; child projections exclude them. Two read-only HTTP endpoints provide
+list/detail and version-bound UTF-8 result paging. CLI `/subagents`, RPC/SDK and the WinUI
+panel expose observation/export only. The session card and narrow-window button open a
+Subagents tab with grouped tasks, stable branch glyphs and a version-bound Markdown reader.
+Stopped work remains distinct from successful completion. Generic run mutations also reject internal children.
+Approval-required child tools are denied with `subagent_parent_action_required`; the parent
+handles the blocker under its own policy. No child approval is auto-granted or shown as a user action.
+Root SSE emits transient `subagent.changed` hints with child attempt/result identities;
+clients fetch snapshots on attach/reconnect and deduplicate by snapshot/attempt versions.
+Historical schema v28 user-apply records remain for receipt/reconciliation integrity.
+Unexecuted legacy user actions are cancelled by the root drive; already executing actions
+are reconciled without replay. New integrations only originate from the parent's `agent_apply` tool.
+See [ADR 0022](docs/adr/0022-delegated-subagent-runs.md) and the
+[implementation evidence](docs/plans/2026-10-17-subagents-implementation.md).
+_Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 **Markdown Skill**:
 A directory containing a case-insensitive `SKILL.md` under one of the supported

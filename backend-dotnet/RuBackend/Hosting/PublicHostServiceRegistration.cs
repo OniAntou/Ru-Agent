@@ -135,6 +135,45 @@ internal static class PublicHostServiceRegistration
         });
         services.AddSingleton<WorkspaceJournalProtector>(services =>
             new WorkspaceJournalProtector(services.GetRequiredService<IHarnessKeyStore>()));
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>();
+        services.AddSingleton<RuAgent.Harness.Core.Subagents.ISubagentInbox>(services =>
+            services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>());
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentBudgetStore>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentFamilyUsageReader>();
+        services.AddSingleton<RuAgent.Harness.Core.Subagents.IAgentFamilyBudget,
+            RuBackend.Harness.Subagents.SubagentFamilyBudget>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentScopeStore>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentWorkspaceAllocationStore>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentRuntimeBinder>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentScheduler>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentCancellationCoordinator>();
+        services.AddSingleton<RuBackend.Harness.Subagents.ISubagentModelSelectionProvider,
+            RuBackend.Harness.Subagents.SubagentModelSelectionProvider>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentWorkspaceStorage>(services =>
+            new RuBackend.Harness.Subagents.SubagentWorkspaceStorage(
+                Path.Combine(Path.GetDirectoryName(services.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!, "subagent-workspaces")));
+        services.AddSingleton<RuBackend.Harness.Subagents.ISubagentWorkspaceFactory>(services =>
+            new RuBackend.Harness.Subagents.SubagentWorkspaceFactory(
+                services.GetRequiredService<IToolGatewayFactory>(), services.GetRequiredService<WorkspaceTrustService>(),
+                services.GetRequiredService<RuBackend.Harness.Subagents.SubagentWorkspaceStorage>().Root,
+                services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentWorkspaceAllocationStore>()));
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentRunFactory>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentContinuationFactory>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentContinuationCoordinator>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentRecoveryCoordinator>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentResultStore>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentChangeSetStore>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentApplyJournal>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentCodingResultPublisher>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentArtifactCleanupCoordinator>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentApplyService>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentSnapshotReader>();
+        services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentUserApplyStore>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentUserApplyCoordinator>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentPublicService>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentLivePublisher>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentControlDispatcher>();
+        services.AddSingleton<RuBackend.Harness.Subagents.SubagentWaitCoordinator>();
         services.AddSingleton<KnownSecretRedactor>(_ => BuildKnownSecretRedactor());
         services.AddSingleton<AgentReplyTransientRedactor>();
         services.AddSingleton<ITransientContentRedactor>(services =>
@@ -152,11 +191,12 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<RetainedApprovalRehydrator>();
         services.AddSingleton<RetainedInputRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
-        services.AddSingleton<IHarnessEventStore>(services =>
+        services.AddSingleton<SqliteHarnessEventStore>(services =>
             new SqliteHarnessEventStore(
                 services.GetRequiredService<HarnessSqliteOptions>(),
                 services.GetRequiredService<HarnessPayloadStore>(),
                 services.GetRequiredService<SessionWorkStateStore>()));
+        services.AddSingleton<IHarnessEventStore>(services => services.GetRequiredService<SqliteHarnessEventStore>());
         services.AddSingleton<HarnessLiveEventHub>();
         services.AddSingleton<AgentRunSummaryLivePublisher>();
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
@@ -173,7 +213,9 @@ internal static class PublicHostServiceRegistration
             services.GetRequiredService<ILogger<InProcessExecutionAuthority>>()));
         services.AddSingleton<IToolGatewayFactory>(services =>
             new InProcessToolGatewayFactory(
-                services.GetRequiredService<InProcessExecutionAuthority>().Runtime));
+                services.GetRequiredService<InProcessExecutionAuthority>().Runtime,
+                new Lazy<RuBackend.Harness.Subagents.SubagentControlDispatcher>(() =>
+                    services.GetRequiredService<RuBackend.Harness.Subagents.SubagentControlDispatcher>())));
         services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
             Path.Combine(
                 Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,

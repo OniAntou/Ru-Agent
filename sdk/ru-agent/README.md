@@ -75,3 +75,31 @@ npm test        # vitest
 npm run typecheck
 npm run build   # tsup -> dist/
 ```
+
+## Subagent observation
+
+```ts
+const snapshot = await run.subagents.list();
+for (const child of snapshot.agents) {
+  console.log(child.agent_id, child.role, child.attempts.at(-1)?.model);
+}
+
+const child = snapshot.agents[0];
+if (child) {
+  const result = child.results.at(-1);
+  if (result) {
+    const page = await run.subagents.get(child.agent_id, { resultVersion: result.result_version });
+    console.log(page.result?.text, page.result?.next_offset);
+  }
+}
+```
+
+`ru.subagents(rootRunId)` also works for a retained root. `get` supports
+`resultVersion`, UTF-8 byte `offset` and a 4–32,768 byte `limit`; continue using
+`next_offset` until null, keeping the exact version. Users only observe children;
+the parent model alone sends follow-ups, cancels and applies results. Generic child
+run mutations and approvals are also refused. Children inherit the exact parent
+selection. Another model requires an explicit user prompt and a matching signed-in
+provider catalog. Unknown or incomplete token usage remains nullable. With `events({ includeTransient: true })`, root transient frames can
+carry `subagent.changed` hints. Always fetch `list` on attach/reconnect; hints are
+not replayed and detaching the stream never cancels Host work.

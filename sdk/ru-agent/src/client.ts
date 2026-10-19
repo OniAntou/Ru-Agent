@@ -1,3 +1,4 @@
+import { Subagents } from "./subagents.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { BridgeTransport } from "./transport.js";
@@ -94,6 +95,10 @@ export class RuAgent {
       rewind: (sessionId: string, index: number): Promise<Record<string, unknown>> =>
         this.#transport.request<Record<string, unknown>>("session.rewind", { sessionId, index }),
     };
+  }
+
+  subagents(rootRunId: string): Subagents {
+    return new Subagents(this.#transport, rootRunId);
   }
 
   get runs() {

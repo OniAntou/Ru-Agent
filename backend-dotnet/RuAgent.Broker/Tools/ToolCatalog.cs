@@ -94,6 +94,11 @@ public sealed class ToolCatalog
         yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("skill", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
+            yield return Manifest(definition.ToolId,
+                definition.ToolId == "agent_apply" ? ToolScope.WorkspaceWrite : ToolScope.SystemRead,
+                definition.ToolId == "agent_apply" ? RiskClass.Reversible : RiskClass.Read, "builtin",
+                workspace: definition.ToolId == "agent_apply", requiresApproval: definition.ToolId == "agent_apply");
     }
 
     private static ToolManifest Manifest(

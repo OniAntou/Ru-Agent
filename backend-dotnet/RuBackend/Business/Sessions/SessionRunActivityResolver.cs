@@ -14,7 +14,7 @@ public static class SessionRunActivityResolver
         return $"""
             SELECT session_id FROM agent_runs
             WHERE terminal_at_utc IS NULL AND session_id IN ({parameters})
-                AND state IN ($created, $history, $running)
+                AND state IN ($created, $history, $running, $subagents)
             """;
     }
 
@@ -36,6 +36,7 @@ public static class SessionRunActivityResolver
             command.Parameters.AddWithValue("$created", (int)HarnessRunState.Created);
             command.Parameters.AddWithValue("$history", (int)HarnessRunState.WaitingHistory);
             command.Parameters.AddWithValue("$running", (int)HarnessRunState.Running);
+            command.Parameters.AddWithValue("$subagents", (int)HarnessRunState.WaitingSubagents);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) result.Add(reader.GetString(0));
             return result;

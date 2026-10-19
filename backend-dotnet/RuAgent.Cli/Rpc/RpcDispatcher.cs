@@ -34,7 +34,7 @@ public interface IRunBridge
     int DetachRun(string runId);
 }
 
-public sealed class RpcDispatcher
+public sealed partial class RpcDispatcher
 {
     public static readonly IReadOnlyList<string> MethodNames =
     [
@@ -54,6 +54,8 @@ public sealed class RpcDispatcher
         "run.command",
         "run.reconcile",
         "run.output",
+        "subagent.list",
+        "subagent.get",
         "policy.list",
         "policy.import",
         "policy.remove",
@@ -132,6 +134,8 @@ public sealed class RpcDispatcher
                 "run.command" => await RunCommandAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.reconcile" => await RunReconcileAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
+                "subagent.list" or "subagent.get"
+                    => await DispatchSubagentAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.list" => await PolicyListAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.import" => await PolicyImportAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.remove" => await PolicyRemoveAsync(request, cancellationToken).ConfigureAwait(false),

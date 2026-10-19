@@ -28,16 +28,22 @@ public interface IGitCli
 public sealed class StreamingGitCli : IGitCli
 {
     private const int TimeoutMs = 30_000;
-    private const int OutputLimitBytes = 256 * 1024;
+    private const int DefaultOutputLimitBytes = 256 * 1024;
+    private const int MaximumOutputLimitBytes = 8 * 1024 * 1024;
 
     private readonly StreamingProcessRunner _runner;
     private readonly IReadOnlyDictionary<string, string> _environment;
+    private readonly int _outputLimitBytes;
 
     public StreamingGitCli(
         StreamingProcessRunner? runner = null,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null,
+        int outputLimitBytes = DefaultOutputLimitBytes)
     {
-        _runner = runner ?? new StreamingProcessRunner();
+        if (outputLimitBytes is < 1 or > MaximumOutputLimitBytes)
+            throw new ArgumentOutOfRangeException(nameof(outputLimitBytes));
+        _outputLimitBytes = outputLimitBytes;
+        _runner = runner ?? new StreamingProcessRunner(outputLimitBytes: outputLimitBytes);
         _environment = environment ?? new AgentCommandEnvironment().ChildEnvironment;
     }
 
@@ -87,7 +93,7 @@ public sealed class StreamingGitCli : IGitCli
             workingDirectory,
             environment,
             TimeoutMs,
-            OutputLimitBytes);
+            _outputLimitBytes);
         var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken);
 
         if (result.Status == "timed_out")

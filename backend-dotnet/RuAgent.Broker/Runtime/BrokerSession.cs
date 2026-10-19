@@ -185,6 +185,21 @@ public sealed class BrokerSession
         }
     }
 
+    internal bool HasRunWithinDirectory(string directory)
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        var prefix = root + Path.DirectorySeparatorChar;
+        lock (_gate)
+        {
+            return _runLeases.Values.Any(lease =>
+            {
+                var candidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(lease.CanonicalRoot));
+                return string.Equals(candidate, root, StringComparison.OrdinalIgnoreCase)
+                    || candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+    }
+
     /// Closes the run lease with the given id without closing the owning session.
     public bool TryCloseRun(string runId)
     {
@@ -246,7 +261,8 @@ public sealed class BrokerSession
             var nextBindingVersion = current.BindingVersion + 1;
             // Decisions issued under the older binding stay recorded but are invalidated by
             // binding-version comparison, so late callers observe decision_stale (not unknown).
-            _runLeases[reboundLease.RunId] = reboundLease with { BindingVersion = nextBindingVersion };
+            _runLeases[reboundLease.RunId] = reboundLease with
+                { BindingVersion = nextBindingVersion, Lifetime = current.Lifetime };
             errorCode = null;
             return true;
         }
@@ -290,6 +306,10 @@ public sealed class BrokerSession
                 return false;
             }
 
+            // Duplicate opens cannot reset cancellation or delegated generation
+            // checks. A genuinely closed lease starts a new generation.
+            if (_runLeases.TryGetValue(lease.RunId, out var current))
+                lease = lease with { Lifetime = current.Lifetime };
             _runLeases[lease.RunId] = lease;
             // Also open session for v2 lease if not already open
             if (_activeSessionId is null)

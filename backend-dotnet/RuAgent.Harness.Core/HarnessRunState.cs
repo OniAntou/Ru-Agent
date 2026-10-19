@@ -13,6 +13,7 @@ public enum HarnessRunState
     Failed = 8,
     Cancelled = 9,
     Interrupted = 10,
+    WaitingSubagents = 11,
 }
 
 public static class HarnessRunStateExtensions

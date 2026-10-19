@@ -39,3 +39,5 @@ export interface RuAgentStartOptions {
   cwd?: string;
   env?: Record<string, string>;
 }
+
+export type { SubagentList, SubagentSummary, SubagentAttempt, SubagentResult, SubagentDetail, SubagentUserAction } from "./subagents.js";

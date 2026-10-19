@@ -28,6 +28,14 @@ public static class AgentRunStateMachine
 
         HarnessRunStatus? next = (current.State, transition) switch
         {
+            (HarnessRunState.Created, HarnessRunTransition.AdmitSubagent) =>
+                Status(HarnessRunState.Running),
+            (HarnessRunState.Running, HarnessRunTransition.WaitForSubagents) =>
+                Status(HarnessRunState.WaitingSubagents),
+            (HarnessRunState.WaitingSubagents, HarnessRunTransition.SubagentsReady) =>
+                Status(HarnessRunState.Running),
+            (HarnessRunState.Running, HarnessRunTransition.CompleteSubagent) =>
+                Status(HarnessRunState.Completed),
             (HarnessRunState.Created, HarnessRunTransition.BeginWorkspaceTrust) =>
                 Status(HarnessRunState.WaitingWorkspaceTrust),
             (HarnessRunState.Created, HarnessRunTransition.BeginUserHistory) =>

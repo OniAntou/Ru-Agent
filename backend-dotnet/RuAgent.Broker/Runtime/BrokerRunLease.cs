@@ -20,6 +20,8 @@ public sealed record BrokerRunLease(
     BoundPolicySnapshot Snapshot,
     long BindingVersion)
 {
+    internal BrokerRunLifetime Lifetime { get; init; } = new();
+
     public bool IsExpired(DateTimeOffset now) => ExpiresAt <= now;
 
     public static BrokerRunLease CreateValidated(

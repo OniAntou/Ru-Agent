@@ -7,7 +7,7 @@ using Xunit;
 
 namespace RuAgent.Client.Tests;
 
-public sealed class AgentApiClientTests
+public sealed partial class AgentApiClientTests
 {
     private static PublicHostSession Session(string bearer = "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     {

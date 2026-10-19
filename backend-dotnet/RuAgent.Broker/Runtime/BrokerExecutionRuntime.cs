@@ -127,7 +127,9 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             // are read before the close removes them: a closed session must not
             // leave consumable approvals behind.
             var runIds = _session.RunIdsForSession(sessionId);
+            foreach (var runId in runIds) RevokeDelegatedExecutions(runId);
             _session.Close(sessionId);
+            ReleaseSessionDelegations(sessionId);
             foreach (var runId in runIds)
             {
                 _runCancellations.CancelRun(runId);
@@ -177,7 +179,11 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     /// lifecycle gate: a cancel must reach in-flight work even while another
     /// operation holds the gate.
     /// </summary>
-    public int CancelRun(string runId) => _runCancellations.CancelRun(runId);
+    public int CancelRun(string runId)
+    {
+        RevokeDelegatedExecutions(runId);
+        return _runCancellations.CancelRun(runId);
+    }
 
     /// <summary>
     /// Clears pending approvals and issued tokens. Called on host shutdown;
@@ -192,6 +198,12 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
 
         _pendingV2.Clear();
         _authTokens.Clear();
+        foreach (var scope in _delegations.Values)
+        {
+            scope.ParentLifetime?.Revoke();
+            scope.ChildLifetime?.Revoke();
+        }
+        _delegations.Clear();
         _runCancellations.CancelAll();
     }
 
@@ -283,12 +295,12 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
                 return new RunLeaseResult(new RuntimeError(errorCode ?? "rebind_failed", "run policy rebind failed"));
             }
 
-            var bound = _session.ActiveRunLease;
-            if (bound is null)
+            if (!_session.TryGetRunLease(lease.RunId, out var bound) || bound is null)
             {
                 return new RunLeaseResult(new RuntimeError("run_not_open", "run lease is not open"));
             }
 
+            RefreshDelegatedExecutions(bound);
             return new RunLeaseResult(null, bound.RunId, bound.Snapshot.Version, bound.BindingVersion);
         }
         catch (AgentProtocolException error)
@@ -316,7 +328,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
         }
         // A closed lease owns no more live work: terminate anything still
         // running for it rather than leaving the process tree orphaned.
-        _runCancellations.CancelRun(runId);
+        CancelRun(runId);
         if (_session.TryCloseRun(runId))
         {
             return new RunCloseResult(null, Closed: true, RunId: runId);

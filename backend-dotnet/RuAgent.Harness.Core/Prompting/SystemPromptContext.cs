@@ -209,7 +209,7 @@ public sealed record SystemPromptContext
     public const int PromptContextSchemaVersion = 2;
     public const string RequiredAgentProfile = "ru-agent";
     public const int MaxInstructionBlocks = 16;
-    public const int MaxCapabilities = 16;
+    public const int MaxCapabilities = RuAgent.Protocol.AgentToolDefinitionCatalog.MaximumModelTools;
     public const int MaxCombinedInstructionBytes = 256 * 1024;
     public const int MaxSerializedBytes = 8 * 1024 * 1024;
 

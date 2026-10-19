@@ -95,6 +95,10 @@ public sealed partial class BrokerExecutionRuntime
             return ApprovalDecisionResult.Denied("approval_stale", "approval is bound to a different run");
         }
 
+        if (pending.Binding.ApprovalKind == "subagent_apply"
+            && command is ApprovalCommandV2.AllowSessionDirectory or ApprovalCommandV2.AllowAlways)
+            return ApprovalDecisionResult.Denied("invalid_command", "result batches require a single-use approval");
+
         if (command == ApprovalCommandV2.AllowSessionDirectory)
         {
             // Directory grants are only available for external-directory approvals.
@@ -120,6 +124,9 @@ public sealed partial class BrokerExecutionRuntime
         // override fields exist so a test can drive the stale path; they are a
         // test seam only and are compiled out of Release, where caller-supplied
         // fields can never influence what the approval is compared against.
+        if (_delegations.TryGetValue(runId!, out var scope) && !TryGetDelegatingParent(scope, out _))
+            return ApprovalDecisionResult.Denied("subagent_parent_revoked", "delegation is no longer active");
+
         var expectedBinding = pending.Binding;
 #if DEBUG
         var overrideHash = PayloadReads.OptionalString(payload, "expected_intent_hash");

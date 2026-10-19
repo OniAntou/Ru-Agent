@@ -74,6 +74,11 @@ public interface ISessionStore
 
     Task<bool> DeleteAsync(string sessionId, CancellationToken cancellationToken);
 
+    // Legacy stores cannot prove that false means absence rather than failure.
+    async Task<SessionDeleteOutcome> DeleteWithOutcomeAsync(string sessionId, CancellationToken cancellationToken) =>
+        await DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false)
+            ? SessionDeleteOutcome.Deleted : SessionDeleteOutcome.Failed;
+
     /// <summary>Removes an empty session atomically; preserves populated sessions.
     /// True means no orphaned empty row remains, including an already missing row.</summary>
     Task<bool> CleanupEmptyAsync(string sessionId, CancellationToken cancellationToken) =>

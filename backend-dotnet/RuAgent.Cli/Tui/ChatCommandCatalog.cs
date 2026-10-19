@@ -19,6 +19,7 @@ public static class ChatCommandCatalog
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Switch or delete sessions", "/sessions [query]"),
         new("/resume", "Resume a session", "/resume [session-id]"),
+        new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
         new("/follow", "Follow a retained run", "/follow [run-id]"),
         new("/retry", "Retry the last held submission", "/retry"),
         new("/delete", "Delete another session", "/delete [session-id]"),
@@ -32,7 +33,7 @@ public static class ChatCommandCatalog
     private static readonly HashSet<string> ReportCommands =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "/status", "/help", "/attachments",
+            "/status", "/help", "/attachments", "/subagents",
         };
 
     /// <summary>True when <paramref name="slashCmd"/> is a report-only command.</summary>

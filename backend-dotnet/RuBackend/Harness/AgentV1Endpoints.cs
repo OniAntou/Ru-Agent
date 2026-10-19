@@ -7,7 +7,7 @@ using RuBackend.Security;
 
 namespace RuBackend.Harness;
 
-public static class AgentV1Endpoints
+public static partial class AgentV1Endpoints
 {
     private const int MaxJsonBodyBytes = 64 * 1024;
     private const int MaxJsonBodyBytesDefault = MaxJsonBodyBytes;
@@ -19,6 +19,7 @@ public static class AgentV1Endpoints
 
     public static void Map(WebApplication app)
     {
+        MapSubagents(app);
         app.MapPost("/agent/v1/runs", CreateRunAsync);
         app.MapGet("/agent/v1/runs/{runId}", GetRunAsync);
         app.MapGet("/agent/v1/runs/{runId}/events", GetEventsAsync);

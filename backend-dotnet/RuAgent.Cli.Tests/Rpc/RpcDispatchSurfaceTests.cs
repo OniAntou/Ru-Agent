@@ -6,7 +6,7 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests.Rpc;
 
-public sealed class RpcDispatchSurfaceTests
+public sealed partial class RpcDispatchSurfaceTests
 {
     private static async Task<RpcDispatcher> CreateInitializedAsync(
         Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
@@ -487,6 +487,8 @@ public sealed class RpcDispatchSurfaceTests
                 "run.command",
                 "run.reconcile",
                 "run.output",
+                "subagent.list",
+                "subagent.get",
                 "policy.list",
                 "policy.import",
                 "policy.remove",

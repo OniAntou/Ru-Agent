@@ -5,7 +5,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class AgentSessionRunsTests
+public sealed partial class AgentSessionRunsTests
 {
     [Fact]
     public async Task Session_runs_return_in_deterministic_order_and_pagination_and_no_leakage()

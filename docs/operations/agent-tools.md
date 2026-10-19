@@ -73,7 +73,7 @@ not advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **43 HTTP with no WebSocket route** (20 non-Agent + 23 `/agent/v1/*`).
+> - Public Contract is now **48 HTTP with no WebSocket route** (20 non-Agent + 28 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
@@ -85,6 +85,8 @@ not advertised Agent tools.
 >   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview) are
 >   covered in `docs/architecture.md`, `CONTEXT.md`,
 >   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
+
+For parent-only delegation tools, user-requested signed-in model selection, read-only user observation, limits and recovery, see [Subagents](subagents.md).
 
 ## Incomplete outcomes and model context
 
@@ -107,9 +109,10 @@ current user's explicit instructions or the system execution contract.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 13 model-visible definitions (`read`,
+The immutable Protocol catalog contains 18 model-visible definitions (`read`,
 `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
-`web_search`, `web_fetch`, `skill`, `ask_user`). Each tool has one purpose: `read` takes `path` with
+`web_search`, `web_fetch`, `skill`, `ask_user`, `agent_spawn`, `agent_send`,
+`agent_wait`, `agent_cancel`, `agent_apply`). Each tool has one purpose: `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
 one file. Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `offset + bytes_read` continues a truncated Broker page, while

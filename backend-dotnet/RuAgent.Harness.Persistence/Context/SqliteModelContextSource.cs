@@ -7,7 +7,7 @@ using RuAgent.Harness.Persistence.Privacy;
 
 namespace RuAgent.Harness.Persistence.Context;
 
-public sealed class SqliteModelContextSource : IModelContextSource
+public sealed partial class SqliteModelContextSource : IModelContextSource
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HarnessSqliteOptions _options;
@@ -24,9 +24,11 @@ public sealed class SqliteModelContextSource : IModelContextSource
         _workStates = workStates;
     }
 
-    public async Task<ModelContextSourceSnapshot> LoadAsync(
+    public Task<ModelContextSourceSnapshot> LoadAsync(
         RunId runId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) => LoadAsync(runId, 0, cancellationToken);
+
+    private async Task<ModelContextSourceSnapshot> LoadAsync(RunId runId, int depth, CancellationToken cancellationToken)
     {
         _ = runId.Value;
         await using var connection = await _options.OpenConnectionAsync(cancellationToken)
@@ -97,6 +99,8 @@ public sealed class SqliteModelContextSource : IModelContextSource
         {
             throw new HarnessStoreException("context_base_incomplete");
         }
+
+        await InheritSubagentContextAsync(connection, runId, sessionBase, depth, cancellationToken).ConfigureAwait(false);
 
         await AppendSessionWorkStateAsync(connection, runId, sessionBase, cancellationToken)
             .ConfigureAwait(false);

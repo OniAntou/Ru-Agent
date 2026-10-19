@@ -34,7 +34,8 @@ internal static class BrokerGatewayContracts
     internal static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) =>
         toolId switch
         {
-            "write" or "edit" or "todo_write" => ToolAccessKind.Mutation,
+            "write" or "edit" or "todo_write" or "agent_spawn" or "agent_send" or "agent_cancel" or "agent_apply" => ToolAccessKind.Mutation,
+            "agent_wait" => ToolAccessKind.ReadOnly,
             "bash" => ToolAccessKind.Terminal,
             _ when BrokerPolicyContracts.IsReadOnlyTool(toolId) => ToolAccessKind.ReadOnly,
             _ => ToolAccessKind.Terminal,
@@ -45,6 +46,10 @@ internal static class BrokerGatewayContracts
         var canonicalArguments = CanonicalizeJson(JsonNode.Parse(arguments.GetRawText()));
         return toolId + "|" + (canonicalArguments?.ToJsonString() ?? "null");
     }
+
+    internal static string ProposalApprovalArgsKey(ToolProposal proposal) =>
+        ApprovalArgsKey(proposal.ToolId, proposal.Arguments)
+        + (RuAgent.Protocol.Subagents.SubagentContractValidator.IsControlTool(proposal.ToolId) ? "|call:" + proposal.ToolCallId.Value : string.Empty);
 
     private static JsonNode? CanonicalizeJson(JsonNode? node) => node switch
     {
@@ -81,6 +86,7 @@ internal static class BrokerGatewayContracts
         "terminal_unknown_executable" => "terminal_unknown_executable",
         "terminal_protected_path_requires_approval" => "terminal_protected_path_requires_approval",
         "web_approval_required" => "web_approval_required",
+        "subagent_apply_approval_required" => "subagent_apply_approval_required",
         _ => "approval_required",
     };
 

@@ -23,7 +23,7 @@ public static class ModelGenerationBounds
 /// </summary>
 public sealed record ModelGenerationSettings
 {
-    private const int MaxModelTools = 16;
+    private const int MaxModelTools = RuAgent.Protocol.AgentToolDefinitionCatalog.MaximumModelTools;
 
     public ModelGenerationSettings(JsonArray? modelTools = null, int? maxOutputTokens = null)
     {

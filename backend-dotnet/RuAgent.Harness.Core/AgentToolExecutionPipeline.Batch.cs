@@ -16,6 +16,7 @@ internal sealed partial class AgentToolExecutionPipeline
         internal ProposalBatch(IReadOnlyList<ToolProposal> proposals) : this(proposals.Count)
         {
             foreach (var proposal in proposals) Proposals.Add(proposal.ModelOrder, proposal);
+            RejectWaitBatch = proposals.Count > 1 && proposals.Any(proposal => proposal.ToolId == "agent_wait");
         }
 
         internal Dictionary<int, ToolProposal> Proposals { get; }
@@ -23,13 +24,26 @@ internal sealed partial class AgentToolExecutionPipeline
         internal Dictionary<int, DeniedToolExecution> Denied { get; } = new();
         internal List<AskDecision> Approvals { get; }
         internal List<InputAsk> Questions { get; } = new();
+        internal bool RejectWaitBatch { get; init; }
     }
 
     private async Task EvaluateBatchProposalAsync(
         AgentRun run, ToolProposal proposal, ProposalBatch batch, CancellationToken cancellationToken)
     {
+        if (batch.RejectWaitBatch)
+        {
+            batch.Denied.Add(proposal.ModelOrder, CreateDeniedExecution(proposal, _ids.NewExecutionId(),
+                "subagent_wait_must_be_alone", "Call agent_wait alone in a tool batch."));
+            return;
+        }
         if (proposal.ToolId is AskUserToolId)
         {
+            if (!_allowUserInput)
+            {
+                batch.Denied.Add(proposal.ModelOrder, CreateDeniedExecution(proposal, _ids.NewExecutionId(),
+                    "subagent_ask_user_denied", "Report the blocker to the parent agent instead of asking the user directly."));
+                return;
+            }
             HandleAskUserProposal(proposal, batch.Denied, batch.Questions);
             return;
         }

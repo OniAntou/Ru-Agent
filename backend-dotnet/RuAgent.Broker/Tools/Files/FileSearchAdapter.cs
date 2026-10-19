@@ -22,6 +22,27 @@ public sealed class FileSearchAdapter
         _maxSearchConcurrency = Math.Clamp(maxSearchConcurrency, 1, MaxSearchConcurrency);
     }
 
+    private static readonly HashSet<string> AlwaysGeneratedDirectories =
+        new(["node_modules", "__pycache__", ".git"], StringComparer.OrdinalIgnoreCase);
+    private static readonly string[] ProjectFilePatterns = ["*.csproj", "*.fsproj", "*.vbproj", "package.json"];
+
+    /// <summary>
+    /// Skips VCS and dependency/build-output directories during recursive traversal.
+    /// `bin`/`obj` are pruned only beside a project file so a source folder of that
+    /// name is still searched; naming such a directory as the search path searches it.
+    /// </summary>
+    private static bool IsGeneratedDirectory(string parent, string directory, Dictionary<string, bool> projectDirectories)
+    {
+        var name = Path.GetFileName(directory);
+        if (AlwaysGeneratedDirectories.Contains(name)) return true;
+        if (!name.Equals("bin", StringComparison.OrdinalIgnoreCase) && !name.Equals("obj", StringComparison.OrdinalIgnoreCase)) return false;
+        if (projectDirectories.TryGetValue(parent, out var hasProject)) return hasProject;
+        try { hasProject = ProjectFilePatterns.Any(pattern => Directory.EnumerateFiles(parent, pattern).Any()); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { hasProject = false; }
+        projectDirectories[parent] = hasProject;
+        return hasProject;
+    }
+
     public Task<JsonObject> ExecuteAsync(JsonObject arguments, CancellationToken cancellationToken) =>
         ExecuteConcurrentAsync(arguments, cancellationToken);
 
@@ -90,6 +111,7 @@ public sealed class FileSearchAdapter
         else
         {
         var stack = new Stack<string>([baseResolved.CanonicalPath]);
+        var projectDirectories = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         while (stack.Count > 0 && candidates.Count < FileToolLimits.MaxEntries * 32)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -97,18 +119,30 @@ public sealed class FileSearchAdapter
             var current = stack.Pop();
             if (!visited.Add(current)) continue;
             if (visited.Count > FileToolLimits.MaxEntries * 16) { traversalCapped = true; break; }
-            IEnumerable<string> entries;
-            try { entries = Directory.EnumerateFileSystemEntries(current); }
+            IEnumerable<FileSystemInfo> entries;
+            try { entries = new DirectoryInfo(current).EnumerateFileSystemInfos(); }
             catch (UnauthorizedAccessException) { continue; }
             catch (IOException) { continue; }
-            foreach (var entry in entries)
+            foreach (var item in entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (stopwatch.ElapsedMilliseconds > FileToolLimits.MaxTimeMs) { traversalCapped = true; break; }
+                // Enumeration already carries attributes, so a plain file that cannot
+                // match the glob is dropped before the per-entry path resolution
+                // (handle open + final-path lookup), which dominates build-output trees.
+                if (fileGlobRegex is not null
+                    && (item.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0
+                    && !fileGlobRegex.IsMatch(WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, item.FullName)))
+                    continue;
+                var entry = item.FullName;
                 ResolvedPath resolved;
                 try { resolved = _resolver.Resolve(entry); } catch { continue; }
                 if (resolved.IsProtected || resolved.IsOutsideWorkspace) continue;
-                if (Directory.Exists(resolved.CanonicalPath)) { stack.Push(resolved.CanonicalPath); continue; }
+                if (Directory.Exists(resolved.CanonicalPath))
+                {
+                    if (!IsGeneratedDirectory(current, resolved.CanonicalPath, projectDirectories)) stack.Push(resolved.CanonicalPath);
+                    continue;
+                }
                 var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath);
                 if (fileGlobRegex is not null && !fileGlobRegex.IsMatch(relative)) continue;
                 try

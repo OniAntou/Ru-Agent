@@ -119,13 +119,13 @@ public sealed partial class TgTranscriptView : View
     /// <summary>Rows committed so far; a step mark for <see cref="DropRowsSince"/>.</summary>
     internal int CommittedRowCount => _lines.Count;
 
-    internal void ReplaceProseSince(int mark, IReadOnlyList<string> prose)
+    internal void ReplaceProseSince(int mark, IReadOnlyList<TgTranscriptRow> rows)
     {
         RetentionVersion++;
         for (var index = _lines.Count - 1; index >= mark; index--)
             if (_lines[index].Style == TranscriptStyle.Prose) RemoveLine(index);
         _wrapWidth = -1;
-        foreach (var line in prose) Append(line, TranscriptStyle.Prose);
+        foreach (var row in rows) Append(row.Text, TranscriptStyle.Prose, row.Spans);
         SetNeedsDraw();
     }
 

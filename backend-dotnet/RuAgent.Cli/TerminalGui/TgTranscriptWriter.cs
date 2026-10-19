@@ -70,7 +70,14 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
 
     public async Task<bool> ReplaceAssistantTurnAsync(IReadOnlyList<string> prose)
     {
-        var clean = prose.Select(TuiText.Strip).ToArray();
+        // The renderer hands over markdown-rendered rows, so keep their paint as spans
+        // the same way CommitLine does — a reconciled turn replaces the streamed block
+        // with the durable text and must not flatten it back to single-attribute rows.
+        var painted = prose.Select(row =>
+        {
+            var (clean, spans) = TgAnsiPaint.Parse(row);
+            return new TgTranscriptRow(clean, TranscriptStyle.Prose, spans);
+        }).ToArray();
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
@@ -83,7 +90,7 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
                     completion.TrySetResult(false);
                     return;
                 }
-                transcript.ReplaceProseSince(_turnMark, clean);
+                transcript.ReplaceProseSince(_turnMark, painted);
                 _projectedRow = false;
                 completion.TrySetResult(true);
             });

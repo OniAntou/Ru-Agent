@@ -316,6 +316,123 @@ internal static class TgAnsiPaint
         return (text.Substring(index, consumed), consumed, codePoint);
     }
 
+    // ------------------------------------------------------------------
+    // The data-tone pass. A free model may answer with important numbers and file
+    // names in bare prose; the deterministic decorator tints exactly those runs so
+    // they read as data wherever the renderer itself left them unpainted.
+    // ------------------------------------------------------------------
+
+    private static readonly System.Text.RegularExpressions.Regex NumberPattern =
+        new(@"\b\d{1,3}(?:,\d{3})+\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex FilePathPattern =
+        new(@"\b[A-Za-z][\w.-]{0,63}\.(?:md|json|jsonl|cs|py|ps1|cmd|bat|txt|yml|yaml|toml|ini|log)\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Splits runs at comma-grouped numbers and file-path-like tokens, tinting
+    /// them with distinct accents — but only inside the default-to-ink runs. Anything the
+    /// renderer already painted (bold, code, heading, notice) passes through untouched,
+    /// and the visible text is never changed, only the paint boundaries.</summary>
+    public static IReadOnlyList<TgSpan>? Decorate(string text, IReadOnlyList<TgSpan>? spans)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return spans;
+        }
+
+        var matches = new List<(int Start, int End, Attr Accent)>();
+        var numberAccent = TgPalette.Attr(TuiToken.Brand);
+        var pathAccent = TgPalette.Attr(TuiToken.Brand2);
+        foreach (System.Text.RegularExpressions.Match match in NumberPattern.Matches(text))
+        {
+            matches.Add((match.Index, match.Index + match.Length, numberAccent));
+        }
+
+        foreach (System.Text.RegularExpressions.Match match in FilePathPattern.Matches(text))
+        {
+            matches.Add((match.Index, match.Index + match.Length, pathAccent));
+        }
+
+        if (matches.Count == 0)
+        {
+            return spans;
+        }
+
+        matches.Sort((left, right) => left.Start.CompareTo(right.Start));
+        var source = spans is { Count: > 0 } ? spans : [new TgSpan(text, TgPalette.Attr(TuiToken.Ink))];
+        var tinted = TintRuns(source, text, matches);
+        return MergeAdjacent(tinted);
+    }
+
+    private static List<TgSpan> TintRuns(
+        IReadOnlyList<TgSpan> source,
+        string text,
+        List<(int Start, int End, Attr Accent)> matches)
+    {
+        var ink = TgPalette.Attr(TuiToken.Ink);
+        var result = new List<TgSpan>(source.Count + matches.Count);
+        var cursor = 0;
+        foreach (var span in source)
+        {
+            var spanStart = cursor;
+            var spanEnd = cursor + span.Text.Length;
+            cursor = spanEnd;
+            if (!span.Attr.Equals(ink))
+            {
+                result.Add(span);
+                continue;
+            }
+
+            var position = spanStart;
+            foreach (var (start, end, accent) in matches)
+            {
+                var low = Math.Max(start, spanStart);
+                var high = Math.Min(end, spanEnd);
+                if (high <= low)
+                {
+                    continue;
+                }
+
+                if (low > position)
+                {
+                    result.Add(new TgSpan(span.Text[(position - spanStart)..(low - spanStart)], span.Attr));
+                }
+
+                result.Add(new TgSpan(text[low..high], accent));
+                position = high;
+            }
+
+            if (position < spanEnd)
+            {
+                result.Add(new TgSpan(span.Text[(position - spanStart)..], span.Attr));
+            }
+        }
+
+        return result;
+    }
+
+    private static List<TgSpan> MergeAdjacent(List<TgSpan> spans)
+    {
+        var merged = new List<TgSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            if (span.Text.Length == 0)
+            {
+                continue;
+            }
+
+            if (merged.Count > 0 && merged[^1].Attr.Equals(span.Attr))
+            {
+                merged[^1] = merged[^1] with { Text = merged[^1].Text + span.Text };
+                continue;
+            }
+
+            merged.Add(span);
+        }
+
+        return merged;
+    }
+
     private static (int CodePoint, int Consumed) ReadRune(string text, int index)
     {
         if (char.IsSurrogatePair(text, index))

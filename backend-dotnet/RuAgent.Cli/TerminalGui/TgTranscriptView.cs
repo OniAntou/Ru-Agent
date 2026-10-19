@@ -213,7 +213,15 @@ public sealed partial class TgTranscriptView : View
         EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
         var bounded = BoundLine(text);
-        _lines.Add(new TgTranscriptRow(bounded, style, FitSpans(spans, text, bounded)));
+        var fitted = FitSpans(spans, text, bounded);
+        if (style == TranscriptStyle.Prose && !bounded.StartsWith(' ') && !bounded.Contains('│'))
+        {
+            // Plain prose gets the deterministic data tone (comma-grouped numbers, file
+            // paths); painted runs keep whatever the renderer already emphasised.
+            fitted = TgAnsiPaint.Decorate(bounded, fitted);
+        }
+
+        _lines.Add(new TgTranscriptRow(bounded, style, fitted));
         _retainedCharacters += CharacterCount(bounded);
         if (wasEmpty)
         {
@@ -502,7 +510,7 @@ public sealed partial class TgTranscriptView : View
             if (style == TranscriptStyle.Prose
                 && TuiMarkdownTable.TryRender(rawRows, i, Math.Min(width, 100), out var consumed, out var table))
             {
-                _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose)));
+                _wrapped.AddRange(table.Select(row => new TgTranscriptRow(row, TranscriptStyle.Prose, TgAnsiPaint.Decorate(row, null))));
                 i += consumed - 1;
                 _tailRows = 0;
                 AppendCollapsedBlocksAfter(i + 1, summaryTop: null, width);

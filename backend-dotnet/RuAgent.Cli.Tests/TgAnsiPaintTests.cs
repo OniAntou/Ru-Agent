@@ -208,4 +208,89 @@ public sealed class TgAnsiPaintTests
         Assert.Equal("one", rows[0].Row);
         Assert.Equal(string.Empty, rows[1].Row);
     }
+
+    // ------------------------------------------------------------------
+    // The data-tone pass: comma-grouped numbers and file-path-like tokens get their
+    // own accent inside otherwise-plain prose, deterministically, without waiting
+    // for the model to wrap them in markdown.
+    // ------------------------------------------------------------------
+
+    private static IReadOnlyList<string> SpanTexts(IReadOnlyList<TgSpan> spans) =>
+        spans.Select(span => span.Text).ToArray();
+
+    [Fact]
+    public void Decorate_TintsCommaGroupedNumbersBlueInPlainProse()
+    {
+        var decorated = TgAnsiPaint.Decorate("Mua 140,600 / Ban 1,043,600 vang", null);
+
+        Assert.NotNull(decorated);
+        Assert.Contains(decorated!, span => span.Text == "140,600" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.Contains(decorated!, span => span.Text == "1,043,600" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.Equal("Mua 140,600 / Ban 1,043,600 vang", string.Concat(SpanTexts(decorated!)));
+    }
+
+    [Fact]
+    public void Decorate_TintsFilePathLikeTokensViolet()
+    {
+        var decorated = TgAnsiPaint.Decorate("dinh vao CHANGELOG.md va MEMORY.md, build.bat", null);
+
+        Assert.NotNull(decorated);
+        Assert.Contains(decorated!, span => span.Text == "CHANGELOG.md" && span.Attr == TgPalette.Attr(TuiToken.Brand2));
+        Assert.Contains(decorated!, span => span.Text == "MEMORY.md" && span.Attr == TgPalette.Attr(TuiToken.Brand2));
+        Assert.Contains(decorated!, span => span.Text == "build.bat" && span.Attr == TgPalette.Attr(TuiToken.Brand2));
+    }
+
+    [Fact]
+    public void Decorate_MixesNumbersAndPathsInTheSameRow()
+    {
+        var decorated = TgAnsiPaint.Decorate("Gia 143,600 trong README.md", null);
+
+        Assert.NotNull(decorated);
+        Assert.Contains(decorated!, span => span.Text == "143,600" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.Contains(decorated!, span => span.Text == "README.md" && span.Attr == TgPalette.Attr(TuiToken.Brand2));
+    }
+
+    [Fact]
+    public void Decorate_LeavesPaintedSegmentsUntouched()
+    {
+        // A bold number is already emphasized by the renderer; the tone pass must not
+        // re-tint spans that carry paint, only the plain ink runs.
+        var spans = new List<TgSpan>
+        {
+            new("Gia ", TgPalette.Attr(TuiToken.Ink)),
+            new("140,600", new Attr(TgPalette.ToColor(TuiPalette.Rgb(TuiToken.Ok)), TgPalette.ToColor((0, 0, 0)), TextStyle.Bold)),
+        };
+
+        var decorated = TgAnsiPaint.Decorate("Gia 140,600", spans);
+
+        Assert.Equal(2, decorated!.Count);
+        Assert.Equal("140,600", decorated[1].Text);
+        Assert.Equal(TextStyle.Bold, decorated[1].Attr.Style);
+    }
+
+    [Fact]
+    public void Decorate_SkipsDatesAndPlainDecimals()
+    {
+        var spans = new List<TgSpan> { new("ngay 19/10/2026 va 2.86% va 30 gio", TgPalette.Attr(TuiToken.Ink)) };
+
+        // Dates and plain decimals carry no comma-grouped thousands, so the pass keeps
+        // the runs exactly as they were — one untouched ink span per source span.
+        var decorated = TgAnsiPaint.Decorate("ngay 19/10/2026 va 2.86% va 30 gio", spans);
+
+        Assert.Single(decorated!);
+        Assert.Equal("ngay 19/10/2026 va 2.86% va 30 gio", decorated![0].Text);
+    }
+
+    [Fact]
+    public void Decorate_TableRowWithPipelineSeparatorsKeepsCellsAndPipePlain()
+    {
+        // Table cells arrive as "X   │ 140,600 │ 143,600": numbers tint, the '│'
+        // separator itself stays plain.
+        var decorated = TgAnsiPaint.Decorate("SJC │ 140,600 │ 148,800", null);
+
+        Assert.NotNull(decorated);
+        Assert.Contains(decorated!, span => span.Text == "140,600" && span.Attr == TgPalette.Attr(TuiToken.Brand));
+        Assert.All(decorated!, span => Assert.False(span.Text.Contains('│') && span.Attr == TgPalette.Attr(TuiToken.Brand)));
+        Assert.Equal("SJC │ 140,600 │ 148,800", string.Concat(SpanTexts(decorated!)));
+    }
 }

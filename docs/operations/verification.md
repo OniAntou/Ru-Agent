@@ -3607,6 +3607,40 @@ non-WebSocket probes. The owned process tree was stopped and the probe roots
 were removed. This confirms managed startup/listener wiring only; it does not
 replace native microphone, OmniVoice, VTube Studio, or Gemini acceptance.
 
+## Live coding trials after reasoning-effort recovery (2026-10-20)
+
+One native attempt per task through `benchmark.py run-live` with the existing
+selected model (`models.dev:kilo`, `minimax/minimax-m3.1-flash:free`), `standard`
+preset, a **published** Host built after the change under test (the trial starts
+the Host from the `publish` folder, not from `dotnet build` output; earlier
+same-day experiments that skipped `dotnet publish` measured the old binary and
+are discarded). The pinned `request_options_json` was read from the harness
+database to confirm which effort a run used. Single attempts on a free model; no
+statistical claim.
+
+| Condition | Result |
+| --- | --- |
+| Everyday suite, saved settings (no effort sent) | 6/6 passed, 94-217 s |
+| Nine Terminal/SWE tasks, saved settings, before the change | 1/9; seven ended in `model_output_truncated` with no source change (reasoning filled the output) |
+| Same nine, `RU_REASONING_EFFORT=low` | 6/9 |
+| Seven previously truncating tasks, saved settings, with automatic lowest-effort retry after a truncation | 4/7 passed after one truncation each; `cs-single-flight-cache` failed on a fourth truncation (cumulative cap, since replaced by a consecutive-notes cap); two failed one grader group |
+| `ts-generation-pager`, three attempts, saved settings | 0/3, all on `same-generation-dedup` |
+
+`ts-generation-pager` fails because its grader also requires that the loader is
+not called synchronously from `loadNext()` (checked before a microtask turn), a
+requirement the instruction does not state; implementations returning the shared
+promise still fail it. A prompt sentence asking for per-requirement edge-case
+checks was tried and reverted: 1/3 on `ts-transaction-store` against 0/1 earlier
+is not evidence. One run of `cs-lease-renewal` ended in `runtime_drive_failed` and
+did not reproduce on rerun; the structured log now records the exception type
+bucket so a recurrence is diagnosable (`RU_DRIVE_FAILURE_DIAGNOSTIC` also dumps
+the full exception).
+
+Deterministic checks for the same change: Harness.Core 537, RuBackend 1264,
+Runtime.Adapters 228 and Runtime.Model 91 tests passed; Broker 1067 of 1068
+passed in Debug (`Assigned_job_kill_takes_down_child_and_grandchild` fails with
+and without the change in this environment).
+
 ## Test ownership and documentation integrity
 
 Python tests cover documentation and route contracts, reference fixtures and

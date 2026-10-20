@@ -32,6 +32,7 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Contributing](../CONTRIBUTING.md)
+- [Documentation site](../docs-site/README.md): how these pages are published
 - [Agent guidance](../AGENTS.md)
 
 ## Decisions

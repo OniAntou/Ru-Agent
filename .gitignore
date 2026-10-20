@@ -76,3 +76,8 @@ rustup-init.exe
 
 # Impeccable design-review scratch (local critique notes, never committed)
 .impeccable/
+
+# Documentation site build output
+/site/
+/docs-site/.build/
+.venv-docs/

@@ -1,0 +1,55 @@
+# Base configuration. build.py fills in docs_dir and nav (the nav lists the Decisions pages
+# straight from docs/adr, so a new ADR needs no edit here).
+site_name: Ru Agent
+site_description: Local-first coding agent for Windows with a native desktop app and a terminal UI.
+site_url: https://oniantou.github.io/Ru-Agent/
+repo_url: https://github.com/OniAntou/Ru-Agent
+repo_name: OniAntou/Ru-Agent
+copyright: Ru Agent documentation
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: false
+  - pymdownx.superfences
+  - pymdownx.tilde
+
+plugins:
+  - search
+
+validation:
+  links:
+    not_found: warn
+    absolute_links: ignore
+    unrecognized_links: ignore

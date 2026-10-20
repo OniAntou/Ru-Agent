@@ -69,7 +69,7 @@ public sealed class TgChatWindow : Window
             }
             else if (!Transcript.HasContent)
             {
-                // A turn that produced no rows (e.g. /continue on an empty transcript)
+                // A turn that produced no rows (e.g. Continue on an empty transcript)
                 // returns to the wordmark when its live row clears.
                 ShowLanding();
             }

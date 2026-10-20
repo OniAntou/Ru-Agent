@@ -334,6 +334,7 @@ public sealed class TgRunLoopTests
         using var window = TgChatWindow.Build();
         var loop = new TgChatLoop(window);
         var cancelled = false;
+        var reachedAfterCancel = false;
         loop.SetPromptHandler(async (_, _, ct) =>
         {
             try
@@ -361,6 +362,7 @@ public sealed class TgRunLoopTests
         });
         app.AddTimeout(TimeSpan.FromMilliseconds(700), () =>
         {
+            reachedAfterCancel = true;
             Assert.True(cancelled);
             var text = string.Join('\n', TgSnapshot.Capture(app));
             Assert.Contains("esc interrupted", text);
@@ -368,6 +370,7 @@ public sealed class TgRunLoopTests
             return false;
         });
         app.Run(window);
+        Assert.True(reachedAfterCancel, "Escape must cancel the active turn without quitting the chat.");
     }
 
     [Fact]

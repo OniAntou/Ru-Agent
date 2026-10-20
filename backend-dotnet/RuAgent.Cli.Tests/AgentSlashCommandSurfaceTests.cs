@@ -81,7 +81,8 @@ public sealed class AgentSlashCommandSurfaceTests
         var text = output.ToString();
         Assert.Contains("╭─ help", text, StringComparison.Ordinal);
         Assert.Contains("/model", text, StringComparison.Ordinal);
-        Assert.Contains("/quit", text, StringComparison.Ordinal);
+        Assert.Contains("/exit", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("/quit", text, StringComparison.Ordinal);
     }
 
     [Fact]

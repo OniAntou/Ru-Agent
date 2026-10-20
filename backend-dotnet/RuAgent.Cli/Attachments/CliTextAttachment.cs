@@ -10,6 +10,6 @@ public sealed record CliTextAttachment(string FileName, string TextContent, long
 {
     public string Extension => Path.GetExtension(FileName).TrimStart('.');
 
-    /// <summary>One-line label for <c>/attachments</c>: name and source size.</summary>
+    /// <summary>One-line attachment label: name and source size.</summary>
     public string Label => $"{FileName}  {CliImageAttachment.FormatBytes(ByteSize)}";
 }

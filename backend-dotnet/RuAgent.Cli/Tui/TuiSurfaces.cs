@@ -25,9 +25,9 @@ public static class TuiSurfaces
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
         ("session", ["/new", "/sessions", "/resume", "/delete", "/status"]),
-        ("run & attachments", ["/continue", "/follow", "/retry", "/attach", "/attachments", "/detach"]),
+        ("run", ["/follow", "/retry", "/release"]),
         ("model & backend", ["/model", "/backend", "/key", "/reasoning"]),
-        ("terminal", ["/clear", "/help", "/update", "/exit", "/quit"]),
+        ("terminal", ["/clear", "/help", "/update", "/exit"]),
     ];
 
     /// <summary>

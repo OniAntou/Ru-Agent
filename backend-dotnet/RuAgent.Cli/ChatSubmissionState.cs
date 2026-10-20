@@ -29,15 +29,16 @@ internal sealed class ChatSubmissionState : IDisposable
         string backend, string model, bool isParked)
     {
         var isCommand = line.TrimStart().StartsWith('/');
-        if (Count > 0 && (isCommand && !ChatSubmissionSnapshot.IsPausedControlCommand(line)
-            || isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase)))
+        var isParkedContinue = isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
+        if (Count > 0 && isCommand && !ChatSubmissionSnapshot.IsPausedControlCommand(line))
         {
             return null;
         }
 
         var snapshot = ChatSubmissionSnapshot.Create(
             line, sessionId, workspace, preset, backend, model,
-            isCommand ? [] : _images, isCommand ? [] : _texts);
+            isCommand || isParkedContinue ? [] : _images,
+            isCommand || isParkedContinue ? [] : _texts);
         return AttachedPrompt.Compose(snapshot.Prompt, snapshot.Texts).Length > MaxComposedPromptChars
             ? null : snapshot;
     }

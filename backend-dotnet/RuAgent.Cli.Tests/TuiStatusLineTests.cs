@@ -89,7 +89,7 @@ public sealed class TuiStatusLineTests
         var status = Create();
         status.IsLive = true;
         status.SetState(TuiRunState.Paused);
-        status.SetDetail("model_step_budget_exhausted · /continue");
+        status.SetDetail("model_step_budget_exhausted · Continue");
         // A parked run is waiting on the operator, not on the model: a spinner frame and
         // a running clock would read as work in flight.
         status.SetElapsed(937.4);
@@ -98,7 +98,7 @@ public sealed class TuiStatusLineTests
 
         Assert.Contains("run paused", row);
         Assert.Contains("model_step_budget_exhausted", row);
-        Assert.Contains("/continue", row);
+        Assert.Contains("Continue", row);
         Assert.DoesNotContain("937.4s", row);
         Assert.DoesNotContain("Thinking", row);
         Assert.DoesNotContain("⠋", row);

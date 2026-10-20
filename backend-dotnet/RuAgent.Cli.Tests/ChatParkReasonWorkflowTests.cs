@@ -172,7 +172,7 @@ public sealed class ChatParkReasonWorkflowTests
         Assert.DoesNotContain("waiting_user · resume", combined);
         Assert.False(cancelPosted, "a parked run is the user's to resume; the turn must not cancel it");
         var output = outWriter.ToString();
-        Assert.Contains("/continue", output, StringComparison.Ordinal);
+        Assert.Contains("Continue", output, StringComparison.Ordinal);
         // The payload-ref recovery is what forces the OCE-parked path: the fetch is
         // dispatched and the body read observes the park's cancelled token.
         Assert.True(payloadFetchPosted, "the model.step_completed payload ref must reach recovery");

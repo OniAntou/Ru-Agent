@@ -559,7 +559,11 @@ reconciliation surfaces from Phase 3:
   Activity/todo/change inspectors, the project-file browser, session tree, rewind,
   Markdown export and separate token/prompt-history reports are absent from the
   interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
-  retain their own capabilities. Conversation replay retains the latest
+  retain their own capabilities. File intake uses clipboard/drop or `--image`;
+  parked chat runs resume on typed `Continue`. `/attach`, `/attachments`, `/paste`,
+  `/detach`, `/continue` and `/quit` are absent from dispatch, help and completion.
+  `/exit` is the sole quit command. Escape dismisses overlays or interrupts an
+  active turn; idle Escape keeps the chat and draft open. Conversation replay retains the latest
   20 nonempty messages, with a 100,000-character bound per message; screen
   retention is independently bounded by `TgTranscriptView`.
   Command overlays follow the composer and remain bounded within the frame.

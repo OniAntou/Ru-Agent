@@ -10,8 +10,7 @@ namespace RuAgent.Cli.Tests;
 
 /// <summary>
 /// Picking a command from the <c>/</c> list must not cost a second Enter: a command that is
-/// complete on its own runs straight away (so its card opens), and only a command that still
-/// needs an argument is left in the composer for the rest to be typed.
+/// complete on its own runs straight away (so its card opens). Tab only fills the composer.
 /// </summary>
 public sealed class TgSlashSubmitTests
 {
@@ -58,6 +57,9 @@ public sealed class TgSlashSubmitTests
     [InlineData("/reasoning", "/reasoning")]
     [InlineData("/clear", "/clear")]
     [InlineData("/status", "/status")]
+    [InlineData("/follow", "/follow")]
+    [InlineData("/release", "/release")]
+    [InlineData("/exit", "/exit")]
     public void ACompleteCommand_RunsTheMomentItIsPicked(string typed, string expected)
     {
         using IApplication app = Application.Create();
@@ -69,21 +71,6 @@ public sealed class TgSlashSubmitTests
         Assert.Equal([expected], ran);
         // Running it consumed the composer, so the command is not left behind as text.
         Assert.Equal(string.Empty, composer);
-    }
-
-    [Theory]
-    [InlineData("/attach", "/attach")]
-    [InlineData("/detach", "/detach")]
-    public void ACommandNeedingAnArgument_StaysInTheComposer(string typed, string expected)
-    {
-        using IApplication app = Application.Create();
-        app.Init(DriverRegistry.Names.ANSI);
-        using var window = TgChatWindow.Build();
-
-        var (composer, ran) = Pick(app, window, typed);
-
-        Assert.Empty(ran);
-        Assert.Equal(expected + " ", composer);
     }
 
     [Fact]
@@ -126,19 +113,4 @@ public sealed class TgSlashSubmitTests
         Assert.Equal("/model ", window.Composer.Input.Text?.ToString());
     }
 
-    [Fact]
-    public void NeedsArgument_OnlyForCommandsThatCannotRunBare()
-    {
-        foreach (var command in new[] { "/attach", "/detach" })
-        {
-            Assert.True(ChatCommandCatalog.NeedsArgument(command), command);
-        }
-
-        foreach (var command in new[] { "/model", "/backend", "/key", "/reasoning", "/delete", "/clear", "/exit", "/help" })
-        {
-            Assert.False(ChatCommandCatalog.NeedsArgument(command), command);
-        }
-
-        Assert.False(ChatCommandCatalog.NeedsArgument(null));
-    }
 }

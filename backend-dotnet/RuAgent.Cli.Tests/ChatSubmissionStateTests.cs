@@ -67,18 +67,38 @@ public sealed class ChatSubmissionStateTests
     }
 
     [Fact]
-    public void AdmissionDefersAttachmentCommandsAndRejectsOversizedComposedPrompt()
+    public void AdmissionDefersStateChangeCommandsAndRejectsOversizedComposedPrompt()
     {
         using var state = new ChatSubmissionState();
         state.Add(new CliTextAttachment("notes.txt", new string('x', ChatSubmissionState.MaxComposedPromptChars), 16_000));
 
-        Assert.Null(state.CreateSnapshot("/detach 1", "session", "C:\\project", "standard", "OpenAI", "model", false));
-        Assert.Null(state.CreateSnapshot("continue", "session", "C:\\project", "standard", "OpenAI", "model", true));
+        Assert.Null(state.CreateSnapshot("/new", "session", "C:\\project", "standard", "OpenAI", "model", false));
         Assert.Null(state.CreateSnapshot("fix", "session", "C:\\project", "standard", "OpenAI", "model", false));
         var control = state.CreateSnapshot("/model", "session", "C:\\project", "standard", "OpenAI", "model", false);
         Assert.NotNull(control);
         Assert.Empty(control.Texts);
         Assert.Equal(1, state.Count);
+    }
+
+    [Theory]
+    [InlineData("/exit", false)]
+    [InlineData("Continue", true)]
+    public void ExitAndParkedContinue_LeavePendingAttachmentsOwnedByTheComposer(string line, bool parked)
+    {
+        using var state = new ChatSubmissionState();
+        var temp = Path.Combine(Path.GetTempPath(), "ru-pending-control-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(temp, "image");
+        state.Add(new CliImageAttachment("image.png", "image/png", "aW1hZ2U=", 1, 1, 5, temp));
+        state.Add(new CliTextAttachment("notes.txt", new string('x', ChatSubmissionState.MaxComposedPromptChars), 16_000));
+
+        var snapshot = state.CreateSnapshot(line, "session", "C:\\project", "standard", "OpenAI", "model", parked);
+
+        Assert.NotNull(snapshot);
+        Assert.Empty(snapshot.Images);
+        Assert.Empty(snapshot.Texts);
+        state.Admit(snapshot);
+        Assert.Equal(2, state.Count);
+        Assert.True(File.Exists(temp));
     }
 
     [Fact]

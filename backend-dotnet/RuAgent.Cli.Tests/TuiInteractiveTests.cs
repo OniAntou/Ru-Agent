@@ -418,10 +418,10 @@ public sealed class TuiInteractiveTests
     public void ChatCommandCatalog_AutoCompletesCoreCommands()
     {
         var commands = ChatCommandCatalog.KnownCommands.Select(command => command.Command);
-        Assert.Equal("/continue", ChatCommandCatalog.AutoComplete("/cont", commands));
+        Assert.Null(ChatCommandCatalog.AutoComplete("/cont", commands));
         Assert.Null(ChatCommandCatalog.AutoComplete("/re", commands)); // resume, reasoning, retry
         Assert.Equal("/status", ChatCommandCatalog.AutoComplete("/stat", commands));
-        Assert.Equal("/attach", ChatCommandCatalog.AutoComplete("/attach", ["/attach"]));
+        Assert.Null(ChatCommandCatalog.AutoComplete("/attach", commands));
         Assert.Equal("/update", ChatCommandCatalog.AutoComplete("/upd", commands));
     }
 
@@ -1346,7 +1346,7 @@ public sealed class TuiInteractiveTests
         Assert.Equal(0, exit);
         Assert.False(cancelPosted, "a parked run is the user's to resume; the turn must not cancel it");
         var output = outWriter.ToString();
-        Assert.Contains("/continue", output, StringComparison.Ordinal);
+        Assert.Contains("Continue", output, StringComparison.Ordinal);
         // The payload-ref recovery is what forces the OCE-parked path: the fetch is
         // dispatched and the body read observes the park's cancelled token.
         Assert.True(payloadFetchPosted, "the model.step_completed payload ref must reach recovery");
@@ -1356,7 +1356,7 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public async Task ChatAsync_SlashContinue_ResumesParkedRunFromItsCursor()
+    public async Task ChatAsync_TypedContinue_ResumesParkedRunFromItsCursor()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
@@ -1447,7 +1447,7 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
             {
                 runGets++;
-                // First read is the parked turn's own terminal check; then the /continue
+                // First read is the parked turn's own terminal check; then the Continue
                 // cursor read; then the resumed stream's terminal check.
                 return runGets switch
                 {
@@ -1461,7 +1461,7 @@ public sealed class TuiInteractiveTests
 
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
-        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("hello\n/continue\n"));
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("hello\nContinue\n"));
 
         var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
 
@@ -1569,7 +1569,7 @@ public sealed class TuiInteractiveTests
         // same fallback the live park prints.
         var output = outWriter.ToString();
         Assert.Contains("run parked", output, StringComparison.Ordinal);
-        Assert.Contains("/continue", output, StringComparison.Ordinal);
+        Assert.Contains("Continue", output, StringComparison.Ordinal);
         Assert.Contains($"ru agent continue {runId}", output, StringComparison.Ordinal);
         Assert.Single(continuePosts);
         Assert.EndsWith($"/agent/v1/runs/{runId}/continue", continuePosts[0], StringComparison.Ordinal);
@@ -1737,197 +1737,7 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public async Task ChatAsync_SlashContinue_WithoutParkedRun_PrintsNotice()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        var session = PublicHostSession.FromDescriptor(desc);
-
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") });
-        var outWriter = new StringWriter();
-        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, new StringWriter(), new StringReader("/continue\n"));
-
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
-
-        Assert.Equal(0, exit);
-        Assert.Contains("no parked run", outWriter.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task ChatAsync_SlashContinue_TerminalRunId_ReportsRunNotRunnable()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        var session = PublicHostSession.FromDescriptor(desc);
-
-        var runId = "run_" + new string('c', 32);
-        var continuePosts = 0;
-
-        var terminal = JsonSerializer.Serialize(new
-        {
-            run_id = runId,
-            session_id = "sess_123",
-            workspace_id = "ws_test",
-            status = "completed",
-            history_wait_kind = (string?)null,
-            preset = "standard",
-            policy_snapshot_version = 1,
-            policy_snapshot_sha256 = new string('d', 64),
-            version = 1L,
-            last_sequence = 4L,
-            created_at = "2026-09-30T00:00:00Z",
-            updated_at = "2026-09-30T00:00:03Z",
-            terminal_at = "2026-09-30T00:00:03Z",
-            terminal_error_code = (string?)null,
-        });
-
-        var handler = new FakeHandler(req =>
-        {
-            var uri = req.RequestUri!.ToString();
-            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue"))
-            {
-                continuePosts++;
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            }
-            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(terminal, Encoding.UTF8, "application/json") };
-            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
-        });
-
-        var errWriter = new StringWriter();
-        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), errWriter, new StringReader($"/continue {runId}\n"));
-
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
-
-        Assert.Equal(0, exit);
-        Assert.Equal(0, continuePosts);
-        Assert.Contains("run_not_runnable", errWriter.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task ChatAsync_SlashContinue_RunningRunId_ReportsRunNotParked()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        var session = PublicHostSession.FromDescriptor(desc);
-
-        var runId = "run_" + new string('c', 32);
-        var continuePosts = 0;
-
-        var running = JsonSerializer.Serialize(new
-        {
-            run_id = runId,
-            session_id = "sess_123",
-            workspace_id = "ws_test",
-            status = "running",
-            history_wait_kind = (string?)null,
-            preset = "standard",
-            policy_snapshot_version = 1,
-            policy_snapshot_sha256 = new string('d', 64),
-            version = 1L,
-            last_sequence = 4L,
-            created_at = "2026-09-30T00:00:00Z",
-            updated_at = "2026-09-30T00:00:03Z",
-            terminal_at = (string?)null,
-            terminal_error_code = (string?)null,
-        });
-
-        var handler = new FakeHandler(req =>
-        {
-            var uri = req.RequestUri!.ToString();
-            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue"))
-            {
-                continuePosts++;
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            }
-            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(running, Encoding.UTF8, "application/json") };
-            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
-        });
-
-        var errWriter = new StringWriter();
-        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), errWriter, new StringReader($"/continue {runId}\n"));
-
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
-
-        Assert.Equal(0, exit);
-        Assert.Equal(0, continuePosts);
-        Assert.Contains("run_not_parked", errWriter.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task ChatAsync_SlashContinue_ForeignSessionRunDoesNotPostOrStream()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        var session = PublicHostSession.FromDescriptor(desc);
-        var runId = "run_" + new string('f', 32);
-        var continuePosts = 0;
-        var eventReads = 0;
-        var parked = JsonSerializer.Serialize(new
-        {
-            run_id = runId,
-            session_id = "sess_other",
-            workspace_id = "ws_test",
-            status = "waiting_user",
-            history_wait_kind = (string?)null,
-            preset = "standard",
-            policy_snapshot_version = 1,
-            policy_snapshot_sha256 = new string('d', 64),
-            version = 1L,
-            last_sequence = 4L,
-            created_at = "2026-09-30T00:00:00Z",
-            updated_at = "2026-09-30T00:00:03Z",
-            terminal_at = (string?)null,
-            terminal_error_code = (string?)null,
-        });
-        var handler = new FakeHandler(req =>
-        {
-            var uri = req.RequestUri!.ToString();
-            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            if (req.Method == HttpMethod.Get && uri.EndsWith("/sessions/sess_123", StringComparison.Ordinal))
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(
-                        "{\"status\":\"ok\",\"session\":{\"id\":\"sess_123\",\"title\":\"current\",\"messages\":[]}}",
-                        Encoding.UTF8,
-                        "application/json"),
-                };
-            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(parked, Encoding.UTF8, "application/json") };
-            if (uri.Contains($"/agent/v1/runs/{runId}/events", StringComparison.Ordinal))
-            {
-                eventReads++;
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(string.Empty, Encoding.UTF8, "text/event-stream") };
-            }
-            if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/continue", StringComparison.Ordinal))
-            {
-                continuePosts++;
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            }
-
-            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
-        });
-
-        var errors = new StringWriter();
-        var output = new StringWriter();
-        var commands = new AgentCommands(session, new HttpClient(handler), output, errors, new StringReader($"/continue {runId}\n/status\n/exit\n"));
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), CancellationToken.None);
-
-        Assert.Equal(0, exit);
-        Assert.Equal(0, continuePosts);
-        Assert.Equal(0, eventReads);
-        Assert.Contains("run_session_mismatch", errors.ToString(), StringComparison.Ordinal);
-        Assert.Contains("sess_123", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task ChatAsync_ContinueOtherRun_ThenCancel_PostsCancelForThatRun()
+    public async Task ChatAsync_ContinueNewerParkedRun_ThenCancel_PostsCancelForThatRun()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
@@ -1938,6 +1748,7 @@ public sealed class TuiInteractiveTests
         var payloadRef = "payload_" + new string('e', 32);
         var cancelPosts = new List<string>();
         var continuePosts = new List<string>();
+        var createdRuns = 0;
 
         string RunJson(string runId, string status, long lastSequence, string? terminalAt) => JsonSerializer.Serialize(new
         {
@@ -1992,7 +1803,7 @@ public sealed class TuiInteractiveTests
             {
                 var created = JsonSerializer.Serialize(new
                 {
-                    run_id = runA,
+                    run_id = ++createdRuns == 1 ? runA : runB,
                     session_id = "sess_123",
                     workspace_id = "ws_test",
                     status = "running",
@@ -2035,6 +1846,18 @@ public sealed class TuiInteractiveTests
                     };
                 }
 
+                if (uri.Contains("after_sequence=0", StringComparison.Ordinal))
+                {
+                    var parked = $"id: 5\ndata: {Durable(runB, 5, "continue.requested", "waiting_user", "model_step_budget_exhausted")}\n\n";
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StreamContent(new ParkedStream(Encoding.UTF8.GetBytes(parked)))
+                        {
+                            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") },
+                        },
+                    };
+                }
+
                 // B's resumed tail has no frames yet; hold the stream open.
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -2054,7 +1877,7 @@ public sealed class TuiInteractiveTests
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
         using var cts = new CancellationTokenSource();
-        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader($"hello\n/continue {runB}\n"));
+        var commands = new AgentCommands(session, new HttpClient(handler), outWriter, errWriter, new StringReader("hello\nsecond\nContinue\n"));
 
         var chat = commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", false), cts.Token);
         await continuePosted.Task.WaitAsync(TimeSpan.FromSeconds(30));

@@ -314,7 +314,7 @@ public sealed partial class AgentCommands
             {
                 DeleteTempPath(tempPath);
                 await WriteAttachFeedbackAsync(
-                    $"image_too_large: this turn's images total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); remove some with /detach").ConfigureAwait(false);
+                    $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added").ConfigureAwait(false);
                 return;
             }
 
@@ -1319,7 +1319,7 @@ public sealed partial class AgentCommands
                 }
 
                 // A parked run is the user's to resume: there is nothing to cancel, and the
-                // transcript already printed the single "run parked ... /continue" notice
+                // transcript already printed the single "run parked ... Continue" notice
                 // for it, so printing another line here only duplicated that guidance.
                 return;
             }
@@ -1340,12 +1340,12 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Resumes a parked run the way the GUI's typed Continue does: read the parked
         /// run's durable cursor, post the continue, then follow the run from that cursor
-        /// as if it were a fresh turn. Without a parked run and without an explicit run
-        /// id this is informational, never an error.
+        /// as if it were a fresh turn. Without a tracked parked run this is informational,
+        /// never an error.
         /// </summary>
-        async Task ContinueParkedRunAsync(string? runIdArg)
+        async Task ContinueParkedRunAsync()
         {
-            var targetRunId = string.IsNullOrWhiteSpace(runIdArg) ? runSession.ParkedRunId : runIdArg.Trim();
+            var targetRunId = runSession.ParkedRunId;
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("no parked run · nothing to continue")).ConfigureAwait(false);
@@ -1395,11 +1395,10 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            // An explicit target that is not parked (running, waiting_approval,
+            // A retained target that is no longer parked (running, waiting_approval,
             // waiting_workspace_trust) is being driven elsewhere or waits on another
-            // decision: the resume POST could only earn a 409. Bare Continue targets
-            // the tracked parked run and keeps its existing behavior.
-            if (runIdArg is not null && !IsParkedRunStatus(run.Status))
+            // decision: the resume POST could only earn a 409.
+            if (!IsParkedRunStatus(run.Status))
             {
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
@@ -1564,7 +1563,7 @@ public sealed partial class AgentCommands
             catch (Exception ex)
             {
                 // Adoption is best effort: an unreachable list/read must not break the
-                // REPL start, and an explicit '/continue <run-id>' still works.
+                // REPL start; the headless 'ru agent continue <run-id>' remains available.
                 Tui.TuiDebug.Log("adopt", $"session run adoption failed: {CliErrorText.ShortMessage(ex.Message)}");
             }
         }
@@ -1633,7 +1632,7 @@ public sealed partial class AgentCommands
 
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
-                await WriteDiagnosticLineAsync(humanOut, "no running or approval-waiting run · use /continue for a parked run").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, "no running or approval-waiting run · type Continue for a parked run").ConfigureAwait(false);
                 return;
             }
 
@@ -1664,7 +1663,7 @@ public sealed partial class AgentCommands
             if (!ChatRunWorkflow.IsFollowable(run))
             {
                 var hint = IsParkedRunStatus(run.Status)
-                    ? $"run {targetRunId} is parked · use /continue {targetRunId}"
+                    ? $"run {targetRunId} is parked · use 'ru agent continue {targetRunId}'"
                     : $"run_not_followable: run {targetRunId} is {run.Status}";
                 await WriteDiagnosticLineAsync(_err, hint).ConfigureAwait(false);
                 return;
@@ -1907,7 +1906,7 @@ public sealed partial class AgentCommands
                 }
                 try
                 {
-                    await ContinueParkedRunAsync(null).ConfigureAwait(false);
+                    await ContinueParkedRunAsync().ConfigureAwait(false);
                 }
                 catch (RunParkedException)
                 {
@@ -2200,7 +2199,7 @@ public sealed partial class AgentCommands
                     cmd.Json ? _out : humanOut, cmd.Json, cancellationToken).ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/exit" or "/quit")
+            if (slashCmd is "/exit")
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
                 await humanOut.FlushAsync().ConfigureAwait(false);
@@ -2259,67 +2258,6 @@ public sealed partial class AgentCommands
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/attach")
-            {
-                if (string.IsNullOrWhiteSpace(arg))
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
-                    return true;
-                }
-
-                await AttachFileAsync(arg).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/paste")
-            {
-                await ClipboardAttachAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/attachments")
-            {
-                if (pendingImages.Count == 0 && pendingTexts.Count == 0)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "no attachments").ConfigureAwait(false);
-                    return true;
-                }
-
-                for (var i = 0; i < pendingImages.Count; i++)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
-                }
-
-                for (var i = 0; i < pendingTexts.Count; i++)
-                {
-                    await WriteDiagnosticLineAsync(
-                        humanOut,
-                        $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
-                }
-
-                return true;
-            }
-            if (slashCmd is "/detach")
-            {
-                var total = submissions.Count;
-                if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
-                {
-                    submissions.ClearPending();
-                    RefreshAttachmentLabels();
-                    await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
-                    return true;
-                }
-
-                if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
-                    return true;
-                }
-
-                var detachedName = submissions.Detach(index);
-                await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
-
-                RefreshAttachmentLabels();
-                return true;
-            }
             if (slashCmd is "/release")
             {
                 var result = await ChatRunRelease.ReleaseAsync(
@@ -2327,21 +2265,6 @@ public sealed partial class AgentCommands
                 if (result.ReleasedRunId is { } released)
                     sessionRenderer.Transcript.ForgetParkHistory(released);
                 await WriteDiagnosticLineAsync(result.IsError ? _err : humanOut, result.Message).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/continue")
-            {
-                try
-                {
-                    await ContinueParkedRunAsync(arg).ConfigureAwait(false);
-                }
-                catch (RunParkedException)
-                {
-                    // Same escape as a fresh turn: an approval under --json ends the
-                    // chat rather than reading a prompt it must not answer.
-                    dispatcherExitCode = 0;
-                    return true;
-                }
                 return true;
             }
             if (slashCmd is "/follow")
@@ -2587,7 +2510,7 @@ public sealed partial class AgentCommands
     /// <summary>
     /// Routes one submitted line to the slash-command handler or the prompt runner. The
     /// sequential and Terminal.Gui loops both call this so command behaviour
-    /// (attachments, /model, /attach, trust prompts) cannot drift between engines.
+    /// (attachments, /model, trust prompts) cannot drift between engines.
     /// </summary>
     public sealed record ChatLineDispatcher
     {

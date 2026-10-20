@@ -13,6 +13,7 @@ public sealed partial class MainWindow
     private void OnSessionMenuOpening(object sender, object e)
     {
         if (sender is not MenuFlyout menu) return;
+        SetSessionMenuOpen(menu, true);
         foreach (var subMenu in menu.Items.OfType<MenuFlyoutSubItem>())
         {
             if (subMenu.Tag is not string id || !Sessions.Any(row => row.Id == id)) continue;

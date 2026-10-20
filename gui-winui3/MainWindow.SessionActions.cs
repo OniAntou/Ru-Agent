@@ -372,12 +372,12 @@ namespace RuApp
 
         private void SessionItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            SetSessionRowActionsVisible(sender, visible: true);
+            if (sender is Grid row) { _sessionRowInteraction.GetOrCreateValue(row).PointerInside = true; UpdateSessionRowActions(row); }
         }
 
         private void SessionItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            SetSessionRowActionsVisible(sender, visible: false);
+            if (sender is Grid row) { _sessionRowInteraction.GetOrCreateValue(row).PointerInside = false; UpdateSessionRowActions(row); }
         }
 
         /// <summary>

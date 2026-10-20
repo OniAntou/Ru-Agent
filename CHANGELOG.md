@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Preserve saved provider keys when a replacement is rejected or cannot be verified. Use an authenticated candidate-validation route and commit only after its catalog check, without changing model/provider selection or falling back on older Hosts.
+- **fix(gui)**: Dismiss Settings dropdowns before their owner on Escape, stack settings earlier at intermediate window widths, keep session actions visible for keyboard focus/open menus, and expose names/selected status for transcript-size choices.
+
 - **fix(agent)**: Permit a final answer from a native `web_fetch` batch with readable sources and only `web_content_empty` failures. Require exact call/receipt bindings and no possible side effects; other failures retain normal verification guards.
 
 - **fix(agent)**: Allow the main agent to repeat a successful, read-only `agent_wait` timeout while subagents are still working. Match the exact native call and receipt identity; keep other repeated actions guarded and preserve run/family budgets.

@@ -5,6 +5,16 @@ namespace RuApp.Views
 {
     public sealed partial class SettingsView
     {
+        public bool HasOpenComboBox => UpdateChannelCombo.IsDropDownOpen;
+
+        public void DismissFlyouts()
+        {
+            ThemeButton.Flyout?.Hide();
+            PresetButton.Flyout?.Hide();
+            ProviderButton.Flyout?.Hide();
+            UpdateChannelCombo.IsDropDownOpen = false;
+        }
+
         private void InitializeSettingsHoverEffects()
         {
             SelectTab(SettingsTab.General);

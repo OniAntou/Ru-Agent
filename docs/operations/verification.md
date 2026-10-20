@@ -1,11 +1,11 @@
 # Verification
 
 > **The table below records the latest full-matrix and release-pipeline evidence; entries under it are history or scoped checks.** Figures are maintained by hand. Run the scripts for authoritative current figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
-> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 45 routes, 18 tools, and an in-process model runner.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the current route contract has 46 routes, 18 tools, and an in-process model runner.
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |
-| Public route | **45 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 25 additive `/agent/v1/*` plus 20 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
+| Public route | **46 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 25 additive `/agent/v1/*` plus 21 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
 | .NET tests | **13-project Debug coverage: 6,884 passed across final project runs, 0 failed / 0 skipped** (2026-10-19, working tree including the subagent Git preparation fix and pending directory-handle/watcher fixes). Broker 1,064; CLI 1,470; Client 241; Core 518; Persistence 269; Hosting 41; Protocol 152; Adapters 228; Model 91; SessionInterchange 43; Updates 25; Backend 1,228; GUI 1,514. Evidence: `artifacts/subagent-git-failure-2026-10-19/verification.json`. The initial CLI run hung in Terminal.Gui input shutdown and was aborted; unchanged source/assertions passed on a PTY rerun. Stack and both outcomes are retained. This is combined project evidence, not an uninterrupted green runner. |
 | Python suite | **216 passed, 1 skipped** (2026-10-19), isolated staging snapshot. POSIX process-group case skipped on Windows. Log: `artifacts/subagent-commit-2026-10-19/python.log`; initial metadata failure retained separately. |
 | Subagent inbox recovery fix | **2,171 passed across four affected Debug assemblies** (2026-10-19): Core 518, Persistence 273, Backend 1,228, Protocol 152. Nine inbox cases include suppressed audit replies, no queued messages, pending native calls and missing payloads. A private snapshot of the reported failure reproduced `payload_model_forbidden` at inbox delivery; the same replay passed after the query fix. Evidence: `artifacts/subagent-drive-failure-2026-10-19/`. These are scoped checks after the full-matrix baseline above; no real-provider task outcome is claimed. |
@@ -15,6 +15,43 @@
 | Live coding benchmark | Everyday baseline **16/18 unattended passes** across six C#/Python/TypeScript tasks; matched three-task follow-up **7/9 → 7/9**, mean duration **251.1 → 172.2 s**. Kilo `stepfun/step-5-preview-free`, saved high reasoning, Standard, 300 s deadline; both matched phases had zero approvals. Two follow-up timeouts remain. Earlier mixed hard diagnostic was 1/10; these are custom corpus results, not official dataset scores. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
+
+## GUI review fixes (2026-10-20, scoped)
+
+The candidate-key route adds one authenticated non-Agent operation, bringing the
+current contract to **46 HTTP / 0 WebSocket**. The Host checks candidate credentials
+with a read-only credential source and isolated catalog cache before committing.
+Rejected, unavailable and cancelled checks preserve the previous credential; a
+settings-save failure exercises existing rollback. The GUI does not use ordinary
+settings writes as a fallback when the route is absent on an older Host.
+
+- Host suite: **1,276 passed**. A later focused run includes **11 passed** for
+  candidate rejection (401/403), rate limiting/outage, cancellation, rollback,
+  live-cache isolation, bearer authentication and mixed-payload rejection. Six of
+  these cases overlap the full-suite run; the figures must not be added together.
+- GUI suite: **1,518 passed** including the dedicated key route and older-Host
+  404 behavior. One previous source contract required deleting rejected keys; it
+  was updated to require Host validation and prohibit GUI key removal.
+- Route/documentation/metadata guards: **18 passed**. The route matrix reports
+  all 46 mapped operations declared. The initial expected-route-set failure and
+  initial GUI contract failure are retained with the subsequent green logs.
+- Native UIA and screenshots confirm first-Escape dismissal for both a Settings
+  flyout and ComboBox, a readable stacked form at 800px window width, visible
+  keyboard-focused sidebar actions and correct hide-on-leave/menu behavior, plus
+  accessible names and selected status for all four transcript-size choices.
+
+A task-local self-contained package was built through the 11-stage build script
+with task-local publish destinations and the broad clean skipped, followed by a
+fresh GUI build for ComboBox handling. Its authenticated status/shutdown smoke
+passed. Native checks used that package and an isolated business-data profile;
+only an empty QA conversation was created, and no real key was edited. The
+already-running canonical Host and its package were preserved.
+
+Evidence: `artifacts/gui-quick-review-2026-10-20/` (including `package-build.log`,
+`final-gui-build.log`, `package-smoke.log`, test logs and `fixed-*.png`). The older
+full-matrix/release entries above retain their original snapshot scope. No new
+full 13-project matrix, live key validation against a real provider or Narrator
+session was performed in this GUI-fix pass.
 
 ## Subagent live GUI regression checks (2026-10-19, scoped)
 

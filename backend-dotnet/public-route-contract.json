@@ -10,6 +10,7 @@
   {"method":"GET","path":"/models-dev","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsDevAsync"]},
   {"method":"GET","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSettingsAsync"]},
   {"method":"POST","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.SaveSettingsAsync"]},
+  {"method":"POST","path":"/settings/provider/key","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ValidateAndSaveModelsDevKeyAsync"]},
   {"method":"POST","path":"/settings/provider/remove","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RemoveProviderAsync"]},
   {"method":"GET","path":"/settings/models-dev-keys","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsDevKeysAsync"]},
   {"method":"GET","path":"/sessions","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSessionsAsync"]},

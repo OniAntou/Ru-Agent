@@ -14,7 +14,7 @@ using RuBackend.Providers;
 
 namespace RuBackend.Business;
 
-public static class BusinessEndpoints
+public static partial class BusinessEndpoints
 {
     private const string DefaultSessionTitle = "Cuộc trò chuyện mới";
 
@@ -22,6 +22,7 @@ public static class BusinessEndpoints
     {
         app.MapGet("/settings", GetSettingsAsync);
         app.MapPost("/settings", SaveSettingsAsync);
+        app.MapPost("/settings/provider/key", SaveValidatedProviderKeyAsync);
         app.MapPost("/settings/provider/remove", RemoveProviderAsync);
         app.MapGet("/settings/models-dev-keys", GetModelsDevKeysAsync);
         app.MapGet("/sessions", ListSessionsAsync);
@@ -87,6 +88,7 @@ public static class BusinessEndpoints
             {
                 status = result.Success ? "success" : "error",
                 message = result.Message,
+                code = result.Code,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

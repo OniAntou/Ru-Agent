@@ -26,6 +26,7 @@ namespace RuApp.Views
         private DispatcherTimer? _modelsDevKeyTimer;
         private bool _modelsDevKeyProbeRunning;
         private long _modelsDevKeyEditGeneration;
+        private CancellationTokenSource? _modelsDevKeyProbeCancellation;
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
 
@@ -254,6 +255,7 @@ namespace RuApp.Views
                 AutomationProperties.SetAutomationId(
                     option,
                     TranscriptSizePickerProjection.OptionAutomationId(size));
+                AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.LabelWithActivity(size)}");
                 option.Click += OnTranscriptSizeOptionClick;
                 Grid.SetColumn(option, index);
                 TranscriptSizeOptionsPanel.Children.Add(option);
@@ -290,6 +292,7 @@ namespace RuApp.Views
             {
                 if (child is not Button { Tag: double size } option) continue;
                 bool selected = Math.Abs(size - _transcriptSize) < 0.001;
+                AutomationProperties.SetItemStatus(option, selected ? "Selected" : "Not selected");
                 option.Background = selected ? selectedBrush : transparent;
                 if (option.Content is StackPanel specimen
                     && specimen.Children.Count > 0
@@ -772,6 +775,7 @@ namespace RuApp.Views
         private void OnModelsDevKeyPasswordChanged(object sender, RoutedEventArgs e)
         {
             _modelsDevKeyEditGeneration++;
+            _modelsDevKeyProbeCancellation?.Cancel();
             if (_loading) return;
             _modelsDevKeyTimer?.Stop();
             if (string.IsNullOrEmpty(ModelsDevApiKeyBox.Password))
@@ -792,10 +796,9 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Saves the typed key only after it proves itself: the key is stored,
-        /// probed with a forced catalog refresh, and removed again when the
-        /// provider answers "unauthorized". Transport failures keep the key and
-        /// say so, because a dead network is not a wrong key.
+        /// The Host checks a temporary candidate through the provider's catalog
+        /// path before storing it. Rejection or an unavailable catalog preserves
+        /// the saved credential; superseded edits cannot publish a stale verdict.
         /// </summary>
         private async Task ProbeAndSaveModelsDevKeyAsync()
         {
@@ -820,14 +823,14 @@ namespace RuApp.Views
                 && string.Equals(providerId, _providerChoice, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(apiKey, ModelsDevApiKeyBox.Password, StringComparison.Ordinal);
             _modelsDevKeyProbeRunning = true;
+            using var cancellation = new CancellationTokenSource();
+            _modelsDevKeyProbeCancellation = cancellation;
             try
             {
                 SetModelsDevKeyStatus("Checking key…", "info");
                 var result = await ProviderKeyProbe.RunAsync(
                     providerId, apiKey, OwnsProbe,
-                    api.SaveModelsDevKeyAsync,
-                    id => api.GetProviderCatalogAsync(id, refresh: true),
-                    api.RemoveProviderAsync);
+                    (id, key) => api.ValidateAndSaveModelsDevKeyAsync(id, key, cancellation.Token));
                 if (!OwnsProbe() || result.Code == "superseded") return;
                 string keyId = providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..];
                 switch (result.Code)
@@ -840,23 +843,19 @@ namespace RuApp.Views
                         _ = _providerCatalogController.RefreshAsync(force: true);
                         break;
                     case "invalid":
-                        _modelsDevKeyIds = _modelsDevKeyIds.Where(id => !string.Equals(id, keyId, StringComparison.OrdinalIgnoreCase)).ToArray();
-                        ApplyProviderKeys();
-                        SetModelsDevKeyStatus("Invalid key; not saved.", ProviderConnectionTest.ErrorTone);
+                        SetModelsDevKeyStatus("Invalid key; saved key unchanged.", ProviderConnectionTest.ErrorTone);
                         break;
                     case "save_failed":
-                        SetModelsDevKeyStatus("Save failed; try again.", ProviderConnectionTest.ErrorTone);
-                        break;
-                    case "remove_failed":
-                        SetModelsDevKeyStatus("Invalid key; removal failed. Remove the saved key and try again.", ProviderConnectionTest.ErrorTone);
+                        SetModelsDevKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
                         break;
                     default:
-                        SetModelsDevKeyStatus($"Could not verify the connection [{result.ErrorCode ?? "unknown"}]; key kept.", "info");
+                        SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
                         break;
                 }
             }
             finally
             {
+                _modelsDevKeyProbeCancellation = null;
                 _modelsDevKeyProbeRunning = false;
                 if (generation != _modelsDevKeyEditGeneration
                     && !string.IsNullOrWhiteSpace(ModelsDevApiKeyBox.Password)) _modelsDevKeyTimer?.Start();
@@ -998,6 +997,7 @@ namespace RuApp.Views
 
             _modelsDevKeyEditGeneration++;
             _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(row.Value);
+            _modelsDevKeyProbeCancellation?.Cancel();
             if (ProviderSearchBox is not null)
             {
                 ProviderSearchBox.Text = string.Empty;
@@ -1120,6 +1120,7 @@ namespace RuApp.Views
             StopUpdateAvailabilityChecks();
             _modelsDevKeyEditGeneration++;
             DisposeEventHandlers();
+            _modelsDevKeyProbeCancellation?.Cancel();
             DisposeOwnedProviderCatalogController();
             _apiService = null;
         }

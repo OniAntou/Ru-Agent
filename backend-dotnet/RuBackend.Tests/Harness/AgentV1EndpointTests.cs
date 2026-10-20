@@ -61,7 +61,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(45, doc.RootElement.GetArrayLength()); // 45 HTTP routes (20 non-Agent + 25 /agent/v1/*), no websocket
+        Assert.Equal(46, doc.RootElement.GetArrayLength()); // 46 HTTP routes (21 non-Agent + 25 /agent/v1/*), no websocket
     }
 
     [Theory]

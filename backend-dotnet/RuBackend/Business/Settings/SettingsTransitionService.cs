@@ -3,7 +3,7 @@ using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
 
-public sealed record SettingsTransitionResult(bool Success, string Message);
+public sealed record SettingsTransitionResult(bool Success, string Message, string? Code = null);
 
 public interface ISettingsTransitionService
 {
@@ -56,6 +56,19 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
                 payload = ExpandModelSelection(payload);
                 candidate = BuildCandidate(previous, payload);
                 updates = BuildCredentialUpdates(payload);
+                if (payload.ContainsKey("validate_models_dev_key"))
+                {
+                    if (payload["validate_models_dev_key"] is not JsonValue flag || !flag.TryGetValue<bool>(out var validate) || !validate
+                        || payload.Count != 3 || updates.Count != 1 || _catalog is null)
+                        throw new SettingsPayloadException();
+                    var alias = ProviderSelection.NormalizeModelsDevBackend(OptionalString(payload, "models_dev_provider_id", 64) ?? "")
+                        ?? throw new SettingsPayloadException();
+                    var probe = await _catalog.CheckCandidateCredentialAsync(alias, updates[0].Secret, previous, cancellationToken).ConfigureAwait(false);
+                    if (probe.Status != "ok")
+                        return new(false, "Key not saved; previous credential unchanged.",
+                            probe.ErrorCode == "catalog_unauthorized" ? "provider_key_rejected" : "provider_key_unverified");
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
                 if (payload.ContainsKey("reasoning_effort"))
                 {
                     if (_catalog is null || updates.Count != 0) throw new SettingsPayloadException();

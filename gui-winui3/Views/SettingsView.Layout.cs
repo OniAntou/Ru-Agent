@@ -36,7 +36,9 @@ public sealed partial class SettingsView
                 }
             }
         }
-        bool narrow = ActualWidth < 700;
+        // Reserve navigation, body padding and a readable label beside fields.
+        // The old 700px modal threshold left labels squeezed at 800px windows.
+        bool narrow = ActualWidth < 840;
         if (_settingsNarrow == narrow) return;
         _settingsNarrow = narrow;
         SettingsNavigationColumn.Width = narrow ? new GridLength(0) : new GridLength(200);

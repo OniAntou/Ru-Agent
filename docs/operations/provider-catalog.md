@@ -15,13 +15,22 @@ fails as `catalog_unauthorized` with an empty catalog once it is signed out — 
 is not sent anonymously, so no picker offers a model that cannot run. The keyless
 Custom OpenAI endpoint keeps serving its catalog.
 
-The Settings key probe pins the provider and key edit generation before saving.
-It validates through a direct forced catalog request for that provider, bypassing
-the shared picker controller's current selection and GUI refresh throttle.
-Changing provider or editing the key supersedes the probe: its delayed result cannot
-clear the new input, display a verdict for another provider or initiate key removal.
-Only an owned `catalog_unauthorized` result removes the saved key; removal failure
-is reported. Transport failures retain the key with an unverified status.
+Settings sends candidate Models.dev keys to the authenticated
+`POST /settings/provider/key` route. Under the settings transition gate, Host checks
+the candidate through the normal provider-specific catalog path using temporary,
+read-only credentials and an isolated catalog cache. Only a successful check permits
+the credential/settings write; rejection, an unavailable catalog or cancellation
+before commit leaves the previous key intact. Existing storage rollback still applies.
+Provider-specific catalog overrides retain their existing semantics; a metadata-only
+catalog is not proof that the credential can complete model generation.
+
+The route accepts only `models_dev_provider_id` and `models_dev_api_key`; it cannot
+also change selection or other settings. Rejections return `provider_key_rejected`,
+unverified candidates return `provider_key_unverified`, and no secret is returned.
+Old Hosts return 404 for this route; GUI never retries it as an ordinary settings
+write. A lost response is reported as an unconfirmed save, not proof of rollback.
+GUI pins the provider/edit generation and cancels superseded requests; late responses
+cannot clear another edit or display its verdict. Explicit Sign out remains separate.
 
 The GUI refreshes on startup, successful provider/model/key settings changes,
 opening the model selector and every five minutes while Chat is active. It

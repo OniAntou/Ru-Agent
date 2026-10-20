@@ -195,7 +195,8 @@
                 <Border.Resources>
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
             <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneWay}"
-                  PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent" Padding="10,4">
+                  PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited"
+                  GotFocus="SessionItem_GotFocus" LostFocus="SessionItem_LostFocus" Background="Transparent" Padding="10,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -231,7 +232,7 @@
                             <TextBlock Text="…" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
                                        Foreground="{StaticResource RuInkBrush}" Margin="0,-6,0,0" />
                             <Button.Flyout>
-                                <MenuFlyout Opening="OnSessionMenuOpening">
+                                <MenuFlyout Opening="OnSessionMenuOpening" Closed="OnSessionMenuClosed">
                                     <MenuFlyoutSubItem Text="Move to" Tag="{x:Bind Id}"/>
                                     <MenuFlyoutSeparator/>
                                     <MenuFlyoutItem x:Name="ExportClaudeCodeItem"

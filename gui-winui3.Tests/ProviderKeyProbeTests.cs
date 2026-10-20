@@ -1,4 +1,3 @@
-using RuApp.Models;
 using RuApp.Services;
 using Xunit;
 
@@ -6,44 +5,39 @@ namespace RuApp.Tests;
 
 public sealed class ProviderKeyProbeTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Superseded_edit_never_deletes_key_or_reports_another_providers_verdict(bool duringSave)
+    [Fact]
+    public async Task Superseded_edit_does_not_publish_the_validation_result()
     {
-        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource<ProviderKeyProbeResult>();
         bool owns = true;
-        int fetches = 0, deletes = 0;
-        var task = ProviderKeyProbe.RunAsync("models.dev:a", "synthetic-key", () => owns,
-            async (_, _) => { if (duringSave) { entered.SetResult(true); await gate.Task; } return true; },
-            async id => { fetches++; Assert.Equal("models.dev:a", id); if (!duringSave) { entered.SetResult(true); await gate.Task; } return Rejected(id); },
-            _ => { deletes++; return Task.FromResult(true); });
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var pending = ProviderKeyProbe.RunAsync("models.dev:a", "synthetic", () => owns, (_, _) => gate.Task);
         owns = false;
-        gate.SetResult(true);
-        Assert.Equal("superseded", (await task).Code);
-        Assert.Equal(0, deletes);
-        Assert.Equal(duringSave ? 0 : 1, fetches);
+        gate.SetResult(new("valid"));
+        Assert.Equal("superseded", (await pending).Code);
+    }
+
+    [Fact]
+    public async Task Already_superseded_edit_does_not_send_a_credential()
+    {
+        var result = await ProviderKeyProbe.RunAsync("models.dev:a", "synthetic", () => false,
+            (_, _) => throw new InvalidOperationException("Must not send"));
+        Assert.Equal("superseded", result.Code);
     }
 
     [Theory]
-    [InlineData("models.dev:a", "catalog_unauthorized", true, "invalid", 1)]
-    [InlineData("models.dev:a", "catalog_unauthorized", false, "remove_failed", 1)]
-    [InlineData("models.dev:b", "catalog_unauthorized", true, "unverified", 0)]
-    [InlineData("models.dev:a", "catalog_timeout", true, "unverified", 0)]
-    public async Task Only_the_owned_providers_rejection_can_remove_its_key(
-        string backend, string error, bool removed, string expected, int expectedDeletes)
+    [InlineData("valid")]
+    [InlineData("invalid")]
+    [InlineData("unverified")]
+    [InlineData("save_failed")]
+    public async Task Current_edit_reports_the_atomic_host_result(string code)
     {
-        int deletes = 0;
-        var result = await ProviderKeyProbe.RunAsync("models.dev:a", "synthetic-key", () => true,
-            (_, _) => Task.FromResult(true),
-            _ => Task.FromResult<ProviderCatalogSnapshot?>(Rejected(backend, error)),
-            id => { Assert.Equal("models.dev:a", id); deletes++; return Task.FromResult(removed); });
-        Assert.Equal(expected, result.Code);
-        Assert.Equal(expectedDeletes, deletes);
+        var expected = new ProviderKeyProbeResult(code);
+        var result = await ProviderKeyProbe.RunAsync("models.dev:a", "synthetic", () => true, (id, key) =>
+        {
+            Assert.Equal("models.dev:a", id);
+            Assert.Equal("synthetic", key);
+            return Task.FromResult(expected);
+        });
+        Assert.Same(expected, result);
     }
-
-    private static ProviderCatalogSnapshot Rejected(string backend, string error = "catalog_unauthorized") =>
-        new() { Backend = backend, ErrorCode = error };
 }

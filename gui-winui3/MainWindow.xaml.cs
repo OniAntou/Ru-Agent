@@ -566,6 +566,7 @@ namespace RuApp
             if (!_isSettingsModalOpen) return;
 
             _isSettingsModalOpen = false;
+            _settingsView?.DismissFlyouts();
             ShellInteractionHost.IsEnabled = true;
 
             if (_activeNavButton != NavSettings)

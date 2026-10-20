@@ -526,12 +526,11 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void ModelsDev_key_probe_sends_the_canonical_form_and_drops_bad_keys()
+    public void ModelsDev_key_probe_uses_host_validation_without_removing_saved_keys()
     {
         // The backend only accepts "models.dev:id": a stripped bare id is
-        // rejected as an invalid payload and the key is never stored. A key
-        // the provider calls unauthorized must be removed again, so only a
-        // proven key survives.
+        // rejected as an invalid payload. Candidate validation now happens in
+        // Host before commit; the GUI must not remove a previous working key.
         string body = GuiSource.MethodBody(
             GuiSource.Text("Views", "SettingsView.xaml.cs"),
             "ProbeAndSaveModelsDevKeyAsync");
@@ -544,8 +543,8 @@ public sealed class ProviderSetupGuidanceTests
             body,
             StringComparison.Ordinal);
         Assert.Contains("ProviderKeyProbe.RunAsync", body, StringComparison.Ordinal);
-        Assert.Contains("catalog_unauthorized", GuiSource.Text("Services", "ProviderKeyProbe.cs"), StringComparison.Ordinal);
-        Assert.Contains("RemoveProviderAsync", body, StringComparison.Ordinal);
+        Assert.Contains("ValidateAndSaveModelsDevKeyAsync", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("RemoveProviderAsync", body, StringComparison.Ordinal);
     }
 
     [Fact]

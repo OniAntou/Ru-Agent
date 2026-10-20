@@ -20,7 +20,7 @@ public sealed record ModelsDevProvider(
     IReadOnlyDictionary<string, int>? Contexts = null);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
-public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
+public sealed partial class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
 {
     private const int MaximumBytes = 4 * 1024 * 1024;
     private const int MaximumModelsDevBytes = 8 * 1024 * 1024;

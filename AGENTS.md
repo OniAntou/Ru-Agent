@@ -54,7 +54,7 @@ Use CONTEXT.md's domain language and update it when concepts change.
 
 ## Architecture can evolve
 
-The current Public Contract is the 45 routes in
+The current Public Contract is the 46 routes in
 `backend-dotnet/public-route-contract.json`: loopback, bearer-authenticated
 HTTP/SSE, with no WebSocket routes. Tool definitions belong to
 `RuAgent.Protocol`; Broker manifest versions and digests must agree.

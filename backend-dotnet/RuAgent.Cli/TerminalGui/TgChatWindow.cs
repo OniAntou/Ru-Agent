@@ -112,6 +112,31 @@ public sealed class TgChatWindow : Window
     public bool IsModalPanelOpen => _panel?.SuperView is not null;
     public string CommandPaletteQuery => _commandPalette.Query;
 
+    /// <summary>Routes terminal text to the active input without changing a hidden draft.</summary>
+    internal bool TryPasteText(string text)
+    {
+        if (IsCommandPaletteOpen)
+        {
+            var firstLine = text.Split(['\r', '\n'], 2)[0];
+            SetCommandPaletteQuery(CommandPaletteQuery + firstLine);
+            return true;
+        }
+
+        if (_secretPanel && IsModalPanelOpen)
+        {
+            AppendSecret(text);
+            return true;
+        }
+
+        if (IsModalPanelOpen || IsDocumentPanelOpen || MostFocused != Composer.Input)
+        {
+            return false;
+        }
+
+        Composer.Input.TryInsertDraft(text);
+        return true; // Refused oversized input is handled too; never bubble into another view.
+    }
+
     /// <summary>True while the read-only output window is over the transcript.</summary>
     public bool IsDocumentPanelOpen => _document?.SuperView is not null;
 

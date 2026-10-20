@@ -848,17 +848,20 @@ public sealed class BrokerExecutionRuntimeTests
                 default);
             var approvalId = ask.Decision!.ApprovalId!;
 
-            // The debug-only override drives the intent mismatch a stale caller
-            // would produce; the decision must not consume the approval or add
-            // a grant.
+            // Change the real binding rather than relying on a debug-only wire
+            // override. A stale directory approval must not add a grant in either
+            // Debug or the shipped Release composition.
+            var rebound = await fixture.Runtime.RebindRunPolicyAsync(
+                RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty(version: 2)),
+                default);
+            Assert.Null(rebound.Error);
             var stale = await fixture.Runtime.RespondApprovalAsync(
                 ApprovalRespond(
                     "approve-stale",
                     sessionId,
                     runId,
                     approvalId,
-                    "allow_session_directory",
-                    expectedIntentHash: new string('1', 64)),
+                    "allow_session_directory"),
                 default);
             Assert.Equal(ToolResultStatuses.Denied, stale.Status);
             Assert.Equal("approval_stale", stale.ErrorCode);

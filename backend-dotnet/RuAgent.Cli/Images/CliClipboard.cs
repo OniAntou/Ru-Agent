@@ -82,7 +82,7 @@ public static class CliClipboard
             {
                 try
                 {
-                    if (!NativeClipboard.OpenClipboard(IntPtr.Zero))
+                    if (!OpenClipboardWithRetry())
                     {
                         return;
                     }
@@ -116,7 +116,7 @@ public static class CliClipboard
         return result;
     }
 
-    private static ClipboardImage ReadSta()
+    private static bool OpenClipboardWithRetry()
     {
         var opened = false;
         for (var attempt = 0; attempt < 5 && !opened; attempt++)
@@ -128,6 +128,13 @@ public static class CliClipboard
 
             opened = NativeClipboard.OpenClipboard(IntPtr.Zero);
         }
+
+        return opened;
+    }
+
+    private static ClipboardImage ReadSta()
+    {
+        var opened = OpenClipboardWithRetry();
 
         if (!opened)
         {

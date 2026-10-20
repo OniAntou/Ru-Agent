@@ -63,6 +63,8 @@ public sealed class TuiTranscript
     private bool _paused;
     private string? _pausedRunId;
     private string? _lastParkReason;
+    private readonly Dictionary<string, string> _parkReasons = new(StringComparer.Ordinal);
+    private bool _repeatedPark;
     private bool _fullScreenCards;
     private string? _pendingPlanProgress;
     private string? _lastPlanProgress;
@@ -228,6 +230,7 @@ public sealed class TuiTranscript
         _paused = false;
         _pausedRunId = null;
         _lastParkReason = null;
+        _repeatedPark = false;
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
@@ -740,6 +743,9 @@ public sealed class TuiTranscript
     public void ApplyDurable(HarnessSafeEventEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
+        if (envelope.EventType.StartsWith("run.", StringComparison.Ordinal)
+            && envelope.Status is "completed" or "failed" or "cancelled" or "interrupted")
+            ForgetParkHistory(envelope.RunId);
         var type = envelope.EventType;
         var summary = Escape(envelope.SafeSummary);
 
@@ -863,11 +869,13 @@ public sealed class TuiTranscript
     /// session-open adoption prints the exact same copy a live park does instead of a
     /// near-duplicate that only looks right.
     /// </summary>
-    public static string FormatParkedNotice(string runId, string? summary = null)
+    public static string FormatParkedNotice(string runId, string? summary = null, bool repeated = false)
     {
         var reason = ParkReasonCode(summary);
+        if (repeated)
+            return $"run parked again · {reason ?? "reason pending"} · {ParkAction(runId, reason ?? string.Empty, true)}";
         return reason is null
-            ? $"run parked · resume with /continue (or 'ru agent continue {runId}')"
+            ? $"run parked · resume with /continue (or 'ru agent continue {runId}') · /release to abandon"
             : $"run parked · {reason} · {ParkAction(runId, reason)}";
     }
 
@@ -875,10 +883,13 @@ public sealed class TuiTranscript
         string.IsNullOrWhiteSpace(code) || code is "waiting_user" or "reconciliation_required"
             ? null : code.Trim();
 
-    private static string ParkAction(string runId, string reason) =>
-        reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
-            ? "provider temporarily unavailable · wait before /continue"
-            : $"resume with /continue (or 'ru agent continue {runId}')";
+    private static string ParkAction(string runId, string reason, bool repeated = false) =>
+        repeated ? "the run is still blocked after Continue · /release to abandon"
+            : reason == "provider_quota_exhausted"
+                ? "restore provider credits or limits before /continue · /release to abandon"
+                : reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
+                    ? "provider temporarily unavailable · wait before /continue · /release to abandon"
+                    : $"resume with /continue (or 'ru agent continue {runId}') · /release to abandon";
 
     /// <summary>
     /// The one line for a run this session already has in flight: the operator can
@@ -897,22 +908,38 @@ public sealed class TuiTranscript
     {
         var reason = ParkReasonCode(Escape(envelope.SafeSummary));
         var newPark = !_paused || _pausedRunId != envelope.RunId;
-        if (newPark) _lastParkReason = null;
+        _parkReasons.TryGetValue(envelope.RunId, out var previousReason);
+        if (newPark) { _lastParkReason = null; _repeatedPark = false; }
+        if (reason is not null && (newPark || reason != _lastParkReason))
+            _repeatedPark = reason == previousReason;
         _paused = true;
         _pausedRunId = envelope.RunId;
         if (newPark)
         {
             _lastParkReason = reason;
-            Notice(FormatParkedNotice(envelope.RunId, reason), TuiToken.Warn);
+            Notice(reason is null && previousReason is not null
+                ? $"run parked again · reason pending · /release to abandon"
+                : FormatParkedNotice(envelope.RunId, reason, _repeatedPark), TuiToken.Warn);
         }
         else if (reason is not null && reason != _lastParkReason)
         {
             _lastParkReason = reason;
-            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason)}", TuiToken.Warn);
+            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason, _repeatedPark)}", TuiToken.Warn);
+        }
+        if (reason is not null)
+        {
+            _parkReasons[envelope.RunId] = reason;
+            while (_parkReasons.Count > 64) _parkReasons.Remove(_parkReasons.Keys.First());
         }
         _status.SetState(TuiRunState.Paused);
         _status.SetDetail(_lastParkReason is null ? "waiting to continue"
-            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason));
+            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason, _repeatedPark));
+    }
+
+    public void ForgetParkHistory(string runId)
+    {
+        _parkReasons.Remove(runId);
+        if (_pausedRunId == runId) ClearPaused();
     }
 
     private void ClearPaused()

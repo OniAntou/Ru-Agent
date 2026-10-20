@@ -94,6 +94,7 @@ Useful focused commands:
 ```powershell
 dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug
 .\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter "Broker"
+.\scripts\test_terminal_input.ps1  # Windows ConPTY: six Unicode/paste/navigation cases
 .venv\Scripts\python.exe -m pytest tests/test_current_documentation.py tests/test_guidance_route_counts.py -q
 ```
 

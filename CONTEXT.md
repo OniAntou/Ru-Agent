@@ -292,8 +292,10 @@ code, never a retry on a different backend. Bounded self-correction is not
 substitution: a `[HARNESS RECOVERY]` note is durable feedback returned to the
 same model, provider, and tool, and spent bounds fall back to the original
 fail-closed code; an exhausted transient provider parks the run in
-`WaitingUser` for an explicit Continue that retries the same provider. The one
-exception is that
+`WaitingUser` for an explicit Continue that retries the same provider. The explicit
+account-limit code, `provider_quota_exhausted`, parks without automatic retries;
+the operator must restore credits or limits before Continue. HTTP 429 without
+an explicit quota code remains a transient throttle. The substitution exception is that
 `web_search` races its configured engine against a fixed set of public HTML
 engines inside the same tool decision, every request still passing `WebPolicy`.
 _Avoid_: permission inferred from prompt text, repository cleanliness, or a

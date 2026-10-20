@@ -194,17 +194,20 @@ public sealed class InProcessModelStepRunnerTests
         Assert.Contains("arguments were incomplete or invalid", secondPrompt, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Does_not_retry_non_retryable_provider_error()
+    [Theory]
+    [InlineData("auth_failed", "provider_auth")]
+    [InlineData("quota_exhausted", "provider_quota_exhausted")]
+    public async Task Does_not_retry_non_retryable_provider_error(string providerCode, string expectedCode)
     {
         var provider = new ScriptedProvider((_, _) =>
-            Throws(new ModelProviderException("auth_failed", retryable: false)));
+            Throws(new ModelProviderException(providerCode, retryable: false)));
 
         var error = await Assert.ThrowsAsync<ModelRunnerProtocolException>(() =>
             Runner(provider).RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None));
 
         // A non-retryable provider failure keeps its stable code for the run.
-        Assert.Equal("provider_auth", error.Code);
+        Assert.Equal(expectedCode, error.Code);
+        Assert.False(error.Retryable);
         Assert.Equal(1, provider.Calls);
     }
 

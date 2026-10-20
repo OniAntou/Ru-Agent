@@ -44,7 +44,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw MapStatus(response.StatusCode);
+                throw response.StatusCode == HttpStatusCode.TooManyRequests
+                    ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
+                    : MapStatus(response.StatusCode);
             }
 
             Stream stream;
@@ -115,6 +117,12 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
                             throw new ModelProviderException("malformed_payload", retryable: false);
                         }
                     }
+
+                    if (data["error"] is JsonObject providerError
+                        && providerError["code"] is JsonValue errorCode
+                        && errorCode.TryGetValue<string>(out var code)
+                        && ModelRateLimitError.IsQuotaCode(code))
+                        throw new ModelProviderException("quota_exhausted", retryable: false);
 
                     var usage = ReadUsage(data["usage"], request.Model);
                     if (data["choices"] is not JsonArray choices)

@@ -196,6 +196,34 @@ public sealed class AgentApiClientTests
         Assert.Equal("payload_run_mismatch", ex.ErrorCode);
     }
 
+    [Theory]
+    [InlineData("assistanttext", "utf8text")]
+    [InlineData("assistantstep", "json")]
+    public async Task GetPayloadContent_preserves_host_metadata_and_verbatim_json(string kind, string encoding)
+    {
+        const string answer = "{\"tool_calls\":[],\"finish_reason\":\"stop\"}";
+        var handler = new FakeHandler(request =>
+        {
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            var json = JsonSerializer.Serialize(new
+            {
+                run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                payload_id = "payload_cccccccccccccccccccccccccccccccc",
+                kind, encoding, content = answer,
+            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            });
+        });
+        using var client = new AgentApiClient(Session(), new HttpClient(handler));
+
+        var payload = await client.GetPayloadContentAsync(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "payload_cccccccccccccccccccccccccccccccc");
+
+        Assert.Equal(new AgentPayloadContent(kind, encoding, answer), payload);
+    }
+
     [Fact]
     public async Task CreateRunUsesBearerAndStrictDto()
     {

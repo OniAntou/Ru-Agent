@@ -1,4 +1,5 @@
 using RuAgent.Cli.Tui;
+using RuAgent.Client;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
@@ -74,7 +75,9 @@ public sealed class AssistantTextReconcilerTests
     [Fact]
     public void Tool_call_step_records_are_not_recovered_as_prose()
     {
-        var kept = AssistantTextReconciler.ProsePayloads([Full, StepJson, StepJsonWithText, null, ""]);
+        var kept = AssistantTextReconciler.ProsePayloads([
+            Text(Full), new("assistantstep", "json", StepJson),
+            new("assistantstep", "json", StepJsonWithText), Text("")]);
 
         Assert.Equal([Full], kept);
     }
@@ -87,7 +90,7 @@ public sealed class AssistantTextReconcilerTests
         const string arrayReply = "[\"SJC\", \"DOJI\"]";
 
         var kept = AssistantTextReconciler.ProsePayloads(
-            ["Bảng giá:", jsonReply, textReply, arrayReply, "{\"note\": \"finish_reason alone is not a step\"}"]);
+            new[] { "Bảng giá:", jsonReply, textReply, arrayReply, "{\"note\": \"finish_reason alone is not a step\"}" }.Select(Text));
 
         Assert.Equal(["Bảng giá:", jsonReply, textReply, arrayReply, "{\"note\": \"finish_reason alone is not a step\"}"], kept);
     }
@@ -99,6 +102,18 @@ public sealed class AssistantTextReconcilerTests
         // just because it starts with a brace.
         const string broken = "{\"answer: 0.007347 USD";
 
-        Assert.Equal([broken], AssistantTextReconciler.ProsePayloads([broken]));
+        Assert.Equal([broken], AssistantTextReconciler.ProsePayloads([Text(broken)]));
     }
+
+    [Theory]
+    [InlineData("assistantstep", "json")]
+    [InlineData("toolresult", "utf8text")]
+    [InlineData("assistanttext", "opaque")]
+    [InlineData("", "utf8text")]
+    public void Non_reply_payloads_are_not_guessed_from_their_contents(string kind, string encoding)
+    {
+        Assert.Empty(AssistantTextReconciler.ProsePayloads([new(kind, encoding, "ordinary looking prose")]));
+    }
+
+    private static AgentPayloadContent Text(string text) => new("assistanttext", "utf8text", text);
 }

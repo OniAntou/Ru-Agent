@@ -199,6 +199,34 @@ public sealed class TgPromptInteractionTests
         }, (_, window, _) => Assert.Equal("/model my-model", window.Composer.Input.Text));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ctrl_v_with_a_wired_paste_handler_routes_to_it_and_keeps_the_draft_unchanged(bool withShift)
+    {
+        Render((app, window, loop) =>
+        {
+            var pasteCalls = 0;
+            loop.SetPasteHandler(() => { pasteCalls++; return Task.CompletedTask; });
+            window.Composer.Input.Text = "draft";
+            window.Composer.Input.InsertionPoint = 5;
+            app.InjectKey(withShift ? Key.V.WithCtrl.WithShift : Key.V.WithCtrl);
+            Assert.Equal(1, pasteCalls);
+        }, (_, window, _) => Assert.Equal("draft", window.Composer.Input.Text));
+    }
+
+    [Fact]
+    public void Terminal_paste_inserts_into_the_composer_editor()
+    {
+        Render((app, window, _) =>
+        {
+            TgTerminalPaste.Attach(app);
+            window.Composer.Input.Text = "draft";
+            window.Composer.Input.InsertionPoint = 5;
+            Assert.True(app.RaisePasteEvent("pasted"));
+        }, (_, window, _) => Assert.Equal("draftpasted", window.Composer.Input.Text));
+    }
+
     private static void Render(Action<IApplication, TgChatWindow, TgChatLoop> act,
         Action<IApplication, TgChatWindow, TgChatLoop> inspect)
     {

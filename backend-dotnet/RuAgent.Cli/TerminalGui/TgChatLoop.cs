@@ -164,7 +164,7 @@ public sealed class TgChatLoop
     /// <summary>Pending attachment count, used to allow an attachment-only (empty) submit.</summary>
     public void SetAttachmentCountProvider(Func<int> provider) => _attachmentCountProvider = provider;
 
-    /// <summary>Ctrl+V handler (clipboard image/text); a null handler leaves the key to the input.</summary>
+    /// <summary>Ctrl+V handler (clipboard image/text); wiring happens in the chat command, and the key stays claimed either way.</summary>
     public void SetPasteHandler(Func<Task> handler) => _pasteHandler = handler;
     public void SetCopyHandler(Func<string, Task<bool>> handler) => _copyHandler = handler;
 
@@ -546,15 +546,19 @@ public sealed class TgChatLoop
     /// <summary>
     /// Ctrl+V claims the key whenever a paste handler is wired: the handler reads the
     /// Windows clipboard itself (image or text), so the composer must not also paste.
+    /// An unwired handler still claims the key but tells the user why nothing pasted.
     /// </summary>
     private void Paste()
     {
         var handler = _pasteHandler;
         if (handler is null)
         {
+            TuiDebug.Log("paste", "ctrl+v reached the loop but no paste handler is wired");
+            _window.Hints.ShowFeedback("paste unavailable", true);
             return;
         }
 
+        TuiDebug.Log("paste", "ctrl+v routed to the paste handler");
         _ = RunHandlerAsync(handler);
     }
 

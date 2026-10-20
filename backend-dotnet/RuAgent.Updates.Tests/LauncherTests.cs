@@ -40,6 +40,28 @@ public sealed class LauncherTests
             }
             else { Assert.Equal("update_helper_start_failed",(await Assert.ThrowsAsync<UpdateException>(() => task)).Code); Assert.False(File.Exists(Path.Combine(staging,"update-request.json"))); }
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root,true); }
+        finally { await CleanupFixtureAsync(root); }
+    }
+
+    private static async Task CleanupFixtureAsync(string root)
+    {
+        var resolved = Path.GetFullPath(root);
+        var temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!resolved.StartsWith(temp, StringComparison.OrdinalIgnoreCase)
+            || !Path.GetFileName(resolved).StartsWith("ru-handoff-", StringComparison.Ordinal))
+            throw new InvalidOperationException("Refusing to clean an unowned fixture directory.");
+
+        // The fixture worker has exited, but Windows can retain a sharing lock
+        // briefly. Retry only that cleanup condition, within a bounded deadline.
+        var deadline = Stopwatch.StartNew();
+        while (Directory.Exists(resolved))
+        {
+            try { Directory.Delete(resolved, recursive: true); return; }
+            catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33
+                && deadline.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                await Task.Delay(50);
+            }
+        }
     }
 }

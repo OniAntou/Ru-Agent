@@ -851,9 +851,11 @@ body,
   margin: 0.7rem 0 0.3rem;
 }
 
-/* The install command is the primary action: show all of it instead of hiding it behind a scrollbar. */
+/* A command inside a procedure step is an action to copy: show all of it instead of a scrollbar. */
 .plate .highlight pre,
-.plate .highlight code {
+.plate .highlight code,
+.md-typeset ol .highlight pre,
+.md-typeset ol .highlight code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

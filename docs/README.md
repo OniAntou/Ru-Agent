@@ -10,6 +10,18 @@ so with a `status: pending` or `status: in-progress` marker.
 that for `docs/superpowers/plans/`, `docs/superpowers/specs/` and `docs/plans/`,
 so an unlabelled draft cannot sit in the checkout indefinitely.
 
+## Guides
+
+Task-oriented pages for people using Ru; start here before the reference material below.
+
+- [Install Ru](guide/install.md)
+- [Connect a provider and run your first task](guide/first-task.md)
+- [Permissions and approvals](guide/permissions.md)
+- [Using the terminal UI](guide/terminal-ui.md)
+- [Teach Ru your project](guide/teach-ru.md)
+- [Subagents](guide/subagents.md)
+- [Troubleshooting](guide/troubleshooting.md)
+
 ## Current system
 
 - [Windows distributions and updates](operations/distribution-and-updates.md)

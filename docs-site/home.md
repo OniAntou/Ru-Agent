@@ -87,6 +87,10 @@ Workspace trust and explicit approvals are part of the workflow. Instructions an
 <figcaption><strong>Fig. 1</strong> Subagent lines in the terminal UI, from a real run of a review subagent on a one-file project. The strip shortens the id; the hint after a finished child carries the full one.</figcaption>
 </figure>
 
+## Where to start
+
+New here: [install Ru](docs/guide/install.md), then [connect a provider and run your first task](docs/guide/first-task.md). Before you let it run commands, read [permissions and approvals](docs/guide/permissions.md). The chapters after *Use Ru* are reference material for people who want the exact contract or want to change Ru itself.
+
 ## Contents
 
 {{CONTENTS}}

@@ -110,6 +110,38 @@ def rewrite_links(text: str, source: Path, staged: set[str], report: dict[str, i
     return LINK.sub(link, text)
 
 
+ALERT = re.compile(r"^> \[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$")
+ALERT_KINDS = {
+    "NOTE": ("note", "Note"),
+    "TIP": ("tip", "Tip"),
+    "IMPORTANT": ("caution", "Caution"),
+    "WARNING": ("warning", "Warning"),
+    "CAUTION": ("danger", "Danger"),
+}
+
+
+def convert_alerts(text: str) -> str:
+    """GitHub alert blockquotes (> [!WARNING]) become MkDocs admonitions, which the site styles as plates."""
+    lines = text.split("\n")
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        match = ALERT.match(lines[index])
+        if not match:
+            out.append(lines[index])
+            index += 1
+            continue
+        kind, title = ALERT_KINDS[match.group(1)]
+        out.append(f'!!! {kind} "{title}"')
+        index += 1
+        while index < len(lines) and lines[index].startswith(">"):
+            body = lines[index][1:]
+            body = body[1:] if body.startswith(" ") else body
+            out.append(("    " + body) if body.strip() else "")
+            index += 1
+    return "\n".join(out)
+
+
 def stage(destination: Path) -> dict[str, int]:
     if destination.exists():
         shutil.rmtree(destination)
@@ -124,6 +156,7 @@ def stage(destination: Path) -> dict[str, int]:
             text = path.read_text(encoding="utf-8")
             # GitHub renders Markdown inside a centred <div>; Python-Markdown needs the opt-in.
             text = text.replace('<div align="center">', '<div align="center" markdown="1">')
+            text = convert_alerts(text)
             target.write_text(rewrite_links(text, path, staged, report), encoding="utf-8", newline="\n")
         else:
             shutil.copy2(path, target)
@@ -205,10 +238,21 @@ def navigation(staged_root: Path) -> list:
         return {title: relative} if (staged_root / relative).exists() else None
 
     sections = [
+        ("Get started", [
+            page("Install Ru", "docs/guide/install.md"),
+            page("First task", "docs/guide/first-task.md"),
+        ]),
         ("Use Ru", [
-            page("Terminal UI and CLI", "backend-dotnet/RuAgent.Cli/README.md"),
-            page("Agent tools", "docs/operations/agent-tools.md"),
-            page("Subagents", "docs/operations/subagents.md"),
+            page("Permissions and approvals", "docs/guide/permissions.md"),
+            page("Using the terminal UI", "docs/guide/terminal-ui.md"),
+            page("Teach Ru your project", "docs/guide/teach-ru.md"),
+            page("Subagents", "docs/guide/subagents.md"),
+            page("Troubleshooting", "docs/guide/troubleshooting.md"),
+        ]),
+        ("Reference", [
+            page("Agent tools and policy", "docs/operations/agent-tools.md"),
+            page("Terminal UI reference", "backend-dotnet/RuAgent.Cli/README.md"),
+            page("Subagents in depth", "docs/operations/subagents.md"),
             page("Providers and models", "docs/operations/provider-catalog.md"),
             page("Runtime behavior", "docs/operations/runtime-behavior.md"),
             page("Installing and updating", "docs/operations/distribution-and-updates.md"),

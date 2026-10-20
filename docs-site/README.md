@@ -13,6 +13,12 @@ python -m venv .venv-docs
 
 - The menu is generated: the sections are listed in `build.py`, and the Decisions section reads
   `docs/adr` so a new ADR needs no edit.
+- `docs/guide/` holds the task-oriented user guides (install, first task, permissions, terminal UI,
+  teaching Ru, subagents, troubleshooting). They are written for users and must stay short and true to the
+  behaviour documented in `docs/operations/` and the CLI README; the reference chapters keep the detail.
+- GitHub alert blockquotes (`> [!WARNING]`) are converted to the site's hazard plates while staging
+  (`NOTE`/`TIP` become a note plate, `IMPORTANT` a caution plate, `WARNING` a warning plate and `CAUTION` a
+  danger plate), so the same Markdown reads correctly on GitHub and on the site.
 - `docs/plans` and `docs/superpowers` are never published (open drafts).
 - MkDocs and its theme are pinned in `docs-site/requirements.txt`. They belong to this site only
   and are not part of the project's Python tooling set.

@@ -101,6 +101,7 @@ public sealed class RpcFrameReader
     private readonly char[] _buffer = new char[BufferChars];
     private int _start;
     private int _count;
+    private bool _atStreamStart = true;
 
     public RpcFrameReader(TextReader reader, int maxFrameBytes)
     {
@@ -135,6 +136,18 @@ public sealed class RpcFrameReader
             }
 
             var c = _buffer[_start++];
+            if (_atStreamStart)
+            {
+                // A Windows writer (Windows PowerShell's redirected stdin among them) can
+                // emit a UTF-8 preamble before the first frame. A byte order mark is not
+                // JSON content, so drop exactly one at the very start of the stream.
+                _atStreamStart = false;
+                if (c == '﻿')
+                {
+                    continue;
+                }
+            }
+
             if (c == '\n')
             {
                 return oversized

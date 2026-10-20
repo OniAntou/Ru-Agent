@@ -76,7 +76,7 @@ public sealed partial class AgentCommands
                 }
                 try
                 {
-                    await ContinueParkedRunAsync(null).ConfigureAwait(false);
+                    await ContinueParkedRunAsync().ConfigureAwait(false);
                 }
                 catch (RunParkedException)
                 {
@@ -370,7 +370,7 @@ public sealed partial class AgentCommands
                     cmd.Json ? _out : humanOut, cmd.Json, cancellationToken).ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/exit" or "/quit")
+            if (slashCmd is "/exit")
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
                 await humanOut.FlushAsync().ConfigureAwait(false);
@@ -429,67 +429,6 @@ public sealed partial class AgentCommands
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
                 return true;
             }
-            if (slashCmd is "/attach")
-            {
-                if (string.IsNullOrWhiteSpace(arg))
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /attach <path>").ConfigureAwait(false);
-                    return true;
-                }
-
-                await AttachFileAsync(arg).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/paste")
-            {
-                await ClipboardAttachAsync().ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/attachments")
-            {
-                if (pendingImages.Count == 0 && pendingTexts.Count == 0)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, "no attachments").ConfigureAwait(false);
-                    return true;
-                }
-
-                for (var i = 0; i < pendingImages.Count; i++)
-                {
-                    await WriteDiagnosticLineAsync(humanOut, $"  [{i + 1}] image  {pendingImages[i].Label}").ConfigureAwait(false);
-                }
-
-                for (var i = 0; i < pendingTexts.Count; i++)
-                {
-                    await WriteDiagnosticLineAsync(
-                        humanOut,
-                        $"  [{pendingImages.Count + i + 1}] file   {pendingTexts[i].Label}").ConfigureAwait(false);
-                }
-
-                return true;
-            }
-            if (slashCmd is "/detach")
-            {
-                var total = submissions.Count;
-                if (string.Equals(arg, "--all", StringComparison.OrdinalIgnoreCase))
-                {
-                    submissions.ClearPending();
-                    RefreshAttachmentLabels();
-                    await WriteDiagnosticLineAsync(humanOut, $"detached all {total} attachment(s)").ConfigureAwait(false);
-                    return true;
-                }
-
-                if (arg is null || !int.TryParse(arg, out var index) || index < 1 || index > total)
-                {
-                    await WriteDiagnosticLineAsync(_err, "usage: /detach <n> | /detach --all").ConfigureAwait(false);
-                    return true;
-                }
-
-                var detachedName = submissions.Detach(index);
-                await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
-
-                RefreshAttachmentLabels();
-                return true;
-            }
             if (slashCmd is "/release")
             {
                 var result = await ChatRunRelease.ReleaseAsync(
@@ -497,21 +436,6 @@ public sealed partial class AgentCommands
                 if (result.ReleasedRunId is { } released)
                     sessionRenderer.Transcript.ForgetParkHistory(released);
                 await WriteDiagnosticLineAsync(result.IsError ? _err : humanOut, result.Message).ConfigureAwait(false);
-                return true;
-            }
-            if (slashCmd is "/continue")
-            {
-                try
-                {
-                    await ContinueParkedRunAsync(arg).ConfigureAwait(false);
-                }
-                catch (RunParkedException)
-                {
-                    // Same escape as a fresh turn: an approval under --json ends the
-                    // chat rather than reading a prompt it must not answer.
-                    dispatcherExitCode = 0;
-                    return true;
-                }
                 return true;
             }
             if (slashCmd is "/follow")

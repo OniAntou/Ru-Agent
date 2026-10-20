@@ -56,15 +56,12 @@ public sealed partial class AgentCommands
 
             var expected = new StringBuilder();
             var completeSteps = new List<string>();
-            var fetched = new List<AgentPayloadContent>();
+            IReadOnlyList<AgentPayloadContent> fetched;
             try
             {
-                foreach (var payloadRef in payloadRefs)
-                {
-                    // Keep the Host's type: valid assistant JSON may have the same keys
-                    // as a step record, but remains prose rather than execution metadata.
-                    fetched.Add(await _agentClient.GetPayloadContentAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false));
-                }
+                fetched = await ChatAssistantPayloadReader.ReadAsync(payloadRefs,
+                    (payloadRef, token) => _agentClient.GetPayloadContentAsync(runId, payloadRef, token),
+                    recoveryToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -387,7 +384,7 @@ public sealed partial class AgentCommands
                 }
 
                 // A parked run is the user's to resume: there is nothing to cancel, and the
-                // transcript already printed the single "run parked ... /continue" notice
+                // transcript already printed the single "run parked ... Continue" notice
                 // for it, so printing another line here only duplicated that guidance.
                 return;
             }
@@ -408,12 +405,12 @@ public sealed partial class AgentCommands
         /// <summary>
         /// Resumes a parked run the way the GUI's typed Continue does: read the parked
         /// run's durable cursor, post the continue, then follow the run from that cursor
-        /// as if it were a fresh turn. Without a parked run and without an explicit run
-        /// id this is informational, never an error.
+        /// as if it were a fresh turn. Without a tracked parked run this is informational,
+        /// never an error.
         /// </summary>
-        async Task ContinueParkedRunAsync(string? runIdArg)
+        async Task ContinueParkedRunAsync()
         {
-            var targetRunId = string.IsNullOrWhiteSpace(runIdArg) ? runSession.ParkedRunId : runIdArg.Trim();
+            var targetRunId = runSession.ParkedRunId;
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
                 await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("no parked run · nothing to continue")).ConfigureAwait(false);
@@ -463,11 +460,10 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            // An explicit target that is not parked (running, waiting_approval,
+            // A retained target that is no longer parked (running, waiting_approval,
             // waiting_workspace_trust) is being driven elsewhere or waits on another
-            // decision: the resume POST could only earn a 409. Bare Continue targets
-            // the tracked parked run and keeps its existing behavior.
-            if (runIdArg is not null && !IsParkedRunStatus(run.Status))
+            // decision: the resume POST could only earn a 409.
+            if (!IsParkedRunStatus(run.Status))
             {
                 await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Err(
                     $"run_not_parked: run {targetRunId} is {run.Status} and not waiting to continue.")).ConfigureAwait(false);
@@ -536,7 +532,7 @@ public sealed partial class AgentCommands
 
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
-                await WriteDiagnosticLineAsync(humanOut, "no running or approval-waiting run · use /continue for a parked run").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, "no active run to follow · type Continue for a parked run").ConfigureAwait(false);
                 return;
             }
 
@@ -567,7 +563,7 @@ public sealed partial class AgentCommands
             if (!ChatRunWorkflow.IsFollowable(run))
             {
                 var hint = IsParkedRunStatus(run.Status)
-                    ? $"run {targetRunId} is parked · use /continue {targetRunId}"
+                    ? $"run {targetRunId} is parked · use 'ru agent continue {targetRunId}'"
                     : $"run_not_followable: run {targetRunId} is {run.Status}";
                 await WriteDiagnosticLineAsync(_err, hint).ConfigureAwait(false);
                 return;

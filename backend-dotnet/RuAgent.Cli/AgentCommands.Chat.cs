@@ -70,7 +70,7 @@ public sealed partial class AgentCommands
     /// <summary>
     /// Routes one submitted line to the slash-command handler or the prompt runner. The
     /// sequential and Terminal.Gui loops both call this so command behaviour
-    /// (attachments, /model, /attach, trust prompts) cannot drift between engines.
+    /// (attachments, /model, trust prompts) cannot drift between engines.
     /// </summary>
     public sealed record ChatLineDispatcher
     {

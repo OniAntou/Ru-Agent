@@ -66,7 +66,7 @@ public sealed partial class AgentCommands
 
         // Best effort and bounded: a fresh session may not have a title until the host has
         // seen a message, so the header keeps the plain caption until one arrives. The probe
-        // only runs where the header exists and never blocks turn cleanup.
+        // only runs where the header exists and has its own short HTTP deadline.
         async Task RefreshSessionTitleAsync()
         {
             if (!tgMode || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
@@ -77,13 +77,11 @@ public sealed partial class AgentCommands
             sessionTitleProbes++;
             try
             {
-                var doc = await _sessionClient.GetSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
-                if (doc.TryGetProperty("session", out var sessionElement)
-                    && sessionElement.TryGetProperty("title", out var titleElement)
-                    && titleElement.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(titleElement.GetString()))
+                var title = await TgSessionTitleReader.ReadAsync(
+                    token => _sessionClient.GetSessionAsync(sessionId, token), cancellationToken).ConfigureAwait(false);
+                if (title is not null)
                 {
-                    sessionTitle = titleElement.GetString()!.Trim();
+                    sessionTitle = title;
                     RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
                 }
             }

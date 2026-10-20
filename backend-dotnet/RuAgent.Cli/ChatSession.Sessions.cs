@@ -133,7 +133,7 @@ public sealed partial class AgentCommands
             catch (Exception ex)
             {
                 // Adoption is best effort: an unreachable list/read must not break the
-                // REPL start, and an explicit '/continue <run-id>' still works.
+                // REPL start; the headless 'ru agent continue <run-id>' remains available.
                 Tui.TuiDebug.Log("adopt", $"session run adoption failed: {CliErrorText.ShortMessage(ex.Message)}");
             }
         }

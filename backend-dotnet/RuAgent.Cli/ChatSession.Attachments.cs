@@ -93,7 +93,7 @@ public sealed partial class AgentCommands
             {
                 DeleteTempPath(tempPath);
                 await WriteAttachFeedbackAsync(
-                    $"image_too_large: this turn's images total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); remove some with /detach").ConfigureAwait(false);
+                    $"image_too_large: this turn's images would total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); this image was not added").ConfigureAwait(false);
                 return;
             }
 

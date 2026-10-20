@@ -6,6 +6,17 @@ namespace RuAgent.Cli.Tests.Rpc;
 public sealed class RpcFrameCodecTests
 {
     [Fact]
+    public async Task ReadFrame_ignores_one_byte_order_mark_at_the_start_of_the_stream_only()
+    {
+        using var reader = new StringReader("﻿{\"a\":1}\n﻿{\"b\":2}\n");
+        var first = await RpcFrameCodec.ReadFrameAsync(reader, 1024, CancellationToken.None);
+        Assert.Equal(RpcFrameStatus.Line, first.Status);
+        Assert.Equal("{\"a\":1}", first.Line);
+        var second = await RpcFrameCodec.ReadFrameAsync(reader, 1024, CancellationToken.None);
+        Assert.Equal("﻿{\"b\":2}", second.Line);
+    }
+
+    [Fact]
     public async Task ReadFrame_returns_the_line_without_the_newline()
     {
         using var reader = new StringReader("{\"a\":1}\n");

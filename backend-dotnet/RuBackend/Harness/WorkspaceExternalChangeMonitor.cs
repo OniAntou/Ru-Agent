@@ -14,6 +14,19 @@ public sealed record WorkspaceExternalChangeEvent(
 public sealed class WorkspaceExternalChangeMonitor
 {
     private const int MaxExpectedContentBytes = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// A baseline keeps the file's previous content only up to this size: the journal stores that
+    /// content so a change can be restored, and a restore of a multi-megabyte file is rare while
+    /// storing it for every change filled the database. Larger files keep their hash only.
+    /// </summary>
+    public const int MaxRetainedContentBytes = 1024 * 1024;
+
+    private static readonly string[] VolatileDirectories = [".git", "node_modules", "__pycache__", ".vs"];
+
+    private static readonly string[] VolatileSuffixes =
+        ["-wal", "-shm", "-journal", ".sqlite", ".sqlite3", ".db", ".log", ".tmp", ".lock"];
+
     private readonly ConcurrentDictionary<string, string> _expectedHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte[]> _expectedContents = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _lastObservedHashes = new(StringComparer.OrdinalIgnoreCase);
@@ -76,6 +89,42 @@ public sealed class WorkspaceExternalChangeMonitor
     /// </summary>
     public const long MaxCaptureTotalBytes = 64L * 1024 * 1024;
 
+    /// <summary>
+    /// Whether a file churns on its own (database files and their write-ahead logs, logs, lock and
+    /// temporary files) or lives in a generated or version-control folder. The bulk baseline skips
+    /// them: watching them only fills the journal with changes nobody would restore, and in a
+    /// workspace that contains the Ru profile it recorded the journal's own database.
+    /// </summary>
+    public static bool IsVolatilePath(string normalizedPath)
+    {
+        ArgumentNullException.ThrowIfNull(normalizedPath);
+        var segments = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < segments.Length - 1; index++)
+        {
+            if (VolatileDirectories.Contains(segments[index], StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // The profile of this application when the workspace is a home folder.
+            if (index + 2 < segments.Length
+                && string.Equals(segments[index], "AppData", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(segments[index + 1], "Local", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(segments[index + 2], "Ru", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        var name = segments[^1];
+        return VolatileSuffixes.Any(suffix => name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+    }
+
     public int CaptureExpectedHashes(string workspaceRoot, int maxFiles = 4096, long maxTotalBytes = MaxCaptureTotalBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -120,6 +169,11 @@ public sealed class WorkspaceExternalChangeMonitor
 
                     var relative = Path.GetRelativePath(workspaceRoot, path);
                     var normalized = NormalizeRelativePath(relative);
+                    if (IsVolatilePath(normalized))
+                    {
+                        continue;
+                    }
+
                     var snapshot = ComputeHashAndOptionalContent(path);
                     totalBytes += length;
                     var key = ExpectedKey(workspaceRoot, normalized);
@@ -469,9 +523,9 @@ public sealed class WorkspaceExternalChangeMonitor
         while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
             hasher.AppendData(buffer, 0, read);
-            if (totalBytes < MaxExpectedContentBytes)
+            if (totalBytes < MaxRetainedContentBytes)
             {
-                var captureLength = (int)Math.Min(read, MaxExpectedContentBytes - totalBytes);
+                var captureLength = (int)Math.Min(read, MaxRetainedContentBytes - totalBytes);
                 content.Write(buffer, 0, captureLength);
             }
 
@@ -479,7 +533,7 @@ public sealed class WorkspaceExternalChangeMonitor
         }
 
         var hash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
-        return (hash, totalBytes <= MaxExpectedContentBytes ? content.ToArray() : null);
+        return (hash, totalBytes <= MaxRetainedContentBytes ? content.ToArray() : null);
     }
 
     private bool TryMarkObserved(string key, string observed)

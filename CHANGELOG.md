@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: The workspace change journal no longer grows without bound. It had reached 193 MB of a 226 MB database (85%), most of it the Ru database's own write-ahead log and other tools' SQLite files captured in full on every change. The run-start baseline now skips files that churn on their own (database files and their `-wal`/`-shm`/`-journal` companions, `.log`/`.tmp`/`.lock`, and `.git`, `node_modules`, `__pycache__`, `.vs` folders, plus the Ru profile) and keeps previous content only up to 1 MiB (larger files keep their hash). A new `WorkspaceJournalRetentionService` removes settled entries older than 14 days and trims each workspace to 64 MiB of retained content, shortly after start and every six hours; the file itself is not shrunk.
+
 - **feat(agent)**: Carry a bounded, encrypted handoff of recent root-run work into the next turn in the same conversation/workspace, including tool results recorded before Stop without a final reply. Model changes still apply to new runs; historical calls are context only, omitted details remain explicit, and approvals or private provider state are not inherited.
 
 - **fix(gui)**: Preserve saved provider keys when a replacement is rejected or cannot be verified. Use an authenticated candidate-validation route and commit only after its catalog check, without changing model/provider selection or falling back on older Hosts.

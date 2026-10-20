@@ -74,6 +74,16 @@ execution rather than acquiring per-path claims. Sessions share the same real
 files. Hash guards and external-change notices do not provide worktree isolation
 or automatic merging of competing terminal writes.
 
+What the journal keeps is bounded. The baseline taken when a run starts skips files that churn
+on their own (database files and their `-wal`/`-shm`/`-journal` companions, `.log`, `.tmp` and `.lock`
+files, and `.git`, `node_modules`, `__pycache__` and `.vs` folders, plus the Ru profile when the
+workspace is a home folder), so those never enter the journal. A baseline keeps a file's previous
+content only up to 1 MiB; a larger file keeps its hash, and a restore of it reports that the content
+is not retained. A retention pass runs shortly after the Host starts and every six hours: it removes
+settled entries (`committed`, `restored`, `rejected`) older than 14 days, then trims each workspace to
+64 MiB of retained content, oldest first. A `prepared` entry is in flight and is never pruned. The
+pass frees space inside the database file for reuse; it does not shrink the file itself.
+
 For troubleshooting, check the activity sequence first, then compare the
 before/after hashes. No GUI or CLI surface renders the coordination state:
 poll the bounded activity feed directly to see peer/external entries and

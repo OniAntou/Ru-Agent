@@ -296,6 +296,24 @@ aggregate endpoint, no second save path and no fallback provider or model.
 
 The Host validates model/reasoning against that catalog at the first model
 step. Settings changes after the selection is pinned affect the next run.
+That new root run also captures a bounded **Session Run Handoff** from up to four
+earlier terminal roots in the same session/workspace, so a different model can
+see work performed before Stop even without a final assistant reply. The
+loaded conversation snapshot supplies the eligible user-message source run IDs;
+rewound/pruned runs and legacy unattributed messages cannot introduce a handoff.
+A SQLite read snapshot binds the source runs, model-visible payloads and receipts;
+the rendered handoff is encrypted with the new run's once-only base context.
+It is a separate, charged history turn and cannot silently fall out of native
+history fitting. At most 48 recent entries per source plus its original request
+are read, with a 128 KiB per-payload and 2 MiB aggregate read cap; the final
+portable text is capped at 16,000 characters. Excerpts and omissions are explicit.
+Only root run-local evidence is eligible: completed conversation turns remain
+in the existing 32-turn base, and old base snapshots are never copied recursively.
+Assistant statements/proposals remain untrusted quoted text. Receipt outcomes
+retain provenance; missing receipts or interrupted effects must be checked before
+repeating a mutation. Native provider continuation, audit-only bytes, child-private
+history, credentials and approval state are excluded. See
+[ADR 0023](adr/0023-bounded-session-run-handoff.md).
 The typed step service rejects missing/invalid snapshots and strips untrusted
 reasoning fields. The Host reads credentials directly from its own store, so no
 per-step handoff file exists. Schema v12 adds an unselected row atomically with

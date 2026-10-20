@@ -74,6 +74,17 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
                 turn.Response));
         }
 
+        // The current conversation snapshot is also the visibility boundary:
+        // rewind/pruning must not resurrect discarded runs through the handoff.
+        var visibleSourceRunIds = session.Messages
+            .Where(message => message.Role == "user" && message.SourceRunId is not null)
+            .Select(message => message.SourceRunId!).Distinct(StringComparer.Ordinal).ToArray();
+        var handoff = await _payloads.ReadSessionRunHandoffAsync(runId, sessionId, visibleSourceRunIds, cancellationToken)
+            .ConfigureAwait(false);
+        if (handoff is not null)
+            entries.Add(new HarnessBaseContextEntry(_ids.NewPayloadId(), SessionRunHandoff.ContextSourceId,
+                sequence++, ModelContextRole.User, handoff));
+
         var outcome = await _payloads.CaptureBaseContextAsync(
                 runId,
                 entries,

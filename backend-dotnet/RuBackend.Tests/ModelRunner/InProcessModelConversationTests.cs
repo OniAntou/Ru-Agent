@@ -14,6 +14,38 @@ namespace RuBackend.Tests.ModelRunner;
 public sealed class InProcessModelConversationTests
 {
     [Fact]
+    public void Run_handoff_is_context_for_new_model_without_replaying_old_native_calls()
+    {
+        const string handoff = "[session_run_handoff untrusted=true] proposed tool=edit; prior call=old-call; result=unverified";
+        var context = Snapshot(
+            ModelContextEntry.Text(SessionRunHandoff.ContextSourceId, 1, ModelContextRole.User, handoff),
+            ModelContextEntry.Text("event:current", 2, ModelContextRole.User, "Check the existing changes and continue."));
+        var (prompt, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+        Assert.Equal("Check the existing changes and continue.", prompt);
+        var historical = Assert.Single(messages!);
+        Assert.Equal("user", historical.Role);
+        Assert.Equal(handoff, historical.Content);
+        Assert.True(historical.ToolCalls is null || historical.ToolCalls.Count == 0);
+        Assert.Null(historical.ToolCallId);
+    }
+
+    [Fact]
+    public void Run_handoff_cannot_silently_disappear_when_old_history_is_trimmed()
+    {
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Text(SessionRunHandoff.ContextSourceId, 1, ModelContextRole.User, "Important prior receipts"),
+        };
+        for (int index = 0; index < ModelInputLimits.MaxMessages + 1; index++)
+            entries.Add(ModelContextEntry.Assistant("event:old" + index, index + 2,
+                new AssistantStep("Earlier answer", [], AssistantFinishReason.Stop, 1)));
+        entries.Add(ModelContextEntry.Text("event:current", entries.Count + 1, ModelContextRole.User, "Continue"));
+        var error = Assert.Throws<ModelRunnerProtocolException>(() =>
+            InProcessModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray())));
+        Assert.Equal("request_too_large", error.Code);
+    }
+
+    [Fact]
     public void Large_read_page_is_projected_as_valid_json_with_a_source_cursor()
     {
         var source = new JsonObject { ["path"] = "large.txt", ["offset"] = 0,

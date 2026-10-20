@@ -146,6 +146,22 @@ the state unavailable. A new session stays independent.
 _Avoid_: global memory, cross-session authority, model prose as proof, or work
 state as permission
 
+**Session Run Handoff**:
+A bounded, encrypted base-context snapshot of model-visible evidence from up to
+four earlier terminal root runs in the same Conversation Session and workspace.
+Only runs whose user messages remain attributed in the loaded conversation
+snapshot are eligible; rewind/pruning cannot restore removed run details.
+It carries recorded requests, assistant statements/proposals, tool-result excerpts
+and receipt outcomes with run/event provenance, including work stopped before a
+final reply. It is captured once for a new root run, alongside the existing
+32 completed conversation turns and Session Work State. Historical proposals are
+quoted context, never executable native calls; missing receipts and omitted
+details remain explicitly unverified. Internal child runs, audit-only payloads,
+provider continuation and execution authority are not inherited. Model selection
+remains pinned separately per run.
+_Avoid_: complete memory, cross-session history, inherited approvals, automatic
+re-execution of unfinished calls
+
 **RuAgentBroker**:
 The in-process execution runtime and class library that validates tool
 manifests, session scopes, approval state, and adapter execution before a local

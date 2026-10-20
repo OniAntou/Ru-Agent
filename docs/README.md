@@ -36,6 +36,7 @@ so an unlabelled draft cannot sit in the checkout indefinitely.
 
 ## Decisions
 
+- [Bounded session-run handoff across model changes](adr/0023-bounded-session-run-handoff.md)
 - [Full access is literally full](adr/0021-full-access-is-literally-full.md)
 - [Always allow parallel sessions in one workspace](adr/0020-always-parallel-workspace-sessions.md)
 - [Product packages and explicit updates](adr/0019-product-packages-and-explicit-updates.md)

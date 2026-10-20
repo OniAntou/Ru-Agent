@@ -1,5 +1,7 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Context;
 using RuBackend.Business;
 using RuBackend.Business.Sessions;
@@ -10,6 +12,91 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class HarnessModelContextBootstrapperTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task New_turn_keeps_cancelled_run_work_only_while_its_prompt_remains_visible(bool promptVisible)
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var prompt = new HarnessPayloadIntent(new PayloadId("payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            HarnessPayloadKind.UserPrompt, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text, 4096, System.Text.Encoding.UTF8.GetBytes("Fix the parser and run its tests."));
+        var previous = await fixture.SeedRunAsync(payloads: [prompt]);
+        var selections = new SqliteAgentRunProviderSelectionStore(fixture.Options);
+        var modelA = new AgentRunProviderSelection("Custom OpenAI", "custom", "chat_completions",
+            "https://provider.invalid/v1", "model-a", "custom_api_key", "{}", 8192);
+        await selections.PinAsync(previous.Run.RunId, modelA, default);
+        var step = new AssistantStep("Updated parser.cs; now checking the tests.",
+            [new ModelToolCall("old-call", "bash", "1",
+                System.Text.Json.JsonDocument.Parse("{\"command\":\"dotnet test Parser.Tests\"}").RootElement)],
+            AssistantFinishReason.ToolCalls, 1);
+        var assistant = new HarnessPayloadIntent(new PayloadId("payload_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            HarnessPayloadKind.AssistantStep, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json, 8192, AssistantStepJsonCodec.Serialize(step));
+        var output = new HarnessPayloadIntent(new PayloadId("payload_cccccccccccccccccccccccccccccccc"),
+            HarnessPayloadKind.ToolOutput, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text, 4096, System.Text.Encoding.UTF8.GetBytes("Parser.Tests: 12 passed"));
+        var ended = fixtureTime(3);
+        var stopped = new AgentRun(previous.Run.RunId, previous.Run.SessionId, previous.Run.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Cancelled), 1, 4, 1, 1, 1,
+            previous.Run.Preset, 1, previous.Run.PolicySnapshotSha256, previous.Run.CreatedAt, ended,
+            terminalAt: ended);
+        await fixture.EventStore.CommitAsync(new HarnessCommit(previous.Run.RunId, 0, stopped,
+            [new HarnessEventIntent(new EventId("evt_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                HarnessEventKind.ModelStepCompleted, payloadId: assistant.PayloadId),
+             new HarnessEventIntent(new EventId("evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                HarnessEventKind.ToolExecutionCompleted,
+                toolCallId: new ToolCallId("call_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), providerCallId: "old-call",
+                executionId: new ExecutionId("exec_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                payloadId: output.PayloadId, safeCode: "ok", toolOutcome: ToolExecutionOutcome.Succeeded,
+                sideEffectsPossible: false),
+             new HarnessEventIntent(new EventId("evt_cccccccccccccccccccccccccccccccc"), HarnessEventKind.RunStateChanged)],
+            [assistant, output], []), default);
+
+        var nextRun = new AgentRun(new RunId("run_22222222222222222222222222222222"), previous.Run.SessionId,
+            previous.Run.WorkspaceId, new HarnessRunStatus(HarnessRunState.Created), 0, 1, 1, 0, 0,
+            previous.Run.Preset, 1, previous.Run.PolicySnapshotSha256, fixtureTime(4), fixtureTime(4));
+        var nextPrompt = new HarnessPayloadIntent(new PayloadId("payload_dddddddddddddddddddddddddddddddd"),
+            HarnessPayloadKind.UserPrompt, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text, 4096, System.Text.Encoding.UTF8.GetBytes("Check the results and continue with model B."));
+        await fixture.EventStore.TryCreateRunAsync(new NewAgentRun(nextRun,
+            [new HarnessEventIntent(new EventId("evt_dddddddddddddddddddddddddddddddd"), HarnessEventKind.RunStateChanged,
+                payloadId: nextPrompt.PayloadId)],
+            [nextPrompt], [], new RunCreationIdentity(new string('e', 64), new string('f', 64), 1)), default);
+        await selections.PinAsync(nextRun.RunId, modelA with { Model = "model-b" }, default);
+        var session = new SessionDocument(nextRun.SessionId.Value, "Model switch", fixtureTime(0), fixtureTime(4),
+            promptVisible
+                ? [new SessionMessage("user", "Fix the parser and run its tests.", "source-old-user", previous.Run.RunId.Value)]
+                : []); // Rewind removed the old prompt; never resurrect that work.
+        var bootstrapper = new HarnessModelContextBootstrapper(new SnapshotSessionStore(session),
+            fixture.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System);
+
+        await bootstrapper.CaptureAsync(nextRun.RunId, nextRun.SessionId, default);
+        var snapshot = await new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)
+            .LoadAsync(nextRun.RunId, default);
+        if (!promptVisible)
+        {
+            Assert.Empty(snapshot.SessionBase);
+            return;
+        }
+        var handoff = Assert.Single(snapshot.SessionBase);
+        Assert.Contains("Parser.Tests: 12 passed", handoff.Content);
+        Assert.Contains("dotnet test Parser.Tests", handoff.Content);
+        Assert.Contains(previous.Run.RunId.Value, handoff.Content);
+        Assert.Contains("Cancelled", handoff.Content);
+        Assert.Contains("untrusted", handoff.Content);
+        Assert.Equal("model-a", (await selections.GetAsync(previous.Run.RunId, default))!.Selection!.Model);
+        Assert.Equal("model-b", (await selections.GetAsync(nextRun.RunId, default))!.Selection!.Model);
+        var context = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(nextRun.RunId, default);
+        var (current, _, messages) = RuBackend.Harness.ModelRunner.InProcessModelStepRunner.BuildConversationForTests(context);
+        Assert.Equal("Check the results and continue with model B.", current);
+        Assert.Contains(messages!, message => message.Content.Contains("Parser.Tests: 12 passed", StringComparison.Ordinal));
+        Assert.All(messages!, message => Assert.Empty(message.ToolCalls));
+
+        static DateTimeOffset fixtureTime(int seconds) => BackendHarnessTestFixture.Timestamp.AddSeconds(seconds);
+    }
+
     [Fact]
     public async Task Captures_one_coherent_loaded_session_snapshot()
     {
@@ -46,7 +133,7 @@ public sealed class HarnessModelContextBootstrapperTests
     }
 
     [Fact]
-    public async Task Captures_the_existing_thirty_two_turn_context_once_and_ignores_source_metadata()
+    public async Task Captures_thirty_two_completed_turns_once_without_copying_source_metadata_into_entries()
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var request = await fixture.SeedRunAsync();

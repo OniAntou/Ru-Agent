@@ -20,10 +20,13 @@ from harness.routes import (
 
 def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    registry = build_route_registry(load_contract(repo_root))
+    contract = load_contract(repo_root)
+    registry = build_route_registry(contract)
 
-    # 45 HTTP routes with no WebSocket transport remaining.
-    assert len(registry) == 45
+    assert len(registry) == len(contract)
+    assert {(entry.method, entry.path, entry.transport) for entry in registry} == {
+        (entry["method"], entry["path"], entry["transport"]) for entry in contract
+    }
     assert all(
         entry.safety
         in {

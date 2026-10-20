@@ -420,7 +420,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         var pendingCalls = new Queue<ModelFunctionCall>();
         var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
         var providerIdsByToolCall = new Dictionary<string, string>(StringComparer.Ordinal);
-        string? protectedWorkState = null;
+        var protectedContextBlocks = new List<string>();
         foreach (var entry in context.Entries)
         {
             if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System)
@@ -439,10 +439,10 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 EnsureNoPendingCalls(pendingCalls);
                 if (!string.IsNullOrWhiteSpace(entry.Content))
                 {
-                    if (entry.SourceId == SessionWorkState.ContextSourceId)
+                    if (entry.SourceId is SessionWorkState.ContextSourceId or SessionRunHandoff.ContextSourceId)
                     {
                         AddPendingUserBlocks(units, pendingUserBlocks);
-                        protectedWorkState = entry.Content;
+                        protectedContextBlocks.Add(entry.Content);
                         units.Add([new ModelTurn("user", entry.Content)]);
                         continue;
                     }
@@ -488,9 +488,8 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         }
         var messages = FitModelMessagesToBudget(units);
         var currentPrompt = ResolveCurrentPrompt(pendingUserBlocks, messages, hasImages);
-        if (protectedWorkState is not null
-            && !messages.Any(message => message.Role == "user"
-                && string.Equals(message.Content, protectedWorkState, StringComparison.Ordinal)))
+        if (protectedContextBlocks.Any(block => !messages.Any(message => message.Role == "user"
+                && string.Equals(message.Content, block, StringComparison.Ordinal))))
             throw new ModelRunnerProtocolException("request_too_large");
         return (currentPrompt, messages);
     }

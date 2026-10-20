@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: Carry a bounded, encrypted handoff of recent root-run work into the next turn in the same conversation/workspace, including tool results recorded before Stop without a final reply. Model changes still apply to new runs; historical calls are context only, omitted details remain explicit, and approvals or private provider state are not inherited.
+
 - **fix(gui)**: Preserve saved provider keys when a replacement is rejected or cannot be verified. Use an authenticated candidate-validation route and commit only after its catalog check, without changing model/provider selection or falling back on older Hosts.
 - **fix(gui)**: Dismiss Settings dropdowns before their owner on Escape, stack settings earlier at intermediate window widths, keep session actions visible for keyboard focus/open menus, and expose names/selected status for transcript-size choices.
 

@@ -275,7 +275,7 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         return reader.GetInt32(1);
     }
 
-    private async Task<ModelContextEntry> ReadEntryAsync(
+    internal async Task<ModelContextEntry> ReadEntryAsync(
         RunId runId,
         SqliteDataReader reader,
         CancellationToken cancellationToken)

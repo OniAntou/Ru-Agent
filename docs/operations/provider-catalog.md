@@ -218,6 +218,19 @@ endpoint, protocol, model, reasoning options and output-token limit, and reads
 only that selection's credential account from the credential store. A legacy
 run without a selection fails as `provider_selection_missing`.
 
+To use another model on unfinished work, stop the old run, select the new model
+and submit a new request in the same conversation. The new run receives recent
+completed dialogue, Session Work State and a bounded Session Run Handoff from
+earlier terminal roots in that session/workspace, including recorded tool results
+from a stopped run with no final reply. This also works between ordinary turns
+without a model change. Continue on the old run still uses its original model.
+The handoff is historical evidence, not a replay of pending tool calls or a transfer
+of approvals. Older/large details may be omitted with an explicit notice; the new
+model must check current files and unverified effects before continuing.
+Only runs still attributed to user messages in the current conversation snapshot
+are eligible. Rewind/pruning cannot reintroduce their removed handoff details;
+legacy unattributed messages keep the existing completed-dialogue context.
+
 The decrypted in-memory snapshot cache is bounded to 64 runs; terminal entries
 are swept when a run requests its snapshot and the cache clears at Host
 disposal. Durable selections remain with their run and are deleted with it.

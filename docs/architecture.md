@@ -529,14 +529,20 @@ reconciliation surfaces from Phase 3:
   response deltas show writing, parked states stay still, and queued tools retain
   their own action after another tool settles. Settled rows preserve outcome text
   and metrics when shortening targets. Frames below
-  20 rows keep a single heading row. The header projects existing session data;
-  it adds no API calls. Every animation phase (braille spinner, running-tool
+  20 rows keep a single heading row. The header projects session data and catalog
+  metadata; optional title probes read the session only while its title is missing.
+  Every animation phase (braille spinner, running-tool
   glyph rotation, busy-hint colour wave, elapsed clock) is a pure function of
   elapsed seconds in
   `TuiSpinner`, so the 18 ms meteor ticker and any slower cadence yield the same
   motion; the ticker runs only while the frame is live, and the live row's
   spinner pauses on parked states. Streaming reflows a dirty tail at draw/scroll
-  boundaries.
+  boundaries. Unchanged wrapped rows are cached by retained text, paint and viewport
+  width, including while tool details are expanded; evicted text does not stay alive
+  through the cache. Turn-end assistant reconciliation reads at most four payloads
+  concurrently and preserves their model-step order and types. Optional header-title
+  reads have a 250 ms cancellation deadline. Reopened sessions and `/follow` treat
+  `waiting_subagents` parents as active without posting Continue.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Silent durable run/model metadata does not flush unfinished assistant prose.

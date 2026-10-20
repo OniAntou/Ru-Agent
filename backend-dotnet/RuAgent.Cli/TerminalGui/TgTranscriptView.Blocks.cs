@@ -208,8 +208,9 @@ public sealed partial class TgTranscriptView
 
     private void AppendCollapsedBlocksAfter(int afterLine, int? summaryTop, int width)
     {
-        foreach (var block in _collapsedBlocks.Where(block => block.AfterLine == afterLine))
+        foreach (var block in _collapsedBlocks)
         {
+            if (block.AfterLine != afterLine) continue;
             block.WrappedTop = block.HasSummary ? summaryTop ?? _wrapped.Count : _wrapped.Count;
             if (!block.Expanded)
             {

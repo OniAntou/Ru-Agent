@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(tui)**: Give optional session-title reads a 250 ms cancellation deadline so a stalled header refresh cannot consume the normal HTTP timeout while finishing a turn.
+
+- **fix(tui)**: Reopened sessions and `/follow` recognize parents waiting for subagents as active runs, retaining the durable cursor without creating, continuing or cancelling another run.
+
+- **perf(tui)**: Read up to four durable assistant payloads concurrently at turn completion, retaining step order and payload types and cancelling the remaining reads on error or interruption.
+
+- **perf(tui)**: Reuse unchanged transcript row layouts while streaming pipe rows or keeping tool details expanded. Cached wraps follow viewport width and paint and are released with evicted text or `/clear`.
+
 - **fix(gui)**: Preserve saved provider keys when a replacement is rejected or cannot be verified. Use an authenticated candidate-validation route and commit only after its catalog check, without changing model/provider selection or falling back on older Hosts.
 - **fix(gui)**: Dismiss Settings dropdowns before their owner on Escape, stack settings earlier at intermediate window widths, keep session actions visible for keyboard focus/open menus, and expose names/selected status for transcript-size choices.
 

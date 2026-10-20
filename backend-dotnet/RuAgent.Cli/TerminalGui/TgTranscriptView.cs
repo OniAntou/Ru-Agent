@@ -192,6 +192,7 @@ public sealed partial class TgTranscriptView : View
         RetentionVersion++;
         _lines.Clear();
         _wrapped.Clear();
+        _wrapCache.Clear();
         ClearCollapsedBlocks();
         _wrapWidth = -1;
         _tailRows = 1;
@@ -696,30 +697,6 @@ public sealed partial class TgTranscriptView : View
     }
 
     private static int CharacterCount(string text) => text.EnumerateRunes().Count();
-
-    private int AppendWrapped(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, int width)
-    {
-        if (spans is { Count: > 0 })
-        {
-            var rows = proseLikeForSpans(text, style)
-                ? TgAnsiPaint.WordWrapSpans(text, spans, width)
-                : TgAnsiPaint.HardWrapSpans(text, spans, width);
-            foreach (var wrapped in rows)
-            {
-                _wrapped.Add(new TgTranscriptRow(wrapped.Row, style, wrapped.Spans));
-            }
-
-            return rows.Count;
-        }
-
-        var plain = WrapLine(text, style, null, width);
-        foreach (var row in plain)
-        {
-            _wrapped.Add(new TgTranscriptRow(row, style, null));
-        }
-
-        return plain.Count;
-    }
 
     private static IReadOnlyList<string> WrapLine(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, int width)
     {

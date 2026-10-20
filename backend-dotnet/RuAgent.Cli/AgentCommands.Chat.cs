@@ -158,7 +158,7 @@ public sealed partial class AgentCommands
 
         // Best effort and bounded: a fresh session may not have a title until the host has
         // seen a message, so the header keeps the plain caption until one arrives. The probe
-        // only runs where the header exists and never blocks turn cleanup.
+        // only runs where the header exists and has its own short HTTP deadline.
         async Task RefreshSessionTitleAsync()
         {
             if (!tgMode || !string.IsNullOrWhiteSpace(sessionTitle) || sessionTitleProbes >= 3)
@@ -169,13 +169,11 @@ public sealed partial class AgentCommands
             sessionTitleProbes++;
             try
             {
-                var doc = await _sessionClient.GetSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
-                if (doc.TryGetProperty("session", out var sessionElement)
-                    && sessionElement.TryGetProperty("title", out var titleElement)
-                    && titleElement.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(titleElement.GetString()))
+                var title = await TgSessionTitleReader.ReadAsync(
+                    token => _sessionClient.GetSessionAsync(sessionId, token), cancellationToken).ConfigureAwait(false);
+                if (title is not null)
                 {
-                    sessionTitle = titleElement.GetString()!.Trim();
+                    sessionTitle = title;
                     RunOnTgUi(() => tgWindow!.Header.SetTitle(sessionTitle));
                 }
             }
@@ -749,15 +747,12 @@ public sealed partial class AgentCommands
 
             var expected = new StringBuilder();
             var completeSteps = new List<string>();
-            var fetched = new List<AgentPayloadContent>();
+            IReadOnlyList<AgentPayloadContent> fetched;
             try
             {
-                foreach (var payloadRef in payloadRefs)
-                {
-                    // Keep the Host's type: valid assistant JSON may have the same keys
-                    // as a step record, but remains prose rather than execution metadata.
-                    fetched.Add(await _agentClient.GetPayloadContentAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false));
-                }
+                fetched = await ChatAssistantPayloadReader.ReadAsync(payloadRefs,
+                    (payloadRef, token) => _agentClient.GetPayloadContentAsync(runId, payloadRef, token),
+                    recoveryToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1632,7 +1627,7 @@ public sealed partial class AgentCommands
 
             if (string.IsNullOrWhiteSpace(targetRunId))
             {
-                await WriteDiagnosticLineAsync(humanOut, "no running or approval-waiting run · type Continue for a parked run").ConfigureAwait(false);
+                await WriteDiagnosticLineAsync(humanOut, "no active run to follow · type Continue for a parked run").ConfigureAwait(false);
                 return;
             }
 

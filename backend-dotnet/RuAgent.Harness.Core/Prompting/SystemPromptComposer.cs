@@ -147,8 +147,6 @@ public static class SystemPromptComposer
     {
         var runtime = context.RuntimeContext;
         var sections = new List<string>();
-        AddSection(sections, "mood", runtime.Mood);
-        AddSection(sections, "hardware", runtime.Hardware);
         const string toolLabelPrefix = "untrusted tool result:";
         sections.AddRange(runtime.References.Where(reference =>
                 reference.Kind != "tool_result" || nativeToolResultIds is null

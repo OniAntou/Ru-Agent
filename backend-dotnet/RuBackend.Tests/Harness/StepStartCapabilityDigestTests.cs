@@ -76,7 +76,7 @@ public sealed class StepStartCapabilityDigestTests
             new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             capabilities,
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
         var projected = InProcessModelStepRunner.BuildSettingsForTests(context);
         Assert.Equal(capabilities.Length, projected["model_tools"]!.AsArray().Count);
     }

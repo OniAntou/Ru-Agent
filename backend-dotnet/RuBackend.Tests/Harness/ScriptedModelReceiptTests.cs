@@ -42,7 +42,7 @@ public sealed class ScriptedModelReceiptTests
                     System.Security.Cryptography.SHA256.HashData(
                         System.Text.Encoding.UTF8.GetBytes(instructions))))],
             [new PromptCapability("read", "1.0.0", "Read a file", "system.read", schema, new string('0', 64), null, "enabled")],
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
     }
 
     [Fact]
@@ -167,8 +167,7 @@ public sealed class ScriptedModelReceiptTests
             context.Environment,
             context.InstructionBlocks,
             context.Capabilities,
-            new PromptRuntimeContext(null, null,
-            [new PromptReference("tool_result", "untrusted tool result",
+            new PromptRuntimeContext([new PromptReference("tool_result", "untrusted tool result",
                 $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"projection_next_offset\":{cursor},\"projection_has_more\":true}}") ]));
     }
 
@@ -182,8 +181,7 @@ public sealed class ScriptedModelReceiptTests
             context.Environment,
             context.InstructionBlocks,
             context.Capabilities,
-            new PromptRuntimeContext(null, null,
-            [new PromptReference("tool_result", "untrusted tool result",
+            new PromptRuntimeContext([new PromptReference("tool_result", "untrusted tool result",
                 $"{{\"projection_tool_call_id\":\"{toolCallId}\",\"projection_provider_call_id\":\"{providerCallId}\",\"results\":[],\"count\":0,\"truncated\":false}}") ]));
     }
 }

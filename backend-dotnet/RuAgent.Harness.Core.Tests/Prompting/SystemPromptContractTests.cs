@@ -75,7 +75,7 @@ public sealed class SystemPromptContractTests
             new PromptEnvironment("test-model", "windows", "vi-VN", "UTC", "2026-08-29", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>())));
+            new PromptRuntimeContext(Array.Empty<PromptReference>())));
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class SystemPromptContractTests
                 {
                     new PromptCapability("files.read", "1.0.0", "Read a file", "workspace.read", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}", "a".PadRight(64, 'a'), null, "enabled"),
                 },
-                new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+                new PromptRuntimeContext(Array.Empty<PromptReference>()));
 
         public static SystemPromptContext ContextWithInstructionBytes(int bytes)
         {
@@ -122,7 +122,7 @@ public sealed class SystemPromptContractTests
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
                 new[] { new PromptInstructionBlock("root:AGENTS.md", "AGENTS.md", content, "a".PadRight(64, 'a')) },
                 Array.Empty<PromptCapability>(),
-                new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+                new PromptRuntimeContext(Array.Empty<PromptReference>()));
         }
 
         public static SystemPromptReceipt Receipt(string promptSha256, IReadOnlyList<PromptBlockDigest> blocks) =>

@@ -55,7 +55,7 @@ public sealed class AgentPolicyProfileParityTests
             new PromptEnvironment("test-model", "windows", "en-US", "UTC", "2026-01-01", null),
             Array.Empty<PromptInstructionBlock>(),
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
         var canonical = AgentPolicyProfileCatalog.Get("standard");
         Assert.True(context.EffectivePolicy.HasSameSemanticsAs(canonical));
 

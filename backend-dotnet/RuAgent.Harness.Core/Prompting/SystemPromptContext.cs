@@ -175,13 +175,8 @@ public sealed record PromptRuntimeContext
     /// </remarks>
     public const int MaxRuntimeReferences = 32;
 
-    public PromptRuntimeContext(
-        string? mood,
-        string? hardware,
-        IReadOnlyList<PromptReference> references)
+    public PromptRuntimeContext(IReadOnlyList<PromptReference> references)
     {
-        Mood = PromptText.Optional(mood, 256, nameof(mood));
-        Hardware = PromptText.Optional(hardware, 2 * 1024, nameof(hardware));
         ArgumentNullException.ThrowIfNull(references);
         var copiedReferences = references.ToArray();
         if (copiedReferences.Any(reference => reference is null))
@@ -196,10 +191,6 @@ public sealed record PromptRuntimeContext
 
         References = new ReadOnlyCollection<PromptReference>(copiedReferences);
     }
-
-    public string? Mood { get; }
-
-    public string? Hardware { get; }
 
     public IReadOnlyList<PromptReference> References { get; }
 }
@@ -223,7 +214,7 @@ public sealed record SystemPromptContext
         new PromptEnvironment("unknown", "unknown", "en-US", "UTC", "1970-01-01", null),
         Array.Empty<PromptInstructionBlock>(),
         Array.Empty<PromptCapability>(),
-        new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+        new PromptRuntimeContext(Array.Empty<PromptReference>()));
 
     public SystemPromptContext(
         int schemaVersion,
@@ -375,8 +366,6 @@ public sealed record SystemPromptContext
             }),
             runtime_context = new
             {
-                mood = RuntimeContext.Mood,
-                hardware = RuntimeContext.Hardware,
                 references = RuntimeContext.References.Select(reference => new
                 {
                     kind = reference.Kind,

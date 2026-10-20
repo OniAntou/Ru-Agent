@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{#
+  Every page under a chapter opens with a plate line: "CHAPTER 2 · HOW IT WORKS ......... 2-1".
+  Chapters are the top-level sections of the navigation; the section number is the page's
+  position inside its chapter, the same numbers the chapter rail shows.
+#}
+{% block content %}
+  {% set ns = namespace(chapter=0, section=0, title="", counter=0) %}
+  {% if page and page.parent %}
+    {% for item in nav.items %}
+      {% if item.is_section %}
+        {% set ns.counter = ns.counter + 1 %}
+        {% if item == page.parent %}
+          {% set ns.chapter = ns.counter %}
+          {% set ns.title = item.title %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {% for child in page.parent.children %}
+      {% if child == page %}{% set ns.section = loop.index %}{% endif %}
+    {% endfor %}
+  {% endif %}
+  {% if ns.chapter %}
+    <div class="manual-head">
+      <span>Chapter {{ ns.chapter }} &middot; {{ ns.title }}</span>
+      <span class="manual-head__ref">{{ ns.chapter }}-{{ ns.section }}</span>
+    </div>
+  {% endif %}
+  {{ super() }}
+{% endblock %}

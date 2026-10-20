@@ -18,3 +18,21 @@ python -m venv .venv-docs
   and are not part of the project's Python tooling set.
 - `.github/workflows/docs.yml` deploys to GitHub Pages on a push to `dev` that touches a
   published document. Pages must be enabled once under Settings > Pages (Source: GitHub Actions).
+
+## Look and feel
+
+The site is "The Service Manual": numbered chapters (the rail, each page's plate line and the
+contents list share the same `2-4` numbers), procedures with tick-off steps, a hazard hierarchy for
+NOTE / CAUTION / WARNING plates, Ru green as the only brand ink, dark by default with a daylight mode.
+
+| File | Role |
+| --- | --- |
+| `PRODUCT.md`, `DESIGN.md` | Product truth and the visual system (tokens, rules). Read them before changing the look. |
+| `theme/assets/manual.css` | The whole stylesheet; the direction contract is at its top. |
+| `theme/assets/manual.js` | Tick-off steps (state kept in localStorage). |
+| `theme/overrides/main.html` | The per-page plate line with the chapter and section number. |
+| `theme/overrides/home.html`, `home.md` | The cover. `home.md` is hand-written Markdown with `{{REV}}`, `{{DATE}}` and a generated `{{CONTENTS}}` list. |
+
+The cover repeats the install command and the permission table from the README, so keep `home.md` in
+step when those change. Fonts (Barlow Condensed, Atkinson Hyperlegible, JetBrains Mono) load from
+Google Fonts at view time.

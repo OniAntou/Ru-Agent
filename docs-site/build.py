@@ -15,6 +15,9 @@ project's Python tooling set.
 from __future__ import annotations
 
 import argparse
+import datetime
+import html
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +45,16 @@ DOC_TREES = ["docs"]
 EXCLUDED_PREFIXES = ("docs/plans/", "docs/superpowers/", "docs/operations/fixtures/")
 # Referenced by the documents but not Markdown: copied so images and data links resolve.
 EXTRA_FILES = ["backend-dotnet/public-route-contract.json"]
+
+THEME = HERE / "theme"
+# MkDocs drops README.md from a folder that also has index.md, and the cover is the index, so the
+# root README is published as the "Overview" page under another name.
+ALIASES = {"README.md": "overview.md"}
+FONTS = (
+    "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700"
+    "&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400"
+    "&family=JetBrains+Mono:wght@400;600&display=swap"
+)
 
 LINK = re.compile(r"(?<!\!)\]\(([^)\s]+?)(\s+\"[^\"]*\")?\)")
 IMAGE = re.compile(r"\!\[[^\]]*\]\(([^)\s]+?)\)")
@@ -79,6 +92,10 @@ def rewrite_links(text: str, source: Path, staged: set[str], report: dict[str, i
         except ValueError:
             report["outside"] += 1
             return target
+        if relative in ALIASES:
+            start = source.parent.relative_to(ROOT).as_posix() or "."
+            moved = os.path.relpath(ALIASES[relative], start=start).replace("\\", "/")
+            return moved + (hash_sep + fragment if fragment else "")
         if relative in staged:
             return target
         if resolved.exists():
@@ -101,7 +118,7 @@ def stage(destination: Path) -> dict[str, int]:
     report = {"files": len(files), "to_github": 0, "missing": 0, "outside": 0}
     for path in files:
         relative = path.relative_to(ROOT)
-        target = destination / relative
+        target = destination / ALIASES.get(relative.as_posix(), relative.as_posix())
         target.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix.lower() == ".md":
             text = path.read_text(encoding="utf-8")
@@ -110,7 +127,63 @@ def stage(destination: Path) -> dict[str, int]:
             target.write_text(rewrite_links(text, path, staged, report), encoding="utf-8", newline="\n")
         else:
             shutil.copy2(path, target)
+    manual = destination / "_manual"
+    shutil.copytree(THEME / "assets", manual)
+    shutil.copy2(ROOT / "docs" / "assets" / "wordmark-clean.svg", manual / "wordmark.svg")
     return report
+
+
+def revision() -> tuple[str, str]:
+    try:
+        short = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        short = "local"
+    return short, datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
+def page_url(relative: str) -> str:
+    """The directory-style URL MkDocs gives a staged page, relative to the site root."""
+    if relative.endswith("/README.md"):
+        return relative[: -len("README.md")]
+    return relative[: -len(".md")] + "/"
+
+
+def contents_html(nav: list) -> str:
+    chapters = []
+    number = 0
+    for entry in nav:
+        (title, value), = entry.items()
+        if not isinstance(value, list):
+            continue
+        number += 1
+        rows = []
+        for index, child in enumerate(value, start=1):
+            (page_title, page_path), = child.items()
+            rows.append(
+                '<li><a href="{url}"><span class="contents__title">{title}</span>'
+                '<span class="contents__leader"></span><span class="contents__num">{ch}-{sec}</span></a></li>'.format(
+                    url=html.escape(page_url(page_path)),
+                    title=html.escape(page_title),
+                    ch=number,
+                    sec=index,
+                )
+            )
+        wide = " contents__chapter--wide" if len(value) > 8 else ""
+        chapters.append(
+            '<section class="contents__chapter{wide}"><h3><span>CH {n}</span>{title}</h3><ol>{rows}</ol></section>'.format(
+                wide=wide, n=number, title=html.escape(title), rows="".join(rows)
+            )
+        )
+    return '<div class="contents">' + "".join(chapters) + "</div>"
+
+
+def write_cover(staged_root: Path, nav: list) -> None:
+    short, today = revision()
+    text = (HERE / "home.md").read_text(encoding="utf-8")
+    text = text.replace("{{REV}}", short).replace("{{DATE}}", today).replace("{{CONTENTS}}", contents_html(nav))
+    (staged_root / "index.md").write_text(text, encoding="utf-8", newline="\n")
 
 
 def title_of(path: Path) -> str:
@@ -132,7 +205,6 @@ def navigation(staged_root: Path) -> list:
         return {title: relative} if (staged_root / relative).exists() else None
 
     sections = [
-        ("Home", [page("Overview", "README.md")]),
         ("Use Ru", [
             page("Terminal UI and CLI", "backend-dotnet/RuAgent.Cli/README.md"),
             page("Agent tools", "docs/operations/agent-tools.md"),
@@ -164,7 +236,8 @@ def navigation(staged_root: Path) -> list:
             page("Python runtime boundary", "docs/operations/python-runtime-boundary.md"),
         ]),
     ]
-    nav: list = []
+    # The overview is a plain page above the numbered chapters.
+    nav: list = [{"Overview": "overview.md"}]
     for title, pages in sections:
         entries = [entry for entry in pages if entry]
         if entries:
@@ -175,10 +248,14 @@ def navigation(staged_root: Path) -> list:
     return nav
 
 
-def write_config(staged_root: Path, config_path: Path) -> None:
+def write_config(staged_root: Path, config_path: Path, nav: list) -> None:
     base = yaml.safe_load((HERE / "mkdocs.yml").read_text(encoding="utf-8"))
     base["docs_dir"] = str(staged_root)
-    base["nav"] = navigation(staged_root)
+    base["nav"] = nav
+    base["theme"]["custom_dir"] = str(THEME / "overrides")
+    base["theme"]["logo"] = "_manual/wordmark.svg"
+    base["extra_css"] = [FONTS, "_manual/manual.css"]
+    base["extra_javascript"] = ["_manual/manual.js"]
     config_path.write_text(yaml.safe_dump(base, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
@@ -192,8 +269,10 @@ def main() -> int:
     work = Path(args.work).resolve()
     staged_root = work / "docs"
     report = stage(staged_root)
+    nav = navigation(staged_root)
+    write_cover(staged_root, nav)
     config_path = work / "mkdocs.yml"
-    write_config(staged_root, config_path)
+    write_config(staged_root, config_path, nav)
     print(
         f"staged {report['files']} files; {report['to_github']} links point at GitHub, "
         f"{report['missing']} links target a missing file, {report['outside']} leave the repository"

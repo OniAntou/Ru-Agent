@@ -1,0 +1,1122 @@
+/*
+ * RU AGENT DOCUMENTATION: "THE SERVICE MANUAL"
+ *
+ * THESIS: Ru is a machine you operate under permission modes, so its docs are a service manual:
+ *   numbered chapters, procedures with visible steps, a hazard hierarchy. Refuses the neon-on-black
+ *   hacker page and the rounded-card SaaS docs page.
+ * OWN-WORLD: graphite-green ground, bone ink, Ru green (#00E676) as the only brand ink meaning
+ *   "engaged / OK"; amber and red only as hazard grades. Condensed grotesque for plates and labels,
+ *   hyper-legible humanist body, monospace only for code. Hairlines and flat plates; no shadows,
+ *   gradients or glass.
+ * STORY: the visitor sees what Ru is, reads the limit up front (no sandbox, unsigned Preview),
+ *   installs in three steps, then navigates by chapter-section number (2-4).
+ * FIRST VIEWPORT: left, the cover (wordmark, "Operator's manual", edition / platform / revision /
+ *   licence); right, the Quick Start procedure plate with the install command; the hazard plates
+ *   sit directly under both; a dark header bar carries wordmark and search.
+ * FORM: field service manual, candidate 7 of 7, seed key 0f4ef2d2.
+ */
+
+/* ------------------------------------------------------------------ tokens */
+
+:root {
+  --ru-green: #00e676;
+  --ru-green-ink: #04140b;
+  --ru-header: #070b09;
+  --ru-header-ink: #e6ece7;
+
+  --ru-condensed: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --ru-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --ru-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  --ru-measure: 72ch;
+  --ru-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-md-color-scheme="slate"] {
+  --ru-bg: #0b100e;
+  --ru-surface: #111815;
+  --ru-surface-2: #17211d;
+  --ru-rule: #26332d;
+  --ru-rule-strong: #3d4f46;
+  --ru-ink: #e6ece7;
+  --ru-ink-2: #a9b6af;
+  --ru-ink-3: #86958d;
+  --ru-link: #4ff0a1;
+  --ru-brand: var(--ru-green);
+  --ru-note-bg: #0f1a22;
+  --ru-note: #7cc4ff;
+  --ru-caution-bg: #1f1806;
+  --ru-caution: #ffb224;
+  --ru-warning-bg: #231208;
+  --ru-warning: #ff8a3d;
+  --ru-danger-bg: #260d0b;
+  --ru-danger: #ff6b5e;
+  --ru-plate-ink: #0b100e;
+}
+
+[data-md-color-scheme="default"] {
+  --ru-bg: #eef2ef;
+  --ru-surface: #f8faf8;
+  --ru-surface-2: #e3e9e5;
+  --ru-rule: #c3cec8;
+  --ru-rule-strong: #8e9d95;
+  --ru-ink: #0f1613;
+  --ru-ink-2: #36443d;
+  --ru-ink-3: #55645c;
+  --ru-link: #006b36;
+  --ru-brand: #006b36;
+  --ru-note-bg: #e8f1f8;
+  --ru-note: #0b4f80;
+  --ru-caution-bg: #fff3d6;
+  --ru-caution: #7a4b00;
+  --ru-warning-bg: #ffe9dc;
+  --ru-warning: #8f3200;
+  --ru-danger-bg: #fde3e0;
+  --ru-danger: #a4160d;
+  --ru-plate-ink: #ffffff;
+}
+
+/* Material variable bridge */
+[data-md-color-scheme="slate"],
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: var(--ru-bg);
+  --md-default-fg-color: var(--ru-ink);
+  --md-default-fg-color--light: var(--ru-ink-2);
+  --md-default-fg-color--lighter: var(--ru-ink-3);
+  --md-default-fg-color--lightest: var(--ru-rule);
+  --md-typeset-color: var(--ru-ink);
+  --md-typeset-a-color: var(--ru-link);
+  --md-primary-fg-color: var(--ru-header);
+  --md-primary-fg-color--light: var(--ru-header);
+  --md-primary-fg-color--dark: var(--ru-header);
+  --md-primary-bg-color: var(--ru-header-ink);
+  --md-primary-bg-color--light: #a9b6af;
+  --md-accent-fg-color: var(--ru-link);
+  --md-footer-bg-color: var(--ru-header);
+  --md-footer-bg-color--dark: var(--ru-header);
+  --md-footer-fg-color: var(--ru-header-ink);
+  --md-footer-fg-color--light: #a9b6af;
+  --md-footer-fg-color--lighter: #86958d;
+  --md-code-bg-color: var(--ru-surface);
+  --md-code-fg-color: var(--ru-ink);
+  --md-typeset-table-color: var(--ru-rule);
+  --md-typeset-kbd-color: var(--ru-surface-2);
+}
+
+/* ------------------------------------------------------------------ page */
+
+html {
+  scroll-padding-top: 4.5rem;
+}
+
+body,
+.md-main {
+  background: var(--ru-bg);
+}
+
+.md-typeset {
+  font-family: var(--ru-body);
+  font-size: 1.0625rem; /* 17px: dense technical reading in long sessions */
+  line-height: 1.62;
+  color: var(--ru-ink);
+}
+
+.md-content__inner {
+  max-width: calc(var(--ru-measure) + 4rem);
+  margin-inline: auto;
+  padding: 1.25rem clamp(1rem, 3vw, 1.75rem) 4rem;
+}
+
+.md-typeset p,
+.md-typeset li {
+  max-width: var(--ru-measure);
+}
+
+.md-typeset a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in srgb, var(--ru-link) 45%, transparent);
+  transition: text-decoration-color 160ms var(--ru-ease), color 160ms var(--ru-ease);
+}
+
+.md-typeset a:hover {
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ru-link);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ header bar */
+
+.md-header {
+  background: var(--ru-header);
+  color: var(--ru-header-ink);
+  box-shadow: none;
+  border-bottom: 1px solid #1c2823;
+}
+
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.15rem;
+  width: auto;
+}
+
+/* The wordmark already names the site; only the page title follows it. */
+.md-header__title > .md-header__ellipsis > .md-header__topic:first-child {
+  display: none;
+}
+
+.md-header__topic,
+.md-header__title {
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+}
+
+.md-search__form {
+  background: #101915;
+  border-radius: 0;
+  border: 1px solid #25332c;
+}
+
+.md-search__input::placeholder {
+  color: #86958d;
+}
+
+/* ------------------------------------------------------------------ chapter rail */
+
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary {
+    width: 15.5rem;
+  }
+}
+
+.md-nav {
+  font-family: var(--ru-body);
+  font-size: 0.82rem;
+}
+
+.md-nav--primary .md-nav__title {
+  display: none;
+}
+
+.md-nav__list {
+  counter-reset: sec;
+}
+
+.md-nav--primary > .md-nav__list {
+  counter-reset: chap;
+}
+
+/* chapter plates */
+.md-nav__item--section {
+  counter-increment: chap;
+  margin-top: 1.35rem;
+  counter-reset: sec;
+}
+
+.md-nav__item--section > .md-nav__link {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-ink);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--ru-rule-strong);
+  margin-bottom: 0.2rem;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.md-nav__item--section > .md-nav__link::before {
+  content: "CH " counter(chap);
+  display: inline-block;
+  margin-right: 0.6rem;
+  padding: 0.05rem 0.4rem;
+  background: var(--ru-ink);
+  color: var(--ru-bg);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+}
+
+.md-nav__item--section > .md-nav__link .md-nav__icon {
+  display: none;
+}
+
+.md-nav__item--section > .md-nav > .md-nav__list > .md-nav__item {
+  counter-increment: sec;
+  padding: 0;
+}
+
+.md-nav__item--section > .md-nav > .md-nav__list > .md-nav__item > .md-nav__link {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.28rem 0.2rem 0.28rem 0;
+  color: var(--ru-ink-2);
+  line-height: 1.3;
+  transition: color 140ms var(--ru-ease), background-color 140ms var(--ru-ease);
+}
+
+.md-nav__item--section > .md-nav > .md-nav__list > .md-nav__item > .md-nav__link::before {
+  content: counter(chap) "-" counter(sec);
+  flex: 0 0 2.1rem;
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ru-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.md-nav__link:hover {
+  color: var(--ru-ink);
+}
+
+.md-nav__item .md-nav__link--active {
+  color: var(--ru-ink);
+  font-weight: 700;
+}
+
+/* The open page is marked the way a manual marks a done step: its number turns into a green chip. */
+.md-nav__item--section > .md-nav > .md-nav__list > .md-nav__item > .md-nav__link--active::before {
+  align-self: flex-start;
+  flex: 0 0 auto;
+  min-width: 2.1rem;
+  padding: 0 0.3rem;
+  margin-right: 0.1rem;
+  background: var(--ru-green);
+  color: var(--ru-green-ink);
+  text-align: center;
+}
+
+/* Material adds a second, mobile-only entry for the open page's contents; the margin already has it. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary label.md-nav__link[for="__toc"] {
+    display: none !important;
+  }
+}
+
+/* On-page contents margin */
+.md-sidebar--secondary .md-nav__title {
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  color: var(--ru-ink-3);
+  box-shadow: none;
+  background: transparent;
+}
+
+.md-sidebar--secondary .md-nav__link {
+  color: var(--ru-ink-3);
+}
+
+.md-sidebar--secondary .md-nav__link--active {
+  color: var(--ru-ink);
+}
+
+/* ------------------------------------------------------------------ plate header (per page) */
+
+.manual-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--ru-rule-strong);
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  font-size: 0.86rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ru-ink-3);
+}
+
+.manual-head__ref {
+  color: var(--ru-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ headings */
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  font-family: var(--ru-condensed);
+  color: var(--ru-ink);
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4.4vw, 3.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.01em;
+  margin: 0 0 1.4rem;
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  font-size: 1.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 3rem 0 0.9rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--ru-rule-strong);
+}
+
+.md-typeset h3 {
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 2.1rem 0 0.5rem;
+}
+
+.md-typeset h4 {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ru-ink-2);
+  margin: 1.6rem 0 0.4rem;
+}
+
+.md-typeset .headerlink {
+  color: var(--ru-ink-3);
+}
+
+/* ------------------------------------------------------------------ procedures */
+
+.md-typeset ol {
+  list-style: none;
+  counter-reset: step;
+  padding-left: 0;
+}
+
+/* Material indents lists with its own margins; the manual aligns steps and bullets to the column. */
+.md-typeset :is(ol, ul),
+.md-typeset :is(ol, ul) > li {
+  margin-left: 0 !important;
+}
+
+.md-typeset ol > li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 2.6rem;
+  margin: 0 0 0.85rem;
+}
+
+.md-typeset ol > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0.12rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ru-rule-strong);
+  background: var(--ru-surface);
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ru-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.md-typeset ol > li[data-done="true"]::before {
+  background: var(--ru-green);
+  border-color: var(--ru-green);
+  color: var(--ru-green-ink);
+  content: "\2713";
+}
+
+.md-typeset ul {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+}
+
+.md-typeset ul > li {
+  position: relative;
+  padding-left: 1.4rem;
+  margin: 0 0 0.35rem;
+}
+
+.md-typeset ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.72em;
+  width: 0.45rem;
+  height: 0.45rem;
+  background: var(--ru-rule-strong);
+}
+
+.md-typeset ul ul > li::before,
+.md-typeset ol ul > li::before {
+  background: transparent;
+  border: 1px solid var(--ru-rule-strong);
+}
+
+.md-typeset li > ol,
+.md-typeset li > ul {
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ hazard plates */
+
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset blockquote {
+  position: relative;
+  margin: 1.6rem 0;
+  padding: 0;
+  border: 1px solid var(--plate, var(--ru-rule-strong));
+  border-radius: 0;
+  background: var(--plate-bg, var(--ru-surface));
+  box-shadow: none;
+  color: var(--ru-ink);
+  font-size: 0.97rem;
+  max-width: calc(var(--ru-measure) + 2rem);
+}
+
+.md-typeset .admonition > :not(.admonition-title),
+.md-typeset details > :not(summary) {
+  margin-inline: 1rem;
+}
+
+.md-typeset .admonition > :nth-child(2),
+.md-typeset details > :nth-child(2) {
+  margin-top: 0.8rem;
+}
+
+.md-typeset .admonition > :last-child,
+.md-typeset details > :last-child {
+  margin-bottom: 0.9rem;
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  display: block;
+  max-width: none;
+  margin: 0;
+  padding: 0.28rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--plate, var(--ru-rule-strong));
+  color: var(--ru-plate-ink);
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Material colours each type's title strip itself; the plate's own strip wins. */
+.md-typeset .admonition > .admonition-title,
+.md-typeset details > summary {
+  background: var(--plate, var(--ru-rule-strong)) !important;
+  color: var(--ru-plate-ink) !important;
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before {
+  display: none;
+}
+
+.md-typeset .admonition-title::after,
+.md-typeset summary::after {
+  display: none;
+}
+
+.md-typeset .admonition.note,
+.md-typeset .admonition.info,
+.md-typeset .admonition.tip,
+.md-typeset .admonition.abstract,
+.md-typeset .admonition.example,
+.md-typeset .admonition.quote,
+.md-typeset .admonition.question {
+  --plate: var(--ru-note);
+  --plate-bg: var(--ru-note-bg);
+}
+
+.md-typeset .admonition.caution,
+.md-typeset .admonition.attention {
+  --plate: var(--ru-caution);
+  --plate-bg: var(--ru-caution-bg);
+}
+
+.md-typeset .admonition.warning {
+  --plate: var(--ru-warning);
+  --plate-bg: var(--ru-warning-bg);
+}
+
+.md-typeset .admonition.danger,
+.md-typeset .admonition.failure,
+.md-typeset .admonition.bug {
+  --plate: var(--ru-danger);
+  --plate-bg: var(--ru-danger-bg);
+}
+
+/* Plain quoted paragraphs in the source documents read as NOTE plates. */
+.md-typeset blockquote {
+  --plate: var(--ru-note);
+  --plate-bg: var(--ru-note-bg);
+  padding: 0.3rem 1rem 0.6rem;
+  border-width: 1px;
+  border-left-width: 1px;
+  color: var(--ru-ink);
+}
+
+.md-typeset blockquote::before {
+  content: "NOTE";
+  display: block;
+  margin: -0.3rem -1rem 0.7rem;
+  padding: 0.28rem 1rem;
+  background: var(--plate);
+  color: var(--ru-plate-ink);
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.18em;
+}
+
+.md-typeset blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ code */
+
+.md-typeset code,
+.md-typeset pre,
+.md-typeset kbd {
+  font-family: var(--ru-mono);
+  font-size: 0.86em;
+}
+
+.md-typeset :not(pre) > code {
+  padding: 0.08em 0.38em;
+  background: var(--ru-surface-2);
+  border: 1px solid var(--ru-rule);
+  border-radius: 0;
+  color: var(--ru-ink);
+  word-break: break-word;
+}
+
+.md-typeset .highlight {
+  margin: 1.2rem 0;
+  border: 1px solid var(--ru-rule);
+  background: var(--ru-surface);
+}
+
+.md-typeset .highlight pre,
+.md-typeset .highlight code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.md-typeset .highlight pre > code {
+  padding: 0.95rem 1.1rem 0.95rem 1.3rem;
+  line-height: 1.55;
+}
+
+.md-clipboard {
+  color: var(--ru-ink-3);
+}
+
+.md-clipboard:hover {
+  color: var(--ru-link);
+}
+
+/* ------------------------------------------------------------------ specification tables */
+
+.md-typeset__table {
+  display: block;
+  max-width: 100%;
+}
+
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+  border: 0;
+  border-top: 2px solid var(--ru-ink);
+  border-bottom: 1px solid var(--ru-rule-strong);
+  box-shadow: none;
+  background: transparent;
+  font-size: 0.93rem;
+}
+
+.md-typeset table:not([class]) th {
+  background: transparent;
+  color: var(--ru-ink-2);
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.9rem 0.45rem 0;
+  border-bottom: 1px solid var(--ru-rule-strong);
+  vertical-align: bottom;
+}
+
+.md-typeset table:not([class]) td {
+  padding: 0.65rem 0.9rem 0.65rem 0;
+  border-top: 1px solid var(--ru-rule);
+  vertical-align: top;
+}
+
+.md-typeset table:not([class]) tbody tr:hover {
+  background: color-mix(in srgb, var(--ru-surface-2) 55%, transparent);
+}
+
+.md-typeset table:not([class]) td:first-child {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 40em) {
+  .md-typeset table:not([class]) td:first-child {
+    white-space: normal;
+  }
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.md-footer {
+  border-top: 1px solid #1c2823;
+}
+
+.md-footer-meta {
+  background: var(--ru-header);
+}
+
+.md-footer__title,
+.md-copyright {
+  font-family: var(--ru-condensed);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ cover (home) */
+
+.md-content__inner:has(> .manual-home) {
+  max-width: 76rem;
+}
+
+.cover {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: start;
+  padding-top: 1.5rem;
+}
+
+.cover__id {
+  padding-top: 0.5rem;
+}
+
+.cover__mark {
+  display: block;
+  width: min(100%, 31rem);
+  height: auto;
+  margin-bottom: 1.6rem;
+}
+
+.cover__kind {
+  margin: 0;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: clamp(2.3rem, 5.4vw, 4rem);
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ru-ink);
+}
+
+.cover__lede {
+  margin: 1.1rem 0 1.6rem;
+  max-width: 36rem;
+  font-size: 1.12rem;
+  color: var(--ru-ink-2);
+}
+
+.cover__meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0;
+  margin: 0;
+  max-width: 28rem;
+  border-top: 2px solid var(--ru-ink);
+  font-size: 0.93rem;
+}
+
+.cover__meta dt,
+.cover__meta dd {
+  margin: 0;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--ru-rule);
+}
+
+.cover__meta dt {
+  padding-right: 1.6rem;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ru-ink-3);
+  align-self: center;
+}
+
+.cover__meta dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.plate {
+  border: 1px solid var(--ru-ink);
+  background: var(--ru-surface);
+}
+
+.plate__head span {
+  white-space: nowrap;
+}
+
+.plate__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 1rem;
+  padding: 0.4rem 1.1rem;
+  background: var(--ru-ink);
+  color: var(--ru-bg);
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.plate__body {
+  padding: 1.3rem 1.3rem 0.6rem;
+}
+
+.plate__body > ol {
+  margin: 0;
+}
+
+.plate__warn {
+  max-width: none;
+  margin: 0;
+  padding: 0.7rem 1.3rem;
+  border-top: 1px solid var(--ru-warning);
+  background: var(--ru-warning-bg);
+  font-size: 0.9rem;
+  color: var(--ru-ink);
+}
+
+.plate__warn strong {
+  margin-right: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  background: var(--ru-warning);
+  color: var(--ru-plate-ink);
+  font-family: var(--ru-condensed);
+  font-size: 0.82rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.plate__foot {
+  margin: 0;
+  padding: 0.7rem 1.3rem 0.9rem;
+  border-top: 1px solid var(--ru-rule);
+  font-size: 0.9rem;
+  color: var(--ru-ink-2);
+}
+
+.plate .highlight {
+  margin: 0.7rem 0 0.3rem;
+}
+
+/* The install command is the primary action: show all of it instead of hiding it behind a scrollbar. */
+.plate .highlight pre,
+.plate .highlight code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cover__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.4rem 0 0;
+  padding: 0;
+}
+
+.cover__actions a {
+  text-decoration: none;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.62rem 1.15rem;
+  border: 1px solid var(--ru-ink);
+  background: transparent;
+  color: var(--ru-ink) !important;
+  font-family: var(--ru-condensed);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none !important;
+  transition: background-color 150ms var(--ru-ease), color 150ms var(--ru-ease);
+}
+
+.button:hover {
+  background: var(--ru-ink);
+  color: var(--ru-bg) !important;
+}
+
+.button--primary {
+  background: var(--ru-green);
+  border-color: var(--ru-green);
+  color: var(--ru-green-ink) !important;
+}
+
+.button--primary:hover {
+  background: var(--ru-ink);
+  border-color: var(--ru-ink);
+  color: var(--ru-bg) !important;
+}
+
+.manual-home h2 {
+  margin-top: 3.4rem;
+}
+
+.manual-home .figure {
+  display: block;
+  margin: 1.2rem 0;
+  max-width: 52rem;
+}
+
+.manual-home .figure .highlight {
+  margin: 0;
+}
+
+.manual-home .figure pre,
+.manual-home .figure code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.manual-home .figure figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--ru-ink-3);
+}
+
+.manual-home .figure figcaption strong {
+  font-family: var(--ru-condensed);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-ink-2);
+}
+
+/* Generated contents list: chapter rows with dotted leaders to the section number. */
+.contents {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 2rem 3rem;
+  margin: 1.4rem 0 0;
+}
+
+.contents__chapter h3 {
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--ru-ink);
+  font-size: 1.1rem;
+}
+
+.contents__chapter h3 span {
+  display: inline-block;
+  margin-right: 0.6rem;
+  padding: 0 0.4rem;
+  background: var(--ru-ink);
+  color: var(--ru-bg);
+}
+
+.contents__chapter ol {
+  margin: 0;
+}
+
+.contents__chapter ol > li {
+  padding-left: 0;
+  margin: 0;
+}
+
+.contents__chapter ol > li::before {
+  display: none;
+}
+
+.contents__chapter a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.22rem 0;
+  text-decoration: none;
+  color: var(--ru-ink);
+}
+
+.contents__chapter a:hover .contents__title {
+  text-decoration: underline;
+}
+
+.contents__leader {
+  flex: 1;
+  min-width: 1rem;
+  border-bottom: 1px dotted var(--ru-rule-strong);
+  transform: translateY(-0.28em);
+}
+
+/* A long chapter (the decisions) spans the row and runs in two columns. */
+.contents__chapter--wide {
+  grid-column: 1 / -1;
+}
+
+.contents__chapter--wide ol {
+  columns: 2 22rem;
+  column-gap: 3rem;
+}
+
+.contents__chapter--wide li {
+  break-inside: avoid;
+}
+
+.contents__num {
+  white-space: nowrap;
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ru-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.contents__chapter a:hover .contents__num {
+  color: var(--ru-brand);
+}
+
+.colophon {
+  margin-top: 4rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--ru-rule-strong);
+  font-family: var(--ru-condensed);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ru-ink-3);
+}
+
+/* ------------------------------------------------------------------ utilities and step ticks */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.step-toggle {
+  position: absolute;
+  left: 0;
+  top: 0.12rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.step-toggle:hover {
+  box-shadow: inset 0 0 0 1px var(--ru-brand);
+}
+
+/* ------------------------------------------------------------------ narrow screens */
+
+@media screen and (max-width: 60em) {
+  .cover {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .md-typeset h2 {
+    font-size: 1.35rem;
+  }
+}
+
+@media screen and (max-width: 40em) {
+  .md-typeset {
+    font-size: 1rem;
+  }
+
+  .plate__body {
+    padding: 1rem 1rem 0.4rem;
+  }
+
+  .md-typeset ol > li {
+    padding-left: 2.35rem;
+  }
+}
+
+/* ------------------------------------------------------------------ motion: one authored moment */
+
+@media (prefers-reduced-motion: no-preference) {
+  .cover__id,
+  .cover > .plate {
+    animation: cover-in 640ms var(--ru-ease) both;
+  }
+
+  .cover > .plate {
+    animation-delay: 90ms;
+  }
+
+  /* Starts visible enough to read if the animation never runs. */
+  @keyframes cover-in {
+    from {
+      opacity: 0.55;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@media print {
+  .md-header,
+  .md-sidebar,
+  .md-footer,
+  .md-clipboard {
+    display: none !important;
+  }
+}

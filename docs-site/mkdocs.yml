@@ -10,6 +10,7 @@ copyright: Ru Agent documentation
 theme:
   name: material
   language: en
+  font: false
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate

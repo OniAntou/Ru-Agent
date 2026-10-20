@@ -107,9 +107,9 @@ internal sealed class TgChatKeyboardBindings
             _submit();
             key.Handled = true;
         }
-        else if (key == Key.Esc && _isBusy())
+        else if (key == Key.Esc)
         {
-            _cancel();
+            HandleEscape();
             key.Handled = true;
         }
         else if (key == Key.CursorUp && _window.Composer.Input.IsAtFirstVisualRow)
@@ -181,9 +181,30 @@ internal sealed class TgChatKeyboardBindings
             return;
         }
 
+        // Escape must never reach the framework's default quit binding, including
+        // when focus has moved from the composer into the transcript.
+        if (key == Key.Esc)
+        {
+            HandleEscape();
+            key.Handled = true;
+            return;
+        }
+
         if (IsTranscriptNavigationShortcut(key) && TryHandleTranscriptNavigationKey(key))
         {
             key.Handled = true;
+        }
+    }
+
+    private void HandleEscape()
+    {
+        if (_window.IsSlashDropdownOpen)
+        {
+            _window.HideSlashDropdown();
+        }
+        else if (_isBusy())
+        {
+            _cancel();
         }
     }
 
@@ -307,12 +328,9 @@ internal sealed class TgChatKeyboardBindings
             var picked = _window.AcceptSlashDropdown();
 
             // Enter on a complete command runs it, so picking /model opens its card straight
-            // away instead of parking the command in the composer for a second Enter. A
-            // command that still needs an argument stays in the composer, and Tab only ever
-            // fills the command in.
-            if (key == Key.Enter
-                && picked is { } command
-                && !ChatCommandCatalog.NeedsArgument(command))
+            // away instead of parking the command in the composer for a second Enter.
+            // Every listed command supports its bare form; Tab only fills the command in.
+            if (key == Key.Enter && picked is not null)
             {
                 _submit();
             }

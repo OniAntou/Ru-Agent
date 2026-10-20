@@ -16,7 +16,7 @@ public sealed record CliImageAttachment(
 {
     public string ToDataUrl() => $"data:{MimeType};base64,{Base64Data}";
 
-    /// <summary>One-line label for <c>/attachments</c>: name, dimensions and size.</summary>
+    /// <summary>One-line attachment label: name, dimensions and size.</summary>
     public string Label => $"{FileName}  {Width}x{Height}  {FormatBytes(ByteSize)}";
 
     public static string FormatBytes(long bytes) => bytes switch

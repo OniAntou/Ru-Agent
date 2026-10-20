@@ -11,12 +11,7 @@ public static class ChatCommandCatalog
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
-        new("/attach", "Attach an image or text/code file", "/attach <path>"),
-        new("/paste", "Paste clipboard text, or attach a clipboard image", "/paste"),
-        new("/attachments", "List pending attachments", "/attachments"),
-        new("/detach", "Remove a pending attachment", "/detach <n> | --all"),
         new("/status", "Show session status and preset", "/status"),
-        new("/continue", "Resume a parked run", "/continue [run-id]"),
         new("/release", "Cancel a parked run in this session", "/release [run-id]"),
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Switch or delete sessions", "/sessions [query]"),
@@ -29,30 +24,17 @@ public static class ChatCommandCatalog
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),
         new("/exit", "Quit", "/exit"),
-        new("/quit", "Quit", "/quit"),
     ];
 
     private static readonly HashSet<string> ReportCommands =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "/status", "/help", "/attachments", "/subagents",
+            "/status", "/help", "/subagents",
         };
 
     /// <summary>True when <paramref name="slashCmd"/> is a report-only command.</summary>
     public static bool IsReportCommand(string? slashCmd) =>
         slashCmd is not null && ReportCommands.Contains(slashCmd.Trim());
-
-    /// <summary>
-    /// Commands that do nothing without an argument the operator has to type. Picking one of
-    /// these from the suggestion list fills the composer so the rest can be typed; every
-    /// other command is complete on its own and runs as soon as it is picked.
-    /// </summary>
-    private static readonly HashSet<string> ArgumentCommands =
-        new(StringComparer.OrdinalIgnoreCase) { "/attach", "/detach" };
-
-    /// <summary>True when <paramref name="slashCmd"/> cannot run without a typed argument.</summary>
-    public static bool NeedsArgument(string? slashCmd) =>
-        slashCmd is not null && ArgumentCommands.Contains(slashCmd.Trim());
 
     public static IReadOnlyList<SlashCommandInfo> FindMatches(string input)
     {

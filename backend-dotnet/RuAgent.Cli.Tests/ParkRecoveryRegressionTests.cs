@@ -238,14 +238,14 @@ public sealed class ParkRecoveryRegressionTests
         transcript.ApplyDurable(park with { Sequence = 4 });
         var text = TuiText.Strip(output.ToString());
         Assert.Contains("still blocked after Continue", text);
-        Assert.DoesNotContain("wait before /continue", text);
+        Assert.DoesNotContain("wait before Continue", text);
         Assert.Contains("/release", text);
 
         transcript.ForgetParkHistory(RunId);
         transcript.BeginTurn();
         output.GetStringBuilder().Clear();
         transcript.ApplyDurable(park with { Sequence = 5 });
-        Assert.Contains("wait before /continue", TuiText.Strip(output.ToString()));
+        Assert.Contains("wait before Continue", TuiText.Strip(output.ToString()));
     }
 
     [Fact]

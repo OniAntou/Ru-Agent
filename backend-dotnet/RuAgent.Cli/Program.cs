@@ -177,7 +177,7 @@ public static class Program
         Console.Error.WriteLine("  ru --version");
         Console.Error.WriteLine("  agent run [--preset plan|standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--image PATH]... [--json] [--trust-workspace] [--confirm-full-access]");
         Console.Error.WriteLine("  agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--image PATH]... [--json] [--classic] [--trust-workspace] [--confirm-full-access]");
-        Console.Error.WriteLine("  --image: attach an image file (repeatable, max 4); also /attach, /attachments, /detach and ctrl+v in chat.");
+        Console.Error.WriteLine("  --image: attach an image file (repeatable, max 4); also drop a file path or use Ctrl+V in chat.");
         Console.Error.WriteLine("  --confirm-full-access: terminal runs as the current Windows user and may access data outside the workspace.");
         Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
         Console.Error.WriteLine("  agent session list [--json]");

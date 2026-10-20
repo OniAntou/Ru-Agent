@@ -193,7 +193,7 @@ public sealed class ChatSessionWorkflowTests
         Assert.Equal(0, exit);
         Assert.Contains($"/agent/v1/sessions/{targetSession}/runs?limit=100", requests);
         Assert.Equal(1, requests.Count(path => path == $"/agent/v1/runs/{ActiveRun}"));
-        Assert.Contains("no running or approval-waiting run", errors.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no active run to follow", errors.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

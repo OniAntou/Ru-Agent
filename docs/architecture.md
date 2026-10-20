@@ -547,14 +547,20 @@ reconciliation surfaces from Phase 3:
   response deltas show writing, parked states stay still, and queued tools retain
   their own action after another tool settles. Settled rows preserve outcome text
   and metrics when shortening targets. Frames below
-  20 rows keep a single heading row. The header projects existing session data;
-  it adds no API calls. Every animation phase (braille spinner, running-tool
+  20 rows keep a single heading row. The header projects session data and catalog
+  metadata; optional title probes read the session only while its title is missing.
+  Every animation phase (braille spinner, running-tool
   glyph rotation, busy-hint colour wave, elapsed clock) is a pure function of
   elapsed seconds in
   `TuiSpinner`, so the 18 ms meteor ticker and any slower cadence yield the same
   motion; the ticker runs only while the frame is live, and the live row's
   spinner pauses on parked states. Streaming reflows a dirty tail at draw/scroll
-  boundaries.
+  boundaries. Unchanged wrapped rows are cached by retained text, paint and viewport
+  width, including while tool details are expanded; evicted text does not stay alive
+  through the cache. Turn-end assistant reconciliation reads at most four payloads
+  concurrently and preserves their model-step order and types. Optional header-title
+  reads have a 250 ms cancellation deadline. Reopened sessions and `/follow` treat
+  `waiting_subagents` parents as active without posting Continue.
   Tool activity metadata is updated by ID and consumed in durable proposal order;
   the transient durable sequence is a stream anchor, not a tool identity.
   Silent durable run/model metadata does not flush unfinished assistant prose.
@@ -577,7 +583,11 @@ reconciliation surfaces from Phase 3:
   Activity/todo/change inspectors, the project-file browser, session tree, rewind,
   Markdown export and separate token/prompt-history reports are absent from the
   interactive command surface. Up/Down prompt recall remains. Headless CLI and RPC
-  retain their own capabilities. Conversation replay retains the latest
+  retain their own capabilities. File intake uses clipboard/drop or `--image`;
+  parked chat runs resume on typed `Continue`. `/attach`, `/attachments`, `/paste`,
+  `/detach`, `/continue` and `/quit` are absent from dispatch, help and completion.
+  `/exit` is the sole quit command. Escape dismisses overlays or interrupts an
+  active turn; idle Escape keeps the chat and draft open. Conversation replay retains the latest
   20 nonempty messages, with a 100,000-character bound per message; screen
   retention is independently bounded by `TgTranscriptView`.
   Command overlays follow the composer and remain bounded within the frame.

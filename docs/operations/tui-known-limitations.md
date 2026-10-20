@@ -138,31 +138,33 @@ distinguishable from a failed fetch.
 
 In Terminal.Gui, Escape during an active turn interrupts it after any open
 command or modal panel handles the key. The append-only reader uses its own
-line-input cancellation path. Interrupts no longer only detach the local stream:
+line-input cancellation path. Idle Escape preserves the draft and never quits
+the chat; `/exit` is the sole quit command. Interrupts no longer only detach the local stream:
 both `POST` `/agent/v1/runs/{runId}/cancel` so the run releases its workspace
 lock. The POST is best-effort — on failure the TUI prints `run_cancel_failed`
 plus the manual `ru agent cancel <run-id>` fallback, and until that is run the
 server may still own the run. A run that parked itself
 (`waiting_user`, `reconciliation_required`) is never cancelled by an interrupt:
-there is nothing to cancel and its notice already points at `/continue`.
+there is nothing to cancel and its notice already points at typed `Continue`.
 
 ### A parked run is surfaced, and only the newest run is adopted
 
 `waiting_user` and `reconciliation_required` now stop the spinner: the status
-row reads `▲ run paused · <code> · /continue` and exactly one notice carries
-`resume with /continue (or 'ru agent continue <run-id>')`. `/continue [run-id]`
-(or a bare `Continue` while a parked run is known) follows the resumed run from
+row reads `▲ run paused · <code> · Continue` and exactly one notice carries
+`resume with Continue (or 'ru agent continue <run-id>')`.
+A bare `Continue` while a parked run is known follows the resumed run from
 its durable cursor, and a resumed run clears the paused row. Opening
 `chat --session <id>` adopts the session's newest non-terminal run, so a run
 left behind by a host restart is visible again. Remaining limits: older parked
-runs are not adopted and need an explicit `/continue <run-id>`, and a resumed
+runs are not adopted and need an explicit `ru agent continue <run-id>` from
+another terminal, and a resumed
 `reconciliation_required` run needs the fixed recovery sweep
 (`HarnessRecoveryScanner` re-registering its runtime root) because the drive
 loop starts `Running` runs and rehydrates `WaitingApproval` runs, but never
 picks up an unregistered one. An
 adopted `running` run offers `/follow <run-id>` and
 `ru agent attach <run-id>`; it is never followed automatically. In-chat
-`/continue` and `/follow` accept only runs belonging to the current session.
+typed `Continue` and `/follow` accept only runs belonging to the current session.
 
 ### Retained approval recovery differs between GUI and TUI
 

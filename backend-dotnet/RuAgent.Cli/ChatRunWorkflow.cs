@@ -13,7 +13,8 @@ internal static class ChatRunWorkflow
     public static bool IsFollowable(GetAgentRunResponse run) =>
         run.TerminalAt is null
         && (string.Equals(run.Status, "running", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase));
+            || string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(run.Status, "waiting_subagents", StringComparison.OrdinalIgnoreCase));
 
     public static bool SameSnapshot(GetAgentRunResponse expected, GetAgentRunResponse actual) =>
         string.Equals(expected.RunId, actual.RunId, StringComparison.Ordinal)

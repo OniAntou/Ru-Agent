@@ -147,7 +147,8 @@ public sealed class TgPanelsTests
         {
             var rows = TgSnapshot.Capture(app);
             Assert.Contains("/model", string.Join('\n', rows));
-            Assert.Contains("/attach", string.Join('\n', rows));
+            Assert.Contains("/status", string.Join('\n', rows));
+            Assert.DoesNotContain("/attach", string.Join('\n', rows));
             app.RequestStop();
             return false;
         });

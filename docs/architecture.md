@@ -207,9 +207,19 @@ Reasoning saves likewise serialize writes; the latest edit alone settles the
 label, with the last successful write as its failure fallback. Settings preserves
 hidden provider fields on load, stacks labels and controls below 700 pixels of
 content width, and confines keyboard navigation to the open modal.
-The TUI keeps raw Markdown lines until completion and uses a replaceable live tail
-projection on Terminal.Gui. Preview parsing runs at frame cadence; completed code
+The TUI keeps raw Markdown lines until completion and projects semantic
+`TranscriptLine`/`TranscriptRun` records directly to Terminal.Gui through
+`ITranscriptPresentationWriter`. Row roles are explicit. Markdown previews,
+completed lines, reply replacement, activity updates, notices and turn outcomes
+do not serialize through ANSI or infer roles from glyphs. Shared Markdown
+recognizers and code tokens feed both the direct presentation path and the
+sequential text serializer. Preview parsing runs at frame cadence; completed code
 lines remain intact for viewport reflow. Plain output commits at newline or Flush.
+`TgTranscriptWriter` retains TextWriter/ANSI import adapters for command reports,
+diagnostics and existing callers. The native transcript path uses its typed API;
+Terminal.Gui owns layout, focus, input, scrolling and drawing. Native tool-row
+appearance and the current controls are retained rather than replacing the
+whole history with a Markdown view that reparses on every update.
 Windows initializes Terminal.Gui's .NET console driver: the 2.5 ANSI reader
 decodes each input packet separately and can corrupt split Unicode scalars.
 Bracketed paste follows the window's active palette, secret prompt or composer;

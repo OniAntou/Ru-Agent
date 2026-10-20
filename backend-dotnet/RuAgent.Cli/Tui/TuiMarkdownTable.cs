@@ -76,10 +76,10 @@ internal static class TuiMarkdownTable
             char c = trimmed[i];
             if (c == '\\' && i + 1 < trimmed.Length && trimmed[i + 1] == '|') { buffer.Append('|'); i++; }
             else if (c == '`') { code = !code; buffer.Append(c); }
-            else if (c == '|' && !code) { cells.Add(TuiText.Strip(TuiMarkdown.RenderInline(buffer.ToString().Trim(), 1000, false))); buffer.Clear(); }
+            else if (c == '|' && !code) { cells.Add(TuiText.Strip(string.Concat(TuiMarkdown.PresentationInline(buffer.ToString().Trim()).Select(run => run.Text)))); buffer.Clear(); }
             else buffer.Append(c);
         }
-        cells.Add(TuiText.Strip(TuiMarkdown.RenderInline(buffer.ToString().Trim(), 1000, false)));
+        cells.Add(TuiText.Strip(string.Concat(TuiMarkdown.PresentationInline(buffer.ToString().Trim()).Select(run => run.Text))));
         return cells.ToArray();
     }
 }

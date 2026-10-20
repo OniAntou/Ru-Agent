@@ -719,6 +719,12 @@ public sealed class AgentV1EndpointTests
         var replayBody = await replayResponse.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
         var expectedReplayStatus = decision == "approve" ? "waiting_history_user" : expectedStatus;
+        if (expectedReplayStatus != replayBody.GetProperty("status").GetString())
+        {
+            using var failedRunResponse = await client.GetAsync($"/agent/v1/runs/{runId}");
+            var failedRunBody = await failedRunResponse.Content.ReadAsStringAsync();
+            Assert.Fail($"Trust replay expected {expectedReplayStatus}; actual replay={replayBody.GetRawText()}; run={failedRunBody}");
+        }
         Assert.Equal(expectedReplayStatus, replayBody.GetProperty("status").GetString());
         Assert.Equal(expectedOutboxCount, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
         Assert.Equal(

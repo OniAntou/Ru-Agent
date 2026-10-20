@@ -20,7 +20,7 @@ namespace RuAgent.Cli.Tui;
 /// anything nested deeper falls back to plain indented text rather than a wrong-depth
 /// bullet. No block state beyond the fence is carried between lines.
 /// </summary>
-public sealed class TuiMarkdown
+public sealed partial class TuiMarkdown
 {
     private const string FenceChars = "```";
     private const string Indent = "    ";
@@ -193,98 +193,9 @@ public sealed class TuiMarkdown
     public static string RenderInline(string text, int width, bool continuesWord)
     {
         ArgumentNullException.ThrowIfNull(text);
-        if (text.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var output = new StringBuilder(text.Length + 16);
-        var index = 0;
-        var previous = continuesWord ? 'x' : ' ';
-        while (index < text.Length)
-        {
-            var c = text[index];
-
-            if (c == '\\' && index + 1 < text.Length && IsEscapable(text[index + 1]))
-            {
-                output.Append(text[index + 1]);
-                previous = text[index + 1];
-                index += 2;
-                continue;
-            }
-
-            if (c == '`')
-            {
-                var close = text.IndexOf('`', index + 1);
-                if (close < 0)
-                {
-                    output.Append(text[index..]);
-                    break;
-                }
-
-                var code = text[(index + 1)..close];
-                output.Append(TuiPalette.Paint(code, TuiToken.Ok));
-                previous = '`';
-                index = close + 1;
-                continue;
-            }
-
-            if ((c == '*' || c == '_') && index + 1 < text.Length && text[index + 1] == c)
-            {
-                if (IsWordChar(previous))
-                {
-                    output.Append(c);
-                    previous = c;
-                    index++;
-                    continue;
-                }
-
-                var close = FindClose(text, index + 2, c);
-                if (close < 0)
-                {
-                    output.Append(text[index..]);
-                    break;
-                }
-
-                output.Append(TuiPalette.Paint(TuiPalette.BoldPaint(text[(index + 2)..close]), TuiToken.Bright));
-                previous = c;
-                index = close + 2;
-                continue;
-            }
-
-            if (c == '~' && index + 1 < text.Length && text[index + 1] == '~')
-            {
-                var close = text.IndexOf("~~", index + 2, StringComparison.Ordinal);
-                if (close < 0)
-                {
-                    output.Append(text[index..]);
-                    break;
-                }
-
-                output.Append(TuiPalette.DimPaint(text[(index + 2)..close]));
-                previous = '~';
-                index = close + 2;
-                continue;
-            }
-
-            if (c == '[')
-            {
-                var label = FindLinkLabel(text, index, out var after);
-                if (label is not null)
-                {
-                    output.Append(RenderInline(label, width, false));
-                    previous = ']';
-                    index = after;
-                    continue;
-                }
-            }
-
-            output.Append(c);
-            previous = char.IsWhiteSpace(c) ? ' ' : c;
-            index++;
-        }
-
-        return output.ToString();
+        return string.Concat(PresentationInline(text, continuesWord).Select(run => run.Dim
+            ? TuiPalette.DimPaint(run.Text)
+            : TuiPalette.Paint(run.Bold ? TuiPalette.BoldPaint(run.Text) : run.Text, run.Token)));
     }
 
     private static int FindClose(string text, int from, char marker)

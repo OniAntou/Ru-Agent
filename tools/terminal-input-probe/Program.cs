@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Cli.TerminalGui;
+using RuAgent.Cli.Tui;
 using RuApp.Services;
 using Terminal.Gui.App;
 
@@ -31,6 +32,8 @@ if (args.Length > 0 && args[0] == "child")
     using IApplication app = Application.Create();
     TgTerminalInput.Initialize(app);
     using var window = TgChatWindow.Build();
+    var presentation = new TuiSessionRenderer(new TgTranscriptWriter(app, window.Transcript));
+    presentation.Transcript.FullScreenCards = true;
     var loop = new TgChatLoop(window);
     loop.SetPromptHandler((_, _, _) => { submissions++; return Task.CompletedTask; });
     app.Paste += (_, e) => rawPaste = e.Text;
@@ -38,6 +41,9 @@ if (args.Length > 0 && args[0] == "child")
     app.Paste += (_, _) => pastes++;
     app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
     {
+        presentation.Transcript.BeginTurn();
+        presentation.Transcript.AppendAssistant("# Native transcript\n**Tiếng Việt 😀** in `README.md`\n| name | value |\n| --- | --- |\n| total | 140,600 |\n```cs\nreturn 42;\n```\n");
+        presentation.Transcript.EndTurn(TuiTurnOutcome.Completed, null);
         window.FocusComposer();
         File.WriteAllText(Path.Combine(root, "ready.txt"), "ready");
         return false;
@@ -51,7 +57,8 @@ if (args.Length > 0 && args[0] == "child")
             text, expected = target, submissions, pastes, rawPaste,
             cursor = window.Composer.Input.InsertionPoint,
             loadedCli = typeof(TgTerminalPaste).Assembly.Location,
-            passed = submissions == 0 && pastes == 1,
+            structuredTranscriptRows = presentation.Surface.HistoryCount,
+            passed = submissions == 0 && pastes == 1 && presentation.Surface.HistoryCount >= 4,
         }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(Path.Combine(root, "result.tmp"), Path.Combine(root, "result.json"));
         app.RequestStop();
@@ -82,6 +89,10 @@ var expected = control ? payload : navigation ? "type" + normalized + "d " : (ty
 File.WriteAllText(Path.Combine(probeRoot, "expected.txt"), expected);
 var executable = Environment.ProcessPath!;
 using var session = ConPtyTerminalSession.Start(probeRoot, $"\"{executable}\" {(control ? "control-child" : "child")} \"{probeRoot}\"", 100, 30);
+// Pin the process handle while the child is alive. Looking it up only after the
+// result arrives can lose access to ExitCode when Windows has already reaped it.
+using var child = Process.GetProcessById(session.ProcessId);
+_ = child.Handle;
 var terminalOutput = new StringBuilder();
 session.OutputReceived += bytes =>
 {
@@ -130,12 +141,7 @@ if (!File.Exists(Path.Combine(probeRoot, "result.json")))
 }
 using var result = JsonDocument.Parse(File.ReadAllText(Path.Combine(probeRoot, "result.json")));
 Console.WriteLine(result.RootElement.GetRawText());
-try
-{
-    using var child = Process.GetProcessById(session.ProcessId);
-    try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
-    catch (TimeoutException) { Console.Error.WriteLine("The console child did not shut down after its completed paste."); return 5; }
-    if (child.ExitCode != 0) return 4;
-}
-catch (ArgumentException) { /* The owned child already exited before its result was read. */ }
+try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+catch (TimeoutException) { Console.Error.WriteLine("The console child did not shut down after its completed paste."); return 5; }
+if (child.ExitCode != 0) return 4;
 return result.RootElement.GetProperty("passed").GetBoolean() ? 0 : 4;

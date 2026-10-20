@@ -12,6 +12,12 @@ completion. Enter selects a command into the composer; arguments can be complete
 before submission. Escape closes the palette and restores the draft. While a
 turn is busy, the palette can be browsed but selection is refused visibly.
 
+Interactive transcript content reaches Terminal.Gui as semantic rows and styled
+runs: Markdown previews/commits, recovered replies, tool updates and notices do
+not round-trip through ANSI strings. The existing views retain their appearance,
+scrolling and code gutters. TextWriter/ANSI import remains for command reports
+and diagnostics; plain and JSON output retain their existing contracts.
+
 Ru's terminal chrome uses a mint-accented signature, a quiet session divider and
 a filled prompt surface in the panel tone — the opencode-style block, with no
 frame outline and no accent rail. An empty chat centres the logo above the same

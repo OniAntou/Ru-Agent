@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(tui)**: Send Markdown previews, completed prose, recovered replies, activities, notices and turn outcomes to Terminal.Gui as semantic rows and styled runs. The interactive transcript no longer formats these through ANSI text or infers their role from glyphs. Keep the existing controls, palette, code gutters, scrolling, input and plain/JSON output; retain TextWriter import compatibility for reports and diagnostics.
 - **fix(tui)**: Preserve data colours when replacing a streamed preview and keep painted prefixes when plain text extends the same row. Recover assistant text by payload kind instead of guessing from JSON keys, so valid JSON answers remain visible.
 - **fix(tui)**: Use Terminal.Gui's .NET console driver on Windows to preserve emoji across fragmented input. Route bracketed paste to the active palette, secret prompt or composer, with draft and modal boundaries intact.
 - **fix(cli)**: Detach `run` and `attach` with exit 2 when a run parks, leaving it available for explicit Continue or cancel. Add `/release [run-id]` for parked runs in the current chat session, and explain when Continue hits the same blocker again.

@@ -511,6 +511,9 @@ The header retains its live context meter. Plans appear as compact completed/tot
 counts in the transcript; there are no separate activity, todo, changes or project-file
 browser panels. Prompt history remains available with Up/Down. Detailed inspection
 belongs in the GUI; headless CLI and RPC capabilities are independent of this UI scope.
+Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
+projects semantic transcript rows and styled runs directly to native attributes;
+sequential text output and legacy command/diagnostic imports remain separate adapters.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
 **Protected User Data**:

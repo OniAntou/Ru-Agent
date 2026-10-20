@@ -210,8 +210,7 @@ public static class TuiPalette
         _ => string.Empty,
     };
 
-    /// <summary>Truecolor components for a token; the Terminal.Gui bridge reads these so
-    /// both engines share one palette definition.</summary>
+    /// <summary>Truecolor components shared by native attributes and text serialization.</summary>
     public static (int R, int G, int B) Rgb(TuiToken token) => token switch
     {
         TuiToken.Brand => (92, 156, 245),

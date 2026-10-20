@@ -11,3 +11,7 @@ and a typed emoji before paste. Each TUI case requires one paste and no submitte
 prompt; all cases require correct text and natural child shutdown within five seconds. Each
 evidence directory must be fresh. A failed case stays failed and stops the run;
 the JSON result and raw terminal log remain available for investigation.
+
+Each TUI child also renders a structured transcript containing Markdown emphasis,
+Unicode, a table and highlighted code before accepting input. The result records
+the committed transcript count so input acceptance cannot pass on an empty screen.

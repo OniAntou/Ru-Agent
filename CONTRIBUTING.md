@@ -95,7 +95,7 @@ Useful focused commands:
 dotnet build backend-dotnet/RuBackend/RuBackend.csproj -c Debug
 .\scripts\test_dotnet.ps1 -Configuration Debug -ProjectFilter "Broker"
 .\scripts\test_terminal_input.ps1  # Windows ConPTY: six Unicode/paste/navigation cases
-.venv\Scripts\python.exe -m pytest tests/test_current_documentation.py tests/test_guidance_route_counts.py -q
+.venv\Scripts\python.exe -m pytest tests/test_current_documentation.py -q
 ```
 
 Choose the build target and `-ProjectFilter` for the changed module. Full matrices:
@@ -116,7 +116,7 @@ correction. Report both outcomes and suspected flakiness; a later green run does
 not erase the original failure.
 
 Python guards check README counts, manifest digests, permission vocabulary and
-the endpoint list against `public-route-contract.json` (46 routes). CI keeps
+the endpoint list against `public-route-contract.json`. CI keeps
 both full matrices on `windows-latest`; focused local checks do not remove CI
 gates. Report commands, outcomes and material gaps. Deterministic tests do not
 establish real-provider quality or native UI acceptance.
@@ -153,8 +153,8 @@ real credentials or tokens in fixtures or read the user's credentials for tests.
 
 ## Evolving the architecture
 
-The current Public Contract is the 46 loopback HTTP routes authenticated by
-bearer token, using HTTP/SSE and no WebSocket routes. The 18 tool definitions
+The current Public Contract is the loopback HTTP routes authenticated by
+bearer token, using HTTP/SSE and no WebSocket routes. The tool definitions
 live in `RuAgent.Protocol`; a mismatched Broker manifest digest refuses to
 start. Counts and process/transport layout describe this version, not a limit
 on future features.

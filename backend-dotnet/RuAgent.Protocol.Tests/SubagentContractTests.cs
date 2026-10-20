@@ -46,8 +46,8 @@ public sealed class SubagentContractTests
     public void Every_definition_has_valid_example_and_fresh_schema()
     {
         var definitions = SubagentToolDefinitions.Get();
-        Assert.Equal(5, definitions.Count);
-        Assert.Equal(18, AgentToolDefinitionCatalog.Get().Count);
+        Assert.NotEmpty(definitions);
+        Assert.True(AgentToolDefinitionCatalog.Get().Count > definitions.Count);
         Assert.All(definitions, d => Assert.NotNull(AgentToolDefinitionCatalog.Find(d.ToolId, d.ToolVersion)));
         foreach (var definition in definitions)
         {

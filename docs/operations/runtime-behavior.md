@@ -129,7 +129,7 @@ runtime context. The model then receives ordered typed user/assistant/tool
 messages; clock, mood, and references are not appended as separate system
 messages.
 
-Host capabilities are the runtime projection of thirteen Protocol-owned tool
+Host capabilities are the runtime projection of the Protocol-owned tool
 definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
 `edit`, `bash`, `web_search`, `web_fetch`, `skill`, and Host-intercepted
 `ask_user`. `ask_user` never dispatches to the Broker: it parks the run in
@@ -384,7 +384,7 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The typed model-step settings advertise thirteen tools, one purpose each:
+The typed model-step settings advertise these tools, one purpose each:
 `read`, `list`,
 `grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
@@ -494,7 +494,7 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
-The thirteen tools above are the model surface. `read`, `list`, `grep`,
+The tools above are the model surface. `read`, `list`, `grep`,
 `glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
 their own schemas, alongside `todo_write`, `skill`, `web_search`,
 `web_fetch`, and the Host-intercepted `ask_user`. Managed startup constructs an enabled WebOptions instance with

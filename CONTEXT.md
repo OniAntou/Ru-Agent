@@ -49,7 +49,7 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 46 HTTP method/path pairs with no WebSocket
+The stable authenticated surface of HTTP method/path pairs with no WebSocket
 route (21 non-Agent plus 25 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
@@ -372,7 +372,7 @@ Hard-invalid requests remain denied; structured protected paths stay denied in
 `plan` and `standard`. Standard is the
 default; `full_access` requires a GUI confirmation or CLI
 `--confirm-full-access`. The model-visible tool list remains the runtime projection of
-thirteen Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
+Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
 `list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
 standalone `web_search`/`web_fetch`, and Host-intercepted `ask_user` (it parks

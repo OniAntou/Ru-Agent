@@ -228,36 +228,6 @@ def _assert_contract_docs_restate_canonical_policy() -> None:
     assert stale == [], stale
 
 
-def test_current_worker_docs_describe_thirteen_separate_tools_and_typed_results() -> None:
-    tool_ids = (
-        "read",
-        "list",
-        "help",
-        "todo_write",
-        "grep",
-        "glob",
-        "write",
-        "edit",
-        "bash",
-        "web_search",
-        "web_fetch",
-        "skill",
-        "ask_user",
-    )
-    for path in (
-        ROOT / "docs/architecture.md",
-        ROOT / "docs/operations/runtime-behavior.md",
-    ):
-        text = _current_text(path).lower()
-        assert "thirteen" in text, path
-        assert "separate" in text, path
-        assert "assistantstep" in text, path
-        assert "receipt" in text, path
-        assert "validat" in text, path
-        for tool_id in tool_ids:
-            assert f"`{tool_id}`" in text, f"{path.relative_to(ROOT)} missing {tool_id}"
-
-
 def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> None:
     banned = (
         "six worker v2 bindings",

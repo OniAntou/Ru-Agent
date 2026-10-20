@@ -1,3 +1,4 @@
+using RuAgent.Cli.Subagents;
 using RuAgent.Cli.Tui;
 using Terminal.Gui.ViewBase;
 
@@ -15,6 +16,7 @@ public sealed class TgHeaderView : View
     public double? ContextPercent { get; private set; }
     public decimal? SessionCost { get; private set; }
     private string _workspace = string.Empty;
+    private IReadOnlyList<SubagentChip> _subagents = [];
 
     public TgHeaderView()
     {
@@ -33,6 +35,15 @@ public sealed class TgHeaderView : View
         TotalTokens = totalTokens;
         ContextPercent = percent;
         SessionCost = cost;
+        SetNeedsDraw();
+    }
+
+    /// <summary>Live children of the current root, painted right-aligned on the workspace row.</summary>
+    public void SetSubagents(IReadOnlyList<SubagentChip> chips)
+    {
+        ArgumentNullException.ThrowIfNull(chips);
+        if (_subagents.SequenceEqual(chips)) return;
+        _subagents = chips;
         SetNeedsDraw();
     }
 
@@ -77,9 +88,19 @@ public sealed class TgHeaderView : View
         }
         if (Viewport.Height >= 2)
         {
+            var spans = SubagentLiveTracker.Fit(_subagents, Math.Max(0, width / 2));
+            var chipWidth = spans.Sum(span => TuiText.VisibleWidth(span.Text));
             SetAttribute(TgPalette.Attr(TuiToken.Meta));
             Move(0, 1);
-            AddStr(TuiText.Truncate(_workspace, width));
+            AddStr(TuiText.Truncate(_workspace, Math.Max(0, width - chipWidth - (chipWidth > 0 ? 2 : 0))));
+            var cursor = width - chipWidth;
+            foreach (var span in spans)
+            {
+                SetAttribute(TgPalette.Attr(span.Tone));
+                Move(cursor, 1);
+                AddStr(span.Text);
+                cursor += TuiText.VisibleWidth(span.Text);
+            }
         }
         return true;
     }

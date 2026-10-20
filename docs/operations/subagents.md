@@ -116,7 +116,7 @@ HTTP exposes only `GET /agent/v1/runs/{runId}/subagents` and
 Generic run approval/input/cancel/continue/compact/command/reconcile/trust writes reject
 internal children with `subagent_read_only`, including marker-only attempts.
 RPC/SDK exposes `subagent.list` and `subagent.get`; CLI accepts
-`/subagents [run-id] [agent-id result [version]]`. Root SSE `subagent.changed` frames are
+`/subagents [run-id] [agent-id result [version]]`. The Terminal.Gui chat also consumes the root's `subagent.changed` hints for a live header strip and one transcript line per child transition. Root SSE `subagent.changed` frames are
 transient hints: refetch the durable snapshot after reconnect. Detaching does not stop work.
 
 Schema 28's historical user-apply proof remains readable. Unexecuted legacy actions are

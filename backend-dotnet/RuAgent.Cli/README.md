@@ -342,6 +342,7 @@ Use `/subagents [run-id]` to inspect coding/review children and their pinned mod
 results and usage. Add `agent-id result [version]` to read a versioned result.
 Only the main agent can send, cancel or integrate child work. Generic child run
 mutations and approvals are refused. RPC exposes `subagent.list` and `subagent.get`.
+In the Terminal.Gui chat a live strip on the header's workspace row lists the root's children (`◐` running, `◇` waiting, `✓` finished, `✗` failed, `○` stopped; active ones first, `+N` for those that do not fit), and the transcript gets one line when a child starts, finishes, fails or is stopped. Sequential chat prints the same lines; `--json` stays silent. Both follow the loss-tolerant `subagent.changed` hints, so a missed hint only skips an intermediate line; `/subagents` reads the durable list.
 See [subagent operations](../../docs/operations/subagents.md).
 
 ## Custom slash commands

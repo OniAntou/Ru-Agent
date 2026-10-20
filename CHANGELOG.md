@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **fix(harness)**: Allow 3 empty-reply and 3 output-truncation recovery notes (was 2 each) under a 24-note per-run cap (was 12), and tell the model to keep reasoning brief and call a tool early after a truncated reply.
 
+- **feat(tui)**: Live subagent strip. The Terminal.Gui header shows the root's children right-aligned on the workspace row (`◐` running, `◇` waiting, `✓` finished, `✗` failed, `○` stopped) and the transcript gets one line per child transition; sequential chat prints the same lines, `--json` stays silent. Driven by the existing `subagent.changed` hints (`AgentSubagentChangeModel`, `SubagentLiveTracker`); no Host change.
 - **feat(diagnostics)**: Structured logs gain `exception_site`, the throwing type and method (for example `Ns.Type.Method`), so an unexplained failure such as a rare `runtime_drive_failed` can be located without `RU_DRIVE_FAILURE_DIAGNOSTIC`; messages and stack text are still never recorded.
 - **fix(diagnostics)**: Record the exception type bucket (`invalid_operation`, `invalid_argument`, `invalid_data`, `not_supported`, `key_not_found`, `null_reference`, `object_disposed`, `out_of_range`) instead of `unknown` in structured logs; messages and stacks are still never recorded.
 

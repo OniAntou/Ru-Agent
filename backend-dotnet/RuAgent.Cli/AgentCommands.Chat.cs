@@ -110,6 +110,7 @@ public sealed partial class AgentCommands
         string? sessionTitle = null;
         long? lastTotalTokens = null;
         var usage = new Tui.TuiUsageTracker();
+        var subagentTracker = new Subagents.SubagentLiveTracker();
         var modelUsage = new ChatModelUsage(_settingsClient.GetModelDetailsAsync);
         var sessionTitleProbes = 0;
 
@@ -268,6 +269,15 @@ public sealed partial class AgentCommands
         /// on thread-pool continuations, so any direct view write from here would race the
         /// driver's draw; an already-disposed session drops the late mutation instead.
         /// </summary>
+        void ClearSubagentStrip()
+        {
+            subagentTracker.Reset();
+            if (tgMode)
+            {
+                RunOnTgUi(() => tgWindow!.Header.SetSubagents([]));
+            }
+        }
+
         void RunOnTgUi(Action action)
         {
             try
@@ -1212,6 +1222,29 @@ public sealed partial class AgentCommands
                         }
                     }
 
+                    if (frame.IsTransient
+                        && AgentSubagentChangeModel.TryParse(frame, out var subagentChange)
+                        && subagentChange is not null)
+                    {
+                        // Each hint carries the whole child set: announce what changed and keep the
+                        // header strip in step. The durable list stays the source for /subagents.
+                        var transitions = subagentTracker.Apply(subagentChange);
+                        if (tgMode)
+                        {
+                            var chips = subagentTracker.Chips;
+                            RunOnTgUi(() => tgWindow!.Header.SetSubagents(chips));
+                        }
+
+                        if (!cmd.Json)
+                        {
+                            foreach (var transition in transitions)
+                            {
+                                await WriteDiagnosticLineAsync(humanOut, Subagents.SubagentLiveTracker.TransitionLine(transition))
+                                    .ConfigureAwait(false);
+                            }
+                        }
+                    }
+
                     if (!frame.IsTransient && frame.Data is not null)
                     {
                         try
@@ -1769,6 +1802,7 @@ public sealed partial class AgentCommands
             turn = 0;
             lastTotalTokens = null;
             usage = new Tui.TuiUsageTracker();
+            ClearSubagentStrip();
             await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
 
             submissions.ClearPending();
@@ -1886,6 +1920,7 @@ public sealed partial class AgentCommands
             // The usage envelope's input/output counters restart with every run, so the
             // step-delta baseline resets here; the session cost itself keeps accumulating.
             usage.BeginTurn();
+            ClearSubagentStrip();
             turn++;
             var presetUpdate = await _runStartCore.UpdateSessionPresetAsync(
                 submissionSessionId,

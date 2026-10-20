@@ -3,6 +3,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using Xunit;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Tests;
 

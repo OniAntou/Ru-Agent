@@ -21,7 +21,7 @@ public sealed partial class AgentProviderSnapshotTests
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
-        using var factory = new AgentProviderSnapshotFactory(settings, credentials, catalog, selections, (_, _) => Task.FromResult(false));
+        await using var factory = new AgentProviderSnapshotFactory(settings, credentials, catalog, selections, (_, _) => Task.FromResult(false));
         var described = await factory.DescribeSelectionAsync(current, default);
         Assert.Equal("a", described.Model);
         Assert.Equal("chat_completions", described.Protocol);

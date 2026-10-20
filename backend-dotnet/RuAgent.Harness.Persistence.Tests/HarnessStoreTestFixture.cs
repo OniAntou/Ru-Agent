@@ -5,6 +5,7 @@ using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Harness.Persistence.Privacy;
 using Xunit;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Tests;
 

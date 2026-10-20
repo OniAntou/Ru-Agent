@@ -1,11 +1,14 @@
 namespace RuBackend.Diagnostics;
 
 using System.Text;
+using System.Diagnostics;
 
 public enum DiagnosticShutdownOutcome { Drained, Cancelled, Incomplete }
 
-public sealed class StructuredDiagnosticLogWriter : IDisposable
+public sealed class StructuredDiagnosticLogWriter : IDisposable, IAsyncDisposable
 {
+    private static readonly TimeSpan DisposeBudget = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan SynchronousDisposeWait = TimeSpan.FromSeconds(3);
     private readonly string _logDirectory;
     private readonly string _prefix;
     private readonly BoundedDiagnosticQueue _queue;
@@ -51,6 +54,8 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
     public BoundedDiagnosticQueue Queue => _queue;
 
     public Task Completion => _completionTcs.Task;
+
+    public DiagnosticShutdownOutcome? LastShutdownOutcome { get; private set; }
 
     public bool TryEnqueue(DiagnosticEvent evt)
     {
@@ -474,44 +479,64 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
 
     public void Dispose()
     {
-        lock (_shutdownGate)
+        MarkDisposeRequested();
+        var shutdownTask = StopAsync(DisposeBudget);
+        bool completed;
+        try { completed = shutdownTask.Wait(SynchronousDisposeWait); }
+        catch (AggregateException error)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
+            var failure = error.InnerException ?? error;
+            LastShutdownOutcome = DiagnosticShutdownOutcome.Incomplete;
+            Trace.TraceError("Diagnostic writer shutdown failed ({0}); cleanup remains owned by its quiescence monitor.",
+                failure.GetType().Name);
+            return;
         }
 
-        var task = StopAsync(TimeSpan.FromSeconds(2));
+        if (!completed)
+        {
+            LastShutdownOutcome = DiagnosticShutdownOutcome.Incomplete;
+            Trace.TraceError("Diagnostic writer shutdown exceeded its bounded synchronous wait; cleanup remains owned by its quiescence monitor.");
+            return;
+        }
+
         try
         {
-            // Wait synchronously with timeout; if Incomplete, do not throw, just return and let continuation handle cleanup
-            task.GetAwaiter().GetResult();
+            RecordShutdownOutcome(shutdownTask.GetAwaiter().GetResult());
         }
-        catch { }
-
-        // If shutdown returned Incomplete, gates are not disposed yet; Completion will dispose later
-        // If Drained/Cancelled, gates already disposed via DisposeGatesAndComplete
-        // For safety, if task completed with Drained/Cancelled but completion not yet set, ensure dispose
-        if (task.IsCompletedSuccessfully)
+        catch (Exception error)
         {
-            var outcome = task.Result;
-            if (outcome != DiagnosticShutdownOutcome.Incomplete)
-            {
-                // Already disposed; ensure completion is set
-                if (!_completionTcs.Task.IsCompleted)
-                {
-                    DisposeGatesAndComplete();
-                }
-            }
-            else
-            {
-                // Incomplete: do not dispose now, wait for background to finish
-                // But we already attached continuation in ShutdownAsync
-            }
+            LastShutdownOutcome = DiagnosticShutdownOutcome.Incomplete;
+            Trace.TraceError("Diagnostic writer shutdown failed ({0}); cleanup remains owned by its quiescence monitor.",
+                error.GetType().Name);
         }
-        // Incomplete shutdown owns cleanup through CompleteWhenQuiescentAsync.
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        MarkDisposeRequested();
+        try
+        {
+            RecordShutdownOutcome(await StopAsync(DisposeBudget).ConfigureAwait(false));
+        }
+        catch (Exception error)
+        {
+            LastShutdownOutcome = DiagnosticShutdownOutcome.Incomplete;
+            Trace.TraceError("Diagnostic writer shutdown failed ({0}); cleanup remains owned by its quiescence monitor.",
+                error.GetType().Name);
+        }
+    }
+
+    private void MarkDisposeRequested()
+    {
+        lock (_shutdownGate) _disposed = true;
+    }
+
+    private void RecordShutdownOutcome(DiagnosticShutdownOutcome outcome)
+    {
+        LastShutdownOutcome = outcome;
+        if (outcome == DiagnosticShutdownOutcome.Incomplete)
+        {
+            Trace.TraceWarning("Diagnostic writer shutdown is incomplete; resource cleanup will wait for admitted work to quiesce.");
+        }
     }
 }

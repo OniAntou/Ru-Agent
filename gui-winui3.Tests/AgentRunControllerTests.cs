@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
@@ -14,6 +13,99 @@ namespace RuApp.Tests;
 
 public sealed class AgentRunControllerTests
 {
+    [Fact]
+    public async Task Approval_coordinator_uses_the_requested_scope_then_refreshes()
+    {
+        var state = new AgentRunApprovalCoordinator();
+        state.Set("approval-1", "Review file");
+        var client = new FakeClient();
+        var events = new List<string>();
+
+        await state.SubmitAsync("run-1", state.Id, AgentApprovalOperation.AllowSessionDirectory, client,
+            events.Add, (_, _) => true, _ => { events.Add("refresh"); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.Equal(new[] { "Submitting approval...", "refresh" }, events);
+        Assert.Equal(new[] { ("run-1", "approval-1", "session") }, client.ApprovalRequests);
+    }
+
+    [Fact]
+    public async Task Approval_coordinator_keeps_pending_identity_and_skips_refresh_on_failure()
+    {
+        var state = new AgentRunApprovalCoordinator();
+        state.Set("approval-1", "Review file");
+        var client = new FakeClient { ThrowOnApprove = true };
+        bool refreshed = false;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => state.SubmitAsync(
+            "run-1", state.Id, AgentApprovalOperation.AllowAlways, client, _ => { },
+            (_, _) => true,
+            _ => { refreshed = true; return Task.CompletedTask; }, CancellationToken.None));
+
+        Assert.False(refreshed);
+        Assert.True(state.HasApproval);
+        Assert.Equal("approval-1", state.Id);
+    }
+
+    [Fact]
+    public async Task Approval_coordinator_does_not_refresh_a_replacement_run()
+    {
+        var state = new AgentRunApprovalCoordinator();
+        state.Set("approval-1", "Review file");
+        bool ownsRequest = true;
+        bool refreshed = false;
+
+        await state.SubmitAsync("run-1", state.Id, AgentApprovalOperation.AllowOnce, new FakeClient(),
+            _ => ownsRequest = false, (_, _) => ownsRequest,
+            _ => { refreshed = true; return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.False(refreshed);
+        Assert.True(state.HasApproval);
+    }
+
+    [Fact]
+    public async Task Input_coordinator_clears_only_after_success_and_preserves_question_on_failure()
+    {
+        var state = new AgentRunInputCoordinator();
+        state.Set("input-1", "Which file?", ["a.cs"]);
+        var client = new FakeClient();
+        var events = new List<string>();
+
+        await state.SubmitAsync("a.cs", "run-1", state.Id, client, events.Add,
+            (_, _) => true,
+            () => { events.Add("clear"); state.Clear(); },
+            _ => { events.Add("refresh"); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.Equal(new[] { "Submitting answer...", "clear", "refresh" }, events);
+        Assert.Equal(new[] { ("run-1", "input-1", "a.cs") }, client.SubmittedInputs);
+        Assert.False(state.HasInput);
+
+        state.Set("input-2", "Still waiting?", []);
+        client.ThrowOnSubmitInput = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => state.SubmitAsync("answer", "run-1", state.Id, client,
+            _ => { }, (_, _) => true, () => state.Clear(), _ => Task.CompletedTask, CancellationToken.None));
+        Assert.True(state.HasInput);
+        Assert.Equal("input-2", state.Id);
+    }
+
+    [Fact]
+    public async Task Input_coordinator_does_not_clear_a_replacement_question()
+    {
+        var state = new AgentRunInputCoordinator();
+        state.Set("input-1", "Old question", []);
+        bool ownsRequest = false;
+        bool cleared = false;
+        bool refreshed = false;
+
+        await state.SubmitAsync("answer", "run-1", state.Id, new FakeClient(), _ => { },
+            (_, _) => ownsRequest, () => cleared = true,
+            _ => { refreshed = true; return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.False(cleared);
+        Assert.False(refreshed);
+        Assert.True(state.HasInput);
+        Assert.Equal("input-1", state.Id);
+    }
+
     [Fact]
     public async Task Old_adopted_feed_cannot_unset_busy_on_new_run()
     {
@@ -194,8 +286,11 @@ public sealed class AgentRunControllerTests
         public List<(string RunId, TrustAgentRunRequest Request)> TrustRequests { get; } = new();
         public bool PresetCalled;
         public bool ApproveCalled;
+        public bool ThrowOnApprove;
         public bool DenyCalled;
         public bool SubmitInputCalled;
+        public bool ThrowOnSubmitInput;
+        public List<(string RunId, string ApprovalId, string Scope)> ApprovalRequests { get; } = new();
         public List<(string RunId, string InputId, string Answer)> SubmittedInputs { get; } = new();
         public bool ThrowOnGetRun;
         public bool ThrowOnCreate;
@@ -289,7 +384,9 @@ public sealed class AgentRunControllerTests
             string scope,
             CancellationToken ct = default)
         {
+            if (ThrowOnApprove) throw new InvalidOperationException("approval_rejected");
             ApproveCalled = true;
+            ApprovalRequests.Add((runId, approvalId, scope));
             return Task.CompletedTask;
         }
 
@@ -301,6 +398,7 @@ public sealed class AgentRunControllerTests
 
         public Task SubmitInputAsync(string runId, string inputId, string answer, CancellationToken ct = default)
         {
+            if (ThrowOnSubmitInput) throw new InvalidOperationException("input_rejected");
             SubmitInputCalled = true;
             SubmittedInputs.Add((runId, inputId, answer));
             return Task.CompletedTask;

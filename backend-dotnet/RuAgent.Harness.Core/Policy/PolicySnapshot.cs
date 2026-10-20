@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using RuAgent.Harness.Core.Workspace;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Policy;
 

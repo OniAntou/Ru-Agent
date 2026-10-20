@@ -9,6 +9,7 @@ using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 internal sealed class BackendHarnessTestFixture : IAsyncDisposable

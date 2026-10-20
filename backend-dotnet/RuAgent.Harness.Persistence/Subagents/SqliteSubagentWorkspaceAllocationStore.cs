@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol.Subagents;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Subagents;
 

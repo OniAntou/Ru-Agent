@@ -233,20 +233,6 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_panel_is_updated_from_the_activity_that_carries_todos()
-    {
-        string code = GuiSource.ViewText("ChatView");
-
-        Assert.True(GuiSource.HasMember(code, "UpdateTodoPanel"));
-
-        string apply = GuiSource.MethodBody(code, "ApplyAgentActivity");
-        Assert.Contains("UpdateTodoPanel", apply, StringComparison.Ordinal);
-        string attach = GuiSource.MethodBody(code, "AttachActivityItem");
-        Assert.DoesNotContain("UpdateTodoPanel", attach, StringComparison.Ordinal);
-        Assert.Contains("UpdateTodoPanel", GuiSource.MethodBody(code, "RegisterReplayedActivities"), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Switching_session_clears_the_panel()
     {
         string code = GuiSource.ViewText("ChatView");

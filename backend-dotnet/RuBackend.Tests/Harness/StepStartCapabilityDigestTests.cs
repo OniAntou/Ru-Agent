@@ -9,6 +9,7 @@ using RuBackend.Harness.Prompting;
 using RuBackend.Harness.ModelRunner;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 /// <summary>

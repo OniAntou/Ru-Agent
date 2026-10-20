@@ -1205,7 +1205,13 @@ public sealed class ToolExecutionServiceTests
             Assert.Equal(ToolResultStatuses.Succeeded, started.Status);
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             while (!File.Exists(pidFile)) await Task.Delay(20, deadline.Token);
-            var processId = int.Parse(await File.ReadAllTextAsync(pidFile, deadline.Token));
+            // The file exists before PowerShell closes it; retry the read until the writer releases it.
+            int processId;
+            while (true)
+            {
+                try { processId = int.Parse(await File.ReadAllTextAsync(pidFile, deadline.Token)); break; }
+                catch (Exception ex) when (ex is IOException or FormatException) { await Task.Delay(20, deadline.Token); }
+            }
             using var process = System.Diagnostics.Process.GetProcessById(processId);
 
             await service.RemoveSessionAsync(sessionId);

@@ -45,18 +45,6 @@ public sealed partial class MainWindow
         while (_sidebarRows.Count > desired.Count) _sidebarRows.RemoveAt(_sidebarRows.Count - 1);
     }
 
-    private void AppendSidebarSessions(List<object> rows, WorkspaceGroup group, bool expanded)
-    {
-        if (!expanded) return;
-        var showAll = _groupShowAll.Contains(group.Key)
-            || group.Sessions.Skip(WorkspaceGroupPageSize).Any(session => session.Id == _activeSessionId);
-        rows.AddRange(showAll ? group.Sessions : group.Sessions.Take(WorkspaceGroupPageSize));
-        if (!showAll && group.Sessions.Count > WorkspaceGroupPageSize)
-            rows.Add(new WorkspaceShowMoreRow(group.Key, $"Show {group.Sessions.Count - WorkspaceGroupPageSize} more"));
-        if (group.Sessions.Count == 0 && group.Path is null)
-            rows.Add(new SidebarEmptyRow(group.Key, group.Key == SidebarSessionOrganization.CliKey ? "No CLI sessions" : "No recent sessions"));
-    }
-
     private void OnSidebarSectionToggleClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: string key }) return;

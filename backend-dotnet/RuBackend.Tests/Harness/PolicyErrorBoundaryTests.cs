@@ -62,7 +62,7 @@ public sealed class PolicyErrorBoundaryTests
             services.AddSingleton<ISessionStore>(sp => new FaultingSessions(new SessionStore(sp.GetRequiredService<DataPaths>()),
                 new OperationCanceledException(cancellation.Token)));
         }));
-        var service = factory.Services.GetRequiredService<AgentV1Service>();
+        var service = factory.Services.GetRequiredService<AgentPoliciesService>();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.CreatePolicyAsync(
             JsonSerializer.SerializeToElement(Preset), true, cancellation.Token));

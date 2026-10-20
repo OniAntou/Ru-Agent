@@ -6,6 +6,7 @@ using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Harness.Workspace;
 
 public sealed class WorkspaceTrustService

@@ -17,8 +17,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -43,28 +41,16 @@ namespace RuApp.Views
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
-                bool isImage = IsImageFile(file.Name);
-                if (isImage && !CanAcceptImageAttachment())
+                int currentImageCount = PendingAttachments.Count(static attachment => attachment.IsImage);
+                var intake = ChatAttachmentIntakePresenter.Evaluate(file.Name, checked((long)props.Size), currentImageCount);
+                if (!intake.Accepted)
                 {
+                    if (intake.Status is not null) ShowAgentInlineStatus(intake.Status);
                     return;
                 }
 
-                if (!isImage && !IsTextOrCodeFile(file.Name))
-                {
-                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images and text/code files are accepted.");
-                    return;
-                }
-
-                int maximumBytes = isImage
-                    ? MaxImageAttachmentBytes
-                    : MaxTextAttachmentBytes;
-                if (props.Size > (ulong)maximumBytes)
-                {
-                    ShowAgentInlineStatus(isImage
-                        ? $"Image '{file.Name}' exceeds the {maximumBytes / (1024 * 1024)} MB attachment limit."
-                        : $"File '{file.Name}' exceeds the {maximumBytes / (1024 * 1024)} MB attachment limit.");
-                    return;
-                }
+                bool isImage = intake.IsImage;
+                int maximumBytes = intake.MaximumBytes;
 
                 using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
                 byte[]? bytes = await ReadBoundedBytesAsync(readStream, maximumBytes);
@@ -101,7 +87,7 @@ namespace RuApp.Views
                 }
                 else
                 {
-                    item.TextContent = DecodeTextAttachment(bytes);
+                    item.TextContent = ChatAttachmentPolicy.DecodeText(bytes);
                 }
 
                 TryAddAttachmentToComposer(item, sessionId, sessionGeneration);
@@ -110,14 +96,6 @@ namespace RuApp.Views
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error adding attachment: {ex.Message}");
             }
-        }
-
-        /// <summary>UTF-8 with BOM detection; a byte-order mark is encoding, not prompt text.</summary>
-        private static string DecodeTextAttachment(byte[] bytes)
-        {
-            using var stream = new MemoryStream(bytes, writable: false);
-            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            return reader.ReadToEnd();
         }
 
         /// <summary>
@@ -181,7 +159,7 @@ namespace RuApp.Views
 
         private bool CanAcceptImageAttachment()
         {
-            if (PendingAttachments.Count(static attachment => attachment.IsImage) < ChatAttachmentPolicy.MaxImageCount)
+            if (ChatAttachmentIntakePresenter.CanAddImage(PendingAttachments.Count(static attachment => attachment.IsImage)))
             {
                 return true;
             }
@@ -195,8 +173,7 @@ namespace RuApp.Views
             string sessionId,
             long sessionGeneration)
         {
-            if (sessionGeneration != _sessionOpenGeneration
-                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            if (!ChatAttachmentIntakePresenter.OwnsSession(sessionId, sessionGeneration, _activeSessionId, _sessionOpenGeneration))
             {
                 return false;
             }

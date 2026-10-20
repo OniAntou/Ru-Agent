@@ -17,7 +17,6 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
 {
     private readonly BrokerSession _session;
     private readonly IReadOnlySet<string> _executableScopes;
-    private readonly Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? _legacyToolHandler;
     private readonly Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? _authenticatedToolHandler;
     private readonly Func<string, string?, JsonObject>? _sessionTasksHandler;
     private readonly Func<string, Task>? _sessionClosedHandler;
@@ -61,7 +60,6 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     internal BrokerExecutionRuntime(
         BrokerSession session,
         IReadOnlySet<string> executableScopes,
-        Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? legacyToolHandler = null,
         Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? authenticatedToolHandler = null,
         Func<string, string?, JsonObject>? sessionTasksHandler = null,
         Func<string, Task>? sessionClosedHandler = null,
@@ -74,7 +72,6 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             session,
             new ToolExecutionBackend(
                 executableScopes,
-                legacyToolHandler,
                 authenticatedToolHandler,
                 sessionTasksHandler,
                 sessionClosedHandler),
@@ -97,7 +94,6 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _executableScopes = backend.ExecutableScopes;
-        _legacyToolHandler = backend.LegacyToolHandler;
         _authenticatedToolHandler = backend.AuthenticatedToolHandler;
         _sessionTasksHandler = backend.SessionTasksHandler;
         _sessionClosedHandler = backend.SessionClosedHandler;
@@ -507,13 +503,12 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
     }
 
     /// <summary>
-    /// The production backend over a <see cref="ToolExecutionService"/>: the
-    /// v1 legacy handler keeps the original message-type branch, v2 execution
-    /// is the authenticated path, and session lifecycle delegates to the service.
+    /// The production backend over a <see cref="ToolExecutionService"/>. Tool
+    /// execution always uses the authenticated run-bound path; session lifecycle
+    /// delegates to the service.
     /// </summary>
     private sealed record ToolExecutionBackend(
         IReadOnlySet<string> ExecutableScopes,
-        Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? LegacyToolHandler,
         Func<AgentEnvelope, CancellationToken, Task<ToolResult>>? AuthenticatedToolHandler,
         Func<string, string?, JsonObject>? SessionTasksHandler,
         Func<string, Task>? SessionClosedHandler,
@@ -524,9 +519,6 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             ArgumentNullException.ThrowIfNull(tools);
             return new ToolExecutionBackend(
                 tools.ListCapabilities().SelectMany(capability => capability.Scopes).ToHashSet(StringComparer.Ordinal),
-                (request, cancellationToken) => request.MessageType == AgentMessageTypes.ApprovalResponse
-                    ? tools.RespondToApprovalAsync(request, cancellationToken)
-                    : tools.ExecuteAsync(request, cancellationToken),
                 (request, cancellationToken) => tools.ExecuteAuthenticatedV2Async(request, cancellationToken),
                 tools.HandleSessionTasks,
                 tools.RemoveSessionAsync,

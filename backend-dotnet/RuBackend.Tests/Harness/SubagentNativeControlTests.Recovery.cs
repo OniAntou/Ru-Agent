@@ -31,10 +31,16 @@ public sealed partial class SubagentNativeControlTests
         var requiresInspection = command.Kind == ReconciliationCommandKind.UnknownContinue;
         var model = new ApplyRecoveryModel(agent.AgentId, requiresInspection);
         var gate = new ReconciliationInspectionGate();
+        var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory);
         async Task<AgentRunCoordinator> Coordinator(ReconciliationInspectionGate currentGate) =>
             await new AgentRuntimeCoordinatorFactory(model, storage.EventStore, storage.Options, storage.PayloadStore,
-                inspectionGate: currentGate, settings: new NativeSettings(), time: new SystemTimeProvider(),
-                contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory)
+                inspectionGate: currentGate,
+                workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
+                settings: new NativeSettings(), time: new SystemTimeProvider(),
+                contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,
+                subagentBinder: factoryDeps.Binder, familyBudget: factoryDeps.FamilyBudget,
+                subagentInbox: factoryDeps.Inbox,
+                transientRedactor: RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty)
                 .CreateAsync(repo, policy, agent.RootRunId, (await storage.EventStore.GetRunAsync(agent.RootRunId, default))!.SessionId.Value);
         var coordinator = await Coordinator(gate);
         var interrupted = await coordinator.RunOneStepAsync(agent.RootRunId, default);

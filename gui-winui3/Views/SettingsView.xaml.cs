@@ -10,10 +10,10 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
 using RuApp.Models;
 using RuApp.Services;
 
+using RuAgent.Protocol.Harness;
 namespace RuApp.Views
 {
     public sealed partial class SettingsView : UserControl, IDisposable
@@ -25,8 +25,7 @@ namespace RuApp.Views
         private DispatcherTimer? _autoSaveTimer;
         private DispatcherTimer? _modelsDevKeyTimer;
         private readonly ProviderKeyProbe _modelsDevKeyProbe = new();
-        private bool _saveInProgress;
-        private bool _saveRequestedDuringSave;
+        private readonly SettingsPresenter _settingsPresenter = new();
 
         public event Action<UiTheme>? ThemeChanged;
         public event Action<AgentPermissionPreset>? PresetChanged;
@@ -44,10 +43,6 @@ namespace RuApp.Views
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
 
         private const double ProviderRowLabelFontSize = 13;
-        private const double ProviderFlyoutBottomMargin = 24;
-        // Six 32px rows: the list stays scannable without eating the settings form.
-        private const double ProviderFlyoutMaxHeight = 200;
-        private const double ProviderFlyoutAbsoluteMinHeight = 96;
 
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
@@ -314,7 +309,8 @@ namespace RuApp.Views
         /// </remarks>
         private async void OnProviderTestClick(object sender, RoutedEventArgs e)
         {
-            if (_apiService is null || _providerCatalogController is null)
+            var catalogController = _providerCatalogController;
+            if (_apiService is null || catalogController is null)
             {
                 ShowProviderTestResult(new ProviderConnectionTest(
                     ProviderConnectionTest.ErrorTone,
@@ -329,17 +325,16 @@ namespace RuApp.Views
 
             try
             {
-                await SaveSettingsAsync();
-
-                // A forced refresh is what actually re-queries the provider.
-                await _providerCatalogController.RefreshAsync(force: true);
-                var state = _providerCatalogController.State;
+                var state = await SettingsProviderPresenter.TestConnectionAsync(
+                    SaveSettingsAsync,
+                    () => catalogController.RefreshAsync(force: true),
+                    () => catalogController.State);
                 var outcome = ProviderConnectionTestPresentation.Project(state);
-                if (outcome.Tone == ProviderConnectionTest.ErrorTone)
+                if (ProviderConnectionTestPresentation.DiagnosticCode(outcome, state) is { } errorCode)
                 {
                     // The message alone cannot tell a blocked network apart from
                     // a bad key next time: record the catalog code locally.
-                    GuiDiagnosticWriter.WriteGuiError("provider_test", state?.ErrorCode ?? "unknown");
+                    GuiDiagnosticWriter.WriteGuiError("provider_test", errorCode);
                 }
 
                 ShowProviderTestResult(outcome, state?.ErrorCode);
@@ -462,20 +457,9 @@ namespace RuApp.Views
                 }
             }
 
-            // No upper cap of our own: the window is the only real limit, so a tall
-            // window shows more rows and the list is never cut short by a constant.
-            //
-            // Height, not just MaxHeight: the picker's content lives in a StackPanel,
-            // which measures its children with unbounded height. A ListView measured that
-            // way realizes every item and lays none of them out. A concrete height is what
-            // makes it virtualize and paint.
-            double height = double.IsFinite(available)
-                ? Math.Min(
-                    Math.Max(
-                        available - ProviderFlyoutBottomMargin,
-                        ProviderFlyoutAbsoluteMinHeight),
-                    ProviderFlyoutMaxHeight)
-                : ProviderFlyoutMaxHeight;
+            // Height, not just MaxHeight: the picker lives in a StackPanel, whose
+            // unbounded measure would otherwise realize every row and paint none.
+            double height = SettingsProviderPresenter.LayoutFor(available).Height;
             ProviderListView.MaxHeight = height;
             ProviderListView.Height = height;
         }
@@ -523,25 +507,30 @@ namespace RuApp.Views
             {
                 _autoSaveTimer.Stop();
             }
-            await SaveSettingsAsync();
+            if (_settingsPresenter.TryConsumeAutoSave()) await SaveSettingsAsync();
         }
 
         private void ScheduleAutoSave()
         {
-            if (_loading) return;
+            if (!_settingsPresenter.ScheduleAutoSave(_loading)) return;
             _autoSaveTimer?.Stop();
             _autoSaveTimer?.Start();
         }
 
         private async Task LoadSettingsAsync()
         {
+            long request = _settingsPresenter.BeginLoad();
             _loading = true;
             try
             {
                 if (_apiService != null)
                 {
-                    var settings = await _apiService.GetSettingsAsync();
-                    settings ??= new AppSettingsDto();
+                    var load = await _settingsPresenter.LoadAsync(
+                        request,
+                        _apiService.GetSettingsAsync,
+                        () => RefreshModelsDevProvidersAsync(request));
+                    if (load is null) return;
+                    var settings = load.Settings;
                     _lastSettings = settings;
 
                     CustomEndpointUrlBox.Text = settings.CustomUrl;
@@ -554,7 +543,6 @@ namespace RuApp.Views
                     ModelsDevKeyStatus.Text = string.Empty;
                     // Providers first: the current choice can only be named once
                     // the runtime rows exist.
-                    await RefreshModelsDevProvidersAsync();
                     SetCurrentProvider(settings.BackendChoice ?? string.Empty);
 
                     UpdateVisibilityForBackend(_providerChoice);
@@ -572,7 +560,7 @@ namespace RuApp.Views
                 // The flag gates autosave and the row click handlers: a throw
                 // anywhere above must not leave the whole panel read-only until
                 // the next restart.
-                _loading = false;
+                if (_settingsPresenter.IsCurrentLoad(request)) _loading = false;
             }
         }
 
@@ -581,19 +569,25 @@ namespace RuApp.Views
         /// The key row saves for the active provider, so it needs no
         /// provider picker of its own.
         /// </summary>
-        private async Task RefreshModelsDevProvidersAsync()
+        private async Task RefreshModelsDevProvidersAsync(long? loadRequest = null)
         {
             if (_apiService is null) return;
+            bool IsCurrent() => loadRequest is null || _settingsPresenter.IsCurrentLoad(loadRequest.Value);
             try
             {
-                var providers = await _apiService.GetModelsDevAsync();
+                var apiService = _apiService;
+                var providers = await apiService.GetModelsDevAsync();
+                if (!IsCurrent() || !ReferenceEquals(apiService, _apiService)) return;
                 _modelsDevLoadFailed = providers.Count == 0;
                 RebuildModelsDevOptions(providers);
-                _modelsDevKeyIds = await _apiService.GetModelsDevKeysAsync();
+                var keyIds = await apiService.GetModelsDevKeysAsync();
+                if (!IsCurrent() || !ReferenceEquals(apiService, _apiService)) return;
+                _modelsDevKeyIds = keyIds;
                 ApplyProviderKeys();
             }
             catch (Exception ex)
             {
+                if (!IsCurrent()) return;
                 _modelsDevLoadFailed = true;
                 GuiDiagnosticWriter.AppendTraceLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
                 // The failure mode this replaced was silent: a partially built list with
@@ -618,7 +612,7 @@ namespace RuApp.Views
                     : keys.Contains(row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]);
             }
 
-            MoveSignedInRowsToTop();
+            MoveRowsToSignedInOrder();
         }
 
         /// <summary>
@@ -626,13 +620,9 @@ namespace RuApp.Views
         /// of intent, and the ~190-row catalog is otherwise a long scroll. The order
         /// inside each group stays alphabetical.
         /// </summary>
-        private void MoveSignedInRowsToTop()
+        private void MoveRowsToSignedInOrder()
         {
-            var ordered = _providerRows
-                .OrderByDescending(row => row.HasKey)
-                .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(row => row.Value, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var ordered = SettingsProviderPresenter.OrderSignedInFirst(_providerRows);
 
             for (int index = 0; index < ordered.Count; index++)
             {
@@ -656,32 +646,16 @@ namespace RuApp.Views
         /// </remarks>
         private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
         {
+            var projection = SettingsProviderPresenter.BuildProviderRows(
+                providers.Select(entry => (entry.Id, entry.Name)));
             _modelsDevNames.Clear();
-            foreach (var (id, name) in ProviderSetupGuidance.OrderModelsDevOptions(
-                         providers.Select(entry => (entry.Id, entry.Name))))
+            foreach (var (id, name) in projection.Names)
             {
                 _modelsDevNames[id] = name;
             }
 
-            var rows = new List<ProviderRow>(_modelsDevNames.Count + 1)
-            {
-                new("custom", CustomProviderDisplayName),
-            };
-            foreach (var id in _modelsDevNames.Keys)
-            {
-                rows.Add(new ProviderRow(ProviderSetupGuidance.ModelsDevPrefix + id, _modelsDevNames[id]));
-            }
-
-            rows.Sort(static (left, right) =>
-            {
-                int byName = string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
-                return byName != 0
-                    ? byName
-                    : string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase);
-            });
-
             _providerRows.Clear();
-            foreach (var row in rows)
+            foreach (var row in projection.Rows)
             {
                 _providerRows.Add(row);
             }
@@ -700,7 +674,7 @@ namespace RuApp.Views
         /// The custom endpoint's label. Declared once so the picker and the key row
         /// cannot drift apart.
         /// </summary>
-        private const string CustomProviderDisplayName = "Custom OpenAI Server";
+        private const string CustomProviderDisplayName = SettingsProviderPresenter.CustomDisplayName;
 
         /// <summary>
         /// Filters all three provider groups by the search text and hides a
@@ -713,37 +687,25 @@ namespace RuApp.Views
 
         private void ApplyProviderFilter(string? filter)
         {
-            int matching = 0;
+            var projection = SettingsProviderPresenter.Filter(_providerRows.ToArray(), filter, _modelsDevLoadFailed);
+            var visibleRows = new HashSet<ProviderRow>(projection.VisibleRows);
             foreach (var row in _providerRows)
             {
-                var id = ProviderSetupGuidance.IsModelsDevChoice(row.Value)
-                    ? row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]
-                    : row.Value;
-                bool show = ProviderSetupGuidance.MatchesProviderFilter(row.DisplayName, id, filter);
-                row.IsVisible = show;
-                if (show)
-                {
-                    matching++;
-                }
+                row.IsVisible = visibleRows.Contains(row);
             }
 
             if (FixedProvidersHeader is not null)
             {
-                int total = _providerRows.Count;
                 // The count stays visible even at zero matches. Hiding the header exactly
                 // when a search finds nothing left the panel with no guidance at all, and
                 // "PROVIDERS (0 of 191)" is the honest answer: the catalog is there, the
                 // query is what is narrow.
-                FixedProvidersHeader.Text = _modelsDevLoadFailed && total <= 1
-                    ? $"PROVIDERS ({total}) - Models.dev list unavailable"
-                    : matching < total
-                        ? $"PROVIDERS ({matching} of {total})"
-                        : $"PROVIDERS ({total})";
+                FixedProvidersHeader.Text = projection.HeaderText;
             }
 
             if (ProviderNoMatchText is not null)
             {
-                ProviderNoMatchText.Visibility = matching == 0 ? Visibility.Visible : Visibility.Collapsed;
+                ProviderNoMatchText.Visibility = projection.HasNoMatches ? Visibility.Visible : Visibility.Collapsed;
             }
 
             RefreshProviderUI();
@@ -796,7 +758,15 @@ namespace RuApp.Views
         private async void OnModelsDevKeyTimerTick(object? sender, object e)
         {
             _modelsDevKeyTimer?.Stop();
-            await ProbeAndSaveModelsDevKeyAsync();
+            try
+            {
+                await ProbeAndSaveModelsDevKeyAsync();
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
+                SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
+            }
         }
 
         /// <summary>
@@ -888,30 +858,13 @@ namespace RuApp.Views
             {
                 // Signing out only makes sense while a key is actually stored; the
                 // dot in the picker and this button read the same source.
-                ModelsDevSignOutButton.Visibility = isModelsDev && IsActiveProviderSignedIn(choice)
+                ModelsDevSignOutButton.Visibility = isModelsDev && SettingsProviderPresenter.IsSignedIn(
+                        choice,
+                        _lastSettings?.HasCustomKey == true,
+                        _modelsDevKeyIds)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
-        }
-
-        /// <summary>
-        /// Whether the given provider has a stored credential: the custom key flag
-        /// or one of the fetched models.dev key ids.
-        /// </summary>
-        private bool IsActiveProviderSignedIn(string choice)
-        {
-            if (string.Equals(choice, "custom", StringComparison.OrdinalIgnoreCase))
-            {
-                return _lastSettings?.HasCustomKey == true;
-            }
-
-            if (!ProviderSetupGuidance.IsModelsDevChoice(choice))
-            {
-                return false;
-            }
-
-            string id = choice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
-            return _modelsDevKeyIds.Contains(id, StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -933,11 +886,14 @@ namespace RuApp.Views
             string name = ProviderButtonLabel?.Text?.Trim() ?? _providerChoice;
             try
             {
-                bool removed = await _apiService.RemoveProviderAsync(_providerChoice);
+                string choice = _providerChoice;
+                bool removed = await SettingsProviderPresenter.SignOutAsync(
+                    choice,
+                    _apiService.RemoveProviderAsync,
+                    ClearProviderKeyInput,
+                    LoadSettingsAsync);
                 if (removed)
                 {
-                    ClearProviderKeyInput(_providerChoice);
-                    await LoadSettingsAsync();
                     // LoadSettingsAsync clears the status line, so the confirmation
                     // must land after the reload, not before it.
                     SetModelsDevKeyStatus($"Signed out of {name}. Paste a new key to sign in again.", ProviderConnectionTest.SuccessTone);
@@ -1000,47 +956,34 @@ namespace RuApp.Views
             }
         }
 
-        private async Task SaveSettingsAsync()
+        private async Task<bool> SaveSettingsAsync()
         {
-            if (_apiService == null) return;
-            if (_saveInProgress)
-            {
-                _saveRequestedDuringSave = true;
-                return;
-            }
-            _saveInProgress = true;
-
+            if (_apiService == null) return false;
             try
             {
-                string backend = _providerChoice;
-
-                var dto = new ProviderSettingsUpdateDto
+                var apiService = _apiService;
+                bool saved = await _settingsPresenter.SaveAsync(async () =>
                 {
-                    BackendChoice = backend,
-                    CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
-                    CustomApiKey = CustomApiKeyBox.Password,
-                    CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
-                };
-
-                bool saved = await _apiService.SaveProviderSettingsAsync(dto);
+                    var dto = new ProviderSettingsUpdateDto
+                    {
+                        BackendChoice = _providerChoice,
+                        CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
+                        CustomApiKey = CustomApiKeyBox.Password,
+                        CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
+                    };
+                    return await apiService.SaveProviderSettingsAsync(dto);
+                });
                 if (!saved)
                 {
                     GuiDiagnosticWriter.WriteGuiError("settings_autosave", "save_failed");
                 }
+
+                return saved;
             }
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.WriteCrashEvent(ex);
-            }
-            finally
-            {
-                _saveInProgress = false;
-                if (_saveRequestedDuringSave)
-                {
-                    _saveRequestedDuringSave = false;
-                    _autoSaveTimer?.Stop();
-                    _autoSaveTimer?.Start();
-                }
+                return false;
             }
         }
 

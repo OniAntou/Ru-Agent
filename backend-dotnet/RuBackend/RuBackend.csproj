@@ -16,9 +16,9 @@
     <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />
     <ProjectReference Include="..\RuAgent.Runtime.Model\RuAgent.Runtime.Model.csproj" />
     <ProjectReference Include="..\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-    <PackageReference Include="OpenTelemetry" Version="1.18.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
   </ItemGroup>
   <!-- Publish Properties -->
   <PropertyGroup>

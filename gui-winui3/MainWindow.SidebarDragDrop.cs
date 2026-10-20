@@ -69,36 +69,18 @@ public sealed partial class MainWindow
     {
         var container = VisualTreeHelper.FindElementsInHostCoordinates(point, ShellRoot)
             .OfType<ListViewItem>().FirstOrDefault(item => SidebarSessionList.ItemFromContainer(item) is not null);
-        if (container is null) return null;
+        if (container is null || string.IsNullOrWhiteSpace(_dragSessionId)) return null;
         var row = SidebarSessionList.ItemFromContainer(container);
-        WorkspaceGroupIdentity? group = row switch
-        {
-            SessionInfo session => SidebarGroupFor(session),
-            WorkspaceGroupRow folder => new(folder.Group.Key, folder.Group.Label, folder.Group.Path),
-            SidebarSectionRow section when section.IsRecents || section.IsCli => new(section.Key, section.Label, null),
-            SidebarEmptyRow empty when empty.Key is SidebarSessionOrganization.RecentsKey or SidebarSessionOrganization.CliKey => new(empty.Key, empty.Label, null),
-            WorkspaceShowMoreRow more => IdentityForSidebarGroup(more.GroupKey),
-            _ => null,
-        };
-        if (group is null || Sessions.FirstOrDefault(session => session.Id == _dragSessionId) is not { } dragged
-            || !SidebarSessionOrganization.CanMoveTo(dragged, group.Key)) return null;
         var local = ShellRoot.TransformToVisual(container).TransformPoint(point);
         var above = local.Y < container.ActualHeight / 2;
-        string? before = null;
-        if (row is SessionInfo hovered)
-        {
-            if (hovered.Id == _dragSessionId) return null;
-            var siblings = _lastWorkspaceGroups.FirstOrDefault(candidate => candidate.Key == group.Key)?.Sessions ?? [];
-            before = above ? hovered.Id : siblings.SkipWhile(item => item.Id != hovered.Id).Skip(1)
-                .FirstOrDefault(item => item.Id != _dragSessionId)?.Id;
-        }
-        return new(group.Key, group.Path, before, container, above);
-    }
-
-    private WorkspaceGroupIdentity? IdentityForSidebarGroup(string key)
-    {
-        var group = _lastWorkspaceGroups.FirstOrDefault(candidate => candidate.Key == key);
-        return group is null ? null : new(group.Key, group.Label, group.Path);
+        var intent = SidebarDragDropPresenter.Resolve(
+            _dragSessionId,
+            row!,
+            above,
+            Sessions.ToList(),
+            _lastWorkspaceGroups,
+            SidebarGroupFor);
+        return intent is null ? null : new(intent.Key, intent.Path, intent.BeforeId, container, intent.InsertAbove);
     }
 
     private void ShowSidebarDropTarget(SidebarDropTarget? target)
@@ -149,10 +131,9 @@ public sealed partial class MainWindow
 
     private bool MoveSidebarSession(string sessionId, string key, string? path, string? beforeId)
     {
-        var session = Sessions.FirstOrDefault(row => row.Id == sessionId);
-        if (session is null || !SidebarSessionOrganization.CanMoveTo(session, key)) return false;
-        var ordered = SidebarSessionOrganization.Order(Sessions.ToList(), _sidebarOrganization.Current).Select(row => row.Id).ToArray();
-        if (!_sidebarOrganization.Move(sessionId, path, beforeId, ordered))
+        if (!SidebarSessionPresenter.TryMove(
+                _sidebarOrganization, Sessions.ToList(), _sidebarOrganization.Current,
+                sessionId, key, path, beforeId))
         {
             SetSessionActionError("Could not save the sidebar order. Try again.");
             return false;

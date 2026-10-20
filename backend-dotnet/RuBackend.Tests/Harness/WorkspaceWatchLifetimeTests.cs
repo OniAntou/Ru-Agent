@@ -38,7 +38,8 @@ public sealed class WorkspaceWatchLifetimeTests
         var protector = new WorkspaceJournalProtector(fixture.KeyStore);
         using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots,
             NullLogger<AgentRuntimeLoopService>.Instance, workspaceChangeMonitor: monitor,
-            workspaceCoordinatorStore: store, workspaceJournalProtector: protector);
+            workspaceCoordinatorStore: store, workspaceJournalProtector: protector,
+            brokerGateways: new UnavailableToolGatewayFactory());
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await loop.StartAsync(CancellationToken.None);
         var firstDrive = loop.StepOnceAsync(cancellation.Token);

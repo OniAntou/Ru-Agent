@@ -14,6 +14,7 @@ using RuBackend.Harness;
 using RuBackend.Harness.Reconciliation;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 public sealed class HarnessRecoveryScannerTests
@@ -978,6 +979,9 @@ public sealed class HarnessRecoveryScannerTests
                 new UnusedCoordinatorFactory(),
                 new AgentRuntimeRootRegistry(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<AgentRuntimeLoopService>.Instance,
+                workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+                workspaceJournalProtector: new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore),
+                brokerGateways: new UnavailableToolGatewayFactory(),
                 retainedApprovalRehydrator: rehydrator);
             var race = await service.ReconcileApprovalRefreshRaceAsync(
                 run.RunId.Value,
@@ -1399,7 +1403,10 @@ public sealed class HarnessRecoveryScannerTests
             fixture.EventStore,
             new UnusedCoordinatorFactory(),
             roots,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<AgentRuntimeLoopService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AgentRuntimeLoopService>.Instance,
+            new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+            new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore),
+            new UnavailableToolGatewayFactory());
     }
 
     [Fact]

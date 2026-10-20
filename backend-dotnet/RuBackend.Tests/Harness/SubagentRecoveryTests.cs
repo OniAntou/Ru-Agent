@@ -5,6 +5,7 @@ using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Subagents;
+using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol.Harness;
 using RuAgent.Protocol.Subagents;
 using RuBackend.Harness;
@@ -91,7 +92,15 @@ public sealed class SubagentRecoveryTests
         if (viaStartup)
         {
             using var startup = new HarnessRecoveryStartupService(fixture.EventStore, fixture.Options,
-                NullLogger<HarnessRecoveryStartupService>.Instance, runtimeRoots: roots, subagentRecovery: recovery);
+                NullLogger<HarnessRecoveryStartupService>.Instance,
+                new WorkspaceTrustService(new WindowsWorkspaceIdentityResolver(), new SqliteWorkspaceStore(fixture.Options),
+                    new WorkspaceTrustRequestStore(fixture.Options), fixture.KeyStore),
+                new SqliteWorkspaceStore(fixture.Options),
+                new RuBackend.Harness.Policy.HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
+                roots,
+                new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+                subagentRecovery: recovery);
             await startup.StartAsync(default);
             try
             {

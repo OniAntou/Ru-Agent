@@ -36,7 +36,7 @@ public enum PublicHostLockState
 /// held lock fails closed instead of silently starting a second host that
 /// clobbers the live instance.
 /// </remarks>
-public sealed class PublicHostSingleInstance : IDisposable
+public sealed class PublicHostSingleInstance : IDisposable, IAsyncDisposable
 {
     private readonly List<ThreadOwnedMutex> _mutexes = new();
     private readonly List<DirectoryHandleLease> _rootLeases = new();
@@ -130,7 +130,20 @@ public sealed class PublicHostSingleInstance : IDisposable
     /// instance's files.
     /// </summary>
     public static PublicHostSingleInstance AcquireForPortAndDataRoot(int publicPort, string dataRoot, string logRoot)
+        => AcquireForRoots(publicPort, dataRoot, logRoot);
+
+    /// <summary>
+    /// Claims the shared data and log roots for a host whose port is assigned by
+    /// the operating system. No global port mutex is needed because the roots
+    /// already identify the one host allowed to publish that profile descriptor.
+    /// </summary>
+    public static PublicHostSingleInstance AcquireForDataAndLogRoot(string dataRoot, string logRoot)
+        => AcquireForRoots(null, dataRoot, logRoot);
+
+    private static PublicHostSingleInstance AcquireForRoots(int? publicPort, string dataRoot, string logRoot)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(logRoot);
         var dataRootGuard = AcquireForDataRoot(dataRoot);
         if (!dataRootGuard.IsAcquired)
         {
@@ -147,9 +160,15 @@ public sealed class PublicHostSingleInstance : IDisposable
                 return logRootGuard;
             }
 
+            if (publicPort is null)
+            {
+                logRootGuard.TakeMutexesFrom(dataRootGuard);
+                return logRootGuard;
+            }
+
             var portGuard = AcquireWithLocalFallback(
-                $"Global\\RuPublicHost-{publicPort}",
-                $"Local\\RuPublicHost-{publicPort}");
+                $"Global\\RuPublicHost-{publicPort.Value}",
+                $"Local\\RuPublicHost-{publicPort.Value}");
             if (!portGuard.IsAcquired)
             {
                 dataRootGuard.Dispose();
@@ -204,15 +223,41 @@ public sealed class PublicHostSingleInstance : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
-        foreach (var mutex in _mutexes)
+        while (_mutexes.Count > 0)
         {
-            mutex.Dispose();
+            var index = _mutexes.Count - 1;
+            _mutexes[index].Dispose();
+            _mutexes.RemoveAt(index);
         }
 
-        _mutexes.Clear();
-        foreach (var root in _rootLeases) root.Dispose();
-        _rootLeases.Clear();
+        while (_rootLeases.Count > 0)
+        {
+            var index = _rootLeases.Count - 1;
+            _rootLeases[index].Dispose();
+            _rootLeases.RemoveAt(index);
+        }
+
+        _disposed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        while (_mutexes.Count > 0)
+        {
+            var index = _mutexes.Count - 1;
+            await _mutexes[index].DisposeAsync().ConfigureAwait(false);
+            _mutexes.RemoveAt(index);
+        }
+
+        while (_rootLeases.Count > 0)
+        {
+            var index = _rootLeases.Count - 1;
+            _rootLeases[index].Dispose();
+            _rootLeases.RemoveAt(index);
+        }
+
+        _disposed = true;
     }
 
     private void TakeMutexesFrom(PublicHostSingleInstance other)

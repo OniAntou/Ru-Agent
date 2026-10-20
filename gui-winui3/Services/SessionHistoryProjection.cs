@@ -1,4 +1,4 @@
-using RuAgent.Harness.Core.Prompting;
+using RuAgent.Client;
 
 namespace RuApp.Services;
 
@@ -34,7 +34,7 @@ public static class SessionHistoryProjection
                 : content ?? string.Empty;
             // A machine tool envelope must never render as chat text (for example a
             // repeated call that failed the run).
-            bool render = !(isAssistant && ModelToolSelectionParser.LooksLikeToolSelection(display));
+            bool render = !(isAssistant && AgentActivityDisplayPolicy.LooksLikeToolSelection(display));
 
             rows.Add(new SessionHistoryRow(role, display, render));
         }

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using RuAgent.Harness.Core.Workspace;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Policy;
 

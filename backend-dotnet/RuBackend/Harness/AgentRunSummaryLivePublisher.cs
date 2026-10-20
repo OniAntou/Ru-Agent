@@ -2,8 +2,6 @@ using System.Collections.Concurrent;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Protocol.Harness;
-using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
-using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
 
 namespace RuBackend.Harness;
 
@@ -231,7 +229,7 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
     private sealed class SummaryState
     {
         private readonly object _gate = new();
-        private readonly Dictionary<string, CoreActivityState> _activityStates = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, AgentActivityState> _activityStates = new(StringComparer.Ordinal);
         private string? _workspaceLabel;
         private int _filesScanned;
         private int _filesChanged;
@@ -262,25 +260,25 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
             lock (_gate)
             {
                 if (_activityStates.TryGetValue(activity.ActivityId, out var previous)
-                    && (previous is CoreActivityState.Completed or CoreActivityState.Failed))
+                    && (previous is AgentActivityState.Completed or AgentActivityState.Failed))
                 {
                     return;
                 }
 
                 _activityStates[activity.ActivityId] = activity.State;
-                if (activity.State is not (CoreActivityState.Completed or CoreActivityState.Failed))
+                if (activity.State is not (AgentActivityState.Completed or AgentActivityState.Failed))
                 {
                     return;
                 }
 
-                if (activity.Kind == CoreActivityKind.Explore && activity.State == CoreActivityState.Completed)
+                if (activity.Kind == AgentActivityKind.Explore && activity.State == AgentActivityState.Completed)
                 {
                     _filesScanned = SaturatingAdd(_filesScanned, activity.Count ?? 0);
                 }
 
-                if (activity.Kind == CoreActivityKind.Edit)
+                if (activity.Kind == AgentActivityKind.Edit)
                 {
-                    if (activity.State == CoreActivityState.Completed)
+                    if (activity.State == AgentActivityState.Completed)
                     {
                         _filesChanged = SaturatingAdd(_filesChanged, 1);
                         _hasVerifiedMutation = true;

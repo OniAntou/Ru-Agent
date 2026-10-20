@@ -96,14 +96,15 @@ function Stop-ProcessTree([System.Diagnostics.Process]$Process) {
 }
 
 function Resolve-SmokePort([int]$RequestedPort) {
+    if ($RequestedPort -eq 0) {
+        return 0
+    }
+
     if ($RequestedPort -ne 0) {
         if ($RequestedPort -lt 1024 -or $RequestedPort -gt 65535) {
             throw "-Port must be between 1024 and 65535; got $RequestedPort."
         }
 
-        if ($RequestedPort -eq 8001) {
-            throw "-Port 8001 is reserved by the managed host's port scheme; pick another port."
-        }
     }
 
     $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $RequestedPort)
@@ -151,8 +152,8 @@ function Wait-StatusReady([System.Diagnostics.Process]$HostProcess, [string]$Url
                 $lastOutcome = "status '$($body.status)'"
             }
         } catch {
-            # The descriptor is published before Kestrel binds, so a refused
-            # connection is expected during the first polls; keep polling.
+            # Descriptor publication follows the bind, but HTTP application
+            # initialization can still be finishing; keep polling.
             $lastOutcome = "connection failed: $($_.Exception.Message)"
         }
 
@@ -226,9 +227,8 @@ try {
     $env:RU_DESKTOP_TOKEN = $token
 
     Write-Smoke "starting published RuBackend on $baseUrl (data root: $dataRoot)..."
-    # --urls must come before --managed-runtime: the command-line configuration
-    # provider consumes the token that follows the value-less --managed-runtime
-    # switch, so the other order silently drops --urls and binds 8000.
+    # --urls must come before --managed-runtime because the command-line
+    # provider treats the value-less switch as consuming the next token.
     $hostProcess = Start-Process -FilePath $backendExe `
         -ArgumentList "--urls", $baseUrl, "--managed-runtime" `
         -WorkingDirectory $publishDir -PassThru -WindowStyle Hidden `
@@ -249,9 +249,14 @@ try {
     }
 
     $descriptor = Get-Content -LiteralPath $descriptorPath -Raw | ConvertFrom-Json
-    if ([string]::IsNullOrWhiteSpace($descriptor.base_url) -or $descriptor.base_url.TrimEnd("/") -ne $baseUrl) {
-        throw "descriptor base_url '$($descriptor.base_url)' does not match the published host URL '$baseUrl'."
+    $descriptorUri = [Uri]$descriptor.base_url
+    if (-not $descriptorUri.IsLoopback -or $descriptorUri.Scheme -ne "http" -or $descriptorUri.Port -lt 1024) {
+        throw "descriptor base_url '$($descriptor.base_url)' is not a bound loopback URL."
     }
+    if ($publicPort -ne 0 -and $descriptorUri.Port -ne $publicPort) {
+        throw "descriptor base_url '$($descriptor.base_url)' does not match requested port $publicPort."
+    }
+    $baseUrl = $descriptorUri.GetLeftPart([System.UriPartial]::Authority).TrimEnd("/")
 
     if ([string]::IsNullOrWhiteSpace($descriptor.bearer_token)) {
         throw "descriptor carries no bearer_token."
@@ -259,9 +264,8 @@ try {
     if ($descriptor.pid -ne $hostProcess.Id) { throw 'Descriptor does not belong to the owned smoke process.' }
 
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
-    # The descriptor is published before Kestrel binds, so the first GET can
-    # race the listener on a loaded runner. Poll on a bounded budget instead of
-    # failing on the first connection-refused, like rpc_smoke's Wait-HostReady.
+    # The descriptor is published after Kestrel binds; poll for authenticated
+    # readiness on a bounded budget in case app initialization is still running.
     $ready = Wait-StatusReady -HostProcess $hostProcess -Url $baseUrl -Bearer $descriptor.bearer_token -TimeoutSeconds 30
     if ($ready.maintenance_protocol -ne 1) { throw 'Published host does not support idle-only maintenance.' }
     $markerPath = Join-Path $publishDir 'ru-install.json'

@@ -56,6 +56,15 @@ internal static class ChatAttachmentPolicy
         };
     }
 
+    internal static string DecodeText(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        using var stream = new System.IO.MemoryStream(bytes, writable: false);
+        using var reader = new System.IO.StreamReader(
+            stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
     internal static string MimeForExtension(string name)
     {
         string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RuAgent.Harness.Core;
+using RuAgent.Protocol.Harness;
 using RuAgent.Protocol;
 using RuBackend.Harness;
 using Xunit;
@@ -242,19 +243,19 @@ public sealed class AgentActivityLivePublisherTests
     }
 
     [Fact]
-    public void Core_and_protocol_activity_kinds_stay_in_sync()
+    public void Activity_kind_wire_names_keep_their_original_order()
     {
-        var core = Enum.GetNames(typeof(RuAgent.Harness.Core.AgentActivityKind));
         var protocol = Enum.GetNames(typeof(RuAgent.Protocol.Harness.AgentActivityKind));
-        Assert.Equal(core, protocol);
+        Assert.Equal(
+            new[] { "Thinking", "Explore", "Search", "Analyze", "Edit", "Terminal", "Compaction", "Retry", "Status", "Todo", "Narration" },
+            protocol);
     }
 
     [Fact]
-    public void Core_and_protocol_activity_states_stay_in_sync()
+    public void Activity_state_wire_names_keep_their_original_order()
     {
-        var core = Enum.GetNames(typeof(RuAgent.Harness.Core.AgentActivityState));
         var protocol = Enum.GetNames(typeof(RuAgent.Protocol.Harness.AgentActivityState));
-        Assert.Equal(core, protocol);
+        Assert.Equal(new[] { "Started", "Completed", "Failed", "Waiting" }, protocol);
     }
 
     [Fact]

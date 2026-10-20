@@ -7,6 +7,7 @@ using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Workspace;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 /// <summary>

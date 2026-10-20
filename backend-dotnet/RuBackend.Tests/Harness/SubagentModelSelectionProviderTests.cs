@@ -35,7 +35,7 @@ public sealed class SubagentModelSelectionProviderTests
         using var handler = new Handler(available);
         using var http = new HttpClient(handler);
         var catalog = new ProviderCatalogService(http, credentials, TimeProvider.System, Path.Combine(fixture.RootPath, "models-dev.json"));
-        using var snapshots = new AgentProviderSnapshotFactory(settings, credentials, catalog, pins, (_, _) => Task.FromResult(false));
+        await using var snapshots = new AgentProviderSnapshotFactory(settings, credentials, catalog, pins, (_, _) => Task.FromResult(false));
         var models = new SubagentModelSelectionProvider(pins, settings, snapshots, fixture.PayloadStore, catalog, credentials);
         if (error is null)
         {

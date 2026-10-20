@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using RuAgent.Protocol.Harness;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;

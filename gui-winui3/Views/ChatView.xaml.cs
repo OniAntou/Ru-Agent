@@ -17,8 +17,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -128,7 +126,9 @@ namespace RuApp.Views
         private string? _requestedWorkspace;
         /// <summary>Last approved identity hash per workspace path; drives the re-trust copy only.</summary>
         private readonly WorkspaceTrustMemoryStore _workspaceTrustMemory = new();
-        private bool _agentActionPending;
+        private readonly SessionHistoryPresenter _sessionHistoryPresenter = new();
+        private bool _agentActionPending => _sessionHistoryPresenter.IsActionPending;
+        private readonly ComposerLocalStatus _composerLocalStatus = new();
         private bool _isSendingUserTurn;
         private string? _focusedApprovalId;
         private string? _focusedInputId;
@@ -141,7 +141,7 @@ namespace RuApp.Views
         public BatchObservableCollection<ChatMessageItem> Messages { get; } = new();
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
-        private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
+        private readonly AgentActivityFeedPresenter _agentActivityFeed = new();
         private readonly Dictionary<string, int> _activitySplitOffsetById = new(StringComparer.Ordinal);
         private int _segmentFrozenLength;
 

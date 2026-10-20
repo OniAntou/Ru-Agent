@@ -110,17 +110,17 @@ public sealed class OfficialProviderTests
     public void ComboBox_offers_the_custom_row_and_no_retired_official_provider()
     {
         string xaml = File.ReadAllText(FindViewSource("SettingsView.xaml"));
-        string code = File.ReadAllText(FindViewSource("SettingsView.xaml.cs"));
 
         // Provider choice is the Models.dev catalog plus the custom endpoint. The two
         // official providers are retired from selection, so neither their rows nor
         // their key rows may come back into the picker.
         //
-        // The custom row is data now, not markup: the picker's rows come from
-        // RebuildModelsDevOptions, so its label lives beside that code.
+        // Provider selection is data: verify the behavior through the provider
+        // projection rather than requiring its label to stay in code-behind.
         Assert.Contains("x:Name=\"CustomEndpointRow\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("CustomProviderDisplayName", code, StringComparison.Ordinal);
-        Assert.Contains("Custom OpenAI Server", code, StringComparison.Ordinal);
+        var customRow = Assert.Single(SettingsProviderPresenter.BuildProviderRows([]).Rows,
+            row => row.Value == SettingsProviderPresenter.CustomChoice);
+        Assert.Equal("Custom OpenAI Server", customRow.DisplayName);
 
         Assert.DoesNotContain("Text=\"OpenAI (Official API)\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Tag=\"openai\"", xaml, StringComparison.Ordinal);

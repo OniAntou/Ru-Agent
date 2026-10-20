@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
 using RuAgent.Hosting;
 
 namespace RuAgent.Client;
@@ -30,9 +30,11 @@ public sealed class PublicHostStarter : IDisposable
         PublicHostLocator? locator = null,
         Func<string, CancellationToken, Task<bool>>? healthProbe = null,
         Func<string, string, CancellationToken, Task<bool>>? startHost = null,
-        int publicPort = 8000,
+        int publicPort = PublicHostRuntimeOptions.DefaultPublicPort,
         Func<ProcessStartInfo, Process?>? startProcess = null)
     {
+        if (publicPort != 0 && (publicPort < 1024 || publicPort > 65535))
+            throw new ArgumentOutOfRangeException(nameof(publicPort));
         _locator = locator ?? new PublicHostLocator();
         _healthProbe = healthProbe ?? DefaultHealthProbeAsync;
         _startHostAsync = startHost ?? StartHostInternalAsync;
@@ -60,7 +62,7 @@ public sealed class PublicHostStarter : IDisposable
 
         // Start exactly one Public Host hidden and poll.
         // Acquire starter single-instance to ensure only one starter launches
-        await using var single = await RuAgent.Protocol.ThreadOwnedMutex.AcquireAsync("Local\\RuPublicHostStarter-" + _publicPort)
+        await using var single = await RuAgent.Protocol.ThreadOwnedMutex.AcquireAsync(CreateStarterMutexName(_locator.DescriptorPath))
             .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         bool isStarterOwner = single.IsAcquired;
@@ -73,10 +75,6 @@ public sealed class PublicHostStarter : IDisposable
 
         if (isStarterOwner)
         {
-            if (IsPortOccupied(_publicPort))
-            {
-                throw new AgentApiException("public_host_port_conflict", $"Public host port {_publicPort} is occupied by non-owned process.", 409);
-            }
             var bearer = GenerateBearerToken();
             var descriptorPath = _locator.DescriptorPath;
             // Generate descriptor nonce and times for host-owned descriptor will be done by host itself; we just trigger start
@@ -109,11 +107,9 @@ public sealed class PublicHostStarter : IDisposable
             await Task.Delay(200, cancellationToken).ConfigureAwait(false);
         }
 
-        // We started this host and it never became ready. Leaving it alive would
-        // wedge every later start: the stale descriptor plus the occupied port
-        // read as public_host_port_conflict forever, and the only cure is a
-        // manual kill. Reap exactly the tree we spawned -- never a host another
-        // client owns (for them _startedProcess is null and this is a no-op).
+        // We started this host and it never became ready. Reap exactly the tree
+        // we spawned -- never a host another client owns (for them
+        // _startedProcess is null and this is a no-op).
         if (isStarterOwner)
         {
             StopOwnedHost();
@@ -176,7 +172,7 @@ public sealed class PublicHostStarter : IDisposable
     {
         HostExitPortConflict => new AgentApiException(
             "public_host_port_conflict",
-            $"Public host port {_publicPort} is occupied by a process that bound after the port check.",
+            "The configured Public Host port is occupied by another process.",
             409),
         HostExitAlreadyRunning => new AgentApiException(
             "public_host_already_running",
@@ -187,8 +183,14 @@ public sealed class PublicHostStarter : IDisposable
             $"Public host exited with code {exitCode} before it became ready."),
     };
 
-    private static bool IsPortOccupied(int port)
-        => RuAgent.Hosting.PortProbe.IsLoopbackPortOccupied(port);
+    private static string CreateStarterMutexName(string descriptorPath)
+    {
+        var profileRoot = Path.GetDirectoryName(Path.GetFullPath(descriptorPath))
+            ?? throw new ArgumentException("Runtime descriptor path has no profile root.", nameof(descriptorPath));
+        profileRoot = Path.TrimEndingDirectorySeparator(profileRoot).ToUpperInvariant();
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(profileRoot));
+        return "Local\\RuPublicHostStarter-" + Convert.ToHexString(digest).ToLowerInvariant();
+    }
 
     private static readonly HttpClient HealthProbeClient = new()
     {
@@ -277,10 +279,10 @@ public sealed class PublicHostStarter : IDisposable
             var psi = new ProcessStartInfo
             {
                 FileName = exe,
-                // The host's command-line configuration provider treats the
-                // value-less --managed-runtime switch as consuming the next
-                // token, so --urls has to come first or it is silently dropped
-                // and the host falls back to the 8000 default.
+                // --urls has to come before the value-less managed-runtime switch
+                // because the command-line configuration provider treats the
+                // switch as consuming the next token. Port zero delegates port
+                // selection to Kestrel.
                 Arguments = $"--urls http://127.0.0.1:{_publicPort} --managed-runtime",
                 WorkingDirectory = actualProjectRoot,
                 UseShellExecute = false,

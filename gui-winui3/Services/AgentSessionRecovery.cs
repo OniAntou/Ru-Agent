@@ -31,4 +31,26 @@ internal sealed class AgentSessionRecovery
     public static bool IsRecoverable(AgentApiException exception) =>
         exception is not null
         && exception.ErrorCode is "session_not_found" or "invalid_session_id";
+
+    internal static async Task<bool?> TryRecoverAsync(
+        AgentApiException error,
+        bool enabled,
+        string? sessionId,
+        Func<bool> ownsSession,
+        Func<bool> tryClaim,
+        Func<Task> recover,
+        Func<Task<bool>> replay)
+    {
+        ArgumentNullException.ThrowIfNull(ownsSession);
+        ArgumentNullException.ThrowIfNull(tryClaim);
+        ArgumentNullException.ThrowIfNull(recover);
+        ArgumentNullException.ThrowIfNull(replay);
+        if (!enabled || sessionId is null || !IsRecoverable(error) || !ownsSession() || !tryClaim())
+        {
+            return null;
+        }
+
+        await recover().ConfigureAwait(true);
+        return await replay().ConfigureAwait(true);
+    }
 }

@@ -9,6 +9,7 @@ using RuBackend.Business.Settings;
 using RuBackend.Providers;
 using RuBackend.Harness.Workspace;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Harness.Prompting;
 
 /// <summary>

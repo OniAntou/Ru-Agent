@@ -5,11 +5,12 @@ using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Hosting;
 
-// Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, publish descriptor. Moved
-// verbatim from Program.cs so startup order is unchanged. The execution
-// authority itself is composed in DI (InProcessExecutionAuthority); this
-// bootstrap no longer starts or owns any child process.
+// Managed runtime bootstrap BEFORE DI: resolve paths, check any fixed-port
+// conflict, acquire single instance and generate credentials. Descriptor
+// publication waits until Kestrel reports its actual bound address. Moved from
+// Program.cs so startup order is unchanged. The execution authority itself is
+// composed in DI (InProcessExecutionAuthority); this bootstrap no longer starts
+// or owns any child process.
 internal sealed record ManagedRuntimeBootstrap(
     string? PublicBearer,
     RuntimeDescriptorWriter DescriptorWriter,
@@ -42,18 +43,19 @@ internal static class ManagedRuntimeBootstrapper
         var descriptorPath = RuAgent.Hosting.PublicHostRuntimeOptions.ResolveDescriptorPath(configDataRoot, configLogRoot, projectRoot);
         var managedDescriptorWriter = new RuAgent.Hosting.RuntimeDescriptorWriter(descriptorPath);
 
-        // Determine public port from BindUrl. The managed launcher passes --urls;
-        // reading it here keeps the conflict/single-instance gate on the same port
-        // the host will actually bind instead of a stale default.
+        // The managed launcher passes --urls. Port zero asks Kestrel to bind an
+        // available loopback port; fixed user configuration keeps its explicit
+        // conflict check and port guard.
         var bindUrl = configuration["RuBackend:BindUrl"]
             ?? configuration["urls"]
             ?? RuAgent.Hosting.PublicHostRuntimeOptions.DefaultBindUrl;
-        int publicPort = new Uri(RuAgent.Hosting.PublicHostRuntimeOptions.DefaultBindUrl).Port;
-        if (Uri.TryCreate(bindUrl, UriKind.Absolute, out var bindUri))
-            publicPort = bindUri.Port;
+        var publicPort = Uri.TryCreate(bindUrl, UriKind.Absolute, out var bindUri)
+            ? bindUri.Port
+            : 0;
 
-        // Port conflict check: if port occupied and no valid owned descriptor, fail fast
-        if (IsPortOccupied(publicPort) && managedDescriptorWriter.IsStale())
+        // Fixed ports fail with a stable code when already held. Port zero is
+        // reserved by Kestrel at startup and has no pre-bind conflict to probe.
+        if (publicPort > 0 && IsPortOccupied(publicPort) && managedDescriptorWriter.IsStale())
         {
             throw new HostStartupException("{\"error_code\":\"public_host_port_conflict\"}", 2);
         }
@@ -69,13 +71,12 @@ internal static class ManagedRuntimeBootstrapper
             ? PublicHostRuntimeOptions.GetDefaultBusinessRoot(projectRoot)
             : configDataRoot;
         var managedLogRoot = PublicHostRuntimeOptions.ResolveLogRoot(projectRoot, configLogRoot);
-        var managedSingleInstance = RuAgent.Hosting.PublicHostSingleInstance.AcquireForPortAndDataRoot(
-            publicPort,
-            effectiveDataRoot,
-            managedLogRoot);
+        var managedSingleInstance = publicPort == 0
+            ? RuAgent.Hosting.PublicHostSingleInstance.AcquireForDataAndLogRoot(effectiveDataRoot, managedLogRoot)
+            : RuAgent.Hosting.PublicHostSingleInstance.AcquireForPortAndDataRoot(publicPort, effectiveDataRoot, managedLogRoot);
         if (!managedSingleInstance.IsAcquired)
         {
-            managedSingleInstance.Dispose();
+            await managedSingleInstance.DisposeAsync().ConfigureAwait(false);
             throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
         }
 
@@ -99,27 +100,38 @@ internal static class ManagedRuntimeBootstrapper
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
-        // Publish ACL-restricted descriptor before health is available. A valid
-        // descriptor at this point belongs to a live instance that holds the
-        // lock elsewhere; refuse to clobber it.
-        var proc = Process.GetCurrentProcess();
-        var descriptor = new RuntimeDescriptor(
-            RuntimeDescriptor.CurrentProtocolVersion,
-            $"http://127.0.0.1:{publicPort}/",
-            managedPublicBearer,
-            proc.Id,
-            proc.StartTime.ToUniversalTime().ToString("O"),
-            RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
-            DateTimeOffset.UtcNow.ToString("O"));
-        if (!await managedDescriptorWriter.TryWriteIfUnclaimedAsync(descriptor).ConfigureAwait(false))
-        {
-            throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
-        }
-
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,
             managedDescriptorWriter,
             managedSingleInstance);
+    }
+
+    internal static async Task<bool> PublishDescriptorAsync(
+        ManagedRuntimeBootstrap bootstrap,
+        Uri boundAddress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bootstrap);
+        ArgumentNullException.ThrowIfNull(boundAddress);
+        if (!boundAddress.IsLoopback
+            || boundAddress.Scheme != Uri.UriSchemeHttp
+            || boundAddress.Port is < 1024 or > 65535)
+        {
+            throw new InvalidOperationException("public_host_bound_address_invalid");
+        }
+
+        var proc = Process.GetCurrentProcess();
+        var descriptor = new RuntimeDescriptor(
+            RuntimeDescriptor.CurrentProtocolVersion,
+            new UriBuilder(boundAddress) { Path = "/", Query = string.Empty, Fragment = string.Empty }.Uri.AbsoluteUri,
+            bootstrap.PublicBearer ?? throw new InvalidOperationException("managed_public_bearer_missing"),
+            proc.Id,
+            proc.StartTime.ToUniversalTime().ToString("O"),
+            RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
+            DateTimeOffset.UtcNow.ToString("O"));
+        return await bootstrap.DescriptorWriter
+            .TryWriteIfUnclaimedAsync(descriptor, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static bool IsPortOccupied(int port)

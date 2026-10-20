@@ -19,9 +19,14 @@ public sealed partial class SubagentNativeControlTests
     {
         await storage.PayloadStore.CaptureBaseContextAsync(root.RunId, [], DateTimeOffset.UtcNow, default);
         var model = new WaitModel(agentId);
+        var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory);
         var factory = new AgentRuntimeCoordinatorFactory(model, storage.EventStore, storage.Options, storage.PayloadStore,
+            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+            workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
             settings: new NativeSettings(), time: new SystemTimeProvider(), contextLimit: new StaticModelContextLimitProvider(100000),
-            brokerGateways: execution.Factory);
+            brokerGateways: execution.Factory, subagentBinder: factoryDeps.Binder,
+            familyBudget: factoryDeps.FamilyBudget, subagentInbox: factoryDeps.Inbox,
+            transientRedactor: RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty);
         var coordinator = await factory.CreateAsync(repo, policy, root.RunId, root.SessionId.Value);
         var parked = await coordinator.RunOneStepAsync(root.RunId, default);
         Assert.Equal(HarnessRunState.WaitingSubagents, parked.Run.State);

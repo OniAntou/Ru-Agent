@@ -154,7 +154,7 @@ agent rpc
 - Assistant prose is rendered, not printed: fenced code becomes verbatim rows behind a `│` gutter, inline emphasis and links render in place, and headings, bullets, ordered items, quotes and rules lose their markers. The inline markers are:
 
 ```text
-**bold**   *italic*   `code`   ~~struck~~   [label](url)   \*escaped\*
+**bold**   *italic*   `code`   ~~struck~~   [label](https://example.com)   \*escaped\*
 ```
 
   Tables and nested lists are out of scope on purpose. Because a streamed delta can cut a marker in half, only the trailing run of marker characters is held back for the next delta, and a leading `*`/`_` is read as an opener only when a word character precedes it — so the text always arrives complete and in order, even when an emphasis spanning a delta boundary loses its styling.

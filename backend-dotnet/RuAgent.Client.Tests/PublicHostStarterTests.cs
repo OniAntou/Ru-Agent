@@ -32,8 +32,8 @@ public sealed class PublicHostStarterTests : IDisposable
                 descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
             return true;
         }
-        using var first = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start, publicPort: port);
-        using var second = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start, publicPort: port);
+        using var first = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start);
+        using var second = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true), startHost: Start);
         var firstTask = first.GetOrStartAsync(_root);
         var secondTask = second.GetOrStartAsync(_root);
         try
@@ -124,7 +124,7 @@ public sealed class PublicHostStarterTests : IDisposable
     }
 
     [Fact]
-    public async Task PortConflictFailsWithStableCodeAndNeverKillsForeign()
+    public async Task ExplicitPortConflictFailsWithStableCodeAndNeverKillsForeign()
     {
         var port = FindFreePort();
         using var listener = new TcpListener(IPAddress.Loopback, port);
@@ -132,7 +132,19 @@ public sealed class PublicHostStarterTests : IDisposable
         try
         {
             var locator = new PublicHostLocator(Path.Combine(_root, "conflict-" + Guid.NewGuid().ToString("N")));
-            var starter = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(false), startHost: (_, _, _) => Task.FromResult(true), publicPort: port);
+            var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+            File.WriteAllBytes(executable, []);
+            using var starter = new PublicHostStarter(locator,
+                healthProbe: (_, _) => Task.FromResult(false),
+                publicPort: port,
+                startProcess: _ => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+                    Arguments = "/c exit 2",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }));
             var ex = await Assert.ThrowsAsync<AgentApiException>(() => starter.GetOrStartAsync(_root));
             Assert.Equal("public_host_port_conflict", ex.ErrorCode);
             // Ensure listener still alive (not killed)
@@ -142,6 +154,43 @@ public sealed class PublicHostStarterTests : IDisposable
         {
             listener.Stop();
         }
+    }
+
+    [Fact]
+    public async Task Default_starter_does_not_conflict_with_port_8000()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 8000);
+        listener.Start();
+        var locator = new PublicHostLocator(Path.Combine(_root, "dynamic-port"));
+        var port = FindFreePort();
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var startCount = 0;
+        using var starter = new PublicHostStarter(
+            locator,
+            healthProbe: (_, _) => Task.FromResult(File.Exists(locator.DescriptorPath)),
+            startHost: (_, bearer, _) =>
+            {
+                Interlocked.Increment(ref startCount);
+                var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(
+                    1,
+                    $"http://127.0.0.1:{port}/",
+                    bearer,
+                    process.Id,
+                    process.StartTime.ToUniversalTime().ToString("O"),
+                    new string('d', 32),
+                    DateTimeOffset.UtcNow.ToString("O"));
+                Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+                File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(
+                    descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+                return Task.FromResult(true);
+            });
+
+        var session = await starter.GetOrStartAsync(_root);
+
+        Assert.Equal(1, startCount);
+        Assert.Equal(port, session.BaseUri.Port);
+        Assert.NotEqual(8000, session.BaseUri.Port);
+        Assert.True(IsPortOccupied(8000));
     }
 
     [Theory]
@@ -286,7 +335,7 @@ public sealed class PublicHostStarterTests : IDisposable
     }
 
     [Fact]
-    public async Task Started_host_receives_urls_before_managed_runtime_for_the_public_port()
+    public async Task Started_host_receives_an_explicit_public_port_before_managed_runtime()
     {
         var port = FindFreePort();
         var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
@@ -313,6 +362,42 @@ public sealed class PublicHostStarterTests : IDisposable
 
         Assert.NotNull(session);
         Assert.Equal($"--urls http://127.0.0.1:{port} --managed-runtime", capturedArguments);
+    }
+
+    [Fact]
+    public async Task Default_starter_asks_kestrel_for_an_ephemeral_port()
+    {
+        var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllBytes(executable, []);
+        var locator = new PublicHostLocator(Path.Combine(_root, "default-port-args"));
+        string? capturedArguments = null;
+        using var starter = new PublicHostStarter(
+            locator,
+            healthProbe: (_, _) => Task.FromResult(File.Exists(locator.DescriptorPath)),
+            startProcess: info =>
+            {
+                capturedArguments = info.Arguments;
+                var process = System.Diagnostics.Process.GetCurrentProcess();
+                var port = FindFreePort();
+                var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(
+                    1,
+                    $"http://127.0.0.1:{port}/",
+                    info.Environment["RU_DESKTOP_TOKEN"]!,
+                    process.Id,
+                    process.StartTime.ToUniversalTime().ToString("O"),
+                    new string('e', 32),
+                    DateTimeOffset.UtcNow.ToString("O"));
+                Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+                File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(
+                    descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+                return process;
+            });
+
+        var session = await starter.GetOrStartAsync(_root);
+
+        Assert.NotNull(session);
+        Assert.Equal("--urls http://127.0.0.1:0 --managed-runtime", capturedArguments);
     }
 
     [Fact]

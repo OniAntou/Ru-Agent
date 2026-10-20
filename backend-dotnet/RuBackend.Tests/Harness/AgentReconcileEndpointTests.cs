@@ -12,6 +12,7 @@ using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Harness.Core.Workspace;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 public sealed class AgentReconcileEndpointTests

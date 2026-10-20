@@ -16,8 +16,6 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -178,23 +176,27 @@ namespace RuApp.Views
                 return;
             }
 
-            if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
+            var update = _agentActivityFeed.Apply(activity, AgentActivities);
+            if (update is null)
+            {
+                return;
+            }
+
+            var item = update.Value.Item;
+            if (!update.Value.Added)
             {
                 // Every frame is applied as it arrives. A completion used to be held
                 // for a minimum window to hide the flicker of a short row, which read
                 // as the feed standing still and then jumping: the row kept its
                 // running affordance while the tool had already finished.
-                if (existing.UpdateFrom(activity))
+                if (update.Value.Changed)
                 {
-                    TrackTerminalToolState(existing);
-                    TrackTerminalOutputRow(existing);
+                    TrackTerminalToolState(item);
+                    TrackTerminalOutputRow(item);
                 }
             }
             else
             {
-                var item = new AgentActivityItem(activity);
-
-                _agentActivityById.Add(item.ActivityId, item);
                 // Arrival order is the harness's order, and the harness emits one
                 // Thinking activity per model step keyed by that step's id, published
                 // when the step starts — before any of the step's tools. So a Thinking
@@ -208,14 +210,15 @@ namespace RuApp.Views
                 // only fired for a new step, where it put that step's failure above the
                 // previous step's work — a run failing on step 2 read as though it had
                 // failed before the tool it ran.
-                AgentActivities.Add(item);
                 FreezeTextSegmentForActivity(item);
                 TrackTerminalToolState(item);
                 TrackTerminalOutputRow(item);
             }
 
-            if (activity.Todos is not null)
-                UpdateTodoPanel(AgentActivities.LastOrDefault(item => item.Todos is not null)?.Todos);
+            if (update.Value.TodoPanelItems is { } todoPanelItems)
+            {
+                UpdateTodoPanel(todoPanelItems);
+            }
         }
 
         /// <summary>
@@ -719,7 +722,7 @@ namespace RuApp.Views
         {
             _sidePanelEditsDirty = true;
             SuspendAgentFeedUpdates();
-            _agentActivityById.Clear();
+            _agentActivityFeed.Clear();
             _activitySplitOffsetById.Clear();
             _segmentFrozenLength = 0;
             AgentActivities.Clear();

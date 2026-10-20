@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -15,18 +16,23 @@ public sealed class AgentProviderSnapshotFactory(
     ICredentialStore credentials,
     ProviderCatalogService catalog,
     SqliteAgentRunProviderSelectionStore selectionStore,
-    Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable
+    Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable, IAsyncDisposable
 {
+    private static readonly TimeSpan SynchronousDisposeTimeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _disposeSync = new();
     private readonly Dictionary<RunId, ProviderBootstrapData> _runs = [];
+    private Task? _disposeTask;
+    private int _disposeRequested;
     private bool _disposed;
 
     public async Task<ProviderBootstrapData> GetAsync(RunId runId, CancellationToken ct)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeRequested) != 0, this);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposeRequested != 0 || _disposed, this);
             if (_runs.TryGetValue(runId, out var cached)) return cached;
             await RemoveTerminalSnapshotsAsync(ct).ConfigureAwait(false);
             if (_runs.Count >= 64) throw new ProviderCatalogException("provider_snapshot_capacity");
@@ -290,7 +296,61 @@ public sealed class AgentProviderSnapshotFactory(
 
     public void Dispose()
     {
-        _gate.Wait();
+        var disposeTask = DisposeAsync().AsTask();
+        bool completed;
+        try { completed = disposeTask.Wait(SynchronousDisposeTimeout); }
+        catch (AggregateException error)
+        {
+            var failure = error.InnerException ?? error;
+            Trace.TraceError("Provider snapshot factory disposal failed ({0}).", failure.GetType().Name);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            throw;
+        }
+
+        if (!completed)
+        {
+            _ = disposeTask.ContinueWith(
+                static task =>
+                {
+                    if (task.Exception is { } error)
+                    {
+                        Trace.TraceError("Provider snapshot factory deferred disposal failed ({0}).",
+                            error.GetBaseException().GetType().Name);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            Trace.TraceError("Provider snapshot factory disposal exceeded its {0}-second limit; cleanup remains queued.",
+                SynchronousDisposeTimeout.TotalSeconds);
+            return;
+        }
+
+        try { disposeTask.GetAwaiter().GetResult(); }
+        catch (Exception error)
+        {
+            Trace.TraceError("Provider snapshot factory disposal failed ({0}).", error.GetType().Name);
+            throw;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        lock (_disposeSync)
+        {
+            if (_disposeTask is null)
+            {
+                Interlocked.Exchange(ref _disposeRequested, 1);
+                _disposeTask = DisposeCoreAsync();
+            }
+
+            return new ValueTask(_disposeTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
         try { _disposed = true; _runs.Clear(); }
         finally { _gate.Release(); }
     }

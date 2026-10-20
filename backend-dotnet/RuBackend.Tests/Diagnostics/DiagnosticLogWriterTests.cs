@@ -29,7 +29,7 @@ public sealed class DiagnosticLogWriterTests : IDisposable
     public async Task Writer_enqueues_non_blocking_and_flushes_batches_to_daily_jsonl()
     {
         var queue = new BoundedDiagnosticQueue(capacity: 100);
-        using var writer = new StructuredDiagnosticLogWriter(
+        await using var writer = new StructuredDiagnosticLogWriter(
             _tempLogDir,
             prefix: "aspnetcore-",
             queue: queue,

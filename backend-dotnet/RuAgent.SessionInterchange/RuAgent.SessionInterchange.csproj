@@ -7,6 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- For reading opencode's store, which moved from JSON files into SQLite in 1.18. -->
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 </Project>

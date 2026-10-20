@@ -81,6 +81,11 @@ def _run_build_script(
     build_root = tmp_path / "checkout"
     build_root.mkdir()
     shutil.copy2(repo_root / "build.bat", build_root / "build.bat")
+    (build_root / "scripts").mkdir()
+    shutil.copy2(
+        repo_root / "scripts" / "check_flat_assembly_identities.ps1",
+        build_root / "scripts" / "check_flat_assembly_identities.ps1",
+    )
     (build_root / "gui-winui3").mkdir()
     (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
     for relative in ("Assets/AppIcon.ico", "Assets/Fonts/Inter-Variable.ttf"):
@@ -104,8 +109,6 @@ def _run_build_script(
     (build_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj").write_text(
         "stub\n", encoding="utf-8"
     )
-    (build_root / "scripts").mkdir()
-
     _write_stub_commands(
         tmp_path,
         gui_publish_exists=gui_publish_exists,
@@ -131,7 +134,8 @@ def test_release_build_completes_without_optional_plugins(tmp_path: Path) -> Non
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Build complete" in result.stdout
-    assert not (tmp_path / "checkout" / "powershell.invocations").exists()
+    power_shell_calls = (tmp_path / "checkout" / "powershell.invocations").read_text(encoding="utf-8")
+    assert "check_flat_assembly_identities.ps1" in power_shell_calls
 
 
 def test_publish_order_and_self_contained_gui_flags(tmp_path: Path) -> None:
@@ -204,6 +208,20 @@ def test_flat_layout_stage_does_not_copy_the_destination_into_itself(tmp_path: P
     assert result.returncode == 0, result.stdout + result.stderr
     assert "cyclic copy" not in result.stdout
     assert "cyclic copy" not in result.stderr
+
+
+def test_flat_layout_checks_assembly_identities_before_copying() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    build_script = (repo_root / "build.bat").read_text(encoding="utf-8")
+    identity_script = (repo_root / "scripts" / "check_flat_assembly_identities.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "check_flat_assembly_identities.ps1" in build_script
+    assert build_script.index("check_flat_assembly_identities.ps1") < build_script.index("xcopy /E /I /Y /Q")
+    assert "AssemblyName]::GetAssemblyName" in identity_script
+    assert "conflicting assembly identities" in identity_script
+    assert "flat layout is missing" in build_script
 
 
 def test_release_reports_the_windows_app_runtime_as_bundled(tmp_path: Path) -> None:

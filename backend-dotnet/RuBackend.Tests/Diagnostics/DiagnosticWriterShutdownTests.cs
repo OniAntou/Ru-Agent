@@ -14,7 +14,7 @@ public sealed class DiagnosticWriterShutdownTests
         Directory.CreateDirectory(root);
         try
         {
-            using var writer = new StructuredDiagnosticLogWriter(root);
+            await using var writer = new StructuredDiagnosticLogWriter(root);
             Assert.True(writer.TryEnqueue(new DiagnosticEvent(
                 "e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
             Assert.Equal(DiagnosticShutdownOutcome.Drained,
@@ -25,6 +25,27 @@ public sealed class DiagnosticWriterShutdownTests
             var file = Assert.Single(Directory.GetFiles(root, "aspnetcore-*.jsonl"));
             Assert.Single(await File.ReadAllLinesAsync(file));
             using var exclusive = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
+    [Fact]
+    public async Task Async_dispose_reports_shutdown_and_waits_for_quiescent_cleanup()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-async-dispose-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var writer = new StructuredDiagnosticLogWriter(root);
+            Assert.True(writer.TryEnqueue(new DiagnosticEvent(
+                "e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
+
+            await writer.DisposeAsync();
+
+            Assert.Equal(DiagnosticShutdownOutcome.Drained, writer.LastShutdownOutcome);
+            await writer.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(writer.TryEnqueue(new DiagnosticEvent(
+                "e2", 1720000001, "2024-07-03T09:46:41Z", "info", "host", "host_startup")));
         }
         finally { try { Directory.Delete(root, true); } catch { } }
     }
@@ -227,6 +248,7 @@ public sealed class DiagnosticWriterShutdownTests
             // Second dispose should be no-op
             writer.Dispose();
             writer.Dispose();
+            Assert.Equal<DiagnosticShutdownOutcome?>(DiagnosticShutdownOutcome.Incomplete, writer.LastShutdownOutcome);
         }
         finally
         {
@@ -274,7 +296,7 @@ public sealed class DiagnosticWriterShutdownTests
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-noop-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        using var writer = new StructuredDiagnosticLogWriter(root);
+        await using var writer = new StructuredDiagnosticLogWriter(root);
         Assert.True(writer.TryEnqueue(new DiagnosticEvent("e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
         await writer.StopAsync(TimeSpan.FromSeconds(2));
         await writer.Completion.WaitAsync(TimeSpan.FromSeconds(5));
@@ -297,7 +319,7 @@ public sealed class DiagnosticWriterShutdownTests
         var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-fail-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var sink = new FailingDiagnosticLogSink();
-        using var writer = new StructuredDiagnosticLogWriter(root, sink: sink, flushInterval: TimeSpan.FromMilliseconds(20));
+        await using var writer = new StructuredDiagnosticLogWriter(root, sink: sink, flushInterval: TimeSpan.FromMilliseconds(20));
         Assert.True(writer.TryEnqueue(new DiagnosticEvent("e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
         var outcome = await writer.StopAsync(TimeSpan.FromSeconds(2));
         await writer.Completion.WaitAsync(TimeSpan.FromSeconds(5));

@@ -15,6 +15,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Protocol.Subagents;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 public sealed partial class SubagentGatewayTests
@@ -74,15 +75,22 @@ public sealed partial class SubagentGatewayTests
         await storage.PayloadStore.CaptureBaseContextAsync(child.Run.RunId, [], DateTimeOffset.UtcNow, default);
         Assert.True(await agents.TryAdmitAsync(agentId: "agent_review", now: BackendHarnessTestFixture.Timestamp.AddSeconds(1), ct: default));
         var model = new CapabilityCapture(ScriptedModelStepRunner.FromJsonForTests("""[{"text":"review result"}]"""));
+        var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory, agents,
+            budgetTime: new FixedTestClock(BackendHarnessTestFixture.Timestamp.AddSeconds(2)));
         var factory = new AgentRuntimeCoordinatorFactory(model,
-            storage.EventStore, storage.Options, storage.PayloadStore, settings: new StubSettings(), time: new SystemTimeProvider(),
-            contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory, subagentBinder: binder);
+            storage.EventStore, storage.Options, storage.PayloadStore,
+            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+            workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
+            settings: new StubSettings(), time: new SystemTimeProvider(),
+            contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,
+            subagentBinder: binder, familyBudget: factoryDeps.FamilyBudget, subagentInbox: factoryDeps.Inbox,
+            transientRedactor: RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty);
         SessionApprovalLedger.Remember(child.Run.SessionId.Value, new PolicyMatcher(ToolId: "list"), DateTimeOffset.UtcNow);
         var effectiveChild = SessionApprovalLedger.Apply(policy, child.Run.SessionId.Value, DateTimeOffset.UtcNow)!;
         var coordinator = await factory.CreateAsync(execution.WorkspaceRoot, effectiveChild, child.Run.RunId, child.Run.SessionId.Value);
         SessionApprovalLedger.ClearSession(child.Run.SessionId.Value);
         var completed = await coordinator.RunOneStepAsync(child.Run.RunId, default);
-        Assert.Equal(HarnessRunState.Completed, completed.Run.State);
+        Assert.True(completed.Run.State == HarnessRunState.Completed, $"state={completed.Run.State} error={completed.ErrorCode}");
         Assert.Contains("read", model.Tools);
         Assert.DoesNotContain("ask_user", model.Tools);
         Assert.DoesNotContain("write", model.Tools);

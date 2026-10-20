@@ -17,8 +17,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -57,9 +55,9 @@ namespace RuApp.Views
                 // Kept so a failed send can name the provider that has no key
                 // without asking the backend again while reporting a failure.
                 _currentSettings = settings;
-                string backend = settings.BackendChoice ?? string.Empty;
-                string currentModel = ProviderModelSelection.GetSelectedModel(settings, backend);
-
+                _modelSelectionPresenter.Adopt(settings);
+                string backend = _modelSelectionPresenter.Backend;
+                string currentModel = _modelSelectionPresenter.Model;
                 _selectedModel = currentModel;
                 _selectedBackend = backend;
                 _groupedCatalogs?.SetSelection(backend, currentModel);
@@ -132,7 +130,7 @@ namespace RuApp.Views
         private DispatcherQueueTimer? _groupedPublishCoalesceTimer;
         private GroupedProviderCatalogState? _pendingGroupedState;
         private bool _modelPickerDirty = true;
-        private readonly ModelSelectionSaveQueue _modelSelectionSaves = new();
+        private readonly ChatModelSelectionPresenter _modelSelectionPresenter = new();
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
@@ -239,6 +237,7 @@ namespace RuApp.Views
             {
                 _selectedBackend = state.SelectedBackend;
             }
+            _modelSelectionPresenter.Adopt(_selectedBackend, _selectedModel);
             ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(
                 state.SelectedBackend, state.SelectedModel);
             // The dropdown tree costs a full rebuild per publish; with two
@@ -278,21 +277,20 @@ namespace RuApp.Views
         {
             try
             {
-                if (_apiService is null ||
-                    string.IsNullOrWhiteSpace(backend) ||
-                    string.IsNullOrWhiteSpace(model))
+                if (_apiService is null)
                 {
                     ShowModelSaveFailure();
                     return;
                 }
 
-                var result = await _modelSelectionSaves.SaveAsync(
-                    () => _apiService.SaveProviderModelSelectionAsync(backend, model));
+                var apiService = _apiService;
+                var result = await _modelSelectionPresenter.SelectAsync(
+                    model, backend, apiService.SaveProviderModelSelectionAsync);
                 if (result == ModelSelectionSaveResult.Superseded || _scrollingDisposed) return;
                 if (result == ModelSelectionSaveResult.Saved)
                 {
-                    _selectedModel = model;
-                    _selectedBackend = backend;
+                    _selectedModel = _modelSelectionPresenter.Model;
+                    _selectedBackend = _modelSelectionPresenter.Backend;
                     // Reset effort so stale value from previous model/backend cannot
                     // stick when the new model has different levels. Fresh server
                     // effort arrives via grouped refresh below.

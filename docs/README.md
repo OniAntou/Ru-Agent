@@ -1,8 +1,9 @@
 # Ru documentation
 
-This directory contains only current operating documentation and accepted
-architecture decisions. Completed implementation plans and design drafts are
-kept in Git history instead of the working tree.
+Current operating documentation and accepted architecture decisions live here.
+Isolated [historical verification evidence](history/verification/README.md)
+records old snapshots without making them current operating instructions.
+Completed implementation plans and design drafts belong in Git history.
 
 A plan may sit in the working tree only while it is still open, and it must say
 so with a `status: pending` or `status: in-progress` marker.
@@ -25,7 +26,10 @@ Task-oriented pages for people using Ru; start here before the reference materia
 ## Current system
 
 - [Windows distributions and updates](operations/distribution-and-updates.md)
-- [Architecture](architecture.md)
+- [Architecture and ownership](architecture.md)
+- Component implementation: [Host](architecture/host.md), [Harness](architecture/harness.md),
+  [Broker](architecture/broker.md), [GUI](architecture/gui.md), [TUI](architecture/tui.md),
+  [Providers](architecture/providers.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
 - [The stdio RPC bridge](operations/rpc.md)
@@ -78,8 +82,9 @@ Git history is the recovery source for removed dated plans, specifications,
 reviews and verification records.
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
-`full_access` profiles defined in [`../CONTEXT.md`](../CONTEXT.md) — that file
-is the single source for the matrix, and this page does not restate it. Under
+`full_access` profiles defined by the Protocol catalog and described in
+[tool policy](operations/agent-tools.md); [CONTEXT.md](../CONTEXT.md) defines the
+domain terms. This index does not restate the matrix. Under
 `full_access` everything else runs automatically, and structured protected
 paths are allowed like any other target. Workspace trust is explicit once per
 canonical identity: the

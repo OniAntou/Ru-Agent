@@ -81,16 +81,25 @@ public sealed class SubagentSchedulingTests
         var blocked = new BlockingModel();
         IModelStepRunner model = closeParents ? blocked : ScriptedModelStepRunner.FromJsonForTests(
             """[{"text":"review one"},{"text":"review two"},{"text":"review three"},{"text":"review four"}]""");
+        var factoryDeps = SubagentCoordinatorFactoryTestDependencies.Create(storage, execution.Factory, agents);
         var factory = new AgentRuntimeCoordinatorFactory(model,
-            storage.EventStore, storage.Options, storage.PayloadStore, settings: new Settings(), time: new SystemTimeProvider(),
-            contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory, subagentBinder: binder);
+            storage.EventStore, storage.Options, storage.PayloadStore,
+            inspectionGate: new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+            workspaceCoordinatorStore: new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
+            settings: new Settings(), time: new SystemTimeProvider(),
+            contextLimit: new StaticModelContextLimitProvider(100000), brokerGateways: execution.Factory,
+            subagentBinder: binder, familyBudget: factoryDeps.FamilyBudget, subagentInbox: factoryDeps.Inbox,
+            transientRedactor: RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty);
         var sessions = new SessionStore(new DataPaths(Path.Combine(storage.RootPath, "settings.json"),
             Path.Combine(storage.RootPath, "sessions"), Path.Combine(storage.RootPath, "activity.log")), TimeProvider.System);
         var dispatcher = new AgentConversationOutboxDispatcher(new HarnessOutboxStore(storage.Options), storage.PayloadStore, sessions,
             new HarnessModelContextBootstrapper(sessions, storage.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
             new AgentRunHistoryTransitionSink(factory, roots), TimeProvider.System);
         using var loop = new AgentRuntimeLoopService(dispatcher, storage.EventStore, factory, roots,
-            NullLogger<AgentRuntimeLoopService>.Instance, brokerGateways: execution.Factory, subagents: scheduler, subagentWaits: waits);
+            NullLogger<AgentRuntimeLoopService>.Instance,
+            new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(storage.Options),
+            new RuAgent.Harness.Persistence.WorkspaceJournalProtector(storage.KeyStore),
+            execution.Factory, subagents: scheduler, subagentWaits: waits);
         if (closeParents)
         {
             using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(15));

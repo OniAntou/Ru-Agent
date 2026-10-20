@@ -40,8 +40,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly Action<Action>? _synchronize;
     private readonly Action<AgentEventModel>? _auditSink;
     private readonly object _gate = new();
-    private readonly HashSet<string> _assistantDeltaKeys = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _toolOutputKeys = new(StringComparer.Ordinal);
+    private readonly AgentRunDeltaDeduplicator _deltaDeduplicator = new();
 
     // The busy flag and status line live in OperationStatus, shared with the policy
     // controller so both present one shape to the view. The `using static` below keeps
@@ -49,6 +48,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly OperationStatus _status;
 
     private AgentRunModel? _currentRun;
+    private readonly AgentRunApprovalCoordinator _approvalCoordinator = new();
+    private readonly AgentRunInputCoordinator _inputCoordinator = new();
     private string? _currentRunId;
     private CreateAgentRunRequest? _pendingCreateRequest;
     private TaskCompletionSource? _pendingCreateSettled;
@@ -61,12 +62,6 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// </summary>
     private const string ReconciliationWaitKind = "reconciliation_required";
 
-    private string? _pendingApprovalId;
-    private string? _pendingApprovalSummary;
-    private string? _pendingApprovalCommand;
-    private string? _pendingInputId;
-    private string? _pendingInputQuestion;
-    private IReadOnlyList<string> _pendingInputOptions = Array.Empty<string>();
     private string? _streamTerminalStatus;
     private bool _isCancelRequested;
     private bool _isPendingCreateOutcomeUnknown;
@@ -142,12 +137,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public string? PendingApprovalId
     {
-        get { lock (_gate) return _pendingApprovalId; }
+        get { lock (_gate) return _approvalCoordinator.Id; }
         private set
         {
             lock (_gate)
             {
-                _pendingApprovalId = value;
+                _approvalCoordinator.SetId(value);
             }
 
             OnPropertyChanged(nameof(PendingApprovalId));
@@ -157,12 +152,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public string? PendingApprovalSummary
     {
-        get { lock (_gate) return _pendingApprovalSummary; }
+        get { lock (_gate) return _approvalCoordinator.Summary; }
         private set
         {
             lock (_gate)
             {
-                _pendingApprovalSummary = value;
+                _approvalCoordinator.SetSummary(value);
             }
 
             OnPropertyChanged(nameof(PendingApprovalSummary));
@@ -171,12 +166,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public string? PendingApprovalCommand
     {
-        get { lock (_gate) return _pendingApprovalCommand; }
+        get { lock (_gate) return _approvalCoordinator.Command; }
         private set
         {
             lock (_gate)
             {
-                _pendingApprovalCommand = value;
+                _approvalCoordinator.SetCommand(value);
             }
 
             OnPropertyChanged(nameof(PendingApprovalCommand));
@@ -187,12 +182,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public string? PendingInputId
     {
-        get { lock (_gate) return _pendingInputId; }
+        get { lock (_gate) return _inputCoordinator.Id; }
         private set
         {
             lock (_gate)
             {
-                _pendingInputId = value;
+                _inputCoordinator.SetId(value);
             }
 
             OnPropertyChanged(nameof(PendingInputId));
@@ -202,12 +197,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public string? PendingInputQuestion
     {
-        get { lock (_gate) return _pendingInputQuestion; }
+        get { lock (_gate) return _inputCoordinator.Question; }
         private set
         {
             lock (_gate)
             {
-                _pendingInputQuestion = value;
+                _inputCoordinator.SetQuestion(value);
             }
 
             OnPropertyChanged(nameof(PendingInputQuestion));
@@ -216,12 +211,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public IReadOnlyList<string> PendingInputOptions
     {
-        get { lock (_gate) return _pendingInputOptions; }
+        get { lock (_gate) return _inputCoordinator.Options; }
         private set
         {
             lock (_gate)
             {
-                _pendingInputOptions = value;
+                _inputCoordinator.SetOptions(value);
             }
 
             OnPropertyChanged(nameof(PendingInputOptions));
@@ -283,8 +278,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 _pendingCreateRequest = requestSnapshot;
                 _pendingCreateSettled = createSettled;
                 ownershipGeneration = ++_runOwnershipGeneration;
-                _assistantDeltaKeys.Clear();
-                _toolOutputKeys.Clear();
+                _deltaDeduplicator.Reset();
                 _streamTerminalStatus = null;
             }
         }
@@ -584,8 +578,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             _isBusy = true;
             _subscriptionCts = cts;
             ownershipGeneration = ++_runOwnershipGeneration;
-            _assistantDeltaKeys.Clear();
-            _toolOutputKeys.Clear();
+            _deltaDeduplicator.Reset();
             _streamTerminalStatus = null;
             // Hand the run id over before the first UI frame: the delta/activity
             // handlers read it on the SSE thread, and a UI-queued assignment lets
@@ -970,19 +963,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public async Task ApproveAsync(CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
-        var approvalId = PendingApprovalId;
-        if (runId is null || approvalId is null)
-        {
-            throw new InvalidOperationException("No Agent approval is pending.");
-        }
-
-        RunOnUi(() => _statusText = "Submitting approval...");
-        // Session permission is decided server-side: Host picks the right
-        // one-time token (session directory grant or ephemeral terminal token)
-        // from the pending approval binding. The UI never selects a scope.
-        await _client.ApproveAsync(runId, approvalId, "once", cancellationToken).ConfigureAwait(false);
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await SubmitApprovalAsync(AgentApprovalOperation.AllowOnce, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -992,16 +973,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public async Task ApproveSessionDirectoryAsync(CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
-        var approvalId = PendingApprovalId;
-        if (runId is null || approvalId is null)
-        {
-            throw new InvalidOperationException("No Agent approval is pending.");
-        }
-
-        RunOnUi(() => _statusText = "Submitting approval...");
-        await _client.ApproveAsync(runId, approvalId, "session", cancellationToken).ConfigureAwait(false);
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await SubmitApprovalAsync(AgentApprovalOperation.AllowSessionDirectory, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1011,30 +983,12 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public async Task ApproveAlwaysAsync(CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
-        var approvalId = PendingApprovalId;
-        if (runId is null || approvalId is null)
-        {
-            throw new InvalidOperationException("No Agent approval is pending.");
-        }
-
-        RunOnUi(() => _statusText = "Submitting approval...");
-        await _client.ApproveAsync(runId, approvalId, "always", cancellationToken).ConfigureAwait(false);
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await SubmitApprovalAsync(AgentApprovalOperation.AllowAlways, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DenyAsync(CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
-        var approvalId = PendingApprovalId;
-        if (runId is null || approvalId is null)
-        {
-            throw new InvalidOperationException("No Agent approval is pending.");
-        }
-
-        RunOnUi(() => _statusText = "Denying approval...");
-        await _client.DenyAsync(runId, approvalId, cancellationToken).ConfigureAwait(false);
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await SubmitApprovalAsync(AgentApprovalOperation.Deny, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1045,22 +999,67 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public async Task SubmitInputAsync(string answer, CancellationToken cancellationToken = default)
     {
-        var runId = CurrentRun?.RunId;
-        var inputId = PendingInputId;
-        if (runId is null || inputId is null)
-        {
-            throw new InvalidOperationException("No Agent question is pending.");
-        }
+        var request = CaptureInputRequest();
+        await _inputCoordinator.SubmitAsync(
+            answer,
+            request.RunId,
+            request.InputId,
+            _client,
+            status => RunOnUi(() => _statusText = status),
+            IsCurrentInputRequest,
+            () => RunOnUi(() =>
+            {
+                if (!IsCurrentInputRequest(request.RunId!, request.InputId!)) return;
+                PendingInputId = null;
+                PendingInputQuestion = null;
+                PendingInputOptions = Array.Empty<string>();
+            }),
+            RefreshAsync,
+            cancellationToken).ConfigureAwait(false);
+    }
 
-        RunOnUi(() => _statusText = "Submitting answer...");
-        await _client.SubmitInputAsync(runId, inputId, answer, cancellationToken).ConfigureAwait(false);
-        RunOnUi(() =>
+    private Task SubmitApprovalAsync(AgentApprovalOperation operation, CancellationToken cancellationToken) =>
+        SubmitApprovalAsync(CaptureApprovalRequest(), operation, cancellationToken);
+
+    private Task SubmitApprovalAsync(
+        (string? RunId, string? ApprovalId) request,
+        AgentApprovalOperation operation,
+        CancellationToken cancellationToken) => _approvalCoordinator.SubmitAsync(
+            request.RunId,
+            request.ApprovalId,
+            operation,
+            _client,
+            status => RunOnUi(() => _statusText = status),
+            IsCurrentApprovalRequest,
+            RefreshAsync,
+            cancellationToken);
+
+    private (string? RunId, string? ApprovalId) CaptureApprovalRequest()
+    {
+        lock (_gate) return (_currentRun?.RunId, _approvalCoordinator.Id);
+    }
+
+    private (string? RunId, string? InputId) CaptureInputRequest()
+    {
+        lock (_gate) return (_currentRun?.RunId, _inputCoordinator.Id);
+    }
+
+    private bool IsCurrentApprovalRequest(string runId, string approvalId)
+    {
+        lock (_gate)
         {
-            PendingInputId = null;
-            PendingInputQuestion = null;
-            PendingInputOptions = Array.Empty<string>();
-        });
-        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+            return string.Equals(_currentRun?.RunId, runId, StringComparison.Ordinal)
+                && string.Equals(_approvalCoordinator.Id, approvalId, StringComparison.Ordinal);
+        }
+    }
+
+    private bool IsCurrentInputRequest(string runId, string inputId)
+    {
+        lock (_gate)
+        {
+            return string.Equals(_currentRun?.RunId, runId, StringComparison.Ordinal)
+                && string.Equals(_inputCoordinator.Id, inputId, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
@@ -1444,8 +1443,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                         return;
                     }
 
-                    var key = $"{runId}:{model.ModelStepId}:{model.TransientSequence}";
-                    if (!_assistantDeltaKeys.Add(key))
+                    if (!_deltaDeduplicator.TryAcceptAssistant(runId, model.ModelStepId, model.TransientSequence))
                     {
                         Interlocked.Increment(ref _droppedDeltasAsDuplicates);
                         return;
@@ -1488,8 +1486,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                         return;
                     }
 
-                    var key = $"{runId}:{model.ExecutionId}:{model.TransientSequence}";
-                    if (!_toolOutputKeys.Add(key))
+                    if (!_deltaDeduplicator.TryAcceptToolOutput(runId, model.ExecutionId, model.TransientSequence))
                     {
                         return;
                     }

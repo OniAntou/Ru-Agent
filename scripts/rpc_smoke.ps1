@@ -10,9 +10,8 @@
 # notifications until a terminal status, and only then closes stdin. A non-JSON
 # line on stdout, a timeout or a non-zero exit is a failure.
 param(
-    # 0 asks the OS for a free loopback port, so a host already bound to the
-    # historical default (8000) cannot make this smoke fail. Pass an explicit
-    # port only when debugging a known failure against a fixed port.
+    # 0 asks Kestrel for an ephemeral loopback port. Pass an explicit port only
+    # when debugging a known failure against a fixed port.
     [int]$Port = 0
 )
 
@@ -150,24 +149,11 @@ function Resolve-SmokePort([int]$RequestedPort) {
             throw "-Port must be between 1024 and 65535; got $RequestedPort."
         }
 
-        if ($RequestedPort -eq 8001) {
-            throw "-Port 8001 is reserved by the managed host's port scheme; pick another port."
-        }
-
         Assert-SmokePortFree -Port $RequestedPort
         return $RequestedPort
     }
 
-    # Port 0 asks the OS for a free loopback port; the listener closes before the
-    # host starts. A race is possible, but the host's own conflict gate turns it
-    # into a loud failure instead of the smoke silently exercising another process.
-    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
-    try {
-        $listener.Start()
-        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
-    } finally {
-        try { $listener.Stop() } catch { }
-    }
+    return 0
 }
 
 function Wait-HostReady([System.Diagnostics.Process]$HostProcess, [string]$Url, [string]$Bearer, [int]$TimeoutSeconds) {
@@ -308,7 +294,7 @@ try {
 
     $publicPort = Resolve-SmokePort -RequestedPort $Port
     $baseUrl = "http://127.0.0.1:$publicPort"
-    Write-Smoke "using loopback port $publicPort"
+    Write-Smoke $(if ($publicPort -eq 0) { "using an ephemeral loopback port" } else { "using loopback port $publicPort" })
 
     $env:RU_DATA_ROOT = $dataRoot
     $env:RU_SCRIPTED_MODEL = $scriptPath
@@ -316,9 +302,8 @@ try {
     $env:RU_PROJECT_ROOT = $repoRoot
 
     Write-Smoke "starting RuBackend on $baseUrl (data root: $dataRoot)..."
-    # --urls must come before --managed-runtime: the command-line configuration
-    # provider consumes the token that follows the value-less --managed-runtime
-    # switch, so the historical order silently dropped --urls and bound 8000.
+    # --urls must come before --managed-runtime because the command-line
+    # provider treats the value-less switch as consuming the next token.
     $hostProcess = Start-Process -FilePath $backendExe `
         -ArgumentList "--urls", $baseUrl, "--managed-runtime" `
         -WorkingDirectory $repoRoot -PassThru -WindowStyle Hidden `
@@ -338,9 +323,18 @@ try {
         Start-Sleep -Milliseconds 200
     }
 
-    # The descriptor is written before Kestrel binds, so a TCP/HTTP-ready host is
-    # a prerequisite for the bridge's own host locator to attach instead of starting
-    # a competing host.
+    $descriptor = Get-Content -LiteralPath $descriptorPath -Raw | ConvertFrom-Json
+    $descriptorUri = [Uri]$descriptor.base_url
+    if (-not $descriptorUri.IsLoopback -or $descriptorUri.Scheme -ne "http" -or $descriptorUri.Port -lt 1024) {
+        throw "host published an invalid loopback URL '$($descriptor.base_url)'."
+    }
+    if ($publicPort -ne 0 -and $descriptorUri.Port -ne $publicPort) {
+        throw "host published port $($descriptorUri.Port), expected $publicPort."
+    }
+    $baseUrl = $descriptorUri.GetLeftPart([System.UriPartial]::Authority).TrimEnd("/")
+
+    # The descriptor is published only after Kestrel binds, so this probe uses
+    # the exact address clients will discover.
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
     Wait-HostReady -HostProcess $hostProcess -Url $baseUrl -Bearer $token -TimeoutSeconds 30
     Write-Smoke "host ready; starting RuAgent.Cli agent rpc..."

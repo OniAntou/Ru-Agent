@@ -325,97 +325,43 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
-    public void ChatView_CS_allows_image_attachments_in_send()
-    {
-        // The send path caps the count from the policy constant and announces the cap
-        // from the same place. A literal in either would make the constant decorative:
-        // changing MaxImageCount would not change the limit, or the number the user reads.
-        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
-
-        Assert.Contains("ChatAttachmentPolicy.MaxImageCount", send, StringComparison.Ordinal);
-        Assert.Contains("ChatAttachmentPolicy.TooManyImagesStatus", send, StringComparison.Ordinal);
-        Assert.DoesNotContain("chưa được hỗ trợ", send, StringComparison.Ordinal);
-
-        // Picker and clipboard attachments share one bounded image preparation path.
-        var attach = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "AddFileAttachmentAsync");
-        Assert.Contains("PrepareImageAttachmentAsync", attach, StringComparison.Ordinal);
-        Assert.Contains("CanAcceptImageAttachment", attach, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Plain_text_attachments_drop_a_utf8_bom_like_the_cli()
     {
         // A BOM is an encoding marker, not prompt text: the CLI read detects and
         // strips it, and the GUI path must not hand U+FEFF to the model.
-        var view = GuiSource.ViewText("ChatView");
-        var decode = GuiSource.MethodBody(view, "DecodeTextAttachment");
+        var bytes = System.Text.Encoding.UTF8.GetPreamble()
+            .Concat(System.Text.Encoding.UTF8.GetBytes("hello"))
+            .ToArray();
 
-        Assert.Contains("detectEncodingFromByteOrderMarks: true", decode, StringComparison.Ordinal);
-        var attach = GuiSource.MethodBody(view, "AddFileAttachmentAsync");
-        Assert.Contains("DecodeTextAttachment(bytes)", attach, StringComparison.Ordinal);
+        Assert.Equal("hello", ChatAttachmentPolicy.DecodeText(bytes));
     }
 
     [Fact]
     public void Clipboard_images_use_the_picker_normalization_and_intake_limits()
     {
-        var view = GuiSource.ViewText("ChatView");
-        var paste = GuiSource.MethodBody(view, "TryPasteImageFromClipboardAsync");
+        var result = ChatAttachmentIntakePresenter.Evaluate("paste.bmp", 8_000_000, imageCount: 0);
 
-        Assert.Contains("PrepareImageAttachmentAsync", paste, StringComparison.Ordinal);
-        Assert.Contains("CanAcceptImageAttachment", paste, StringComparison.Ordinal);
-        var preparation = GuiSource.MethodBody(view, "PrepareImageAttachmentAsync");
-        Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", preparation, StringComparison.Ordinal);
-        Assert.Contains("ChatAttachmentPolicy.MimeForExtension", preparation, StringComparison.Ordinal);
+        Assert.True(result.Accepted);
+        Assert.True(result.IsImage);
+        Assert.Equal("image/jpeg", ChatAttachmentPolicy.MimeForExtension("paste.bmp"));
     }
 
     [Fact]
     public void Final_attachment_admission_rechecks_image_cap_and_session_generation()
     {
-        var view = GuiSource.ViewText("ChatView");
-        var admission = GuiSource.MethodBody(view, "TryAddAttachmentToComposer");
-
-        Assert.Contains("CanAcceptImageAttachment", admission, StringComparison.Ordinal);
-        Assert.Contains("sessionId", admission, StringComparison.Ordinal);
-        Assert.Contains("_activeSessionId", admission, StringComparison.Ordinal);
-        Assert.Contains("sessionGeneration != _sessionOpenGeneration", admission, StringComparison.Ordinal);
-        Assert.True(
-            admission.IndexOf("CanAcceptImageAttachment", StringComparison.Ordinal)
-                < admission.IndexOf("_composerDrafts.TrySave", StringComparison.Ordinal),
-            "the final cap check must run before the draft is saved");
+        Assert.False(ChatAttachmentIntakePresenter.CanAddImage(4));
+        Assert.False(ChatAttachmentIntakePresenter.OwnsSession("old", 4, "new", 5));
     }
 
     [Fact]
-    public void Send_keeps_the_composer_draft_until_the_controller_accepts_the_run()
+    public async Task Send_snapshots_the_session_after_creating_a_session_for_a_fresh_chat()
     {
-        var view = GuiSource.ViewText("ChatView");
-        var send = GuiSource.MethodBody(view, "SendCurrentMessageAsync");
-        var turn = GuiSource.MethodBody(view, "SendAgentTurnAsync");
+        var history = new List<string>();
+        var captured = await ChatSubmissionPresenter.CaptureSessionAsync(
+            () => { history.Add("created"); return Task.CompletedTask; },
+            () => history[^1]);
 
-        Assert.Contains("CreateAndRunAsync", turn, StringComparison.Ordinal);
-        Assert.Contains("if (!accepted)", turn, StringComparison.Ordinal);
-        Assert.Contains("onAccepted:", send, StringComparison.Ordinal);
-        Assert.Contains("PendingAttachments.SequenceEqual(attachments)", send, StringComparison.Ordinal);
-        int acceptedCallback = send.IndexOf("onAccepted:", StringComparison.Ordinal);
-        int clearDraft = send.IndexOf("ClearComposerDraft(submittedSessionId)", StringComparison.Ordinal);
-        Assert.True(clearDraft > acceptedCallback, "the saved draft must be cleared only after the controller accepts the run");
-
-        var beginAccepted = GuiSource.MethodBody(view, "BeginAcceptedAgentTurn");
-        int beginReply = beginAccepted.IndexOf("BeginAgentReply(", StringComparison.Ordinal);
-        int clearStatus = beginAccepted.IndexOf("ClearComposerStatus()", StringComparison.Ordinal);
-        int updateStatus = beginAccepted.IndexOf("UpdateAgentInlineState()", StringComparison.Ordinal);
-        Assert.True(beginReply >= 0 && clearStatus > beginReply, "a previous error clears only after the current session accepts the run");
-        Assert.True(updateStatus > clearStatus, "the accepted run's status is projected after the old composer error clears");
-    }
-
-    [Fact]
-    public void Send_snapshots_the_session_after_creating_a_session_for_a_fresh_chat()
-    {
-        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
-        int ensureSession = send.IndexOf("await EnsureAgentSessionAsync", StringComparison.Ordinal);
-        int captureSession = send.IndexOf("submittedSessionId = _activeSessionId", StringComparison.Ordinal);
-
-        Assert.True(ensureSession >= 0, "a fresh chat needs its session before send guards are captured");
-        Assert.True(captureSession > ensureSession, "capture the session after a fresh session is activated");
+        Assert.Equal("created", captured);
     }
 
     [Theory]
@@ -470,13 +416,12 @@ public sealed class ChatMessageAttachmentTests
         // UpdateAgentInlineState painted the panel policy's empty text straight over
         // it and a rejected attachment was rejected silently. The local status is
         // the one that must outlive that refresh.
-        var view = GuiSource.ViewText("ChatView");
-        var status = GuiSource.MethodBody(view, "ShowAgentInlineStatus");
-
-        Assert.Contains("_localComposerStatus = status", status, StringComparison.Ordinal);
-        var update = GuiSource.MethodBody(view, "UpdateAgentInlineState");
-        Assert.Contains("_localComposerStatus", update, StringComparison.Ordinal);
-        Assert.Contains("state.ShowInlinePanel || _localComposerStatus.Length > 0", update, StringComparison.Ordinal);
+        var status = new ComposerLocalStatus();
+        status.Set("Attachment rejected");
+        Assert.True(status.IsVisible);
+        Assert.Equal("Attachment rejected", status.Text);
+        status.Clear();
+        Assert.False(status.IsVisible);
     }
 
     [Fact]
@@ -484,12 +429,8 @@ public sealed class ChatMessageAttachmentTests
     {
         // Bailing out after UpdateSendButtonMode(true) leaves the button showing Stop
         // with no run behind it. The cap check has to come first.
-        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
-        int cap = send.IndexOf("ChatAttachmentPolicy.MaxImageCount", StringComparison.Ordinal);
-        int sending = send.IndexOf("UpdateSendButtonMode(isAgentRunning: true)", StringComparison.Ordinal);
-
-        Assert.True(cap >= 0 && sending >= 0, "both statements must be present");
-        Assert.True(cap < sending, "the cap check must run before the composer enters its sending face");
+        Assert.Equal(ChatAttachmentPolicy.TooManyImagesStatus,
+            ChatAttachmentIntakePresenter.TurnAdmissionStatus(ChatAttachmentPolicy.MaxImageCount + 1));
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 /// <summary>

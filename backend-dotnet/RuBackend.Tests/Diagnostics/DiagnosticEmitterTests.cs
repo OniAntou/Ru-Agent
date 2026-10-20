@@ -31,7 +31,7 @@ public sealed class DiagnosticEmitterTests : IDisposable
     [Fact]
     public async Task TryEmit_enqueues_only_sanitized_scalar_fields()
     {
-        using var writer = new StructuredDiagnosticLogWriter(
+        await using var writer = new StructuredDiagnosticLogWriter(
             _logDirectory,
             prefix: "aspnetcore-",
             flushInterval: TimeSpan.FromSeconds(10));
@@ -68,7 +68,7 @@ public sealed class DiagnosticEmitterTests : IDisposable
     [Fact]
     public async Task TryEmit_carries_only_bounded_action_proof_fields()
     {
-        using var writer = new StructuredDiagnosticLogWriter(
+        await using var writer = new StructuredDiagnosticLogWriter(
             _logDirectory,
             prefix: "action-",
             flushInterval: TimeSpan.FromSeconds(10));

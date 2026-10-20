@@ -3,8 +3,8 @@ using RuAgent.Harness.Core;
 using RuAgent.Protocol.Harness;
 using RuBackend.Harness;
 using Xunit;
-using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
-using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
+using ActivityKind = RuAgent.Protocol.Harness.AgentActivityKind;
+using ActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 
 namespace RuBackend.Tests.Harness;
 
@@ -21,10 +21,10 @@ public sealed class AgentRunSummaryLivePublisherTests
         await using var lease = hub.Subscribe(run.RunId);
         publisher.PublishActivity(
             run.RunId,
-            new AgentActivity("act_explore", CoreActivityKind.Explore, CoreActivityState.Completed, Count: 5));
+            new AgentActivity("act_explore", ActivityKind.Explore, ActivityState.Completed, Count: 5));
         publisher.PublishActivity(
             run.RunId,
-            new AgentActivity("act_edit", CoreActivityKind.Edit, CoreActivityState.Completed, FileName: "ChatView.xaml"));
+            new AgentActivity("act_edit", ActivityKind.Edit, ActivityState.Completed, FileName: "ChatView.xaml"));
 
         Assert.True(publisher.TryPublishSummary(run));
         Assert.False(publisher.TryPublishSummary(run));
@@ -76,7 +76,7 @@ public sealed class AgentRunSummaryLivePublisherTests
 
         publisher.PublishActivity(
             run.RunId,
-            new AgentActivity("act_failed_edit", CoreActivityKind.Edit, CoreActivityState.Failed, FileName: "seed.txt"));
+            new AgentActivity("act_failed_edit", ActivityKind.Edit, ActivityState.Failed, FileName: "seed.txt"));
 
         var summary = publisher.BuildSummary(run);
 
@@ -92,13 +92,13 @@ public sealed class AgentRunSummaryLivePublisherTests
         var run = MakeRun(HarnessRunState.Completed);
         publisher.PublishActivity(
             run.RunId,
-            new AgentActivity("act_edit", CoreActivityKind.Edit, CoreActivityState.Completed));
+            new AgentActivity("act_edit", ActivityKind.Edit, ActivityState.Completed));
 
         Assert.True(publisher.TryPublishSummary(run));
 
         publisher.PublishActivity(
             run.RunId,
-            new AgentActivity("act_late", CoreActivityKind.Edit, CoreActivityState.Completed));
+            new AgentActivity("act_late", ActivityKind.Edit, ActivityState.Completed));
 
         var summary = publisher.BuildSummary(run);
         Assert.Equal(1, summary.FilesChanged);

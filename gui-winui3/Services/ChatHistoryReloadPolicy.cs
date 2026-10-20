@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using RuAgent.Harness.Core.Prompting;
+using RuAgent.Client;
 
 namespace RuApp.Services;
 
@@ -30,7 +30,7 @@ public static class ChatHistoryReloadPolicy
         // keep looking at. The caller used to re-check both of these itself, which
         // meant the decision lived half here and half at the call site.
         if (string.IsNullOrWhiteSpace(streamedReply)
-            || ModelToolSelectionParser.LooksLikeToolSelection(streamedReply))
+            || AgentActivityDisplayPolicy.LooksLikeToolSelection(streamedReply))
         {
             return false;
         }

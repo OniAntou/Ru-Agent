@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core;
 using Xunit;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Tests;
 

@@ -47,7 +47,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', 'Directory.Build.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
       - run: git log --check --format=
@@ -72,6 +72,11 @@ jobs:
         # the gate. The escape is scoped to this step; build and test steps above
         # stay fatal, and the contract test still bans blanket non-blocking flags.
         run: dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0
+      - name: GUI dependency audit (advisory)
+        shell: pwsh
+        # RuApp is intentionally built separately from the cross-platform solution
+        # because WinUI requires an explicit x64 platform and Windows SDK.
+        run: dotnet list gui-winui3/RuApp.csproj package --vulnerable --include-transitive || exit 0
 
   node:
     runs-on: windows-latest

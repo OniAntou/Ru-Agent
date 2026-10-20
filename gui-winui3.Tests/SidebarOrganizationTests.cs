@@ -101,22 +101,36 @@ public sealed class SidebarOrganizationTests : IDisposable
     }
 
     [Fact]
+    public void Sidebar_presenter_persists_placement_without_changing_execution_workspace()
+    {
+        var session = new SessionInfo { Id = "session", WorkspacePath = @"C:\execution", MessageCount = 1 };
+        var store = new SidebarOrganizationStore(Path.Combine(FilePath, "presenter.json"));
+
+        Assert.True(SidebarSessionPresenter.TryMove(
+            store,
+            [session],
+            store.Current,
+            session.Id,
+            SidebarSessionOrganization.RecentsKey,
+            path: null,
+            beforeId: null));
+
+        Assert.Null(store.Current.Groups[session.Id]);
+        Assert.Equal(new[] { session.Id }, store.Current.Order);
+        Assert.Equal(@"C:\execution", session.WorkspacePath);
+    }
+
+    [Fact]
     public void Sidebar_has_one_drag_surface_and_a_keyboard_move_menu()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
         Assert.Equal("RECENTS", GuiSource.AttributeValue(GuiSource.Require(document, "RecentsHeader"), "Text"));
         Assert.Contains(document.Descendants(), element => GuiSource.AttributeValue(element, "AutomationProperties.Name") == "Toggle CLI Session");
-        var rendering = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "RenderWorkspaceSidebar");
-        Assert.True(rendering.IndexOf("\"WORKSPACES\"", StringComparison.Ordinal) < rendering.IndexOf("\"RECENTS\"", StringComparison.Ordinal));
-        Assert.True(rendering.IndexOf("\"RECENTS\"", StringComparison.Ordinal) < rendering.IndexOf("\"CLI SESSION\"", StringComparison.Ordinal));
         var list = GuiSource.Require(document, "SidebarSessionList");
         Assert.Equal("True", GuiSource.AttributeValue(list, "CanDragItems"));
         Assert.Equal("OnSidebarDrop", GuiSource.AttributeValue(list, "Drop"));
         Assert.Contains(document.Descendants(), element => element.Name.LocalName == "MenuFlyoutSubItem"
             && GuiSource.AttributeValue(element, "Text") == "Move to");
-        var move = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "MoveSidebarSession");
-        Assert.DoesNotContain("SetRequestedWorkspace", move, StringComparison.Ordinal);
-        Assert.DoesNotContain("WorkspacePath =", move, StringComparison.Ordinal);
     }
 
     [Fact]

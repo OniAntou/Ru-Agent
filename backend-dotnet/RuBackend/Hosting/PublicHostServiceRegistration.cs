@@ -252,12 +252,23 @@ internal static class PublicHostServiceRegistration
         // deleting a session cancels its in-flight runs before the rows vanish.
         services.AddSingleton<IAgentRuntimeRunCleanup>(services =>
             services.GetRequiredService<AgentRuntimeLoopService>());
-        services.AddSingleton<AgentV1Service>();
+        services.AddSingleton<AgentV1SubagentGuard>();
+        services.AddSingleton<AgentRunWorkspaceAdmissionService>();
+        services.AddSingleton<AgentRunCreationService>();
+        services.AddSingleton<AgentRunQueryService>();
+        services.AddSingleton<AgentRunLifecycleService>();
+        services.AddSingleton<AgentApprovalsService>();
+        services.AddSingleton<AgentPoliciesService>();
+        services.AddSingleton<AgentWorkspaceService>();
+        services.AddSingleton<AgentWorkspaceTrustService>();
+        services.AddSingleton<AgentActivitiesService>();
+        services.AddSingleton<AgentCommandsService>();
+        services.AddSingleton<AgentInputsService>();
         // Image-input support follows what the provider's catalog declares for the
         // selected model. A name check alone read a gateway model carrying no vendor
         // token as non-vision and rejected its attachments. Wired as a property so
-        // this service keeps the dozen optional collaborators DI already supplies.
-        services.AddSingleton<IPostConfigureOptions<AgentV1Service>, AgentV1CatalogVisionConfigurator>();
+        // the run service keeps catalog metadata in its focused creation path.
+        services.AddSingleton<IPostConfigureOptions<AgentRunCreationService>, AgentV1CatalogVisionConfigurator>();
 
         // Harness Core adapters: the typed in-process model step service. One
         // Request deadlines end at response headers; the adapters retain an infinite
@@ -492,15 +503,15 @@ internal sealed class HarnessStoreHealthWarmupService : IHostedService
 }
 
 /// <summary>
-/// Points <see cref="AgentV1Service"/> at the provider catalog so image-input support
+/// Points <see cref="AgentRunCreationService"/> at the provider catalog so image-input support
 /// follows what the provider declares for the selected model rather than a guess made
 /// from the model name.
 /// </summary>
 internal sealed class AgentV1CatalogVisionConfigurator(
     ProviderCatalogService catalog,
-    ISettingsStore? settingsStore) : IPostConfigureOptions<AgentV1Service>
+    ISettingsStore settingsStore) : IPostConfigureOptions<AgentRunCreationService>
 {
-    public void PostConfigure(string? name, AgentV1Service service)
+    public void PostConfigure(string? name, AgentRunCreationService service)
     {
         service.DeclaredVision = async (model, ct) =>
         {

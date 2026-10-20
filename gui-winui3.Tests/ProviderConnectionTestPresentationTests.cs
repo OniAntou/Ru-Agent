@@ -159,6 +159,18 @@ public sealed class ProviderConnectionTestPresentationTests
     }
 
     [Fact]
+    public void Failed_tests_keep_the_catalog_code_for_diagnostics_without_logging_successes()
+    {
+        Assert.Equal("catalog_unauthorized", ProviderConnectionTestPresentation.DiagnosticCode(
+            ProviderConnectionTestPresentation.Project(Failure("catalog_unauthorized")),
+            Failure("catalog_unauthorized")));
+        Assert.Equal("unknown", ProviderConnectionTestPresentation.DiagnosticCode(
+            ProviderConnectionTestPresentation.Project(null), null));
+        Assert.Null(ProviderConnectionTestPresentation.DiagnosticCode(
+            ProviderConnectionTestPresentation.Project(Success(1)), Success(1)));
+    }
+
+    [Fact]
     public void Testing_state_is_visible_so_the_button_does_not_look_ignored()
     {
         var testing = ProviderConnectionTestPresentation.Testing();

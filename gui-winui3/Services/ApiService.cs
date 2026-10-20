@@ -29,7 +29,7 @@ namespace RuApp.Services
         private readonly BackendSession _session;
         private readonly string? _logRoot;
 
-        public ApiService(string authSecret, int port = 8000, string? logRoot = null)
+        public ApiService(string authSecret, int port, string? logRoot = null)
             : this(BackendSession.FromLoopback(port, authSecret), logRoot)
         {
         }

@@ -263,6 +263,12 @@ def navigation(staged_root: Path) -> list:
         ]),
         ("How it works", [
             page("Architecture", "docs/architecture.md"),
+            page("Host implementation", "docs/architecture/host.md"),
+            page("Harness implementation", "docs/architecture/harness.md"),
+            page("Broker implementation", "docs/architecture/broker.md"),
+            page("GUI implementation", "docs/architecture/gui.md"),
+            page("TUI implementation", "docs/architecture/tui.md"),
+            page("Provider implementation", "docs/architecture/providers.md"),
             page("Domain language", "CONTEXT.md"),
             page("Public route contract", "docs/aspnetcore-route-matrix.md"),
             page("Shared workspace coordination", "docs/operations/shared-workspace-coordination.md"),
@@ -271,7 +277,8 @@ def navigation(staged_root: Path) -> list:
         ("Quality", [
             page("Coding-agent capabilities", "docs/operations/coding-agent-capabilities.md"),
             page("Coding benchmark", "tools/coding-benchmark/README.md"),
-            page("Verification log", "docs/operations/verification.md"),
+            page("Current verification", "docs/operations/verification.md"),
+            page("Historical evidence", "docs/history/verification/README.md"),
         ]),
         ("Contributing", [
             page("Contributing", "CONTRIBUTING.md"),

@@ -31,7 +31,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, selections, (_, _) => Task.FromResult(false));
 
         var first = await ReadAsync(factory, run.Run.RunId);
@@ -56,6 +56,8 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Equal("key-one", stillFirst.Credential);
         Assert.Equal("high", stillFirst.RequestOptions?["reasoning_effort"]?.GetValue<string>());
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+        await factory.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => factory.GetAsync(run.Run.RunId, default));
     }
 
     [Fact]
@@ -72,7 +74,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var runId = run.Run.RunId;
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
         ProviderBootstrapData pinned;
-        using (var firstFactory = new AgentProviderSnapshotFactory(
+        await using (var firstFactory = new AgentProviderSnapshotFactory(
                    store, credentials, catalog, selections, (_, _) => Task.FromResult(false)))
         {
             pinned = await firstFactory.GetAsync(runId, default);
@@ -84,7 +86,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
 
         await store.SaveAsync((await store.ReadAsync(default)) with
         { CustomModel = "b", CustomUrl = "https://provider-b.invalid/v1" }, default);
-        using var restartedFactory = new AgentProviderSnapshotFactory(
+        await using var restartedFactory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, selections, (_, _) => Task.FromResult(false));
 
         var resumed = await restartedFactory.GetAsync(runId, default);
@@ -115,7 +117,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var credentials = new TrackingCredentials();
         var catalog = new ProviderCatalogService(
             new HttpClient(new TrackingCatalogHandler()), credentials, TimeProvider.System);
-        using (var firstFactory = new AgentProviderSnapshotFactory(
+        await using (var firstFactory = new AgentProviderSnapshotFactory(
                    settings, credentials, catalog, selections, (_, _) => Task.FromResult(false)))
         {
             _ = await firstFactory.GetAsync(runId, default);
@@ -123,7 +125,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
 
         await SetCallingModeAsync(harness.Options.DatabasePath, runId, "text_selection");
 
-        using var restartedFactory = new AgentProviderSnapshotFactory(
+        await using var restartedFactory = new AgentProviderSnapshotFactory(
             settings,
             credentials,
             new ProviderCatalogService(
@@ -138,7 +140,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         Assert.Equal(ProviderToolCallingMode.TextSelection, metadata.ToolCallingMode);
 
         await SetCallingModeAsync(harness.Options.DatabasePath, runId, "unknown_mode");
-        using var invalidFactory = new AgentProviderSnapshotFactory(
+        await using var invalidFactory = new AgentProviderSnapshotFactory(
             settings,
             credentials,
             new ProviderCatalogService(
@@ -167,7 +169,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var firstCatalog = new ProviderCatalogService(
             new HttpClient(firstCatalogHandler), firstCredentials, TimeProvider.System);
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
-        using (var firstFactory = new AgentProviderSnapshotFactory(
+        await using (var firstFactory = new AgentProviderSnapshotFactory(
                    settings,
                    firstCredentials,
                    firstCatalog,
@@ -192,7 +194,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var resumedCatalogHandler = new TrackingCatalogHandler();
         var resumedCatalog = new ProviderCatalogService(
             new HttpClient(resumedCatalogHandler), resumedCredentials, TimeProvider.System);
-        using var restartedFactory = new AgentProviderSnapshotFactory(
+        await using var restartedFactory = new AgentProviderSnapshotFactory(
             settings,
             resumedCredentials,
             resumedCatalog,
@@ -223,7 +225,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var firstCatalog = new ProviderCatalogService(
             new HttpClient(firstCatalogHandler), firstCredentials, TimeProvider.System);
         var selections = new SqliteAgentRunProviderSelectionStore(harness.Options);
-        using (var firstFactory = new AgentProviderSnapshotFactory(
+        await using (var firstFactory = new AgentProviderSnapshotFactory(
                    settings,
                    firstCredentials,
                    firstCatalog,
@@ -248,7 +250,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var resumedCatalogHandler = new TrackingCatalogHandler();
         var resumedCatalog = new ProviderCatalogService(
             new HttpClient(resumedCatalogHandler), resumedCredentials, TimeProvider.System);
-        using var restartedFactory = new AgentProviderSnapshotFactory(
+        await using var restartedFactory = new AgentProviderSnapshotFactory(
             settings,
             resumedCredentials,
             resumedCatalog,
@@ -279,7 +281,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var initialCredentials = new Credentials();
         var initialCatalog = new ProviderCatalogService(
             new HttpClient(new TrackingCatalogHandler()), initialCredentials, TimeProvider.System);
-        using (var firstFactory = new AgentProviderSnapshotFactory(
+        await using (var firstFactory = new AgentProviderSnapshotFactory(
                    settings,
                    initialCredentials,
                    initialCatalog,
@@ -303,7 +305,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var resumedCatalogHandler = new TrackingCatalogHandler();
         var resumedCatalog = new ProviderCatalogService(
             new HttpClient(resumedCatalogHandler), resumedCredentials, TimeProvider.System);
-        using var restartedFactory = new AgentProviderSnapshotFactory(
+        await using var restartedFactory = new AgentProviderSnapshotFactory(
             settings,
             resumedCredentials,
             resumedCatalog,
@@ -433,7 +435,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var run = await harness.SeedRunAsync();
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
             (_, _) => Task.FromResult(false));
         var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.GetAsync(run.Run.RunId, default));
@@ -450,7 +452,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         await using var harness = await BackendHarnessTestFixture.CreateAsync();
         var run = await harness.SeedRunAsync();
         var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new EmptyCredentials(), TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, new EmptyCredentials(), catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
             (_, _) => Task.FromResult(false));
 
@@ -468,7 +470,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         await using var harness = await BackendHarnessTestFixture.CreateAsync();
         var run = await harness.SeedRunAsync();
         var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new KeyedCredentials(), TimeProvider.System);
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, new KeyedCredentials(), catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
             (_, _) => Task.FromResult(false));
 
@@ -506,7 +508,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
             new HttpClient(new FailingCatalogHandler(status)), credentials, TimeProvider.System, cacheFile);
         await using var harness = await BackendHarnessTestFixture.CreateAsync();
         var run = await harness.SeedRunAsync();
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
             (_, _) => Task.FromResult(false));
 
@@ -535,7 +537,7 @@ public sealed partial class AgentProviderSnapshotTests : IDisposable
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System, cacheFile);
         await using var harness = await BackendHarnessTestFixture.CreateAsync();
         var run = await harness.SeedRunAsync();
-        using var factory = new AgentProviderSnapshotFactory(
+        await using var factory = new AgentProviderSnapshotFactory(
             store, credentials, catalog, new SqliteAgentRunProviderSelectionStore(harness.Options),
             (_, _) => Task.FromResult(false));
 

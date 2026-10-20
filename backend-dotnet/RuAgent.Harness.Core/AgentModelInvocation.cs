@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RuAgent.Protocol.Harness;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Diagnostics;
 using RuAgent.Harness.Core.Persistence;

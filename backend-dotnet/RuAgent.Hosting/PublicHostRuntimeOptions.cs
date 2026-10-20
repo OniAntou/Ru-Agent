@@ -6,8 +6,8 @@ namespace RuAgent.Hosting;
 
 public sealed class PublicHostRuntimeOptions
 {
-    public const int DefaultPublicPort = 8000;
-    public const string DefaultBindUrl = "http://127.0.0.1:8000";
+    public const int DefaultPublicPort = 0;
+    public const string DefaultBindUrl = "http://127.0.0.1:0";
 
     public int PublicPort { get; init; } = DefaultPublicPort;
     public string ProjectRoot { get; init; } = Directory.GetCurrentDirectory();
@@ -24,9 +24,8 @@ public sealed class PublicHostRuntimeOptions
         string? instanceNonce = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
-        if (publicPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(publicPort));
-        if (publicPort == 8001)
-            throw new ArgumentException("Ports must not collide with 8000 or 8001.");
+        if (publicPort != 0 && (publicPort < 1024 || publicPort > 65535))
+            throw new ArgumentOutOfRangeException(nameof(publicPort));
         var resolvedProjectRoot = Path.GetFullPath(projectRoot);
         var resolvedDataRoot = string.IsNullOrWhiteSpace(dataRoot) ? string.Empty : Path.GetFullPath(dataRoot.Trim());
         var resolvedLogRoot = string.IsNullOrWhiteSpace(logRoot) ? ResolveLogRoot(resolvedProjectRoot, null) : Path.GetFullPath(logRoot.Trim());

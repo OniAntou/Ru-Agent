@@ -123,6 +123,11 @@ establish real-provider quality or native UI acceptance.
 
 ## Changes and contracts
 
+NuGet versions belong in root `Directory.Packages.props`; product and test
+projects omit local `PackageReference` versions. Benchmark candidate repositories
+under `tools/coding-benchmark` opt out of this product dependency policy.
+GUI C# builds use the same warnings-as-errors baseline as product services.
+
 Keep changes focused on one outcome. Create/split files for clear ownership;
 refactor the affected area when needed. Prefer cohesive functions and readable
 names; line counts and naming prefixes are guidance. Comments explain intent

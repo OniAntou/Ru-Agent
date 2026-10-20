@@ -25,7 +25,6 @@ namespace RuApp
         private string? _selectedWorkspaceKey;
         private bool _suppressSidebarSelection;
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _workspaceSearchTimer;
-        private const int WorkspaceGroupPageSize = 5;
         private readonly ObservableCollection<object> _sidebarRows = new();
         private readonly List<WorkspaceGroup> _lastWorkspaceGroups = new();
         private readonly WorkspaceGroupPreferenceStore _workspaceGroups = new();
@@ -33,60 +32,25 @@ namespace RuApp
         private readonly SessionWorkspaceMapStore _sessionWorkspaces = new();
         private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
 
-        private static string PathStateKey(string canonicalPath) =>
-            "path:" + canonicalPath.ToLowerInvariant();
-
         private void RenderWorkspaceSidebar()
         {
-            var sessions = SidebarSessionOrganization.Order(Sessions.ToList(), _sidebarOrganization.Current).ToList();
-            var activeKey = ActiveWorkspaceKey();
-            if (_workspaceFilterActive && activeKey is not null)
-            {
-                sessions = sessions
-                    .Where(session => SidebarGroupFor(session).Key == activeKey)
-                    .ToList();
-            }
-
-            var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText, SidebarGroupFor);
-            var searching = !string.IsNullOrWhiteSpace(_workspaceSearchText);
-            var groups = WorkspaceSessionProjection.MergePinned(
-                projection.Groups,
-                _workspacePins.PinnedPaths.Where(path => !SidebarSessionOrganization.SamePath(path, _sidebarAppRoot)).ToArray());
-            if (searching)
-            {
-                groups = groups.Where(group => group.Sessions.Count > 0).ToList();
-            }
+            var projection = SidebarSessionPresenter.Build(
+                Sessions.ToList(),
+                _workspaceSearchText,
+                _sidebarAppRoot,
+                _sidebarOrganization.Current,
+                _workspacePins.PinnedPaths,
+                _activeSessionId,
+                _workspaceFilterActive,
+                _workspaceGroups.IsExpanded,
+                key => _groupShowAll.Contains(key));
 
             _suppressSidebarSelection = true;
             try
             {
                 _lastWorkspaceGroups.Clear();
-                _lastWorkspaceGroups.AddRange(groups);
-                var rows = new List<object>();
-                var recents = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.RecentsKey)
-                    ?? new WorkspaceGroup(SidebarSessionOrganization.RecentsKey, "Recents", null, []);
-                var recentExpanded = searching || _workspaceGroups.IsExpanded(recents.Key, defaultExpanded: true);
-                rows.Add(new SidebarSectionRow(SidebarSessionOrganization.WorkspacesKey, "WORKSPACES", FilterActive: _workspaceFilterActive));
-                var first = true;
-                foreach (var group in groups.Where(group => group.Path is not null))
-                {
-                    var expanded = searching
-                        || _workspaceGroups.IsExpanded(group.Key,
-                            defaultExpanded: activeKey is null ? first : group.Key == activeKey)
-                        || (!string.IsNullOrEmpty(group.Path)
-                            && _workspaceGroups.IsExpanded(PathStateKey(group.Path), defaultExpanded: false));
-                    first = false;
-                    rows.Add(new WorkspaceGroupRow(group, expanded));
-                    AppendSidebarSessions(rows, group, expanded);
-                }
-                rows.Add(new SidebarSectionRow(recents.Key, "RECENTS", recentExpanded));
-                AppendSidebarSessions(rows, recents, recentExpanded);
-                var cli = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.CliKey)
-                    ?? new WorkspaceGroup(SidebarSessionOrganization.CliKey, "CLI Session", null, []);
-                var cliExpanded = searching || _workspaceGroups.IsExpanded(cli.Key, defaultExpanded: true);
-                rows.Add(new SidebarSectionRow(cli.Key, "CLI SESSION", cliExpanded));
-                AppendSidebarSessions(rows, cli, cliExpanded);
-                ReconcileSidebarRows(rows);
+                _lastWorkspaceGroups.AddRange(projection.Groups);
+                ReconcileSidebarRows(projection.Rows);
 
                 if (_activeSessionId is not null)
                 {
@@ -98,22 +62,10 @@ namespace RuApp
                 _suppressSidebarSelection = false;
             }
 
-            var matchCount = _sidebarRows.OfType<SessionInfo>().Count();
-            WorkspaceSearchCount.Text = matchCount == 0
+            WorkspaceSearchCount.Text = projection.MatchCount == 0
                 ? "No matches"
-                : matchCount == 1 ? "1 result" : $"{matchCount} results";
-            WorkspaceSearchCount.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private string? ActiveWorkspaceKey()
-        {
-            if (_activeSessionId is null)
-            {
-                return null;
-            }
-
-            var active = Sessions.FirstOrDefault(session => session.Id == _activeSessionId);
-            return active is null ? null : SidebarGroupFor(active).Key;
+                : projection.MatchCount == 1 ? "1 result" : $"{projection.MatchCount} results";
+            WorkspaceSearchCount.Visibility = string.IsNullOrWhiteSpace(_workspaceSearchText) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
@@ -180,13 +132,14 @@ namespace RuApp
                 // Flip the row's effective state (not the stored default) and keep the
                 // group-key and path-key flags in sync; otherwise a pinned path flag
                 // left true by OnWorkspaceAddClick pins the group open forever.
-                var expanded = !(button.CommandParameter as bool?
-                    ?? _workspaceGroups.IsExpanded(key, defaultExpanded: true));
+                var expanded = SidebarSessionPresenter.NextExpandedState(
+                    button.CommandParameter as bool?,
+                    _workspaceGroups.IsExpanded(key, defaultExpanded: true));
                 _workspaceGroups.SetExpanded(key, expanded);
                 var path = ResolveWorkspacePath(key);
                 if (!string.IsNullOrEmpty(path))
                 {
-                    _workspaceGroups.SetExpanded(PathStateKey(path), expanded);
+                    _workspaceGroups.SetExpanded(SidebarSessionPresenter.PathStateKey(path), expanded);
                 }
 
                 RenderWorkspaceSidebar();
@@ -273,7 +226,7 @@ namespace RuApp
 
             var canonical = WorkspacePinStore.Canonicalize(folder.Path);
             _workspacePins.Pin(canonical);
-            _workspaceGroups.SetExpanded(PathStateKey(canonical), true);
+            _workspaceGroups.SetExpanded(SidebarSessionPresenter.PathStateKey(canonical), true);
             RenderWorkspaceSidebar();
 
             foreach (var group in _lastWorkspaceGroups)
@@ -298,7 +251,7 @@ namespace RuApp
                     return group.Path;
                 }
 
-                if (!string.IsNullOrEmpty(group.Path) && PathStateKey(group.Path) == key)
+                if (!string.IsNullOrEmpty(group.Path) && SidebarSessionPresenter.PathStateKey(group.Path) == key)
                 {
                     return group.Path;
                 }
@@ -306,7 +259,7 @@ namespace RuApp
 
             foreach (var pinned in _workspacePins.PinnedPaths)
             {
-                if (PathStateKey(pinned) == key)
+                if (SidebarSessionPresenter.PathStateKey(pinned) == key)
                 {
                     return pinned;
                 }

@@ -1,9 +1,5 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence.Privacy;
-using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
-using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
-using ProtocolActivityKind = RuAgent.Protocol.Harness.AgentActivityKind;
-using ProtocolActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 using ProtocolActivityWire = RuAgent.Protocol.Harness.AgentActivityWire;
 using ProtocolTodoWire = RuAgent.Protocol.Harness.AgentTodoWire;
 using RuAgent.Protocol.Harness;
@@ -40,8 +36,8 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         }
         var wire = new ProtocolActivityWire(
             activity.ActivityId,
-            MapKind(activity.Kind),
-            MapState(activity.State),
+            activity.Kind,
+            activity.State,
             activity.FileName,
             activity.LineStart,
             activity.LineEnd,
@@ -70,28 +66,4 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
     private static IReadOnlyList<ProtocolTodoWire>? MapTodos(IReadOnlyList<AgentTodoRow>? todos) =>
         todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray();
 
-    private static ProtocolActivityKind MapKind(CoreActivityKind kind) => kind switch
-    {
-        CoreActivityKind.Thinking => ProtocolActivityKind.Thinking,
-        CoreActivityKind.Explore => ProtocolActivityKind.Explore,
-        CoreActivityKind.Search => ProtocolActivityKind.Search,
-        CoreActivityKind.Analyze => ProtocolActivityKind.Analyze,
-        CoreActivityKind.Edit => ProtocolActivityKind.Edit,
-        CoreActivityKind.Terminal => ProtocolActivityKind.Terminal,
-        CoreActivityKind.Compaction => ProtocolActivityKind.Compaction,
-        CoreActivityKind.Retry => ProtocolActivityKind.Retry,
-        CoreActivityKind.Status => ProtocolActivityKind.Status,
-        CoreActivityKind.Todo => ProtocolActivityKind.Todo,
-        CoreActivityKind.Narration => ProtocolActivityKind.Narration,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
-    };
-
-    private static ProtocolActivityState MapState(CoreActivityState state) => state switch
-    {
-        CoreActivityState.Started => ProtocolActivityState.Started,
-        CoreActivityState.Completed => ProtocolActivityState.Completed,
-        CoreActivityState.Failed => ProtocolActivityState.Failed,
-        CoreActivityState.Waiting => ProtocolActivityState.Waiting,
-        _ => throw new ArgumentOutOfRangeException(nameof(state)),
-    };
 }

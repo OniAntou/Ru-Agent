@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="AngleSharp" Version="1.8.4" />
+    <PackageReference Include="AngleSharp" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <EmbeddedResource Include="..\..\README.md" LogicalName="RuAgent.Broker.HelpDocs.ru-overview.md" />
     <EmbeddedResource Include="..\..\docs\architecture.md" LogicalName="RuAgent.Broker.HelpDocs.architecture.md" />

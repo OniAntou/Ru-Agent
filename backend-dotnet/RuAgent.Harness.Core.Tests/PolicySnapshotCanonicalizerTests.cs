@@ -1,6 +1,7 @@
 using System.Text;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Workspace;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;

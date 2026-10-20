@@ -4,6 +4,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence.Workspace;
 using Xunit;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Tests;
 
@@ -103,29 +104,17 @@ public sealed class WorkspaceStoreTests
     }
 
     [Fact]
-    public async Task Legacy_trusted_workspace_without_trust_source_is_untrusted_after_migration()
+    public async Task A_stored_decision_without_explicit_source_never_grants_trust()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         var identity = await fixture.RegisterWorkspaceAsync(1);
-        await PrepareVersionSevenAsync(fixture, identity, isApproved: true);
-
-        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
-
-        Assert.True(health.IsAvailable, health.ErrorCode);
+        await PrepareUnattributedTrustAsync(fixture, identity, isApproved: true);
         var store = new SqliteWorkspaceStore(fixture.Options);
         Assert.False(await store.IsTrustedAsync(
             identity,
             AgentPermissionPreset.Standard,
             CancellationToken.None));
-        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
-        Assert.Null(await NullableStringAsync(
-            fixture,
-            "SELECT trust_decision FROM agent_workspaces WHERE workspace_id = $workspace_id",
-            identity));
-        Assert.Null(await NullableStringAsync(
-            fixture,
-            "SELECT trust_decided_at_utc FROM agent_workspaces WHERE workspace_id = $workspace_id",
-            identity));
+        Assert.Equal(1L, await ScalarAsync(fixture, "SELECT trust_decision FROM agent_workspaces"));
         Assert.Null(await NullableStringAsync(
             fixture,
             "SELECT trust_source FROM agent_workspaces WHERE workspace_id = $workspace_id",
@@ -136,16 +125,11 @@ public sealed class WorkspaceStoreTests
     }
 
     [Fact]
-    public async Task Approve_after_migration_writes_explicit_source_and_restores_trust()
+    public async Task Approve_writes_explicit_source_and_restores_trust()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         var identity = await fixture.RegisterWorkspaceAsync(1);
-        await PrepareVersionSevenAsync(fixture, identity, isApproved: false);
-        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
-
-        Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
-        Assert.True(await ColumnExistsAsync(fixture, "agent_workspaces", "trust_source"));
+        await PrepareUnattributedTrustAsync(fixture, identity, isApproved: false);
         var response = new WorkspaceTrustResponse(
             HarnessStoreTestFixture.Trust(1),
             identity,
@@ -169,15 +153,11 @@ public sealed class WorkspaceStoreTests
     }
 
     [Fact]
-    public async Task Deny_after_migration_does_not_create_a_trust_source_or_trust_the_workspace()
+    public async Task Deny_does_not_create_a_trust_source_or_trust_the_workspace()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         var identity = await fixture.RegisterWorkspaceAsync(1);
-        await PrepareVersionSevenAsync(fixture, identity, isApproved: false);
-        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
-
-        Assert.True(health.IsAvailable, health.ErrorCode);
-        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await PrepareUnattributedTrustAsync(fixture, identity, isApproved: false);
         var response = new WorkspaceTrustResponse(
             HarnessStoreTestFixture.Trust(1),
             identity,
@@ -336,37 +316,21 @@ public sealed class WorkspaceStoreTests
         Assert.False(await store.IsTrustedAsync(moved, AgentPermissionPreset.Standard, CancellationToken.None));
     }
 
-    private static async Task PrepareVersionSevenAsync(
+    private static async Task PrepareUnattributedTrustAsync(
         HarnessStoreTestFixture fixture,
         WorkspaceIdentity identity,
         bool isApproved)
     {
         await using var connection = fixture.CreateRawConnection();
         await connection.OpenAsync();
-        await using (var cleanup = connection.CreateCommand())
-        {
-            cleanup.CommandText = "DROP TABLE IF EXISTS agent_run_provider_selections; DROP TABLE IF EXISTS agent_session_preset_snapshots; DROP TABLE IF EXISTS agent_session_work_states; DROP INDEX IF EXISTS ix_agent_runs_session_created_run; DROP INDEX IF EXISTS ix_agent_events_provider_continuation; DROP INDEX IF EXISTS ix_agent_events_session_receipts; ALTER TABLE agent_events DROP COLUMN provider_call_id";
-            await cleanup.ExecuteNonQueryAsync();
-        }
-
-        if (await ColumnExistsAsync(fixture, "agent_workspaces", "trust_source"))
-        {
-            await using var downgrade = connection.CreateCommand();
-            downgrade.CommandText = """
-                ALTER TABLE agent_workspaces DROP COLUMN trust_source;
-                ALTER TABLE agent_workspaces DROP COLUMN trust_profile_version;
-                """;
-            await downgrade.ExecuteNonQueryAsync();
-        }
-
         await using var seed = connection.CreateCommand();
         seed.CommandText = """
             UPDATE agent_workspaces
             SET trust_decision = $decision,
                 trust_decided_at_utc = $decided_at,
-                updated_at_utc = $updated_at
+                updated_at_utc = $updated_at,
+                trust_source = NULL
             WHERE workspace_id = $workspace_id;
-            PRAGMA user_version = 7;
             """;
         seed.Parameters.AddWithValue("$decision", isApproved ? 1 : 0);
         seed.Parameters.AddWithValue(
@@ -383,20 +347,6 @@ public sealed class WorkspaceStoreTests
         }
 
         await seed.ExecuteNonQueryAsync();
-    }
-
-    private static async Task<bool> ColumnExistsAsync(
-        HarnessStoreTestFixture fixture,
-        string table,
-        string column)
-    {
-        await using var connection = fixture.CreateRawConnection();
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info($table) WHERE name = $column";
-        command.Parameters.AddWithValue("$table", table);
-        command.Parameters.AddWithValue("$column", column);
-        return (long)(await command.ExecuteScalarAsync() ?? 0L) == 1L;
     }
 
     private static async Task<string?> NullableStringAsync(

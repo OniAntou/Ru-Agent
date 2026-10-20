@@ -79,6 +79,11 @@ internal static class ProviderConnectionTestPresentation
     internal static bool ReportsFailure(ProviderConnectionTest? test) =>
         test is { Tone: ProviderConnectionTest.ErrorTone };
 
+    internal static string? DiagnosticCode(ProviderConnectionTest test, ProviderCatalogState? state) =>
+        test.Tone == ProviderConnectionTest.ErrorTone
+            ? state?.ErrorCode ?? "unknown"
+            : null;
+
     /// <summary>
     /// Copy for one catalog error code.
     /// </summary>

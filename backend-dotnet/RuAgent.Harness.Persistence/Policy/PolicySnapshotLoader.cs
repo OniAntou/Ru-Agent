@@ -5,6 +5,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence.Privacy;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence.Policy;
 

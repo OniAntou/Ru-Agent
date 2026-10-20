@@ -22,19 +22,6 @@ public sealed class AgentRunModelTests
     }
 
     [Fact]
-    public void Live_compaction_projection_identity_matches_the_replay_mapper()
-    {
-        var live = RuAgent.Harness.Core.AgentActivityProjector.ProjectCompaction(
-            "run_1",
-            42,
-            RuAgent.Harness.Core.AgentActivityState.Completed,
-            coveredEntries: 3);
-        var mapped = AgentRunEvidenceActivityMapper.Compaction("run_1", 42);
-
-        Assert.Equal(mapped.ActivityId, live.ActivityId);
-    }
-
-    [Fact]
     public void Compaction_activity_identity_includes_run_and_sequence_for_replay_live_deduplication()
     {
         var firstReplay = AgentRunEvidenceActivityMapper.Compaction("run_first", 42);

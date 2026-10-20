@@ -65,6 +65,37 @@ internal static class AgentV1Shared
         };
     }
 
+    internal static AgentRun AdvanceRun(
+        AgentRun current,
+        HarnessRunStatus nextStatus,
+        int nextBudgetWindow,
+        int nextModelSteps,
+        int nextToolCalls,
+        long appendedCount,
+        DateTimeOffset updatedAt,
+        string? terminalErrorCode = null)
+    {
+        DateTimeOffset? terminalAt = nextStatus.State.IsTerminal() ? updatedAt : null;
+        return new AgentRun(
+            current.RunId,
+            current.SessionId,
+            current.WorkspaceId,
+            nextStatus,
+            current.Version + 1,
+            current.LastSequence + appendedCount,
+            nextBudgetWindow,
+            nextModelSteps,
+            nextToolCalls,
+            current.Preset,
+            current.PolicySnapshotVersion,
+            current.PolicySnapshotSha256,
+            current.CreatedAt,
+            updatedAt,
+            terminalAt,
+            terminalErrorCode,
+            current.PermissionProfileVersion);
+    }
+
     internal static string ComputeSha256(string value)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));

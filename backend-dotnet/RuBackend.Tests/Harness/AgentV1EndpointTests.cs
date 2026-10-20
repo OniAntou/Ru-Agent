@@ -366,7 +366,7 @@ public sealed class AgentV1EndpointTests
     public async Task Create_run_service_rejects_image_too_large_per_image()
     {
         using var factory = new BackendWebApplicationFactory();
-        var svc = factory.Services.GetRequiredService<AgentV1Service>();
+        var svc = factory.Services.GetRequiredService<AgentRunCreationService>();
         var largeBytes = new byte[4 * 1024 * 1024 + 4];
         var largeBase64 = "data:image/png;base64," + Convert.ToBase64String(largeBytes);
         var req = new CreateAgentRunRequest(
@@ -388,7 +388,7 @@ public sealed class AgentV1EndpointTests
     public async Task Create_run_service_rejects_image_chars_exceeds_5600000()
     {
         using var factory = new BackendWebApplicationFactory();
-        var svc = factory.Services.GetRequiredService<AgentV1Service>();
+        var svc = factory.Services.GetRequiredService<AgentRunCreationService>();
         var longUrl = "data:image/png;base64," + new string('A', 5_600_001);
         var req = new CreateAgentRunRequest(
             "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

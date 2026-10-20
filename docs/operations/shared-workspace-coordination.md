@@ -6,7 +6,7 @@ at most one non-terminal run. `PUT /agent/v1/workspaces/{workspaceId}/concurrenc
 accepts only shared mode, with a membership capacity from 2 to 32 (default 32).
 The Host's global worker limit remains four concurrent drive passes; additional
 work waits for worker/membership capacity without cancelling other sessions.
-Schema v19 upgrades existing exclusive or single-slot coordinators in place,
+The consolidated v18-to-v29 upgrade converts existing exclusive or single-slot coordinators in place,
 preserving runs, trust, grants, lease settings and shared capacities above one.
 The coordinator persists a monotonic commit sequence in SQLite and uses a
 renewable membership lease for each active Ru run.

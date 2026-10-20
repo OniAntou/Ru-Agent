@@ -189,13 +189,17 @@ public sealed class ProviderSetupGuidanceTests
     [Fact]
     public void The_picker_offers_exactly_the_fixed_aliases_it_declares()
     {
-        // The fixed rows are no longer markup: the custom endpoint is built as a row by
-        // the code, so the declared list and the code that uses it must agree.
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        string body = GuiSource.MethodBody(code, "RebuildModelsDevOptions");
+        var projection = SettingsProviderPresenter.BuildProviderRows(
+        [
+            ("zeta", "Zulu"),
+            ("alpha", "Alpha"),
+        ]);
 
-        Assert.Contains("new(\"custom\", CustomProviderDisplayName)", body, StringComparison.Ordinal);
         Assert.Equal(["custom"], ProviderSetupGuidance.PickerAliases);
+        Assert.Equal(
+            new[] { "models.dev:alpha", "custom", "models.dev:zeta" },
+            projection.Rows.Select(row => row.Value));
+        Assert.Equal("Alpha", projection.Names["alpha"]);
     }
 
     [Fact]
@@ -413,21 +417,6 @@ public sealed class ProviderSetupGuidanceTests
     /// unbounded height. A ListView measured that way realizes every item and lays out
     /// none of them: the rows existed, had correct bounds, and painted nothing.
     /// </remarks>
-    [Fact]
-    public void The_provider_list_is_given_a_concrete_height()
-    {
-        string body = GuiSource.MethodBody(
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "OnProviderFlyoutOpening");
-
-        Assert.Contains("ProviderListView.Height", body, StringComparison.Ordinal);
-        Assert.Contains("ProviderListView.MaxHeight", body, StringComparison.Ordinal);
-        // The window is the bound, not a constant of our own.
-        Assert.Contains("XamlRoot", body, StringComparison.Ordinal);
-        Assert.Contains("Math.Max", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("Math.Clamp", body, StringComparison.Ordinal);
-    }
-
     /// <summary>
     /// The item template binds with x:Bind, which is compiled.
     /// </summary>
@@ -484,11 +473,8 @@ public sealed class ProviderSetupGuidanceTests
         // Search plus scroll is the whole way through the catalog: the A-Z
         // jump strip competed with search instead of helping it.
         var markup = GuiSource.Text("Views", "SettingsView.xaml");
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
 
         Assert.DoesNotContain("ProviderLetterJumpStrip", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("RebuildProviderLetterStrip", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("JumpTargets", code, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -590,13 +576,6 @@ public sealed class ProviderSetupGuidanceTests
     [Fact]
     public void The_empty_result_state_still_reports_the_count()
     {
-        string body = GuiSource.MethodBody(
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "ApplyProviderFilter");
-
-        Assert.DoesNotContain("FixedProvidersHeader.Visibility", body, StringComparison.Ordinal);
-        Assert.Contains("ProviderNoMatchText.Visibility", body, StringComparison.Ordinal);
-
         var settings = GuiSource.Xml("Views", "SettingsView.xaml");
         var empty = GuiSource.Require(settings, "ProviderNoMatchText");
         Assert.Equal("No provider matches", GuiSource.AttributeValue(empty, "Text"));

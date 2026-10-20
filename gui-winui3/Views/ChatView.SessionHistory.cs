@@ -17,8 +17,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -178,7 +176,10 @@ namespace RuApp.Views
             // Durable replay: messages carry source_run_id, while a fresh
             // load would drop every tool row. Rebuild settled rows from each terminal
             // run's durable events; the live turn keeps its in-memory rows below.
-            var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, cancellationToken);
+            var replayedRuns = _apiService is { } replayApi
+                ? await AgentActivityReplayLoader.LoadAsync(
+                    sessionId, replayApi.ListSessionRunIdsAsync, replayApi.ListRunActivitiesAsync, cancellationToken)
+                : Array.Empty<SessionRunReplay>();
 
             void Apply()
             {
@@ -223,7 +224,8 @@ namespace RuApp.Views
                         current.ActivitySplitOffsets = TakeSplitOffsetSnapshot(AgentActivities);
                         RebuildMessageSegments(current);
                     }
-                    RegisterReplayedActivities(restored);
+                    _sidePanelEditsDirty = true;
+                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(restored));
 
                     var scroller = ChatScrollViewer;
                     double? preservedOffset = scroller is not null && scroller.ScrollableHeight > 0
@@ -268,86 +270,6 @@ namespace RuApp.Views
                 Apply);
 
             return didApply ? (preserveStreamedReply ? streamedReply : latestAssistant) : null;
-        }
-
-        // Both open and reload preserve run identities, including unreadable
-        // replay slots, so a missing response cannot shift another turn's feed.
-        private async Task<IReadOnlyList<SessionRunReplay>> LoadReplayedRunActivitiesAsync(
-            string sessionId,
-            CancellationToken cancellationToken)
-        {
-            var empty = Array.AsReadOnly(Array.Empty<SessionRunReplay>());
-            if (_apiService is null || string.IsNullOrWhiteSpace(sessionId))
-            {
-                return empty;
-            }
-
-            var runs = await _apiService.ListSessionRunIdsAsync(sessionId, cancellationToken);
-            if (runs is null || runs.Count == 0 || cancellationToken.IsCancellationRequested)
-            {
-                return empty;
-            }
-
-            var slots = new SessionRunReplay?[runs.Count];
-            using var gate = new SemaphoreSlim(4);
-            var tasks = new List<Task>(runs.Count);
-            for (int index = 0; index < runs.Count; index++)
-            {
-                int slot = index;
-                string runId = runs[slot].RunId;
-                tasks.Add(Task.Run(async () =>
-                {
-                    await gate.WaitAsync(cancellationToken);
-                    try
-                    {
-                        var replay = await _apiService.ListRunActivitiesAsync(runId, cancellationToken);
-                        slots[slot] = replay is null
-                            ? new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>())
-                            : new SessionRunReplay(
-                                runId, replay.Activities
-                                .Select(model => new AgentActivityItem(model))
-                                .ToArray(),
-                                replay.Transcript);
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        slots[slot] = new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>());
-                    }
-                    catch (Exception)
-                    {
-                        slots[slot] = new SessionRunReplay(runId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>());
-                    }
-                    finally
-                    {
-                        gate.Release();
-                    }
-                }, cancellationToken));
-            }
-
-            try
-            {
-                await Task.WhenAll(tasks);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return empty;
-            }
-
-            return slots.Select((slot, index) => slot ?? new SessionRunReplay(runs[index].RunId, Array.Empty<AgentActivityItem>(), Array.Empty<ApiService.RunTranscriptEntry>())).ToArray();
-        }
-
-        private void RegisterReplayedActivities(IEnumerable<ChatMessageItem> messages)
-        {
-            _sidePanelEditsDirty = true;
-            IReadOnlyList<TodoItemModel>? latestTodos = null;
-            foreach (var message in messages)
-                if (message.AgentActivities is { } activities)
-                    foreach (var item in activities)
-                    {
-                        _agentActivityById.TryAdd(item.ActivityId, item);
-                        if (item.Todos is not null) latestTodos = item.Todos;
-                    }
-            UpdateTodoPanel(latestTodos);
         }
 
         private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
@@ -455,51 +377,50 @@ namespace RuApp.Views
 
         private async void OnApprovalDecisionRequested(object? sender, Controls.AgentApprovalDecidedEventArgs e)
         {
-            // One branch per decision: approval picks the session or the single
-            // action, denial declines. A nested ternary hid that shape.
-            Func<Task> action = () => Task.CompletedTask;
-            if (_agentController is not null)
-            {
-                if (!e.Approved)
+            if (_agentController is not { } controller) return;
+            string? runId = controller.CurrentRun?.RunId;
+            if (runId is null) return;
+            await _sessionHistoryPresenter.RunApprovalAsync(
+                e.Approved,
+                e.Scope,
+                operation => operation switch
                 {
-                    action = () => _agentController.DenyAsync();
-                }
-                else if (string.Equals(e.Scope, "session", StringComparison.Ordinal))
-                {
-                    action = () => _agentController.ApproveSessionDirectoryAsync();
-                }
-                else if (string.Equals(e.Scope, "always", StringComparison.Ordinal))
-                {
-                    action = () => _agentController.ApproveAlwaysAsync();
-                }
-                else
-                {
-                    action = () => _agentController.ApproveAsync();
-                }
-            }
-
-            await RunAgentActionAsync(
-                action,
-                e.Approved ? "Submitting approval…" : "Denying approval…");
+                    AgentApprovalOperation.Deny => controller.DenyAsync(),
+                    AgentApprovalOperation.AllowSessionDirectory => controller.ApproveSessionDirectoryAsync(),
+                    AgentApprovalOperation.AllowAlways => controller.ApproveAlwaysAsync(),
+                    _ => controller.ApproveAsync(),
+                },
+                () => !_scrollingDisposed && ReferenceEquals(controller, _agentController)
+                    && string.Equals(controller.CurrentRun?.RunId, runId, StringComparison.Ordinal),
+                ShowAgentInlineStatus,
+                UpdateAgentInlineState,
+                StartAgentMonitor,
+                ShowAgentError,
+                ClearComposerStatus);
         }
 
         private async void OnQuestionAnswerRequested(object? sender, Controls.AgentQuestionAnsweredEventArgs e)
         {
-            // The answer is submitted through the controller, which owns the
-            // resolve route; the card clears on the same success the POST returns.
-            await RunAgentActionAsync(
-                () => _agentController?.SubmitInputAsync(e.Answer) ?? Task.CompletedTask,
-                "Submitting answer…");
+            if (_agentController is not { } controller) return;
+            string? runId = controller.CurrentRun?.RunId;
+            if (runId is null) return;
+            // The controller owns the resolve route and clears its question card
+            // only after a successful POST. The presenter owns the interaction lifecycle.
+            await _sessionHistoryPresenter.RunInputAsync(
+                e.Answer,
+                answer => controller.SubmitInputAsync(answer),
+                () => !_scrollingDisposed && ReferenceEquals(controller, _agentController)
+                    && string.Equals(controller.CurrentRun?.RunId, runId, StringComparison.Ordinal),
+                ShowAgentInlineStatus,
+                UpdateAgentInlineState,
+                StartAgentMonitor,
+                ShowAgentError,
+                ClearComposerStatus);
         }
 
         private async Task RunAgentActionAsync(Func<Task> action, string status)
         {
-            if (_agentActionPending || _agentController is null)
-            {
-                return;
-            }
-
-            _agentActionPending = true;
+            if (_agentController is null || !_sessionHistoryPresenter.TryBeginAction()) return;
             ShowAgentInlineStatus(status);
             UpdateAgentInlineState();
             try
@@ -513,10 +434,7 @@ namespace RuApp.Views
             }
             finally
             {
-                _agentActionPending = false;
-                // The status described one moment of the action; once it is over
-                // the run's own status has to come back, or the composer keeps
-                // reading "Submitting approval…" over a finished turn.
+                _sessionHistoryPresenter.EndAction();
                 ClearComposerStatus();
             }
         }
@@ -579,7 +497,8 @@ namespace RuApp.Views
                 // what makes the activity feed survive leaving the session or closing the app;
                 // without it the rows exist only as transient frames and are gone the moment
                 // the live connection ends.
-                var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, openToken);
+                var replayedRuns = await AgentActivityReplayLoader.LoadAsync(
+                    sessionId, _apiService.ListSessionRunIdsAsync, _apiService.ListRunActivitiesAsync, openToken);
                 if (!IsCurrentOpen(generation)) return;
                 _sidePanelTasksRunId = replayedRuns.LastOrDefault()?.RunId;
                 UpdateAgentInlineState();
@@ -591,7 +510,8 @@ namespace RuApp.Views
                     // No await between clearing the old feed and replacing its rows:
                     // the outgoing transcript remains intact throughout history I/O.
                     ClearAgentActivities();
-                    RegisterReplayedActivities(opened);
+                    _sidePanelEditsDirty = true;
+                    UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(opened));
                     JumpToLatestForNewTurn();
                     Messages.ReplaceAll(opened);
                     RefreshSidePanelEdits();
@@ -967,49 +887,34 @@ namespace RuApp.Views
             }
         }
 
-        private bool _rewindInProgress;
-
         private async void OnRewindToMessageClick(object sender, RoutedEventArgs e)
         {
-            if (_isSessionHistoryLoading) return;
-            if (_apiService is not { } api || _rewindInProgress
-                || sender is not FrameworkElement { Tag: ChatMessageItem message }) return;
-            if (IsActiveAgentRunPending())
-            {
-                ShowAgentInlineStatus("Finish or stop the current turn before rewinding.");
-                return;
-            }
-            if (message.SourceMessageIndex is null || !Messages.Contains(message)
-                || message.SessionId != _activeSessionId)
-            {
-                ShowAgentInlineStatus("This row has no saved message to rewind to. Reopen the session to refresh history.");
-                return;
-            }
+            if (_apiService is not { } api || sender is not FrameworkElement { Tag: ChatMessageItem message }) return;
             var sessionId = _activeSessionId;
             var generation = _sessionOpenGeneration;
             bool OwnsSession() => !_scrollingDisposed && generation == _sessionOpenGeneration
                 && sessionId == _activeSessionId && ReferenceEquals(api, _apiService);
-            _rewindInProgress = true;
-            try
-            {
-                bool rewound = await SessionRewindWorkflow.RunAsync(sessionId, message.SourceMessageIndex, OwnsSession,
-                    api.RewindSessionAsync, async () =>
-                        await ReloadSessionHistoryAsync(CancellationToken.None, preserveLiveTurn: false) is not null);
-                if (!rewound && OwnsSession()) ShowAgentInlineStatus("Could not rewind the session. Try again.");
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error rewinding session: {ex.Message}");
-                if (OwnsSession()) ShowAgentInlineStatus("Could not rewind the session. Try again.");
-            }
-            finally { _rewindInProgress = false; }
+            await _sessionHistoryPresenter.RewindAsync(
+                sessionId,
+                message.SourceMessageIndex,
+                _isSessionHistoryLoading,
+                IsActiveAgentRunPending(),
+                Messages.Contains(message) && message.SessionId == sessionId,
+                OwnsSession,
+                api.RewindSessionAsync,
+                async () => await ReloadSessionHistoryAsync(CancellationToken.None, preserveLiveTurn: false) is not null,
+                _sessionHistoryPresenter.IsActionPending,
+                () => ShowAgentInlineStatus("Finish or stop the current turn before rewinding."),
+                () => ShowAgentInlineStatus("This row has no saved message to rewind to. Reopen the session to refresh history."),
+                () => ShowAgentInlineStatus("Could not rewind the session. Try again."),
+                ex => GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error rewinding session: {ex.Message}"));
         }
 
         public void Dispose()
         {
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();
-            _modelSelectionSaves.Invalidate();
+            _modelSelectionPresenter.Invalidate();
             _reasoningSelectionSaves.Invalidate();
             StopTaskRefreshTimer();
             SidePanel?.CancelVisibilityAnimations();

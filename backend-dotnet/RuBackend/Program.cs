@@ -24,7 +24,8 @@ using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 
 var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal);
 
@@ -34,9 +35,10 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.W
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 
-// Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict,
-// acquire single instance, generate credentials, publish descriptor. The
-// execution authority itself is composed inside DI.
+// Managed runtime bootstrap BEFORE DI: resolve paths, check any fixed-port
+// conflict, acquire single instance and generate credentials. The descriptor
+// is published after Kestrel reports its actual bound address. The execution
+// authority itself is composed inside DI.
 ManagedRuntimeBootstrap? bootstrap = null;
 if (isManagedRuntime)
 {
@@ -62,9 +64,8 @@ builder.Services
     .AddRuActivityAndDiagnostics();
 // The Public Contract is a loopback-only surface guarded by a bearer token that
 // desktop clients read from local files. A misconfigured or edited BindUrl must
-// not silently widen it to every interface on the machine. The hosted default
-// lives in BackendOptions (standalone) and PublicHostRuntimeOptions (managed),
-// so the fallback here cannot drift from the configured surface.
+// not silently widen it to every interface on the machine. Standalone hosts keep
+// their fixed local default; managed clients use the ephemeral PublicHost default.
 var bindUrl = builder.Configuration["RuBackend:BindUrl"];
 if (bindUrl is null)
 {
@@ -108,7 +109,7 @@ static bool IsLoopbackBindUrl(string value)
     return IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address);
 }
 
-var app = builder.Build();
+await using var app = builder.Build();
 
 // Never HTML: without this any unhandled exception becomes a 500 text/html
 // page, which the GUI and TUI cannot parse. Every failure below this point
@@ -141,17 +142,16 @@ if (isManagedRuntime)
     // Resolve the authority at startup so a DI composition failure fails the
     // managed host with a bounded code (exit 4) instead of surfacing as a tool
     // error on the first request. The runtime itself is composed lazily.
-    var executionAuthority = ResolveExecutionAuthority(app, bootstrap!);
+    var executionAuthority = await ResolveExecutionAuthorityAsync(app, bootstrap!).ConfigureAwait(false);
 
     lifetime.ApplicationStopping.Register(() =>
     {
         try { executionAuthority.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "In-process execution authority dispose failed during shutdown."); }
         try { bootstrap!.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
-        try { bootstrap!.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     });
 }
 
-static InProcessExecutionAuthority ResolveExecutionAuthority(WebApplication app, ManagedRuntimeBootstrap bootstrap)
+static async Task<InProcessExecutionAuthority> ResolveExecutionAuthorityAsync(WebApplication app, ManagedRuntimeBootstrap bootstrap)
 {
     try
     {
@@ -162,7 +162,7 @@ static InProcessExecutionAuthority ResolveExecutionAuthority(WebApplication app,
         Console.Error.WriteLine("{\"error_code\":\"in_process_execution_unavailable\"}");
         app.Logger.LogError(ex, "in-process execution authority could not be composed; stopping the host");
         try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Descriptor cleanup failed during startup failure."); }
-        try { bootstrap.SingleInstance.Dispose(); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Single-instance release failed during startup failure."); }
+        try { await bootstrap.SingleInstance.DisposeAsync().ConfigureAwait(false); } catch (Exception cleanupError) { app.Logger.LogWarning(cleanupError, "Single-instance release failed during startup failure."); }
         Environment.Exit(4);
         // Environment.Exit never returns; this guard exists only because the
         // compiler requires a terminator here (Exit is not annotated as
@@ -228,6 +228,44 @@ StatusEndpoints.Map(app);
 
 using var telemetryProvider = BackendTelemetry.CreateProvider();
 
-app.Run();
+await app.StartAsync();
+if (isManagedRuntime)
+{
+    var addresses = app.Services
+        .GetRequiredService<IServer>()
+        .Features
+        .Get<IServerAddressesFeature>()?
+        .Addresses;
+    var boundAddress = addresses?
+        .Select(address => Uri.TryCreate(address, UriKind.Absolute, out var uri) ? uri : null)
+        .FirstOrDefault(uri => uri is not null
+            && uri.IsLoopback
+            && uri.Scheme == Uri.UriSchemeHttp
+            && uri.Port is >= 1024 and <= 65535);
+    if (boundAddress is null)
+    {
+        Console.Error.WriteLine("{\"error_code\":\"public_host_bind_address_unavailable\"}");
+        Environment.Exit(5);
+    }
+
+    if (!await ManagedRuntimeBootstrapper.PublishDescriptorAsync(bootstrap!, boundAddress).ConfigureAwait(false))
+    {
+        Console.Error.WriteLine("{\"error_code\":\"public_host_already_running\"}");
+        Environment.Exit(3);
+    }
+}
+
+try
+{
+    await app.WaitForShutdownAsync().ConfigureAwait(false);
+}
+finally
+{
+    if (isManagedRuntime)
+    {
+        try { await bootstrap!.SingleInstance.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
+    }
+}
 
 public partial class Program { }

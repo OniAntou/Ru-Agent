@@ -1,7 +1,9 @@
 # Ru ASP.NET Core backend
 
-`RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 46 HTTP routes
+`RuBackend` is the only public backend for Ru. When started as
+`RuBackend.exe --managed-runtime`, it asks Kestrel to bind an available loopback
+port and publishes the selected address in its runtime descriptor after bind.
+It owns all 46 HTTP routes
 (21 non-Agent routes plus 25 additive
 `/agent/v1/*`). Text turns use the current in-process-model-step Agent HTTP/SSE
 contract; no Chat WebSocket is exposed.
@@ -11,7 +13,7 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         |
         | bearer token or authenticated SSE
         v
-ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime, one process)
+ASP.NET Core Public Host 127.0.0.1:<ephemeral> (RuBackend.exe --managed-runtime, one process)
         |\
         | \-- in-process typed model step (ModelStepService behind IModelStepRunner)
         |     `-- bounded provider adapters + one-step AssistantStep
@@ -65,12 +67,12 @@ persistent text.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST clients. |
-| `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
+| `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; managed desktop startup uses `http://127.0.0.1:0` unless explicitly configured. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
 | `RU_MAX_BACKGROUND_TERMINAL_TASKS` | `8` | Per-session running terminal capacity (1–64), including foreground reservations. Invalid explicit values fail initialization; a full session refuses new launches without stopping existing tasks. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates a 256-bit
-desktop secret, publishes an ACL-restricted loopback descriptor for
+desktop secret, binds loopback, then publishes an ACL-restricted descriptor for
 `RuAgent.Client` start-or-attach, and probes public readiness before serving.
 `RuApp` and `RuAgent.Cli` never start an execution process; they validate the
 descriptor and `GET /status` bearer, and poll for a valid descriptor if

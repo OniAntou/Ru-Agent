@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence.Policy;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Persistence;
 

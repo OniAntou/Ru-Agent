@@ -1,5 +1,6 @@
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuApp.Tests;
 
 /// <summary>

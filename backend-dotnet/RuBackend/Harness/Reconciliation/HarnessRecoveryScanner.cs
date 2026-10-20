@@ -10,6 +10,7 @@ using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
 using RuBackend.Harness;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Harness.Reconciliation;
 
 public sealed record RecoveredRunSummary(RunId RunId, string Action);
@@ -379,35 +380,35 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly ILogger<HarnessRecoveryStartupService> _logger;
-    private readonly WorkspaceTrustService? _trustService;
-    private readonly SqliteWorkspaceStore? _workspaceStore;
-    private readonly HarnessPolicySnapshotService? _policySnapshots;
-    private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
-    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
-    private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly WorkspaceTrustService _trustService;
+    private readonly SqliteWorkspaceStore _workspaceStore;
+    private readonly HarnessPolicySnapshotService _policySnapshots;
+    private readonly IAgentRuntimeRootRegistry _runtimeRoots;
+    private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
+    private readonly ReconciliationInspectionGate _inspectionGate;
 
     public HarnessRecoveryStartupService(
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
         ILogger<HarnessRecoveryStartupService> logger,
-        WorkspaceTrustService? trustService = null,
-        SqliteWorkspaceStore? workspaceStore = null,
-        HarnessPolicySnapshotService? policySnapshots = null,
-        IAgentRuntimeRootRegistry? runtimeRoots = null,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        ReconciliationInspectionGate? inspectionGate = null,
-        Subagents.SubagentRecoveryCoordinator? subagentRecovery = null)
+        WorkspaceTrustService trustService,
+        SqliteWorkspaceStore workspaceStore,
+        HarnessPolicySnapshotService policySnapshots,
+        IAgentRuntimeRootRegistry runtimeRoots,
+        WorkspaceCoordinatorStore workspaceCoordinatorStore,
+        ReconciliationInspectionGate inspectionGate,
+        Subagents.SubagentRecoveryCoordinator subagentRecovery)
     {
-        _store = store;
-        _sqliteOptions = sqliteOptions;
-        _logger = logger;
-        _trustService = trustService;
-        _workspaceStore = workspaceStore;
-        _policySnapshots = policySnapshots;
-        _runtimeRoots = runtimeRoots;
-        _workspaceCoordinatorStore = workspaceCoordinatorStore;
-        _inspectionGate = inspectionGate;
-        _subagentRecovery = subagentRecovery;
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _trustService = trustService ?? throw new ArgumentNullException(nameof(trustService));
+        _workspaceStore = workspaceStore ?? throw new ArgumentNullException(nameof(workspaceStore));
+        _policySnapshots = policySnapshots ?? throw new ArgumentNullException(nameof(policySnapshots));
+        _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
+        _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
+        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
+        _subagentRecovery = subagentRecovery ?? throw new ArgumentNullException(nameof(subagentRecovery));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -528,7 +529,7 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
         IReadOnlyList<RunId> pendingRunIds,
         CancellationToken stoppingToken)
     {
-        if (_inspectionGate is null || pendingRunIds.Count == 0)
+        if (pendingRunIds.Count == 0)
         {
             return;
         }
@@ -582,10 +583,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
     {
         try
         {
-            if (_workspaceCoordinatorStore is null)
-            {
-                return true;
-            }
             var reconciled = await _workspaceCoordinatorStore
                 .ReconcileExpiredAsync(DateTimeOffset.UtcNow, stoppingToken)
                 .ConfigureAwait(false);
@@ -617,14 +614,6 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
         IReadOnlyList<RunId> runIds,
         CancellationToken cancellationToken)
     {
-        if (_trustService is null
-            || _workspaceStore is null
-            || _policySnapshots is null
-            || _runtimeRoots is null)
-        {
-            return;
-        }
-
         foreach (var runId in runIds)
         {
             try

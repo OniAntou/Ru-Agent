@@ -6,6 +6,7 @@ using RuAgent.Protocol.Subagents;
 using RuBackend.Harness.Broker;
 using RuBackend.Harness.Workspace;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Harness.Subagents;
 
 public sealed record PreparedSubagentWorkspace(string Root, PolicySnapshot Policy, string? ManifestJson);

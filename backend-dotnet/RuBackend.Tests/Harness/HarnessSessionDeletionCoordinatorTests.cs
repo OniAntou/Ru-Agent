@@ -287,7 +287,10 @@ public sealed partial class HarnessSessionDeletionCoordinatorTests
             fixture.EventStore,
             new UnusedCoordinatorFactory(),
             roots,
-            NullLogger<AgentRuntimeLoopService>.Instance);
+            NullLogger<AgentRuntimeLoopService>.Instance,
+            new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+            new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore),
+            new UnavailableToolGatewayFactory());
     }
 
     private sealed class RecordingRootRegistry : IAgentRuntimeRootRegistry

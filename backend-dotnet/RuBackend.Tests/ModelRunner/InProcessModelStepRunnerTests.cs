@@ -1,4 +1,4 @@
-﻿using RuAgent.Harness.Core;
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
@@ -9,6 +9,7 @@ using RuBackend.Harness.ModelRunner;
 using RuBackend.Providers;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.ModelRunner;
 
 public sealed class InProcessModelStepRunnerTests

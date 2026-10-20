@@ -19,7 +19,7 @@ public sealed class AgentSkillCommandTests
         AddSkill(tmp.Path, "py.required", PythonSkill);
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient();
-        factory.Services.GetRequiredService<AgentV1Service>().PythonAvailable = () => false;
+        factory.Services.GetRequiredService<AgentCommandsService>().PythonAvailable = () => false;
         var runId = await CreateRunAsync(client, tmp.Path);
 
         using var response = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/commands", new { text = "/skill py.required" });
@@ -37,7 +37,7 @@ public sealed class AgentSkillCommandTests
         AddSkill(tmp.Path, "py.required", PythonSkill);
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient();
-        factory.Services.GetRequiredService<AgentV1Service>().PythonAvailable = () => true;
+        factory.Services.GetRequiredService<AgentCommandsService>().PythonAvailable = () => true;
         var runId = await CreateRunAsync(client, tmp.Path);
 
         using var response = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/commands", new { text = "/skill py.required" });
@@ -54,7 +54,7 @@ public sealed class AgentSkillCommandTests
         AddSkill(tmp.Path, "node.required", "---\nname: node.required\ndescription: Needs Node\nrequires: node\n---\n\nRun the script.");
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient();
-        factory.Services.GetRequiredService<AgentV1Service>().PythonAvailable = () => true;
+        factory.Services.GetRequiredService<AgentCommandsService>().PythonAvailable = () => true;
         var runId = await CreateRunAsync(client, tmp.Path);
 
         using var response = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/commands", new { text = "/skill node.required" });
@@ -74,7 +74,7 @@ public sealed class AgentSkillCommandTests
         AddSkill(tmp.Path, "plain.skill", "---\nname: plain.skill\ndescription: Plain\n---\n\nPlain body.");
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
         using var client = factory.CreateAuthenticatedClient();
-        factory.Services.GetRequiredService<AgentV1Service>().PythonAvailable = () => throw new InvalidOperationException("probe_called");
+        factory.Services.GetRequiredService<AgentCommandsService>().PythonAvailable = () => throw new InvalidOperationException("probe_called");
         var runId = await CreateRunAsync(client, tmp.Path);
 
         using var response = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/commands", new { text = "/skill plain.skill" });

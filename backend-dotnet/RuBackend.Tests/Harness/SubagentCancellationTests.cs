@@ -39,19 +39,18 @@ public sealed partial class SubagentCancellationTests
             }
         }
         var before = (await fixture.EventStore.GetRunAsync(child.RunId, default))!;
-        var service = new AgentV1Service(fixture.EventStore, fixture.Options, null!, null!, null!, null!,
-            new CryptographicIdGenerator(), new SystemTimeProvider(), fixture.PayloadStore, null!, null!, fixture.KeyStore);
-        var response = await service.ContinueAsync(child.RunId.Value, default);
+        using var services = new AgentV1ServiceTestBuilder(fixture).Build();
+        var response = await services.Lifecycle.ContinueAsync(child.RunId.Value, default);
         Assert.Equal(409, response.StatusCode);
         Assert.Contains("subagent_read_only", System.Text.Json.JsonSerializer.Serialize(response.Body));
         foreach (var blocked in new[] {
-            await service.CancelAsync(child.RunId.Value, default),
-            await service.HandleApprovalAsync(child.RunId.Value, "apr_fixture", null, default),
-            await service.HandleInputAsync(child.RunId.Value, "input_fixture", null, default),
-            await service.CompactAsync(child.RunId.Value, null, default),
-            await service.DispatchCommandAsync(child.RunId.Value, null, default),
-            await service.ReconcileAsync(child.RunId.Value, null, null, default),
-            await service.TrustAsync(child.RunId.Value, null!, default) })
+            await services.Lifecycle.CancelAsync(child.RunId.Value, default),
+            await services.Approvals.HandleApprovalAsync(child.RunId.Value, "apr_fixture", null, default),
+            await services.Inputs.HandleInputAsync(child.RunId.Value, "input_fixture", null, default),
+            await services.Commands.CompactAsync(child.RunId.Value, null, default),
+            await services.Commands.DispatchCommandAsync(child.RunId.Value, null, default),
+            await services.Commands.ReconcileAsync(child.RunId.Value, null, null, default),
+            await services.WorkspaceTrust.TrustAsync(child.RunId.Value, null!, default) })
         {
             Assert.Equal(409, blocked.StatusCode);
             Assert.Contains("subagent_read_only", System.Text.Json.JsonSerializer.Serialize(blocked.Body));
@@ -101,12 +100,12 @@ public sealed partial class SubagentCancellationTests
         }
         var cleanup = new Cleanup(agents, root.Run.RunId);
         var cancellation = new SubagentCancellationCoordinator(fixture.EventStore, agents, cleanup, new SystemTimeProvider());
-        var service = new AgentV1Service(fixture.EventStore, fixture.Options, null!, null!, null!, null!,
-            new CryptographicIdGenerator(), new SystemTimeProvider(), fixture.PayloadStore, null!, null!, fixture.KeyStore,
-            subagentCancellation: cancellation);
+        using var services = new AgentV1ServiceTestBuilder(fixture)
+            .WithSubagentCancellation(cancellation)
+            .Build();
         async Task StopAsync()
         {
-            if (viaService) Assert.Equal(200, (await service.CancelAsync(root.Run.RunId.Value, default)).StatusCode);
+            if (viaService) Assert.Equal(200, (await services.Lifecycle.CancelAsync(root.Run.RunId.Value, default)).StatusCode);
             else await cancellation.CancelFamilyAsync(root.Run.RunId, default);
         }
         await StopAsync();

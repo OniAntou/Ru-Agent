@@ -1,27 +1,6 @@
+using RuAgent.Protocol.Harness;
+
 namespace RuAgent.Harness.Core;
-
-public enum AgentActivityKind
-{
-    Thinking,
-    Explore,
-    Search,
-    Analyze,
-    Edit,
-    Terminal,
-    Compaction,
-    Retry,
-    Status,
-    Todo,
-    Narration,
-}
-
-public enum AgentActivityState
-{
-    Started,
-    Completed,
-    Failed,
-    Waiting,
-}
 
 /// <summary>
 /// One row of the agent's task list, inside the Core boundary.
@@ -30,7 +9,8 @@ public enum AgentActivityState
 /// The Core form of a task row. The Protocol has its own wire form and the Broker its
 /// own validated form, and each stays in its own layer: Core does not reference the
 /// Broker, so it cannot borrow that one, and reusing the wire record would put
-/// serialization attributes in the middle of the domain.
+/// serialization attributes in the middle of the domain. Activity kind and state
+/// vocabulary comes from Protocol because the values cross the Host/client boundary.
 /// </remarks>
 public sealed record AgentTodoRow(string Content, string Status);
 

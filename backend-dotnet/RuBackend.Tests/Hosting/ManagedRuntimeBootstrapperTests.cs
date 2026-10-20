@@ -84,7 +84,7 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
     }
 
     [Fact]
-    public async Task StartPublishesTheDescriptorWithoutStartingABrokerChild()
+    public async Task DescriptorIsPublishedOnlyAfterTheBoundAddressIsKnown()
     {
         var dataRoot = Path.Combine(_root, "data");
         var logRoot = Path.Combine(_root, "logs");
@@ -110,7 +110,12 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
             try
             {
                 Assert.NotNull(bootstrap.PublicBearer);
-                Assert.True(File.Exists(Path.Combine(dataRoot, "runtime_descriptor.json")));
+                var descriptorPath = Path.Combine(dataRoot, "runtime_descriptor.json");
+                Assert.False(File.Exists(descriptorPath));
+                Assert.True(await ManagedRuntimeBootstrapper.PublishDescriptorAsync(
+                    bootstrap,
+                    new Uri($"http://127.0.0.1:{port}/")));
+                Assert.True(File.Exists(descriptorPath));
 
                 // The child topology is gone: the bootstrap publishes only the
                 // Host descriptor, never a broker descriptor, and creates no
@@ -122,7 +127,7 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
             finally
             {
                 bootstrap.DescriptorWriter.Cleanup();
-                bootstrap.SingleInstance.Dispose();
+                await bootstrap.SingleInstance.DisposeAsync();
             }
         }
         finally
@@ -134,6 +139,13 @@ public sealed class ManagedRuntimeBootstrapperTests : IDisposable
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", previousWebEndpoint);
             Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", previousWebRequireApproval);
         }
+    }
+
+    [Fact]
+    public void Managed_default_requests_an_ephemeral_loopback_port()
+    {
+        Assert.Equal("http://127.0.0.1:0", PublicHostRuntimeOptions.DefaultBindUrl);
+        Assert.Equal(0, PublicHostRuntimeOptions.DefaultPublicPort);
     }
 
     private static (Thread Thread, ManualResetEventSlim Release) HoldLockOnWorkerThread(

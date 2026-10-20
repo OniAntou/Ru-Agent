@@ -100,6 +100,19 @@ public sealed class PublicHostSingleInstanceTests
     }
 
     [Fact]
+    public async Task Async_release_allows_reacquire_after_owner_thread_exits()
+    {
+        var name = "Local\\RuTestAsyncRelease-" + Guid.NewGuid().ToString("N");
+        await using (var first = new PublicHostSingleInstance(name))
+        {
+            Assert.True(first.IsAcquired);
+        }
+
+        using var second = new PublicHostSingleInstance(name);
+        Assert.True(second.IsAcquired);
+    }
+
+    [Fact]
     public void AbandonedMutexIsAdoptedByTheNextInstance()
     {
         // A host that dies without releasing must not wedge the next start:

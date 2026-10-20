@@ -9,6 +9,7 @@ using RuBackend.Harness.ModelRunner;
 using RuBackend.Providers;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.ModelRunner;
 
 public sealed class ReducedEffortTests
@@ -86,7 +87,7 @@ public sealed class ReducedEffortTests
             new ModelStepId("step_" + new string('b', 32)),
             new ModelContextSnapshot(entries, Array.Empty<byte>()),
             SystemPromptContext.Empty,
-            RuAgent.Harness.Core.AgentPermissionPreset.Standard,
+            RuAgent.Protocol.Harness.AgentPermissionPreset.Standard,
             policySnapshotVersion: 1,
             policySnapshotSha256: new string('c', 64));
     }

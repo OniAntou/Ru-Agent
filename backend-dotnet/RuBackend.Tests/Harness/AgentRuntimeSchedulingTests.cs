@@ -32,7 +32,10 @@ public sealed class AgentRuntimeSchedulingTests
             sessions, new HarnessModelContextBootstrapper(sessions, fixture.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
             new AgentRunHistoryTransitionSink(factory, roots), TimeProvider.System);
         using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots,
-            NullLogger<AgentRuntimeLoopService>.Instance, workspaceCoordinatorStore: new WorkspaceCoordinatorStore(fixture.Options));
+            NullLogger<AgentRuntimeLoopService>.Instance,
+            workspaceCoordinatorStore: new WorkspaceCoordinatorStore(fixture.Options),
+            workspaceJournalProtector: new WorkspaceJournalProtector(fixture.KeyStore),
+            brokerGateways: new UnavailableToolGatewayFactory());
         await loop.StartAsync(CancellationToken.None);
         try
         {
@@ -56,7 +59,8 @@ public sealed class AgentRuntimeSchedulingTests
         var dispatcher = new AgentConversationOutboxDispatcher(new HarnessOutboxStore(fixture.Options), fixture.PayloadStore, sessions,
             new HarnessModelContextBootstrapper(sessions, fixture.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
             new AgentRunHistoryTransitionSink(factory, roots), TimeProvider.System);
-        using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots, NullLogger<AgentRuntimeLoopService>.Instance);
+        using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots, NullLogger<AgentRuntimeLoopService>.Instance,
+            new WorkspaceCoordinatorStore(fixture.Options), new WorkspaceJournalProtector(fixture.KeyStore), new UnavailableToolGatewayFactory());
         await loop.StartAsync(CancellationToken.None);
         try
         {
@@ -90,7 +94,8 @@ public sealed class AgentRuntimeSchedulingTests
         var dispatcher = new AgentConversationOutboxDispatcher(new HarnessOutboxStore(fixture.Options), fixture.PayloadStore,
             sessions, new HarnessModelContextBootstrapper(sessions, fixture.PayloadStore, new CryptographicIdGenerator(), TimeProvider.System),
             new AgentRunHistoryTransitionSink(factory, roots), TimeProvider.System);
-        using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots, NullLogger<AgentRuntimeLoopService>.Instance);
+        using var loop = new AgentRuntimeLoopService(dispatcher, fixture.EventStore, factory, roots, NullLogger<AgentRuntimeLoopService>.Instance,
+            new WorkspaceCoordinatorStore(fixture.Options), new WorkspaceJournalProtector(fixture.KeyStore), new UnavailableToolGatewayFactory());
         await loop.StartAsync(CancellationToken.None);
         try
         {

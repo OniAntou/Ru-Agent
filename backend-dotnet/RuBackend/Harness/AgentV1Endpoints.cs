@@ -45,7 +45,7 @@ public static partial class AgentV1Endpoints
         app.MapPost("/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore", PostWorkspaceChangeRestoreAsync);
     }
 
-    private static async Task<IResult> CreateRunAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> CreateRunAsync(HttpContext context, AgentRunCreationService service, CancellationToken ct)
     {
         CreateAgentRunRequest? dto;
         try
@@ -77,13 +77,13 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetWorkspaceConcurrencyAsync(string workspaceId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetWorkspaceConcurrencyAsync(string workspaceId, AgentWorkspaceService service, CancellationToken ct)
     {
         var result = await service.GetWorkspaceConcurrencyAsync(workspaceId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PutWorkspaceConcurrencyAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PutWorkspaceConcurrencyAsync(string workspaceId, HttpContext context, AgentWorkspaceService service, CancellationToken ct)
     {
         WorkspaceConcurrencyUpdateRequest? request;
         try
@@ -111,17 +111,17 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> GetWorkspaceActivityAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct) =>
+    private static Task<IResult> GetWorkspaceActivityAsync(string workspaceId, HttpContext context, AgentWorkspaceService service, CancellationToken ct) =>
         GetWorkspaceFeedAsync(workspaceId, context, service, ct, activity: true);
 
-    private static Task<IResult> GetWorkspaceChangesAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct) =>
+    private static Task<IResult> GetWorkspaceChangesAsync(string workspaceId, HttpContext context, AgentWorkspaceService service, CancellationToken ct) =>
         GetWorkspaceFeedAsync(workspaceId, context, service, ct, activity: false);
 
     private static async Task<IResult> PostWorkspaceChangeRestoreAsync(
         string workspaceId,
         string changeId,
         HttpContext context,
-        AgentV1Service service,
+        AgentWorkspaceService service,
         CancellationToken ct)
     {
         WorkspaceChangeRestoreRequest? request;
@@ -153,7 +153,7 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> GetWorkspaceFeedAsync(
         string workspaceId,
         HttpContext context,
-        AgentV1Service service,
+        AgentWorkspaceService service,
         CancellationToken ct,
         bool activity)
     {
@@ -173,19 +173,19 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetRunAsync(string runId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetRunAsync(string runId, AgentRunQueryService service, CancellationToken ct)
     {
         var result = await service.GetRunAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetRunActivitiesAsync(string runId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetRunActivitiesAsync(string runId, AgentActivitiesService service, CancellationToken ct)
     {
         var result = await service.ListRunActivitiesAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task GetEventsAsync(string runId, HttpContext context, AgentV1Service service, IHarnessEventStore store, HarnessLiveEventHub hub, AgentRunSummaryLivePublisher summaryPublisher, CancellationToken ct)
+    private static async Task GetEventsAsync(string runId, HttpContext context, AgentRunQueryService service, IHarnessEventStore store, HarnessLiveEventHub hub, AgentRunSummaryLivePublisher summaryPublisher, CancellationToken ct)
     {
         // cursor handling: Last-Event-ID header and after_sequence query param
         var afterSequenceRaw = context.Request.Query["after_sequence"].ToString();
@@ -552,13 +552,13 @@ public static partial class AgentV1Endpoints
         }
     }
 
-    private static async Task<IResult> GetPayloadAsync(string runId, string payloadId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetPayloadAsync(string runId, string payloadId, AgentRunQueryService service, CancellationToken ct)
     {
         var result = await service.GetPayloadAsync(runId, payloadId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostApprovalAsync(string runId, string approvalId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostApprovalAsync(string runId, string approvalId, HttpContext context, AgentApprovalsService service, CancellationToken ct)
     {
         System.Text.Json.JsonElement body = default;
         bool hasBody = false;
@@ -589,7 +589,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostInputAsync(string runId, string inputId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostInputAsync(string runId, string inputId, HttpContext context, AgentInputsService service, CancellationToken ct)
     {
         System.Text.Json.JsonElement body = default;
         bool hasBody = false;
@@ -620,7 +620,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostTrustAsync(string runId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostTrustAsync(string runId, HttpContext context, AgentWorkspaceTrustService service, CancellationToken ct)
     {
         TrustAgentRunRequest? dto;
         try
@@ -652,13 +652,13 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostCancelAsync(string runId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostCancelAsync(string runId, AgentRunLifecycleService service, CancellationToken ct)
     {
         var result = await service.CancelAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostContinueAsync(string runId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostContinueAsync(string runId, AgentRunLifecycleService service, CancellationToken ct)
     {
         var result = await service.ContinueAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
@@ -667,7 +667,7 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> PostCompactAsync(
         string runId,
         HttpContext context,
-        AgentV1Service service,
+        AgentCommandsService service,
         CancellationToken ct)
     {
         CompactAgentRunRequest? dto;
@@ -720,7 +720,7 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> PostCommandAsync(
         string runId,
         HttpContext context,
-        AgentV1Service service,
+        AgentCommandsService service,
         CancellationToken ct)
     {
         DispatchAgentCommandRequest? dto;
@@ -766,7 +766,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostReconcileAsync(string runId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostReconcileAsync(string runId, HttpContext context, AgentCommandsService service, CancellationToken ct)
     {
         string? outcome = null;
         string? snapshotHash = null;
@@ -811,7 +811,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetSessionRunsAsync(string sessionId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetSessionRunsAsync(string sessionId, HttpContext context, AgentRunQueryService service, CancellationToken ct)
     {
         var limitRaw = context.Request.Query["limit"].ToString();
         int? limit = null;
@@ -835,13 +835,13 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetSessionPresetAsync(string sessionId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetSessionPresetAsync(string sessionId, HttpContext context, AgentPoliciesService service, CancellationToken ct)
     {
         var result = await service.GetSessionPresetAsync(sessionId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetPoliciesAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetPoliciesAsync(HttpContext context, AgentPoliciesService service, CancellationToken ct)
     {
         var scope = context.Request.Query["scope"].ToString();
         if (string.IsNullOrWhiteSpace(scope)) scope = null;
@@ -851,7 +851,7 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> PostPolicyAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostPolicyAsync(HttpContext context, AgentPoliciesService service, CancellationToken ct)
     {
         bool isInteractive = string.Equals(context.Request.Headers["X-Interactive-Confirmed"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
         JsonElement body;
@@ -894,7 +894,7 @@ public static partial class AgentV1Endpoints
         }
     }
 
-    private static async Task<IResult> DeletePolicyAsync(string ruleId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> DeletePolicyAsync(string ruleId, HttpContext context, AgentPoliciesService service, CancellationToken ct)
     {
         bool isInteractive = string.Equals(context.Request.Headers["X-Interactive-Confirmed"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
         var result = await service.DeletePolicyAsync(ruleId, isInteractive, ct);

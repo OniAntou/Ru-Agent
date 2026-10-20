@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using RuAgent.Harness.Core;
+using RuAgent.Protocol.Harness;
 using RuBackend.Business;
 using RuBackend.Diagnostics;
 using Xunit;

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 ADVISORY_AUDIT_SHORT_CIRCUITS = (
     "dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0",
+    "dotnet list gui-winui3/RuApp.csproj package --vulnerable --include-transitive || exit 0",
     "npm audit --prefix sdk/ru-agent --omit=dev || exit 0",
 )
 
@@ -88,6 +89,7 @@ def test_ci_publish_smoke_and_dependency_audits_are_wired_but_advisory() -> None
     assert (ROOT / "scripts" / "publish_smoke.ps1").is_file()
 
     assert "dotnet list RuAgent.slnx package --vulnerable --include-transitive || exit 0" in dotnet_job
+    assert "dotnet list gui-winui3/RuApp.csproj package --vulnerable --include-transitive || exit 0" in dotnet_job
     assert "npm audit --prefix sdk/ru-agent --omit=dev || exit 0" in node_job
     # pip-audit is deliberately not wired: pyproject pins no such tool, and the
     # repo does not grow a dependency just to run an advisory scan.

@@ -6,6 +6,7 @@ using RuAgent.Harness.Persistence.Workspace;
 using RuBackend.Harness.Workspace;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.Harness;
 
 public sealed class WorkspaceTrustEndpointTests

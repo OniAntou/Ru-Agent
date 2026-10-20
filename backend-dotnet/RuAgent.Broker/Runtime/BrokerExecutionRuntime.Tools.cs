@@ -9,56 +9,6 @@ namespace RuAgent.Broker.Runtime;
 public sealed partial class BrokerExecutionRuntime
 {
     /// <summary>
-    /// v1 <c>tool_request</c> / <c>approval_response</c>. Both message types
-    /// share the legacy handler exactly as before: the handler itself branches
-    /// on the message type, and the lifecycle gate serializes the whole call,
-    /// so two legacy requests never overlap.
-    /// </summary>
-    public async Task<ToolExecutionReply> ExecuteLegacyAsync(AgentEnvelope request, CancellationToken cancellationToken)
-    {
-        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-            if (_delegations.Values.Any(scope => scope.ChildSessionId == request.SessionId))
-                return ToolExecutionReply.Error("subagent_legacy_denied", "delegated sessions require run-bound execution");
-            if (!_session.Owns(request.SessionId))
-            {
-                return ToolExecutionReply.Error("broker_not_ready", "session is not open");
-            }
-
-            if (_legacyToolHandler is null)
-            {
-                return ToolExecutionReply.Error("broker_not_ready", "tool execution is not registered");
-            }
-
-            using var telemetryActivity = BrokerTelemetry.StartToolActivity();
-            try
-            {
-                var result = await _legacyToolHandler(request, cancellationToken).ConfigureAwait(false);
-                BrokerTelemetry.SetToolOutcome(
-                    telemetryActivity,
-                    BrokerTelemetry.ReadToolId(request.Payload),
-                    result);
-                return ToolExecutionReply.FromReceipt(result);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception error)
-            {
-                BrokerDiagnosticLog.ToolHandlerFailed(request, error);
-                return ToolExecutionReply.Error("tool_handler_failed", "tool request failed");
-            }
-        }
-        finally
-        {
-            _lifecycleGate.Release();
-        }
-    }
-
-    /// <summary>
     /// v2 <c>tool.execute</c>: the run registration is taken before the
     /// authorization token is consumed, the gate serializes only the preflight
     /// (lease re-check + one-time token consumption), and the execution itself
@@ -109,9 +59,7 @@ public sealed partial class BrokerExecutionRuntime
         using var telemetryActivity = BrokerTelemetry.StartToolActivity();
         try
         {
-            var result = _authenticatedToolHandler is { } authenticatedHandler
-                ? await authenticatedHandler(request, executionToken).ConfigureAwait(false)
-                : await preparation.Handler!(request, executionToken).ConfigureAwait(false);
+            var result = await preparation.Handler!(request, executionToken).ConfigureAwait(false);
             BrokerTelemetry.SetToolOutcome(
                 telemetryActivity,
                 BrokerTelemetry.ReadToolId(request.Payload),
@@ -353,11 +301,11 @@ public sealed partial class BrokerExecutionRuntime
                 null);
         }
 
-        return _legacyToolHandler is null && _authenticatedToolHandler is null
+        return _authenticatedToolHandler is null
             ? new ToolExecutePreparation(
                 ToolExecutionReply.Error("broker_not_ready", "tool execution is not registered"),
                 null)
-            : new ToolExecutePreparation(null, _legacyToolHandler);
+            : new ToolExecutePreparation(null, _authenticatedToolHandler);
     }
 
     /// <summary>

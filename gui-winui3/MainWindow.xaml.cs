@@ -1160,7 +1160,7 @@ namespace RuApp
             if (_apiService == null || _chatView == null) return;
             try
             {
-                var target = _selectedWorkspaceKey ?? ResolveNewChatWorkspace();
+                var target = SidebarSessionPresenter.ResolveNewChatWorkspace(_selectedWorkspaceKey);
                 var path = target is null ? null : ResolveWorkspacePath(target);
                 await CreateDraftSessionAsync(target, path);
             }
@@ -1171,11 +1171,6 @@ namespace RuApp
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 StatusText.Text = "Could not create a new chat session";
             }
-        }
-
-        private string? ResolveNewChatWorkspace()
-        {
-            return SidebarSessionOrganization.RecentsKey;
         }
 
         private async void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)

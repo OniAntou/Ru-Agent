@@ -17,8 +17,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
-using RuAgent.Harness.Core;
-using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
@@ -34,7 +32,7 @@ namespace RuApp.Views
 
         private void ShowAgentInlineStatus(string status)
         {
-            _localComposerStatus = status;
+            _composerLocalStatus.Set(status);
             ApplyAgentStatusText();
         }
 
@@ -45,7 +43,7 @@ namespace RuApp.Views
         /// </summary>
         private void ClearComposerStatus()
         {
-            _localComposerStatus = string.Empty;
+            _composerLocalStatus.Clear();
             UpdateAgentInlineState();
         }
 
@@ -57,7 +55,7 @@ namespace RuApp.Views
         /// from being rejected silently. It is cleared by the next composer action
         /// that replaces the message, or by a turn that starts.
         /// </summary>
-        private string _localComposerStatus = string.Empty;
+        private string _localComposerStatus => _composerLocalStatus.Text;
 
         private void ApplyAgentStatusText()
         {
@@ -376,7 +374,7 @@ namespace RuApp.Views
             _workspaceTrustDialogRunId = run.RunId;
             _workspaceTrustDialogSessionId = run.SessionId;
             _workspaceTrustDialogController = controller;
-            _agentActionPending = true;
+            _sessionHistoryPresenter.SetActionPending(true);
             UpdateAgentInlineState();
 
             Exception? failure = null;
@@ -454,7 +452,7 @@ namespace RuApp.Views
 
                 if (_workspaceTrustDialogRunId is null)
                 {
-                    _agentActionPending = false;
+                    _sessionHistoryPresenter.SetActionPending(false);
                     UpdateAgentInlineState();
                 }
 
@@ -569,7 +567,7 @@ namespace RuApp.Views
             _queuedTurns.Clear();
 
             _sessionPresentation.StopMonitoring();
-            _agentActionPending = false;
+            _sessionHistoryPresenter.SetActionPending(false);
             _workspaceTrustDialogRunId = null;
             _workspaceTrustDialogSessionId = null;
             _workspaceTrustDialogHandledRunId = null;
@@ -592,7 +590,7 @@ namespace RuApp.Views
             ApprovalPanel.Hide();
             QuestionPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
-            _localComposerStatus = string.Empty;
+            _composerLocalStatus.Clear();
             ApplyAgentStatusText();
             UpdateSendButtonMode(isAgentRunning: false);
         }
@@ -813,32 +811,31 @@ namespace RuApp.Views
                 // bailing out after UpdateSendButtonMode(true) leaves the button showing
                 // Stop with no run behind it, and the next send starts from a broken state.
                 int imageCount = attachments.Count(static attachment => attachment.IsImage);
-                if (imageCount > ChatAttachmentPolicy.MaxImageCount)
+                if (ChatAttachmentIntakePresenter.TurnAdmissionStatus(imageCount) is { } admissionStatus)
                 {
-                    ShowAgentInlineStatus(ChatAttachmentPolicy.TooManyImagesStatus);
+                    ShowAgentInlineStatus(admissionStatus);
                     return;
                 }
 
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
 
-                await EnsureAgentSessionAsync(CancellationToken.None);
-                string submittedSessionId = _activeSessionId;
-                bool accepted = await SendAgentTurnAsync(
-                    BuildEffectivePrompt(text, attachments),
-                    CancellationToken.None,
-                    attachments: attachments,
-                    displayUserText: text,
-                    onAccepted: () =>
+                string submittedSessionId = await ChatSubmissionPresenter.CaptureSessionAsync(
+                    () => EnsureAgentSessionAsync(CancellationToken.None),
+                    () => _activeSessionId);
+                bool accepted = await ChatSubmissionPresenter.SubmitAsync(
+                    onAccepted => SendAgentTurnAsync(
+                        BuildEffectivePrompt(text, attachments),
+                        CancellationToken.None,
+                        attachments: attachments,
+                        displayUserText: text,
+                        onAccepted: onAccepted),
+                    () => submittedGeneration == _agentTurnGeneration
+                        && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
+                        && string.Equals(ChatInputTextBox.Text, composerText, StringComparison.Ordinal)
+                        && PendingAttachments.SequenceEqual(attachments),
+                    () =>
                     {
-                        if (submittedGeneration != _agentTurnGeneration
-                            || !string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
-                            || !string.Equals(ChatInputTextBox.Text, composerText, StringComparison.Ordinal)
-                            || !PendingAttachments.SequenceEqual(attachments))
-                        {
-                            return;
-                        }
-
                         ChatInputTextBox.Text = string.Empty;
                         PendingAttachments.Clear();
                         AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
@@ -1061,7 +1058,7 @@ namespace RuApp.Views
                 throw new InvalidOperationException("Agent controller is unavailable.");
             }
 
-            if (_rewindInProgress)
+            if (_sessionHistoryPresenter.IsRewindInProgress)
             {
                 ShowAgentInlineStatus("Wait for the history rewind to finish before sending.");
                 return false;
@@ -1143,24 +1140,34 @@ namespace RuApp.Views
 
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
             }
-            catch (AgentApiException error) when (
-                allowSessionRecovery
-                && AgentSessionRecovery.IsRecoverable(error)
-                && submittedSessionId is not null
-                && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
-                && _agentSessionRecovery.TryBegin(submittedSessionId))
+            catch (AgentApiException error)
             {
-                // Preserve the completion gate while replacing the stale
-                // session and retrying this same logical turn once.
-                AbandonActiveAgentReply(removeUserMessage: true);
-                await RecoverAgentSessionAsync(cancellationToken);
-                return await SendAgentTurnAsync(
-                    text,
-                    cancellationToken,
-                    allowSessionRecovery: false,
-                    attachments: attachments,
-                    displayUserText: displayUserText,
-                    onAccepted: onAccepted);
+                bool? recovered = await AgentSessionRecovery.TryRecoverAsync(
+                    error,
+                    allowSessionRecovery,
+                    submittedSessionId,
+                    () => string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal),
+                    () => submittedSessionId is not null && _agentSessionRecovery.TryBegin(submittedSessionId),
+                    async () =>
+                    {
+                        // Preserve the completion gate while replacing the stale
+                        // session and retrying this same logical turn once.
+                        AbandonActiveAgentReply(removeUserMessage: true);
+                        await RecoverAgentSessionAsync(cancellationToken);
+                    },
+                    () => SendAgentTurnAsync(
+                        text,
+                        cancellationToken,
+                        allowSessionRecovery: false,
+                        attachments: attachments,
+                        displayUserText: displayUserText,
+                        onAccepted: onAccepted));
+                if (recovered is bool accepted)
+                {
+                    return accepted;
+                }
+
+                throw;
             }
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))

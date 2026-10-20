@@ -9,6 +9,7 @@ from urllib.parse import unquote, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 
 CURRENT_OPERATIONS_DOCS = sorted((ROOT / "docs/operations").glob("*.md"))
+CURRENT_COMPONENT_DOCS = sorted((ROOT / "docs/architecture").glob("*.md"))
 CURRENT_CONTRACT_DOCS = [
     ROOT / "README.md",
     ROOT / "CONTEXT.md",
@@ -21,6 +22,7 @@ CURRENT_CONTRACT_DOCS = [
     ROOT / "backend-dotnet/README.md",
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
     ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
+    *CURRENT_COMPONENT_DOCS,
 ]
 CURRENT_RULE_DOCS = [
     ROOT / "AGENTS.md",
@@ -32,25 +34,23 @@ CURRENT_RULE_DOCS = [
 # held by the ban-list tests below, which is where drift in a passing
 # reference actually shows up.
 CURRENT_MATRIX_OWNING_DOCS = [
-    ROOT / "CONTEXT.md",
-    ROOT / "docs/architecture.md",
+    ROOT / "docs/architecture/broker.md",
     ROOT / "docs/operations/agent-tools.md",
     ROOT / "docs/operations/runtime-behavior.md",
     ROOT / "backend-dotnet/README.md",
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
     ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
 ]
-CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
+CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_COMPONENT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
 CURRENT_REASON_DOCS = [
     ROOT / "docs/README.md",
-    ROOT / "docs/architecture.md",
+    ROOT / "docs/architecture/broker.md",
     ROOT / "docs/operations/agent-tools.md",
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
     ROOT / "docs/adr/0017-workspace-terminal-policy.md",
 ]
 CURRENT_SECTION_BOUNDARIES = {
     ROOT / "docs/operations/agent-tools.md": ("## Current capability matrix", None),
-    ROOT / "docs/operations/verification.md": (None, "\n> **Job Object:"),
 }
 
 
@@ -78,6 +78,8 @@ def test_current_documentation_local_links_resolve() -> None:
             ROOT / "docs/README.md", ROOT / "docs/architecture.md",
             ROOT / "backend-dotnet/README.md", ROOT / "backend-dotnet/RuAgent.Cli/README.md",
             *sorted((ROOT / "docs/operations").glob("*.md")),
+            *CURRENT_COMPONENT_DOCS,
+            *sorted((ROOT / "docs/history").rglob("*.md")),
             *sorted((ROOT / "docs/adr").glob("*.md")),
         )
         if path.exists()

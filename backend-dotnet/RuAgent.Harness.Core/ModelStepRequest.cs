@@ -1,5 +1,6 @@
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core;
 

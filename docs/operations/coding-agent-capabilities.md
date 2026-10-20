@@ -1,6 +1,6 @@
 # Coding-agent capability baseline
 
-This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-11: terminal OS confinement was retired under ADR-0015; terminal children run as the current Windows user, while Job Object bounds, ordinary approvals, and secret redaction remain. The [post-refactor Nemotron rerun](verification.md#post-refactor-live-coding-rerun-2026-10-10) resolved 0/9 custom tasks under `standard`; its model/tool-use and approval failures do not establish general coding quality.
+This is the current capability and acceptance map for Ru. The 2026-10-04 hardening delivery balanced Harness and TUI development; it does not establish benchmark or overall product parity. Updated 2026-10-11: terminal OS confinement was retired under ADR-0015; terminal children run as the current Windows user, while Job Object bounds, ordinary approvals, and secret redaction remain. The [post-refactor Nemotron rerun](../history/verification/2026-10-10.md#post-refactor-live-coding-rerun-2026-10-10) resolved 0/9 custom tasks under `standard`; its model/tool-use and approval failures do not establish general coding quality.
 
 ## Reference workflows
 
@@ -19,7 +19,7 @@ These products differ in architecture and scope. Ru must keep its native .NET ru
 
 | Workflow | Current source evidence | Acceptance gap |
 | --- | --- | --- |
-| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](verification.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
+| Read/edit/run/verify loop | Harness Core, thirteen Protocol tool definitions, Broker adapters; incomplete-finish rejection and concrete tool repair hints | Before the finish-reason fixes, the nine-task live rerun resolved none. The post-fix small C# diagnostic stopped at provider rate limiting before tool use; improvement remains unmeasured. See [Verification](../history/verification/2026-10-10.md#provider-finish-reason-and-tool-feedback-fixes-2026-10-10) |
 | Multi-tool steps and bounded repair | Tool Batch, durable Recovery Notes, failed period-2/3 cycle guard; real Host/Broker edit/verify and guard scenarios | Real-provider effectiveness of repair advice |
 | Streaming and durable replay | HTTP/SSE, transcript reconciliation, retained run discovery, explicit `/follow` and typed `Continue` | Native rendering and transport interruption acceptance |
 | Approval, trust and presets | Broker authority, single-use tokens, Workspace Trust; pending approval replay and fresh run-version checks | Native approval keyboard acceptance; another client may resolve first |

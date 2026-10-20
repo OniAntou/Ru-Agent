@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Benchmark task projects are isolated fixtures, not product dependencies. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

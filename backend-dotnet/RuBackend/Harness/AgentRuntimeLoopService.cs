@@ -167,7 +167,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly SessionWorkStateStore? _workStates;
-    private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly ReconciliationInspectionGate _inspectionGate;
     private readonly ITransientContentRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
@@ -178,47 +178,51 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider _contextLimit;
     private readonly Prompting.AgentToolRuntimeAvailability _runtimeAvailability;
-    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
-    private readonly Broker.IToolGatewayFactory? _brokerGateways;
+    private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
+    private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly InMemoryRetainedApprovalStash _retainedStash;
     private readonly IAgentRunModelMetadataResolver? _runModelMetadataResolver;
-    private readonly Subagents.SubagentRuntimeBinder? _subagentBinder;
-    private readonly RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? _familyBudget;
-    private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox? _subagentInbox;
+    private readonly Subagents.SubagentRuntimeBinder _subagentBinder;
+    private readonly RuAgent.Harness.Core.Subagents.IAgentFamilyBudget _familyBudget;
+    private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox _subagentInbox;
+    private readonly ILogger<AgentRuntimeCoordinatorFactory>? _budgetLogger;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
         HarnessPayloadStore payloadStore,
-        ReconciliationInspectionGate? inspectionGate = null,
-        ITransientContentRedactor? transientRedactor = null,
+        ReconciliationInspectionGate inspectionGate,
+        WorkspaceCoordinatorStore workspaceCoordinatorStore,
+        Broker.IToolGatewayFactory brokerGateways,
+        Subagents.SubagentRuntimeBinder subagentBinder,
+        RuAgent.Harness.Core.Subagents.IAgentFamilyBudget familyBudget,
+        RuAgent.Harness.Core.Subagents.ISubagentInbox subagentInbox,
+        ISettingsStore settings,
+        ITimeProvider time,
+        ITransientContentRedactor transientRedactor,
         HarnessLiveEventHub? liveEvents = null,
         AgentRunSummaryLivePublisher? summaryPublisher = null,
         IAgentReplyPolicy? replyPolicy = null,
         IAgentReplyEffectSink? replyEffects = null,
         RuInstructionLoader? instructionLoader = null,
-        ISettingsStore? settings = null,
-        ITimeProvider? time = null,
         IModelContextLimitProvider? contextLimit = null,
         Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        Broker.IToolGatewayFactory? brokerGateways = null,
         IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
         SessionWorkStateStore? workStates = null,
-        Subagents.SubagentRuntimeBinder? subagentBinder = null,
-        RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? familyBudget = null,
-        RuAgent.Harness.Core.Subagents.ISubagentInbox? subagentInbox = null)
+        ILogger<AgentRuntimeCoordinatorFactory>? logger = null)
     {
-        _familyBudget = familyBudget;
-        _subagentInbox = subagentInbox;
+        _budgetLogger = logger;
+        _familyBudget = familyBudget ?? throw new ArgumentNullException(nameof(familyBudget));
+        _subagentInbox = subagentInbox ?? throw new ArgumentNullException(nameof(subagentInbox));
+        _subagentBinder = subagentBinder ?? throw new ArgumentNullException(nameof(subagentBinder));
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _workStates = workStates;
-        _inspectionGate = inspectionGate;
-        _transientRedactor = transientRedactor;
+        _inspectionGate = inspectionGate ?? throw new ArgumentNullException(nameof(inspectionGate));
+        _transientRedactor = transientRedactor ?? throw new ArgumentNullException(nameof(transientRedactor));
         _liveEvents = liveEvents;
         _summaryPublisher = summaryPublisher;
         _replyPolicy = replyPolicy;
@@ -228,6 +232,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _time = time ?? throw new ArgumentNullException(nameof(time));
         var pinnedModelMetadataResolver = model is IProviderBackedModelStepRunner
             ? runModelMetadataResolver
+                ?? throw new InvalidOperationException("provider_model_metadata_unavailable")
             : null;
         _contextLimit = contextLimit
             ?? (pinnedModelMetadataResolver is null
@@ -240,11 +245,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _runtimeAvailability = runtimeAvailability ?? new Prompting.AgentToolRuntimeAvailability(
             WebSearchEnabled: true,
             WebFetchEnabled: true);
-        _workspaceCoordinatorStore = workspaceCoordinatorStore;
-        _brokerGateways = brokerGateways;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
+        _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _runModelMetadataResolver = pinnedModelMetadataResolver;
         _retainedStash = new InMemoryRetainedApprovalStash(_time);
-        _subagentBinder = subagentBinder;
     }
 
     public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
@@ -256,7 +260,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         string? agentSessionId = null,
         CancellationToken cancellationToken = default)
     {
-        var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken).ConfigureAwait(false);
+        var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken, _budgetLogger).ConfigureAwait(false);
         var availability = _runtimeAvailability with { ChildRole = null };
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null
@@ -269,7 +273,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
-        if (internalRun && (_subagentBinder is null || agentSessionId != storedRun!.SessionId.Value))
+        if (internalRun && agentSessionId != storedRun!.SessionId.Value)
             throw new HarnessStoreException("subagent_runtime_unavailable");
         if (internalRun)
         {
@@ -285,7 +289,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         {
             try
             {
-                if (!await _subagentBinder!.BindAsync(brokerRunId, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false))
+                if (!await _subagentBinder.BindAsync(brokerRunId, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false))
                     throw new HarnessStoreException("subagent_scope_missing");
             }
             catch
@@ -324,7 +328,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _time,
             new ToolCallScheduler(),
             frames,
-            _transientRedactor ?? KnownSecretRedactor.Empty,
+            _transientRedactor,
             _contextLimit,
             _inspectionGate,
             activitySink,
@@ -340,12 +344,13 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 
     /// <summary>
     /// Reads the compaction ratios from settings into a budget policy.
-    /// Fail-closed: any read failure or invalid pair yields policy defaults,
-    /// so a bad settings file can never break a run.
+    /// Expected storage/format failures use policy defaults with a safe warning.
+    /// Cancellation and unexpected programming failures remain observable.
     /// </summary>
     internal static async Task<ContextBudgetPolicy> ResolveBudgetPolicyAsync(
         ISettingsStore settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
         try
         {
@@ -358,8 +363,12 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         {
             throw;
         }
-        catch
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException
+            or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
         {
+            // Exception messages may contain persisted settings or credentials.
+            logger?.LogWarning("Context budget settings unavailable; using policy defaults. ErrorType={ErrorType}",
+                error.GetType().Name);
             return AgentRunCoordinator.CreateBudgetPolicy();
         }
     }
@@ -431,8 +440,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly ILogger<AgentRuntimeLoopService> _logger;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
     private readonly WorkspaceExternalChangeMonitor? _workspaceChangeMonitor;
-    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
-    private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
+    private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
+    private readonly WorkspaceJournalProtector _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _workerGate = new(MaxConcurrentRuns, MaxConcurrentRuns);
     private readonly Dictionary<string, Task> _workers = new(StringComparer.Ordinal);
@@ -442,7 +451,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         new(StringComparer.Ordinal);
 
     private readonly WorkspaceWatchRegistry? _workspaceWatches;
-    private readonly Broker.IToolGatewayFactory? _brokerGateways;
+    private readonly Broker.IToolGatewayFactory _brokerGateways;
     private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
     private readonly RetainedInputRehydrator? _retainedInputRehydrator;
     private readonly HarnessRecoveryScanner _recoveryScanner;
@@ -458,11 +467,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         IAgentRuntimeCoordinatorFactory coordinatorFactory,
         IAgentRuntimeRootRegistry roots,
         ILogger<AgentRuntimeLoopService> logger,
+        WorkspaceCoordinatorStore workspaceCoordinatorStore,
+        WorkspaceJournalProtector workspaceJournalProtector,
+        Broker.IToolGatewayFactory brokerGateways,
         AgentRunSummaryLivePublisher? summaryPublisher = null,
         WorkspaceExternalChangeMonitor? workspaceChangeMonitor = null,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        WorkspaceJournalProtector? workspaceJournalProtector = null,
-        Broker.IToolGatewayFactory? brokerGateways = null,
         RetainedApprovalRehydrator? retainedApprovalRehydrator = null,
         RetainedInputRehydrator? retainedInputRehydrator = null,
         Subagents.SubagentScheduler? subagents = null,
@@ -479,9 +488,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         _summaryPublisher = summaryPublisher;
         _workspaceChangeMonitor = workspaceChangeMonitor;
         _workspaceWatches = workspaceChangeMonitor is null ? null : new WorkspaceWatchRegistry(workspaceChangeMonitor);
-        _workspaceCoordinatorStore = workspaceCoordinatorStore;
-        _workspaceJournalProtector = workspaceJournalProtector;
-        _brokerGateways = brokerGateways;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore ?? throw new ArgumentNullException(nameof(workspaceCoordinatorStore));
+        _workspaceJournalProtector = workspaceJournalProtector ?? throw new ArgumentNullException(nameof(workspaceJournalProtector));
+        _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _retainedApprovalRehydrator = retainedApprovalRehydrator;
         _retainedInputRehydrator = retainedInputRehydrator;
         _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
@@ -822,7 +831,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         {
             _summaryPublisher?.RegisterWorkspace(runId, workspaceRoot);
 
-            if (_workspaceCoordinatorStore is not null)
             {
                 var workspace = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceRun.WorkspaceId, cancellationToken).ConfigureAwait(false);
                 var leaseDuration = TimeSpan.FromSeconds(workspace.LeaseTtlSeconds);
@@ -1078,19 +1086,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     continue;
                 }
 
-                // Triage hook: surface the terminal reason alongside the exception dump.
-                var terminalDiagnostic = Environment.GetEnvironmentVariable("RU_DRIVE_FAILURE_DIAGNOSTIC");
-                if (!string.IsNullOrWhiteSpace(terminalDiagnostic) && result.ErrorCode is not null)
+                if (result.ErrorCode is not null)
                 {
-                    try
-                    {
-                        File.AppendAllText(
-                            terminalDiagnostic,
-                            $"{DateTimeOffset.UtcNow:O} {runIdValue}: error_code={result.ErrorCode} state={result.Run.State}{Environment.NewLine}");
-                    }
-                    catch (Exception)
-                    {
-                    }
+                    _logger.LogInformation("Run {RunId} stopped with {ErrorCode} in {RunState}",
+                        runIdValue, result.ErrorCode, result.Run.State);
                 }
 
                 if (result.Run.State.IsTerminal())
@@ -1104,22 +1103,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            // Triage hook: the normalized terminal code hides the underlying exception,
-            // which makes a drive failure hard to diagnose from a test. Set
-            // RU_DRIVE_FAILURE_DIAGNOSTIC to a file path to dump the full exception.
-            var diagnosticPath = Environment.GetEnvironmentVariable("RU_DRIVE_FAILURE_DIAGNOSTIC");
-            if (!string.IsNullOrWhiteSpace(diagnosticPath))
-            {
-                try
-                {
-                    File.AppendAllText(diagnosticPath, $"{DateTimeOffset.UtcNow:O} {runIdValue}: {error}{Environment.NewLine}");
-                }
-                catch (Exception)
-                {
-                    // Diagnostics must never change run behaviour.
-                }
-            }
-
             _logger.LogWarning(error, "run {RunId} failed during runtime drive", runIdValue);
             if (coordinator is null)
             {
@@ -1149,7 +1132,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             }
 
             workspaceWatcher?.Dispose();
-            if (membership is not null && _workspaceCoordinatorStore is not null)
+            if (membership is not null)
             {
                 try
                 {
@@ -1183,11 +1166,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             change.ExpectedSha256,
             change.ObservedSha256,
             change.WriterKind);
-
-        if (_workspaceCoordinatorStore is null || _workspaceJournalProtector is null)
-        {
-            return false;
-        }
 
         try
         {

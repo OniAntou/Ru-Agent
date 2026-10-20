@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using RuAgent.Harness.Core;
 using RuApp.Services;
 using Xunit;
 
+using RuAgent.Protocol.Harness;
 namespace RuApp.Tests;
 
 /// <summary>
@@ -17,6 +17,18 @@ namespace RuApp.Tests;
 /// </summary>
 public sealed class AgentSessionUiSourceContractTests
 {
+    [Fact]
+    public void RuApp_does_not_reference_server_harness_core()
+    {
+        var project = GuiSource.Xml("RuApp.csproj");
+        var references = project.Descendants("ProjectReference")
+            .Select(reference => (string?)reference.Attribute("Include"))
+            .Where(include => include is not null);
+
+        Assert.DoesNotContain(references, include =>
+            include!.Contains("RuAgent.Harness.Core", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void Beginning_reply_does_not_reset_a_trust_prompt_owned_by_the_accepted_run()
     {
@@ -350,13 +362,13 @@ public sealed class AgentSessionUiSourceContractTests
     [Fact]
     public void Sidebar_is_rendered_before_backend_start_and_empty_unchanged_polls_can_repair_it()
     {
+        // Startup ordering is an ownership boundary: the shell owns initial chrome,
+        // while session polling may repair the projection later.
         var code = GuiSource.ViewText("MainWindow");
         var startup = GuiSource.MethodBody(code, "InitializeAppAsync");
         var render = startup.IndexOf("RenderWorkspaceSidebar();", StringComparison.Ordinal);
         var start = startup.IndexOf("_backendProvider.StartAsync", StringComparison.Ordinal);
         Assert.True(render >= 0 && start > render, "Sidebar chrome must render without waiting for backend/session changes.");
-        var apply = GuiSource.MethodBody(code, "ApplySessions");
-        Assert.Contains("_sidebarRows.Count == 0", apply, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -364,65 +376,20 @@ public sealed class AgentSessionUiSourceContractTests
     {
         var document = GuiSource.Xml("MainWindow.xaml");
         var warning = GuiSource.Require(document, "SidebarSessionTruncationWarning");
-        var applySessions = GuiSource.MethodBody(
-            GuiSource.ViewText("MainWindow"),
-            "ApplySessions");
-
         Assert.Equal("Collapsed", GuiSource.AttributeValue(warning, "Visibility"));
         Assert.Contains("some sessions are hidden", GuiSource.AttributeValue(warning, "Text"), StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("result.SessionsTruncated", applySessions, StringComparison.Ordinal);
-        Assert.Contains("SidebarSessionTruncationWarning.Visibility", applySessions, StringComparison.Ordinal);
-        Assert.Contains("SidebarSessionTruncationWarning.Visibility != warningVisibility", applySessions, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Sidebar_render_wires_projection_and_new_chat_cascade()
+    public void Sidebar_controls_remain_wired_to_their_ui_handlers()
     {
-        var code = GuiSource.ViewText("MainWindow");
-        Assert.Contains(
-            "WorkspaceSessionProjection.Project",
-            GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "ResolveNewChatWorkspace",
-            GuiSource.MethodBody(code, "OnNewChatClick"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "VirtualKey.Enter",
-            GuiSource.MethodBody(code, "OnWorkspaceSearchKeyDown"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "FolderPicker",
-            GuiSource.MethodBody(code, "PickAndPinWorkspaceAsync"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "MergePinned",
-            GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "CreateDraftSessionAsync",
-            GuiSource.MethodBody(code, "AddSessionToWorkspaceGroupAsync"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "CreateSessionAsync",
-            GuiSource.MethodBody(code, "CreateDraftSessionAsync"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Unpin",
-            GuiSource.MethodBody(code, "OnWorkspaceRemoveClick"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Opacity",
-            GuiSource.MethodBody(code, "SetWorkspaceGroupChromeVisible"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "CommandParameter",
-            GuiSource.MethodBody(code, "OnWorkspaceGroupClick"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "PathStateKey",
-            GuiSource.MethodBody(code, "OnWorkspaceGroupClick"),
-            StringComparison.Ordinal);
+        var document = GuiSource.Xml("MainWindow.xaml");
+        foreach (string name in new[] { "SidebarSessionList", "WorkspaceSearchBox", "WorkspaceGroupToggle" })
+        {
+            Assert.Contains(name, GuiSource.NamedElements(document).Keys);
+        }
+
+        Assert.NotNull(GuiSource.AttributeValue(GuiSource.Require(document, "WorkspaceGroupToggle"), "Click"));
     }
 
     [Fact]

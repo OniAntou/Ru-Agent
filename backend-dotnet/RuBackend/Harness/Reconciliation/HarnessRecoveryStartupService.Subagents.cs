@@ -5,12 +5,11 @@ namespace RuBackend.Harness.Reconciliation;
 
 public sealed partial class HarnessRecoveryStartupService
 {
-    private readonly Subagents.SubagentRecoveryCoordinator? _subagentRecovery;
+    private readonly Subagents.SubagentRecoveryCoordinator _subagentRecovery;
 
     private async Task<(IReadOnlyList<RunId> Ordinary, IReadOnlyList<RunId> Children)> PartitionSubagentRunsAsync(
         IReadOnlyList<RunId> runIds, CancellationToken ct)
     {
-        if (_subagentRecovery is null) return (runIds, Array.Empty<RunId>());
         var ordinary = new List<RunId>();
         var children = new List<RunId>();
         foreach (var runId in runIds)
@@ -23,7 +22,6 @@ public sealed partial class HarnessRecoveryStartupService
 
     private async Task<bool> RecoverSubagentsStageAsync(IReadOnlyList<RunId> children, CancellationToken ct)
     {
-        if (_subagentRecovery is null) return true;
         var handled = true;
         foreach (var runId in children)
         {

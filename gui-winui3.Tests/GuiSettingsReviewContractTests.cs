@@ -1,3 +1,4 @@
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -5,10 +6,15 @@ namespace RuApp.Tests;
 public sealed class GuiSettingsReviewContractTests
 {
     [Fact]
-    public void Settings_hydrates_the_hidden_cloudflare_account_before_any_autosave()
+    public async Task Settings_load_retains_the_hidden_cloudflare_account_for_form_hydration()
     {
-        string load = GuiSource.MethodBody(GuiSource.ViewText("SettingsView"), "LoadSettingsAsync");
-        Assert.Contains("CloudflareAccountIdBox.Text = settings.CloudflareAccountId", load, StringComparison.Ordinal);
+        var presenter = new SettingsPresenter();
+        var settings = new RuApp.Models.AppSettingsDto { CloudflareAccountId = "account-123" };
+        long request = presenter.BeginLoad();
+
+        var result = await presenter.LoadAsync(request, () => Task.FromResult<RuApp.Models.AppSettingsDto?>(settings));
+
+        Assert.Equal("account-123", result?.Settings.CloudflareAccountId);
     }
 
     [Fact]

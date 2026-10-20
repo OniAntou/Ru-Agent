@@ -1,63 +1,72 @@
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
-/// <summary>
-/// Opening a session must rebuild the agent's activity feed, not just its prose.
-/// </summary>
-/// <remarks>
-/// Session messages persist role/content and run identity; a transcript built from them alone
-/// shows text with every tool, thinking and task-list row missing. The rows are recovered
-/// from each terminal run's durable events, which is the only reason a feed survives
-/// leaving a session or closing the app.
-///
-/// This is asserted at the source level rather than by driving the view: the view needs a
-/// live host, and the property that matters -- that the open path consults the durable
-/// replay at all -- is visible in the method body.
-/// </remarks>
+/// <summary>Durable feed replay keeps run slots stable while limiting parallel reads.</summary>
 public sealed class SessionOpenReplayTests
 {
-    private static string OpenSessionBody() =>
-        GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
-
     [Fact]
-    public void Opening_a_session_rebuilds_activities_from_durable_events()
+    public async Task Replay_preserves_run_order_and_empty_slots_when_a_run_read_fails()
     {
-        string body = OpenSessionBody();
+        var runIds = Enumerable.Range(0, 9)
+            .Select(index => new ApiService.SessionRunRef($"run-{index}", true, "completed", null, null))
+            .ToArray();
+        int activeReads = 0;
+        int peakReads = 0;
 
-        Assert.Contains("LoadReplayedRunActivitiesAsync", body, StringComparison.Ordinal);
+        var replay = await AgentActivityReplayLoader.LoadAsync(
+            "session-a",
+            (_, _) => Task.FromResult<IReadOnlyList<ApiService.SessionRunRef>?>(runIds),
+            async (runId, _) =>
+            {
+                int active = Interlocked.Increment(ref activeReads);
+                UpdatePeak(active);
+                try
+                {
+                    await Task.Delay(15);
+                    if (runId == "run-4") throw new InvalidOperationException("damaged activity log");
+                    return new ApiService.RunActivityReplay(
+                        Array.Empty<AgentActivityModel>(),
+                        [new ApiService.RunTranscriptEntry(0, "assistant_text", runId, null)]);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref activeReads);
+                }
+            },
+            CancellationToken.None);
+
+        Assert.Equal(runIds.Select(run => run.RunId), replay.Select(run => run.RunId));
+        Assert.Empty(replay[4].Activities);
+        Assert.Empty(replay[4].Transcript);
+        Assert.Equal("run-5", replay[5].RunId);
+        Assert.InRange(peakReads, 2, AgentActivityReplayLoader.MaximumConcurrentReads);
+
+        void UpdatePeak(int active)
+        {
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref peakReads);
+                if (observed >= active) return;
+            } while (Interlocked.CompareExchange(ref peakReads, active, observed) != observed);
+        }
     }
 
     [Fact]
-    public void The_rebuilt_rows_are_attached_to_the_assistant_messages()
+    public async Task Replay_skips_run_listing_for_an_empty_session_id()
     {
-        string body = OpenSessionBody();
+        bool listed = false;
+        var replay = await AgentActivityReplayLoader.LoadAsync(
+            " ",
+            (_, _) => { listed = true; return Task.FromResult<IReadOnlyList<ApiService.SessionRunRef>?>([]); },
+            (_, _) => Task.FromResult<ApiService.RunActivityReplay?>(null),
+            CancellationToken.None);
 
-        Assert.Contains("RegisterReplayedActivities", body, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_open_path_aligns_runs_the_same_way_the_end_of_turn_reload_does()
-    {
-        // Two different alignment rules would make a session render differently depending
-        // on whether it was opened or had just finished its own turn.
-        string body = OpenSessionBody();
-
-        Assert.Contains("SessionTranscriptBuilder.Build", body, StringComparison.Ordinal);
-        var reload = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ReloadSessionHistoryAsync");
-        Assert.Contains("SessionTranscriptBuilder.Build", reload, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_message_that_is_not_rendered_does_not_consume_an_assistant_ordinal()
-    {
-        // A machine tool envelope is hidden, so it must not shift which run pairs with
-        // which visible bubble. The policy answers rendering and backing separately and
-        // its own tests cover the counting; here it is enough that the open path asks it
-        // rather than deciding for itself.
-        string body = OpenSessionBody();
-
-        Assert.Contains("SessionTranscriptBuilder.Build", body, StringComparison.Ordinal);
-        Assert.Contains("projected[i].Render", GuiSource.Text("Services", "SessionTranscriptBuilder.cs"), StringComparison.Ordinal);
+        Assert.Empty(replay);
+        Assert.False(listed);
     }
 }

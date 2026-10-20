@@ -24,10 +24,18 @@ public sealed class HarnessRecoveryStartupServiceTests
             var request = await fixture.SeedRunAsync(new HarnessRunStatus(HarnessRunState.WaitingApproval));
             var runId = request.Run.RunId;
             var store = new FlakyStore(fixture.EventStore);
+            var roots = new AgentRuntimeRootRegistry();
             var service = new HarnessRecoveryStartupService(
                 store,
                 fixture.Options,
-                NullLogger<HarnessRecoveryStartupService>.Instance);
+                NullLogger<HarnessRecoveryStartupService>.Instance,
+                CreateTrustService(fixture),
+                new SqliteWorkspaceStore(fixture.Options),
+                new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
+                roots,
+                new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+                CreateSubagentRecovery(fixture, roots));
 
             await service.StartAsync(CancellationToken.None);
             try
@@ -86,7 +94,10 @@ public sealed class HarnessRecoveryStartupServiceTests
                     fixture.KeyStore),
                 new SqliteWorkspaceStore(fixture.Options),
                 new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
-                roots);
+                roots,
+                new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+                CreateSubagentRecovery(fixture, roots));
 
             await service.StartAsync(CancellationToken.None);
             try
@@ -133,6 +144,16 @@ public sealed class HarnessRecoveryStartupServiceTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static WorkspaceTrustService CreateTrustService(BackendHarnessTestFixture fixture)
+    {
+        var workspaces = new SqliteWorkspaceStore(fixture.Options);
+        return new WorkspaceTrustService(
+            new WindowsWorkspaceIdentityResolver(),
+            workspaces,
+            new WorkspaceTrustRequestStore(fixture.Options),
+            fixture.KeyStore);
     }
 
     private static async Task<bool> WaitForRootAsync(
@@ -220,7 +241,10 @@ public sealed class HarnessRecoveryStartupServiceTests
             fixture.EventStore,
             coordinatorFactory,
             roots,
-            NullLogger<AgentRuntimeLoopService>.Instance);
+            NullLogger<AgentRuntimeLoopService>.Instance,
+            new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+            new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore),
+            new UnavailableToolGatewayFactory());
     }
 
     /// <summary>
@@ -267,6 +291,23 @@ public sealed class HarnessRecoveryStartupServiceTests
         }
 
         return false;
+    }
+
+    private static RuBackend.Harness.Subagents.SubagentRecoveryCoordinator CreateSubagentRecovery(
+        BackendHarnessTestFixture fixture,
+        IAgentRuntimeRootRegistry roots)
+    {
+        var agents = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
+        return new RuBackend.Harness.Subagents.SubagentRecoveryCoordinator(
+            fixture.EventStore,
+            agents,
+            new RuAgent.Harness.Persistence.Subagents.SqliteSubagentScopeStore(fixture.Options, new RuAgent.Harness.Persistence.WorkspaceJournalProtector(fixture.KeyStore)),
+            new SqliteAgentRunProviderSelectionStore(fixture.Options),
+            roots,
+            new UnavailableToolGatewayFactory(),
+            new SystemTimeProvider(),
+            fixture.Options,
+            fixture.PayloadStore);
     }
 
     /// <summary>

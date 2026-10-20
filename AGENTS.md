@@ -115,6 +115,8 @@ the cause or correcting the environment, and report both results.
   Explain non-obvious decisions in the body.
 - Commit only when requested or already authorized. Stage only task files;
   never force-push, rewrite shared history or commit secrets.
-- Review affected docs after the task. Update claims that changed; correct or
-  remove stale guidance and repair references when removing it. Update
-  CHANGELOG for user-visible behavior and breaking changes.
+- Review affected docs after every task; correct stale claims and repair links
+  when moving or removing guidance. Keep CONTEXT.md for domain definitions and
+  authority boundaries. Put implementation and lifecycle details in component
+  pages under docs/architecture, operating instructions in docs/operations,
+  lasting decisions in ADRs, and user-visible or breaking changes in CHANGELOG.

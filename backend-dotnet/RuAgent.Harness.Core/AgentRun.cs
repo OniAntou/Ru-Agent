@@ -1,3 +1,5 @@
+using RuAgent.Protocol.Harness;
+
 namespace RuAgent.Harness.Core;
 
 public sealed record AgentRun

@@ -206,12 +206,6 @@ REM A flat layout is what makes the GUI runnable outside this repository. The
 REM launcher resolves its siblings first and the repository layout second, so
 REM without this step the published GUI only worked from a checkout.
 REM
-REM Copy order matters. The GUI and CLI ship older builds of eight shared
-REM Microsoft.Extensions assemblies than RuBackend does, so whichever tree is
-REM copied last wins those files. The service goes last because it references
-REM the newer versions; with the opposite order RuBackend.exe failed at startup
-REM with "Could not load file or assembly
-REM Microsoft.Extensions.Logging.Abstractions, Version=10.0.0.0".
 echo [10/11] Flattening the runtime into one distributable directory...
 set "RU_FLAT_FAIL=0"
 REM The GUI is already at the destination, so only the two service trees are
@@ -219,6 +213,8 @@ REM copied. Including %PUBLISH_DIR% here made xcopy copy a directory into itself
 REM and fail with "Cannot perform a cyclic copy".
 set "RU_COPY_SOURCES="%CLI_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%""
 if "%RU_RELEASE_SPLIT%"=="1" set "RU_COPY_SOURCES="%BACKEND_PUBLISH_DIR%""
+call powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check_flat_assembly_identities.ps1" -DirectoryList "%PUBLISH_DIR%;%CLI_PUBLISH_DIR%;%BACKEND_PUBLISH_DIR%"
+if errorlevel 1 exit /b 1
 for %%S in (%RU_COPY_SOURCES%) do (
     if not exist "%%~S" (
         echo BUILD FAILED: publish directory not found: %%~S
@@ -261,13 +257,9 @@ for %%A in ("%PUBLISH_DIR%\Assets\AppIcon.ico" "%PUBLISH_DIR%\Assets\Fonts\Inter
 )
 echo Published GUI Assets: icons and fonts.
 
-REM The GUI and CLI ship older builds of eight shared Microsoft.Extensions
-REM assemblies than RuBackend does. A size difference between trees is
-REM therefore expected rather than a defect: the flat layout holds the newer copy,
-REM which the older consumers load happily, while the reverse order left
-REM RuBackend.exe failing at startup with "Could not load file or assembly
-REM Microsoft.Extensions.Logging.Abstractions, Version=10.0.0.0". The build only
-REM fails when the flat layout is missing an assembly some tree needs.
+REM Every source publish directory was checked for matching Microsoft.Extensions
+REM identities before copying. Keep this separate presence check: a matching
+REM identity in one tree does not make up for a DLL missing from the flat layout.
 set "RU_FLAT_MISMATCH=0"
 for %%S in (%RU_COPY_SOURCES%) do (
     for %%F in ("%%~S\Microsoft.Extensions.*.dll") do (

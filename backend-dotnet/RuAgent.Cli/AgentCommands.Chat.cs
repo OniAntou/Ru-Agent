@@ -696,19 +696,15 @@ public sealed partial class AgentCommands
 
             var expected = new StringBuilder();
             var completeSteps = new List<string>();
+            var fetched = new List<string?>();
             try
             {
                 foreach (var payloadRef in payloadRefs)
                 {
                     // GetPayloadAsync unwraps the host's envelope and returns the assistant
-                    // text itself, so there is nothing to parse here -- this is prose, and
-                    // parsing it as JSON throws.
-                    var text = await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false);
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        expected.Append(text);
-                        completeSteps.Add(text);
-                    }
+                    // text itself for reply payloads. A tool-calls-only step stores its step
+                    // record instead, so the filter below decides what is prose.
+                    fetched.Add(await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false));
                 }
             }
             catch (OperationCanceledException)
@@ -719,6 +715,19 @@ public sealed partial class AgentCommands
             {
                 await WriteDiagnosticLineAsync(_err, $"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
                 return;
+            }
+
+            var prose = Tui.AssistantTextReconciler.ProsePayloads(fetched);
+            var dropped = fetched.Count(part => part is { Length: > 0 }) - prose.Count;
+            if (dropped > 0)
+            {
+                Tui.TuiDebug.Log("recover", $"dropped {dropped} step-record payloads");
+            }
+
+            foreach (var text in prose)
+            {
+                expected.Append(text);
+                completeSteps.Add(text);
             }
 
             if (expected.Length == 0)

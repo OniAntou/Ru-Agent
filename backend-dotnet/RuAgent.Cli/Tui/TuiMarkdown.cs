@@ -133,7 +133,7 @@ public sealed class TuiMarkdown
         if (TryHeading(line, out var heading, out var level))
         {
             var body = RenderInline(heading, width, false);
-            return Wrap(level == 1 ? TuiPalette.BoldPaint(body) : body, width, 0);
+            return Wrap(TuiPalette.Paint(level == 1 ? TuiPalette.BoldPaint(body) : body, TuiToken.Warn), width, 0);
         }
 
         if (TryTable(line, out var table))
@@ -223,7 +223,7 @@ public sealed class TuiMarkdown
                 }
 
                 var code = text[(index + 1)..close];
-                output.Append(TuiPalette.Paint(code, TuiToken.Brand2));
+                output.Append(TuiPalette.Paint(code, TuiToken.Ok));
                 previous = '`';
                 index = close + 1;
                 continue;
@@ -246,7 +246,7 @@ public sealed class TuiMarkdown
                     break;
                 }
 
-                output.Append(TuiPalette.BoldPaint(text[(index + 2)..close]));
+                output.Append(TuiPalette.Paint(TuiPalette.BoldPaint(text[(index + 2)..close]), TuiToken.Bright));
                 previous = c;
                 index = close + 2;
                 continue;

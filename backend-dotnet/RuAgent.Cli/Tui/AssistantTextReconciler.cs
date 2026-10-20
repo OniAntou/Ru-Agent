@@ -56,6 +56,46 @@ public static class AssistantTextReconciler
             : AssistantTextRecovery.ReportTruncation;
     }
 
+    /// <summary>Filters fetched payloads down to assistant prose. A model step that only
+    /// calls tools stores its step record — a JSON object with <c>tool_calls</c> and a
+    /// <c>finish_reason</c> — which must never print as recovered reply text. Everything
+    /// that is not such a record survives, including prose that merely opens a brace.</summary>
+    public static IReadOnlyList<string> ProsePayloads(IEnumerable<string?> payloads)
+    {
+        var kept = new List<string>();
+        foreach (var payload in payloads)
+        {
+            if (string.IsNullOrEmpty(payload) || IsStepRecord(payload))
+            {
+                continue;
+            }
+
+            kept.Add(payload);
+        }
+
+        return kept;
+    }
+
+    private static bool IsStepRecord(string payload)
+    {
+        if (!payload.AsSpan().TrimStart().StartsWith('{'))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(payload);
+            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("tool_calls", out _)
+                && doc.RootElement.TryGetProperty("finish_reason", out _);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The text to print for a decision, or an empty string when nothing should be printed.</summary>
     public static string SuffixFor(AssistantTextRecovery decision, string? streamed, string? durable)
     {

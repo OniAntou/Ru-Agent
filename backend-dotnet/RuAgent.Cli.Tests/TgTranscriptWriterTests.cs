@@ -3,6 +3,7 @@ using RuAgent.Cli.Tui;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Xunit;
+using TextStyle = Terminal.Gui.Drawing.TextStyle;
 
 namespace RuAgent.Cli.Tests;
 
@@ -401,5 +402,202 @@ public sealed class TgTranscriptWriterTests
             return false;
         });
         app.Run(window);
+    }
+
+    /// <summary>
+    /// The metadata feature's core contract: the bridge keeps markdown paint as spans
+    /// instead of stripping it, so bold and inline code stay styled in the TG transcript.
+    /// </summary>
+    [Fact]
+    public void MarkdownPaintSurvivesTheBridgeAsSpans()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            transcript.AppendAssistant("Answer with **emphasis** inline and `code` chip.");
+            transcript.Flush();
+            // AppendAssistant opens a spacer row before the reply; the reply itself is last.
+            var row = window.Transcript.Lines[^1];
+            Assert.Equal("Answer with emphasis inline and code chip.", row.Text);
+            Assert.DoesNotContain('\u001b', row.Text);
+            Assert.NotNull(row.Spans);
+            Assert.Contains(row.Spans!, span => span.Text == "emphasis" && span.Attr.Style == TextStyle.Bold);
+            Assert.Contains(row.Spans!, span => span.Text == "code" && span.Attr == TgPalette.Attr(TuiToken.Ok));
+            app.RequestStop();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    /// <summary>Fenced code keeps its syntax paint and the line-number gutter, escape-free.</summary>
+    [Fact]
+    public void FencedCodeArrivesWithSyntaxSpans()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            transcript.AppendAssistant("```csharp\nvar value = 42;\n```\nAfter the fence.");
+            transcript.Flush();
+            var rows = window.Transcript.Lines.ToArray();
+            Assert.DoesNotContain(rows, row => row.Text.Contains("```"));
+            var codeRow = Assert.Single(rows, row => row.Text.Contains("var value = 42"));
+            Assert.StartsWith("  1 │ ", codeRow.Text);
+            Assert.DoesNotContain('\u001b', codeRow.Text);
+            Assert.NotEmpty(codeRow.Spans!);
+            Assert.Equal("After the fence.", rows[^1].Text);
+            app.RequestStop();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    /// <summary>A painted notice keeps its tone instead of flattening to the row style.</summary>
+    [Fact]
+    public void PaintedNoticeRowCarriesItsSpan()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            writer.WriteLine("\u001b[32m  · Search done\u001b[0m");
+            var row = Assert.Single(window.Transcript.Lines);
+            Assert.Equal("  · Search done", row.Text);
+            Assert.NotNull(row.Spans);
+            var span = Assert.Single(row.Spans!);
+            Assert.Equal("  · Search done", span.Text);
+            Assert.Equal(TgPalette.ToColor((0, 205, 0)), span.Attr.Foreground);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
+    /// <summary>
+    /// The reconciliation path of a stabilized turn renders the durable reply through the
+    /// markdown renderer and hands it to <see cref="TgTranscriptWriter.ReplaceAssistantTurnAsync"/>;
+    /// the span transcript must keep that paint instead of stripping it back to plain rows.
+    /// </summary>
+    [Fact]
+    public async void RecoveredReplyKeepsItsMarkdownSpans()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
+        const string full = "So du: **0.007347 USD** trong `models`.";
+        var pending = Task<bool>.FromResult(true);
+
+        // Stream the reply in fragments like the event renderer does, then let the
+        // reconciliation replace the streamed block with the durable full text.
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            writer.BeginAssistantTurn();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(400), () =>
+        {
+            transcript.AppendAssistant(full[..16]);
+            surface.Flush();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            // Split mid-emphasis markers the way real deltas do.
+            transcript.AppendAssistant(full[16..27]);
+            surface.Flush();
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(800), () =>
+        {
+            transcript.AppendAssistant(full[27..]);
+            surface.Flush();
+            pending = transcript.RecoverAssistantTurnAsync(full);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(1500), () =>
+        {
+            Assert.True(pending.IsCompletedSuccessfully);
+            Assert.True(pending.Result);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+
+        var row = window.Transcript.Lines.Single(r => r.Text.Contains("So du"));
+        Assert.DoesNotContain('\u001b', row.Text);
+        // The streamed rows were replaced, not duplicated.
+        Assert.Equal(1, window.Transcript.Lines.Count(r => r.Text.Contains("So du")));
+        Assert.NotNull(row.Spans);
+        Assert.Contains(row.Spans!, span => span.Text == "0.007347 USD" && span.Attr.Style == TextStyle.Bold);
+        Assert.Contains(row.Spans!, span => span.Text == "models" && span.Attr == TgPalette.Attr(TuiToken.Ok));
+    }
+
+    /// <summary>Reconciliation of an unpainted reply must not leak raw markdown markers.</summary>
+    [Fact]
+    public async void RecoveredPlainReplyStaysPlainWithoutRawMarkers()
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var pinned = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        using var window = TgChatWindow.Build();
+        var writer = new TgTranscriptWriter(app, window.Transcript);
+        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
+        const string full = "So du o dong trong suot.";
+        var pending = Task<bool>.FromResult(true);
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            writer.BeginAssistantTurn();
+            transcript.AppendAssistant(full[..10]);
+            surface.Flush();
+            pending = transcript.RecoverAssistantTurnAsync(full);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(1200), () =>
+        {
+            Assert.True(pending.IsCompletedSuccessfully);
+            Assert.True(pending.Result);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+
+        var row = window.Transcript.Lines.Single(r => r.Text.Contains("So du"));
+        Assert.Equal(full, row.Text);
+        // Fast-path rows stay on the plain single-attribute route.
+        Assert.Null(row.Spans);
     }
 }

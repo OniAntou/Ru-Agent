@@ -12,7 +12,7 @@ public sealed partial class ProviderCatalogService
     {
         var account = ProviderSelection.CredentialAccountForAlias(alias)
             ?? throw new ArgumentException("Provider does not use credentials.");
-        var probe = new ProviderCatalogService(http, new CandidateCredential(account, key), clock, _modelsDevCacheFile);
+        var probe = new ProviderCatalogService(http, new CandidateCredential(account, key), clock, _modelsDevSource.CacheFile);
         return probe.GetAsync(alias, settings, refresh: true, ct);
     }
 

@@ -205,8 +205,14 @@ settings saves are serialized, skipping superseded queued choices and publishing
 only the newest result. These UI ownership guards do not change execution policy.
 Reasoning saves likewise serialize writes; the latest edit alone settles the
 label, with the last successful write as its failure fallback. Settings preserves
-hidden provider fields on load, stacks labels and controls below 700 pixels of
-content width, and confines keyboard navigation to the open modal.
+hidden provider fields on load, stacks labels and controls below 840 pixels of
+modal width, and confines keyboard navigation to the open modal.
+`ProviderKeyProbe` owns each Settings editor's candidate-key generation,
+single-flight request and cancellation, independently of WinUI. Key edits,
+provider changes and backend replacement invalidate the request; disposal
+suppresses both its verdict and retries. The view owns debounce timing and
+renders only the current completion. The authenticated Host still validates
+and stores the candidate atomically; this coordinator never writes credentials.
 The TUI keeps raw Markdown lines until completion and projects semantic
 `TranscriptLine`/`TranscriptRun` records directly to Terminal.Gui through
 `ITranscriptPresentationWriter`. Row roles are explicit. Markdown previews,
@@ -268,6 +274,14 @@ intersected with a source-dated (`2026-09-01`) exact capability registry; unknow
 IDs are retained as unsupported and never selected. The response adds per-model
 protocol/reasoning metadata, stale/error state and last-success time. See
 [provider catalogs](operations/provider-catalog.md).
+
+`ProviderCatalogService` owns the credential-scoped provider catalogs and their
+metadata merge. Its `ModelsDevCatalogSource` separately owns public Models.dev
+HTTP fetches, single-flight refresh, the 24-hour durable cache and parsed-cache
+invalidation. `ModelsDevCatalogParser` reads published declarations without
+I/O. The source never reads credentials or selects a generation provider;
+candidate-key checks retain separate credential-scoped catalog state. The
+public facade and its caller contracts stay unchanged.
 
 The Chat client composes the per-provider `GET /models` catalogs into one
 grouped, searchable picker through `GroupedProviderCatalogController`, which

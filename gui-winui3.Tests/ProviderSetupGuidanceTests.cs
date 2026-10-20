@@ -535,14 +535,15 @@ public sealed class ProviderSetupGuidanceTests
             GuiSource.Text("Views", "SettingsView.xaml.cs"),
             "ProbeAndSaveModelsDevKeyAsync");
 
-        // The canonical form now comes from the table shared with the terminal client,
-        // so neither surface can drift on what the backend accepts.
-        Assert.Contains("ProviderCredential.Resolve", body, StringComparison.Ordinal);
+        string probe = GuiSource.Text("Services", "ProviderKeyProbe.cs");
+        // The coordinator owns canonicalization and edit lifetime; the view only
+        // renders its result and delegates atomic validation/save to the Host.
+        Assert.Contains("ProviderCredential.Resolve", probe, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
             body,
             StringComparison.Ordinal);
-        Assert.Contains("ProviderKeyProbe.RunAsync", body, StringComparison.Ordinal);
+        Assert.Contains("_modelsDevKeyProbe.RunAsync", body, StringComparison.Ordinal);
         Assert.Contains("ValidateAndSaveModelsDevKeyAsync", body, StringComparison.Ordinal);
         Assert.DoesNotContain("RemoveProviderAsync", body, StringComparison.Ordinal);
     }

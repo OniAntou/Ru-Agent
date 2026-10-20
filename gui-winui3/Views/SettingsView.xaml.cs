@@ -24,9 +24,7 @@ namespace RuApp.Views
         private bool _loading = false;
         private DispatcherTimer? _autoSaveTimer;
         private DispatcherTimer? _modelsDevKeyTimer;
-        private bool _modelsDevKeyProbeRunning;
-        private long _modelsDevKeyEditGeneration;
-        private CancellationTokenSource? _modelsDevKeyProbeCancellation;
+        private readonly ProviderKeyProbe _modelsDevKeyProbe = new();
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
 
@@ -95,6 +93,7 @@ namespace RuApp.Views
 
         public void SetCurrentProvider(string backendChoice)
         {
+            string previousChoice = _providerChoice;
             // The stored choice may be unset or name a provider the app no longer
             // offers. Resolving that to a real provider needs the catalog, which is
             // fetched after settings; RebuildModelsDevOptions finishes the job once
@@ -104,6 +103,8 @@ namespace RuApp.Views
                     backendChoice,
                     _modelsDevNames.Select(pair => (pair.Key, pair.Value)))
                 : ProviderSetupGuidance.NormalizeProviderChoice(backendChoice);
+            if (!string.Equals(previousChoice, _providerChoice, StringComparison.OrdinalIgnoreCase))
+                _modelsDevKeyProbe.Invalidate();
             RefreshProviderUI();
         }
 
@@ -481,6 +482,7 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
         {
+            _modelsDevKeyProbe.Invalidate();
             DisposeEventHandlers();
             // A previous Initialize that owned its controller must not leave it
             // behind when the view is re-initialized against a new backend.
@@ -684,9 +686,12 @@ namespace RuApp.Views
                 _providerRows.Add(row);
             }
 
+            string previousChoice = _providerChoice;
             _providerChoice = ProviderSetupGuidance.ResolveUnsetChoice(
                 _providerChoice,
                 providers.Select(entry => (entry.Id, entry.Name)));
+            if (!string.Equals(previousChoice, _providerChoice, StringComparison.OrdinalIgnoreCase))
+                _modelsDevKeyProbe.Invalidate();
             ApplyProviderFilter(ProviderSearchBox?.Text);
             LogProviderListState("rebuild");
         }
@@ -774,8 +779,7 @@ namespace RuApp.Views
 
         private void OnModelsDevKeyPasswordChanged(object sender, RoutedEventArgs e)
         {
-            _modelsDevKeyEditGeneration++;
-            _modelsDevKeyProbeCancellation?.Cancel();
+            _modelsDevKeyProbe.Invalidate();
             if (_loading) return;
             _modelsDevKeyTimer?.Stop();
             if (string.IsNullOrEmpty(ModelsDevApiKeyBox.Password))
@@ -802,63 +806,40 @@ namespace RuApp.Views
         /// </summary>
         private async Task ProbeAndSaveModelsDevKeyAsync()
         {
-            if (_loading || _modelsDevKeyProbeRunning) return;
+            if (_loading || _modelsDevKeyProbe.IsRunning) return;
             if (_apiService is null || _providerCatalogController is null) return;
             if (!ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)) return;
             string apiKey = ModelsDevApiKeyBox.Password;
             if (string.IsNullOrWhiteSpace(apiKey)) return;
 
-            // One shared table decides the provider's canonical form and key field, so
-            // this path and the terminal's /key cannot disagree about what the backend
-            // accepts. They did once: the bare id was sent and every catalog key was
-            // rejected as an invalid payload.
-            var target = ProviderCredential.Resolve(_providerChoice);
-            if (target is null || !target.IsModelsDev) return;
-            var api = _apiService;
-            string providerId = target.Choice;
-            string displayId = target.DisplayName;
-            var generation = _modelsDevKeyEditGeneration;
-            bool OwnsProbe() => ReferenceEquals(api, _apiService)
-                && generation == _modelsDevKeyEditGeneration
-                && string.Equals(providerId, _providerChoice, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(apiKey, ModelsDevApiKeyBox.Password, StringComparison.Ordinal);
-            _modelsDevKeyProbeRunning = true;
-            using var cancellation = new CancellationTokenSource();
-            _modelsDevKeyProbeCancellation = cancellation;
-            try
+            var pending = _modelsDevKeyProbe.RunAsync(
+                _providerChoice, apiKey, _apiService.ValidateAndSaveModelsDevKeyAsync);
+            if (_modelsDevKeyProbe.IsRunning) SetModelsDevKeyStatus("Checking key…", "info");
+            var completion = await pending;
+            if (completion is null) return;
+            if (completion.RetryRequested && !string.IsNullOrWhiteSpace(ModelsDevApiKeyBox.Password))
+                _modelsDevKeyTimer?.Start();
+            if (completion.Result.Code == "superseded") return;
+
+            var target = completion.Target;
+            switch (completion.Result.Code)
             {
-                SetModelsDevKeyStatus("Checking key…", "info");
-                var result = await ProviderKeyProbe.RunAsync(
-                    providerId, apiKey, OwnsProbe,
-                    (id, key) => api.ValidateAndSaveModelsDevKeyAsync(id, key, cancellation.Token));
-                if (!OwnsProbe() || result.Code == "superseded") return;
-                string keyId = providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..];
-                switch (result.Code)
-                {
-                    case "valid":
-                        ModelsDevApiKeyBox.Password = string.Empty;
-                        _modelsDevKeyIds = _modelsDevKeyIds.Append(keyId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-                        ApplyProviderKeys();
-                        SetModelsDevKeyStatus($"Saved key for {displayId}.", ProviderConnectionTest.SuccessTone);
-                        _ = _providerCatalogController.RefreshAsync(force: true);
-                        break;
-                    case "invalid":
-                        SetModelsDevKeyStatus("Invalid key; saved key unchanged.", ProviderConnectionTest.ErrorTone);
-                        break;
-                    case "save_failed":
-                        SetModelsDevKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
-                        break;
-                    default:
-                        SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
-                        break;
-                }
-            }
-            finally
-            {
-                _modelsDevKeyProbeCancellation = null;
-                _modelsDevKeyProbeRunning = false;
-                if (generation != _modelsDevKeyEditGeneration
-                    && !string.IsNullOrWhiteSpace(ModelsDevApiKeyBox.Password)) _modelsDevKeyTimer?.Start();
+                case "valid":
+                    ModelsDevApiKeyBox.Password = string.Empty;
+                    _modelsDevKeyIds = _modelsDevKeyIds.Append(target.ModelsDevId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                    ApplyProviderKeys();
+                    SetModelsDevKeyStatus($"Saved key for {target.DisplayName}.", ProviderConnectionTest.SuccessTone);
+                    _ = _providerCatalogController.RefreshAsync(force: true);
+                    break;
+                case "invalid":
+                    SetModelsDevKeyStatus("Invalid key; saved key unchanged.", ProviderConnectionTest.ErrorTone);
+                    break;
+                case "save_failed":
+                    SetModelsDevKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
+                    break;
+                default:
+                    SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
+                    break;
             }
         }
 
@@ -995,9 +976,8 @@ namespace RuApp.Views
             if (e.ClickedItem is not ProviderRow row) return;
             if (!ProviderSetupGuidance.IsSelectableProvider(row.Value)) return;
 
-            _modelsDevKeyEditGeneration++;
+            _modelsDevKeyProbe.Invalidate();
             _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(row.Value);
-            _modelsDevKeyProbeCancellation?.Cancel();
             if (ProviderSearchBox is not null)
             {
                 ProviderSearchBox.Text = string.Empty;
@@ -1118,9 +1098,8 @@ namespace RuApp.Views
         {
             _updateLifetime.Cancel();
             StopUpdateAvailabilityChecks();
-            _modelsDevKeyEditGeneration++;
+            _modelsDevKeyProbe.Dispose();
             DisposeEventHandlers();
-            _modelsDevKeyProbeCancellation?.Cancel();
             DisposeOwnedProviderCatalogController();
             _apiService = null;
         }

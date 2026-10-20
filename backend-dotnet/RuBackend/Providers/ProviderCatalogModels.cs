@@ -101,3 +101,10 @@ public sealed class ProviderCatalogException(string code) : Exception(code)
 {
     public string Code { get; } = code;
 }
+
+/// <summary>The only reasoning states the picker knows how to present.</summary>
+internal static class CatalogReasoningStates
+{
+    public const string Levels = "levels";
+    public const string Unknown = "unknown";
+}

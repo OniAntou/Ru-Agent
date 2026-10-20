@@ -37,22 +37,7 @@ public sealed class SkillBodyStore
         return null;
     }
 
-    private IEnumerable<string> SkillRoots()
-    {
-        yield return Path.Combine(_workspaceRoot, "skills");
-        yield return Path.Combine(_workspaceRoot, ".ru", "skills");
-        var configured = Environment.GetEnvironmentVariable("RU_SKILLS_ROOT");
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            yield return configured;
-        }
-
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (!string.IsNullOrWhiteSpace(localAppData))
-        {
-            yield return Path.Combine(localAppData, "Ru", "skills");
-        }
-    }
+    private IEnumerable<string> SkillRoots() => RuAgent.Protocol.SkillRoots.For(_workspaceRoot);
 
     private static SkillBody? TryLoadFromRoot(string root, string name)
     {

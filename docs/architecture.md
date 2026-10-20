@@ -637,11 +637,13 @@ records which instruction bytes the step was composed against; it is not an
 attestation of the rendered system message (see the in-process model runner
 note above).
 
-The bounded instruction loader reads the fixed `AGENTS.md`, `CONTEXT.md`,
+The bounded instruction loader first reads the optional user-wide `~/.ru/AGENTS.md` (origin `User`,
+followed by the workspace guidance), then the fixed `AGENTS.md`, `CONTEXT.md`,
 `.ru/AGENTS.md`, and `.ru/CONTEXT.md` candidates below the selected run root,
-then discovers direct-child skill directories from these roots in precedence order:
-`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`. A package is recognized only when it contains a
+then discovers direct-child skill directories from `RuAgent.Protocol.SkillRoots` in precedence order:
+`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
+`RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
+`%LOCALAPPDATA%\Ru\skills`. The prompt listing, the `skill` tool and `/skills` share that one list. A package is recognized only when it contains a
 case-insensitive `SKILL.md`; for example:
 
 ```markdown
@@ -688,7 +690,7 @@ while the global gate protects only accounting and retained metadata.
 Projection clipping never rewrites the receipt; bounded history may still omit
 older exchanges.
 
-`AGENTS.md` remains the sole persona/style source. The four fixed workspace
+`AGENTS.md` remains the sole persona/style source. The user-wide file, the four fixed workspace
 instruction files and discovered skills are untrusted guidance; none can grant
 tools, capabilities, paths, network access, or approvals. Skills are rendered
 as `ExternalSkill`, and their `allowed-tools` metadata is descriptive only.

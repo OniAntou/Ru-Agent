@@ -46,17 +46,30 @@ public sealed class RuInstructionLoader
         ("ru:CONTEXT.md", Path.Combine(".ru", "CONTEXT.md"), ".ru/CONTEXT.md"),
     ];
 
+    // The user-wide file lives beside the per-user skills folder. It is Ru's own name so that
+    // another tool's global file is never read by accident.
+    private const string UserInstructionRelativePath = ".ru/AGENTS.md";
+
     private readonly MarkdownSkillLoader _markdownSkillLoader;
     private readonly string _localApplicationDataRoot;
+    private readonly string _userProfileRoot;
 
     public RuInstructionLoader(
         MarkdownSkillLoader? markdownSkillLoader = null,
-        string? localApplicationDataRoot = null)
+        string? localApplicationDataRoot = null,
+        string? userProfileRoot = null)
     {
         _markdownSkillLoader = markdownSkillLoader ?? new MarkdownSkillLoader();
         _localApplicationDataRoot = string.IsNullOrWhiteSpace(localApplicationDataRoot)
             ? GetLocalApplicationDataRoot()
             : Path.GetFullPath(localApplicationDataRoot);
+        // An explicit data root means the caller isolates the user's machine (tests), so the
+        // user profile follows it instead of reaching the real home folder.
+        _userProfileRoot = !string.IsNullOrWhiteSpace(userProfileRoot)
+            ? Path.GetFullPath(userProfileRoot)
+            : string.IsNullOrWhiteSpace(localApplicationDataRoot)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : _localApplicationDataRoot;
     }
 
     public RuInstructionLoadResult Load(string workspaceRoot)
@@ -68,10 +81,22 @@ public sealed class RuInstructionLoader
         var sourceIds = new HashSet<string>(StringComparer.Ordinal);
         var combinedBytes = 0;
 
-        foreach (var candidate in Candidates)
+        // The user-wide file comes first so workspace guidance, which is closer to the task,
+        // is read last and wins where the two disagree.
+        var entries = new List<(string SourceId, string Root, string RelativePath, string DisplayName, PromptInstructionOrigin Origin)>();
+        if (!string.IsNullOrWhiteSpace(_userProfileRoot))
         {
-            var candidatePath = Path.GetFullPath(Path.Combine(canonicalRoot, candidate.RelativePath));
-            var relative = Path.GetRelativePath(canonicalRoot, candidatePath);
+            entries.Add(("user:AGENTS.md", _userProfileRoot, UserInstructionRelativePath, "~/.ru/AGENTS.md", PromptInstructionOrigin.User));
+        }
+
+        entries.AddRange(Candidates.Select(item =>
+            (item.SourceId, canonicalRoot, item.RelativePath, item.DisplayName, PromptInstructionOrigin.Workspace)));
+
+        foreach (var candidate in entries)
+        {
+            var containmentRoot = candidate.Root;
+            var candidatePath = Path.GetFullPath(Path.Combine(containmentRoot, candidate.RelativePath));
+            var relative = Path.GetRelativePath(containmentRoot, candidatePath);
             if (Path.IsPathRooted(relative) || IsParentPath(relative))
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "outside_root"));
@@ -80,12 +105,18 @@ public sealed class RuInstructionLoader
 
             if (!File.Exists(candidatePath))
             {
-                skips.Add(new RuInstructionSkip(candidate.SourceId, "missing"));
+                // The user-wide file is optional on every machine: only the fixed workspace
+                // files report "missing", as they always have.
+                if (candidate.Origin != PromptInstructionOrigin.User)
+                {
+                    skips.Add(new RuInstructionSkip(candidate.SourceId, "missing"));
+                }
+
                 continue;
             }
 
             if (!TryResolveFinalPath(candidatePath, out var finalPath)
-                || !IsContained(canonicalRoot, finalPath))
+                || !IsContained(containmentRoot, finalPath))
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "outside_root"));
                 continue;
@@ -119,23 +150,18 @@ public sealed class RuInstructionLoader
             }
 
             var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(content))).ToLowerInvariant();
-            blocks.Add(new PromptInstructionBlock(candidate.SourceId, candidate.DisplayName, content, digest));
+            blocks.Add(new PromptInstructionBlock(candidate.SourceId, candidate.DisplayName, content, digest, candidate.Origin));
             combinedBytes += contentBytes;
         }
 
-        var markdownRoots = new[]
-        {
-            Path.Combine(canonicalRoot, "skills"),
-            Path.Combine(canonicalRoot, ".ru", "skills"),
-            Path.Combine(_localApplicationDataRoot, "Ru", "skills"),
-        };
+        var markdownRoots = RuAgent.Protocol.SkillRoots.For(canonicalRoot, _localApplicationDataRoot, _userProfileRoot);
         var markdownResult = _markdownSkillLoader.Load(markdownRoots);
         var optionalRootPaths = markdownRoots
             .Select(Path.GetFullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var skip in markdownResult.Skips)
         {
-            // The three Markdown roots are optional. Keep the established
+            // The Markdown roots are optional. Keep the established
             // fixed-file missing diagnostics without adding noisy root-missing
             // entries on every prompt build.
             if (skip.Reason == "missing"

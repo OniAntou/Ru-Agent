@@ -55,6 +55,7 @@ public enum PromptInstructionOrigin
 {
     Workspace,
     ExternalSkill,
+    User,
 }
 
 public sealed record PromptInstructionBlock

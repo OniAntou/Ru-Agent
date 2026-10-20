@@ -151,7 +151,7 @@ public sealed partial class AgentCommands
         IApplication? tgApp = tgMode ? Application.Create() : null;
         if (tgApp is not null)
         {
-            tgApp.Init();
+            TgTerminalInput.Initialize(tgApp);
         }
 
         ChatSubmissionState? submissions = null;
@@ -159,6 +159,11 @@ public sealed partial class AgentCommands
         try
         {
             tgWindow = tgMode ? TgChatWindow.Build() : null;
+            if (tgApp is not null)
+            {
+                TgTerminalPaste.Attach(tgApp);
+            }
+
             TgTranscriptWriter? tgWriter = tgMode ? new TgTranscriptWriter(tgApp!, tgWindow!.Transcript) : null;
 
             if (backendName is not null)

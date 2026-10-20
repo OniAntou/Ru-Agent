@@ -1,11 +1,12 @@
 namespace RuAgent.Harness.Core;
 
 /// <summary>
-/// A model step the runner reported with a stable provider-transient code after
-/// its bounded in-step retries were exhausted (rate limit, timeout, server or
-/// transport error). The provider may recover while the user waits, so the
-/// coordinator parks a root for explicit Continue; an internal child returns a
-/// terminal failure to its parent after the same bounded retries.
+/// A model step that needs an explicit Continue or a terminal child failure: exhausted
+/// bounded in-step retries on a stable provider-transient code (rate limit, timeout,
+/// server or transport error), or an account limit that needs operator action without
+/// automatic retries. The coordinator parks a root for explicit Continue with the same
+/// provider/model selection pinned; an internal child returns a terminal failure to its
+/// parent after the same bounded retries.
 /// Carries the provider's code plus the original exception.
 /// </summary>
 public sealed class ProviderTransientPauseException : Exception
@@ -33,4 +34,8 @@ public sealed class ProviderTransientPauseException : Exception
             or "provider_timeout"
             or "provider_server_error"
             or "provider_transport_error";
+
+    /// <summary>Account limits can be repaired by the operator, but never auto-retried.</summary>
+    public static bool RequiresExplicitContinue(string? code) =>
+        IsProviderTransientCode(code) || code == "provider_quota_exhausted";
 }

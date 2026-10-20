@@ -37,7 +37,10 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
 
         using (response)
         {
-            if (!response.IsSuccessStatusCode) throw MapStatus(response.StatusCode);
+            if (!response.IsSuccessStatusCode)
+                throw response.StatusCode == HttpStatusCode.TooManyRequests
+                    ? await ModelRateLimitError.ReadAsync(response, cancellationToken).ConfigureAwait(false)
+                    : MapStatus(response.StatusCode);
             Stream stream;
             try { stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { throw new ModelProviderException("timeout", true); }
@@ -119,6 +122,10 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                     }
                     if (evt.Event == "response.failed")
                     {
+                        var failed = ReadObject(data["response"]);
+                        var error = ReadObject(failed?["error"]);
+                        if (ModelRateLimitError.IsQuotaCode(ReadString(error?["code"])))
+                            throw new ModelProviderException("quota_exhausted", false);
                         throw new ModelProviderException("http_error", false);
                     }
                     if (evt.Event is "response.reasoning.delta" or "response.reasoning_summary_text.delta")
@@ -352,6 +359,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
     /// </summary>
     private static ModelProviderException MapError(string code) => code switch
     {
+        _ when ModelRateLimitError.IsQuotaCode(code) => new("quota_exhausted", false),
         "unauthorized" or "authentication_error" => new("auth_failed", false),
         "permission_error" or "forbidden" => new("forbidden", false),
         "rate_limit_exceeded" or "rate_limited" => new("rate_limited", true),

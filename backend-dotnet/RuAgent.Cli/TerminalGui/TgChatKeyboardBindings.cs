@@ -127,7 +127,7 @@ internal sealed class TgChatKeyboardBindings
             _completeCommand();
             key.Handled = true;
         }
-        else if (key == Key.V.WithCtrl)
+        else if (key == Key.V.WithCtrl || key == Key.V.WithCtrl.WithShift)
         {
             _paste();
             key.Handled = true;

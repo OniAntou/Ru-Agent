@@ -213,13 +213,7 @@ public sealed partial class TgTranscriptView : View
         EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
         var bounded = BoundLine(text);
-        var fitted = FitSpans(spans, text, bounded);
-        if (style == TranscriptStyle.Prose && !bounded.StartsWith(' ') && !bounded.Contains('│'))
-        {
-            // Plain prose gets the deterministic data tone (comma-grouped numbers, file
-            // paths); painted runs keep whatever the renderer already emphasised.
-            fitted = TgAnsiPaint.Decorate(bounded, fitted);
-        }
+        var fitted = PrepareRowSpans(spans, bounded, style);
 
         _lines.Add(new TgTranscriptRow(bounded, style, fitted));
         _retainedCharacters += CharacterCount(bounded);
@@ -291,7 +285,11 @@ public sealed partial class TgTranscriptView : View
         }
         else
         {
-            grownSpans = last.Spans;
+            // A plain delta still extends an already painted row. Cover the suffix as
+            // ink instead of leaving spans shorter than the text and losing paint on wrap.
+            grownSpans = last.Spans is { Count: > 0 }
+                ? FitSpansToLength(last.Spans, grown)
+                : null;
         }
 
         _lines[^1] = new TgTranscriptRow(grown, last.Style, grownSpans);
@@ -324,7 +322,7 @@ public sealed partial class TgTranscriptView : View
         else
         {
             var bounded = BoundLineParts(string.Empty, text);
-            _lines[^1] = new TgTranscriptRow(bounded, style, FitSpans(spans, text, bounded));
+            _lines[^1] = new TgTranscriptRow(bounded, style, PrepareRowSpans(spans, bounded, style));
             _retainedCharacters += CharacterCount(bounded);
         }
         if (text is null || HasExpandedBlocks || text.Contains('|')) _wrapWidth = -1;
@@ -741,19 +739,23 @@ public sealed partial class TgTranscriptView : View
         && !text.StartsWith(' ') && !text.Contains('│') && !text.Contains("  ", StringComparison.Ordinal);
 
     /// <summary>
-    /// Aligns spans parsed from <paramref name="source"/> onto the bounded text actually
+    /// Aligns parsed spans onto the bounded text actually
     /// stored. <see cref="BoundLine(string)"/> may have cut the tail runes or appended an
     /// ellipsis, so the result is clipped to the bounded length and any covering gap is
     /// padded with an ink span — a row either paints its whole text through spans or none.
     /// </summary>
-    private static IReadOnlyList<TgSpan>? FitSpans(IReadOnlyList<TgSpan>? spans, string source, string bounded)
+    private static IReadOnlyList<TgSpan>? PrepareRowSpans(
+        IReadOnlyList<TgSpan>? spans, string bounded, TranscriptStyle style)
     {
-        if (spans is not { Count: > 0 })
+        var fitted = spans is { Count: > 0 } ? FitSpansToLength(spans, bounded) : null;
+        if (style == TranscriptStyle.Prose && !bounded.StartsWith(' ') && !bounded.Contains('│'))
         {
-            return null;
+            // Replacing a preview with its completed line must use the same data-tone
+            // projection as appending it. Existing Markdown/code paint stays authoritative.
+            fitted = TgAnsiPaint.Decorate(bounded, fitted);
         }
 
-        return FitSpansToLength(spans, bounded);
+        return fitted;
     }
 
     private static IReadOnlyList<TgSpan>? FitSpansToLength(IReadOnlyList<TgSpan> spans, string bounded)

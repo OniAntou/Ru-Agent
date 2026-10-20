@@ -82,10 +82,11 @@ public sealed class ModelStepFailureClassificationTests
 
     [Theory]
     [InlineData("provider_rate_limited")]
+    [InlineData("provider_quota_exhausted")]
     [InlineData("provider_timeout")]
     [InlineData("provider_server_error")]
     [InlineData("provider_transport_error")]
-    public async Task Provider_transient_code_parks_the_run_for_continue(string code)
+    public async Task Recoverable_provider_code_parks_the_run_for_continue(string code)
     {
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run());
@@ -102,6 +103,13 @@ public sealed class ModelStepFailureClassificationTests
         Assert.Contains(events, item =>
             item.Kind == HarnessEventKind.ContinueRequested && item.SafeCode == code);
         Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+    }
+
+    [Fact]
+    public void Exhausted_quota_requires_operator_action_instead_of_transient_retries()
+    {
+        Assert.False(ProviderTransientPauseException.IsProviderTransientCode("provider_quota_exhausted"));
+        Assert.True(ProviderTransientPauseException.RequiresExplicitContinue("provider_quota_exhausted"));
     }
 
     [Theory]

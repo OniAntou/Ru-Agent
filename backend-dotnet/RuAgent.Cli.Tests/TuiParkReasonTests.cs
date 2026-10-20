@@ -23,11 +23,14 @@ public sealed class TuiParkReasonTests
             transcript.ApplyDurable(Frame("run.state_changed", "waiting_user", 5));
             transcript.ApplyDurable(Frame("continue.requested", reason, 6));
             transcript.ApplyDurable(Frame("continue.requested", reason, 6));
+            var detail = TuiText.Strip(status.Compose(220));
+            Assert.Contains(turn == 0 ? "wait before /continue" : "still blocked after Continue", detail);
+            Assert.Contains("/release", detail);
         }
         var rows = TuiText.Strip(output.ToString()).Split('\n');
         Assert.Equal(2, rows.Count(row => row.Contains("reason:") && row.Contains(reason)));
         Assert.DoesNotContain("waiting_user · resume", output.ToString());
-        Assert.Contains("wait", TuiText.Strip(status.Compose(140)));
+        Assert.DoesNotContain("wait before /continue", TuiText.Strip(status.Compose(220)));
     }
 
     [Fact]

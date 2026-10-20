@@ -338,7 +338,11 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
         return (payload.Encoding ?? string.Empty, payload.Content);
     }
 
-    private async Task<(string? Encoding, string Content)> FetchPayloadEnvelopeAsync(string runId, string payloadId, CancellationToken ct)
+    /// <summary>Retains the payload type so callers never infer it from user-visible text.</summary>
+    public Task<AgentPayloadContent> GetPayloadContentAsync(string runId, string payloadId, CancellationToken ct = default) =>
+        FetchPayloadEnvelopeAsync(runId, payloadId, ct);
+
+    private async Task<AgentPayloadContent> FetchPayloadEnvelopeAsync(string runId, string payloadId, CancellationToken ct)
     {
         ValidateRunId(runId);
         ValidatePayloadId(payloadId);
@@ -371,12 +375,15 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
             var encoding = root.TryGetProperty("encoding", out var encodingElement) && encodingElement.ValueKind == JsonValueKind.String
                 ? encodingElement.GetString()
                 : null;
+            var kind = root.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String
+                ? kindElement.GetString()
+                : null;
             if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
             {
-                return (encoding, content.GetString() ?? string.Empty);
+                return new(kind ?? string.Empty, encoding ?? string.Empty, content.GetString() ?? string.Empty);
             }
 
-            return (encoding, body);
+            return new(kind ?? string.Empty, encoding ?? string.Empty, body);
         }
     }
 

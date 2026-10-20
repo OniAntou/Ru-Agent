@@ -19,6 +19,15 @@ public static class TuiToolRow
     public static string Compose(
         ToolLineStatus status, string display, string? target, string? meta, int width)
     {
+        return ComposeCore(status, display, target, meta, width, true);
+    }
+
+    public static TranscriptLine ComposePresentation(ToolLineStatus status, string display, string? target, string? meta, int width) =>
+        TranscriptLine.Plain(ComposeCore(status, display, target, meta, width, false), TranscriptRole.Tool);
+
+    private static string ComposeCore(ToolLineStatus status, string display, string? target, string? meta, int width, bool colored)
+    {
+        string Paint(string text, TuiToken token) => colored ? TuiPalette.Paint(text, token) : text;
         ArgumentException.ThrowIfNullOrWhiteSpace(display);
         var w = Math.Max(MinWidth, width);
         var token = status == ToolLineStatus.Failed ? TuiToken.Err
@@ -43,12 +52,12 @@ public static class TuiToolRow
         var leftRoom = Math.Max(1, w - rightWidth - (rightWidth > 0 ? 3 : 0));
         head = TuiText.Truncate(head, leftRoom);
         var targetRoom = leftRoom - TuiText.VisibleWidth(head) - 2;
-        var text = TuiPalette.Paint(head, token);
+        var text = Paint(head, token);
         if (!string.IsNullOrWhiteSpace(target) && targetRoom > 2)
-            text += "  " + TuiPalette.Paint(TuiText.MiddleTruncate(ChatDisplayText.Sanitize(target, 512), targetRoom), TuiToken.Meta);
+            text += "  " + Paint(TuiText.MiddleTruncate(ChatDisplayText.Sanitize(target, 512), targetRoom), TuiToken.Meta);
         if (rightWidth > 0)
             text += new string(' ', Math.Max(1, w - TuiText.VisibleWidth(text) - rightWidth))
-                + TuiPalette.Paint(metrics, status == ToolLineStatus.Failed ? TuiToken.Err : TuiToken.Line);
+                + Paint(metrics, status == ToolLineStatus.Failed ? TuiToken.Err : TuiToken.Line);
         return TuiText.Truncate(text, w);
     }
 

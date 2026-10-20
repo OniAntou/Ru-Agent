@@ -59,6 +59,11 @@ public sealed class TgCommandPalette
         var builder = new System.Text.StringBuilder(MaxQueryCharacters);
         foreach (var rune in query.EnumerateRunes())
         {
+            if (System.Text.Rune.IsControl(rune))
+            {
+                continue;
+            }
+
             if (builder.Length + rune.Utf16SequenceLength > MaxQueryCharacters)
             {
                 break;

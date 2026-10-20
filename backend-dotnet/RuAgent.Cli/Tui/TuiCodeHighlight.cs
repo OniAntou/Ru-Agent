@@ -1,7 +1,7 @@
 namespace RuAgent.Cli.Tui;
 
 /// <summary>
-/// ANSI-only tinting for fenced code lines: a right-aligned line-number gutter in the
+/// Shared lexical styles for fenced code lines: a right-aligned line-number gutter in the
 /// existing <c>│ </c> style followed by keyword/string/comment/number spans painted
 /// through <see cref="TuiPalette"/>. Stateless and per-line: a block comment must close
 /// on the same line (an unterminated one tints to the end of the line) and no language
@@ -32,15 +32,19 @@ public static class TuiCodeHighlight
         return [TuiPalette.DimPaint(gutter) + body];
     }
 
-    private static string Highlight(string line)
+    private static string Highlight(string line) =>
+        string.Concat(Tokenize(line).Select(run => TuiPalette.Paint(run.Text, run.Token)));
+
+    public static IReadOnlyList<TranscriptRun> Tokenize(string line)
     {
-        var output = new System.Text.StringBuilder(line.Length + 32);
+        ArgumentNullException.ThrowIfNull(line);
+        var output = new TranscriptRunBuilder();
         var index = 0;
         while (index < line.Length)
         {
             if (line[index] == '/' && index + 1 < line.Length && line[index + 1] == '/')
             {
-                output.Append(TuiPalette.Paint(line[index..], TuiToken.Meta));
+                output.Append(line[index..], TuiToken.Meta);
                 break;
             }
 
@@ -48,7 +52,7 @@ public static class TuiCodeHighlight
             {
                 var close = line.IndexOf("*/", index + 2, StringComparison.Ordinal);
                 var stop = close < 0 ? line.Length : close + 2;
-                output.Append(TuiPalette.Paint(line[index..stop], TuiToken.Meta));
+                output.Append(line[index..stop], TuiToken.Meta);
                 index = stop;
                 continue;
             }
@@ -72,7 +76,7 @@ public static class TuiCodeHighlight
                     }
                 }
 
-                output.Append(TuiPalette.Paint(line[index..stop], TuiToken.Ok));
+                output.Append(line[index..stop], TuiToken.Ok);
                 index = stop;
                 continue;
             }
@@ -85,7 +89,7 @@ public static class TuiCodeHighlight
                     stop++;
                 }
 
-                output.Append(TuiPalette.Paint(line[index..stop], TuiToken.Brand));
+                output.Append(line[index..stop], TuiToken.Brand);
                 index = stop;
                 continue;
             }
@@ -99,7 +103,7 @@ public static class TuiCodeHighlight
                 }
 
                 var word = line[index..stop];
-                output.Append(Keywords.Contains(word) ? TuiPalette.Paint(word, TuiToken.Brand2) : word);
+                output.Append(word, Keywords.Contains(word) ? TuiToken.Brand2 : TuiToken.Ink);
                 index = stop;
                 continue;
             }
@@ -108,7 +112,7 @@ public static class TuiCodeHighlight
             index++;
         }
 
-        return output.ToString();
+        return output.Line().Runs;
     }
 
     private static bool IsWordChar(char c) =>

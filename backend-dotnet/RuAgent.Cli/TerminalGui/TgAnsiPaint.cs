@@ -9,10 +9,10 @@ namespace RuAgent.Cli.TerminalGui;
 public sealed record TgSpan(string Text, Attr Attr);
 
 /// <summary>
-/// Reverses the classic palette's escape painting into Terminal.Gui spans. The renderer
-/// upstream paints every row through <see cref="TuiPalette"/> (fg per colour level, bold, dim,
-/// reset), and the TG view draws per-span attributes instead of one attribute per row, so the
-/// bridge parses the escapes rather than stripping them. Unknown escape sequences are dropped
+/// Imports legacy command and diagnostic output into Terminal.Gui spans. Interactive
+/// transcript events supply native attributes directly; older TextWriter callers may
+/// still paint through <see cref="TuiPalette"/> (fg per colour level, bold, dim, reset).
+/// Unknown escape sequences are dropped
 /// invisibly; an input with no escapes yields null spans so plain rows keep their old path.
 /// Spans always cover the whole visible text of the row they belong to, which is what makes
 /// wrapping able to slice them by character range.

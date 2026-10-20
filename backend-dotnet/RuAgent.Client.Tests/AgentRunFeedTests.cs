@@ -8,6 +8,32 @@ namespace RuAgent.Client.Tests;
 public sealed class AgentRunFeedTests
 {
     [Fact]
+    public async Task Caller_stop_delivers_the_frame_then_disposes_the_feed_without_cancelling()
+    {
+        var disposed = false;
+        var delivered = false;
+        using var cancellation = new CancellationTokenSource();
+        async IAsyncEnumerable<SseFrame> Read(long cursor, [EnumeratorCancellation] CancellationToken token)
+        {
+            try
+            {
+                yield return DurableFrame(1);
+                await Task.Yield();
+                throw new InvalidOperationException("The held feed must not be read again.");
+            }
+            finally { disposed = true; }
+        }
+
+        await AgentRunFeed.FollowAsync(0, Read,
+            _ => throw new InvalidOperationException("A caller stop must not probe terminal status."),
+            (_, _) => { delivered = true; return Task.CompletedTask; }, cancellation.Token,
+            new AgentRunFeedOptions { StopWhen = _ => { Assert.True(delivered); return true; } });
+
+        Assert.True(disposed);
+        Assert.False(cancellation.IsCancellationRequested);
+    }
+
+    [Fact]
     public async Task FollowAsync_resumes_from_last_durable_sequence_and_can_refill_budget_on_progress()
     {
         var cursors = new List<long>();

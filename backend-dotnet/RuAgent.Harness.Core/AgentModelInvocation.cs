@@ -146,12 +146,11 @@ internal sealed class AgentModelInvocation
             // reader at the wrong subsystem. The code is classified from the exception rather
             // than forwarded, because a message can quote user content.
             string code = ModelStepFailureCode(error);
-            if (ProviderTransientPauseException.IsProviderTransientCode(code))
+            if (ProviderTransientPauseException.RequiresExplicitContinue(code))
             {
-                // The provider kept failing transiently after the runner's bounded
-                // retries. Failing the run here would burn it on a condition that
-                // may clear while the user waits, so the coordinator parks the run
-                // for an explicit Continue instead; no failure marking happens here.
+                // Exhausted transient retries can recover after a wait; an account
+                // limit needs operator action without retries. Both retain this run
+                // for an explicit Continue with the same pinned selection.
                 // The attempts before the throw may have streamed partial text, so
                 // reset the stream before it completes: the Continue retry must
                 // start on a clean turn instead of appending to the superseded text.

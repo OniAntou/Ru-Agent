@@ -89,6 +89,10 @@ public static class AgentFailureCopy
             "check the API key and model, then retry");
 
         // Provider rate limits and transport.
+        Add(table, ["provider_quota_exhausted", "quota_exhausted"],
+            "Provider quota exhausted",
+            "the provider reported exhausted credit, spend or usage limits",
+            "restore the provider's credit or quota before continuing; stop the parked run to abandon it");
         Add(table, ["provider_rate_limited", "rate_limited"],
             "Rate limited",
             "the provider returned HTTP 429 for this turn",

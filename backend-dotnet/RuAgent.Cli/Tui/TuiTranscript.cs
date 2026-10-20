@@ -25,7 +25,7 @@ public enum ToolLineStatus
 /// records and their order. Typed activity supplies tool outcome/display metadata;
 /// without it a result stays neutral, since an envelope's run status is not a tool result.
 /// </summary>
-public sealed class TuiTranscript
+public sealed partial class TuiTranscript
 {
     private const int MaxDiffLines = 12;
     private const int MaxRetainedLines = 200;
@@ -63,6 +63,8 @@ public sealed class TuiTranscript
     private bool _paused;
     private string? _pausedRunId;
     private string? _lastParkReason;
+    private readonly Dictionary<string, string> _parkReasons = new(StringComparer.Ordinal);
+    private bool _repeatedPark;
     private bool _fullScreenCards;
     private string? _pendingPlanProgress;
     private string? _lastPlanProgress;
@@ -170,9 +172,20 @@ public sealed class TuiTranscript
         if (_surface.Writer is not ITranscriptTurnRewriter screen) return false;
         Flush();
         var markdown = new TuiMarkdown { HighlightCode = _fullScreenCards };
-        var rows = fullText.Replace("\r", string.Empty).Split('\n')
-            .SelectMany(line => markdown.RenderLogicalLine(line, Width)).ToArray();
-        if (!await screen.ReplaceAssistantTurnAsync(rows).ConfigureAwait(false)) return false;
+        bool replaced;
+        if (_surface.Presentation is { } presentation)
+        {
+            var rows = fullText.Replace("\r", string.Empty).Split('\n')
+                .SelectMany(line => markdown.RenderPresentation(line, Width)).ToArray();
+            replaced = await presentation.ReplaceAssistantPresentationAsync(rows).ConfigureAwait(false);
+        }
+        else
+        {
+            var rows = fullText.Replace("\r", string.Empty).Split('\n')
+                .SelectMany(line => markdown.RenderLogicalLine(line, Width)).ToArray();
+            replaced = await screen.ReplaceAssistantTurnAsync(rows).ConfigureAwait(false);
+        }
+        if (!replaced) return false;
         _streamedAssistant.Clear();
         _streamedAssistant.Append(fullText);
         return true;
@@ -196,8 +209,14 @@ public sealed class TuiTranscript
     /// Writes finished lines and repaints the live row in the same lock acquisition, so the
     /// spinner can never interleave between two transcript lines.
     /// </summary>
-    private void WriteLines(params string[] lines) =>
-        _surface.WriteBlock(lines, _status.LiveRow(Width));
+    private void WriteLines(params string[] lines)
+    {
+        if (_surface.Presentation is not null)
+        {
+            foreach (var line in lines) _surface.AppendPresentation(TranscriptLine.Plain(TuiText.Strip(line), TranscriptRole.Meta));
+        }
+        else _surface.WriteBlock(lines, _status.LiveRow(Width));
+    }
 
     private sealed record ToolDetail(
         string ActivityId,
@@ -228,6 +247,7 @@ public sealed class TuiTranscript
         _paused = false;
         _pausedRunId = null;
         _lastParkReason = null;
+        _repeatedPark = false;
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
@@ -347,7 +367,9 @@ public sealed class TuiTranscript
         // existing transcript boundary, retaining counts rather than a second task list.
         if (_pendingPlanProgress is { } progress && progress != _lastPlanProgress)
         {
-            WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
+            if (_surface.Presentation is not null)
+                _surface.AppendPresentation(TranscriptLine.Plain("  · " + progress, TranscriptRole.Meta, TuiToken.Meta));
+            else WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
             _lastPlanProgress = progress;
         }
         _pendingPlanProgress = null;
@@ -435,12 +457,17 @@ public sealed class TuiTranscript
             var line = newline < 0 ? text[start..] : text[start..newline];
             if (line.Length > 0)
             {
-                if (_atLineStart)
+                if (_surface.Presentation is not null)
                 {
-                    _surface.Write(TuiPalette.Paint("  │ ", TuiToken.Line));
+                    var row = new TranscriptRunBuilder();
+                    if (_atLineStart) row.Append("  │ ", TuiToken.Line);
+                    _surface.AppendPresentationChunk(row.Append(line, dim: true).Line(TranscriptRole.Meta));
                 }
-
-                _surface.Write(TuiPalette.DimPaint(line));
+                else
+                {
+                    if (_atLineStart) _surface.Write(TuiPalette.Paint("  │ ", TuiToken.Line));
+                    _surface.Write(TuiPalette.DimPaint(line));
+                }
                 _atLineStart = false;
             }
 
@@ -481,7 +508,9 @@ public sealed class TuiTranscript
                     if (_surface.HasLineProjection && (_proseLine.Length == text.Length - start
                         || Stopwatch.GetElapsedTime(_lastProsePreview).TotalMilliseconds >= ProsePreviewIntervalMilliseconds))
                     {
-                        _surface.PreviewLine(_markdown.PreviewLine(_proseLine.ToString(), Width));
+                        if (_surface.Presentation is { } presentation)
+                            presentation.PreviewPresentation(_markdown.PreviewPresentation(_proseLine.ToString(), Width));
+                        else _surface.PreviewLine(_markdown.PreviewLine(_proseLine.ToString(), Width));
                         _lastProsePreview = Stopwatch.GetTimestamp();
                     }
                     _atLineStart = false;
@@ -504,6 +533,11 @@ public sealed class TuiTranscript
 
     private void WriteCompleteLine(string line)
     {
+        if (_surface.Presentation is not null)
+        {
+            _surface.CommitPresentation(_markdown.RenderPresentation(line, Width));
+            return;
+        }
         var rows = _surface.HasLineProjection
             ? _markdown.RenderLogicalLine(line, Width)
             : _markdown.RenderLine(line, Width);
@@ -688,7 +722,10 @@ public sealed class TuiTranscript
         };
         _settledToolRows[activity.ActivityId] = detail;
         var status = activity.State == AgentActivityState.Completed ? ToolLineStatus.Ok : ToolLineStatus.Failed;
-        screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
+        if (_surface.Presentation is { } presentation)
+            presentation.UpdateActivityPresentation(activity.ActivityId, TuiToolRow.ComposePresentation(status,
+                detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
+        else screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
             detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
     }
 
@@ -740,6 +777,9 @@ public sealed class TuiTranscript
     public void ApplyDurable(HarnessSafeEventEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
+        if (envelope.EventType.StartsWith("run.", StringComparison.Ordinal)
+            && envelope.Status is "completed" or "failed" or "cancelled" or "interrupted")
+            ForgetParkHistory(envelope.RunId);
         var type = envelope.EventType;
         var summary = Escape(envelope.SafeSummary);
 
@@ -863,11 +903,13 @@ public sealed class TuiTranscript
     /// session-open adoption prints the exact same copy a live park does instead of a
     /// near-duplicate that only looks right.
     /// </summary>
-    public static string FormatParkedNotice(string runId, string? summary = null)
+    public static string FormatParkedNotice(string runId, string? summary = null, bool repeated = false)
     {
         var reason = ParkReasonCode(summary);
+        if (repeated)
+            return $"run parked again · {reason ?? "reason pending"} · {ParkAction(runId, reason ?? string.Empty, true)}";
         return reason is null
-            ? $"run parked · resume with /continue (or 'ru agent continue {runId}')"
+            ? $"run parked · resume with /continue (or 'ru agent continue {runId}') · /release to abandon"
             : $"run parked · {reason} · {ParkAction(runId, reason)}";
     }
 
@@ -875,10 +917,13 @@ public sealed class TuiTranscript
         string.IsNullOrWhiteSpace(code) || code is "waiting_user" or "reconciliation_required"
             ? null : code.Trim();
 
-    private static string ParkAction(string runId, string reason) =>
-        reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
-            ? "provider temporarily unavailable · wait before /continue"
-            : $"resume with /continue (or 'ru agent continue {runId}')";
+    private static string ParkAction(string runId, string reason, bool repeated = false) =>
+        repeated ? "the run is still blocked after Continue · /release to abandon"
+            : reason == "provider_quota_exhausted"
+                ? "restore provider credits or limits before /continue · /release to abandon"
+                : reason is "provider_rate_limited" or "provider_timeout" or "provider_server_error" or "provider_transport_error"
+                    ? "provider temporarily unavailable · wait before /continue · /release to abandon"
+                    : $"resume with /continue (or 'ru agent continue {runId}') · /release to abandon";
 
     /// <summary>
     /// The one line for a run this session already has in flight: the operator can
@@ -897,22 +942,38 @@ public sealed class TuiTranscript
     {
         var reason = ParkReasonCode(Escape(envelope.SafeSummary));
         var newPark = !_paused || _pausedRunId != envelope.RunId;
-        if (newPark) _lastParkReason = null;
+        _parkReasons.TryGetValue(envelope.RunId, out var previousReason);
+        if (newPark) { _lastParkReason = null; _repeatedPark = false; }
+        if (reason is not null && (newPark || reason != _lastParkReason))
+            _repeatedPark = reason == previousReason;
         _paused = true;
         _pausedRunId = envelope.RunId;
         if (newPark)
         {
             _lastParkReason = reason;
-            Notice(FormatParkedNotice(envelope.RunId, reason), TuiToken.Warn);
+            Notice(reason is null && previousReason is not null
+                ? $"run parked again · reason pending · /release to abandon"
+                : FormatParkedNotice(envelope.RunId, reason, _repeatedPark), TuiToken.Warn);
         }
         else if (reason is not null && reason != _lastParkReason)
         {
             _lastParkReason = reason;
-            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason)}", TuiToken.Warn);
+            Notice($"reason: {reason} · {ParkAction(envelope.RunId, reason, _repeatedPark)}", TuiToken.Warn);
+        }
+        if (reason is not null)
+        {
+            _parkReasons[envelope.RunId] = reason;
+            while (_parkReasons.Count > 64) _parkReasons.Remove(_parkReasons.Keys.First());
         }
         _status.SetState(TuiRunState.Paused);
         _status.SetDetail(_lastParkReason is null ? "waiting to continue"
-            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason));
+            : _lastParkReason + " · " + ParkAction(envelope.RunId, _lastParkReason, _repeatedPark));
+    }
+
+    public void ForgetParkHistory(string runId)
+    {
+        _parkReasons.Remove(runId);
+        if (_pausedRunId == runId) ClearPaused();
     }
 
     private void ClearPaused()
@@ -973,7 +1034,7 @@ public sealed class TuiTranscript
             }
         }
 
-        if (_fullScreenCards)
+        if (_fullScreenCards || _surface.Presentation is not null)
         {
             WriteToolRow(status, detail, target, envelope.SafeSummary);
         }
@@ -1026,17 +1087,28 @@ public sealed class TuiTranscript
         {
             // The expanded diff keeps its tinted rows between two dim rules, so the
             // block reads as one framed unit instead of loose lines.
-            var rule = "    " + TuiPalette.Paint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);
+            var rule = "    " + RetainedPaint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);
             _retained.Add(rule);
             foreach (var line in diffLines)
             {
-                _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
+                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)
+                    + (_surface.Presentation is not null ? line : FormatDiffLine(line)));
             }
 
             _retained.Add(rule);
         }
 
         TrimRetained();
+        if (_surface.Presentation is not null)
+        {
+            WriteStructuredTool(detail?.ActivityId, status, display, target, meta);
+            if (detail is not null)
+            {
+                _settledToolRows[detail.ActivityId] = detail;
+                while (_settledToolRows.Count > 64) _settledToolRows.Remove(_settledToolRows.Keys.First());
+            }
+            return;
+        }
         var row = TuiToolRow.Compose(status, display, target, meta, Width);
         if (detail is not null && _surface.Writer is ITranscriptActivityWriter)
         {
@@ -1162,7 +1234,7 @@ public sealed class TuiTranscript
 
         foreach (var line in flat.Split('\n'))
         {
-            _retained.Add("    " + TuiPalette.DimPaint(line));
+            _retained.Add("    " + (_surface.Presentation is not null ? line : TuiPalette.DimPaint(line)));
         }
 
         TrimRetained();
@@ -1183,7 +1255,9 @@ public sealed class TuiTranscript
             _atLineStart = true;
         }
 
-        WriteLines(TuiPalette.Paint("  · " + Escape(text), token));
+        if (_surface.Presentation is not null)
+            _surface.AppendPresentation(TranscriptLine.Plain("  · " + Escape(text), TranscriptRole.Meta, token));
+        else WriteLines(TuiPalette.Paint("  · " + Escape(text), token));
     }
 
     // ------------------------------------------------------------------
@@ -1206,7 +1280,15 @@ public sealed class TuiTranscript
 
         foreach (var line in diffLines.Take(MaxDiffLines))
         {
-            WriteLines("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
+            if (_surface.Presentation is not null)
+            {
+                var header = line.StartsWith("+++", StringComparison.Ordinal) || line.StartsWith("---", StringComparison.Ordinal);
+                var token = header ? TuiToken.Ink : line.StartsWith("@@", StringComparison.Ordinal) ? TuiToken.Brand
+                    : line.StartsWith('+') ? TuiToken.Ok : line.StartsWith('-') ? TuiToken.Err : TuiToken.Ink;
+                _surface.AppendPresentation(new TranscriptRunBuilder().Append("    ").Append("│ ", TuiToken.Line)
+                    .Append(line, token, bold: header).Line(TranscriptRole.Meta));
+            }
+            else WriteLines("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
         }
 
         if (diffLines.Count > MaxDiffLines)
@@ -1214,13 +1296,15 @@ public sealed class TuiTranscript
             _retained.Clear();
             foreach (var line in diffLines)
             {
-                _retained.Add("    " + TuiPalette.Paint("│ ", TuiToken.Line) + FormatDiffLine(line));
+                _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)
+                    + (_surface.Presentation is not null ? line : FormatDiffLine(line)));
             }
 
             TrimRetained();
-            WriteLines(TuiPalette.Paint(
-                $"    │ · {diffLines.Count - MaxDiffLines} more lines · ctrl+o",
-                TuiToken.Line));
+            var more = $"    │ · {diffLines.Count - MaxDiffLines} more lines · ctrl+o";
+            if (_surface.Presentation is not null)
+                _surface.AppendPresentation(TranscriptLine.Plain(more, TranscriptRole.Meta, TuiToken.Line));
+            else WriteLines(TuiPalette.Paint(more, TuiToken.Line));
         }
 
         _ = width;
@@ -1378,7 +1462,8 @@ public sealed class TuiTranscript
         _status.SetElapsed(outcome == TuiTurnOutcome.Completed ? seconds : 0);
         _status.SetDetail(outcome == TuiTurnOutcome.Completed ? _summaryDetail : null);
 
-        switch (outcome)
+        if (_surface.Presentation is not null) WritePresentationOutcome(outcome, errorCode, seconds, streamedText);
+        else switch (outcome)
         {
             case TuiTurnOutcome.Completed:
                 WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail));

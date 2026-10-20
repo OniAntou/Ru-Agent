@@ -5,13 +5,12 @@ using Terminal.Gui.App;
 namespace RuAgent.Cli.TerminalGui;
 
 /// <summary>
-/// Bridges the classic transcript renderer's <see cref="TextWriter"/> surface onto a
-/// Terminal.Gui transcript view. Palette escape sequences are stripped, streamed
-/// fragments grow the open row (<c>AppendChunk</c>) and completed lines commit rows;
-/// appends are marshalled onto the UI loop so a background turn can never mutate the
-/// view while the driver draws it.
+/// Projects semantic transcript rows onto Terminal.Gui on its UI thread. Interactive
+/// Markdown, activities and outcomes use ITranscriptPresentationWriter directly.
+/// TextWriter and the older string interfaces remain import adapters for slash-command
+/// reports, diagnostics and existing callers; their ANSI parsing is outside that path.
 /// </summary>
-public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter
+public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter, ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter
 {
     private readonly StringBuilder _pending = new();
     private bool _rowOpen;
@@ -78,6 +77,11 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
             var (clean, spans) = TgAnsiPaint.Parse(row);
             return new TgTranscriptRow(clean, TranscriptStyle.Prose, spans);
         }).ToArray();
+        return await ReplaceNativeAssistantAsync(painted).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ReplaceNativeAssistantAsync(IReadOnlyList<TgTranscriptRow> painted)
+    {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
@@ -381,9 +385,8 @@ public sealed class TgTranscriptWriter(IApplication app, TgTranscriptView transc
     }
 
     /// <summary>
-    /// Minimal role split for bridged rows: tool rows keep their glyph vocabulary, the
-    /// classic notice marker stays meta, everything else is prose. Task 15's parity pass
-    /// replaces this with a structured renderer.
+    /// Legacy text-import classification only. Native transcript rows supply their role
+    /// explicitly, so assistant prose is never classified from tool-like glyphs.
     /// </summary>
     private static TranscriptStyle Classify(string text)
     {

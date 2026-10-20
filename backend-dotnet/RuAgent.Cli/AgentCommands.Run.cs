@@ -61,7 +61,8 @@ public sealed partial class AgentCommands
 
         try
         {
-            await StreamEventsAsync(outcome.RunId, cmd.Json, cancellationToken).ConfigureAwait(false);
+            if (await StreamEventsAsync(outcome.RunId, cmd.Json, cancellationToken).ConfigureAwait(false))
+                return 2;
         }
         catch (OperationCanceledException)
         {
@@ -115,7 +116,8 @@ public sealed partial class AgentCommands
 
         try
         {
-            await StreamEventsAsync(cmd.RunId, cmd.Json, cancellationToken).ConfigureAwait(false);
+            if (await StreamEventsAsync(cmd.RunId, cmd.Json, cancellationToken).ConfigureAwait(false))
+                return 2;
         }
         catch (OperationCanceledException)
         {
@@ -161,8 +163,10 @@ public sealed partial class AgentCommands
         }
     }
 
-    private async Task StreamEventsAsync(string runId, bool json, CancellationToken ct)
+    private async Task<bool> StreamEventsAsync(string runId, bool json, CancellationToken ct)
     {
+        var parked = false;
+        string? parkReason = null;
         await StreamRunEventsResumedAsync(runId, async (frame, frameCt) =>
         {
             frameCt.ThrowIfCancellationRequested();
@@ -175,6 +179,25 @@ public sealed partial class AgentCommands
                 SafeEventRenderer.RenderFrame(frame, _out);
             }
             await _out.FlushAsync().ConfigureAwait(false);
-        }, ct).ConfigureAwait(false);
+            if (RunParkSignal.TryRead(frame, runId, out var reason))
+            {
+                var current = await _agentClient.GetRunAsync(runId, frameCt).ConfigureAwait(false);
+                // Replay can contain old parks followed by a later Continue. Only the
+                // current durable boundary may detach this live subscription.
+                if (IsParkedRunStatus(current.Status) && current.LastSequence == frame.DurableSequence)
+                {
+                    parked = true;
+                    parkReason = reason;
+                }
+            }
+        }, ct, stopWhen: _ => parked).ConfigureAwait(false);
+        if (parked)
+        {
+            var noticeWriter = json ? _err : _out;
+            var notice = $"run parked · {parkReason ?? "reason pending"} · continue with 'ru agent continue {runId}' · abandon with 'ru agent cancel {runId}'";
+            await noticeWriter.WriteLineAsync(notice).ConfigureAwait(false);
+            await noticeWriter.FlushAsync().ConfigureAwait(false);
+        }
+        return parked;
     }
 }

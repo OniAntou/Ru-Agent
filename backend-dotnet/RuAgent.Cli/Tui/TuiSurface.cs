@@ -47,6 +47,36 @@ public sealed class TuiSurface
     public TextWriter Writer { get; }
 
     public bool HasLineProjection => Writer is ITranscriptLineWriter;
+    public ITranscriptPresentationWriter? Presentation => Writer as ITranscriptPresentationWriter;
+
+    public void CommitPresentation(IReadOnlyList<TranscriptLine> rows)
+    {
+        lock (Gate)
+        {
+            Presentation!.CommitPresentation(rows);
+            foreach (var row in rows) CompleteLine(row.Text);
+        }
+    }
+
+    public void AppendPresentation(TranscriptLine row)
+    {
+        lock (Gate) { Presentation!.AppendPresentation(row); CompleteLine(row.Text); }
+    }
+
+    public void AppendPresentationChunk(TranscriptLine row)
+    {
+        lock (Gate) { Presentation!.AppendPresentationChunk(row); Record(row.Text); }
+    }
+
+    public void AppendActivityPresentation(string activityId, TranscriptLine row, IReadOnlyList<string>? details)
+    {
+        lock (Gate)
+        {
+            Presentation!.AppendActivityPresentation(activityId, row, details);
+            CompleteLine(row.Text);
+        }
+    }
+
 
     public void WriteActivityLine(string activityId, string text)
     {

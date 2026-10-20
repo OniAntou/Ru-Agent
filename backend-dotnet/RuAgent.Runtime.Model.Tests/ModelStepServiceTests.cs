@@ -1006,6 +1006,7 @@ public sealed class ModelStepServiceTests
     [InlineData("auth_failed", false, "provider_auth", false)]
     [InlineData("forbidden", false, "provider_auth", false)]
     [InlineData("rate_limited", false, "provider_rate_limited", true)]
+    [InlineData("quota_exhausted", true, "provider_quota_exhausted", false)]
     [InlineData("server_error", false, "provider_server_error", true)]
     [InlineData("transport_error", false, "provider_transport_error", true)]
     [InlineData("malformed_payload", false, "protocol_failure", true)]

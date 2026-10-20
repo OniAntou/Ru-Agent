@@ -983,6 +983,7 @@ public sealed class ModelStepService
         "timeout" => new ModelStepException("provider_timeout", retryable: true, error),
         "auth_failed" or "forbidden" => new ModelStepException("provider_auth", retryable: false, error),
         "rate_limited" => new ModelStepException("provider_rate_limited", retryable: true, error),
+        "quota_exhausted" => new ModelStepException("provider_quota_exhausted", retryable: false, error),
         "server_error" => new ModelStepException("provider_server_error", retryable: true, error),
         "transport_error" => new ModelStepException("provider_transport_error", retryable: true, error),
         // Split on purpose: an unreadable chunk is a per-response accident and

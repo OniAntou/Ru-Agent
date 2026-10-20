@@ -80,7 +80,8 @@ public sealed partial class AgentCommands : IDisposable
         string runId,
         Func<SseFrame, CancellationToken, Task> onFrameAsync,
         CancellationToken ct,
-        long afterSequence = 0)
+        long afterSequence = 0,
+        Func<SseFrame, bool>? stopWhen = null)
     {
         await AgentRunFeed.FollowAsync(
                 afterSequence,
@@ -99,6 +100,7 @@ public sealed partial class AgentCommands : IDisposable
                 new AgentRunFeedOptions
                 {
                     ResetResumeBudgetOnFrame = true,
+                    StopWhen = stopWhen,
                     TransportFailureFactory = (failure, resumes) => new AgentApiException(
                         "stream_interrupted",
                         $"event stream broke {resumes} times; last error: {failure.Message}",

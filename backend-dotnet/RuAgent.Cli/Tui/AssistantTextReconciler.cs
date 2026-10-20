@@ -1,3 +1,5 @@
+using RuAgent.Client;
+
 namespace RuAgent.Cli.Tui;
 
 /// <summary>What to do about a reply whose durable text and streamed text disagree.</summary>
@@ -56,44 +58,23 @@ public static class AssistantTextReconciler
             : AssistantTextRecovery.ReportTruncation;
     }
 
-    /// <summary>Filters fetched payloads down to assistant prose. A model step that only
-    /// calls tools stores its step record — a JSON object with <c>tool_calls</c> and a
-    /// <c>finish_reason</c> — which must never print as recovered reply text. Everything
-    /// that is not such a record survives, including prose that merely opens a brace.</summary>
-    public static IReadOnlyList<string> ProsePayloads(IEnumerable<string?> payloads)
+    /// <summary>Recovers only Host-typed assistant text. An answer may itself describe
+    /// the tool protocol in JSON, so its field names never determine its payload type.</summary>
+    public static IReadOnlyList<string> ProsePayloads(IEnumerable<AgentPayloadContent> payloads)
     {
         var kept = new List<string>();
         foreach (var payload in payloads)
         {
-            if (string.IsNullOrEmpty(payload) || IsStepRecord(payload))
+            if (payload.Kind != "assistanttext" || payload.Encoding != "utf8text"
+                || string.IsNullOrEmpty(payload.Content))
             {
                 continue;
             }
 
-            kept.Add(payload);
+            kept.Add(payload.Content);
         }
 
         return kept;
-    }
-
-    private static bool IsStepRecord(string payload)
-    {
-        if (!payload.AsSpan().TrimStart().StartsWith('{'))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(payload);
-            return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("tool_calls", out _)
-                && doc.RootElement.TryGetProperty("finish_reason", out _);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return false;
-        }
     }
 
     /// <summary>The text to print for a decision, or an empty string when nothing should be printed.</summary>

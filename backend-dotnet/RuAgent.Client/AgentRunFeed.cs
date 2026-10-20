@@ -20,6 +20,9 @@ public sealed record AgentRunFeedOptions
 
     /// <summary>Creates the final transport failure after the resume budget is exhausted.</summary>
     public Func<Exception, int, AgentApiException>? TransportFailureFactory { get; init; }
+
+    /// <summary>Detaches after delivering a caller-defined final frame, without cancelling the run.</summary>
+    public Func<SseFrame, bool>? StopWhen { get; init; }
 }
 
 /// <summary>
@@ -98,6 +101,7 @@ public static class AgentRunFeed
                     // from a renderer or dispatcher is a consumer failure, not a reason
                     // to replay the feed.
                     await onFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                    if (options.StopWhen?.Invoke(frame) == true) return;
                 }
             }
 

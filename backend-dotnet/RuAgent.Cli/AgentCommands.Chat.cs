@@ -303,8 +303,7 @@ public sealed partial class AgentCommands
             if (totalBytes > Images.CliImagePolicy.MaxTotalImageBytes)
             {
                 DeleteTempPath(tempPath);
-                await WriteDiagnosticLineAsync(
-                    _err,
+                await WriteAttachFeedbackAsync(
                     $"image_too_large: this turn's images total {Images.CliImageAttachment.FormatBytes(totalBytes)} (limit {Images.CliImageAttachment.FormatBytes(Images.CliImagePolicy.MaxTotalImageBytes)}); remove some with /detach").ConfigureAwait(false);
                 return;
             }
@@ -318,12 +317,31 @@ public sealed partial class AgentCommands
             RefreshAttachmentLabels();
             if (activeModel.Length > 0 && !Images.CliVisionModels.IsVisionModel(activeModel))
             {
-                await WriteDiagnosticLineAsync(
-                    _err,
+                await WriteAttachFeedbackAsync(
                     $"model_vision_unsupported: {activeModel} may not read images; switch to a vision model with /model").ConfigureAwait(false);
             }
 
-            await WriteDiagnosticLineAsync(humanOut, $"attached [{submissions.Count}] {attachment.Label}").ConfigureAwait(false);
+            var attachedMessage = $"attached [{submissions.Count}] {attachment.Label}";
+            if (tgMode)
+            {
+                ShowPasteFeedback(attachedMessage);
+            }
+
+            await WriteDiagnosticLineAsync(humanOut, attachedMessage).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Attachment failures must be visible with a live TUI: stderr lands behind the frame,
+        /// so the hint row mirrors the message there (classic mode keeps stderr only).
+        /// </summary>
+        async Task WriteAttachFeedbackAsync(string message)
+        {
+            if (tgMode)
+            {
+                ShowPasteFeedback(message);
+            }
+
+            await WriteDiagnosticLineAsync(_err, message).ConfigureAwait(false);
         }
 
         async Task AttachFileAsync(string path)
@@ -339,7 +357,7 @@ public sealed partial class AgentCommands
                 .ConfigureAwait(false);
             if (attachment is null)
             {
-                await WriteDiagnosticLineAsync(_err, textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
+                await WriteAttachFeedbackAsync(textError ?? "unsupported_attachment: the file could not be loaded").ConfigureAwait(false);
                 return;
             }
 
@@ -360,18 +378,37 @@ public sealed partial class AgentCommands
                 {
                     var input = tgWindow!.Composer.Input;
                     if (!input.TryInsertDraft(text))
+                    {
                         tgWindow.Hints.ShowFeedback("paste too large · draft unchanged · limit 16000 characters", true);
+                    }
+                    else
+                    {
+                        TuiDebug.Log("paste", $"inserted {text.Length} characters at the composer cursor");
+                    }
                 });
             }
             catch (NotInitializedException)
             {
-                // The TG session wound down before the paste landed.
+                TuiDebug.Log("paste", "tg session wound down before the paste landed");
+            }
+        }
+
+        void ShowPasteFeedback(string message)
+        {
+            try
+            {
+                tgApp?.Invoke(() => tgWindow?.Hints.ShowFeedback(message, true));
+            }
+            catch (NotInitializedException)
+            {
+                // The TG session wound down before the feedback landed.
             }
         }
 
         async Task ClipboardAttachAsync()
         {
             var clipboard = Images.CliClipboard.TryReadImagePath();
+            TuiDebug.Log("paste", $"image read: path={clipboard.Path} error={clipboard.Error}");
             if (clipboard.Path is null)
             {
                 // A text-only clipboard still pastes: Ctrl+V would otherwise swallow the
@@ -379,11 +416,17 @@ public sealed partial class AgentCommands
                 if (tgMode)
                 {
                     var text = Images.CliClipboard.TryReadText();
+                    TuiDebug.Log("paste", $"text read: length={text?.Length ?? 0}");
                     if (!string.IsNullOrWhiteSpace(text))
                     {
                         InsertIntoComposer(text);
                         return;
                     }
+
+                    // The diagnostic line writes behind the live TUI; the hint row is the
+                    // feedback the composer can actually see.
+                    ShowPasteFeedback(clipboard.Error ?? "clipboard_has_no_image: copy a screenshot or an image file first");
+                    return;
                 }
 
                 await WriteDiagnosticLineAsync(_err, clipboard.Error ?? "clipboard_has_no_image: copy a screenshot or an image file first").ConfigureAwait(false);
@@ -696,15 +739,14 @@ public sealed partial class AgentCommands
 
             var expected = new StringBuilder();
             var completeSteps = new List<string>();
-            var fetched = new List<string?>();
+            var fetched = new List<AgentPayloadContent>();
             try
             {
                 foreach (var payloadRef in payloadRefs)
                 {
-                    // GetPayloadAsync unwraps the host's envelope and returns the assistant
-                    // text itself for reply payloads. A tool-calls-only step stores its step
-                    // record instead, so the filter below decides what is prose.
-                    fetched.Add(await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false));
+                    // Keep the Host's type: valid assistant JSON may have the same keys
+                    // as a step record, but remains prose rather than execution metadata.
+                    fetched.Add(await _agentClient.GetPayloadContentAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false));
                 }
             }
             catch (OperationCanceledException)
@@ -718,7 +760,7 @@ public sealed partial class AgentCommands
             }
 
             var prose = Tui.AssistantTextReconciler.ProsePayloads(fetched);
-            var dropped = fetched.Count(part => part is { Length: > 0 }) - prose.Count;
+            var dropped = fetched.Count(part => part.Content.Length > 0) - prose.Count;
             if (dropped > 0)
             {
                 Tui.TuiDebug.Log("recover", $"dropped {dropped} step-record payloads");
@@ -2193,6 +2235,11 @@ public sealed partial class AgentCommands
                 await AttachFileAsync(arg).ConfigureAwait(false);
                 return true;
             }
+            if (slashCmd is "/paste")
+            {
+                await ClipboardAttachAsync().ConfigureAwait(false);
+                return true;
+            }
             if (slashCmd is "/attachments")
             {
                 if (pendingImages.Count == 0 && pendingTexts.Count == 0)
@@ -2236,6 +2283,15 @@ public sealed partial class AgentCommands
                 await WriteDiagnosticLineAsync(humanOut, $"detached {detachedName}").ConfigureAwait(false);
 
                 RefreshAttachmentLabels();
+                return true;
+            }
+            if (slashCmd is "/release")
+            {
+                var result = await ChatRunRelease.ReleaseAsync(
+                    _agentClient, runSession, sessionId, arg, cancellationToken).ConfigureAwait(false);
+                if (result.ReleasedRunId is { } released)
+                    sessionRenderer.Transcript.ForgetParkHistory(released);
+                await WriteDiagnosticLineAsync(result.IsError ? _err : humanOut, result.Message).ConfigureAwait(false);
                 return true;
             }
             if (slashCmd is "/continue")

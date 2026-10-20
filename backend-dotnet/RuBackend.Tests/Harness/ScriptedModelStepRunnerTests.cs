@@ -122,8 +122,7 @@ public sealed class ScriptedModelStepRunnerTests
         var context = new ModelContextSnapshot(
         [ModelContextEntry.ToolResult("tool:previous", 1, Receipt("ru_call_script_1", "call_11111111111111111111111111111111"), "{}")],
         ReadOnlyMemory<byte>.Empty);
-        var references = new PromptRuntimeContext(null, null,
-        [
+        var references = new PromptRuntimeContext([
             new PromptReference("tool_result", "older", "{\"projection_tool_call_id\":\"call_22222222222222222222222222222222\",\"projection_provider_call_id\":\"ru_call_script_old\",\"projection_next_offset\":111,\"projection_has_more\":true}"),
             new PromptReference("tool_result", "previous", "{\"projection_tool_call_id\":\"call_11111111111111111111111111111111\",\"projection_provider_call_id\":\"ru_call_script_1\",\"projection_next_offset\":222,\"projection_has_more\":true}"),
         ]);
@@ -310,7 +309,7 @@ public sealed class ScriptedModelStepRunnerTests
         SystemPromptContext.Empty.Environment,
         Array.Empty<PromptInstructionBlock>(),
         Array.Empty<PromptCapability>(),
-        new PromptRuntimeContext(null, null, [new PromptReference("tool_result", "previous", content)]));
+        new PromptRuntimeContext([new PromptReference("tool_result", "previous", content)]));
 
     [Fact]
     public void The_arguments_survive_parsing()

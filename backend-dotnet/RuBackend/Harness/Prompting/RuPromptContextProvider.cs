@@ -109,7 +109,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 + ". Do not assume those instructions were applied. Inspect or repair them within current permissions."));
             // The warning stays newest, while preserving the reference-count invariant.
             if (references.Count > PromptRuntimeContext.MaxRuntimeReferences) references.RemoveAt(0);
-            runtime = new PromptRuntimeContext(runtime.Mood, runtime.Hardware, references);
+            runtime = new PromptRuntimeContext(references);
         }
         var capabilities = BuildCapabilities();
 
@@ -298,7 +298,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             references.AddRange(kept);
         }
 
-        return new PromptRuntimeContext(null, null, references);
+        return new PromptRuntimeContext(references);
     }
 
     private async Task<PromptReference?> BuildBackgroundTaskReferenceAsync(

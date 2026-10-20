@@ -384,7 +384,7 @@ public sealed class InProcessModelStepRunnerTests
             new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-30", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             [capability],
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
     }
 
     private static async IAsyncEnumerable<ModelDelta> Deltas(params ModelDelta[] deltas)

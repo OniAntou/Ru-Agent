@@ -142,10 +142,7 @@ public sealed class AgentPromptReceiptTests
                 new string('a', 64),
                 null,
                 "enabled")],
-            new PromptRuntimeContext(
-                null,
-                null,
-                Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
     }
 
     private static SystemPromptReceipt Receipt(

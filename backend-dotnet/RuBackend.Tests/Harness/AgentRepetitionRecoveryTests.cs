@@ -88,7 +88,7 @@ public sealed partial class AgentProviderTransientParkTests
             return Task.FromResult(new SystemPromptContext(SystemPromptContext.PromptContextSchemaVersion,
                 "ru-agent", "standard",
                 new PromptEnvironment("model-b", "windows", "vi-VN", "Asia/Bangkok", "2026-10-11", "test"),
-                [], [capability], new PromptRuntimeContext(null, null, [])));
+                [], [capability], new PromptRuntimeContext([])));
         }
     }
 

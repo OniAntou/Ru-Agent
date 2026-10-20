@@ -10,7 +10,7 @@ internal static class PromptContextBudget
         PromptRuntimeContext runtime)
     {
         var empty = new SystemPromptContext(version, profile, preset, environment, instructions, capabilities,
-            new PromptRuntimeContext(runtime.Mood, runtime.Hardware, []));
+            new PromptRuntimeContext([]));
         // Reserve envelope/omission/rendering overhead. Mandatory policy and instructions
         // never disappear to make room for untrusted tool output.
         var available = SystemPromptContext.MaxSerializedBytes - empty.SerializeUtf8().Length - 16 * 1024;
@@ -35,7 +35,7 @@ internal static class PromptContextBudget
             retained.Insert(0, new PromptReference("references_omitted", "aggregate context budget",
                 $"{omitted} older reference(s) omitted to fit the serialized context budget. Durable receipts remain stored; use available tool cursors or read the source again if needed."));
         return new SystemPromptContext(version, profile, preset, environment, instructions, capabilities,
-            new PromptRuntimeContext(runtime.Mood, runtime.Hardware, retained));
+            new PromptRuntimeContext(retained));
     }
 
     private static int Measure(PromptReference reference) => JsonSerializer.SerializeToUtf8Bytes(new

@@ -357,11 +357,7 @@ public sealed partial class AgentV1Service
         }
 
         var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
-        var roots = new[]
-        {
-            Path.Combine(workspaceRoot, "skills"),
-            Path.Combine(workspaceRoot, ".ru", "skills"),
-        };
+        var roots = RuAgent.Protocol.SkillRoots.For(workspaceRoot);
         var loaded = loader.Load(roots, cancellationToken);
         var items = loaded.Skills
             .OrderBy(skill => skill.Id, StringComparer.Ordinal)
@@ -392,11 +388,7 @@ public sealed partial class AgentV1Service
         }
 
         var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
-        var roots = new[]
-        {
-            Path.Combine(workspaceRoot, "skills"),
-            Path.Combine(workspaceRoot, ".ru", "skills"),
-        };
+        var roots = RuAgent.Protocol.SkillRoots.For(workspaceRoot);
         var loaded = loader.Load(roots, cancellationToken);
         var skill = loaded.Skills.FirstOrDefault(item =>
             string.Equals(item.Id, command.SkillId, StringComparison.OrdinalIgnoreCase));

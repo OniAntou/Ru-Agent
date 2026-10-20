@@ -544,7 +544,7 @@ public sealed class RuPromptContextProviderTests
             new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             [new PromptCapability("files.read", "1.0.0", "Read", "workspace.read", schema, new string('0', 64), null, "enabled")],
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
 
         var error = Assert.Throws<AgentProtocolException>(() => InProcessModelStepRunner.BuildSettingsForTests(context));
         Assert.Equal("tool_contract_mismatch", error.Code);

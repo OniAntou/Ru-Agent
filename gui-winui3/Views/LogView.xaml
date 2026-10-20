@@ -55,7 +55,7 @@
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,16" VerticalAlignment="Center">
             <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
                 <TextBlock Text="Activity Timeline" Style="{StaticResource RuViewHeaderStyle}"/>
-                <TextBlock Text="Track chat events, emotion analysis, and VTube Studio actions in real time" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="Review recent chat activity and the events recorded earlier" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
             <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">

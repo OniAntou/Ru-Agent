@@ -114,10 +114,88 @@ public sealed class RuInstructionLoaderTests
             new PromptEnvironment("model", "windows", "en-US", "UTC", "2026-09-07", "workspace"),
             result.Blocks,
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
         var prompt = SystemPromptComposer.Compose(context);
         prompt.Receipt.ValidateAgainst(context, prompt.Text);
         Assert.Contains(SystemPromptComposer.ExternalSkillInstructionBoundary, prompt.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Loads_the_user_wide_instruction_first_and_marks_it_as_user_guidance()
+    {
+        using var fixture = TempRoot.Create();
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.Parent, "profile")).FullName;
+        Directory.CreateDirectory(Path.Combine(profile, ".ru"));
+        File.WriteAllText(Path.Combine(profile, ".ru", "AGENTS.md"), "always reply briefly", new UTF8Encoding(false));
+        File.WriteAllText(Path.Combine(fixture.Root, "AGENTS.md"), "workspace guidance", new UTF8Encoding(false));
+
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
+            .Load(fixture.Root);
+
+        Assert.Equal(new[] { "user:AGENTS.md", "root:AGENTS.md" }, result.Blocks.Select(block => block.SourceId));
+        Assert.Equal(PromptInstructionOrigin.User, result.Blocks[0].Origin);
+        Assert.Equal("~/.ru/AGENTS.md", result.Blocks[0].DisplayName);
+        Assert.Equal(PromptInstructionOrigin.Workspace, result.Blocks[1].Origin);
+
+        var context = new SystemPromptContext(
+            SystemPromptContext.PromptContextSchemaVersion,
+            SystemPromptContext.RequiredAgentProfile,
+            "standard",
+            new PromptEnvironment("model", "windows", "en-US", "UTC", "2026-09-07", "workspace"),
+            result.Blocks,
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(Array.Empty<PromptReference>()));
+        var prompt = SystemPromptComposer.Compose(context);
+        prompt.Receipt.ValidateAgainst(context, prompt.Text);
+        Assert.Contains(SystemPromptComposer.UserInstructionBoundary, prompt.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_missing_user_wide_instruction_is_not_reported_and_a_linked_one_outside_the_profile_is_refused()
+    {
+        using var fixture = TempRoot.Create();
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.Parent, "profile")).FullName;
+
+        var missing = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
+            .Load(fixture.Root);
+
+        Assert.DoesNotContain(missing.Skips, skip => skip.SourceId == "user:AGENTS.md");
+
+        var outside = Directory.CreateDirectory(Path.Combine(fixture.Parent, "elsewhere")).FullName;
+        File.WriteAllText(Path.Combine(outside, "AGENTS.md"), "not yours", new UTF8Encoding(false));
+        var ru = Path.Combine(profile, ".ru");
+        try
+        {
+            Directory.CreateSymbolicLink(ru, outside);
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+        {
+            return; // Symbolic links need a privilege this machine does not grant.
+        }
+
+        var linked = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
+            .Load(fixture.Root);
+
+        Assert.DoesNotContain(linked.Blocks, block => block.SourceId == "user:AGENTS.md");
+        Assert.Contains(linked.Skips, skip => skip.SourceId == "user:AGENTS.md" && skip.Reason == "outside_root");
+    }
+
+    [Fact]
+    public void Discovers_skills_in_the_agents_folder_and_the_user_ru_folder_with_workspace_precedence()
+    {
+        using var fixture = TempRoot.Create();
+        var profile = Directory.CreateDirectory(Path.Combine(fixture.Parent, "profile")).FullName;
+        var agentsSkills = Directory.CreateDirectory(Path.Combine(fixture.Root, ".agents", "skills")).FullName;
+        var homeSkills = Directory.CreateDirectory(Path.Combine(profile, ".ru", "skills")).FullName;
+        WriteSkill(agentsSkills, "delta", "# Delta\n\nFrom the shared agents folder.");
+        WriteSkill(homeSkills, "delta-home", "---\nname: delta\n---\n# Delta home\n\nLoses to the workspace copy.");
+        WriteSkill(homeSkills, "epsilon", "# Epsilon\n\nFrom the user profile.");
+
+        var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot, userProfileRoot: profile)
+            .Load(fixture.Root);
+
+        Assert.Equal(new[] { "skill:delta", "skill:epsilon" }, result.Blocks.Select(block => block.SourceId));
+        Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Delta home", StringComparison.Ordinal));
     }
 
     [Fact]

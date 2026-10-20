@@ -523,6 +523,7 @@ returned: the model's `skill` tool (Broker) and the `/skill <name>` command
 unrecognized token fails closed as `unsupported_skill_requirement` naming the
 token, and the body is not returned. Skills without `requires` are unaffected.
 
+An optional `~/.ru/AGENTS.md` carries user-wide preferences and is read before the workspace files.
 `AGENTS.md`, `CONTEXT.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are the fixed
 user-workspace instruction candidates below the selected run root, not repo
 templates. The loader applies final-path containment, strict UTF-8 decoding,
@@ -540,8 +541,10 @@ Example `AGENTS.md` format:
 
 Workspace skill roots holding that same `SKILL.md` shape. Copy a directory
 containing a case-insensitive `SKILL.md` into one of the supported roots:
-`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
-`%LOCALAPPDATA%\Ru\skills`. A minimal package can look like this:
+`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, `<workspace-root>/.agents/skills`,
+`RU_SKILLS_ROOT`, `~/.ru/skills`, or `%LOCALAPPDATA%\Ru\skills` (first match wins, so a
+workspace skill overrides a user-wide one). Skills in other tools' folders such as `~/.agents/skills`
+are not read automatically; copy the ones you want into `~/.ru/skills`. A minimal package can look like this:
 
 ```markdown
 ---

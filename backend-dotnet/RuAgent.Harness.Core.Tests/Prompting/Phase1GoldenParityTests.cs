@@ -255,10 +255,7 @@ public sealed class Phase1GoldenParityTests
                 OptionalString(environment["workspace_label"])),
             instructions,
             capabilities,
-            new PromptRuntimeContext(
-                OptionalString(runtime["mood"]),
-                OptionalString(runtime["hardware"]),
-                references));
+            new PromptRuntimeContext(references));
     }
 
     private static string? OptionalString(JsonNode? node) => node is null ? null : node.GetValue<string>();

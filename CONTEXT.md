@@ -295,7 +295,8 @@ _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
 **Markdown Skill**:
 A directory containing a case-insensitive `SKILL.md` under one of the supported
-skill roots: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
+skill roots, listed in precedence order: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`,
+`<workspace-root>/.agents/skills`, `RU_SKILLS_ROOT` when set, `~/.ru/skills`, and
 `%LOCALAPPDATA%\Ru\skills`. It is bounded, untrusted prompt guidance. For
 example:
 
@@ -446,7 +447,8 @@ checks and the final-answer verification guard. A note cannot turn a failed
 verification into successful completion.
 
 **Agent Persona Source**:
-The root-selected `AGENTS.md` instruction is the sole Agent persona/style source.
+The root-selected `AGENTS.md` instruction is the sole Agent persona/style source; an optional
+user-wide `~/.ru/AGENTS.md` is read before it, so workspace guidance wins where they disagree.
 The built-in prompt is a neutral execution contract. Root instructions may
 guide persona and workflow but cannot grant tools, folders, network access, or
 override Broker policy.

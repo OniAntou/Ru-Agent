@@ -64,6 +64,7 @@ public sealed class AgentSlashCommands
     public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
 
     public int PanelWidth { get; set; } = Tui.TuiViewport.FallbackWidth;
+    public bool FramelessReports { get; set; }
 
     public AgentSlashCommands(SettingsApiClient settingsClient, TextWriter outWriter, TextWriter errWriter)
         : this(settingsClient, null, outWriter, errWriter)
@@ -827,7 +828,7 @@ public sealed class AgentSlashCommands
             ToolsSettled: snapshot?.ToolsSettled ?? 0,
             ApiKeyConfigured: hasKey ?? snapshot?.ApiKeyConfigured);
 
-        foreach (var line in Tui.TuiSurfaces.Status(PanelWidth, card))
+        foreach (var line in Tui.TuiSurfaces.Status(PanelWidth, card, !FramelessReports))
         {
             _humanOut.WriteLine(line);
         }
@@ -835,7 +836,7 @@ public sealed class AgentSlashCommands
 
     private void WriteHelpPanel()
     {
-        foreach (var line in Tui.TuiSurfaces.Help(PanelWidth))
+        foreach (var line in Tui.TuiSurfaces.Help(PanelWidth, !FramelessReports))
         {
             _humanOut.WriteLine(line);
         }

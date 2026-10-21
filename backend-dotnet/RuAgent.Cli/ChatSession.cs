@@ -27,7 +27,7 @@ public sealed partial class AgentCommands
     private sealed partial class ChatSession
     {
         private readonly AgentCommands _host;
-        private readonly ChatCommand cmd;
+        private ChatCommand cmd;
         private readonly ChatBootstrapContext bootstrap;
         private readonly CancellationToken cancellationToken;
 
@@ -112,6 +112,7 @@ public sealed partial class AgentCommands
             _slashCommands.HumanOut = humanOut;
             _slashCommands.Json = cmd.Json;
             _slashCommands.PanelWidth = Tui.TuiViewport.Width();
+            _slashCommands.FramelessReports = tgMode;
             // The TG frame has no scrollback behind the picker, so a cancelled bare form must
             // reprint the option panel instead of leaving the operator with a silent no-op.
             _slashCommands.ReprintPanelOnPickerCancel = tgMode;
@@ -237,6 +238,7 @@ public sealed partial class AgentCommands
                     tgMode = false;
                     tgWriter = null;
                     _slashCommands.ReprintPanelOnPickerCancel = false;
+                    _slashCommands.FramelessReports = false;
                     humanOut = _out;
                     _slashCommands.HumanOut = _out;
                     sessionRenderer = CreateSessionRenderer(_out);

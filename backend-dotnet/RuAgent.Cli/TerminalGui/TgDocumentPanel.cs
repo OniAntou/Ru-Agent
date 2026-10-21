@@ -40,10 +40,29 @@ public sealed class TgDocumentPanel : View
     {
         ArgumentNullException.ThrowIfNull(body);
         _title = string.IsNullOrWhiteSpace(title) ? "output" : title.Trim();
-        _body = body;
+        // Legacy report writers emit ANSI; native views need visible text before wrapping.
+        // Keep the captured original for the transcript's separate styled-import path.
+        _body = body.Select(line => TgAnsiPaint.Parse(line ?? string.Empty).Clean).ToArray();
         _offset = 0;
         _wrapWidth = -1;
+        SetNeedsLayout();
         SetNeedsDraw();
+    }
+
+    internal int MeasureHeight(int width, int availableRows)
+    {
+        EnsureRows(width);
+        return Math.Min(availableRows, _rows.Count + TuiCard.TuiCardFrameRows);
+    }
+
+    private void EnsureRows(int width)
+    {
+        var cardWidth = Math.Clamp(width, TuiDocumentPanel.MinWidth, TuiCard.MaxWidth);
+        // Item rows also reserve the left padding and a two-cell bullet within InnerWidth.
+        var inner = Math.Max(1, TuiCard.InnerWidth(cardWidth) - TuiCard.PadX - 2);
+        if (inner == _wrapWidth) return;
+        _rows = TuiText.HardWrap(_body, inner);
+        _wrapWidth = inner;
     }
 
     public void ScrollBy(int delta) => ScrollTo(_offset + delta);
@@ -62,13 +81,8 @@ public sealed class TgDocumentPanel : View
         }
 
         var width = Math.Clamp(Viewport.Width, TuiDocumentPanel.MinWidth, TuiCard.MaxWidth);
-        var inner = TuiCard.InnerWidth(width);
-        if (inner != _wrapWidth)
-        {
-            _rows = TuiText.HardWrap(_body, inner);
-            _wrapWidth = inner;
-            _offset = TuiDocumentPanel.ClampOffset(_offset, _rows.Count, PageSize());
-        }
+        EnsureRows(width);
+        _offset = TuiDocumentPanel.ClampOffset(_offset, _rows.Count, PageSize());
 
         var body = new List<CardRow>(_rows.Count);
         for (var i = _offset; i < Math.Min(_rows.Count, _offset + PageSize()); i++)

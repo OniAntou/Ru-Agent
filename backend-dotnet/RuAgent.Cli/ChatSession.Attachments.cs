@@ -27,6 +27,7 @@ public sealed partial class AgentCommands
             }
 
             submissions.HoldForRetry(submission);
+            RefreshAttachmentLabels();
             tgLoop?.PauseQueuedSubmissions();
         }
 
@@ -74,6 +75,7 @@ public sealed partial class AgentCommands
             if (pendingImages.Count >= Images.CliImagePolicy.MaxImageCount)
             {
                 DeleteTempPath(tempPath);
+                if (tgMode) ShowPasteFeedback(Images.CliImagePolicy.TooManyImagesStatus);
                 await WriteDiagnosticLineAsync(humanOut, Images.CliImagePolicy.TooManyImagesStatus).ConfigureAwait(false);
                 return;
             }
@@ -84,7 +86,7 @@ public sealed partial class AgentCommands
             if (attachment is null)
             {
                 DeleteTempPath(tempPath);
-                await WriteDiagnosticLineAsync(_err, imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
+                await WriteAttachFeedbackAsync(imageError ?? "invalid_image: the attachment could not be loaded").ConfigureAwait(false);
                 return;
             }
 
@@ -113,7 +115,7 @@ public sealed partial class AgentCommands
             var attachedMessage = $"attached [{submissions.Count}] {attachment.Label}";
             if (tgMode)
             {
-                ShowPasteFeedback(attachedMessage);
+                ShowPasteFeedback(attachedMessage, false);
             }
 
             await WriteDiagnosticLineAsync(humanOut, attachedMessage).ConfigureAwait(false);
@@ -182,11 +184,11 @@ public sealed partial class AgentCommands
             }
         }
 
-        void ShowPasteFeedback(string message)
+        void ShowPasteFeedback(string message, bool isError = true)
         {
             try
             {
-                tgApp?.Invoke(() => tgWindow?.Hints.ShowFeedback(message, true));
+                tgApp?.Invoke(() => tgWindow?.Hints.ShowFeedback(message, isError));
             }
             catch (NotInitializedException)
             {

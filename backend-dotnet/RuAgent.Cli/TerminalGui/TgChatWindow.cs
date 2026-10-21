@@ -158,7 +158,7 @@ public sealed class TgChatWindow : Window
         {
             _document = new TgDocumentPanel();
             _document.Closed += HideDocument;
-            TgModalLayout.Apply(_document, this);
+            TgModalLayout.Apply(_document, this, measureHeight: _document.MeasureHeight);
         }
 
         _document.SetContent(title, body);

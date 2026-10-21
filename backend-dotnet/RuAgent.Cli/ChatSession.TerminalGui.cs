@@ -67,6 +67,7 @@ public sealed partial class AgentCommands
             // clipboard pastes and dropped paths without parsing anything itself.
             loop.SetAttachmentLabelProvider(CurrentAttachmentLabel);
             loop.SetAttachmentCountProvider(() => submissions.Count);
+            loop.SetImageCountProvider(() => pendingImages.Count, () => submissions.Retryable?.Images.Length ?? 0);
             loop.SetPasteHandler(ClipboardAttachAsync);
             loop.SetCopyHandler(Images.CliClipboardTextWriter.TryWriteAsync);
             loop.SetDropHandler(line =>

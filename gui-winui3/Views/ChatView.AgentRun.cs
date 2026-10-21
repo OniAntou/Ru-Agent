@@ -119,6 +119,7 @@ namespace RuApp.Views
                         ApprovalPanel.Hide();
                     }
 
+                    ApplyTodoShelfForPromptCard();
                     break;
                 case nameof(AgentRunPanelViewModel.Question):
                     if (RunPanel.Question is { } question)
@@ -130,6 +131,7 @@ namespace RuApp.Views
                         QuestionPanel.Hide();
                     }
 
+                    ApplyTodoShelfForPromptCard();
                     break;
             }
         }
@@ -243,6 +245,54 @@ namespace RuApp.Views
             }
         }
 
+        private readonly Dictionary<string, string> _requestedWorkspaceBySession = new(StringComparer.Ordinal);
+
+        /// <summary>The Host's workspace path for a session, supplied by the shell's session list.</summary>
+        public Func<string, string?>? SessionWorkspaceResolver { get; set; }
+
+        /// <summary>
+        /// The folder a run's session works in: the Host's session record first, then the
+        /// exact path this app sent when it created the run. Never the composer's current
+        /// default, which may have changed since the run was created.
+        /// </summary>
+        private string? ResolveRunWorkspacePath(string sessionId)
+        {
+            if (SessionWorkspaceResolver?.Invoke(sessionId) is { Length: > 0 } hostPath) return hostPath;
+            return _requestedWorkspaceBySession.TryGetValue(sessionId, out var requested) ? requested : null;
+        }
+
+        private static UIElement BuildTrustPromptContent(WorkspaceTrustPromptPolicy.Prompt prompt)
+        {
+            var panel = new StackPanel { Spacing = 12 };
+            panel.Children.Add(new TextBlock { Text = prompt.Content, TextWrapping = TextWrapping.Wrap });
+            var path = new TextBlock
+            {
+                Text = prompt.WorkspaceText,
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+                FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
+            };
+            AutomationProperties.SetName(path, $"Workspace: {prompt.WorkspaceText}");
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(10, 8, 10, 8),
+                CornerRadius = Services.UiCornerRadius.Control,
+                Background = (Brush)Application.Current.Resources["RuAccentSoftBrush"],
+                Child = path,
+            });
+            if (prompt.ScopeWarning is { } warning)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = warning,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Brush)Application.Current.Resources["RuWarningBrush"],
+                });
+            }
+
+            return panel;
+        }
+
         private async void ShowWorkspaceTrustDialogAsync()
         {
             var controller = _agentController;
@@ -264,11 +314,12 @@ namespace RuApp.Views
             try
             {
                 var prompt = WorkspaceTrustPromptPolicy.For(
-                    _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash));
+                    _workspaceTrustMemory.IsReTrust(_agentWorkspace, run.DisplayIdentityHash),
+                    ResolveRunWorkspacePath(run.SessionId));
                 var dialog = new ContentDialog
                 {
                     Title = prompt.Title,
-                    Content = prompt.Content,
+                    Content = BuildTrustPromptContent(prompt),
                     PrimaryButtonText = prompt.PrimaryButtonText,
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
@@ -833,6 +884,8 @@ namespace RuApp.Views
                 ?? throw new InvalidOperationException("App root workspace is not configured.");
 
             _agentWorkspace = workspace;
+            // The exact folder this run is created for, so the trust prompt can name it.
+            _requestedWorkspaceBySession[_activeSessionId] = workspace;
 
             string? submittedSessionId = null;
             try

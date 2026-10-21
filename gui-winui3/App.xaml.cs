@@ -14,7 +14,6 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-        RegisterTranscriptTypography();
         this.UnhandledException += (s, e) =>
         {
             // Only swallow exceptions that are recoverable; let truly fatal
@@ -39,30 +38,6 @@ public partial class App : Application
                 // Nothing left to report to: the process is already terminating.
             }
         };
-    }
-
-    /// <summary>
-    /// Publishes the transcript typography singleton as an application resource so
-    /// the transcript can bind its font sizes to it.
-    /// </summary>
-    /// <remarks>
-    /// Registered from code rather than declared in App.xaml. Markup cannot construct
-    /// the type -- its constructor takes an optional store, which is not a public
-    /// default constructor as the XAML compiler defines one -- and declaring it there
-    /// would also risk a second instance existing beside the singleton the transcript
-    /// reads, so a size change could apply to one and not the other.
-    /// </remarks>
-    private void RegisterTranscriptTypography()
-    {
-        try
-        {
-            Resources["TranscriptTypography"] = Services.TranscriptTypography.Instance;
-        }
-        catch (Exception ex)
-        {
-            // A missing typography resource costs the font-size preference, not the app.
-            GuiDiagnosticWriter.AppendTraceLine($"[App] Transcript typography registration failed: {ex.Message}");
-        }
     }
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)

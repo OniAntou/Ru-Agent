@@ -37,19 +37,50 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public async Task A_stored_legacy_alias_is_named_rather_than_showing_a_stale_label()
+    public async Task A_stored_legacy_alias_with_a_key_keeps_its_name()
     {
-        // A fresh Host stores "openai", which has no picker row; the old view kept the
-        // label of the last rebuilt row (302.AI) instead of naming the stored choice.
-        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "openai" } };
+        // An existing OpenAI setup has no picker row but must keep working and be named,
+        // not show the label of whichever row was rebuilt last.
+        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "openai", HasOpenAiKey = true } };
         using var viewModel = NewViewModel();
 
         await viewModel.AttachAsync(backend, new FakeCatalog());
 
         Assert.Equal("openai", viewModel.ProviderChoice);
         Assert.Equal("OpenAI", viewModel.ProviderButtonText);
-        Assert.False(viewModel.IsModelsDevKeyVisible);
         Assert.All(viewModel.ProviderRows, row => Assert.False(row.IsSelected));
+    }
+
+    [Theory]
+    [InlineData("openai")]
+    [InlineData("anthropic")]
+    public async Task A_keyless_legacy_alias_reads_as_unset_so_a_new_user_gets_a_key_box(string stored)
+    {
+        // A fresh Host stores "openai". With no key it has neither a picker row nor a key
+        // row, so a new user had nowhere to type a key and saw a network error instead.
+        var backend = new FakeBackend { Settings = new AppSettingsDto { BackendChoice = stored } };
+        using var viewModel = NewViewModel();
+
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        Assert.Equal("models.dev:302ai", viewModel.ProviderChoice);
+        Assert.True(viewModel.IsModelsDevKeyVisible);
+        Assert.Equal("302.AI API key", viewModel.ModelsDevKeyLabel);
+    }
+
+    [Fact]
+    public async Task A_catalog_failure_for_a_provider_without_a_key_asks_for_the_key()
+    {
+        var catalog = new FakeCatalog();
+        var dispatched = new List<Action>();
+        using var viewModel = new SettingsViewModel(dispatched.Add, (_, _) => Task.CompletedTask);
+        await viewModel.AttachAsync(new FakeBackend { Settings = new AppSettingsDto { BackendChoice = string.Empty } }, catalog);
+
+        catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_unavailable" });
+        foreach (var action in dispatched.ToArray()) action();
+
+        Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderTestMessage);
+        Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
     }
 
     [Fact]
@@ -225,7 +256,11 @@ public sealed class SettingsViewModelTests
         var catalog = new FakeCatalog();
         var dispatched = new List<Action>();
         using var viewModel = new SettingsViewModel(dispatched.Add, (_, _) => Task.CompletedTask);
-        await viewModel.AttachAsync(new FakeBackend(), catalog);
+        // A provider with a stored key, so a failure is a real failure rather than the
+        // missing-key prompt (A_catalog_failure_for_a_provider_without_a_key_asks_for_the_key).
+        await viewModel.AttachAsync(
+            new FakeBackend { Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" }, KeyIds = ["openai"] },
+            catalog);
         string initial = viewModel.ProviderTestMessage;
 
         catalog.Raise(new ProviderCatalogState { Status = "ok", Models = ["m1"] });

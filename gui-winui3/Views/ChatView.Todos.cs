@@ -33,7 +33,19 @@ public sealed partial class ChatView
         AutomationProperties.SetName(TodoPanelToggle, _todoPanelExpanded ? "Collapse task list" : "Expand task list");
         ToolTipService.SetToolTip(TodoPanelToggle, _todoPanelExpanded ? "Collapse task list" : "Expand task list");
         if (_todoPanelExpanded) TodoPanelList.Render(todos);
-        UiMotion.SetVisible(TodoPanel, true);
+        // An approval or question card floats over the composer and the shelf; the shelf
+        // yields while one is up instead of showing its header above the card's edge.
+        UiMotion.SetVisible(TodoPanel, !IsPromptCardShown);
+    }
+
+    private bool IsPromptCardShown => RunPanel.Approval is not null || RunPanel.Question is not null;
+
+    /// <summary>Hides the shelf while a prompt card is up and brings it back afterwards.</summary>
+    private void ApplyTodoShelfForPromptCard()
+    {
+        if (TodoPanel is null) return;
+        if (IsPromptCardShown) UiMotion.SetVisible(TodoPanel, false);
+        else if (_latestTodos is not null) UpdateTodoPanel(_latestTodos);
     }
 
     private void ClearTodoPanel()

@@ -28,6 +28,23 @@ public sealed partial class ChatView
     /// projections retain unchanged rows. Visible task summaries also refresh
     /// periodically so processes can settle independently of the model's run.
     /// </summary>
+    /// <summary>
+    /// A newer title for the open session (one titled by its first prompt after it was
+    /// opened). Titles for other sessions are ignored.
+    /// </summary>
+    public void UpdateSessionTitle(string sessionId, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)
+            || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
+            || string.Equals(title, _activeSessionTitle, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _activeSessionTitle = title;
+        SidePanel?.SetSessionTitle(title);
+    }
+
     private void UpdateSidePanel(bool isRunRunning)
     {
         if (SidePanel is null)

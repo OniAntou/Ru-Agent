@@ -400,6 +400,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(EffectiveDurationMs));
                 OnPropertyChanged(nameof(DisplayText));
+        OnPropertyChanged(nameof(DisplayTooltip));
                 OnPropertyChanged(nameof(CompletedText));
                 OnPropertyChanged(nameof(MetadataText));
                 OnPropertyChanged(nameof(HasDuration));
@@ -521,9 +522,15 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         _ => "Completed",
     };
 
-    public string WaitingText => Kind == AgentActivityKind.Status
-        ? "Waiting for confirmation"
-        : "Waiting to continue";
+    public string WaitingText => RuApp.Services.AgentWaitPresentation.Headline(Kind == AgentActivityKind.Status, SafeCode);
+
+    /// <summary>
+    /// The row label's tooltip. A waiting row whose headline explains its code keeps the
+    /// code here, where a bug report can still find it.
+    /// </summary>
+    public string DisplayTooltip => State == AgentActivityState.Waiting && RuApp.Services.AgentWaitPresentation.IsExplained(SafeCode)
+        ? $"{DisplayText} ({SafeCode})"
+        : DisplayText;
 
     /// <summary>
     /// What a Status row says when its safe code names nothing more specific.
@@ -645,11 +652,13 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 parts.Add($"{AddedDeltaText} {RemovedDeltaText}");
             }
 
-            // A waiting headline never names its reason, so the muted line keeps
-            // the machine code. A failed headline already translated it, so the
-            // code would only repeat noise; the copy action carries it instead.
+            // A waiting headline that cannot name its reason keeps the machine code on
+            // the muted line; an explained one moves it to the tooltip. A failed headline
+            // already translated it, so the code would only repeat noise; the copy action
+            // carries it instead.
             if (State == AgentActivityState.Waiting
-                && !string.IsNullOrWhiteSpace(SafeCode))
+                && !string.IsNullOrWhiteSpace(SafeCode)
+                && !RuApp.Services.AgentWaitPresentation.IsExplained(SafeCode))
             {
                 parts.Add(SafeCode);
             }
@@ -796,6 +805,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(AddedDeltaText));
         OnPropertyChanged(nameof(RemovedDeltaText));
         OnPropertyChanged(nameof(DisplayText));
+        OnPropertyChanged(nameof(DisplayTooltip));
         OnPropertyChanged(nameof(EffectiveDurationMs));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(HasDetail));

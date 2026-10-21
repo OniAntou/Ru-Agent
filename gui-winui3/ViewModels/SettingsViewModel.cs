@@ -312,7 +312,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             ModelsDevApiKey = string.Empty;
             SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
             // The catalog is known by now, so the stored choice resolves against it.
-            SetCurrentProvider(settings.BackendChoice ?? string.Empty);
+            SetCurrentProvider(ProviderSetupGuidance.EffectiveStoredChoice(settings.BackendChoice, settings));
             _catalog?.SetBackend(ProviderChoice);
         }
         catch (Exception ex)
@@ -635,8 +635,30 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var catalog = sender as IProviderCatalogSession ?? _catalog;
         _dispatch(() =>
         {
-            if (!_disposed && (catalog is null || ReferenceEquals(catalog, _catalog))) ShowProviderTest(outcome);
+            if (_disposed || (catalog is not null && !ReferenceEquals(catalog, _catalog))) return;
+            // A provider with no key cannot list its models; saying "could not reach the
+            // provider" sent a new user to check their network instead of the key box.
+            if (IsCurrentProviderKeyMissing())
+            {
+                ShowProviderTest(new ProviderConnectionTest(
+                    ProviderConnectionTest.NeutralTone, $"Add a {ProviderButtonText} API key above to load its models."),
+                    state.ErrorCode);
+                return;
+            }
+
+            ShowProviderTest(outcome, state.ErrorCode);
         });
+    }
+
+    /// <summary>Whether the selected provider needs a key and none is stored.</summary>
+    private bool IsCurrentProviderKeyMissing()
+    {
+        if (ProviderSetupGuidance.IsModelsDevChoice(ProviderChoice))
+        {
+            return !SettingsProviderPresenter.IsSignedIn(ProviderChoice, _lastSettings?.HasCustomKey == true, _modelsDevKeyIds);
+        }
+
+        return ProviderSetupGuidance.IsMissingKey(_lastSettings, ProviderChoice);
     }
 
     private void LogProviderListState(string stage)

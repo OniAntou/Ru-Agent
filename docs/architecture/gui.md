@@ -46,7 +46,12 @@ cards, and the one-prompt-per-run workspace-trust guard. Its rules stay in
 per prompt id, so the view moves keyboard focus only on a new prompt, and a
 composer-local message (a rejected file, a queue notice) outlives run refreshes
 until it is cleared. `ChatView` still projects the controller into the panel's
-input and keeps animation, scrolling and the trust dialog itself.
+input and keeps animation, scrolling and the trust dialog itself. The trust dialog
+names the folder from the Host's session record (or the exact path sent when the run
+was created), never the composer's current default, and `WorkspaceTrustPromptPolicy`
+adds a plain note when that folder is a drive root or the user profile. Waiting feed
+rows take their headline from `AgentWaitPresentation`; an explained code moves to the
+row's tooltip and an unknown one stays on the row.
 `ChatComposerViewModel` owns the composer's unsent content: attachments, the
 per-session draft (`ComposerDraftStore`), the turn queue and its strip state, and
 the effective prompt that inlines text attachments. The text box stays the live

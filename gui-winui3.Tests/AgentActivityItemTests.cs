@@ -1,3 +1,4 @@
+using RuApp.Services;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
@@ -117,13 +118,21 @@ public sealed class AgentActivityItemTests
 
         Assert.Equal("Cancelled", cancelled.DisplayText);
 
-        // A waiting row never names its reason in the headline, so its muted line keeps
-        // the machine code it was carrying.
+        // A waiting row whose headline explains its code says what the run needs and
+        // keeps the code in the tooltip; an unknown code stays on the muted line.
         var waiting = new AgentActivityItem(Activity(
             AgentActivityState.Waiting,
             safeCode: "terminal_unknown_executable"));
 
-        Assert.Contains("terminal_unknown_executable", waiting.MetadataText, StringComparison.Ordinal);
+        Assert.Equal(AgentWaitPresentation.ApprovalHeadline, waiting.DisplayText);
+        Assert.DoesNotContain("terminal_unknown_executable", waiting.MetadataText, StringComparison.Ordinal);
+        Assert.Contains("terminal_unknown_executable", waiting.DisplayTooltip, StringComparison.Ordinal);
+
+        var unknown = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            safeCode: "brand_new_wait_reason"));
+
+        Assert.Contains("brand_new_wait_reason", unknown.MetadataText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -199,8 +208,16 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Waiting for confirmation", waitingStatus.DisplayText);
 
         var waitingTool = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Edit, safeCode: "approval_required"));
-        Assert.Equal("Waiting to continue", waitingTool.DisplayText);
-        Assert.Equal("approval_required", waitingTool.MetadataText);
+        Assert.Equal(AgentWaitPresentation.ApprovalHeadline, waitingTool.DisplayText);
+        Assert.Equal(string.Empty, waitingTool.MetadataText);
+
+        var waitingAnswer = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Status, safeCode: "input_required"));
+        Assert.Equal(AgentWaitPresentation.AnswerHeadline, waitingAnswer.DisplayText);
+        Assert.Equal("Waiting for your answer (input_required)", waitingAnswer.DisplayTooltip);
+
+        var waitingOther = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Edit, safeCode: "something_else"));
+        Assert.Equal("Waiting to continue", waitingOther.DisplayText);
+        Assert.Equal("something_else", waitingOther.MetadataText);
     }
 
     [Fact]
@@ -328,7 +345,10 @@ public sealed class AgentActivityItemTests
             fileName: "obsolete.txt",
             safeCode: "approval_required"));
 
-        Assert.Contains("approval_required", waiting.MetadataText, StringComparison.Ordinal);
+        // The reason is the headline now; the file stays on the row and the code in the tooltip.
+        Assert.Equal(AgentWaitPresentation.ApprovalHeadline, waiting.DisplayText);
+        Assert.Contains("obsolete.txt", waiting.MetadataText, StringComparison.Ordinal);
+        Assert.Contains("approval_required", waiting.DisplayTooltip, StringComparison.Ordinal);
 
         var failed = new AgentActivityItem(Activity(
             AgentActivityState.Failed,

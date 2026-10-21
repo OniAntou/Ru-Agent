@@ -313,6 +313,9 @@ namespace RuApp
                     Sidebar.AppRoot,
                     _providerCatalogController,
                     _groupedCatalogs);
+                // The trust prompt names the run's folder from the Host's session record.
+                _chatView.SessionWorkspaceResolver = sessionId =>
+                    Sidebar.Sessions.FirstOrDefault(session => session.Id == sessionId)?.WorkspacePath;
                 _chatView.SessionOpened += OnChatSessionOpened;
                 _chatView.SessionStarted += OnChatSessionStarted;
                 _chatView.SessionPresetAdopted += OnChatSessionPresetAdopted;

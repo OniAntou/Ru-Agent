@@ -34,6 +34,12 @@ namespace RuApp
                 if (Sidebar.ActiveSessionId is { } active)
                 {
                     SyncSidebarSelection(active);
+                    // The open chat keeps the title it was opened with; a session titled by
+                    // its first prompt afterwards must reach the side card too.
+                    if (Sidebar.Sessions.FirstOrDefault(session => session.Id == active) is { } open)
+                    {
+                        _chatView?.UpdateSessionTitle(open.Id, open.Title);
+                    }
                 }
             }
             finally

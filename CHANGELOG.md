@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: A new profile can enter a provider key. The Host's default (`OpenAI`) has no picker or key row, so a fresh install showed no key box and a false "could not reach the provider" network error. A keyless legacy choice now reads as unset and resolves to a catalog provider with its key box; a stored OpenAI or Anthropic key keeps working. A provider without a key now says to add one instead of blaming the network.
+- **fix(gui)**: The workspace-trust prompt names the folder being trusted (from the Host's session record or the exact path sent for the run) and says plainly when that folder is a drive root or the user profile. The default workspace rule is unchanged.
+- **fix(gui)**: Waiting rows in the activity feed say what the run needs ("Waiting for your answer", "Waiting for your approval", "Waiting for workspace trust") instead of showing raw codes such as `input_required`; explained codes move to the tooltip and unknown codes stay visible.
+- **fix(gui)**: The side card follows a session's title once its first prompt names it, the task shelf no longer shows behind an approval or question card, and the dead application-resource registration of transcript typography (which failed on every launch) is removed.
+
 - **fix(agent)**: A compaction summary can no longer close or reopen its own `[context_compaction … untrusted=true]` frame. Frame markers inside the summarized history or the model checkpoint are neutralized, so text after a forged `[/context_compaction]` stays inside the untrusted block.
 
 - **fix(agent)**: Preserve nested instruction discovery through compaction and restart in image/text-selection runs using original encrypted file receipts. Prefer existing instruction files nearest to touched paths so empty ancestors cannot hide the applicable `AGENTS.md`.

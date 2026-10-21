@@ -168,7 +168,7 @@
                                TextTrimming="CharacterEllipsis"
                                MaxLines="1"
                                MaxWidth="240"
-                               ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
+                               ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
                                VerticalAlignment="Center"
                                Margin="20,0,0,0" />
                       <!--
@@ -211,7 +211,7 @@
                                          TextTrimming="CharacterEllipsis"
                                          MaxLines="1"
                                          MaxWidth="240"
-                                         ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
+                                         ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
                                          VerticalAlignment="Center" />
                           </StackPanel>
                        </ToggleButton>
@@ -249,7 +249,7 @@
                                           TextTrimming="CharacterEllipsis"
                                           MaxLines="1"
                                           MaxWidth="240"
-                                          ToolTipService.ToolTip="{x:Bind DisplayText, Mode=OneWay}"
+                                          ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
                                           VerticalAlignment="Center" />
                            </StackPanel>
                        </ToggleButton>

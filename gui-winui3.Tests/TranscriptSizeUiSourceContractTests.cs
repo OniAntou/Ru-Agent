@@ -152,18 +152,18 @@ public sealed class TranscriptSizeUiSourceContractTests
     }
 
     [Fact]
-    public void The_typography_instance_is_registered_before_any_view_loads()
+    public void The_transcript_reads_the_typography_singleton_from_code_not_a_resource()
     {
-        string code = GuiSource.Text("App.xaml.cs");
-        string constructor = GuiSource.MethodBody(code, "App");
-
-        // The transcript resolves the resource while loading, so a late registration
-        // means every binding silently falls back to its default.
-        Assert.Contains("RegisterTranscriptTypography", constructor, StringComparison.Ordinal);
-        Assert.True(GuiSource.HasMember(code, "RegisterTranscriptTypography"));
-
-        string registration = GuiSource.MethodBody(code, "RegisterTranscriptTypography");
-        Assert.Contains("TranscriptTypography.Instance", registration, StringComparison.Ordinal);
+        // The app once also published the singleton as an application resource. Nothing
+        // in markup resolved it, and the insert failed on every launch (an empty-message
+        // trace line); the transcript, composer and checklist read the singleton directly.
+        Assert.DoesNotContain("Resources[\"TranscriptTypography\"]", GuiSource.Text("App.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("TranscriptTypography.Instance", GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "RefreshTranscriptTypography")
+            + GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ApplyTranscriptTypography"), StringComparison.Ordinal);
+        foreach (var view in new[] { "ChatView.xaml", "SettingsView.xaml" })
+        {
+            Assert.DoesNotContain("TranscriptTypography", GuiSource.Text("Views", view), StringComparison.Ordinal);
+        }
     }
 
     [Fact]

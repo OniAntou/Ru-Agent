@@ -345,6 +345,29 @@ internal static class ProviderSetupGuidance
     /// a base URL plus an optional key environment variable, with no hosted/local
     /// distinction and no key validation.
     /// </remarks>
+    /// <summary>
+    /// The stored choice the editor should show. A fixed alias the picker no longer
+    /// offers (OpenAI, Anthropic) with no key stored is not a working choice: it has no
+    /// picker row and no key row, so a new profile, whose Host default is OpenAI, left
+    /// the user nowhere to type a key. Such a choice reads as unset and resolves against
+    /// the catalog like any first run. A stored key keeps the choice, so an existing
+    /// setup keeps working.
+    /// </summary>
+    internal static string EffectiveStoredChoice(string? backendChoice, AppSettingsDto settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        string choice = backendChoice?.Trim() ?? string.Empty;
+        if (!IsKnown(choice) || IsPickerFixed(choice))
+        {
+            return choice;
+        }
+
+        var provider = Find(choice);
+        return provider is not null && !provider.KeyIsOptional && !provider.HasKey(settings)
+            ? UnsetChoice
+            : choice;
+    }
+
     internal static bool IsMissingKey(AppSettingsDto? settings, string? backendChoice)
     {
         if (settings is null)

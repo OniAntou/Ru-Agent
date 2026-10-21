@@ -14,7 +14,7 @@ public sealed partial class SqliteModelContextSource
         return snapshot;
     }
 
-    private async Task InheritSubagentContextAsync(SqliteConnection connection, RunId runId,
+    private async Task<IReadOnlyList<string>> InheritSubagentContextAsync(SqliteConnection connection, RunId runId,
         List<ModelContextEntry> sessionBase, int depth, CancellationToken ct)
     {
         if (depth > 2) throw new HarnessStoreException("subagent_context_depth_invalid");
@@ -28,7 +28,7 @@ public sealed partial class SqliteModelContextSource
         RunId previousId;
         using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
-            if (!await reader.ReadAsync(ct).ConfigureAwait(false) || reader.GetInt32(0) == 1) return;
+            if (!await reader.ReadAsync(ct).ConfigureAwait(false) || reader.GetInt32(0) == 1) return [];
             if (reader.IsDBNull(1)) throw new HarnessStoreException("subagent_context_predecessor_missing");
             previousId = new(reader.GetString(1));
         }
@@ -59,6 +59,7 @@ public sealed partial class SqliteModelContextSource
                 _ => throw new HarnessStoreException("subagent_context_entry_invalid"),
             });
         }
+        return source.ObservedFilePaths;
     }
 
     private static void ValidateClosedSubagentHistory(IReadOnlyList<ModelContextEntry> entries)

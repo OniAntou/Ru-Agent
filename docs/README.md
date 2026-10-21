@@ -31,6 +31,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
   [Broker](architecture/broker.md), [GUI](architecture/gui.md), [TUI](architecture/tui.md),
   [Providers](architecture/providers.md)
 - [Domain language](../CONTEXT.md)
+- [Context management and checkpoints](architecture/context-management.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
 - [Agent performance diagnostics and offline benchmark](operations/agent-performance.md)
 - [The stdio RPC bridge](operations/rpc.md)

@@ -5,6 +5,19 @@ namespace RuBackend.Harness.Prompting;
 
 internal static class PromptContextBudget
 {
+    internal static PromptRuntimeContext Append(PromptRuntimeContext runtime, PromptReference latest)
+    {
+        var references = runtime.References.ToList();
+        if (references.Count >= PromptRuntimeContext.MaxRuntimeReferences)
+        {
+            references = references.TakeLast(PromptRuntimeContext.MaxRuntimeReferences - 2).ToList();
+            references.Insert(0, new PromptReference("references_omitted", "bounded runtime context",
+                "Some earlier runtime references were omitted to retain current guidance and diagnostics. Original durable receipts remain stored."));
+        }
+        references.Add(latest);
+        return new PromptRuntimeContext(references);
+    }
+
     public static SystemPromptContext Create(int version, string profile, string preset, PromptEnvironment environment,
         IReadOnlyList<PromptInstructionBlock> instructions, IReadOnlyList<PromptCapability> capabilities,
         PromptRuntimeContext runtime)

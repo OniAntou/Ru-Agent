@@ -28,10 +28,10 @@ public sealed class RuInstructionLoadResult
 }
 
 /// <summary>
-/// Loads only the fixed workspace instruction files below a trusted run root.
-/// No model-provided path or recursive discovery is accepted here.
+/// Loads fixed root sources and bounded AGENTS.md chains from successful file observations.
+/// Instruction filenames stay fixed; discovery never recursively crawls the workspace.
 /// </summary>
-public sealed class RuInstructionLoader
+public sealed partial class RuInstructionLoader
 {
     public const int MaxInstructionBytes = 64 * 1024;
     public const int MaxCombinedInstructionBytes = 256 * 1024;
@@ -72,7 +72,7 @@ public sealed class RuInstructionLoader
                 : _localApplicationDataRoot;
     }
 
-    public RuInstructionLoadResult Load(string workspaceRoot)
+    public RuInstructionLoadResult Load(string workspaceRoot, IReadOnlyList<string>? observedPaths = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         var canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
@@ -91,6 +91,8 @@ public sealed class RuInstructionLoader
 
         entries.AddRange(Candidates.Select(item =>
             (item.SourceId, canonicalRoot, item.RelativePath, item.DisplayName, PromptInstructionOrigin.Workspace)));
+        entries.AddRange(NestedCandidates(canonicalRoot, observedPaths, skips).Select(item =>
+            (item.SourceId, canonicalRoot, item.RelativePath, item.RelativePath, PromptInstructionOrigin.Workspace)));
 
         foreach (var candidate in entries)
         {
@@ -122,6 +124,14 @@ public sealed class RuInstructionLoader
                 continue;
             }
 
+            if (candidate.SourceId.StartsWith("nested:", StringComparison.Ordinal)
+                && (RuAgent.Broker.Tools.Paths.ProtectedPathCatalog.IsProtected(finalPath)
+                    || RuAgent.Broker.Tools.Paths.HardLinkGuard.HasMultipleLinks(finalPath)))
+            {
+                skips.Add(new RuInstructionSkip(candidate.SourceId, "protected_instruction"));
+                continue;
+            }
+
             var read = ReadCandidate(finalPath);
             if (read.Reason is not null)
             {
@@ -137,7 +147,7 @@ public sealed class RuInstructionLoader
                 continue;
             }
 
-            if (combinedBytes > MaxCombinedInstructionBytes - contentBytes)
+            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks || combinedBytes > MaxCombinedInstructionBytes - contentBytes)
             {
                 skips.Add(new RuInstructionSkip(candidate.SourceId, "oversize"));
                 continue;

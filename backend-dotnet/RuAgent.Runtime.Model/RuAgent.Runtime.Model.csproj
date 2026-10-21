@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="RuAgent.Runtime.Model.Tests" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />

@@ -194,8 +194,13 @@ instruction limit. It re-reads those roots for every newly built prompt
 context, so copying or changing `SKILL.md` is picked up on a new run or after
 restart without a downloader or package manager. Ancillary `references/`,
 `assets/`, and `scripts/` files are ignored by discovery and are not
-automatically read or executed. Context values remain bounded (32 KiB per
-reference and 512 KiB serialized context). Root-selected
+automatically read or executed. Context values remain bounded (128 KiB per
+reference and 8 MiB serialized context). Successful structured file operations
+also discover bounded nested `AGENTS.md` guidance, refreshed in runtime context
+with an explicit scope and precedence. Receipt-derived private scope hints survive
+compaction and restart independently of native text caching, including image and
+text-selection requests. Existing files nearest to touched paths receive priority
+under the instruction-count bound. Root-selected
 instructions and skills are followed only as guidance; they cannot
 grant tools, permissions, approvals, paths, network access, or preset changes.
 The `allowed-tools` field is descriptive only; the optional `requires:` field is enforced on every body load — the model's `skill` tool and the Host's `/skill` command (only `python` is recognized: absent Python fails closed with `python_unavailable`). Runtime
@@ -553,6 +558,14 @@ Auto-compaction is tuned by two settings (`compaction_trigger_ratio`
 default `0.80`, `compaction_target_ratio` default `0.62`); values must
 satisfy `0 < target < trigger < 1` and anything else fails closed to the
 defaults.
+
+Provider-backed compaction now generates a structured checkpoint using the same
+pinned provider/model, with one budgeted auxiliary call, a 60-second deadline
+and at most 4,096 output tokens. A malformed, truncated or failed checkpoint
+returns a named `checkpoint_*` error and keeps original history; tools proposed
+by the summarizer never execute. Automatic compaction keeps a recent complete
+exchange tail. See [context management](../architecture/context-management.md)
+for retention, usage accounting, native request estimates and tool excerpts.
 
 ### Web access
 

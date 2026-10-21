@@ -7,11 +7,11 @@ namespace RuAgent.Harness.Core;
 
 /// <summary>
 /// Owns context-window budgeting for a run: the preflight check before each model
-/// step plus explicit manual compaction. Moved verbatim from AgentRunCoordinator;
-/// per-run gates serialize compaction against preflight so a manual compact can
+/// step plus explicit manual compaction and structured checkpoint admission.
+/// Per-run gates serialize compaction against preflight so a manual compact can
 /// never interleave with an automatic one for the same run.
 /// </summary>
-internal sealed class AgentRunCompaction
+internal sealed partial class AgentRunCompaction
 {
     private readonly IHarnessEventStore _store;
     private readonly AgentContextAssembler _contextAssembler;
@@ -46,7 +46,11 @@ internal sealed class AgentRunCompaction
         ITimeProvider time,
         IModelContextLimitProvider? contextLimit,
         ContextBudgetPolicy contextBudgetPolicy,
-        IAgentActivitySink? activitySink = null)
+        IAgentActivitySink? activitySink = null,
+        IContextCheckpointSummarizer? summarizer = null,
+        Prompting.ISystemPromptContextProvider? promptContextProvider = null,
+        Subagents.IAgentFamilyBudget? familyBudget = null,
+        bool internalRun = false)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _contextAssembler = contextAssembler
@@ -57,6 +61,10 @@ internal sealed class AgentRunCompaction
         _contextBudgetPolicy = contextBudgetPolicy
             ?? throw new ArgumentNullException(nameof(contextBudgetPolicy));
         _activitySink = activitySink;
+        _summarizer = summarizer;
+        _promptContextProvider = promptContextProvider;
+        _familyBudget = familyBudget;
+        _internalRun = internalRun;
     }
 
     public async Task<ContextCompactionResult> CompactAsync(
@@ -222,7 +230,8 @@ internal sealed class AgentRunCompaction
                                 ContextCompactionStrategy.Normal);
                         }
                         else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
-                            or ContextCompactionOutcome.RunNotFound)
+                            or ContextCompactionOutcome.RunNotFound
+                            || compaction.ErrorCode is not null && compaction.ErrorCode != "compact_not_available")
                         {
                             return new ContextPreflightResult(
                                 compaction.Run ?? run,
@@ -266,10 +275,20 @@ internal sealed class AgentRunCompaction
             decision,
             "compact-" + eventId.Value,
             reason,
-            estimatedTokensOverride: estimatedTokensOverride);
+            estimatedTokensOverride: estimatedTokensOverride,
+            retainRecentTokens: reason == ContextCompactionReason.Automatic ? (long)(decision.UsablePromptTokens * 0.16) : 0);
         if (plan is null)
         {
             return ContextCompactionResult.NoOp(run, strategy);
+        }
+
+        if (_summarizer is not null && _promptContextProvider is not null)
+        {
+            var checkpoint = await BuildCheckpointAsync(run, plan, cancellationToken).ConfigureAwait(false);
+            run = checkpoint.Run;
+            if (checkpoint.ErrorCode is not null)
+                return new ContextCompactionResult(ContextCompactionOutcome.NotAvailable, run, strategy, ErrorCode: checkpoint.ErrorCode);
+            plan = checkpoint.Plan!;
         }
 
         var summaryBytes = Encoding.UTF8.GetBytes(plan.SummaryText);

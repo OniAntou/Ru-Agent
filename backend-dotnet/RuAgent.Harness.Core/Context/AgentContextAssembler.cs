@@ -3,6 +3,7 @@ namespace RuAgent.Harness.Core.Context;
 public sealed class AgentContextAssembler
 {
     private readonly IModelContextSource _source;
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ModelContextEntry, ModelContextEntry> ToolProjections = new();
 
     public AgentContextAssembler(IModelContextSource source) =>
         _source = source ?? throw new ArgumentNullException(nameof(source));
@@ -23,7 +24,13 @@ public sealed class AgentContextAssembler
 
         var session = source.SessionBase.OrderBy(entry => entry.Sequence).ToArray();
         var run = source.RunLocal.OrderBy(entry => entry.Sequence).ToArray();
-        var combined = session.Concat(run).ToArray();
+        var combined = session.Concat(run).Select(entry => entry.Kind == ModelContextEntryKind.ToolResult
+            ? ToolProjections.GetValue(entry, original =>
+            {
+                var text = ToolResultExcerpt.Project(original.Content!);
+                return ReferenceEquals(text, original.Content) ? original
+                    : ModelContextEntry.ToolResult(original.SourceId, original.Sequence, original.ToolReceipt!, text);
+            }) : entry).ToArray();
         if (combined.Select(entry => entry.SourceId).Distinct(StringComparer.Ordinal).Count()
             != combined.Length)
         {
@@ -32,7 +39,7 @@ public sealed class AgentContextAssembler
 
         return new ModelContextSnapshot(
             combined,
-            ModelContextSnapshot.Canonicalize(combined));
+            ModelContextSnapshot.Canonicalize(combined), source.ObservedFilePaths);
     }
 
     private static void RejectDuplicateSequence(IReadOnlyList<ModelContextEntry> entries)

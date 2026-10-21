@@ -29,7 +29,8 @@ public sealed class PreparedModelStep
         JsonObject settings,
         IModelProvider provider,
         long estimatedInputTokens,
-        long maxPromptTokens)
+        long maxPromptTokens,
+        string? contextScope = null)
     {
         Source = source;
         Request = request;
@@ -38,6 +39,7 @@ public sealed class PreparedModelStep
         Provider = provider;
         EstimatedInputTokens = estimatedInputTokens;
         MaxPromptTokens = maxPromptTokens;
+        ContextScope = contextScope;
         OutputTokenCap = request.MaximumOutputTokens;
         SerializedBodyBytes = request.PreparedBodyJson is { } body
             ? Encoding.UTF8.GetByteCount(body)
@@ -53,6 +55,7 @@ public sealed class PreparedModelStep
     internal SystemPromptSnapshot Snapshot { get; }
     internal JsonObject Settings { get; }
     internal IModelProvider Provider { get; }
+    internal string? ContextScope { get; }
     public long EstimatedInputTokens { get; }
     public long MaxPromptTokens { get; }
     public int SerializedBodyBytes { get; }
@@ -116,6 +119,7 @@ public sealed class ModelStepService
     private const string DirectModelStepId = "worker";
     private readonly IModelProviderResolver _providers;
     private readonly SemaphoreSlim _providerGate;
+    private readonly RequestTokenAnchor _tokenAnchors = new();
 
     /// <summary>
     /// Bounds how many provider generations may be in flight at once.
@@ -193,7 +197,8 @@ public sealed class ModelStepService
     public PreparedModelStep PrepareRequest(
         ModelGenerationRequest request,
         string? modelStepId = null,
-        bool requireExactProjection = true)
+        bool requireExactProjection = true,
+        string? contextScope = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -272,6 +277,9 @@ public sealed class ModelStepService
             var body = projector.ProjectRequestBody(modelRequest);
             modelRequest = modelRequest.WithPreparedBodyJson(body);
             (estimatedInputTokens, maxPromptTokens) = MeasurePreparedRequest(modelRequest, providerBootstrap);
+            if (contextScope is not null && request.Images.Count == 0 && request.PromptInHistory)
+                estimatedInputTokens = _tokenAnchors.Estimate(contextScope, body,
+                    providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri, estimatedInputTokens);
         }
         else if (requireExactProjection)
         {
@@ -279,7 +287,7 @@ public sealed class ModelStepService
         }
 
         return new PreparedModelStep(
-            request, modelRequest, snapshot, settings, provider, estimatedInputTokens, maxPromptTokens);
+            request, modelRequest, snapshot, settings, provider, estimatedInputTokens, maxPromptTokens, contextScope);
     }
 
     public async Task<ModelStepServiceResult> RunPreparedAsync(
@@ -454,6 +462,10 @@ public sealed class ModelStepService
             && providerBootstrap.Protocol is ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages
             && calls.Count > 0 && providerContinuation is null)
             throw new ModelStepException("provider_continuation_missing", retryable: false);
+        if (prepared.ContextScope is { } scope && prepared.Request.PreparedBodyJson is { } body
+            && prepared.Source.Images.Count == 0 && prepared.Source.PromptInHistory)
+            _tokenAnchors.Observe(scope, body, providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri,
+                providerBootstrap.Model, usage);
         return new ModelStepServiceResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
         }
         catch (OperationCanceledException)

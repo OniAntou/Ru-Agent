@@ -15,9 +15,9 @@ public sealed class StaticModelContextLimitProvider(long? limitTokens) : IModelC
 }
 
 /// <summary>
-/// Deterministic upper-bound estimate of the complete assembled model context. The
-/// canonical UTF-8 projection is the same bytes the provider would receive; four
-/// characters per token is a conservative stand-in for tokenizer counts.
+/// Deterministic heuristic over canonical context UTF-8 bytes. This is not a
+/// provider tokenizer or a proven upper bound. Prepared request measurement also
+/// accounts for the provider envelope and may apply a guarded usage anchor.
 /// </summary>
 public static class ModelContextSizeEstimator
 {

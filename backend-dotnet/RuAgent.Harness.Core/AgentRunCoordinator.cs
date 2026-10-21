@@ -70,7 +70,11 @@ public sealed class AgentRunCoordinator
             _time,
             contextLimit,
             contextBudgetPolicy ?? CreateBudgetPolicy(),
-            activitySink);
+            activitySink,
+            model as IContextCheckpointSummarizer,
+            promptContextProvider,
+            familyBudget,
+            internalRun);
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -197,7 +201,9 @@ public sealed class AgentRunCoordinator
             }
 
             return AgentRunStepResult.Blocked(
-                preflight.Run ?? run,
+                run.State == HarnessRunState.Running && preflight.ErrorCode.StartsWith("checkpoint_", StringComparison.Ordinal)
+                    ? await _lifecycle.FailAsync(run.RunId, preflight.ErrorCode, cancellationToken).ConfigureAwait(false)
+                    : preflight.Run ?? run,
                 preflight.ErrorCode);
         }
 

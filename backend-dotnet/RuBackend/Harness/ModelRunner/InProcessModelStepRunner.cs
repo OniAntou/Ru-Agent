@@ -17,7 +17,7 @@ namespace RuBackend.Harness.ModelRunner;
 /// replaced by a typed provider snapshot: conversation build, delta sequencing,
 /// bounded retry/backoff and the durable failure mapping are unchanged.
 /// </summary>
-public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer
+public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer, IContextCheckpointSummarizer
 {
     private const int MaxModelStepAttempts = 5;
     private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
@@ -87,7 +87,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 var prepared = preparedStep?.StepRequest
                     ?? _stepService.PrepareRequest(
                         await BuildGenerationRequestAsync(request, selectionFeedbackCode, cancellationToken)
-                            .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false);
+                            .ConfigureAwait(false), request.ModelStepId.Value, requireExactProjection: false, contextScope: request.RunId.Value);
                 if (prepared.EstimatedInputTokens >= 0
                     && prepared.EstimatedInputTokens
                         > prepared.MaxPromptTokens - RequestSafetyMarginTokens)
@@ -185,7 +185,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken, preparingSnapshot: true)
             .ConfigureAwait(false);
         var stepRequest = _stepService.PrepareRequest(
-            generationRequest, request.ModelStepId.Value, requireExactProjection: true);
+            generationRequest, request.ModelStepId.Value, requireExactProjection: true, contextScope: request.RunId.Value);
         if (stepRequest.EstimatedInputTokens < 0 || stepRequest.MaxPromptTokens <= 0)
             throw new ModelStepException("provider_request_projection_unavailable", retryable: false);
         return new InProcessPreparedStep(stepRequest, generationRequest.PendingRuntimeSnapshot);

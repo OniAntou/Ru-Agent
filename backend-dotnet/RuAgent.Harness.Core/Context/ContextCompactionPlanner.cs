@@ -70,7 +70,8 @@ public static class ContextCompactionPlanner
         ContextCompactionReason reason,
         Func<ModelContextEntry, bool>? additionalProtection = null,
         int maxSummaryChars = DefaultSummaryMaxChars,
-        long? estimatedTokensOverride = null)
+        long? estimatedTokensOverride = null,
+        long retainRecentTokens = 0)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(decision);
@@ -89,7 +90,23 @@ public static class ContextCompactionPlanner
 
         var completeBatches = FindCompleteBatches(snapshot.Entries);
         var protectedEntries = BuildProtectedEntries(snapshot, additionalProtection, completeBatches);
-        var eligible = BuildCompactionUnits(snapshot, completeBatches)
+        var units = BuildCompactionUnits(snapshot, completeBatches);
+        var eligibleUnitCount = units.Count(unit => unit.Entries.All(entry => !protectedEntries.Contains(entry)));
+        long retained = 0;
+        foreach (var unit in units.OrderByDescending(unit => unit.Sequence))
+        {
+            if (retained >= retainRecentTokens) break;
+            if (unit.Entries.All(entry => !protectedEntries.Contains(entry)))
+            {
+                // Retention is a soft target; a single oversized old exchange must not prevent all progress.
+                if (eligibleUnitCount <= 1) break;
+                eligibleUnitCount--;
+            }
+            foreach (var entry in unit.Entries) protectedEntries.Add(entry);
+            retained += ModelContextSizeEstimator.EstimateTokens(new ModelContextSnapshot(unit.Entries,
+                ModelContextSnapshot.Canonicalize(unit.Entries)));
+        }
+        var eligible = units
             .Where(unit => unit.Entries.All(entry => !protectedEntries.Contains(entry)))
             .OrderBy(unit => unit.Sequence)
             .ThenBy(unit => unit.Entries[0].SourceId, StringComparer.Ordinal)
@@ -180,7 +197,7 @@ public static class ContextCompactionPlanner
             ComputeInputHash(coveredSnapshot, decision.Strategy, reason));
     }
 
-    private static IReadOnlySet<ModelContextEntry> BuildProtectedEntries(
+    private static HashSet<ModelContextEntry> BuildProtectedEntries(
         ModelContextSnapshot snapshot,
         Func<ModelContextEntry, bool>? additionalProtection,
         IReadOnlyDictionary<ModelContextEntry, IReadOnlyList<ModelContextEntry>> completeBatches)
@@ -189,6 +206,9 @@ public static class ContextCompactionPlanner
             .Where(entry => entry.Role == ModelContextRole.System
                 || entry.SourceId.StartsWith("base:", StringComparison.Ordinal))
             .ToHashSet();
+        var scopeSnapshot = snapshot.Entries.LastOrDefault(Prompting.RuntimeContextSnapshot.IsSnapshot);
+        if (scopeSnapshot?.Content?.Contains("\nobserved_path_b64: ", StringComparison.Ordinal) == true)
+            protectedEntries.Add(scopeSnapshot);
         var latestUser = snapshot.Entries
             .Where(entry => entry.Role == ModelContextRole.User
                 && !entry.SourceId.StartsWith("base:", StringComparison.Ordinal))

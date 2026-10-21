@@ -97,6 +97,9 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
             }
         }
 
+        // Original encrypted receipts remain durable. Derive private scope hints before replacing
+        // their model projection, including for image/text-mode runs that never admit cache snapshots.
+        var observedPaths = FileObservationPaths.Read(sessionBase.Concat(runLocal));
         await ApplyCompactionsAsync(
                 connection,
                 runId,
@@ -109,12 +112,12 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
             throw new HarnessStoreException("context_base_incomplete");
         }
 
-        await InheritSubagentContextAsync(connection, runId, sessionBase, depth, cancellationToken).ConfigureAwait(false);
+        var inheritedPaths = await InheritSubagentContextAsync(connection, runId, sessionBase, depth, cancellationToken).ConfigureAwait(false);
 
         await AppendSessionWorkStateAsync(connection, runId, sessionBase, cancellationToken)
             .ConfigureAwait(false);
 
-        return new ModelContextSourceSnapshot(sessionBase, runLocal);
+        return new ModelContextSourceSnapshot(sessionBase, runLocal, inheritedPaths.Concat(observedPaths).ToArray());
     }
 
     private async Task AppendSessionWorkStateAsync(

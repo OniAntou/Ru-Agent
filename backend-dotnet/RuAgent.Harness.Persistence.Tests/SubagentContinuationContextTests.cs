@@ -30,7 +30,7 @@ public sealed class SubagentContinuationContextTests
         var original = seed.Run;
         var run = new AgentRun(original.RunId, original.SessionId, original.WorkspaceId, original.Status, 0, complete ? 3 : 2, 1, 0, 0,
             original.Preset, original.PolicySnapshotVersion, original.PolicySnapshotSha256, original.CreatedAt, original.UpdatedAt);
-        using var arguments = JsonDocument.Parse("{\"path\":\"x.txt\"}");
+        using var arguments = JsonDocument.Parse("{\"path\":\"src/x.txt\"}");
         var step = new ModelStepId("step_" + new string('a', 32));
         var assistant = AssistantStepJsonCodec.Serialize(new AssistantStep("inspect", [new("provider_read", "read", "1.0.0", arguments.RootElement)],
             AssistantFinishReason.ToolCalls, 16));
@@ -77,6 +77,7 @@ public sealed class SubagentContinuationContextTests
         Assert.Equal("provider_read", receipt.ToolReceipt!.ProviderCallId);
         Assert.Equal("Nội dung tệp", receipt.Content);
         Assert.Empty(context.RunLocal);
+        Assert.Equal(Path.Combine("src", ".ru-instruction-scope"), Assert.Single(context.ObservedFilePaths));
         await events.CommitAsync(SubagentAdmission.CreateTerminalCommit(next.Run, new("evt_" + new string('e', 32)),
             false, "fixture_failure", HarnessStoreTestFixture.Timestamp), default);
         await agents.AppendMessageAsync(root.Run.RunId, "agent_one", "message_two", "Another follow up", default);
@@ -86,6 +87,7 @@ public sealed class SubagentContinuationContextTests
         var thirdContext = await source.LoadAsync(third.Run.RunId, default);
         Assert.Equal(3, thirdContext.SessionBase.Count);
         Assert.Equal(3, thirdContext.SessionBase.Select(entry => entry.SourceId).Distinct().Count());
+        Assert.Equal(context.ObservedFilePaths, thirdContext.ObservedFilePaths);
         await events.CommitAsync(SubagentAdmission.CreateTerminalCommit(third.Run, new("evt_" + new string('d', 32)),
             false, "fixture_failure", HarnessStoreTestFixture.Timestamp), default);
         await agents.AppendMessageAsync(root.Run.RunId, "agent_one", "message_three", "One too many", default);

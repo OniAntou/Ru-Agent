@@ -7,6 +7,21 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 
 public sealed class SystemPromptComposerTests
 {
+    [Theory]
+    [InlineData("read", "Use read for text inspection.", "Search args: grep")]
+    [InlineData("grep", "Search args: grep", "Use write for new files")]
+    [InlineData("skill", "Load the full SKILL.md", "Delegate with agent_spawn")]
+    [InlineData("agent_spawn", "Delegate with agent_spawn", "Use agent_wait")]
+    public void Tool_guidance_matches_only_the_advertised_capabilities(string id, string included, string excluded)
+    {
+        var capability = new PromptCapability(id, "1.0.0", "Fixture tool.", "workspace.read",
+            "{\"type\":\"object\",\"properties\":{}}", new string('a', 64), null, "enabled");
+        var prompt = SystemPromptComposer.Compose(PromptFixtures.ValidContext(capabilities: [capability]), true);
+        Assert.Contains(included, prompt.Text);
+        Assert.DoesNotContain(excluded, prompt.Text);
+        prompt.Receipt.ValidateAgainst(PromptFixtures.ValidContext(capabilities: [capability]), prompt.Text);
+    }
+
     [Fact]
     public void Native_history_deduplicates_tool_data_but_text_mode_retains_it_and_its_schema()
     {

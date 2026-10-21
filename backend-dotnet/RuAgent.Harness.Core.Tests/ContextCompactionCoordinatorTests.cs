@@ -7,7 +7,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Tests;
 
-public sealed class ContextCompactionCoordinatorTests
+public sealed partial class ContextCompactionCoordinatorTests
 {
     [Fact]
     public async Task Context_snapshot_is_committed_with_the_prepared_step_before_dispatch()
@@ -358,7 +358,7 @@ public sealed class ContextCompactionCoordinatorTests
     private static ModelContextSourceSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(Array.Empty<ModelContextEntry>(), entries);
 
-    private static AgentRun Run() =>
+    private static AgentRun Run(int modelSteps = 0) =>
         new(
             RunId(),
             new SessionId("22222222222222222222222222222222"),
@@ -367,7 +367,7 @@ public sealed class ContextCompactionCoordinatorTests
             0,
             0,
             1,
-            0,
+            modelSteps,
             0,
             AgentPermissionPreset.Standard,
             1,

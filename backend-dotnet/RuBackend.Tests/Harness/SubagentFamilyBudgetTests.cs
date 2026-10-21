@@ -14,6 +14,21 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class SubagentFamilyBudgetTests
 {
+    [Theory]
+    [InlineData(HarnessRunState.WaitingUser)]
+    [InlineData(HarnessRunState.WaitingApproval)]
+    [InlineData(HarnessRunState.WaitingSubagents)]
+    public async Task Parked_root_allows_only_budgeted_checkpoint_calls(HarnessRunState state)
+    {
+        await using var storage = await BackendHarnessTestFixture.CreateAsync();
+        var root = await storage.SeedRunAsync(new(state));
+        var agents = new SqliteSubagentStore(storage.Options, storage.PayloadStore);
+        var gate = new SubagentFamilyBudget(storage.EventStore, agents, new SqliteSubagentBudgetStore(storage.Options), new SystemTimeProvider());
+        var step = new ModelStepId("step_" + new string('f', 32));
+        Assert.False(await gate.ReserveModelAsync(root.Run, step, default));
+        Assert.True(await gate.ReserveCheckpointAsync(root.Run, step, default));
+    }
+
     [Fact]
     public async Task Root_and_child_share_exact_reservations_and_cancel_revokes_even_replayed_charge()
     {
@@ -46,6 +61,7 @@ public sealed class SubagentFamilyBudgetTests
         var step = new ModelStepId("step_" + new string('1', 32));
         Assert.True(await gate.ReserveModelAsync(actor, step, default));
         Assert.True(await gate.ReserveModelAsync(actor, step, default));
+        Assert.True(await gate.ReserveCheckpointAsync(actor, step, default));
         Assert.False(await gate.ReserveModelAsync(actor, new("step_" + new string('2', 32)), default));
         Assert.False(await gate.ReserveModelAsync((await storage.EventStore.GetRunAsync(root.Run.RunId, default))!,
             new("step_" + new string('3', 32)), default));
@@ -54,6 +70,7 @@ public sealed class SubagentFamilyBudgetTests
         Assert.False(await gate.ReserveToolsAsync(actor, new("step_" + new string('2', 32)), 1, default));
         await agents.CancelFamilyAsync(root.Run.RunId, default);
         Assert.False(await gate.ReserveModelAsync(actor, step, default));
+        Assert.False(await gate.ReserveCheckpointAsync(actor, step, default));
         await using (var connection = await storage.Options.OpenConnectionAsync(default))
         {
             using var command = connection.CreateCommand();

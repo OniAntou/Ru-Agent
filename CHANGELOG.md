@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: Preserve nested instruction discovery through compaction and restart in image/text-selection runs using original encrypted file receipts. Prefer existing instruction files nearest to touched paths so empty ancestors cannot hide the applicable `AGENTS.md`.
+
+- **feat(agent)**: Generate validated structured checkpoints with the pinned model, reserve auxiliary-call budgets and record reported usage. Retain recent exchanges and original receipts; failed or incomplete checkpoints return named errors.
+- **feat(agent)**: Refresh nested `AGENTS.md` guidance after successful structured file operations, including changes/removals and bounded scope continuity across restart/compaction. Directory guidance never grants execution authority.
+- **perf(agent)**: Bound unstructured model-visible tool logs with head/tail excerpts, use guarded provider-usage anchors for native text estimates, and emit tool-specific prompt guidance only for advertised capabilities.
+
 - **perf(agent)**: Refill read-only tool slots as calls complete while preserving the concurrency bound, ordered receipts, mutation barriers and cleanup/reconciliation. Cache bounded parsed context rows in Host memory with current-key and complete encrypted-row checks; compactions and current work state still come from storage.
 - **feat(diagnostics)**: Add content-free phase/first-output timings and Host cache counters, plus a credential-free 16/32/60-step continuation benchmark and CI request-prefix/latency gate. Provider latency and GUI rendering remain separate measurements.
 

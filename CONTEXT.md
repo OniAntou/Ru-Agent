@@ -67,6 +67,15 @@ Implementation: [broker](docs/architecture/broker.md#ruagentbroker).
 _Avoid_: public API route, unrestricted shell, separate broker process
 
 
+**Context Checkpoint**:
+A bounded, encrypted summary replacing selected model-context history while
+preserving its covered ranges and original durable evidence. Provider-backed
+checkpoints use the run's pinned model and consume a model-call budget; they
+never transfer approvals or turn quoted instructions into execution authority.
+Implementation: [context management](docs/architecture/context-management.md).
+_Avoid_: complete memory, verified success inferred from model prose, inherited approval
+
+
 **Execution Authority**:
 The single path through `IToolGateway` to `BrokerExecutionRuntime` that can perform model-visible file, terminal and network actions. Host orchestration intercepts `ask_user` without dispatching it to that authority.
 Implementation: [broker](docs/architecture/broker.md#execution-authority).

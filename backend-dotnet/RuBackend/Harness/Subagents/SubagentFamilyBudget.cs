@@ -14,12 +14,15 @@ public sealed class SubagentFamilyBudget(
     public Task<bool> ReserveModelAsync(AgentRun run, ModelStepId step, CancellationToken ct) =>
         ReserveAsync(run, step, SubagentBudgetKind.ModelStep, 1, ct);
 
+    public Task<bool> ReserveCheckpointAsync(AgentRun run, ModelStepId step, CancellationToken ct) =>
+        ReserveAsync(run, step, SubagentBudgetKind.ModelStep, 1, ct, allowParked: true);
+
     public Task<bool> ReserveToolsAsync(AgentRun run, ModelStepId step, int count, CancellationToken ct) =>
         ReserveAsync(run, step, SubagentBudgetKind.ToolCall, count, ct);
 
-    private async Task<bool> ReserveAsync(AgentRun run, ModelStepId step, SubagentBudgetKind kind, int amount, CancellationToken ct)
+    private async Task<bool> ReserveAsync(AgentRun run, ModelStepId step, SubagentBudgetKind kind, int amount, CancellationToken ct, bool allowParked = false)
     {
-        if (run.Status.State != HarnessRunState.Running) return false;
+        if (!CanReserve(run)) return false;
         var owner = await agents.FindOwnerAsync(run.SessionId, ct).ConfigureAwait(false);
         if (owner is null && await agents.IsInternalRunAsync(run.RunId, ct).ConfigureAwait(false)) return false;
         var rootId = owner?.RootRunId ?? run.RunId;
@@ -28,7 +31,7 @@ public sealed class SubagentFamilyBudget(
         {
             var attempt = await agents.GetLatestAttemptAsync(rootId, owner.AgentId, ct).ConfigureAwait(false);
             if (owner.Canceled || attempt is null || attempt.Run.RunId != run.RunId
-                || attempt.Run.Status.State != HarnessRunState.Running || attempt.AdmittedAt is null
+                || !CanReserve(attempt.Run) || attempt.AdmittedAt is null
                 || attempt.DeadlineAt is null || time.UtcNow >= attempt.DeadlineAt) return false;
         }
         var root = await events.GetRunAsync(rootId, ct).ConfigureAwait(false);
@@ -38,5 +41,9 @@ public sealed class SubagentFamilyBudget(
         var key = (kind == SubagentBudgetKind.ModelStep ? "model_" : "tools_") + step.Value;
         return await budgets.ReserveAmountAsync(rootId, root.BudgetWindow, key, kind, amount,
             root.ModelStepsInWindow, root.ToolCallsInWindow, ct).ConfigureAwait(false);
+
+        bool CanReserve(AgentRun candidate) => candidate.State == HarnessRunState.Running
+            || allowParked && candidate.State is HarnessRunState.WaitingUser or HarnessRunState.WaitingApproval
+                or HarnessRunState.WaitingSubagents;
     }
 }

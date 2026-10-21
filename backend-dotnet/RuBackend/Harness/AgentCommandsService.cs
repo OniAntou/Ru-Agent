@@ -338,7 +338,7 @@ public sealed class AgentCommandsService
                     result.Run?.Version ?? 0)),
             ContextCompactionOutcome.NotAvailable => BoundedError(
                 409,
-                "compact_not_available",
+                result.ErrorCode ?? "compact_not_available",
                 "Context compaction is not available."),
             ContextCompactionOutcome.CommitConflict => BoundedError(
                 409,

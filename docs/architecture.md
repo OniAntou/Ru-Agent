@@ -43,6 +43,9 @@ The [canonical policy catalog](../backend-dotnet/RuAgent.Protocol/Harness/AgentP
 
 ## Agent prompt contract
 
+See [context management](architecture/context-management.md) for structured
+checkpoints, guarded usage estimates and nested workspace instruction baselines.
+
 Provider, model, protocol and tool identities remain pinned for a run. Bounded same-selection recovery never substitutes another provider. A new run can capture historical Session Run Handoff evidence; historical proposals are never replayed as executable calls and approvals do not transfer. See [Harness context](architecture/harness.md#agent-prompt-contract) and [provider selection](architecture/providers.md#run-provider-selection).
 
 ## Harness ownership

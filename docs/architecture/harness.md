@@ -64,6 +64,9 @@ provider continuation data.
 
 ## Agent prompt contract
 
+Long-session checkpoint generation, tool excerpts, usage-anchored estimates and
+nested instruction discovery are described in [context management](context-management.md).
+
 Context sources may reuse bounded parsed encrypted rows in source-local memory.
 The current key and complete row fingerprint are checked before reuse; the
 database remains authoritative for membership, receipts, compactions and current
@@ -140,7 +143,10 @@ while the global gate protects only accounting and retained metadata.
 Projection clipping never rewrites the receipt; bounded history may still omit
 older exchanges.
 
-`AGENTS.md` remains the sole persona/style source. The user-wide file, the four fixed workspace
+`AGENTS.md` remains the sole persona/style source. Successful structured file
+operations can also discover nested directory guidance, delivered through a
+bounded runtime baseline as described in [context management](context-management.md).
+The user-wide file, nested instructions, the four fixed workspace
 instruction files and discovered skills are untrusted guidance; none can grant
 tools, capabilities, paths, network access, or approvals. Skills are rendered
 as `ExternalSkill`, and their `allowed-tools` metadata is descriptive only.

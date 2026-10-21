@@ -14,9 +14,9 @@ namespace RuBackend.Harness.Prompting;
 
 /// <summary>
 /// Rebuilds the typed system-prompt context for every model step. The provider is
-/// constructed for one canonical run root and never accepts a model-selected path.
+/// constructed for one canonical run root; nested scopes come from successful durable file observations.
 /// </summary>
-public sealed class RuPromptContextProvider : ISystemPromptContextProvider
+public sealed partial class RuPromptContextProvider : ISystemPromptContextProvider
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
@@ -89,7 +89,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             ? SelectModel(await _settings.ReadAsync(cancellationToken).ConfigureAwait(false))
             : (await _runModelMetadataResolver.ResolveAsync(run.RunId, cancellationToken).ConfigureAwait(false)).ModelLabel;
         cancellationToken.ThrowIfCancellationRequested();
-        var instructions = _instructionLoader.Load(_canonicalRoot);
+        var observedPaths = ObservedFilePaths(modelContext);
+        var instructions = _instructionLoader.Load(_canonicalRoot, observedPaths);
         var now = TimeZoneInfo.ConvertTime(_time.UtcNow, TimeZoneInfo.Local);
         var environment = new PromptEnvironment(
             model,
@@ -100,17 +101,17 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             WorkspaceLabel(_canonicalRoot),
             ToolInventoryProbe.Probe());
         var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
+        if (observedPaths.Count > 0)
+        {
+            runtime = PromptContextBudget.Append(runtime, NestedInstructionReference(instructions, observedPaths));
+        }
         var skipped = instructions.Skips.Where(skip => skip.Reason is not ("missing" or "empty")).ToArray();
         if (skipped.Length > 0)
         {
-            var references = runtime.References.ToList();
-            references.Add(new PromptReference("instruction_skipped", "workspace instruction diagnostics",
+            runtime = PromptContextBudget.Append(runtime, new PromptReference("instruction_skipped", "workspace instruction diagnostics",
                 "Some instructions were not loaded: " + string.Join("; ", skipped.Take(16)
                     .Select(skip => $"{skip.SourceId}: {skip.Reason}"))
                 + ". Do not assume those instructions were applied. Inspect or repair them within current permissions."));
-            // The warning stays newest, while preserving the reference-count invariant.
-            if (references.Count > PromptRuntimeContext.MaxRuntimeReferences) references.RemoveAt(0);
-            runtime = new PromptRuntimeContext(references);
         }
         var capabilities = BuildCapabilities();
 
@@ -119,7 +120,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             SystemPromptContext.RequiredAgentProfile,
             AgentPermissionPresetMapper.ToWireValue(run.Preset),
             environment,
-            instructions.Blocks,
+            instructions.Blocks.Where(block => !block.SourceId.StartsWith("nested:", StringComparison.Ordinal)).ToArray(),
             capabilities,
             runtime);
     }

@@ -16,7 +16,7 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class RuPromptContextProviderTests
+public sealed partial class RuPromptContextProviderTests
 {
     [Fact]
     public async Task Environment_date_uses_the_advertised_local_timezone()

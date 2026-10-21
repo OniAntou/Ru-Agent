@@ -12,7 +12,7 @@ using Xunit;
 using RuAgent.Protocol.Harness;
 namespace RuBackend.Tests.ModelRunner;
 
-public sealed class InProcessModelStepRunnerTests
+public sealed partial class InProcessModelStepRunnerTests
 {
     [Fact]
     public async Task Maps_deltas_and_returns_exactly_one_final_step()

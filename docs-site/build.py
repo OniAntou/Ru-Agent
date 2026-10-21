@@ -266,6 +266,7 @@ def navigation(staged_root: Path) -> list:
             page("Architecture", "docs/architecture.md"),
             page("Host implementation", "docs/architecture/host.md"),
             page("Harness implementation", "docs/architecture/harness.md"),
+            page("Context management", "docs/architecture/context-management.md"),
             page("Broker implementation", "docs/architecture/broker.md"),
             page("GUI implementation", "docs/architecture/gui.md"),
             page("TUI implementation", "docs/architecture/tui.md"),

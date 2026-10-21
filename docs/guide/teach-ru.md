@@ -18,6 +18,16 @@ from the project takes precedence over your user-wide file where they disagree:
 Say what is not obvious from the code: how to build and test, naming and style rules, things to avoid.
 Each file can be up to 64 KiB (256 KiB in total).
 
+For a monorepo, place an additional `AGENTS.md` inside a component directory.
+After a successful structured file read/write/edit in that directory, Ru loads
+its applicable nested instruction chain. More specific guidance applies within
+that directory; current user instructions still take precedence. Changes and
+removals refresh on later requests, including after history compaction or restart
+for sessions with images or text-based tool selection. Under discovery limits,
+existing instruction files closest to the touched files take priority over more
+distant ancestors. Discovery and context have bounds; omitted
+guidance is reported rather than assumed. See [context management](../architecture/context-management.md).
+
 ## Skills: workflows for tasks you repeat
 
 A skill is a folder with a `SKILL.md` file that describes a workflow. Ru lists only each skill's name and

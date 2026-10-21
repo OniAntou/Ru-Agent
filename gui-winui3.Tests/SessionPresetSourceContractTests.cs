@@ -37,26 +37,31 @@ public sealed class SessionPresetSourceContractTests
         // Standard, a Standard one came back Plan, and neither said so on
         // screen. The plan downgrade also reached the user as an unrelated
         // `protocol failure` instead of the plan preset's own read-only refusal.
-        Assert.DoesNotContain(
-            "_agentPreset = AgentPermissionPreset.Plan",
-            Body("ChatView.SessionHistory.cs", "public async Task OpenSessionAsync"),
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "_agentPreset = AgentPermissionPreset.Standard",
-            Body("ChatView.AgentRun.cs", "private void ResetAgentState"),
-            StringComparison.Ordinal);
+        // The preset now lives in SessionPresetViewModel; the only narrowing on open is
+        // its Full Access rule (SessionPresetViewModelTests), and a reset forgets the
+        // stored version without touching the choice.
+        string open = Body("ChatView.SessionHistory.cs", "public async Task OpenSessionAsync");
+        Assert.DoesNotContain("Presets.Choose(", open, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentPermissionPreset.Plan", open, StringComparison.Ordinal);
+        Assert.Contains("Presets.NarrowForOpening(sessionId)", open, StringComparison.Ordinal);
+
+        string reset = Body("ChatView.AgentRun.cs", "private void ResetAgentState");
+        Assert.Contains("Presets.ForgetStoredVersion()", reset, StringComparison.Ordinal);
+        Assert.DoesNotContain("Presets.Choose(", reset, StringComparison.Ordinal);
+        Assert.DoesNotContain("DeclineFullAccess", reset, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Standard_still_starts_as_the_default()
     {
         // The removed reset had a job -- it set a default. That default now lives
-        // where a default belongs: the ChatView field initialiser and the settings
-        // view model's stored choice (SettingsViewModelTests).
-        Assert.Contains(
-            "private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;",
-            GuiSource.ViewText("ChatView"),
-            StringComparison.Ordinal);
+        // where a default belongs: SessionPresetViewModel's initialiser
+        // (SessionPresetViewModelTests.Standard_is_the_default) and the settings
+        // view model's stored choice (SettingsViewModelTests). The view reads the
+        // one copy instead of keeping its own.
+        string code = GuiSource.ViewText("ChatView");
+        Assert.Contains("CurrentAgentPreset => Presets.Preset", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("private AgentPermissionPreset", code, StringComparison.Ordinal);
     }
 
     [Fact]

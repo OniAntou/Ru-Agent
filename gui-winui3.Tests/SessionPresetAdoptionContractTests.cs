@@ -21,26 +21,19 @@ public sealed class SessionPresetAdoptionContractTests
     }
 
     [Fact]
-    public void Adoption_reads_the_preset_without_rewriting_it()
+    public void Adoption_goes_through_the_preset_view_model_and_never_writes()
     {
+        // Reading without rewriting, keeping the choice when nothing could be read,
+        // and seeding the version cache are SessionPresetViewModelTests'
+        // Adoption_reads_without_writing_and_seeds_the_version_cache,
+        // A_missing_stored_selection_leaves_the_current_choice and
+        // A_read_for_a_session_that_is_no_longer_open_is_dropped.
         var code = GuiSource.ViewText("ChatView");
         var adopt = GuiSource.MethodBody(code, "AdoptStoredSessionPresetAsync");
 
-        Assert.Contains("GetSessionPresetAsync", adopt, StringComparison.Ordinal);
-        // A missing or unreadable selection keeps the current choice: the
-        // device must never re-grade a session it could not read.
-        Assert.Contains("stored is null", adopt, StringComparison.Ordinal);
+        Assert.Contains("Presets.AdoptStoredAsync", adopt, StringComparison.Ordinal);
         Assert.DoesNotContain("SetSessionPresetAsync", adopt, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Adoption_seeds_the_version_cache_so_the_next_send_does_not_rewrite()
-    {
-        var code = GuiSource.ViewText("ChatView");
-        var adopt = GuiSource.MethodBody(code, "AdoptStoredSessionPresetAsync");
-
-        Assert.Contains("_agentPresetSessionId = sessionId", adopt, StringComparison.Ordinal);
-        Assert.Contains("_agentPresetVersion = stored.Version", adopt, StringComparison.Ordinal);
+        Assert.DoesNotContain("EnsureStoredAsync", adopt, StringComparison.Ordinal);
     }
 
     [Fact]

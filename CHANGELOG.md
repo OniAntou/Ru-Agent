@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(gui)**: The chat's permission preset, its stored-version cache, stored-preset adoption and the Full Access carry rule move into `SessionPresetViewModel`, with behavioral tests in place of source checks.
 - **refactor(gui)**: The composer's attachments, per-session drafts, turn queue and effective prompt move into `ChatComposerViewModel`; the queue strip's header and Send now are bound to it.
 - **refactor(gui)**: The chat's model picker and reasoning selection move into `ChatModelPickerViewModel`, and the composer's run surface (status, Stop, send/stop face, approval and question cards, workspace-trust guard) into `AgentRunPanelViewModel`. Focus moves to an approval or question card once per new prompt, as before.
 - **refactor(gui)**: The sidebar's sessions, workspace groups, search, drafts and delete flow move into `SessionSidebarViewModel`; `MainWindow` keeps native selection, drag visuals and dialogs.

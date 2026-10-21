@@ -467,10 +467,9 @@ namespace RuApp.Views
                 // so carrying Full Access across would silently elevate a
                 // session the user never chose it for. Plan and Standard are
                 // preferences and may follow the user; an elevation may not.
-                if (_agentPreset == AgentPermissionPreset.FullAccess
-                    && !string.Equals(_agentPresetSessionId, sessionId, StringComparison.Ordinal))
+                if (Presets.NarrowForOpening(sessionId))
                 {
-                    SetAgentPreset(AgentPermissionPreset.Standard);
+                    UpdateAgentInlineState();
                 }
 
                 RestoreComposerDraft(sessionId);
@@ -593,34 +592,11 @@ namespace RuApp.Views
         /// </summary>
         private async Task AdoptStoredSessionPresetAsync(string sessionId, CancellationToken cancellationToken)
         {
-            if (_apiService is null
-                || string.IsNullOrWhiteSpace(sessionId)
-                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+            if (await Presets.AdoptStoredAsync(sessionId, () => _activeSessionId, cancellationToken) is not { } preset)
             {
                 return;
             }
 
-            var stored = await _apiService.GetSessionPresetAsync(sessionId, cancellationToken);
-            if (stored is null
-                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)
-                || cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            var preset = stored.Preset switch
-            {
-                "plan" => AgentPermissionPreset.Plan,
-                "full_access" => AgentPermissionPreset.FullAccess,
-                _ => AgentPermissionPreset.Standard,
-            };
-            // Seed the send path's version cache with the stored selection: the
-            // next send skips the preset POST instead of re-writing the value
-            // this just read, and a session that is still on version 0 keeps
-            // the current behavior.
-            _agentPreset = preset;
-            _agentPresetSessionId = sessionId;
-            _agentPresetVersion = stored.Version;
             UpdateAgentInlineState();
             SessionPresetAdopted?.Invoke(this, new SessionPresetAdoptedEventArgs(sessionId, preset));
         }

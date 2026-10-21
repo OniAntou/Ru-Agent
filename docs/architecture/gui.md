@@ -52,6 +52,14 @@ source of the typed text, because WinUI raises `TextChanged` after an edit: meth
 that compare or save text take the box's current value, so text typed while a send
 awaits the Host is never cleared by that send. The view model writes text back only
 through `TextReplaced` (restore and clear), never through a two-way binding.
+`SessionPresetViewModel` owns the chat's permission preset and the cached version of
+the Host's stored selection. Only two rules narrow it: Full Access does not follow the
+user into a session it was not stored for, and a declined Full Access confirmation
+falls back to Standard. Opening a session adopts the stored selection (read only, best
+effort, dropped if the session changed meanwhile) and seeds the version cache, so the
+next send does not rewrite it; a write that completes after a switch fails as
+`session_changed`. An unknown stored value reads as Standard. Transcript loading, run
+adoption and the activity feed remain in `ChatView` partials and their presenters.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}` names a
 public member of the bound view model.
 

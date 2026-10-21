@@ -119,9 +119,6 @@ namespace RuApp.Views
         private AgentRunController? _agentController;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentBusySeen;
-        private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
-        private string? _agentPresetSessionId;
-        private long? _agentPresetVersion;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private string? _requestedWorkspace;
@@ -138,6 +135,9 @@ namespace RuApp.Views
         public BatchObservableCollection<ChatMessageItem> Messages { get; } = new();
         /// <summary>The composer's unsent content: attachments, per-session drafts and the turn queue.</summary>
         public ChatComposerViewModel Composer { get; }
+
+        /// <summary>The session's permission preset and the Host's stored version of it.</summary>
+        public SessionPresetViewModel Presets { get; }
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly AgentActivityFeedPresenter _agentActivityFeed = new();
         private readonly Dictionary<string, int> _activitySplitOffsetById = new(StringComparer.Ordinal);
@@ -165,6 +165,7 @@ namespace RuApp.Views
             ModelSelection.PickerProjectionReady += OnModelSelectionPickerReady;
             ModelSelection.SelectionChanged += OnModelSelectionChanged;
             Composer = new ChatComposerViewModel(RunPanel);
+            Presets = new SessionPresetViewModel(new HostSessionPresetBackend(() => _apiService, () => _agentController));
             Composer.TextReplaced += OnComposerTextReplaced;
             this.InitializeComponent();
             RunPanel.PropertyChanged += OnRunPanelPropertyChanged;

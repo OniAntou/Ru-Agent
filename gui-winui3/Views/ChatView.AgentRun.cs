@@ -71,11 +71,11 @@ namespace RuApp.Views
                 AgentComposerPresentation.AgentModeName);
         }
 
-        public AgentPermissionPreset CurrentAgentPreset => _agentPreset;
+        public AgentPermissionPreset CurrentAgentPreset => Presets.Preset;
 
         public void SetAgentPreset(AgentPermissionPreset preset)
         {
-            _agentPreset = preset;
+            Presets.Choose(preset);
             UpdateAgentInlineState();
         }
 
@@ -433,8 +433,7 @@ namespace RuApp.Views
             // without a word on screen. The default is already in the field
             // initialiser and the XAML SelectedIndex; these lines only ever
             // narrowed what the user had chosen.
-            _agentPresetSessionId = null;
-            _agentPresetVersion = null;
+            Presets.ForgetStoredVersion();
             AbandonActiveAgentReply(preservePresentation: preserveTranscript);
 
             UpdateAgentComposerVisuals();
@@ -838,25 +837,21 @@ namespace RuApp.Views
             string? submittedSessionId = null;
             try
             {
-                AgentPermissionPreset preset = _agentPreset;
+                AgentPermissionPreset preset = Presets.Preset;
                 if (preset == AgentPermissionPreset.FullAccess && !await ConfirmFullAccessAsync())
                 {
-                    _agentPreset = AgentPermissionPreset.Standard;
+                    Presets.DeclineFullAccess();
                     UpdateAgentInlineState();
                     return false;
                 }
 
-                _agentPreset = preset;
+                // The confirmed choice wins over a change made while the dialog was open.
+                Presets.Choose(preset);
                 long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
                 // The preset choice is stored server-side per session: the run
                 // request carries the same wire value so the stored selection and
                 // the run agree, but the stored selection stays authoritative.
-                string wirePreset = preset switch
-                {
-                    AgentPermissionPreset.Plan => "plan",
-                    AgentPermissionPreset.FullAccess => "full_access",
-                    _ => "standard",
-                };
+                string wirePreset = SessionPresetViewModel.WireName(preset);
                 var imagePayloads = attachments?
                     .Where(a => a.IsImage && (!string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
@@ -1163,8 +1158,7 @@ namespace RuApp.Views
             string sessionId = created.Id.Trim();
 
             ActivateSession(sessionId);
-            _agentPresetSessionId = null;
-            _agentPresetVersion = null;
+            Presets.ForgetStoredVersion();
             ClearAgentActivities();
 
             DetachAgentActivitiesFromMessages();
@@ -1194,7 +1188,7 @@ namespace RuApp.Views
                     created.Title ?? "New Conversation"));
         }
 
-        private async Task<long> EnsureAgentPresetAsync(
+        private Task<long> EnsureAgentPresetAsync(
             AgentPermissionPreset preset,
             CancellationToken cancellationToken)
         {
@@ -1203,48 +1197,14 @@ namespace RuApp.Views
                 throw new InvalidOperationException("Agent controller is unavailable.");
             }
 
-            if (preset == AgentPermissionPreset.Standard
-                && string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
-                && _agentPreset == AgentPermissionPreset.Standard
-                && _agentPresetVersion is long knownStandardVersion)
-            {
-                return knownStandardVersion;
-            }
-
-            if (string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
-                && _agentPreset == preset
-                && _agentPresetVersion is long knownVersion)
-            {
-                return knownVersion;
-            }
-
-            string wirePreset = preset switch
-            {
-                AgentPermissionPreset.Plan => "plan",
-                AgentPermissionPreset.FullAccess => "full_access",
-                _ => "standard",
-            };
             string requestedSessionId = _activeSessionId;
             long requestedGeneration = _sessionOpenGeneration;
-            long version = await SessionPresetVersionNegotiator.ExecuteAsync(
+            return Presets.EnsureStoredAsync(
+                preset,
                 requestedSessionId,
-                expectedVersion => _agentController.SetSessionPresetAsync(
-                    requestedSessionId,
-                    wirePreset,
-                    expectedVersion,
-                    interactive: true,
-                    cancellationToken),
+                () => requestedGeneration == _sessionOpenGeneration
+                    && string.Equals(requestedSessionId, _activeSessionId, StringComparison.Ordinal),
                 cancellationToken);
-            if (requestedGeneration != _sessionOpenGeneration
-                || !string.Equals(requestedSessionId, _activeSessionId, StringComparison.Ordinal))
-            {
-                throw new AgentApiException("session_changed", "Active session changed during permission update.");
-            }
-
-            _agentPresetSessionId = requestedSessionId;
-            _agentPreset = preset;
-            _agentPresetVersion = version;
-            return version;
         }
 
         private async Task<bool> ConfirmFullAccessAsync()

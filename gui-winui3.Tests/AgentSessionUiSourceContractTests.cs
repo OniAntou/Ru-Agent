@@ -61,8 +61,13 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(named.ContainsKey("AgentModeLabel"), "AgentModeLabel must exist.");
         Assert.Equal("Agent", GuiSource.AttributeValue(named["AgentModeLabel"], "Text"));
 
-        // The composer carries no permission control: the preset lives in Settings.
+        // The composer carries no permission control: the preset lives in Settings. It may
+        // say that Full Access is on (owner decision, 2026-10-22), as a read-only notice.
         Assert.False(named.ContainsKey("AgentPresetBox"), "AgentPresetBox was retired from the composer.");
+        var notice = named["FullAccessIndicator"];
+        Assert.Equal("Border", notice.Name.LocalName);
+        Assert.Equal("{x:Bind Presets.IsFullAccess, Mode=OneWay}", GuiSource.AttributeValue(notice, "Visibility"));
+        Assert.DoesNotContain(notice.DescendantsAndSelf(), element => element.Name.LocalName is "Button" or "ComboBox" or "ToggleButton");
 
         foreach (var retired in RetiredXamlNames)
         {

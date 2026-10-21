@@ -111,6 +111,21 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
 
     [ObservableProperty] public partial string ModelLabel { get; private set; } = ProviderModelPickerProjection.TriggerDisplay(string.Empty, string.Empty);
 
+    /// <summary>
+    /// No model is chosen yet, typically a first run with no provider key. The empty
+    /// chat offers the way to Models &amp; Providers only then; it is false until the
+    /// stored selection has been read, so the hint never flashes on a configured app.
+    /// </summary>
+    [ObservableProperty] public partial bool NeedsProviderSetup { get; private set; }
+
+    private bool _selectionRead;
+
+    private void ShowSelection(string backend, string model)
+    {
+        ModelLabel = ProviderModelPickerProjection.TriggerDisplay(backend, model);
+        NeedsProviderSetup = _selectionRead && string.IsNullOrWhiteSpace(EffectiveModel);
+    }
+
     [ObservableProperty] public partial string EffortLabel { get; private set; } = "default";
 
     [ObservableProperty] public partial string EffortAutomationName { get; private set; } = "Reasoning effort: default";
@@ -173,12 +188,13 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
             var settings = await backend.GetSettingsAsync();
             if (settings is null || !ReferenceEquals(backend, _backend)) return;
             CurrentSettings = settings;
+            _selectionRead = true;
             _selection.Adopt(settings);
             Backend = _selection.Backend;
             Model = _selection.Model;
             _grouped?.SetSelection(Backend, Model);
             await RefreshModelsDevGroupsAsync();
-            ModelLabel = ProviderModelPickerProjection.TriggerDisplay(Backend, Model);
+            ShowSelection(Backend, Model);
             if (_catalog is { } catalog)
             {
                 catalog.SetBackend(Backend);
@@ -264,7 +280,7 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
         if (!string.IsNullOrWhiteSpace(state.SelectedModel)) Model = state.SelectedModel;
         if (!string.IsNullOrWhiteSpace(state.SelectedBackend)) Backend = state.SelectedBackend;
         _selection.Adopt(Backend, Model);
-        ModelLabel = ProviderModelPickerProjection.TriggerDisplay(state.SelectedBackend, state.SelectedModel);
+        ShowSelection(state.SelectedBackend, state.SelectedModel);
         // The tree costs a full rebuild per publish; nobody sees it while closed.
         if (IsPickerOpen) PublishPicker(state);
         else _isPickerDirty = true;
@@ -317,7 +333,7 @@ public sealed partial class ChatModelPickerViewModel : ObservableObject, IDispos
             // stored one arrives with the catalog refresh below.
             SelectedEffort = "default";
             _grouped?.SetSelection(backend, model);
-            ModelLabel = ProviderModelPickerProjection.TriggerDisplay(backend, model);
+            ShowSelection(backend, model);
             SelectionChanged?.Invoke();
             if (_catalog is { } catalog)
             {

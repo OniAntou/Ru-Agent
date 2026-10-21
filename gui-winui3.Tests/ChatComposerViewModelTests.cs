@@ -106,6 +106,51 @@ public sealed class ChatComposerViewModelTests
     }
 
     [Fact]
+    public void A_send_whose_workspace_trust_is_declined_comes_back_to_the_composer()
+    {
+        // B7: the composer clears when the Host accepts the run, before the trust
+        // prompt. Declining trust ended the run and the typed message was simply gone.
+        var shot = Image("shot.png");
+        _composer.TryAddAttachment("sess-a", "fix the login bug", shot);
+        var snapshot = _composer.TakeSnapshot("fix the login bug");
+        _composer.ClearAfterSend("sess-a", snapshot);
+        Assert.Equal(string.Empty, _replaced[^1]);
+        Assert.Empty(_composer.Attachments);
+
+        Assert.True(_composer.RestoreDeclinedSend("sess-a", liveText: string.Empty));
+
+        Assert.Equal("fix the login bug", _replaced[^1]);
+        Assert.Equal("shot.png", Assert.Single(_composer.Attachments).FileName);
+        Assert.Equal("fix the login bug", _drafts.Restore("sess-a"));
+        // Restored once: a second decline for the same send has nothing to bring back.
+        Assert.False(_composer.RestoreDeclinedSend("sess-a", liveText: string.Empty));
+    }
+
+    [Fact]
+    public void A_declined_send_never_overwrites_text_typed_since()
+    {
+        var snapshot = _composer.TakeSnapshot("first message");
+        _composer.ClearAfterSend("sess-a", snapshot);
+        _replaced.Clear();
+
+        Assert.False(_composer.RestoreDeclinedSend("sess-a", liveText: "something newer"));
+
+        Assert.Empty(_replaced);
+    }
+
+    [Fact]
+    public void Only_the_session_the_send_belonged_to_gets_it_back_and_a_started_run_forgets_it()
+    {
+        var snapshot = _composer.TakeSnapshot("for session a");
+        _composer.ClearAfterSend("sess-a", snapshot);
+
+        Assert.False(_composer.RestoreDeclinedSend("sess-b", liveText: string.Empty));
+
+        _composer.ForgetAcceptedSend("sess-a");
+        Assert.False(_composer.RestoreDeclinedSend("sess-a", liveText: string.Empty));
+    }
+
+    [Fact]
     public void An_empty_composer_has_nothing_to_send_or_queue()
     {
         Assert.True(_composer.TakeSnapshot("   ").IsEmpty);
@@ -227,4 +272,18 @@ public sealed class ChatComposerViewModelTests
     }
 
     private static ImageAttachmentItem Image(string name) => new() { FileName = name, IsImage = true };
+}
+
+public sealed class DeclinedTrustWiringTests
+{
+    [Fact]
+    public void The_trust_prompt_returns_a_declined_send_and_forgets_a_started_one()
+    {
+        // Behavior: ChatComposerViewModelTests.A_send_whose_workspace_trust_is_declined_comes_back_to_the_composer.
+        string code = GuiSource.ViewText("ChatView");
+        string prompt = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        Assert.Contains("Composer.RestoreDeclinedSend(run.SessionId", prompt, StringComparison.Ordinal);
+        Assert.Contains("Composer.ForgetAcceptedSend(run.SessionId)", prompt, StringComparison.Ordinal);
+        Assert.Contains("Composer.ClearAfterSend(submittedSessionId, snapshot)", GuiSource.MethodBody(code, "SendCurrentMessageAsync"), StringComparison.Ordinal);
+    }
 }

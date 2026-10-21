@@ -93,6 +93,14 @@ every entry calls an existing handler (a permission change goes through
 `ShellViewModel.ChoosePresetInSettings`, the Settings path). Shortcuts live in
 `KeyboardShortcutCatalog`, which the shell's key handler, the palette hints and the
 shortcuts sheet share; the composer still carries no permission control.
+`ApprovalRulesViewModel` backs Settings → Approval rules through `IApprovalRulesClient`
+(implemented by the run client adapter over `GET/DELETE /agent/v1/policies`): it reads
+global rules once and project rules per workspace the user has sessions in, keeps its
+rows when a read fails, and only removes rules. `ChatComposerViewModel` keeps an
+accepted send until its run starts, so a declined workspace-trust prompt returns the
+message to the composer instead of losing it. The empty chat links to Models &
+Providers while `ChatModelPickerViewModel.NeedsProviderSetup` is true, and the composer
+shows a read-only Full Access notice bound to `SessionPresetViewModel.IsFullAccess`.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}`,
 `{x:Bind ModelSelection.X}`, `{x:Bind Composer.X}` and `{x:Bind Shell.X}` names a public
 member of the bound view model.

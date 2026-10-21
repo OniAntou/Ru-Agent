@@ -87,6 +87,20 @@ public sealed class SessionPresetViewModelTests
     }
 
     [Fact]
+    public void The_full_access_notice_follows_the_preset()
+    {
+        var changes = new List<string?>();
+        _presets.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
+
+        _presets.Choose(AgentPermissionPreset.FullAccess);
+        Assert.True(_presets.IsFullAccess);
+        Assert.Contains(nameof(SessionPresetViewModel.IsFullAccess), changes);
+
+        _presets.DeclineFullAccess();
+        Assert.False(_presets.IsFullAccess);
+    }
+
+    [Fact]
     public void A_declined_full_access_falls_back_to_standard()
     {
         _presets.Choose(AgentPermissionPreset.FullAccess);

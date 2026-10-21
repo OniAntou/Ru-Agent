@@ -652,6 +652,34 @@
                            Foreground="{StaticResource RuInkBrush}"
                            HorizontalAlignment="Left"
                            TextWrapping="Wrap" />
+
+                <!--
+                  The one addition to the minimal empty state (owner decision, 2026-10-22):
+                  before any model is chosen, usually a first run without a key, the way
+                  to Models & Providers. It never shows on a configured app.
+                -->
+                <StackPanel x:Name="WelcomeSetupRow"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            HorizontalAlignment="Left"
+                            Visibility="{x:Bind ModelSelection.NeedsProviderSetup, Mode=OneWay}">
+                    <TextBlock Text="Choose a provider and add its API key to start."
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="WelcomeSetupButton"
+                            Click="OnWelcomeSetupClick"
+                            Style="{StaticResource RuToolbarButtonStyle}"
+                            Padding="8,4"
+                            AutomationProperties.Name="Open Models and Providers">
+                        <TextBlock Text="Open Models &amp; Providers"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuAccentBrush}" />
+                    </Button>
+                </StackPanel>
             </StackPanel>
 
             <!-- Virtualized history: the ListView owns its scroll host so long
@@ -1103,6 +1131,34 @@
                                       FontSize="14"
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
+
+                        <!--
+                          A notice, not a control (owner decision, 2026-10-22): the composer
+                          still carries no permission selector. Full Access skips approval
+                          prompts, so the composer says so while it is the preset.
+                        -->
+                        <Border x:Name="FullAccessIndicator"
+                                Grid.Column="1"
+                                Visibility="{x:Bind Presets.IsFullAccess, Mode=OneWay}"
+                                Background="{StaticResource RuAccentSoftBrush}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
+                                Padding="8,3"
+                                Margin="4,0"
+                                VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Full Access: commands skip approval prompts. Change it in Settings or with Ctrl+K."
+                                AutomationProperties.Name="Permission: Full Access">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <FontIcon Glyph="&#xE7BA;"
+                                          FontSize="11"
+                                          Foreground="{StaticResource RuWarningBrush}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Text="Full Access"
+                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource RuInkBrush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
 
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="1"

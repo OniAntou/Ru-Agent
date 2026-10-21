@@ -24,6 +24,21 @@ namespace RuApp.Views
 
         public SettingsViewModel ViewModel { get; }
 
+        /// <summary>The remembered approval rules page.</summary>
+        public ViewModels.ApprovalRulesViewModel Rules { get; }
+
+        private Func<Services.IApprovalRulesClient?> _rulesClient = () => null;
+        private Func<IReadOnlyList<ViewModels.ApprovalRuleWorkspace>> _rulesWorkspaces = () => [];
+
+        /// <summary>Where the rules page reads from: the run controller's client and the sidebar's workspaces.</summary>
+        public void ConfigureApprovalRules(
+            Func<Services.IApprovalRulesClient?> client,
+            Func<IReadOnlyList<ViewModels.ApprovalRuleWorkspace>> workspaces)
+        {
+            _rulesClient = client ?? throw new ArgumentNullException(nameof(client));
+            _rulesWorkspaces = workspaces ?? throw new ArgumentNullException(nameof(workspaces));
+        }
+
         public event Action<UiTheme>? ThemeChanged
         {
             add => ViewModel.ThemeChanged += value;
@@ -50,6 +65,7 @@ namespace RuApp.Views
         public SettingsView()
         {
             ViewModel = new SettingsViewModel(DispatchToUi);
+            Rules = new ViewModels.ApprovalRulesViewModel(() => _rulesClient(), () => _rulesWorkspaces());
             this.InitializeComponent();
             InitializeSettingsLayout();
             InitializeUpdates();

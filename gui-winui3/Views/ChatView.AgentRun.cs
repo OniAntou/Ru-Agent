@@ -247,6 +247,9 @@ namespace RuApp.Views
 
         private readonly Dictionary<string, string> _requestedWorkspaceBySession = new(StringComparer.Ordinal);
 
+        internal const string DeclinedTrustStatus =
+            "Not started: the workspace was not trusted. Your message is back in the box.";
+
         /// <summary>The Host's workspace path for a session, supplied by the shell's session list.</summary>
         public Func<string, string?>? SessionWorkspaceResolver { get; set; }
 
@@ -355,10 +358,18 @@ namespace RuApp.Views
                     // Only an accepted approval reaches this line: the client throws on a
                     // rejected decision, so the memory cannot claim a trust the Host never recorded.
                     _workspaceTrustMemory.Remember(_agentWorkspace, run.DisplayIdentityHash);
+                    Composer.ForgetAcceptedSend(run.SessionId);
                 }
                 else
                 {
                     await controller.TrustAsync(approve: false);
+                    // The run ends without starting; the message it carried goes back to
+                    // the composer instead of vanishing (B7).
+                    if (string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
+                        && Composer.RestoreDeclinedSend(run.SessionId, ChatInputTextBox?.Text ?? string.Empty))
+                    {
+                        ShowAgentInlineStatus(DeclinedTrustStatus);
+                    }
                 }
             }
             catch (Exception exception)
@@ -723,7 +734,7 @@ namespace RuApp.Views
                     () => submittedGeneration == _agentTurnGeneration
                         && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
                         && Composer.IsUnchangedSince(snapshot, ChatInputTextBox.Text),
-                    () => Composer.ClearAfterSend(submittedSessionId));
+                    () => Composer.ClearAfterSend(submittedSessionId, snapshot));
                 if (!accepted && submittedGeneration == _agentTurnGeneration)
                 {
                     UpdateSendButtonMode(isAgentRunning: false);

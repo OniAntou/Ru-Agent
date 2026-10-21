@@ -31,6 +31,30 @@ public sealed class ChatModelPickerViewModelTests
     }
 
     [Fact]
+    public async Task Provider_setup_is_offered_only_once_the_selection_is_read_and_empty()
+    {
+        var (viewModel, backend, _, _) = NewViewModel();
+        Assert.False(viewModel.NeedsProviderSetup);
+
+        backend.Settings.Model = string.Empty;
+        await viewModel.LoadAsync();
+        Assert.True(viewModel.NeedsProviderSetup);
+
+        await viewModel.SelectModelAsync(Model, Backend);
+        Assert.False(viewModel.NeedsProviderSetup);
+    }
+
+    [Fact]
+    public async Task A_configured_selection_never_offers_provider_setup()
+    {
+        var (viewModel, _, _, _) = NewViewModel();
+
+        await viewModel.LoadAsync();
+
+        Assert.False(viewModel.NeedsProviderSetup);
+    }
+
+    [Fact]
     public async Task A_stored_effort_survives_until_the_catalog_arrives()
     {
         var (viewModel, _, catalog, _) = NewViewModel();

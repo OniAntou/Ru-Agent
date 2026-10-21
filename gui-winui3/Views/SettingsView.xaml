@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:RuApp.Views"
     xmlns:models="using:RuApp.Models"
+    xmlns:viewmodels="using:RuApp.ViewModels"
     mc:Ignorable="d" IsTabStop="False">
 
     <UserControl.Resources>
@@ -118,6 +119,16 @@
                             Content="Models &amp; Providers"
                             AutomationProperties.Name="Models and providers settings"
                             Click="OnNavModelsClick"
+                            Style="{StaticResource SidebarNavButtonStyle}" />
+                    <Button x:Name="NavRulesBtn"
+                            Content="Approval rules"
+                            AutomationProperties.Name="Approval rules"
+                            Click="OnNavRulesClick"
+                            Style="{StaticResource SidebarNavButtonStyle}" />
+                    <Button x:Name="NavShortcutsBtn"
+                            Content="Keyboard shortcuts"
+                            AutomationProperties.Name="Keyboard shortcuts"
+                            Click="OnNavShortcutsClick"
                             Style="{StaticResource SidebarNavButtonStyle}" />
                     <Button x:Name="NavAboutBtn" Content="About"
                             AutomationProperties.Name="About Ru"
@@ -767,6 +778,91 @@
 
                 </StackPanel>
             </ScrollViewer>
+            <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->
+            <ScrollViewer x:Name="PanelRulesScrollViewer" Grid.Row="1"
+                          Padding="28,20,28,32" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <StackPanel Spacing="16">
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Remembered approvals" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Rules saved with Always allow on an approval card. Removing one makes Ru ask again."
+                                               Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button x:Name="RulesRefreshButton"
+                                        Grid.Column="1"
+                                        Content="Refresh"
+                                        Click="OnRulesRefreshClick"
+                                        VerticalAlignment="Top"
+                                        Style="{StaticResource RuToolbarButtonStyle}"
+                                        AutomationProperties.Name="Refresh approval rules" />
+                            </Grid>
+                            <ProgressBar IsIndeterminate="True" Visibility="{x:Bind Rules.IsLoading, Mode=OneWay}" />
+                            <TextBlock Text="{x:Bind Rules.StatusText, Mode=OneWay}"
+                                       Visibility="{x:Bind Rules.HasStatus, Mode=OneWay}"
+                                       Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap" />
+                            <TextBlock Text="No remembered rules. Choosing Always allow on an approval card adds one here."
+                                       Visibility="{x:Bind Rules.HasNoRules, Mode=OneWay}"
+                                       Style="{StaticResource SettingDescStyle}" TextWrapping="Wrap" />
+                            <ItemsControl x:Name="RulesList" ItemsSource="{x:Bind Rules.Rules}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Spacing="8" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="viewmodels:ApprovalRuleRow">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"
+                                              Padding="12,10"
+                                              Background="{StaticResource RuCanvasBrush}"
+                                              CornerRadius="{StaticResource AppInsetCornerRadius}"
+                                              AutomationProperties.Name="{x:Bind AutomationName}">
+                                            <StackPanel Spacing="4">
+                                                <TextBlock Text="{x:Bind Title}"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="13" FontWeight="Medium"
+                                                           Foreground="{StaticResource RuInkBrush}" />
+                                                <TextBlock Text="{x:Bind Detail}"
+                                                           Visibility="{x:Bind HasDetail}"
+                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource RuInkBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind ScopeLabel}"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Content="Remove"
+                                                    VerticalAlignment="Center"
+                                                    Click="OnRemoveRuleClick"
+                                                    Tag="{x:Bind}"
+                                                    Style="{StaticResource RuToolbarButtonStyle}"
+                                                    AutomationProperties.Name="Remove this rule" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Keyboard shortcuts: the same list the Ctrl+/ sheet shows. -->
+            <ScrollViewer x:Name="PanelShortcutsScrollViewer" Grid.Row="1"
+                          Padding="28,20,28,32" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <Border Style="{StaticResource FluentCardStyle}">
+                    <ContentControl x:Name="ShortcutsListHost" HorizontalContentAlignment="Stretch" />
+                </Border>
+            </ScrollViewer>
+
             <ScrollViewer x:Name="PanelAboutScrollViewer" Grid.Row="1"
                           Padding="28,20,28,32" Background="Transparent"
                           HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"

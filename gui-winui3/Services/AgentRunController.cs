@@ -225,6 +225,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public bool HasPendingInput => PendingInputId is not null;
 
+    /// <summary>The Host's remembered approval rules, when the client can reach them.</summary>
+    internal IApprovalRulesClient? ApprovalRules => _client as IApprovalRulesClient;
+
     public bool NeedsWorkspaceTrust =>
         CurrentRun?.Status == "waiting_workspace_trust"
         && !string.IsNullOrWhiteSpace(CurrentRun.TrustRequestId)

@@ -167,6 +167,42 @@ public sealed partial class ChatComposerViewModel : ObservableObject
         _drafts.Clear(sessionId);
     }
 
+    /// <summary>
+    /// Clears after an accepted send and keeps what was sent until the run starts. The
+    /// Host accepts a run before asking for workspace trust, so declining that prompt
+    /// used to lose the message: it had already left the composer and the run never
+    /// started (B7).
+    /// </summary>
+    internal void ClearAfterSend(string sessionId, ComposerSnapshot sent)
+    {
+        ArgumentNullException.ThrowIfNull(sent);
+        ClearAfterSend(sessionId);
+        _acceptedSends[sessionId] = sent;
+    }
+
+    /// <summary>The run for this session started; its message no longer needs keeping.</summary>
+    internal void ForgetAcceptedSend(string? sessionId)
+    {
+        if (sessionId is not null) _acceptedSends.Remove(sessionId);
+    }
+
+    /// <summary>
+    /// Puts a send whose run was declined back in the composer. Text typed since is
+    /// never overwritten; returns whether the message came back.
+    /// </summary>
+    internal bool RestoreDeclinedSend(string sessionId, string liveText)
+    {
+        if (!_acceptedSends.Remove(sessionId, out var sent)) return false;
+        if (!string.IsNullOrWhiteSpace(liveText) || Attachments.Count > 0) return false;
+
+        TextReplaced?.Invoke(sent.RawText);
+        foreach (var attachment in sent.Attachments) Attachments.Add(attachment);
+        _drafts.TrySave(sessionId, sent.RawText, Attachments);
+        return true;
+    }
+
+    private readonly Dictionary<string, ComposerSnapshot> _acceptedSends = new(StringComparer.Ordinal);
+
     /// <summary>Empties the text only, as when typed "Continue" resumes a run.</summary>
     internal void ClearText() => TextReplaced?.Invoke(string.Empty);
 

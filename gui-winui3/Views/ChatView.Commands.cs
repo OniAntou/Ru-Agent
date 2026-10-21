@@ -8,6 +8,10 @@ namespace RuApp.Views;
 /// </summary>
 public sealed partial class ChatView
 {
+    /// <summary>The empty chat's provider-setup link opens Models &amp; Providers.</summary>
+    private void OnWelcomeSetupClick(object sender, RoutedEventArgs e) =>
+        ProviderSettingsRequested?.Invoke(this, EventArgs.Empty);
+
     /// <summary>Puts the keyboard in the message box.</summary>
     public void FocusComposer()
     {

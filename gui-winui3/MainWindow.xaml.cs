@@ -329,6 +329,14 @@ namespace RuApp
                 _settingsView.CanInstallUpdate = () => _agentController?.IsBusy != true && _agentController?.CanCancel != true;
                 _settingsView.UpdateRestartRequested += () => { _updateHandOff = true; Close(); };
                 _settingsView.Initialize(_apiService, _providerCatalogController);
+                _settingsView.ConfigureApprovalRules(
+                    () => _agentController?.ApprovalRules,
+                    () => Sidebar.Sessions
+                        .Where(session => !string.IsNullOrWhiteSpace(session.WorkspaceId))
+                        .Select(session => new ViewModels.ApprovalRuleWorkspace(
+                            session.WorkspaceId!,
+                            session.WorkspacePath ?? session.WorkspaceLabel ?? session.WorkspaceId!))
+                        .ToList());
                 _settingsView.SetCurrentTheme(Shell.Theme);
                 Shell.ShowChatPreset(_chatView.CurrentAgentPreset);
                 _settingsView.SetCurrentPreset(Shell.SettingsPreset);

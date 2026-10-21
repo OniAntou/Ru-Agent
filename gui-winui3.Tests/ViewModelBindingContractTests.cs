@@ -17,6 +17,9 @@ public sealed partial class ViewModelBindingContractTests
     [InlineData("Views/ChatView.xaml", "ModelSelection", typeof(ChatModelPickerViewModel))]
     [InlineData("Views/ChatView.xaml", "Composer", typeof(ChatComposerViewModel))]
     [InlineData("MainWindow.xaml", "Shell", typeof(ShellViewModel))]
+    [InlineData("MainWindow.xaml", "Palette", typeof(CommandPaletteViewModel))]
+    [InlineData("Views/SettingsView.xaml", "Rules", typeof(ApprovalRulesViewModel))]
+    [InlineData("Views/ChatView.xaml", "Presets", typeof(SessionPresetViewModel))]
     public void View_bindings_name_public_view_model_members(string view, string property, Type viewModel)
     {
         string markup = GuiSource.Text(view.Split('/'));

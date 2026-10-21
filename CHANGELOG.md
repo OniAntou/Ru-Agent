@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Declining workspace trust no longer loses the message (B7). The Host accepts a run before asking for trust and the composer empties on acceptance, so a declined run took the text with it; it now comes back to the composer with its attachments and a note that the run did not start. Text typed since is never overwritten.
+- **feat(gui)**: Settings gains **Approval rules**, listing the rules saved with Always allow (global and per workspace the user has chats in) with Remove, which only narrows what runs without asking, and **Keyboard shortcuts**, the same list as the Ctrl+/ sheet.
+- **feat(gui)**: The empty chat links to Models & Providers while no model is chosen, and the composer shows a read-only **Full Access** notice while that preset is active. Both are owner-approved additions to the minimal empty state and the "no permission control in the composer" rule.
+
 - **style(gui)**: The transcript has a hierarchy: settled activity rows recede to the muted tone so the agent's reply reads first, rows that need the user stay ink and italic, failures stay red. The question card leads with the question, the composer labels its reasoning control ("Effort"), the side card's Subagents and Background tasks rows share the Changes row's icon-title-state shape with one wording ("No background tasks"), the sidebar says "CLI SESSIONS" and explains an empty WORKSPACES section, and Settings describes the permission preset.
 
 - **feat(gui)**: Command palette (Ctrl+K) for keyboard-first work: new chat, focus the message box, choose model, stop the run, side panel, Settings pages, updates, theme, permission preset and every session by title or workspace. Commands call the same handlers as their buttons; a permission change takes the Settings path and Full Access still asks to confirm before the next turn.

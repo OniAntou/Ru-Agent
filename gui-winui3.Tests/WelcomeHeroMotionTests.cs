@@ -10,19 +10,28 @@ namespace RuApp.Tests;
 public sealed class WelcomeHeroMotionTests
 {
     [Fact]
-    public void The_welcome_hero_keeps_only_the_workspace_line_and_title()
+    public void The_welcome_hero_keeps_the_workspace_line_title_and_a_setup_link_only_when_needed()
     {
         // The subtitle and the three starter chips were removed by owner
         // direction: the empty state keeps the workspace readout and the
-        // greeting, and nothing else.
+        // greeting. The one later addition (owner direction, 2026-10-22) is the
+        // provider-setup link, shown only before any model is chosen.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         foreach (var name in new[]
         {
-            "WelcomeHeroPanel", "WelcomeWorkspaceRow", "WelcomeWorkspaceText", "WelcomeTitleText",
+            "WelcomeHeroPanel", "WelcomeWorkspaceRow", "WelcomeWorkspaceText", "WelcomeTitleText", "WelcomeSetupRow",
         })
         {
             GuiSource.Require(document, name);
         }
+
+        Assert.Equal(
+            "{x:Bind ModelSelection.NeedsProviderSetup, Mode=OneWay}",
+            GuiSource.AttributeValue(GuiSource.Require(document, "WelcomeSetupRow"), "Visibility"));
+        Assert.Contains(
+            "ProviderSettingsRequested",
+            GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnWelcomeSetupClick"),
+            StringComparison.Ordinal);
 
         var named = GuiSource.NamedElements(document);
         Assert.DoesNotContain("WelcomeSubtitleText", named.Keys);

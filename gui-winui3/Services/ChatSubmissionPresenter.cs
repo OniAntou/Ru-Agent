@@ -11,6 +11,18 @@ internal static class ChatSubmissionPresenter
         return readSession();
     }
 
+    /// <summary>
+    /// Submits a turn and clears the draft the moment the Host accepts it.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="submit"/> receives the acceptance callback and completes only
+    /// when the run ends or parks, so clearing on its return would leave the sent text
+    /// in the composer for the whole run, where Enter would queue it again. A send that
+    /// is never accepted (declined Full Access, a run already in hand, a failure) never
+    /// invokes the callback and keeps the draft. The snapshot guard is evaluated at
+    /// acceptance, so text typed while the send awaited the Host survives. The clear is
+    /// one-shot because a session-recovery retry reuses the same callback.
+    /// </remarks>
     internal static async Task<bool> SubmitAsync(
         Func<Action, Task<bool>> submit,
         Func<bool> snapshotIsCurrent,
@@ -19,9 +31,12 @@ internal static class ChatSubmissionPresenter
         ArgumentNullException.ThrowIfNull(submit);
         ArgumentNullException.ThrowIfNull(snapshotIsCurrent);
         ArgumentNullException.ThrowIfNull(clearDraft);
-        bool acceptancePublished = false;
-        bool accepted = await submit(() => acceptancePublished = true).ConfigureAwait(true);
-        if (accepted && acceptancePublished && snapshotIsCurrent()) clearDraft();
-        return accepted;
+        bool acceptanceHandled = false;
+        return await submit(() =>
+        {
+            if (acceptanceHandled) return;
+            acceptanceHandled = true;
+            if (snapshotIsCurrent()) clearDraft();
+        }).ConfigureAwait(true);
     }
 }

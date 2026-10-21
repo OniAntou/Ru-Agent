@@ -37,22 +37,25 @@
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                     <TextBlock Text="Agent question"
                                FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="13"
+                               FontSize="12"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource RuInkBrush}" />
+                               Foreground="{StaticResource RuMutedBrush}" />
                     <TextBlock Text="Reply to resume the run"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="11"
                                Foreground="{StaticResource RuMutedBrush}" />
                 </StackPanel>
             </Grid>
+            <!-- The question is what the user must answer, so it carries the card:
+                 ink at reading size, above the muted header that only names the card. -->
             <TextBlock x:Name="QuestionText"
                        Grid.Row="1"
                        TextWrapping="Wrap"
                        FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="14"
-                       LineHeight="20"
-                       Foreground="{StaticResource RuMutedBrush}"
+                       FontSize="15"
+                       FontWeight="Medium"
+                       LineHeight="22"
+                       Foreground="{StaticResource RuInkBrush}"
                        AutomationProperties.AutomationId="AgentQuestionText"
                        AutomationProperties.LiveSetting="Polite" />
             <ScrollViewer Grid.Row="2"

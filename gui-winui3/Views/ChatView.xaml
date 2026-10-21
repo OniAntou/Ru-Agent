@@ -1201,6 +1201,12 @@
                                     VerticalAlignment="Center">
 
                                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                    <!-- "default" alone did not say what it was the default of. -->
+                                    <TextBlock Text="Effort"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuMutedBrush}"
+                                               VerticalAlignment="Center" />
                                     <TextBlock x:Name="ChatReasoningLabel"
                                                Text="{x:Bind ModelSelection.EffortLabel, Mode=OneWay}"
                                                FontFamily="{StaticResource RuUiFontFamily}"

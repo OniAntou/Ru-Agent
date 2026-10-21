@@ -102,7 +102,7 @@ public sealed partial class ChatView
             && string.Equals(runId, ResolveSidePanelTaskRunId(), StringComparison.Ordinal);
         if (string.IsNullOrWhiteSpace(runId) || _agentController is null)
         {
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks.");
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
             return;
         }
 
@@ -119,7 +119,7 @@ public sealed partial class ChatView
                 if (response.Code == "broker_gateway_unavailable" && runId == _sidePanelTasksRunId
                     && _agentController.CurrentRun?.RunId != runId)
                 {
-                    SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active background tasks.");
+                    SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
                     return;
                 }
                 SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), $"Tasks unavailable ({response.Code}).");
@@ -131,7 +131,7 @@ public sealed partial class ChatView
         catch (AgentApiException error) when (error.ErrorCode == "broker_gateway_unavailable")
         {
             if (!OwnsRefresh()) return;
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No active background tasks.");
+            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
         }
         catch (Exception)
         {

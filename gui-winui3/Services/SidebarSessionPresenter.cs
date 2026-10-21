@@ -85,16 +85,25 @@ internal static class SidebarSessionPresenter
             AppendSessions(rows, group, isExpanded, showAll(group.Key), activeSessionId, pageSize);
         }
 
+        // An empty WORKSPACES header with its tools beside it read as a broken section
+        // while the chats sat under RECENTS. Say that the section is simply empty.
+        if (firstWorkspace && !searching)
+        {
+            rows.Add(new SidebarEmptyRow(SidebarSessionOrganization.WorkspacesKey, NoWorkspacesLabel));
+        }
+
         rows.Add(new SidebarSectionRow(recents.Key, "RECENTS", recentExpanded));
         AppendSessions(rows, recents, recentExpanded, showAll(recents.Key), activeSessionId, pageSize);
         var cli = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.CliKey)
             ?? new WorkspaceGroup(SidebarSessionOrganization.CliKey, "CLI Session", null, []);
         bool cliExpanded = searching || expanded(cli.Key, true);
-        rows.Add(new SidebarSectionRow(cli.Key, "CLI SESSION", cliExpanded));
+        rows.Add(new SidebarSectionRow(cli.Key, "CLI SESSIONS", cliExpanded));
         AppendSessions(rows, cli, cliExpanded, showAll(cli.Key), activeSessionId, pageSize);
 
         return new SidebarSessionProjection(groups, rows, rows.OfType<SessionInfo>().Count());
     }
+
+    internal const string NoWorkspacesLabel = "No other project folders yet";
 
     internal static string PathStateKey(string canonicalPath) =>
         "path:" + canonicalPath.ToLowerInvariant();

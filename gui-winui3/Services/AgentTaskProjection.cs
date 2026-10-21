@@ -30,7 +30,7 @@ public static class AgentTaskProjection
         }
 
         int running = rows.Count(row => row.State == "running");
-        string status = rows.Count == 0 ? "No background tasks."
+        string status = rows.Count == 0 ? "No background tasks"
             : running + " running · " + (rows.Count - running) + " finished";
         if (rows.Count > MaxRows) status = $"Showing {MaxRows} of {rows.Count} · {running} running";
         return new(rows.OrderByDescending(row => row.State == "running").Take(MaxRows).ToArray(), status);

@@ -314,7 +314,9 @@
                         <StackPanel Spacing="16">
                             <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Permission preset" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Applies to new turns. Full Access asks to confirm before the next one."
+                                               Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"

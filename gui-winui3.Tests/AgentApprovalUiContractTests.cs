@@ -391,7 +391,7 @@ public sealed class AgentApprovalUiContractTests
             element => element.Name.LocalName == "TextBlock"
                 && string.Equals(
                     GuiSource.AttributeValue(element, "Text"),
-                    "Permission Preset",
+                    "Permission preset",
                     StringComparison.Ordinal));
 
         Assert.Equal("Plan", GuiSource.AttributeValue(named["PresetPlanText"], "Text"));

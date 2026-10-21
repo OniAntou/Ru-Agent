@@ -971,9 +971,8 @@ namespace RuApp.Views
             else
             {
                 StopTextSweep(textBlock);
-                var targetBrush = item.IsFailed
-                    ? (SolidColorBrush)Application.Current.Resources["RuDangerBrush"]
-                    : (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
+                var targetBrush = (SolidColorBrush)Application.Current.Resources[
+                    Services.ActivityRowTone.BrushKeyFor(item.IsFailed, item.IsWaiting)];
 
                 textBlock.Foreground = targetBrush;
                 // Waiting rows need user action: italic sets them apart without

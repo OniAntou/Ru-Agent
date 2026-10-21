@@ -241,9 +241,21 @@
                 <Button x:Name="CardSubagentsRow" Click="OnCardSubagentsRowClick"
                         Style="{StaticResource SidePanelCardRowStyle}"
                         ToolTipService.ToolTip="View subagents" AutomationProperties.Name="View subagents">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Subagents" FontSize="12" Foreground="{StaticResource RuInkBrush}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
+                    <!-- Same shape as the Changes and Tasks rows: icon and title, then the state. -->
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                            <FontIcon Glyph="&#xE716;"
+                                      FontSize="12"
+                                      Foreground="{StaticResource RuMutedBrush}"
+                                      VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1"
+                                       Text="Subagents"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuInkBrush}"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="18,0,0,0">
                             <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" />
                             <TextBlock x:Name="CardSubagentsSummary" Text="No subagents yet" FontSize="11"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource RuMutedBrush}" />
@@ -257,25 +269,27 @@
                         Style="{StaticResource SidePanelCardRowStyle}"
                         ToolTipService.ToolTip="Open background tasks"
                         AutomationProperties.Name="Open tasks panel">
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                        <FontIcon Glyph="&#xE7C4;"
-                                  FontSize="12"
-                                  Foreground="{StaticResource RuMutedBrush}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1"
-                                   Text="Background tasks"
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                            <FontIcon Glyph="&#xE7C4;"
+                                      FontSize="12"
+                                      Foreground="{StaticResource RuMutedBrush}"
+                                      VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1"
+                                       Text="Background tasks"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuInkBrush}"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                        <TextBlock x:Name="CardTasksStatusText"
+                                   Margin="18,0,0,0"
                                    FontFamily="{StaticResource RuUiFontFamily}"
-                                   FontSize="12"
-                                   Foreground="{StaticResource RuInkBrush}"
-                                   VerticalAlignment="Center" />
-                    </Grid>
+                                   FontSize="11"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
                 </Button>
-
-                <TextBlock x:Name="CardTasksStatusText"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="12"
-                           Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="Wrap" />
 
                 <ScrollViewer MaxHeight="180"
                               HorizontalScrollBarVisibility="Disabled"

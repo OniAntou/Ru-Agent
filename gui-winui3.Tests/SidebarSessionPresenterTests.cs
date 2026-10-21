@@ -33,7 +33,7 @@ public sealed class SidebarSessionPresenterTests
             sessions, null, "C:\\app", new SidebarOrganizationPreferences(), [],
             activeSessionId: "old", activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
 
-        Assert.Equal(new[] { "WORKSPACES", "project", "RECENTS", "CLI SESSION" },
+        Assert.Equal(new[] { "WORKSPACES", "project", "RECENTS", "CLI SESSIONS" },
             result.Rows.Select(row => row switch
             {
                 SidebarSectionRow section => section.Label,
@@ -69,7 +69,21 @@ public sealed class SidebarSessionPresenterTests
             activeSessionId: null, activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
 
         Assert.Equal(
-            new[] { "WORKSPACES", "RECENTS", "CLI SESSION" },
+            new[] { "WORKSPACES", "RECENTS", "CLI SESSIONS" },
             result.Rows.OfType<SidebarSectionRow>().Select(section => section.Label));
+        // Each section says what it holds when it is empty, WORKSPACES included.
+        Assert.Equal(
+            new[] { SidebarSessionPresenter.NoWorkspacesLabel, "No recent sessions", "No CLI sessions" },
+            result.Rows.OfType<SidebarEmptyRow>().Select(empty => empty.Label));
+    }
+
+    [Fact]
+    public void The_workspaces_hint_leaves_once_a_workspace_exists_or_while_searching()
+    {
+        var searching = SidebarSessionPresenter.Build(
+            [], "anything", null, new SidebarOrganizationPreferences(), [],
+            activeSessionId: null, activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
+
+        Assert.DoesNotContain(searching.Rows.OfType<SidebarEmptyRow>(), empty => empty.Label == SidebarSessionPresenter.NoWorkspacesLabel);
     }
 }

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **style(gui)**: The transcript has a hierarchy: settled activity rows recede to the muted tone so the agent's reply reads first, rows that need the user stay ink and italic, failures stay red. The question card leads with the question, the composer labels its reasoning control ("Effort"), the side card's Subagents and Background tasks rows share the Changes row's icon-title-state shape with one wording ("No background tasks"), the sidebar says "CLI SESSIONS" and explains an empty WORKSPACES section, and Settings describes the permission preset.
+
 - **feat(gui)**: Command palette (Ctrl+K) for keyboard-first work: new chat, focus the message box, choose model, stop the run, side panel, Settings pages, updates, theme, permission preset and every session by title or workspace. Commands call the same handlers as their buttons; a permission change takes the Settings path and Full Access still asks to confirm before the next turn.
 - **feat(gui)**: Keyboard shortcuts Ctrl+L (message box), Ctrl+J (side panel), Ctrl+, (Settings) and Ctrl+/ (shortcuts sheet), listed with the existing ones in one catalog that the palette and the sheet both read.
 

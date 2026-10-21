@@ -129,10 +129,7 @@ namespace RuApp.Views
         private readonly WorkspaceTrustMemoryStore _workspaceTrustMemory = new();
         private readonly SessionHistoryPresenter _sessionHistoryPresenter = new();
         private bool _agentActionPending => _sessionHistoryPresenter.IsActionPending;
-        private readonly ComposerLocalStatus _composerLocalStatus = new();
         private bool _isSendingUserTurn;
-        private string? _focusedApprovalId;
-        private string? _focusedInputId;
         private readonly AgentTurnQueue _queuedTurns = new();
         /// <summary>
         /// The transcript, bound to the chat list. A batch collection so the two
@@ -168,6 +165,10 @@ namespace RuApp.Views
             ModelSelection.PickerProjectionReady += OnModelSelectionPickerReady;
             ModelSelection.SelectionChanged += OnModelSelectionChanged;
             this.InitializeComponent();
+            RunPanel.PropertyChanged += OnRunPanelPropertyChanged;
+            RunPanel.ApprovalArrived += OnRunPanelApprovalArrived;
+            RunPanel.QuestionArrived += OnRunPanelQuestionArrived;
+            RunPanel.TrustPromptRequested += OnRunPanelTrustPromptRequested;
             // A size chosen while the transcript is open repaints the rows already on
             // screen; without this only rows created afterwards would pick it up.
             TranscriptTypography.Instance.PropertyChanged += OnTranscriptTypographyChanged;

@@ -97,10 +97,10 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void The_composer_says_which_of_the_two_things_enter_will_do()
     {
-        string update = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSendButtonMode");
-
-        Assert.Contains("AgentComposerPresentation.QueuePlaceholder", update, StringComparison.Ordinal);
-        Assert.Contains("AgentComposerPresentation.MessagePlaceholder", update, StringComparison.Ordinal);
+        // The wording is decided by AgentRunPanelViewModel.ComposerPlaceholder
+        // (AgentRunPanelViewModelTests); the view must paint that value.
+        string face = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ApplySendFace");
+        Assert.Contains("RunPanel.ComposerPlaceholder", face, StringComparison.Ordinal);
     }
 
     [Fact]

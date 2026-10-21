@@ -406,7 +406,7 @@ public sealed class AgentSessionUiSourceContractTests
 
         // The send/stop glyph must stay legible on the solid accent fill in both
         // themes, so the face update paints OnAccent — never Ink or Danger.
-        var sendFace = GuiSource.MethodBody(code, "UpdateSendButtonMode");
+        var sendFace = GuiSource.MethodBody(code, "ApplySendFace");
         Assert.Contains("RuOnAccentBrush", sendFace, StringComparison.Ordinal);
         Assert.DoesNotContain("RuInkBrush", sendFace, StringComparison.Ordinal);
         Assert.DoesNotContain("RuDangerBrush", sendFace, StringComparison.Ordinal);
@@ -479,7 +479,7 @@ public sealed class AgentSessionUiSourceContractTests
         int runGate = RequiredSourceIndex(dialog, "run is null");
         int sessionGate = RequiredSourceIndex(dialog, "run.SessionId, _activeSessionId");
         int requestGate = RequiredSourceIndex(dialog, "controller.NeedsWorkspaceTrust");
-        int guard = RequiredSourceIndex(dialog, "_workspaceTrustDialogRunId = run.RunId");
+        int guard = RequiredSourceIndex(dialog, "RunPanel.TryBeginTrustPrompt");
         int dialogConstruction = RequiredSourceIndex(dialog, "new ContentDialog");
         int show = RequiredSourceIndex(dialog, "await ContentDialogGate.ShowAsync(dialog)");
 
@@ -514,21 +514,13 @@ public sealed class AgentSessionUiSourceContractTests
     [Fact]
     public void Workspace_trust_guard_is_cleared_in_the_actual_finally_block_and_on_reset()
     {
+        // The guard's rules are covered by AgentRunPanelViewModelTests; this pins that the
+        // view releases it from the finally block and on session reset.
         var code = GuiSource.ViewText("ChatView");
-        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
-        string finallyBody = ReadFinallyBody(dialog);
-        int inFlightCleanup = finallyBody.IndexOf(
-            "_workspaceTrustDialogRunId = null",
-            StringComparison.Ordinal);
-        var reset = GuiSource.MethodBody(code, "ResetAgentState");
-        int resetCleanup = RequiredSourceIndex(reset, "_workspaceTrustDialogRunId = null");
-        var changedRunReset = GuiSource.MethodBody(code, "ResetWorkspaceTrustDialogIfRunChanged");
-        int changedRunCheck = RequiredSourceIndex(changedRunReset, "run.SessionId");
-        int changedRunCleanup = RequiredSourceIndex(changedRunReset, "_workspaceTrustDialogRunId = null");
-
-        Assert.True(inFlightCleanup >= 0, "The actual finally block must clear the in-flight guard.");
-        Assert.True(resetCleanup >= 0, "Session reset must clear the trust dialog guard.");
-        Assert.True(changedRunCheck < changedRunCleanup, "Run/session ownership changes must be checked before reset cleanup.");
+        string finallyBody = ReadFinallyBody(GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync"));
+        Assert.Contains("RunPanel.EndTrustPrompt", finallyBody, StringComparison.Ordinal);
+        Assert.Contains("RunPanel.Reset()", GuiSource.MethodBody(code, "ResetAgentState"), StringComparison.Ordinal);
+        Assert.Contains("RunPanel.ForgetTrustIfRunChanged", GuiSource.MethodBody(code, "UpdateAgentInlineState"), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -180,7 +180,7 @@ public sealed class AgentApprovalUiContractTests
         Assert.Contains("\"Remember folder for project\"", show, StringComparison.Ordinal);
 
         string chat = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
-        Assert.Contains("ApprovalPanel.Show(", chat, StringComparison.Ordinal);
+        Assert.Contains("ApprovalPanel.Show(", GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnRunPanelPropertyChanged"), StringComparison.Ordinal);
         Assert.Contains("CanAllowSessionDirectory(", chat, StringComparison.Ordinal);
         Assert.Contains("CanRememberForSession(", chat, StringComparison.Ordinal);
 
@@ -360,15 +360,11 @@ public sealed class AgentApprovalUiContractTests
     [Fact]
     public void The_approval_panel_takes_the_keyboard_once_per_new_approval()
     {
-        // UpdateAgentInlineState reruns on every refresh while a run streams; an
-        // unconditional FocusDecision would steal the keyboard from the rest of
-        // the panel (and the composer) on each repaint.
-        string body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
-
-        int guard = body.IndexOf("_focusedApprovalId", StringComparison.Ordinal);
-        int focus = body.IndexOf("FocusDecision", StringComparison.Ordinal);
-        Assert.True(guard >= 0, "The approval id transition must be tracked.");
-        Assert.True(focus > guard, "FocusDecision must be gated by the approval id transition.");
+        // The once-per-approval rule is AgentRunPanelViewModel.ApprovalArrived
+        // (AgentRunPanelViewModelTests); the view focuses only from that event.
+        string handler = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnRunPanelApprovalArrived");
+        Assert.Contains("FocusDecision", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("FocusDecision", GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState"), StringComparison.Ordinal);
     }
 
     [Fact]

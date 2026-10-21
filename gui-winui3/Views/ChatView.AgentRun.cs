@@ -21,6 +21,7 @@ using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using Windows.Storage.Streams;
 using System.IO;
 
@@ -30,41 +31,24 @@ namespace RuApp.Views
     {
         private long _agentTurnGeneration;
 
-        private void ShowAgentInlineStatus(string status)
-        {
-            _composerLocalStatus.Set(status);
-            ApplyAgentStatusText();
-        }
+        /// <summary>The run panel's state: status line, Stop, send face, approval, question, trust guard.</summary>
+        public AgentRunPanelViewModel RunPanel { get; } = new();
+
+        private void ShowAgentInlineStatus(string status) => RunPanel.ShowLocalStatus(status);
 
         /// <summary>
-        /// Drops local feedback so only actionable run status can remain.
-        /// Without this a transient message ("Submitting approval…") outlives
-        /// the moment it described and masks later actionable feedback.
+        /// Drops local feedback so only actionable run status can remain. Without this a
+        /// transient message ("Submitting approval…") outlives the moment it described.
         /// </summary>
         private void ClearComposerStatus()
         {
-            _composerLocalStatus.Clear();
+            RunPanel.ClearLocalStatus();
             UpdateAgentInlineState();
         }
 
-        /// <summary>
-        /// A composer-local message (a rejected attachment, a picker failure) has no
-        /// run behind it, so AgentInlinePanelPolicy reports the panel hidden and
-        /// <see cref="UpdateAgentInlineState"/> would erase whatever was just written.
-        /// Holding the text here and re-projecting it is what keeps a rejected file
-        /// from being rejected silently. It is cleared by the next composer action
-        /// that replaces the message, or by a turn that starts.
-        /// </summary>
-        private string _localComposerStatus => _composerLocalStatus.Text;
+        private string _localComposerStatus => RunPanel.LocalStatus;
 
-        private void ApplyAgentStatusText()
-        {
-            string text = _localComposerStatus;
-            AgentStatusText.Text = text;
-            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(text)
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-        }
+        private bool _isSendButtonInStopMode => RunPanel.IsRunning;
 
         // The markup binds its initial send face to these, so the XAML and the runtime
         // assignment below read the same vocabulary instead of holding two copies.
@@ -95,106 +79,92 @@ namespace RuApp.Views
             UpdateAgentInlineState();
         }
 
-        private bool _isSendButtonInStopMode;
-        private string? _workspaceTrustDialogRunId;
-        private string? _workspaceTrustDialogSessionId;
-        private string? _workspaceTrustDialogHandledRunId;
-        private string? _workspaceTrustDialogHandledSessionId;
-        private AgentRunController? _workspaceTrustDialogController;
+        private void UpdateSendButtonMode(bool isAgentRunning) => RunPanel.SetRunning(isAgentRunning);
+
+        private void OnRunPanelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(AgentRunPanelViewModel.IsRunning):
+                    ApplySendFace(animate: true);
+                    UpdateQueuedTurnsPanel();
+                    break;
+                case nameof(AgentRunPanelViewModel.IsPanelVisible):
+                    Services.UiMotion.SetVisible(AgentInlinePanel, RunPanel.IsPanelVisible);
+                    break;
+                case nameof(AgentRunPanelViewModel.StatusText):
+                    AgentStatusText.Text = RunPanel.StatusText;
+                    AgentStatusText.Visibility = RunPanel.IsStatusVisible ? Visibility.Visible : Visibility.Collapsed;
+                    break;
+                case nameof(AgentRunPanelViewModel.IsStopVisible):
+                    AgentStopButton.Visibility = RunPanel.IsStopVisible ? Visibility.Visible : Visibility.Collapsed;
+                    break;
+                case nameof(AgentRunPanelViewModel.IsInteractionEnabled):
+                    ApprovalPanel.SetDecisionEnabled(RunPanel.IsInteractionEnabled);
+                    QuestionPanel.SetSubmitEnabled(RunPanel.IsInteractionEnabled);
+                    AgentStopButton.IsEnabled = RunPanel.IsInteractionEnabled;
+                    break;
+                case nameof(AgentRunPanelViewModel.Approval):
+                    if (RunPanel.Approval is { } approval)
+                    {
+                        ApprovalPanel.Show(
+                            approval.Summary,
+                            approval.TerminalCommand,
+                            approval.CanAllowSessionDirectory,
+                            approval.CanRememberAllowAlways,
+                            approval.CanRememberForSession);
+                    }
+                    else
+                    {
+                        ApprovalPanel.Hide();
+                    }
+
+                    break;
+                case nameof(AgentRunPanelViewModel.Question):
+                    if (RunPanel.Question is { } question)
+                    {
+                        QuestionPanel.Show(question.InputId, question.Question, question.Options);
+                    }
+                    else
+                    {
+                        QuestionPanel.Hide();
+                    }
+
+                    break;
+            }
+        }
 
         /// <summary>
-        /// Earliest time the trust prompt may be attempted again after a dialog
-        /// failure. The failure path itself refreshes the inline state, which
-        /// would otherwise re-enter the prompt immediately; the cooldown leaves
-        /// the retry to the monitor's next refresh instead of looping.
+        /// The two faces occupy the same box, so a cross-fade reads as one button turning
+        /// over instead of a glyph blinking into a different one.
         /// </summary>
-        private DateTimeOffset _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
-
-        private void UpdateSendButtonMode(bool isAgentRunning)
+        private void ApplySendFace(bool animate)
         {
             if (SendButton is null) return;
-
-            bool faceChanged = _isSendButtonInStopMode != isAgentRunning;
-            _isSendButtonInStopMode = isAgentRunning;
+            AutomationProperties.SetName(SendButton, RunPanel.SendName);
+            if (ChatInputTextBox is not null) ChatInputTextBox.PlaceholderText = RunPanel.ComposerPlaceholder;
+            if (SendButtonIcon is null) return;
 
             void ApplyFace()
             {
-                if (SendButtonIcon is null)
-                {
-                    return;
-                }
-
-                SendButtonIcon.Glyph = isAgentRunning
-                    ? AgentComposerPresentation.StopGlyph
-                    : AgentComposerPresentation.SendGlyph;
-                SendButtonIcon.Margin = isAgentRunning ? new Thickness(0) : new Thickness(-1, 1, 0, 0);
+                SendButtonIcon.Glyph = RunPanel.SendGlyph;
+                SendButtonIcon.Margin = RunPanel.IsRunning ? new Thickness(0) : new Thickness(-1, 1, 0, 0);
                 if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccent) && onAccent is Brush onAccentBrush)
                 {
                     SendButtonIcon.Foreground = onAccentBrush;
                 }
             }
 
-            AutomationProperties.SetName(
-                SendButton,
-                isAgentRunning ? AgentComposerPresentation.StopName : AgentComposerPresentation.SendName);
-
-            // The two faces occupy the same box, so a cross-fade reads as one button
-            // turning over instead of a glyph blinking into a different one. Repeat
-            // calls with the same face re-apply instantly and never animate.
-            if (faceChanged && SendButtonIcon is not null)
-            {
-                Services.UiMotion.SwapContent(SendButtonIcon, ApplyFace);
-            }
-            else
-            {
-                ApplyFace();
-            }
-
-            // The composer says which of the two things Enter will do, so a second
-            // thought is never typed into a box that silently swallows it.
-            if (ChatInputTextBox is not null)
-            {
-                ChatInputTextBox.PlaceholderText = isAgentRunning
-                    ? AgentComposerPresentation.QueuePlaceholder
-                    : AgentComposerPresentation.MessagePlaceholder;
-            }
-
-            UpdateQueuedTurnsPanel();
+            if (animate) Services.UiMotion.SwapContent(SendButtonIcon, ApplyFace);
+            else ApplyFace();
         }
 
-        private void ResetWorkspaceTrustDialogIfRunChanged(AgentRunController? controller)
-        {
-            bool hasInFlightGuard = _workspaceTrustDialogRunId is not null;
-            bool hasHandledRun = _workspaceTrustDialogHandledRunId is not null;
-            if (!hasInFlightGuard && !hasHandledRun)
-            {
-                return;
-            }
+        /// <summary>Approval arrives via SSE while the user may be scrolled up; put the keyboard on it once.</summary>
+        private void OnRunPanelApprovalArrived() => ApprovalPanel.FocusDecision();
 
-            var run = controller?.CurrentRun;
-            bool sameController = ReferenceEquals(_workspaceTrustDialogController, controller);
-            bool sameRun = run is not null
-                && ((hasInFlightGuard
-                        && string.Equals(run.RunId, _workspaceTrustDialogRunId, StringComparison.Ordinal))
-                    || (hasHandledRun
-                        && string.Equals(run.RunId, _workspaceTrustDialogHandledRunId, StringComparison.Ordinal)));
-            bool sameSession = run is not null
-                && string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
-                && ((hasInFlightGuard
-                        && string.Equals(run.SessionId, _workspaceTrustDialogSessionId, StringComparison.Ordinal))
-                    || (hasHandledRun
-                        && string.Equals(run.SessionId, _workspaceTrustDialogHandledSessionId, StringComparison.Ordinal)));
+        private void OnRunPanelQuestionArrived() => QuestionPanel.FocusAnswer();
 
-            if (!sameController || !sameRun || !sameSession)
-            {
-                _workspaceTrustDialogRunId = null;
-                _workspaceTrustDialogSessionId = null;
-                _workspaceTrustDialogHandledRunId = null;
-                _workspaceTrustDialogHandledSessionId = null;
-                _workspaceTrustDialogController = null;
-                _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
-            }
-        }
+        private void OnRunPanelTrustPromptRequested() => ShowWorkspaceTrustDialogAsync();
 
         private void UpdateAgentInlineState()
         {
@@ -202,7 +172,8 @@ namespace RuApp.Views
             if (_agentController?.CurrentRun is { } presented && presented.SessionId == _activeSessionId)
                 _sidePanelTasksRunId = presented.RunId;
             SidePanel.BindSubagents(_agentController?.SubagentClient, ResolveSidePanelTaskRunId());
-            ResetWorkspaceTrustDialogIfRunChanged(_agentController);
+            RunPanel.ForgetTrustIfRunChanged(
+                _agentController, _agentController?.CurrentRun?.RunId, _agentController?.CurrentRun?.SessionId, _activeSessionId);
             bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
             if (_agentBusySeen && !agentBusy)
             {
@@ -211,8 +182,8 @@ namespace RuApp.Views
 
             _agentBusySeen = agentBusy;
 
-            // The rules live in AgentInlinePanelPolicy; this method only projects the
-            // controller and assigns the result to controls.
+            // The rules live in AgentInlinePanelPolicy and the state around them in
+            // RunPanel; this method only projects the controller into them.
             var controller = _agentController;
             var hasController = controller is not null;
             bool runBelongsToAnotherSession = controller?.CurrentRun is { } currentRun
@@ -230,109 +201,45 @@ namespace RuApp.Views
                     HasRenderedAgentReply())
                 : string.Empty;
 
-            var state = AgentInlinePanelPolicy.Evaluate(new AgentInlinePanelInput(
-                HasController: hasController,
-                RunBelongsToAnotherSession: runBelongsToAnotherSession,
-                IsBusy: controller?.IsBusy == true,
-                CanCancel: controller?.CanCancel == true,
-                HasPendingApproval: controller?.HasPendingApproval == true,
-                HasPendingInput: controller?.HasPendingInput == true,
-                NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
-                CanContinue: controller?.CanContinue == true,
-                KeepTerminalFailureVisible: keepTerminalFailureVisible,
-                RunPending: IsActiveAgentRunPending(),
-                StatusText: statusText,
-                InteractionPending: _agentActionPending));
-
-            UpdateSendButtonMode(isAgentRunning: state.IsRunning);
-            UpdateSidePanel(state.IsRunning);
-
-            if (state.ShowWorkspaceTrust)
-            {
-                ShowWorkspaceTrustDialogAsync();
-            }
-
-            Services.UiMotion.SetVisible(
-                AgentInlinePanel,
-                state.ShowInlinePanel || _localComposerStatus.Length > 0);
-
-            // A composer-local message outlives the refresh that would otherwise
-            // blank it: the panel policy only knows about runs.
-            if (_localComposerStatus.Length > 0)
-            {
-                ApplyAgentStatusText();
-            }
-            else
-            {
-                AgentStatusText.Text = state.ShowInlinePanel ? state.StatusText : string.Empty;
-                AgentStatusText.Visibility = string.IsNullOrWhiteSpace(AgentStatusText.Text)
-                    ? Visibility.Collapsed
-                    : Visibility.Visible;
-            }
-            AgentStopButton.Visibility = state.ShowStop ? Visibility.Visible : Visibility.Collapsed;
-
-            if (state.ShowApproval && controller is not null)
-            {
-                string summary = AgentApprovalSummaryPresentation.Render(
-                    controller.PendingApprovalSummary);
-                string? terminalCommand = AgentApprovalPresentation.ResolveTerminalCommand(
-                    controller.PendingApprovalCommand,
-                    AgentActivities);
-
-                ApprovalPanel.Show(
-                    summary,
-                    terminalCommand,
+            AgentApprovalPrompt? approval = controller is { HasPendingApproval: true }
+                ? new AgentApprovalPrompt(
+                    controller.PendingApprovalId ?? string.Empty,
+                    AgentApprovalSummaryPresentation.Render(controller.PendingApprovalSummary),
+                    AgentApprovalPresentation.ResolveTerminalCommand(controller.PendingApprovalCommand, AgentActivities),
                     AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary),
                     AgentApprovalPresentation.CanRememberAllowAlways(controller.PendingApprovalSummary),
-                    AgentApprovalPresentation.CanRememberForSession(controller.PendingApprovalSummary));
-
-                // Approval arrives via SSE while the user may be scrolled up; bring
-                // the Approve/Deny prompt into view and put the keyboard on it. The
-                // focus move happens once per new approval only: this projection
-                // reruns on every refresh while the panel is open, and re-grabbing
-                // the keyboard would make the rest of the panel unusable.
-                ScrollChatToBottom();
-                if (!string.Equals(_focusedApprovalId, controller.PendingApprovalId, StringComparison.Ordinal))
-                {
-                    _focusedApprovalId = controller.PendingApprovalId;
-                    ApprovalPanel.FocusDecision();
-                }
-            }
-            else
-            {
-                _focusedApprovalId = null;
-                ApprovalPanel.Hide();
-            }
-
-            if (state.ShowQuestion && controller is not null)
-            {
-                QuestionPanel.Show(
+                    AgentApprovalPresentation.CanRememberForSession(controller.PendingApprovalSummary))
+                : null;
+            AgentQuestionPrompt? question = controller is { HasPendingInput: true }
+                ? new AgentQuestionPrompt(
                     controller.PendingInputId ?? string.Empty,
                     AgentQuestionPresentation.RenderQuestion(controller.PendingInputQuestion),
-                    AgentQuestionPresentation.RenderOptions(controller.PendingInputOptions));
+                    AgentQuestionPresentation.RenderOptions(controller.PendingInputOptions))
+                : null;
 
-                // The question arrives via SSE while the user may be scrolled up;
-                // bring the card into view and put the keyboard in the answer box.
-                // The focus move happens once per new question only, for the same
-                // reason the approval prompt tracks its id.
+            RunPanel.Evaluate(new AgentRunPanelInput(
+                new AgentInlinePanelInput(
+                    HasController: hasController,
+                    RunBelongsToAnotherSession: runBelongsToAnotherSession,
+                    IsBusy: controller?.IsBusy == true,
+                    CanCancel: controller?.CanCancel == true,
+                    HasPendingApproval: controller?.HasPendingApproval == true,
+                    HasPendingInput: controller?.HasPendingInput == true,
+                    NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
+                    CanContinue: controller?.CanContinue == true,
+                    KeepTerminalFailureVisible: keepTerminalFailureVisible,
+                    RunPending: IsActiveAgentRunPending(),
+                    StatusText: statusText,
+                    InteractionPending: _agentActionPending),
+                approval,
+                question));
+
+            UpdateSidePanel(RunPanel.IsRunning);
+
+            // A prompt that arrived while the reader scrolled up is brought back into view.
+            if (RunPanel.Approval is not null || RunPanel.Question is not null)
+            {
                 ScrollChatToBottom();
-                if (!string.Equals(_focusedInputId, controller.PendingInputId, StringComparison.Ordinal))
-                {
-                    _focusedInputId = controller.PendingInputId;
-                    QuestionPanel.FocusAnswer();
-                }
-            }
-            else
-            {
-                _focusedInputId = null;
-                QuestionPanel.Hide();
-            }
-
-            ApprovalPanel.SetDecisionEnabled(!state.SuppressInteraction);
-            QuestionPanel.SetSubmitEnabled(!state.SuppressInteraction);
-            if (AgentStopButton is not null)
-            {
-                AgentStopButton.IsEnabled = !state.SuppressInteraction;
             }
         }
 
@@ -340,40 +247,16 @@ namespace RuApp.Views
         {
             var controller = _agentController;
             var run = controller?.CurrentRun;
-            if (_workspaceTrustDialogRunId is not null)
-            {
-                return;
-            }
-
             if (controller is null
                 || run is null
                 || !string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
                 || !controller.NeedsWorkspaceTrust
-                || XamlRoot is null)
+                || XamlRoot is null
+                || !RunPanel.TryBeginTrustPrompt(controller, run.RunId, run.SessionId, DateTimeOffset.UtcNow))
             {
                 return;
             }
 
-            if (DateTimeOffset.UtcNow < _workspaceTrustPromptRetryAfter)
-            {
-                // A failed prompt set a short cooldown: the refresh that follows
-                // the failure must not re-enter the prompt immediately. The
-                // monitor's next refresh retries once the cooldown elapses.
-                return;
-            }
-
-            if (_workspaceTrustDialogHandledRunId is not null
-                && ReferenceEquals(_workspaceTrustDialogController, controller)
-                && string.Equals(_workspaceTrustDialogHandledRunId, run.RunId, StringComparison.Ordinal)
-                && string.Equals(_workspaceTrustDialogHandledSessionId, run.SessionId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _workspaceTrustPromptRetryAfter = DateTimeOffset.MinValue;
-            _workspaceTrustDialogRunId = run.RunId;
-            _workspaceTrustDialogSessionId = run.SessionId;
-            _workspaceTrustDialogController = controller;
             _sessionHistoryPresenter.SetActionPending(true);
             UpdateAgentInlineState();
 
@@ -394,7 +277,7 @@ namespace RuApp.Views
 
                 ContentDialogResult result = await ContentDialogGate.ShowAsync(dialog);
                 bool isCurrentRequest = ReferenceEquals(_agentController, controller)
-                    && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
+                    && RunPanel.OwnsTrustPrompt(controller, run.RunId, run.SessionId)
                     && controller.CurrentRun is { } currentRun
                     && string.Equals(currentRun.RunId, run.RunId, StringComparison.Ordinal)
                     && string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal)
@@ -407,9 +290,8 @@ namespace RuApp.Views
                 if (result == ContentDialogResult.Primary)
                 {
                     await controller.TrustAsync(approve: true);
-                    // Only an accepted approval reaches this line: the client throws
-                    // on a rejected decision, so the memory cannot claim a trust the
-                    // Host never recorded.
+                    // Only an accepted approval reaches this line: the client throws on a
+                    // rejected decision, so the memory cannot claim a trust the Host never recorded.
                     _workspaceTrustMemory.Remember(_agentWorkspace, run.DisplayIdentityHash);
                 }
                 else
@@ -423,34 +305,11 @@ namespace RuApp.Views
             }
             finally
             {
-                bool ownsGuard = ReferenceEquals(_workspaceTrustDialogController, controller)
-                    && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
-                    && string.Equals(_workspaceTrustDialogSessionId, run.SessionId, StringComparison.Ordinal);
-                bool retryable = failure is not null && ContentDialogGate.IsDialogConflict(failure);
-                if (retryable)
-                {
-                    // Set before the state refresh below, so the refresh that this
-                    // failure triggers cannot re-enter the prompt immediately.
-                    _workspaceTrustPromptRetryAfter = DateTimeOffset.UtcNow.AddSeconds(1);
-                }
-
-                if (ownsGuard)
-                {
-                    if (!retryable)
-                    {
-                        // Only an answered prompt (or a non-dialog failure) counts
-                        // as handled. A prompt that never opened must be offered
-                        // again: the run is parked on trust, and the monitor
-                        // refresh retries within its interval.
-                        _workspaceTrustDialogHandledRunId = run.RunId;
-                        _workspaceTrustDialogHandledSessionId = run.SessionId;
-                    }
-
-                    _workspaceTrustDialogRunId = null;
-                    _workspaceTrustDialogSessionId = null;
-                }
-
-                if (_workspaceTrustDialogRunId is null)
+                // A prompt that could not open (another dialog was up) is retried by the
+                // next monitor refresh after a short cooldown, not counted as answered.
+                bool couldNotOpen = failure is not null && ContentDialogGate.IsDialogConflict(failure);
+                bool ownsGuard = RunPanel.EndTrustPrompt(controller, run.RunId, run.SessionId, couldNotOpen, DateTimeOffset.UtcNow);
+                if (!RunPanel.IsTrustPromptOpen)
                 {
                     _sessionHistoryPresenter.SetActionPending(false);
                     UpdateAgentInlineState();
@@ -458,10 +317,8 @@ namespace RuApp.Views
 
                 if (failure is not null && ownsGuard)
                 {
-                    if (retryable)
+                    if (couldNotOpen)
                     {
-                        // A prompt that could not open is not a start failure:
-                        // say what happened and let the next refresh retry it.
                         ShowAgentInlineStatus("Could not open the workspace trust prompt. Close any open dialog; the prompt will reappear.");
                     }
                     else
@@ -568,11 +425,6 @@ namespace RuApp.Views
 
             _sessionPresentation.StopMonitoring();
             _sessionHistoryPresenter.SetActionPending(false);
-            _workspaceTrustDialogRunId = null;
-            _workspaceTrustDialogSessionId = null;
-            _workspaceTrustDialogHandledRunId = null;
-            _workspaceTrustDialogHandledSessionId = null;
-            _workspaceTrustDialogController = null;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
             // The preset is deliberately not reset here. It is session-scoped
@@ -586,13 +438,7 @@ namespace RuApp.Views
             AbandonActiveAgentReply(preservePresentation: preserveTranscript);
 
             UpdateAgentComposerVisuals();
-            Services.UiMotion.SetVisible(AgentInlinePanel, false);
-            ApprovalPanel.Hide();
-            QuestionPanel.Hide();
-            AgentStopButton.Visibility = Visibility.Collapsed;
-            _composerLocalStatus.Clear();
-            ApplyAgentStatusText();
-            UpdateSendButtonMode(isAgentRunning: false);
+            RunPanel.Reset();
         }
 
 

@@ -304,15 +304,11 @@ public sealed class AgentQuestionUiContractTests
     [Fact]
     public void The_question_panel_takes_the_keyboard_once_per_new_question()
     {
-        // UpdateAgentInlineState reruns on every refresh while a run streams; the
-        // focus move must be gated by the input id transition, exactly like the
-        // approval prompt's.
-        string body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState");
-
-        int guard = body.IndexOf("_focusedInputId", StringComparison.Ordinal);
-        int focus = body.IndexOf("FocusAnswer", StringComparison.Ordinal);
-        Assert.True(guard >= 0, "The input id transition must be tracked.");
-        Assert.True(focus > guard, "FocusAnswer must be gated by the input id transition.");
+        // The once-per-question rule is AgentRunPanelViewModel.QuestionArrived
+        // (AgentRunPanelViewModelTests); the view focuses only from that event.
+        string handler = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OnRunPanelQuestionArrived");
+        Assert.Contains("FocusAnswer", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("FocusAnswer", GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateAgentInlineState"), StringComparison.Ordinal);
     }
 
     [Fact]

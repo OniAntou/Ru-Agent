@@ -917,6 +917,10 @@ namespace RuApp.Views
             ModelSelection.PickerProjectionReady -= OnModelSelectionPickerReady;
             ModelSelection.SelectionChanged -= OnModelSelectionChanged;
             ModelSelection.Dispose();
+            RunPanel.PropertyChanged -= OnRunPanelPropertyChanged;
+            RunPanel.ApprovalArrived -= OnRunPanelApprovalArrived;
+            RunPanel.QuestionArrived -= OnRunPanelQuestionArrived;
+            RunPanel.TrustPromptRequested -= OnRunPanelTrustPromptRequested;
             StopTaskRefreshTimer();
             SidePanel?.CancelVisibilityAnimations();
             _taskRefreshCancellation?.Cancel();

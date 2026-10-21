@@ -86,8 +86,7 @@ public sealed class ShellMotionContractTests
                  {
                      "UpdateTodoPanel",
                      "ClearTodoPanel",
-                     "UpdateAgentInlineState",
-                     "ResetAgentState",
+                     "OnRunPanelPropertyChanged",
                      "UpdateQueuedTurnsPanel",
                  })
         {
@@ -138,14 +137,13 @@ public sealed class ShellMotionContractTests
     [Fact]
     public void The_send_button_cross_fades_between_send_and_stop()
     {
-        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSendButtonMode");
-
-        Assert.Contains("UiMotion.SwapContent", body, StringComparison.Ordinal);
-        // Only a real face change animates; repeat calls with the same face
-        // re-apply instantly so a refresh storm cannot strobe the button.
-        Assert.Contains("faceChanged", body, StringComparison.Ordinal);
-        Assert.Contains("StopGlyph", body, StringComparison.Ordinal);
-        Assert.Contains("SendGlyph", body, StringComparison.Ordinal);
+        var code = GuiSource.ViewText("ChatView");
+        var face = GuiSource.MethodBody(code, "ApplySendFace");
+        Assert.Contains("UiMotion.SwapContent", face, StringComparison.Ordinal);
+        Assert.Contains("RunPanel.SendGlyph", face, StringComparison.Ordinal);
+        // Only a real face change animates: IsRunning raises a change only when the
+        // value flips (AgentRunPanelViewModelTests), and only that change animates.
+        Assert.Contains("ApplySendFace(animate: true)", GuiSource.MethodBody(code, "OnRunPanelPropertyChanged"), StringComparison.Ordinal);
     }
 
     [Fact]

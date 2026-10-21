@@ -1140,7 +1140,7 @@
 
                                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock x:Name="ChatModelLabel"
-                                                Text="Model…"
+                                                Text="{x:Bind ModelSelection.ModelLabel, Mode=OneWay}"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}"
@@ -1148,20 +1148,21 @@
                                                 TextTrimming="CharacterEllipsis"
                                                 VerticalAlignment="Center" />
                                     <TextBlock x:Name="ChatModelSaveStatusText"
+                                               Text="{x:Bind ModelSelection.ModelSaveFailure, Mode=OneWay}"
                                                Foreground="{StaticResource RuDangerBrush}"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="10"
                                                TextTrimming="CharacterEllipsis"
                                                MaxWidth="120"
                                                VerticalAlignment="Center"
-                                               Visibility="Collapsed" />
+                                               Visibility="{x:Bind ModelSelection.HasModelSaveFailure, Mode=OneWay}" />
                                     <FontIcon Glyph="&#xE70D;"
                                                FontSize="9"
                                                Foreground="{StaticResource RuMutedBrush}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
                                 <Button.Flyout>
-                                    <Flyout x:Name="ChatModelFlyout" Placement="Top" Opened="OnChatModelFlyoutOpened">
+                                    <Flyout x:Name="ChatModelFlyout" Placement="Top" Opened="OnChatModelFlyoutOpened" Closed="OnChatModelFlyoutClosed">
                                         <Flyout.FlyoutPresenterStyle>
                                             <Style TargetType="FlyoutPresenter">
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
@@ -1191,7 +1192,7 @@
 
                             <Button x:Name="ChatReasoningButton"
                                     AutomationProperties.AutomationId="ChatReasoningButton"
-                                    AutomationProperties.Name="Select Reasoning Effort"
+                                    AutomationProperties.Name="{x:Bind ModelSelection.EffortAutomationName, Mode=OneWay}"
                                     Padding="6,4"
                                     Margin="0"
                                     CornerRadius="{StaticResource AppControlCornerRadius}"
@@ -1200,7 +1201,7 @@
 
                                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock x:Name="ChatReasoningLabel"
-                                               Text="default"
+                                               Text="{x:Bind ModelSelection.EffortLabel, Mode=OneWay}"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}"

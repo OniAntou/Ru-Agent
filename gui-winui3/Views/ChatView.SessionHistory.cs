@@ -914,8 +914,9 @@ namespace RuApp.Views
         {
             SidePanel.SubagentsChanged -= OnSubagentsChanged;
         SidePanel.DisposeSubagents();
-            _modelSelectionPresenter.Invalidate();
-            _reasoningSelectionSaves.Invalidate();
+            ModelSelection.PickerProjectionReady -= OnModelSelectionPickerReady;
+            ModelSelection.SelectionChanged -= OnModelSelectionChanged;
+            ModelSelection.Dispose();
             StopTaskRefreshTimer();
             SidePanel?.CancelVisibilityAnimations();
             _taskRefreshCancellation?.Cancel();
@@ -930,19 +931,6 @@ namespace RuApp.Views
                 _contextMeterTimer.Stop();
                 _contextMeterTimer = null;
             }
-            if (_modelSearchDebounce is not null)
-            {
-                _modelSearchDebounce.Tick -= OnModelSearchDebounceTick;
-                _modelSearchDebounce.Stop();
-                _modelSearchDebounce = null;
-            }
-            if (_groupedPublishCoalesceTimer is not null)
-            {
-                _groupedPublishCoalesceTimer.Tick -= OnGroupedPublishCoalesceTick;
-                _groupedPublishCoalesceTimer.Stop();
-                _groupedPublishCoalesceTimer = null;
-            }
-            _pendingGroupedState = null;
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
             _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;
@@ -950,17 +938,10 @@ namespace RuApp.Views
             RootGrid.SizeChanged -= OnRootGridSizeChanged;
             ChatListView.ContainerContentChanging -= OnChatContainerContentChanging;
             this.Loaded -= OnChatViewLoaded;
-            if (_modelSaveFailureTimer != null)
-            {
-                _modelSaveFailureTimer.Stop();
-                _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
-                _modelSaveFailureTimer = null;
-            }
             if (_providerCatalogController != null)
             {
                 var catalog = _providerCatalogController;
                 bool owns = _ownsProviderCatalogController;
-                catalog.StateChanged -= OnProviderCatalogStateChanged;
                 _providerCatalogController = null;
                 if (owns)
                 {
@@ -979,7 +960,6 @@ namespace RuApp.Views
             {
                 var grouped = _groupedCatalogs;
                 bool ownsGrouped = _ownsGroupedCatalogs;
-                grouped.StateChanged -= OnGroupedStateChanged;
                 _groupedCatalogs = null;
                 if (ownsGrouped)
                 {

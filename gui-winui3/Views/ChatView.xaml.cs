@@ -21,6 +21,7 @@ using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using Windows.Storage.Streams;
 using System.IO;
 
@@ -157,6 +158,15 @@ namespace RuApp.Views
 
         public ChatView()
         {
+            ModelSelection = new ChatModelPickerViewModel(action =>
+            {
+                if (!DispatcherQueue.TryEnqueue(() => action()))
+                {
+                    GuiDiagnosticWriter.AppendTraceLine("[ChatView] dispatcher rejected a model selection update.");
+                }
+            });
+            ModelSelection.PickerProjectionReady += OnModelSelectionPickerReady;
+            ModelSelection.SelectionChanged += OnModelSelectionChanged;
             this.InitializeComponent();
             // A size chosen while the transcript is open repaints the rows already on
             // screen; without this only rows created afterwards would pick it up.
@@ -329,16 +339,6 @@ namespace RuApp.Views
         private bool _ownsProviderCatalogController;
         private GroupedProviderCatalogController? _groupedCatalogs;
         private bool _ownsGroupedCatalogs;
-        private string _selectedModel = string.Empty;
-        private string _selectedBackend = string.Empty;
-
-        /// <summary>
-        /// The last settings payload read from the backend, used to name the provider
-        /// that is missing a key without a second request while reporting a failure.
-        /// </summary>
-        private AppSettingsDto? _currentSettings;
-        private string _selectedReasoningEffort = "default";
-        private DispatcherTimer? _modelSaveFailureTimer;
 
         public void Initialize(
             ApiService apiService,
@@ -362,8 +362,7 @@ namespace RuApp.Views
             _ownsProviderCatalogController = providerCatalogController == null;
             _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsGroupedCatalogs = groupedProviderCatalogs == null;
-            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
-            _groupedCatalogs.StateChanged += OnGroupedStateChanged;
+            AttachModelSelection();
             _agentController?.PropertyChanged += OnAgentControllerChanged;
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
@@ -391,7 +390,6 @@ namespace RuApp.Views
             ProviderCatalogController? providerCatalogController,
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
-            _reasoningSelectionSaves.Invalidate();
             _apiService = apiService;
             if (_ownsProviderCatalogController && _providerCatalogController is not null)
             {
@@ -416,14 +414,6 @@ namespace RuApp.Views
                     TaskContinuationOptions.OnlyOnFaulted,
                     TaskScheduler.Default);
             }
-            if (_providerCatalogController != null)
-            {
-                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
-            }
-            if (_groupedCatalogs != null)
-            {
-                _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
-            }
             if (_agentController != null)
             {
                 _agentController.PropertyChanged -= OnAgentControllerChanged;
@@ -441,8 +431,7 @@ namespace RuApp.Views
             _ownsProviderCatalogController = providerCatalogController == null;
             _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsGroupedCatalogs = groupedProviderCatalogs == null;
-            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
-            _groupedCatalogs.StateChanged += OnGroupedStateChanged;
+            AttachModelSelection();
 
             if (_agentController != null)
             {

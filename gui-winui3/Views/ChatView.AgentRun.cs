@@ -1559,9 +1559,9 @@ namespace RuApp.Views
             // A send that failed because no provider is configured is the first
             // failure a new user meets. Saying which provider is missing a key, and
             // offering the screen that fixes it, turns a dead end into one click.
-            if (ProviderSetupGuidance.IsMissingKey(_currentSettings, _selectedBackend))
+            if (ProviderSetupGuidance.IsMissingKey(ModelSelection.CurrentSettings, ModelSelection.Backend))
             {
-                status = ProviderSetupGuidance.MissingKeyMessage(_currentSettings, _selectedBackend);
+                status = ProviderSetupGuidance.MissingKeyMessage(ModelSelection.CurrentSettings, ModelSelection.Backend);
                 ShowAgentInlineStatus(status);
                 ShowProviderSetupCard(status);
                 AgentStopButton.Visibility = Visibility.Collapsed;

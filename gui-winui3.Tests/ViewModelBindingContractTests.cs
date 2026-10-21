@@ -13,21 +13,20 @@ namespace RuApp.Tests;
 public sealed partial class ViewModelBindingContractTests
 {
     [Theory]
-    [InlineData("SettingsView.xaml", typeof(SettingsViewModel))]
-    public void View_bindings_name_public_view_model_members(string view, Type viewModel)
+    [InlineData("SettingsView.xaml", "ViewModel", typeof(SettingsViewModel))]
+    [InlineData("ChatView.xaml", "ModelSelection", typeof(ChatModelPickerViewModel))]
+    public void View_bindings_name_public_view_model_members(string view, string property, Type viewModel)
     {
         string markup = GuiSource.Text("Views", view);
-        var members = ViewModelPath().Matches(markup).Select(match => match.Groups[1].Value).Distinct().ToArray();
+        var path = new Regex(@"\{x:Bind\s+(?:\w+\()?" + property + @"\.(\w+)");
+        var members = path.Matches(markup).Select(match => match.Groups[1].Value).Distinct().ToArray();
 
         Assert.NotEmpty(members);
         foreach (string member in members)
         {
             Assert.True(
                 viewModel.GetMember(member, BindingFlags.Public | BindingFlags.Instance).Length > 0,
-                $"{view} binds ViewModel.{member}, which {viewModel.Name} does not expose.");
+                $"{view} binds {property}.{member}, which {viewModel.Name} does not expose.");
         }
     }
-
-    [GeneratedRegex(@"\{x:Bind\s+(?:\w+\()?ViewModel\.(\w+)")]
-    private static partial Regex ViewModelPath();
 }

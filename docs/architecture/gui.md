@@ -27,6 +27,13 @@ sign-out and connection test. A credential stays in a key property only until it
 is saved, validated or removed. Every provider-dependent value (label, key rows,
 sign-out) is derived in one place from the current choice, so resolving an unset
 or legacy stored choice cannot leave a stale label or a hidden key row.
+`SessionSidebarViewModel` owns the sidebar's session list (server rows merged in
+place with local drafts), workspace grouping, pins, search, manual organization,
+refresh and the create, select and delete workflows. `MainWindow` keeps native
+list selection, drag visuals, title waves and dialogs; it re-syncs selection on
+`Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
+A delete removes the row as soon as the Host confirms it, then refreshes with
+`RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}` names a
 public member of the bound view model.
 

@@ -21,6 +21,7 @@ using RuAgent.Protocol.Harness;
 using RuApp.Controls;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using Windows.Storage.Streams;
 using System.IO;
 
@@ -45,366 +46,54 @@ namespace RuApp.Views
         private Brush? _reasoningCursorBrush;
         private Brush? _reasoningRestBrush;
 
-        public async Task LoadChatModelsAsync()
+        /// <summary>The composer's provider/model and reasoning-effort state.</summary>
+        public ChatModelPickerViewModel ModelSelection { get; }
+
+        public Task LoadChatModelsAsync() => ModelSelection.LoadAsync();
+
+        /// <summary>
+        /// The catalog for the selected backend, or null when none has arrived; the
+        /// session usage panel prices runs from it.
+        /// </summary>
+        public ProviderCatalogState? ProviderCatalogState => ModelSelection.SelectedCatalog;
+
+        private void AttachModelSelection()
         {
-            if (_apiService == null) return;
-            try
-            {
-                var settings = await _apiService.GetSettingsAsync();
-                if (settings == null) return;
-                // Kept so a failed send can name the provider that has no key
-                // without asking the backend again while reporting a failure.
-                _currentSettings = settings;
-                _modelSelectionPresenter.Adopt(settings);
-                string backend = _modelSelectionPresenter.Backend;
-                string currentModel = _modelSelectionPresenter.Model;
-                _selectedModel = currentModel;
-                _selectedBackend = backend;
-                _groupedCatalogs?.SetSelection(backend, currentModel);
-                await RefreshModelsDevGroupsAsync();
-                ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, currentModel);
-                if (_providerCatalogController != null)
-                {
-                    _providerCatalogController.SetBackend(backend);
-                    await _providerCatalogController.RefreshAsync();
-                }
-                if (_groupedCatalogs != null)
-                {
-                    await _groupedCatalogs.RefreshAsync(force: false);
-                }
-                UpdateReasoningEffortUi();
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error loading models: {ex.Message}");
-            }
+            if (_apiService is null || _providerCatalogController is null || _groupedCatalogs is null) return;
+            ModelSelection.Attach(
+                new ApiChatModelBackend(_apiService),
+                new ProviderCatalogSession(_providerCatalogController),
+                new GroupedCatalogSession(_groupedCatalogs));
         }
+
+        private void OnModelSelectionPickerReady(ProviderModelPickerProjection projection) => ModelPicker.Apply(projection);
+
+        private void OnModelSelectionChanged() => UpdateContextUsage();
 
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
             ModelPicker.FocusSearch();
-            // The tree is only built while the flyout is open (see
-            // ApplyGroupedState), so paint the newest state now if background
-            // publishes marked it dirty: they skip the rebuild while closed.
-            if (_modelPickerDirty && _groupedCatalogs != null)
-            {
-                ApplyPickerProjection(_groupedCatalogs.State);
-            }
-
-            // Due-based, not forced: opening the picker fanned out one forced
-            // refresh per child (two hundred concurrent GET /models), which is
-            // what made the dropdown lag on open. The selected backend is always
-            // refreshed through the single controller; the rest only refetch
-            // when their poll interval lapsed.
-            _ = RefreshGroupedCatalogsAsync(force: false);
+            ModelSelection.OnPickerOpened();
         }
 
-        private async Task RefreshGroupedCatalogsAsync(bool force)
-        {
-            if (_groupedCatalogs == null) return;
-            await RefreshModelsDevGroupsAsync();
-            await _groupedCatalogs.RefreshAsync(force);
-        }
+        private void OnChatModelFlyoutClosed(object sender, object e) => ModelSelection.OnPickerClosed();
 
-        /// <summary>
-        /// Pulls the Models.dev provider list so the picker grows a group per
-        /// generic provider. Best-effort: an empty list keeps the fixed five.
-        /// </summary>
-        private async Task RefreshModelsDevGroupsAsync()
-        {
-            if (_apiService == null || _groupedCatalogs == null) return;
-            try
-            {
-                var providers = await _apiService.GetModelsDevAsync();
-                await _groupedCatalogs.SetModelsDevProvidersAsync(
-                    providers.Select(entry => new ModelsDevEntry(entry.Id, entry.Name)).ToArray());
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error loading Models.dev providers: {ex.Message}");
-            }
-        }
-
-        private DispatcherQueueTimer? _modelSearchDebounce;
-        private string _pendingModelSearch = string.Empty;
-        private DispatcherQueueTimer? _groupedPublishCoalesceTimer;
-        private GroupedProviderCatalogState? _pendingGroupedState;
-        private bool _modelPickerDirty = true;
-        private readonly ChatModelSelectionPresenter _modelSelectionPresenter = new();
-
-        private void OnModelPickerSearchTextChanged(object? sender, string searchText)
-        {
-            // Restarting the timer coalesces a burst of typing into one rebuild. The
-            // previous shape called SetSearchText per keystroke, and every one of those
-            // re-projected the catalog and rebuilt the whole dropdown on the UI thread.
-            if (_modelSearchDebounce is null)
-            {
-                _modelSearchDebounce = DispatcherQueue.CreateTimer();
-                _modelSearchDebounce.Interval = UiTiming.ModelSearchDebounce;
-                _modelSearchDebounce.Tick += OnModelSearchDebounceTick;
-            }
-
-            _pendingModelSearch = searchText;
-            _modelSearchDebounce.Stop();
-            _modelSearchDebounce.Start();
-        }
-
-        private void OnModelSearchDebounceTick(object? sender, object e)
-        {
-            _modelSearchDebounce?.Stop();
-            _groupedCatalogs?.SetSearchText(_pendingModelSearch);
-        }
+        private void OnModelPickerSearchTextChanged(object? sender, string searchText) =>
+            ModelSelection.SetSearchText(searchText);
 
         private void OnModelPickerModelSelected(object? sender, ProviderModelSelectionEventArgs e)
         {
             ChatModelFlyout.Hide();
-            _ = SelectChatModelAsync(e.Model, e.Backend);
+            _ = ModelSelection.SelectModelAsync(e.Model, e.Backend);
         }
 
         /// <summary>
-        /// Escape, or any other way the list asked to be left without a choice.
+        /// Escape, or any other way the list asked to be left without a choice. The
+        /// flyout belongs to this view (it sits on the toolbar button), so it hides here;
+        /// light dismiss alone is unreliable while a text field holds the focus.
         /// </summary>
-        /// <remarks>
-        /// The flyout hides here rather than in the picker because the picker does not
-        /// own it: the Flyout is declared in this view so it can sit on the toolbar
-        /// button. Relying on light dismiss alone was not good enough, because a focused
-        /// text field is exactly the case where Escape is least certain to reach the
-        /// popup, and being unable to back out of a list is worse than a redundant close.
-        /// </remarks>
         private void OnModelPickerDismissRequested(object? sender, EventArgs e) =>
             ChatModelFlyout.Hide();
-
-        private void OnGroupedStateChanged(object? sender, GroupedProviderCatalogState state)
-        {
-            // A poll publishes once per provider; applying each one re-projects
-            // all groups on the UI thread. Collapse the burst into one trailing
-            // apply of the newest state instead.
-            _pendingGroupedState = state;
-            if (_groupedPublishCoalesceTimer is null)
-            {
-                _groupedPublishCoalesceTimer = DispatcherQueue.CreateTimer();
-                _groupedPublishCoalesceTimer.Interval = UiTiming.GroupedPublishCoalesce;
-                _groupedPublishCoalesceTimer.Tick += OnGroupedPublishCoalesceTick;
-            }
-
-            _groupedPublishCoalesceTimer.Stop();
-            _groupedPublishCoalesceTimer.Start();
-        }
-
-        private void OnGroupedPublishCoalesceTick(object? sender, object e)
-        {
-            _groupedPublishCoalesceTimer?.Stop();
-            var state = _pendingGroupedState;
-            _pendingGroupedState = null;
-            if (state is null) return;
-
-            if (_groupedCatalogs is null ||
-                !ReferenceEquals(_groupedCatalogs.State, state))
-            {
-                return;
-            }
-
-            ApplyGroupedState(state);
-        }
-
-        /// <summary>
-        /// The single controller lands after the grouped one is still empty (it is
-        /// refreshed for the selected backend on load and on every model switch).
-        /// When it does, the stored effort and the level list may have arrived, so
-        /// recompute the button. Anything for another backend is ignored: the
-        /// shared controller is repointed by Settings too.
-        /// </summary>
-        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
-        {
-            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
-                ? _groupedCatalogs.State.SelectedBackend
-                : _selectedBackend;
-            if (!string.Equals(state.Backend, backend, StringComparison.Ordinal)) return;
-
-            if (!DispatcherQueue.TryEnqueue(UpdateReasoningEffortUi))
-            {
-                return;
-            }
-        }
-
-        private void ApplyGroupedState(GroupedProviderCatalogState state)
-        {
-            if (!string.IsNullOrWhiteSpace(state.SelectedModel))
-            {
-                _selectedModel = state.SelectedModel;
-            }
-            if (!string.IsNullOrWhiteSpace(state.SelectedBackend))
-            {
-                _selectedBackend = state.SelectedBackend;
-            }
-            _modelSelectionPresenter.Adopt(_selectedBackend, _selectedModel);
-            ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(
-                state.SelectedBackend, state.SelectedModel);
-            // The dropdown tree costs a full rebuild per publish; with two
-            // hundred providers one poll cycle is hundreds of publishes. While
-            // the flyout is closed nobody sees the tree, so skip the build and
-            // repaint once on open instead of janking the UI thread in
-            // the background. Label, meter and effort below stay live.
-            if (ChatModelFlyout.IsOpen)
-            {
-                ApplyPickerProjection(state);
-            }
-            else
-            {
-                _modelPickerDirty = true;
-            }
-
-            UpdateContextUsage();
-            UpdateReasoningEffortUi();
-        }
-
-        /// <summary>
-        /// Rebuilds the model dropdown from grouped state. Skipped by the view
-        /// itself when the content is unchanged.
-        /// </summary>
-        private void ApplyPickerProjection(GroupedProviderCatalogState state)
-        {
-            ModelPicker.Apply(ProviderModelPickerProjection.Create(
-                state.Catalogs.Values,
-                state.SelectedBackend,
-                state.SelectedModel,
-                state.SearchText,
-                _groupedCatalogs?.CurrentDefinitions));
-            _modelPickerDirty = false;
-        }
-
-        private async Task SelectChatModelAsync(string model, string backend)
-        {
-            try
-            {
-                if (_apiService is null)
-                {
-                    ShowModelSaveFailure();
-                    return;
-                }
-
-                var apiService = _apiService;
-                var result = await _modelSelectionPresenter.SelectAsync(
-                    model, backend, apiService.SaveProviderModelSelectionAsync);
-                if (result == ModelSelectionSaveResult.Superseded || _scrollingDisposed) return;
-                if (result == ModelSelectionSaveResult.Saved)
-                {
-                    _selectedModel = _modelSelectionPresenter.Model;
-                    _selectedBackend = _modelSelectionPresenter.Backend;
-                    // Reset effort so stale value from previous model/backend cannot
-                    // stick when the new model has different levels. Fresh server
-                    // effort arrives via grouped refresh below.
-                    _selectedReasoningEffort = "default";
-                    _groupedCatalogs?.SetSelection(backend, model);
-                    ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, model);
-                    UpdateContextUsage();
-                    if (_providerCatalogController != null)
-                    {
-                        _providerCatalogController.SetBackend(backend);
-                        _ = _providerCatalogController.RefreshAsync();
-                    }
-                    // Refresh grouped catalogs in background to sync SelectedEffort;
-                    // picker itself uses local _selectedModel instantly (no restart).
-                    // Due-based: a forced refresh fanned out one GET /models per
-                    // child, stalling the next picker open on two hundred requests.
-                    _ = _groupedCatalogs?.RefreshAsync(force: false);
-                    UpdateReasoningEffortUi();
-                }
-                else
-                {
-                    ShowModelSaveFailure();
-                }
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error saving model: {ex.Message}");
-                ShowModelSaveFailure();
-            }
-        }
-
-        private void UpdateReasoningEffortUi()
-        {
-            SyncEffortFromCatalog();
-            var options = GetCurrentReasoningOptions();
-            _selectedReasoningEffort = ProviderReasoningOptions.Clamp(
-                _selectedReasoningEffort, options, IsCatalogReadyForSelection());
-
-            ChatReasoningLabel.Text = _selectedReasoningEffort;
-            AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {_selectedReasoningEffort}");
-        }
-
-        /// <summary>
-        /// Whether the catalog that would validate the current effort has arrived.
-        /// </summary>
-        /// <remarks>
-        /// Until it does, the option list is just "default" and nothing can be
-        /// concluded from it, so the effort is left alone.
-        /// </remarks>
-        private bool IsCatalogReadyForSelection() =>
-            TryGetSelectedCatalog(out _);
-
-        /// <summary>
-        /// The catalog for the selected backend, preferring the single controller
-        /// this view points at it. The grouped controller holds two hundred
-        /// children behind polling and a fan-out fetch, so it is empty at startup
-        /// and long after; the single refresh in LoadChatModelsAsync is what has
-        /// SelectedEffort, Identity and reasoning levels when the composer needs
-        /// them.
-        /// </summary>
-        private bool TryGetSelectedCatalog(out ProviderCatalogState? catalog)
-        {
-            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
-                ? _groupedCatalogs.State.SelectedBackend
-                : _selectedBackend;
-            return ProviderSelectedCatalog.TryResolve(
-                _providerCatalogController?.State,
-                _groupedCatalogs?.State.Catalogs,
-                backend,
-                out catalog);
-        }
-
-        /// <summary>
-        /// The catalog for the selected backend, or null when none has arrived.
-        /// </summary>
-        /// <remarks>
-        /// The session usage panel prices a session's runs from this. It is exposed as
-        /// null rather than as a placeholder catalog because "no rates to price with"
-        /// and "priced against nothing" have to stay the same answer: a panel handed an
-        /// empty catalog would report every run as free.
-        /// </remarks>
-        public ProviderCatalogState? ProviderCatalogState =>
-            TryGetSelectedCatalog(out var catalog) ? catalog : null;
-
-        private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()
-        {
-            if (TryGetSelectedCatalog(out var catalog) && catalog is not null)
-            {
-                string effectiveModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
-                    ? _groupedCatalogs.State.SelectedModel
-                    : _selectedModel;
-                return ProviderReasoningOptions.For(catalog, effectiveModel);
-            }
-
-            return [new ProviderReasoningOption("default", "default")];
-        }
-
-        private readonly ReasoningSelectionSaveQueue _reasoningSelectionSaves = new();
-
-        private void SyncEffortFromCatalog(bool force = false)
-        {
-            if (TryGetSelectedCatalog(out var catalog) && catalog is not null)
-            {
-                var context = $"{_selectedBackend}\n{_selectedModel}\n{catalog.Identity}";
-                _reasoningSelectionSaves.Synchronize(context, catalog.SelectedEffort ?? "default");
-                if (_reasoningSelectionSaves.IsPending) return;
-                if (!string.IsNullOrWhiteSpace(catalog.SelectedEffort) &&
-                    (force ||
-                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase)))
-                {
-                    _selectedReasoningEffort = _reasoningSelectionSaves.ConfirmedEffort;
-                }
-            }
-        }
 
         /// <summary>
         /// Builds the reasoning effort list.
@@ -437,8 +126,7 @@ namespace RuApp.Views
             ReasoningOptionsContainer.Children.Clear();
             _reasoningRows.Clear();
             _reasoningEfforts.Clear();
-            SyncEffortFromCatalog();
-            var options = GetCurrentReasoningOptions();
+            var options = ModelSelection.ReasoningOptions();
 
             var resources = Application.Current.Resources;
             var font = (FontFamily)resources["RuUiFontFamily"];
@@ -451,7 +139,7 @@ namespace RuApp.Views
             int selectedIndex = 0;
             foreach (var option in options)
             {
-                bool isSelected = string.Equals(option.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase);
+                bool isSelected = string.Equals(option.Value, ModelSelection.SelectedEffort, StringComparison.OrdinalIgnoreCase);
                 string label = option.Label ?? option.Value;
                 int index = _reasoningRows.Count;
                 if (isSelected)
@@ -566,92 +254,12 @@ namespace RuApp.Views
                 }
 
                 ChatReasoningFlyout.Hide();
-                await ApplyReasoningEffortAsync(_reasoningEfforts[index]);
+                await ModelSelection.ApplyEffortAsync(_reasoningEfforts[index]);
             }
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
             }
-        }
-
-        private async Task ApplyReasoningEffortAsync(string effort)
-        {
-            string previousEffort = _selectedReasoningEffort;
-            _selectedReasoningEffort = effort;
-            ChatReasoningLabel.Text = effort;
-            AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {effort}");
-
-            if (_apiService is null) return;
-
-            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
-                ? _groupedCatalogs.State.SelectedBackend
-                : _selectedBackend;
-            string model = _selectedModel ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(backend)) return;
-
-            // The save is selection-bound: the backend compares this against the
-            // snapshot identity (a credential hash), so the backend string itself
-            // is never a valid substitute. The single controller refreshed at load
-            // carries the real one; without any catalog the save is honestly
-            // rejected and the label below reports it.
-            string identity = backend;
-            if (TryGetSelectedCatalog(out var catalogState) && catalogState is not null &&
-                !string.IsNullOrWhiteSpace(catalogState.Identity))
-            {
-                identity = catalogState.Identity;
-            }
-
-            var api = _apiService;
-            var context = $"{backend}\n{model}\n{identity}";
-            var settled = await _reasoningSelectionSaves.SaveAsync(context, effort, previousEffort,
-                () => api.SaveReasoningSettingsAsync(effort, model, identity));
-            if (settled is null || !ReferenceEquals(api, _apiService)
-                || backend != _selectedBackend || model != _selectedModel) return;
-            _selectedReasoningEffort = settled;
-            ChatReasoningLabel.Text = settled;
-            AutomationProperties.SetName(ChatReasoningButton,
-                $"Reasoning effort: {settled}{(settled != effort ? " (Save failed)" : "")}");
-        }
-
-        private void ShowModelSaveFailure()
-        {
-            ChatModelSaveStatusText.Text = "Could not save selected model.";
-            ChatModelSaveStatusText.Visibility = Visibility.Visible;
-            _modelSaveFailureTimer ??= new DispatcherTimer { Interval = Services.UiTiming.ModelSaveFailure };
-            _modelSaveFailureTimer.Stop();
-            _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
-            _modelSaveFailureTimer.Tick += OnModelSaveFailureTimerTick;
-            _modelSaveFailureTimer.Start();
-        }
-
-        private void OnModelSaveFailureTimerTick(object? sender, object e)
-        {
-            _modelSaveFailureTimer?.Stop();
-            ChatModelSaveStatusText.Visibility = Visibility.Collapsed;
-            ChatModelSaveStatusText.Text = string.Empty;
-        }
-
-        private int? GetCurrentModelContextLength()
-        {
-            if (_groupedCatalogs is null || string.IsNullOrWhiteSpace(_selectedModel)) return null;
-            var state = _groupedCatalogs.State;
-            string backend = !string.IsNullOrWhiteSpace(state.SelectedBackend)
-                ? state.SelectedBackend
-                : _selectedBackend;
-            if (string.IsNullOrWhiteSpace(backend)) return null;
-
-            if (state.Catalogs.TryGetValue(backend, out var catalogState))
-            {
-                string lookup = !string.IsNullOrWhiteSpace(state.SelectedModel)
-                    ? state.SelectedModel
-                    : _selectedModel;
-                var match = catalogState.Catalog.FirstOrDefault(m => string.Equals(m.Id, lookup, StringComparison.OrdinalIgnoreCase));
-                if (match?.ContextLength is int len && len > 0)
-                {
-                    return len;
-                }
-            }
-            return null;
         }
 
         private bool _suppressContextUsageUpdate;
@@ -671,9 +279,6 @@ namespace RuApp.Views
             }
 
             _lastContextUsageTick = now;
-            string currentModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
-                ? _groupedCatalogs.State.SelectedModel
-                : _selectedModel;
             var retainedRun = _agentController?.CurrentRun;
             bool isRetainedRun = retainedRun is not null
                 && string.Equals(retainedRun.SessionId, _activeSessionId, StringComparison.Ordinal);
@@ -690,7 +295,7 @@ namespace RuApp.Views
             }
             else
             {
-                int? catalogCtx = GetCurrentModelContextLength();
+                int? catalogCtx = ModelSelection.ContextLength();
                 maxTokens = catalogCtx is > 0 ? catalogCtx.Value : 0;
                 displayLimit = ModelContextSpecs.FormatPublishedContext(catalogCtx) ?? string.Empty;
                 RetainedRunIdentityText.Text = string.Empty;

@@ -51,16 +51,11 @@ public sealed class SessionPresetSourceContractTests
     public void Standard_still_starts_as_the_default()
     {
         // The removed reset had a job -- it set a default. That default now lives
-        // where a default belongs: the ChatView field initialiser and the
-        // settings control's stored choice, so nothing has to rewrite it on the
-        // way in.
+        // where a default belongs: the ChatView field initialiser and the settings
+        // view model's stored choice (SettingsViewModelTests).
         Assert.Contains(
             "private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;",
             GuiSource.ViewText("ChatView"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "private string _presetChoice = \"standard\";",
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
             StringComparison.Ordinal);
     }
 

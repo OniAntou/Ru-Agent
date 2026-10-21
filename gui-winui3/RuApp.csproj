@@ -64,6 +64,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" />
     <PackageReference Include="System.Drawing.Common" />
     <PackageReference Include="Markdig.Signed" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
 
   <!--

@@ -1,38 +1,40 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using RuAgent.Client;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 
 using RuAgent.Protocol.Harness;
 namespace RuApp.Views
 {
+    /// <summary>
+    /// Renders <see cref="SettingsViewModel"/>. Decisions about providers, keys, autosave
+    /// and the connection test live in the view model; this class owns only what needs
+    /// WinUI: brushes, flyouts, layout measurement and the transcript-size specimens.
+    /// </summary>
     public sealed partial class SettingsView : UserControl, IDisposable
     {
-        private ApiService? _apiService;
         private ProviderCatalogController? _providerCatalogController;
         private bool _ownsProviderCatalogController;
-        private bool _loading = false;
-        private DispatcherTimer? _autoSaveTimer;
-        private DispatcherTimer? _modelsDevKeyTimer;
-        private readonly ProviderKeyProbe _modelsDevKeyProbe = new();
-        private readonly SettingsPresenter _settingsPresenter = new();
 
-        public event Action<UiTheme>? ThemeChanged;
-        public event Action<AgentPermissionPreset>? PresetChanged;
+        public SettingsViewModel ViewModel { get; }
 
-        private string _themeChoice = "dark";
-        private string _presetChoice = "standard";
-        private string _providerChoice = string.Empty;
+        public event Action<UiTheme>? ThemeChanged
+        {
+            add => ViewModel.ThemeChanged += value;
+            remove => ViewModel.ThemeChanged -= value;
+        }
+
+        public event Action<AgentPermissionPreset>? PresetChanged
+        {
+            add => ViewModel.PresetChanged += value;
+            remove => ViewModel.PresetChanged -= value;
+        }
 
         /// <summary>
         /// The stored conversation text size, read once at construction so the picker
@@ -40,105 +42,97 @@ namespace RuApp.Views
         /// </summary>
         private double _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
 
-        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
-
-        private const double ProviderRowLabelFontSize = 13;
+        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value);
 
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
 
-        /// <summary>
-        /// The provider picker's rows, in display order. One entry per offerable
-        /// provider: the custom endpoint plus the whole Models.dev catalog.
-        /// </summary>
-        private readonly ObservableCollection<ProviderRow> _providerRows = new();
-
-        /// <summary>
-        /// Models.dev display names by lowercase id, for naming the trigger before the
-        /// rows exist and for resolving a stored choice to its label.
-        /// </summary>
-        private readonly Dictionary<string, string> _modelsDevNames = new(StringComparer.Ordinal);
-
-        private AppSettingsDto? _lastSettings;
-        private IReadOnlyList<string> _modelsDevKeyIds = [];
-        private bool _modelsDevLoadFailed;
-
-        public void SetCurrentTheme(UiTheme theme)
+        public SettingsView()
         {
-            _themeChoice = theme switch
+            ViewModel = new SettingsViewModel(DispatchToUi);
+            this.InitializeComponent();
+            InitializeSettingsLayout();
+            InitializeUpdates();
+            InitDropdownOptions();
+            InitTranscriptSizeOptions();
+            InitializeSettingsHoverEffects();
+            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ViewModel.ProviderPickerCommitted += OnProviderPickerCommitted;
+            if (ProviderButton?.Flyout is Flyout providerFlyout)
             {
-                UiTheme.Dark => "dark",
-                UiTheme.DarkMeteorShower => "dark-meteor",
-                UiTheme.StarryNight => "starry-night",
-                _ => "light",
-            };
-            RefreshThemeUI();
+                providerFlyout.Opening += OnProviderFlyoutOpening;
+            }
         }
 
-        public void SetCurrentPreset(AgentPermissionPreset preset)
+        public void SetCurrentTheme(UiTheme theme) => ViewModel.SetCurrentTheme(theme);
+
+        public void SetCurrentPreset(AgentPermissionPreset preset) => ViewModel.SetCurrentPreset(preset);
+
+        public void SetCurrentProvider(string backendChoice) => ViewModel.SetCurrentProvider(backendChoice);
+
+        public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
         {
-            _presetChoice = preset switch
+            // A previous Initialize that owned its controller must not leave it behind
+            // when the view is re-initialized against a new backend.
+            DisposeOwnedProviderCatalogController();
+            _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsProviderCatalogController = providerCatalogController is null;
+            _ = ViewModel.AttachAsync(new ApiSettingsBackend(apiService), new ProviderCatalogSession(_providerCatalogController));
+        }
+
+        public Task RefreshProviderCatalogAsync() => ViewModel.RefreshCatalogAsync();
+
+        private void DispatchToUi(Action action)
+        {
+            if (DispatcherQueue.HasThreadAccess)
             {
-                AgentPermissionPreset.Plan => "plan",
-                AgentPermissionPreset.FullAccess => "full_access",
-                _ => "standard",
-            };
-            RefreshPresetUI();
+                action();
+            }
+            else if (!DispatcherQueue.TryEnqueue(() => action()))
+            {
+                GuiDiagnosticWriter.AppendTraceLine("[Settings] dispatcher rejected a view model update during shutdown.");
+            }
         }
 
-        public void SetCurrentProvider(string backendChoice)
+        private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            string previousChoice = _providerChoice;
-            // The stored choice may be unset or name a provider the app no longer
-            // offers. Resolving that to a real provider needs the catalog, which is
-            // fetched after settings; RebuildModelsDevOptions finishes the job once
-            // it arrives. Until then this keeps the trigger label honest.
-            _providerChoice = _modelsDevNames.Count > 0
-                ? ProviderSetupGuidance.ResolveUnsetChoice(
-                    backendChoice,
-                    _modelsDevNames.Select(pair => (pair.Key, pair.Value)))
-                : ProviderSetupGuidance.NormalizeProviderChoice(backendChoice);
-            if (!string.Equals(previousChoice, _providerChoice, StringComparison.OrdinalIgnoreCase))
-                _modelsDevKeyProbe.Invalidate();
-            RefreshProviderUI();
+            switch (e.PropertyName)
+            {
+                case nameof(SettingsViewModel.ThemeChoice):
+                    RefreshThemeUI();
+                    break;
+                case nameof(SettingsViewModel.PresetChoice):
+                    RefreshPresetUI();
+                    break;
+            }
         }
+
+        /// <summary>Maps a status tone to its theme brush; used by x:Bind.</summary>
+        public Brush ToneBrush(string tone) => (Brush)Application.Current.Resources[tone switch
+        {
+            ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
+            ProviderConnectionTest.ErrorTone => "AppDangerBrush",
+            _ => "RuMutedBrush",
+        }];
+
+        /// <summary>Maps a status tone to its glyph; used by x:Bind.</summary>
+        public string ToneGlyph(string tone) => tone switch
+        {
+            ProviderConnectionTest.SuccessTone => "",
+            ProviderConnectionTest.ErrorTone => "",
+            _ => "",
+        };
 
         private void RefreshThemeUI()
         {
             if (_themeOptions == null || ThemeButtonLabel == null) return;
-            RefreshDropdownUI(_themeOptions, _themeChoice, ThemeButtonLabel);
+            RefreshDropdownUI(_themeOptions, ViewModel.ThemeChoice, ThemeButtonLabel);
         }
 
         private void RefreshPresetUI()
         {
             if (_presetOptions == null || PresetButtonLabel == null) return;
-            RefreshDropdownUI(_presetOptions, _presetChoice, PresetButtonLabel);
-        }
-
-        private void RefreshProviderUI()
-        {
-            if (ProviderButtonLabel == null) return;
-
-            foreach (var row in _providerRows)
-            {
-                row.IsSelected = string.Equals(row.Value, _providerChoice, StringComparison.OrdinalIgnoreCase);
-                if (row.IsSelected)
-                {
-                    ProviderButtonLabel.Text = row.DisplayName;
-                }
-            }
-
-            if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
-            {
-                // Before the runtime rows load there is nothing to match, so
-                // name the trigger from the fetched list (or the raw id).
-                var id = _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
-                ProviderButtonLabel.Text = _modelsDevNames.TryGetValue(id, out var name) ? name : id;
-            }
-            else if (_providerChoice == ProviderSetupGuidance.UnsetChoice)
-            {
-                ProviderButtonLabel.Text = "No provider";
-            }
+            RefreshDropdownUI(_presetOptions, ViewModel.PresetChoice, PresetButtonLabel);
         }
 
         private static void RefreshDropdownUI(
@@ -179,15 +173,8 @@ namespace RuApp.Views
                 new DropdownOption(PresetStandardOption, PresetStandardText, PresetStandardCheck, "standard"),
                 new DropdownOption(PresetFullAccessOption, PresetFullAccessText, PresetFullAccessCheck, "full_access"),
             };
-            if (ProviderListView is not null)
-            {
-                ProviderListView.ItemsSource = _providerRows;
-            }
-            // Row hover is owned by the item template's own visuals, so every row --
-            // the fixed custom endpoint and the whole catalog -- reacts alike.
             RefreshThemeUI();
             RefreshPresetUI();
-            RefreshProviderUI();
         }
 
         /// <summary>
@@ -205,20 +192,17 @@ namespace RuApp.Views
                 return;
             }
 
-            var uiFont = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"];
-            var muted = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-            var ink = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+            var uiFont = (FontFamily)Application.Current.Resources["RuUiFontFamily"];
+            var muted = (Brush)Application.Current.Resources["RuMutedBrush"];
+            var ink = (Brush)Application.Current.Resources["RuInkBrush"];
             var itemStyle = (Style)Application.Current.Resources["RuDropdownItemButtonStyle"];
             TranscriptSizeOptionsPanel.Children.Clear();
             var sizes = TranscriptSizePickerProjection.Sizes();
             for (int index = 0; index < sizes.Count; index++)
             {
                 var size = sizes[index];
-                // A live specimen: the "Aa" is set in the size itself, so the
-                // choice is seen rather than read. The caption names the
-                // activity size that comes with it.
-                // Bottom-aligned: the captions share one baseline while the
-                // larger specimens rise above, like a type specimen sheet.
+                // A live specimen: the "Aa" is set in the size itself, so the choice is
+                // seen rather than read. Bottom-aligned so the captions share a baseline.
                 var specimen = new StackPanel
                 {
                     Spacing = 0,
@@ -248,9 +232,7 @@ namespace RuApp.Views
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     HorizontalContentAlignment = HorizontalAlignment.Center,
                 };
-                AutomationProperties.SetAutomationId(
-                    option,
-                    TranscriptSizePickerProjection.OptionAutomationId(size));
+                AutomationProperties.SetAutomationId(option, TranscriptSizePickerProjection.OptionAutomationId(size));
                 AutomationProperties.SetName(option, $"Conversation text size {TranscriptSizePickerProjection.LabelWithActivity(size)}");
                 option.Click += OnTranscriptSizeOptionClick;
                 Grid.SetColumn(option, index);
@@ -273,9 +255,7 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Marks the chosen specimen: an accent wash behind it and the "Aa"
-        /// in accent, the rest at rest. Same selected language the dropdown
-        /// options speak, so the tab reads as one system.
+        /// Marks the chosen specimen with the same selected language the dropdowns use.
         /// </summary>
         private void RefreshTranscriptSizeSpecimens()
         {
@@ -300,139 +280,12 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Asks the selected provider whether it answers, and reports what it said.
-        /// </summary>
-        /// <remarks>
-        /// The pending edit is saved first. The backend answers /models from stored
-        /// settings, and auto-save is debounced by 800 ms, so testing straight after
-        /// typing a key would otherwise prove the previous key.
-        /// </remarks>
-        private async void OnProviderTestClick(object sender, RoutedEventArgs e)
-        {
-            var catalogController = _providerCatalogController;
-            if (_apiService is null || catalogController is null)
-            {
-                ShowProviderTestResult(new ProviderConnectionTest(
-                    ProviderConnectionTest.ErrorTone,
-                    "The backend is not ready yet. Try again in a moment."));
-                return;
-            }
-
-            _autoSaveTimer?.Stop();
-            _modelsDevKeyTimer?.Stop();
-            ProviderTestButton.IsEnabled = false;
-            ShowProviderTestResult(ProviderConnectionTestPresentation.Testing());
-
-            try
-            {
-                var state = await SettingsProviderPresenter.TestConnectionAsync(
-                    SaveSettingsAsync,
-                    () => catalogController.RefreshAsync(force: true),
-                    () => catalogController.State);
-                var outcome = ProviderConnectionTestPresentation.Project(state);
-                if (ProviderConnectionTestPresentation.DiagnosticCode(outcome, state) is { } errorCode)
-                {
-                    // The message alone cannot tell a blocked network apart from
-                    // a bad key next time: record the catalog code locally.
-                    GuiDiagnosticWriter.WriteGuiError("provider_test", errorCode);
-                }
-
-                ShowProviderTestResult(outcome, state?.ErrorCode);
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.WriteCrashEvent(ex);
-                ShowProviderTestResult(new ProviderConnectionTest(
-                    ProviderConnectionTest.ErrorTone,
-                    "The test could not run. Open Tools → Activity Log to check."));
-            }
-            finally
-            {
-                ProviderTestButton.IsEnabled = true;
-            }
-        }
-
-        private void ShowProviderTestResult(ProviderConnectionTest result, string? errorCode = null)
-        {
-            if (ProviderTestStatusText is null)
-            {
-                return;
-            }
-
-            string code = errorCode?.Trim() ?? string.Empty;
-            ProviderTestStatusText.Text = result.Message;
-            var brush = (Brush)Application.Current.Resources[
-                result.Tone switch
-                {
-                    ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
-                    ProviderConnectionTest.ErrorTone => "AppDangerBrush",
-                    _ => "RuMutedBrush",
-                }];
-            ProviderTestStatusText.Foreground = brush;
-
-            if (ProviderTestStatusIcon is not null)
-            {
-                ProviderTestStatusIcon.Glyph = result.Tone switch
-                {
-                    ProviderConnectionTest.SuccessTone => "\uE73E",
-                    ProviderConnectionTest.ErrorTone => "\uE7BA",
-                    _ => "\uE946",
-                };
-                ProviderTestStatusIcon.Foreground = brush;
-            }
-
-            // The raw catalog code stays available for a report without sitting in
-            // the reading path; the diagnostic log keeps its own copy.
-            ToolTipService.SetToolTip(
-                ProviderTestStatusText,
-                code.Length > 0 && code.Length <= 64 ? code : null);
-        }
-
-        /// <summary>
-        /// Reflects a background catalog failure in the status line, but never a
-        /// background success: the catalog also refreshes on a timer, and a result
-        /// appearing without the button being pressed would read as the user's own.
-        /// </summary>
-        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
-        {
-            var outcome = ProviderConnectionTestPresentation.Project(state);
-            if (!ProviderConnectionTestPresentation.ReportsFailure(outcome))
-            {
-                return;
-            }
-
-            // The catalog also refreshes on a timer, so this fires off the UI thread;
-            // touching the status controls directly would be a cross-thread write.
-            if (!DispatcherQueue.TryEnqueue(() => ShowProviderTestResult(outcome)))
-            {
-                GuiDiagnosticWriter.AppendTraceLine(
-                    "[Settings] dispatcher rejected a provider test status update during shutdown.");
-            }
-        }
-
-        public SettingsView()
-        {
-            this.InitializeComponent();
-            InitializeSettingsLayout();
-            InitializeUpdates();
-            InitDropdownOptions();
-            InitTranscriptSizeOptions();
-            InitializeSettingsHoverEffects();
-            if (ProviderButton?.Flyout is Flyout providerFlyout)
-            {
-                providerFlyout.Opening += OnProviderFlyoutOpening;
-            }
-        }
-
-        /// <summary>
         /// Gives the provider dropdown the whole height the window can spare.
         /// </summary>
         /// <remarks>
         /// The catalog is ~190 rows, so the picker is meant to be scrolled and searched;
-        /// what it must never do is stop short. A cap of my own is what made the list read
-        /// as truncated: at 560px it showed about eighteen rows and the rest were one
-        /// slightly-off scrollbar away. The declared height in the markup is only the
-        /// floor used when the window cannot be measured.
+        /// what it must never do is stop short. The declared height in the markup is only
+        /// the floor used when the window cannot be measured.
         /// </remarks>
         private void OnProviderFlyoutOpening(object? sender, object e)
         {
@@ -464,594 +317,43 @@ namespace RuApp.Views
             ProviderListView.Height = height;
         }
 
-        public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
+        private void OnProviderRowClicked(object sender, ItemClickEventArgs e) =>
+            ViewModel.SelectProviderCommand.Execute(e.ClickedItem as ProviderRow);
+
+        private void OnProviderPickerCommitted() => (ProviderButton.Flyout as Flyout)?.Hide();
+
+        private void OnThemeOptionClick(object sender, RoutedEventArgs e)
         {
-            _modelsDevKeyProbe.Invalidate();
-            DisposeEventHandlers();
-            // A previous Initialize that owned its controller must not leave it
-            // behind when the view is re-initialized against a new backend.
-            DisposeOwnedProviderCatalogController();
-            _apiService = apiService;
-            _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
-            _ownsProviderCatalogController = providerCatalogController is null;
-            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
-            _ = LoadSettingsAsync();
-            SetupAutoSave();
+            if (sender is not Button { Tag: string tag }) return;
+            ViewModel.SelectThemeCommand.Execute(tag);
+            (ThemeButton.Flyout as Flyout)?.Hide();
         }
 
-        private void SetupAutoSave()
+        private void OnPresetOptionClick(object sender, RoutedEventArgs e)
         {
-            _autoSaveTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(800)
-            };
-            _autoSaveTimer.Tick += OnAutoSaveTimerTick;
-
-            // The key box probes itself: a quiet box is saved and tested
-            // without any button, one second after the last keystroke.
-            _modelsDevKeyTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
-            _modelsDevKeyTimer.Tick += OnModelsDevKeyTimerTick;
-
-            CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
-            CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
-            CloudflareAccountIdBox.TextChanged += AutoSaveTextHandler;
-            ModelsDevApiKeyBox.PasswordChanged += OnModelsDevKeyPasswordChanged;
-        }
-
-        private async void OnAutoSaveTimerTick(object? sender, object e)
-        {
-            if (_autoSaveTimer != null)
-            {
-                _autoSaveTimer.Stop();
-            }
-            if (_settingsPresenter.TryConsumeAutoSave()) await SaveSettingsAsync();
-        }
-
-        private void ScheduleAutoSave()
-        {
-            if (!_settingsPresenter.ScheduleAutoSave(_loading)) return;
-            _autoSaveTimer?.Stop();
-            _autoSaveTimer?.Start();
-        }
-
-        private async Task LoadSettingsAsync()
-        {
-            long request = _settingsPresenter.BeginLoad();
-            _loading = true;
-            try
-            {
-                if (_apiService != null)
-                {
-                    var load = await _settingsPresenter.LoadAsync(
-                        request,
-                        _apiService.GetSettingsAsync,
-                        () => RefreshModelsDevProvidersAsync(request));
-                    if (load is null) return;
-                    var settings = load.Settings;
-                    _lastSettings = settings;
-
-                    CustomEndpointUrlBox.Text = settings.CustomUrl;
-                    CloudflareAccountIdBox.Text = settings.CloudflareAccountId;
-                    CustomApiKeyBox.Password = string.Empty;
-                    CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
-                        ? "Saved (leave blank to keep unchanged)"
-                        : "sk-...";
-                    ModelsDevApiKeyBox.Password = string.Empty;
-                    ModelsDevKeyStatus.Text = string.Empty;
-                    // Providers first: the current choice can only be named once
-                    // the runtime rows exist.
-                    SetCurrentProvider(settings.BackendChoice ?? string.Empty);
-
-                    UpdateVisibilityForBackend(_providerChoice);
-                    _providerCatalogController?.SetBackend(_providerChoice);
-                }
-            }
-            catch (Exception ex)
-            {
-                // The load is fire-and-forget: an escaping fault would be
-                // unobserved, so it is traced here and the panel keeps working.
-                GuiDiagnosticWriter.AppendTraceLine($"[SettingsView] Settings load failed: {ex.Message}");
-            }
-            finally
-            {
-                // The flag gates autosave and the row click handlers: a throw
-                // anywhere above must not leave the whole panel read-only until
-                // the next restart.
-                if (_settingsPresenter.IsCurrentLoad(request)) _loading = false;
-            }
-        }
-
-        /// <summary>
-        /// Appends Models.dev providers to the Active Provider dropdown.
-        /// The key row saves for the active provider, so it needs no
-        /// provider picker of its own.
-        /// </summary>
-        private async Task RefreshModelsDevProvidersAsync(long? loadRequest = null)
-        {
-            if (_apiService is null) return;
-            bool IsCurrent() => loadRequest is null || _settingsPresenter.IsCurrentLoad(loadRequest.Value);
-            try
-            {
-                var apiService = _apiService;
-                var providers = await apiService.GetModelsDevAsync();
-                if (!IsCurrent() || !ReferenceEquals(apiService, _apiService)) return;
-                _modelsDevLoadFailed = providers.Count == 0;
-                RebuildModelsDevOptions(providers);
-                var keyIds = await apiService.GetModelsDevKeysAsync();
-                if (!IsCurrent() || !ReferenceEquals(apiService, _apiService)) return;
-                _modelsDevKeyIds = keyIds;
-                ApplyProviderKeys();
-            }
-            catch (Exception ex)
-            {
-                if (!IsCurrent()) return;
-                _modelsDevLoadFailed = true;
-                GuiDiagnosticWriter.AppendTraceLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
-                // The failure mode this replaced was silent: a partially built list with
-                // no error anywhere. The stage and the row count make it visible next time.
-                GuiDiagnosticWriter.AppendTraceLine(
-                    $"[provider-list] load-failed: type={ex.GetType().Name} "
-                    + $"hresult=0x{ex.HResult:X8} rows={_providerRows.Count}");
-                ApplyProviderFilter(ProviderSearchBox?.Text);
-            }
-        }
-
-        /// <summary>
-        /// Lights the key dot on every row whose provider has a stored key.
-        /// </summary>
-        private void ApplyProviderKeys()
-        {
-            var keys = new HashSet<string>(_modelsDevKeyIds, StringComparer.OrdinalIgnoreCase);
-            foreach (var row in _providerRows)
-            {
-                row.HasKey = row.Value == "custom"
-                    ? _lastSettings?.HasCustomKey == true
-                    : keys.Contains(row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]);
-            }
-
-            MoveRowsToSignedInOrder();
-        }
-
-        /// <summary>
-        /// Signed-in providers lead the picker: a stored key is the strongest signal
-        /// of intent, and the ~190-row catalog is otherwise a long scroll. The order
-        /// inside each group stays alphabetical.
-        /// </summary>
-        private void MoveRowsToSignedInOrder()
-        {
-            var ordered = SettingsProviderPresenter.OrderSignedInFirst(_providerRows);
-
-            for (int index = 0; index < ordered.Count; index++)
-            {
-                int current = _providerRows.IndexOf(ordered[index]);
-                if (current != index)
-                {
-                    _providerRows.Move(current, index);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Replaces the picker's rows with the custom endpoint plus the whole
-        /// Models.dev catalog, in A-Z order.
-        /// </summary>
-        /// <remarks>
-        /// One collection drives the ListView, so the catalog's size costs nothing at
-        /// build time: the list materializes rows as they scroll into view. The custom
-        /// endpoint stays first-class because it is the only provider the catalog cannot
-        /// describe -- a server on this machine, or a gateway with its own base URL.
-        /// </remarks>
-        private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
-        {
-            var projection = SettingsProviderPresenter.BuildProviderRows(
-                providers.Select(entry => (entry.Id, entry.Name)));
-            _modelsDevNames.Clear();
-            foreach (var (id, name) in projection.Names)
-            {
-                _modelsDevNames[id] = name;
-            }
-
-            _providerRows.Clear();
-            foreach (var row in projection.Rows)
-            {
-                _providerRows.Add(row);
-            }
-
-            string previousChoice = _providerChoice;
-            _providerChoice = ProviderSetupGuidance.ResolveUnsetChoice(
-                _providerChoice,
-                providers.Select(entry => (entry.Id, entry.Name)));
-            if (!string.Equals(previousChoice, _providerChoice, StringComparison.OrdinalIgnoreCase))
-                _modelsDevKeyProbe.Invalidate();
-            ApplyProviderFilter(ProviderSearchBox?.Text);
-            LogProviderListState("rebuild");
-        }
-
-        /// <summary>
-        /// The custom endpoint's label. Declared once so the picker and the key row
-        /// cannot drift apart.
-        /// </summary>
-        private const string CustomProviderDisplayName = SettingsProviderPresenter.CustomDisplayName;
-
-        /// <summary>
-        /// Filters all three provider groups by the search text and hides a
-        /// group header when none of its rows match.
-        /// </summary>
-        private void OnProviderSearchChanged(object sender, TextChangedEventArgs e)
-        {
-            ApplyProviderFilter((sender as TextBox)?.Text);
-        }
-
-        private void ApplyProviderFilter(string? filter)
-        {
-            var projection = SettingsProviderPresenter.Filter(_providerRows.ToArray(), filter, _modelsDevLoadFailed);
-            var visibleRows = new HashSet<ProviderRow>(projection.VisibleRows);
-            foreach (var row in _providerRows)
-            {
-                row.IsVisible = visibleRows.Contains(row);
-            }
-
-            if (FixedProvidersHeader is not null)
-            {
-                // The count stays visible even at zero matches. Hiding the header exactly
-                // when a search finds nothing left the panel with no guidance at all, and
-                // "PROVIDERS (0 of 191)" is the honest answer: the catalog is there, the
-                // query is what is narrow.
-                FixedProvidersHeader.Text = projection.HeaderText;
-            }
-
-            if (ProviderNoMatchText is not null)
-            {
-                ProviderNoMatchText.Visibility = projection.HasNoMatches ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            RefreshProviderUI();
-            LogProviderListState("filter");
-        }
-
-        /// <summary>
-        /// Records how many provider rows the picker holds and how many it shows.
-        /// </summary>
-        /// <remarks>
-        /// The catalog is ~190 rows. A short read here is what identified the real fault
-        /// behind the picker stopping in the C's: building one Button per provider threw
-        /// 0x800F1000 partway through, so the list was truncated at the point of failure
-        /// while every layer above it was returning the full catalog.
-        /// </remarks>
-        private void LogProviderListState(string stage)
-        {
-            try
-            {
-                int visible = _providerRows.Count(row => row.IsVisible);
-
-                GuiDiagnosticWriter.AppendTraceLine(
-                    $"[provider-list] {stage}: rows={_providerRows.Count} "
-                    + $"visible={visible} "
-                    + $"filter='{ProviderSearchBox?.Text}' "
-                    + $"loadFailed={_modelsDevLoadFailed}");
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[provider-list] {stage}: logging failed: {ex.Message}");
-            }
-        }
-
-        private void OnModelsDevKeyPasswordChanged(object sender, RoutedEventArgs e)
-        {
-            _modelsDevKeyProbe.Invalidate();
-            if (_loading) return;
-            _modelsDevKeyTimer?.Stop();
-            if (string.IsNullOrEmpty(ModelsDevApiKeyBox.Password))
-            {
-                ModelsDevKeyStatus.Text = string.Empty;
-                return;
-            }
-
-            // Typing restarts the verdict below; only a quiet box gets probed.
-            ModelsDevKeyStatus.Text = string.Empty;
-            _modelsDevKeyTimer?.Start();
-        }
-
-        private async void OnModelsDevKeyTimerTick(object? sender, object e)
-        {
-            _modelsDevKeyTimer?.Stop();
-            try
-            {
-                await ProbeAndSaveModelsDevKeyAsync();
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.WriteCrashEvent(ex);
-                SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
-            }
-        }
-
-        /// <summary>
-        /// The Host checks a temporary candidate through the provider's catalog
-        /// path before storing it. Rejection or an unavailable catalog preserves
-        /// the saved credential; superseded edits cannot publish a stale verdict.
-        /// </summary>
-        private async Task ProbeAndSaveModelsDevKeyAsync()
-        {
-            if (_loading || _modelsDevKeyProbe.IsRunning) return;
-            if (_apiService is null || _providerCatalogController is null) return;
-            if (!ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)) return;
-            string apiKey = ModelsDevApiKeyBox.Password;
-            if (string.IsNullOrWhiteSpace(apiKey)) return;
-
-            var pending = _modelsDevKeyProbe.RunAsync(
-                _providerChoice, apiKey, _apiService.ValidateAndSaveModelsDevKeyAsync);
-            if (_modelsDevKeyProbe.IsRunning) SetModelsDevKeyStatus("Checking key…", "info");
-            var completion = await pending;
-            if (completion is null) return;
-            if (completion.RetryRequested && !string.IsNullOrWhiteSpace(ModelsDevApiKeyBox.Password))
-                _modelsDevKeyTimer?.Start();
-            if (completion.Result.Code == "superseded") return;
-
-            var target = completion.Target;
-            switch (completion.Result.Code)
-            {
-                case "valid":
-                    ModelsDevApiKeyBox.Password = string.Empty;
-                    _modelsDevKeyIds = _modelsDevKeyIds.Append(target.ModelsDevId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-                    ApplyProviderKeys();
-                    SetModelsDevKeyStatus($"Saved key for {target.DisplayName}.", ProviderConnectionTest.SuccessTone);
-                    _ = _providerCatalogController.RefreshAsync(force: true);
-                    break;
-                case "invalid":
-                    SetModelsDevKeyStatus("Invalid key; saved key unchanged.", ProviderConnectionTest.ErrorTone);
-                    break;
-                case "save_failed":
-                    SetModelsDevKeyStatus("Could not confirm the save. Refresh or try again.", ProviderConnectionTest.ErrorTone);
-                    break;
-                default:
-                    SetModelsDevKeyStatus("Could not verify the connection; saved key unchanged. Try again.", "info");
-                    break;
-            }
-        }
-
-        private void SetModelsDevKeyStatus(string message, string tone)
-        {
-            ModelsDevKeyStatus.Text = message;
-            ModelsDevKeyStatus.Foreground = (Brush)Application.Current.Resources[
-                tone switch
-                {
-                    ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
-                    ProviderConnectionTest.ErrorTone => "AppDangerBrush",
-                    _ => "RuMutedBrush",
-                }];
-        }
-
-        private void UpdateVisibilityForBackend(string choice)
-        {
-            bool isModelsDev = ProviderSetupGuidance.IsModelsDevChoice(choice);
-            CustomEndpointRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
-            CustomApiKeyRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
-            if (ModelsDevApiKeyRow is not null)
-            {
-                ModelsDevApiKeyRow.Visibility = isModelsDev ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            if (ModelsDevApiKeyLabel is not null)
-            {
-                // The button label already resolves the display name (runtime rows,
-                // then the fetched models.dev list); reuse it so the key row names
-                // the same provider the user picked.
-                string name = ProviderButtonLabel?.Text?.Trim() ?? string.Empty;
-                if (name.Length == 0 || string.Equals(name, "No provider", StringComparison.Ordinal))
-                {
-                    name = ProviderSetupGuidance.DisplayName(choice);
-                }
-
-                ModelsDevApiKeyLabel.Text = isModelsDev ? $"{name} API key" : "API key";
-            }
-
-            if (CloudflareAccountIdBox is not null)
-            {
-                CloudflareAccountIdBox.Visibility = IsCloudflareChoice(choice) ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            if (ModelsDevSignOutButton is not null)
-            {
-                // Signing out only makes sense while a key is actually stored; the
-                // dot in the picker and this button read the same source.
-                ModelsDevSignOutButton.Visibility = isModelsDev && SettingsProviderPresenter.IsSignedIn(
-                        choice,
-                        _lastSettings?.HasCustomKey == true,
-                        _modelsDevKeyIds)
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-            }
-        }
-
-        /// <summary>
-        /// Removes the stored key of the active provider. The key can be pasted
-        /// again to sign back in, so no confirmation step is needed.
-        /// </summary>
-        private async void OnSignOutActiveProviderClick(object sender, RoutedEventArgs e)
-        {
-            if (_apiService is null || string.IsNullOrWhiteSpace(_providerChoice))
-            {
-                return;
-            }
-
-            if (sender is Button button)
-            {
-                button.IsEnabled = false;
-            }
-
-            string name = ProviderButtonLabel?.Text?.Trim() ?? _providerChoice;
-            try
-            {
-                string choice = _providerChoice;
-                bool removed = await SettingsProviderPresenter.SignOutAsync(
-                    choice,
-                    _apiService.RemoveProviderAsync,
-                    ClearProviderKeyInput,
-                    LoadSettingsAsync);
-                if (removed)
-                {
-                    // LoadSettingsAsync clears the status line, so the confirmation
-                    // must land after the reload, not before it.
-                    SetModelsDevKeyStatus($"Signed out of {name}. Paste a new key to sign in again.", ProviderConnectionTest.SuccessTone);
-                }
-                else
-                {
-                    SetModelsDevKeyStatus("Could not sign out; the backend did not answer.", ProviderConnectionTest.ErrorTone);
-                }
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.WriteCrashEvent(ex);
-                SetModelsDevKeyStatus("Could not sign out; try again.", ProviderConnectionTest.ErrorTone);
-            }
-            finally
-            {
-                if (sender is Button released)
-                {
-                    released.IsEnabled = true;
-                }
-            }
-        }
-
-        private bool IsCloudflareChoice(string choice) =>
-            string.Equals(
-                ProviderSetupGuidance.NormalizeProviderChoice(choice),
-                "models.dev:cloudflare-workers-ai",
-                StringComparison.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Commits the clicked row as the active provider and closes the picker.
-        /// </summary>
-        private void OnProviderRowClicked(object sender, ItemClickEventArgs e)
-        {
-            if (_loading) return;
-            if (e.ClickedItem is not ProviderRow row) return;
-            if (!ProviderSetupGuidance.IsSelectableProvider(row.Value)) return;
-
-            _modelsDevKeyProbe.Invalidate();
-            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(row.Value);
-            if (ProviderSearchBox is not null)
-            {
-                ProviderSearchBox.Text = string.Empty;
-            }
-
-            RefreshProviderUI();
-            (ProviderButton.Flyout as Flyout)?.Hide();
-
-            UpdateVisibilityForBackend(_providerChoice);
-            _providerCatalogController?.SetBackend(_providerChoice);
-            _ = _providerCatalogController?.RefreshAsync(force: true);
-            ScheduleAutoSave();
-        }
-
-        public async Task RefreshProviderCatalogAsync()
-        {
-            if (_providerCatalogController is not null)
-            {
-                await _providerCatalogController.RefreshAsync(force: true);
-            }
-        }
-
-        private async Task<bool> SaveSettingsAsync()
-        {
-            if (_apiService == null) return false;
-            try
-            {
-                var apiService = _apiService;
-                bool saved = await _settingsPresenter.SaveAsync(async () =>
-                {
-                    var dto = new ProviderSettingsUpdateDto
-                    {
-                        BackendChoice = _providerChoice,
-                        CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
-                        CustomApiKey = CustomApiKeyBox.Password,
-                        CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
-                    };
-                    return await apiService.SaveProviderSettingsAsync(dto);
-                });
-                if (!saved)
-                {
-                    GuiDiagnosticWriter.WriteGuiError("settings_autosave", "save_failed");
-                }
-
-                return saved;
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.WriteCrashEvent(ex);
-                return false;
-            }
-        }
-
-        private async void OnRemoveProviderClick(object sender, RoutedEventArgs e)
-        {
-            if (_apiService is null)
-            {
-                return;
-            }
-
-            if (sender is not Button button
-                || button.Tag is not string alias
-                || string.IsNullOrWhiteSpace(alias))
-            {
-                return;
-            }
-
-            button.IsEnabled = false;
-            try
-            {
-                bool removed = await _apiService.RemoveProviderAsync(alias);
-                if (removed)
-                {
-                    ClearProviderKeyInput(alias);
-                    await LoadSettingsAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.WriteCrashEvent(ex);
-            }
-            finally
-            {
-                button.IsEnabled = true;
-            }
-        }
-
-        private void ClearProviderKeyInput(string alias)
-        {
-            if (ProviderSetupGuidance.IsModelsDevChoice(alias))
-            {
-                ModelsDevApiKeyBox.Password = string.Empty;
-                return;
-            }
-
-            switch (alias)
-            {
-                case "custom":
-                    CustomApiKeyBox.Password = string.Empty;
-                    break;
-            }
+            if (sender is not Button { Tag: string tag }) return;
+            ViewModel.SelectPresetCommand.Execute(tag);
+            (PresetButton.Flyout as Flyout)?.Hide();
         }
 
         public void Dispose()
         {
             _updateLifetime.Cancel();
             StopUpdateAvailabilityChecks();
-            _modelsDevKeyProbe.Dispose();
-            DisposeEventHandlers();
+            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            ViewModel.ProviderPickerCommitted -= OnProviderPickerCommitted;
+            if (ProviderButton?.Flyout is Flyout providerFlyout)
+            {
+                providerFlyout.Opening -= OnProviderFlyoutOpening;
+            }
+
+            ViewModel.Dispose();
             DisposeOwnedProviderCatalogController();
-            _apiService = null;
         }
 
         /// <summary>
-        /// Disposes the provider catalog controller when this view owns it and
-        /// clears the reference. Async disposal never blocks the UI thread: every
-        /// await inside the controller uses ConfigureAwait(false), so the task
-        /// completes independently and a fault is only logged.
+        /// Disposes the provider catalog controller when this view owns it. Async disposal
+        /// never blocks the UI thread; a fault is only logged.
         /// </summary>
         private void DisposeOwnedProviderCatalogController()
         {
@@ -1074,89 +376,5 @@ namespace RuApp.Views
             _providerCatalogController = null;
             _ownsProviderCatalogController = false;
         }
-
-        private void DisposeEventHandlers()
-        {
-            CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
-            CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
-            CloudflareAccountIdBox.TextChanged -= AutoSaveTextHandler;
-            if (ProviderButton?.Flyout is Flyout providerFlyout)
-            {
-                providerFlyout.Opening -= OnProviderFlyoutOpening;
-            }
-            if (_providerCatalogController is not null)
-            {
-                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
-            }
-            if (_autoSaveTimer != null)
-            {
-                _autoSaveTimer.Tick -= OnAutoSaveTimerTick;
-                _autoSaveTimer.Stop();
-                _autoSaveTimer = null;
-            }
-            ModelsDevApiKeyBox.PasswordChanged -= OnModelsDevKeyPasswordChanged;
-            if (_modelsDevKeyTimer != null)
-            {
-                _modelsDevKeyTimer.Tick -= OnModelsDevKeyTimerTick;
-                _modelsDevKeyTimer.Stop();
-                _modelsDevKeyTimer = null;
-            }
-        }
-
-        private void AutoSaveHandler(object sender, RoutedEventArgs e) => ScheduleAutoSave();
-
-        private void AutoSaveTextHandler(object sender, TextChangedEventArgs e) => ScheduleAutoSave();
-
-        private void OnThemeOptionClick(object sender, RoutedEventArgs e)
-        {
-            if (_loading) return;
-            if (sender is not Button button || button.Tag is not string tag) return;
-            _themeChoice = tag.ToLowerInvariant() switch
-            {
-                "dark" => "dark",
-                "dark-meteor" => "dark-meteor",
-                "starry-night" => "starry-night",
-                _ => "light",
-            };
-            RefreshThemeUI();
-            (ThemeButton.Flyout as Flyout)?.Hide();
-            var theme = _themeChoice switch
-            {
-                "dark" => UiTheme.Dark,
-                "dark-meteor" => UiTheme.DarkMeteorShower,
-                "starry-night" => UiTheme.StarryNight,
-                _ => UiTheme.Light,
-            };
-            ThemeChanged?.Invoke(theme);
-        }
-
-        private void OnPresetOptionClick(object sender, RoutedEventArgs e)
-        {
-            if (_loading) return;
-            if (sender is not Button button || button.Tag is not string tag) return;
-            if (string.Equals(tag, "plan", StringComparison.OrdinalIgnoreCase))
-            {
-                _presetChoice = "plan";
-            }
-            else if (string.Equals(tag, "full_access", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(tag, "full", StringComparison.OrdinalIgnoreCase))
-            {
-                _presetChoice = "full_access";
-            }
-            else
-            {
-                _presetChoice = "standard";
-            }
-            RefreshPresetUI();
-            (PresetButton.Flyout as Flyout)?.Hide();
-            var preset = _presetChoice switch
-            {
-                "plan" => AgentPermissionPreset.Plan,
-                "full_access" => AgentPermissionPreset.FullAccess,
-                _ => AgentPermissionPreset.Standard,
-            };
-            PresetChanged?.Invoke(preset);
-        }
-
     }
 }

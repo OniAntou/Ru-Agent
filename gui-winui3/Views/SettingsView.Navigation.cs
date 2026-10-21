@@ -28,7 +28,7 @@ namespace RuApp.Views
         private void OnNavModelsClick(object sender, RoutedEventArgs e)
         {
             SelectTab(SettingsTab.Models);
-            _ = _providerCatalogController?.RefreshAsync(force: true);
+            _ = ViewModel.RefreshCatalogAsync();
         }
 
         /// <summary>

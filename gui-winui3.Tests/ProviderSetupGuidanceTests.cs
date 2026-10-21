@@ -398,15 +398,12 @@ public sealed class ProviderSetupGuidanceTests
 
         Assert.Equal("ListView", list.Name.LocalName);
         Assert.Equal("True", GuiSource.AttributeValue(list, "IsItemClickEnabled"));
-
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        Assert.Contains("ProviderListView.ItemsSource = _providerRows", code, StringComparison.Ordinal);
+        Assert.Equal("{x:Bind ViewModel.ProviderRows}", GuiSource.AttributeValue(list, "ItemsSource"));
 
         // The old shape must not come back: a row panel with one Button per provider is
         // what hit the element ceiling.
         Assert.Null(settings.Descendants()
             .FirstOrDefault(element => GuiSource.AttributeValue(element, "Name") == "ModelsDevOptionsPanel"));
-        Assert.DoesNotContain("BuildProviderRowButton", code, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -490,12 +487,13 @@ public sealed class ProviderSetupGuidanceTests
     [Fact]
     public void ModelsDev_key_box_saves_itself_without_a_button()
     {
-        // No save button: a quiet key box probes and stores itself, so the
-        // markup must wire the keystroke handler and drop the old button.
-        string markup = GuiSource.Text("Views", "SettingsView.xaml");
+        // No save button: the box is bound to the view model, which probes and stores
+        // a quiet key itself (see SettingsViewModelTests).
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var named = GuiSource.NamedElements(settings);
 
-        Assert.Contains("PasswordChanged=\"OnModelsDevKeyPasswordChanged\"", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("ModelsDevSaveButton", markup, StringComparison.Ordinal);
+        Assert.Equal("{x:Bind ViewModel.ModelsDevApiKey, Mode=TwoWay}", GuiSource.AttributeValue(named["ModelsDevApiKeyBox"], "Password"));
+        Assert.False(named.ContainsKey("ModelsDevSaveButton"));
     }
 
     [Fact]
@@ -512,26 +510,12 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void ModelsDev_key_probe_uses_host_validation_without_removing_saved_keys()
+    public void ModelsDev_key_probe_canonicalizes_through_the_shared_credential_target()
     {
-        // The backend only accepts "models.dev:id": a stripped bare id is
-        // rejected as an invalid payload. Candidate validation now happens in
-        // Host before commit; the GUI must not remove a previous working key.
-        string body = GuiSource.MethodBody(
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "ProbeAndSaveModelsDevKeyAsync");
-
+        // The backend only accepts "models.dev:id"; the probe resolves the same
+        // credential target the terminal uses rather than stripping the prefix.
         string probe = GuiSource.Text("Services", "ProviderKeyProbe.cs");
-        // The coordinator owns canonicalization and edit lifetime; the view only
-        // renders its result and delegates atomic validation/save to the Host.
         Assert.Contains("ProviderCredential.Resolve", probe, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
-            body,
-            StringComparison.Ordinal);
-        Assert.Contains("_modelsDevKeyProbe.RunAsync", body, StringComparison.Ordinal);
-        Assert.Contains("ValidateAndSaveModelsDevKeyAsync", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("RemoveProviderAsync", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -579,7 +563,7 @@ public sealed class ProviderSetupGuidanceTests
         var settings = GuiSource.Xml("Views", "SettingsView.xaml");
         var empty = GuiSource.Require(settings, "ProviderNoMatchText");
         Assert.Equal("No provider matches", GuiSource.AttributeValue(empty, "Text"));
-        Assert.Equal("Collapsed", GuiSource.AttributeValue(empty, "Visibility"));
+        Assert.Equal("{x:Bind ViewModel.HasNoProviderMatches, Mode=OneWay}", GuiSource.AttributeValue(empty, "Visibility"));
     }
 
     /// <summary>

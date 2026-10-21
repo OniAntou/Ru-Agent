@@ -24,21 +24,12 @@ public sealed class ProviderConnectionTestUiSourceContractTests
     }
 
     [Fact]
-    public void Test_button_is_wired_to_an_existing_ui_handler()
+    public void Test_button_is_wired_to_the_view_model_command()
     {
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
         var button = GuiSource.Require(document, "ProviderTestButton");
-        string handler = GuiSource.AttributeValue(button, "Click") ?? string.Empty;
 
-        Assert.False(string.IsNullOrWhiteSpace(handler));
-        Assert.True(GuiSource.HasMember(GuiSource.Text("Views", "SettingsView.xaml.cs"), handler));
+        Assert.Equal("{x:Bind ViewModel.TestConnectionCommand}", GuiSource.AttributeValue(button, "Command"));
     }
 
-    [Fact]
-    public void Settings_releases_the_long_lived_catalog_subscription_on_disposal()
-    {
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        Assert.Contains("StateChanged +=", GuiSource.MethodBody(code, "Initialize"), StringComparison.Ordinal);
-        Assert.Contains("StateChanged -=", GuiSource.MethodBody(code, "DisposeEventHandlers"), StringComparison.Ordinal);
-    }
 }

@@ -63,6 +63,11 @@ internal static class GuiSource
             }
 
             var sources = Directory.EnumerateFiles(root, viewName + "*.cs", SearchOption.AllDirectories)
+                // A view model is a separate owner: "SettingsView*.cs" must not pull
+                // ViewModels/SettingsViewModel.cs into the view's source.
+                .Where(file => !file.Contains(
+                    $"{System.IO.Path.DirectorySeparatorChar}ViewModels{System.IO.Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal))
                 .Where(file => !file.Contains(
                     $"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}",
                     StringComparison.Ordinal)

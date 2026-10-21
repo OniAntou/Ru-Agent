@@ -14,10 +14,6 @@ public sealed class ProviderSignOutUiContractTests
     {
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
         var button = GuiSource.Require(document, "ModelsDevSignOutButton");
-        string handler = GuiSource.AttributeValue(button, "Click") ?? string.Empty;
-        Assert.False(string.IsNullOrWhiteSpace(handler), "the sign-out button must reach a handler");
-
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        Assert.True(GuiSource.HasMember(code, handler), $"Click=\"{handler}\" has no member.");
+        Assert.Equal("{x:Bind ViewModel.SignOutCommand}", GuiSource.AttributeValue(button, "Command"));
     }
 }

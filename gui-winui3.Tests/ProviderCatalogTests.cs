@@ -441,28 +441,20 @@ public sealed class ProviderCatalogTests
     [Fact]
     public void SettingsView_exposes_a_sign_out_button_for_every_picker_row_it_renders()
     {
-        var settingsXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml");
-        var settingsCodePath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml.cs");
-        if (!File.Exists(settingsXamlPath) || !File.Exists(settingsCodePath))
-        {
-            return;
-        }
-
-        var settingsXaml = File.ReadAllText(settingsXamlPath);
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var named = GuiSource.NamedElements(settings);
 
         // Only the custom endpoint is a fixed row now, so it carries the only fixed
-        // sign-out control. Catalog providers are removed through the models.dev key
-        // list instead of a per-row button.
-        Assert.Contains("x:Name=\"CustomSignOutButton\"", settingsXaml, StringComparison.Ordinal);
-
+        // sign-out control. Catalog providers sign out through the active key row.
+        Assert.True(named.ContainsKey("CustomSignOutButton"));
         foreach (string retired in new[] { "OpenAiSignOutButton", "AnthropicSignOutButton" })
         {
-            Assert.DoesNotContain($"x:Name=\"{retired}\"", settingsXaml, StringComparison.Ordinal);
+            Assert.False(named.ContainsKey(retired));
         }
 
-        Assert.Contains("OnRemoveProviderClick", settingsXaml, StringComparison.Ordinal);
-        Assert.Contains("OnRemoveProviderClick", File.ReadAllText(settingsCodePath), StringComparison.Ordinal);
-        Assert.Contains("RemoveProviderAsync", File.ReadAllText(settingsCodePath), StringComparison.Ordinal);
+        var button = named["CustomSignOutButton"];
+        Assert.Equal("{x:Bind ViewModel.RemoveProviderCommand}", GuiSource.AttributeValue(button, "Command"));
+        Assert.Equal("custom", GuiSource.AttributeValue(button, "CommandParameter"));
     }
 
     private sealed class TestClock : IProviderCatalogClock

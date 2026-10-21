@@ -455,7 +455,7 @@
                                         AutomationProperties.Name="Active provider">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock x:Name="ProviderButtonLabel"
-                                                   Text="No provider"
+                                                   Text="{x:Bind ViewModel.ProviderButtonText, Mode=OneWay}"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="13"
                                                    FontWeight="Medium"
@@ -487,7 +487,7 @@
                                                              Grid.Column="1"
                                                              AutomationProperties.Name="Search providers"
                                                              PlaceholderText="Search providers"
-                                                             TextChanged="OnProviderSearchChanged"
+                                                             Text="{x:Bind ViewModel.ProviderFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                              FontFamily="{StaticResource RuUiFontFamily}"
                                                              FontSize="13"
                                                              MinHeight="0"
@@ -524,7 +524,7 @@
                                                   not a short list still loading.
                                                 -->
                                                 <TextBlock x:Name="FixedProvidersHeader"
-                                                           Text="PROVIDERS"
+                                                           Text="{x:Bind ViewModel.ProviderHeaderText, Mode=OneWay}"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="10"
                                                            FontWeight="SemiBold"
@@ -548,6 +548,7 @@
                                                               MaxHeight="200"
                                                               SelectionMode="None"
                                                               IsItemClickEnabled="True"
+                                                              ItemsSource="{x:Bind ViewModel.ProviderRows}"
                                                               ItemClick="OnProviderRowClicked"
                                                               Padding="0,0,0,6"
                                                               ScrollViewer.HorizontalScrollMode="Disabled"
@@ -620,7 +621,7 @@
                                                                FontSize="12"
                                                                Foreground="{StaticResource RuMutedBrush}"
                                                                Margin="12,8,12,12"
-                                                               Visibility="Collapsed" />
+                                                               Visibility="{x:Bind ViewModel.HasNoProviderMatches, Mode=OneWay}" />
                                                  </Grid>
                                             </StackPanel>
                                         </Flyout>
@@ -629,41 +630,43 @@
                             </Grid>
 
                             <!-- Provider API key row: the key comes before the test. -->
-                            <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16">
+                            <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16" Visibility="{x:Bind ViewModel.IsModelsDevKeyVisible, Mode=OneWay}">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="ModelsDevApiKeyLabel" Text="API key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock x:Name="ModelsDevApiKeyLabel" Text="{x:Bind ViewModel.ModelsDevKeyLabel, Mode=OneWay}" Style="{StaticResource SettingLabelStyle}" />
                                         <TextBlock Text="Stored in Windows Credential Manager; saving is automatic." Style="{StaticResource SettingDescStyle}" />
                                         <TextBlock x:Name="ModelsDevKeyStatus"
+                                                   Text="{x:Bind ViewModel.ModelsDevKeyStatus, Mode=OneWay}"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="12"
-                                                   Foreground="{StaticResource RuMutedBrush}"
+                                                   Foreground="{x:Bind ToneBrush(ViewModel.ModelsDevKeyStatusTone), Mode=OneWay}"
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                         <TextBox x:Name="CloudflareAccountIdBox"
                                                  AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
+                                                 Text="{x:Bind ViewModel.CloudflareAccountId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                  PlaceholderText="Account ID"
                                                  ToolTipService.ToolTip="Cloudflare dashboard → Account ID (Workers AI)."
                                                  Width="150"
                                                  Height="36"
                                                  CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                 Visibility="Collapsed" />
+                                                 Visibility="{x:Bind ViewModel.IsCloudflareAccountVisible, Mode=OneWay}" />
                                         <PasswordBox x:Name="ModelsDevApiKeyBox"
+                                                     Password="{x:Bind ViewModel.ModelsDevApiKey, Mode=TwoWay}"
                                                      AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
                                                      PlaceholderText="sk-&#x2026;"
                                                      Width="260"
                                                      Height="36"
                                                      CornerRadius="{StaticResource AppControlCornerRadius}"
-                                                     PasswordRevealMode="Hidden"
-                                                     PasswordChanged="OnModelsDevKeyPasswordChanged" />
+                                                     PasswordRevealMode="Hidden" />
                                         <Button x:Name="ModelsDevSignOutButton"
                                                 Content="Sign out"
-                                                Click="OnSignOutActiveProviderClick"
+                                                Command="{x:Bind ViewModel.SignOutCommand}"
                                                 Height="36"
                                                 MinWidth="96"
-                                                Visibility="Collapsed"
+                                                Visibility="{x:Bind ViewModel.IsModelsDevSignOutVisible, Mode=OneWay}"
                                                 AutomationProperties.Name="Sign out of the active provider"
                                                 CornerRadius="{StaticResource AppControlCornerRadius}" />
                                     </StackPanel>
@@ -680,13 +683,15 @@
                                     <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
                                         <FontIcon x:Name="ProviderTestStatusIcon"
-                                                  Glyph="&#xE946;"
+                                                  Glyph="{x:Bind ToneGlyph(ViewModel.ProviderTestTone), Mode=OneWay}"
                                                   FontSize="12"
-                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
                                                   VerticalAlignment="Center" />
                                         <TextBlock x:Name="ProviderTestStatusText"
                                                    Grid.Column="1"
-                                                   Text="Not tested yet. The test checks the key and loads the model list."
+                                                   Text="{x:Bind ViewModel.ProviderTestMessage, Mode=OneWay}"
+                                                   Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
+                                                   ToolTipService.ToolTip="{x:Bind ViewModel.ProviderTestErrorCode, Mode=OneWay}"
                                                    Style="{StaticResource SettingDescStyle}"
                                                    TextWrapping="Wrap"
                                                    AutomationProperties.LiveSetting="Polite" />
@@ -701,11 +706,11 @@
                                         HorizontalContentAlignment="Center"
                                         Style="{StaticResource RuPrimaryButtonStyle}"
                                         AutomationProperties.Name="Test provider connection"
-                                        Click="OnProviderTestClick" />
+                                        Command="{x:Bind ViewModel.TestConnectionCommand}" />
                             </Grid>
 
                             <!-- Custom Endpoint URL Row -->
-                            <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
+                            <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="{x:Bind ViewModel.IsCustomProviderVisible, Mode=OneWay}">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
@@ -715,6 +720,7 @@
                                     <TextBox x:Name="CustomEndpointUrlBox"
                                              Grid.Column="1"
                                              AutomationProperties.LabeledBy="{Binding ElementName=CustomServerUrlLabel}"
+                                             Text="{x:Bind ViewModel.CustomUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              PlaceholderText="http://localhost:8000/v1"
                                              Width="260"
                                              Height="36"
@@ -723,7 +729,7 @@
                             </StackPanel>
 
                             <!-- Custom API Key Row -->
-                            <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
+                            <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="{x:Bind ViewModel.IsCustomProviderVisible, Mode=OneWay}">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                                 <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
@@ -733,15 +739,16 @@
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                         <PasswordBox x:Name="CustomApiKeyBox"
                                                      AutomationProperties.LabeledBy="{Binding ElementName=CustomApiKeyLabel}"
-                                                     PlaceholderText="sk-&#x2026;"
+                                                     Password="{x:Bind ViewModel.CustomApiKey, Mode=TwoWay}"
+                                                     PlaceholderText="{x:Bind ViewModel.CustomApiKeyPlaceholder, Mode=OneWay}"
                                                      Width="260"
                                                      Height="36"
                                                      CornerRadius="{StaticResource AppControlCornerRadius}"
                                                      PasswordRevealMode="Hidden" />
                                         <Button x:Name="CustomSignOutButton"
                                                 Content="Đăng xuất"
-                                                Tag="custom"
-                                                Click="OnRemoveProviderClick"
+                                                Command="{x:Bind ViewModel.RemoveProviderCommand}"
+                                                CommandParameter="custom"
                                                 Height="36"
                                                 MinWidth="96"
                                                 AutomationProperties.AutomationId="SignOutProviderCustom"

@@ -13,12 +13,13 @@ namespace RuApp.Tests;
 public sealed partial class ViewModelBindingContractTests
 {
     [Theory]
-    [InlineData("SettingsView.xaml", "ViewModel", typeof(SettingsViewModel))]
-    [InlineData("ChatView.xaml", "ModelSelection", typeof(ChatModelPickerViewModel))]
-    [InlineData("ChatView.xaml", "Composer", typeof(ChatComposerViewModel))]
+    [InlineData("Views/SettingsView.xaml", "ViewModel", typeof(SettingsViewModel))]
+    [InlineData("Views/ChatView.xaml", "ModelSelection", typeof(ChatModelPickerViewModel))]
+    [InlineData("Views/ChatView.xaml", "Composer", typeof(ChatComposerViewModel))]
+    [InlineData("MainWindow.xaml", "Shell", typeof(ShellViewModel))]
     public void View_bindings_name_public_view_model_members(string view, string property, Type viewModel)
     {
-        string markup = GuiSource.Text("Views", view);
+        string markup = GuiSource.Text(view.Split('/'));
         var path = new Regex(@"\{x:Bind\s+(?:\w+\()?" + property + @"\.(\w+)");
         var members = path.Matches(markup).Select(match => match.Groups[1].Value).Distinct().ToArray();
 

@@ -47,9 +47,15 @@ public sealed class SessionPresetAdoptionContractTests
 
         var shell = GuiSource.ViewText("MainWindow");
         var handler = GuiSource.MethodBody(shell, "OnChatSessionPresetAdopted");
-        Assert.Contains("SetCurrentPreset", handler, StringComparison.Ordinal);
         // The adoption may arrive after another switch: only the still-active
-        // session may repaint the dropdown.
+        // session may repaint the dropdown. The rule is the shell's
+        // (ShellViewModelTests.An_adopted_preset_repaints_settings_only_for_the_session_still_active);
+        // the window supplies the active session and paints what the shell decides.
+        Assert.Contains("Shell.AdoptSessionPreset", handler, StringComparison.Ordinal);
         Assert.Contains("Sidebar.ActiveSessionId", handler, StringComparison.Ordinal);
+        Assert.Contains(
+            "SetCurrentPreset(Shell.SettingsPreset)",
+            GuiSource.MethodBody(shell, "OnShellPropertyChanged"),
+            StringComparison.Ordinal);
     }
 }

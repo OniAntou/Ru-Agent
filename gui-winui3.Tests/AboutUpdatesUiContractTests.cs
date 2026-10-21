@@ -23,15 +23,17 @@ public sealed class AboutUpdatesUiContractTests
     [Fact]
     public void Title_bar_update_is_hidden_until_availability_is_reported()
     {
+        // The button's visibility is the shell's availability flag, which starts false
+        // (ShellViewModelTests.The_title_bar_entries_follow_settings_updates_and_the_side_panel).
         var button = GuiSource.Require(GuiSource.Xml("MainWindow.xaml"), "TitleBarUpdateButton");
-        Assert.Equal("Collapsed", GuiSource.AttributeValue(button, "Visibility"));
+        Assert.Equal("{x:Bind Shell.IsUpdateAvailable, Mode=OneWay}", GuiSource.AttributeValue(button, "Visibility"));
+        Assert.Equal("{x:Bind Shell.IsSettingsReady, Mode=OneWay}", GuiSource.AttributeValue(button, "IsEnabled"));
         var settings = GuiSource.ViewText("SettingsView");
         var publish = GuiSource.MethodBody(settings, "SetAvailableUpdate");
         Assert.Contains("UpdateAvailabilityChanged", publish, StringComparison.Ordinal);
         Assert.Contains("release is not null", publish, StringComparison.Ordinal);
-        var handler = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnUpdateAvailabilityChanged");
-        Assert.Contains("Visibility.Visible", handler, StringComparison.Ordinal);
-        Assert.Contains("Visibility.Collapsed", handler, StringComparison.Ordinal);
+        var startup = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "InitializeAppAsync");
+        Assert.Contains("UpdateAvailabilityChanged += Shell.SetUpdateAvailable", startup, StringComparison.Ordinal);
     }
 
     [Fact]

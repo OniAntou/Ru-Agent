@@ -364,11 +364,16 @@ public sealed class AgentSessionUiSourceContractTests
     {
         // Startup ordering is an ownership boundary: the shell owns initial chrome,
         // while session polling may repair the projection later.
+        // The order itself (root published, then the Host started) is behavior:
+        // ShellViewModelTests.The_project_root_is_published_before_the_host_starts.
+        // Here: the window starts the Host only through the shell, and the shell's
+        // root notification is what renders the sidebar chrome.
         var code = GuiSource.ViewText("MainWindow");
         var startup = GuiSource.MethodBody(code, "InitializeAppAsync");
-        var render = startup.IndexOf("Sidebar.SetAppRoot(", StringComparison.Ordinal);
-        var start = startup.IndexOf("_backendProvider.StartAsync", StringComparison.Ordinal);
-        Assert.True(render >= 0 && start > render, "Sidebar chrome must render without waiting for backend/session changes.");
+        Assert.Contains("Shell.StartAsync", startup, StringComparison.Ordinal);
+        Assert.DoesNotContain("_backendProvider.StartAsync", code, StringComparison.Ordinal);
+        Assert.Contains("Shell.ProjectRootResolved += OnProjectRootResolved", code, StringComparison.Ordinal);
+        Assert.Contains("Sidebar.SetAppRoot(", GuiSource.MethodBody(code, "OnProjectRootResolved"), StringComparison.Ordinal);
     }
 
     [Fact]

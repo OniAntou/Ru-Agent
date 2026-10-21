@@ -204,7 +204,7 @@ namespace RuApp
                 return;
             }
 
-            if (e.Key == Windows.System.VirtualKey.Escape && _isSettingsModalOpen)
+            if (e.Key == Windows.System.VirtualKey.Escape && Shell.IsSettingsOpen)
             {
                 // Nested flyouts own the first Escape; closing the owner here
                 // leaves the popup floating above the chat.
@@ -215,7 +215,7 @@ namespace RuApp
                 return;
             }
 
-            if (_isSettingsModalOpen) return;
+            if (Shell.IsSettingsOpen) return;
 
             var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);

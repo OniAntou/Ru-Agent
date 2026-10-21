@@ -209,8 +209,7 @@ namespace RuApp
         /// </summary>
         private void SetSessionActionError(string message)
         {
-            StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-            StatusText.Text = message;
+            Shell.ReportError(message);
         }
 
         private async void OnDeleteSessionClick(object sender, RoutedEventArgs e)

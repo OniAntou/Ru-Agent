@@ -35,18 +35,12 @@ namespace RuApp
         private AgentRunController? _agentController;
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
-        private bool _sessionsPollInFlight;
-        private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
         private ProviderCatalogController? _providerCatalogController;
         private GroupedProviderCatalogController? _groupedCatalogs;
         private DispatcherTimer? _providerCatalogTimer;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
-        private readonly UiThemePreferenceStore _themePreferenceStore = new();
         private Microsoft.UI.Windowing.AppWindow? _appWindow;
-        private UiTheme _currentTheme = UiTheme.Light;
-        private bool _reconnecting;
-        private DispatcherTimer? _reconnectTimer;
 
         public static MainWindow? Instance { get; private set; }
 
@@ -55,6 +49,9 @@ namespace RuApp
 
         /// <summary>The sidebar's sessions, groups and session workflows.</summary>
         internal SessionSidebarViewModel Sidebar { get; }
+
+        /// <summary>Startup, Host status, navigation, Settings sync and title-bar state.</summary>
+        internal ShellViewModel Shell { get; }
 
         public ObservableCollection<SessionInfo> Sessions => Sidebar.Sessions;
 
@@ -80,6 +77,25 @@ namespace RuApp
             Sidebar.Rendered += OnSidebarRendered;
             Sidebar.PropertyChanged += OnSidebarPropertyChanged;
             Sidebar.ActionFailed += SetSessionActionError;
+            Shell = new ShellViewModel(
+                new HostShellBackend(
+                    _backendProvider,
+                    composition,
+                    () => _apiService,
+                    () => _healthStatusService,
+                    () => _providerCatalogController,
+                    () => _groupedCatalogs,
+                    RebindBackendAsync),
+                action =>
+                {
+                    if (!DispatcherQueue.TryEnqueue(() => action()))
+                    {
+                        throw new OperationCanceledException("The window dispatcher rejected a shell callback.");
+                    }
+                });
+            Shell.PropertyChanged += OnShellPropertyChanged;
+            Shell.ProjectRootResolved += OnProjectRootResolved;
+            Shell.ChatPresetChosen += preset => _chatView?.SetAgentPreset(preset);
             try
             {
                 this.InitializeComponent();
@@ -100,7 +116,7 @@ namespace RuApp
                     GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] TitleBar setup failed: {ex.Message}");
                 }
 
-                ApplyTheme(_themePreferenceStore.Load());
+                ApplyTheme(Shell.Theme);
                 InitializeSidebarHoverEffects();
                 InitializeSidePanelToggle();
 
@@ -115,18 +131,73 @@ namespace RuApp
             }
         }
 
-        private void OnThemeToggleClick(object sender, RoutedEventArgs e)
+        private void OnThemeToggleClick(object sender, RoutedEventArgs e) => Shell.ToggleTheme();
+
+        private void OnShellPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
-            // The toggle flips the plain pair; a themed dark (Meteor Shower,
-            // Starry Night) folds back to plain Dark.
-            var nextTheme = _currentTheme switch
+            switch (e.PropertyName)
             {
-                UiTheme.Dark => UiTheme.Light,
-                _ => UiTheme.Dark,
-            };
-            ApplyTheme(nextTheme);
-            _themePreferenceStore.TrySave(nextTheme);
+                case nameof(ShellViewModel.Theme):
+                    ApplyTheme(Shell.Theme);
+                    _settingsView?.SetCurrentTheme(Shell.Theme);
+                    break;
+                case nameof(ShellViewModel.SettingsPreset):
+                    _settingsView?.SetCurrentPreset(Shell.SettingsPreset);
+                    break;
+                case nameof(ShellViewModel.StartupPhase):
+                    ApplyWelcomeStatus();
+                    break;
+                case nameof(ShellViewModel.IsBackendLive):
+                    ApplyBackendLiveness();
+                    break;
+            }
         }
+
+        private void ApplyWelcomeStatus()
+        {
+            switch (Shell.StartupPhase)
+            {
+                case ShellStartupPhase.Starting:
+                    WelcomeOverlay?.SetStatus(Shell.WelcomeText, isReady: false);
+                    break;
+                case ShellStartupPhase.RootMissing:
+                    WelcomeOverlay?.SetStatus(Shell.WelcomeText, isReady: true, isError: true);
+                    break;
+                case ShellStartupPhase.Ready:
+                    WelcomeOverlay?.NotifyReady();
+                    break;
+                case ShellStartupPhase.Failed:
+                    WelcomeOverlay?.NotifyReady(isError: true);
+                    break;
+            }
+        }
+
+        /// <summary>The polls run only while a Host session is up.</summary>
+        private void ApplyBackendLiveness()
+        {
+            if (!Shell.IsBackendLive)
+            {
+                _sessionsTimer?.Stop();
+                _providerCatalogTimer?.Stop();
+                return;
+            }
+
+            _sessionsTimer?.Start();
+            if (Shell.Destination == ShellDestination.Chat)
+            {
+                _providerCatalogTimer?.Start();
+            }
+        }
+
+        private Brush StatusBrush(ShellStatusTone tone) => (Brush)Application.Current.Resources[tone switch
+        {
+            ShellStatusTone.Ready => "AppSuccessBrush",
+            ShellStatusTone.Danger => "AppDangerBrush",
+            _ => "AppWarningBrush",
+        }];
+
+        private void OnProjectRootResolved(string projectRoot) =>
+            Sidebar.SetAppRoot(AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness));
 
         private bool _hasAppliedTheme;
 
@@ -148,7 +219,6 @@ namespace RuApp
 
         private void ApplyThemeCore(UiTheme theme)
         {
-            _currentTheme = theme;
             CurrentTheme = theme;
             bool isDark = RuApp.Services.RuThemePalettes.IsDark(theme);
             var target = isDark ? ElementTheme.Dark : ElementTheme.Light;
@@ -164,10 +234,11 @@ namespace RuApp
             RuApp.Services.RuThemePalettes.Apply(theme);
             ShellRoot.RequestedTheme = target;
 
-            var label = isDark ? "Switch to light mode" : "Switch to dark mode";
-            LabelThemeToggle.Text = label;
-            ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
-            AutomationProperties.SetName(ThemeToggleButton, label);
+            // The label changes with the palette inside the fade, so it is set
+            // here rather than bound.
+            LabelThemeToggle.Text = Shell.ThemeToggleLabel;
+            ThemeToggleIcon.Glyph = Shell.ThemeToggleGlyph;
+            AutomationProperties.SetName(ThemeToggleButton, Shell.ThemeToggleLabel);
             ApplyTitleBarTheme();
             _chatView?.RefreshBackdropEffect();
         }
@@ -196,44 +267,6 @@ namespace RuApp
             titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         }
 
-        private static string? ResolveProjectRoot()
-        {
-            string? envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
-            if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot) && File.Exists(Path.Combine(envRoot, "pyproject.toml")))
-            {
-                return Path.GetFullPath(envRoot);
-            }
-
-            var cwd = Directory.GetCurrentDirectory();
-            if (File.Exists(Path.Combine(cwd, "pyproject.toml")))
-            {
-                return Path.GetFullPath(cwd);
-            }
-
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string candidate = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
-            if (File.Exists(Path.Combine(candidate, "pyproject.toml")))
-            {
-                return candidate;
-            }
-
-            string? walk = candidate;
-            while (walk != null && walk.Length > 3)
-            {
-                if (File.Exists(Path.Combine(walk, "pyproject.toml")))
-                {
-                    return walk;
-                }
-                walk = Path.GetDirectoryName(walk);
-            }
-
-            // No repository anywhere above us, which is the normal case for an
-            // installed copy. Returning null here stopped startup entirely; the
-            // directory holding the application is the only root that exists, and the
-            // caller picks the actual workspace.
-            return RuAppLayout.ResolveWorkingRoot(projectRoot: null, baseDir);
-        }
-
         private async Task InitializeAppSafelyAsync()
         {
             try { await InitializeAppAsync(); }
@@ -241,52 +274,24 @@ namespace RuApp
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.WriteCrashEvent(ex);
-                if (!_closed) StatusText.Text = "Could not start Ru. Please check the logs.";
+                if (!_closed) Shell.ReportError("Could not start Ru. Please check the logs.");
             }
         }
 
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sidebar.Rows;
-            StatusText.Text = $"Starting {_backendProvider.DisplayName} Backend...";
-            StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
-            WelcomeOverlay?.SetStatus($"Starting {_backendProvider.DisplayName}...", isReady: false);
-
-            string? projectRoot = _composition.IsHarness
-                ? _composition.HarnessWorkspacePath ?? string.Empty
-                : ResolveProjectRoot();
-            if (projectRoot == null)
-            {
-                StatusText.Text = "Project root not found. Please place RuApp.exe inside or under D:\\LLM.";
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                WelcomeOverlay?.SetStatus("Project root not found. Click to continue.", isReady: true, isError: true);
-                return;
-            }
-
             InitializeSidebarMotion();
-            // Section chrome and persisted workspace pins do not depend on a
-            // successful session fetch or a change in the session fingerprint.
-            Sidebar.SetAppRoot(AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness));
 
-            BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
+            // The shell publishes the project root before it starts the Host, so
+            // section chrome and workspace pins render without waiting for it.
+            BackendSession? backendSession = await _startup.RunAsync(token => Shell.StartAsync(token));
             if (backendSession != null)
             {
-                StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
-                WelcomeOverlay?.NotifyReady();
-                _backendProvider.BackendExited += OnBackendExited;
-
-                _apiService = new ApiService(backendSession);
-                _apiService.RequestFailed += (_, args) =>
-                {
-                    var err = args.Error;
-                    GuiDiagnosticWriter.AppendTraceLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
-                    GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
-                };
+                _apiService = CreateApiService(backendSession);
                 var catalogService = new ProviderCatalogService(_apiService);
                 _providerCatalogController = new ProviderCatalogController(catalogService);
                 _groupedCatalogs = new GroupedProviderCatalogController(catalogService);
-                _apiService.SettingsSaved += OnSettingsSaved;
                 _providerCatalogTimer = new DispatcherTimer { Interval = ProviderCatalogController.PollInterval };
                 _providerCatalogTimer.Tick += async (_, __) =>
                 {
@@ -316,26 +321,17 @@ namespace RuApp
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
 
                 _settingsView = new SettingsView();
-                _settingsView.UpdateAvailabilityChanged += OnUpdateAvailabilityChanged;
+                _settingsView.UpdateAvailabilityChanged += Shell.SetUpdateAvailable;
                 _settingsView.CanInstallUpdate = () => _agentController?.IsBusy != true && _agentController?.CanCancel != true;
                 _settingsView.UpdateRestartRequested += () => { _updateHandOff = true; Close(); };
                 _settingsView.Initialize(_apiService, _providerCatalogController);
-                _settingsView.SetCurrentTheme(_currentTheme);
-                if (_chatView is not null)
-                {
-                    _settingsView.SetCurrentPreset(_chatView.CurrentAgentPreset);
-                }
-                _settingsView.ThemeChanged += nextTheme =>
-                {
-                    ApplyTheme(nextTheme);
-                    _themePreferenceStore.TrySave(nextTheme);
-                };
-                _settingsView.PresetChanged += nextPreset =>
-                {
-                    _chatView?.SetAgentPreset(nextPreset);
-                };
+                _settingsView.SetCurrentTheme(Shell.Theme);
+                Shell.ShowChatPreset(_chatView.CurrentAgentPreset);
+                _settingsView.SetCurrentPreset(Shell.SettingsPreset);
+                _settingsView.ThemeChanged += Shell.ChooseTheme;
+                _settingsView.PresetChanged += Shell.ChoosePresetInSettings;
                 SettingsModalContent.Content = _settingsView;
-                TitleBarUpdateButton.IsEnabled = true;
+                Shell.MarkSettingsReady();
                 _settingsView.StartUpdateAvailabilityChecks();
 
                 _logView = new LogView();
@@ -359,42 +355,11 @@ namespace RuApp
                 Sidebar.SetRefreshActive(true);
                 await _startup.RunAsync(_ => Sidebar.RefreshAsync());
 
-                _healthRefreshController = new RefreshController<HealthStatusSnapshot?>(
-                    async token => await _healthStatusService!.GatherAsync(token),
-                    snapshot => { if (snapshot != null) ApplyHealthStatus(snapshot); },
-                    action =>
-                    {
-                        if (!DispatcherQueue.TryEnqueue(() => action()))
-                        {
-                            throw new OperationCanceledException("The window dispatcher rejected a health callback.");
-                        }
-                    });
-                _healthRefreshController.SetActive(true);
-                await _startup.RunAsync(_ => _healthRefreshController.RefreshAsync());
+                Shell.SetHealthActive(true);
+                await _startup.RunAsync(_ => Shell.RefreshHealthAsync());
 
                 _sessionsTimer = new DispatcherTimer { Interval = Services.UiTiming.SessionsPoll };
-                _sessionsTimer.Tick += async (_, __) =>
-                {
-                    if (_sessionsPollInFlight) return;
-                    _sessionsPollInFlight = true;
-                    try
-                    {
-                        await Sidebar.RefreshAsync();
-                        try { await UpdateHealthStatusAsync(); }
-                        catch (Exception ex)
-                        {
-                            GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Health poll failed: {ex.Message}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Sessions poll failed: {ex.Message}");
-                    }
-                    finally
-                    {
-                        _sessionsPollInFlight = false;
-                    }
-                };
+                _sessionsTimer.Tick += async (_, __) => await Shell.PollAsync(() => Sidebar.RefreshAsync());
                 _sessionsTimer.Start();
 
                 if (_composition.IsHarness && WelcomeOverlay != null && !WelcomeOverlay.IsDismissed)
@@ -402,13 +367,19 @@ namespace RuApp
                     _ = WelcomeOverlay.DismissAsync();
                 }
             }
-            else
+        }
+
+        private ApiService CreateApiService(BackendSession backendSession)
+        {
+            var api = new ApiService(backendSession);
+            api.RequestFailed += (_, args) =>
             {
-                StatusText.Text = $"Could not connect to {_backendProvider.DisplayName} Backend!";
-                var danger = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                StatusDot.Fill = danger;
-                WelcomeOverlay?.NotifyReady(isError: true);
-            }
+                var err = args.Error;
+                GuiDiagnosticWriter.AppendTraceLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
+                GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
+            };
+            api.SettingsSaved += OnSettingsSaved;
+            return api;
         }
 
         private Button? _activeNavButton;
@@ -435,7 +406,7 @@ namespace RuApp
         {
             btn.PointerEntered += (s, e) =>
             {
-                if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
+                if (btn != _activeNavButton && (btn != NavSettings || !Shell.IsSettingsOpen))
                 {
                     Services.UiMotion.FadeBrush(btn, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
                     Services.UiMotion.FadeBrush(btn, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuInkBrush"]);
@@ -443,7 +414,7 @@ namespace RuApp
             };
             btn.PointerExited += (s, e) =>
             {
-                if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
+                if (btn != _activeNavButton && (btn != NavSettings || !Shell.IsSettingsOpen))
                 {
                     Services.UiMotion.FadeBrush(btn, Control.BackgroundProperty, null);
                     Services.UiMotion.FadeBrush(btn, Control.ForegroundProperty, (Brush)Application.Current.Resources["RuMutedBrush"]);
@@ -485,39 +456,13 @@ namespace RuApp
         private void OnChatSessionPresetAdopted(object? sender, SessionPresetAdoptedEventArgs e)
         {
             // The Settings dropdown shows the durable choice of the session that
-            // is open, not the previous session's. The switch may already have
-            // moved on when this arrives, so only the active session applies.
-            if (string.Equals(e.SessionId, Sidebar.ActiveSessionId, StringComparison.Ordinal))
-            {
-                _settingsView?.SetCurrentPreset(e.Preset);
-            }
+            // is open, not the previous session's.
+            Shell.AdoptSessionPreset(e.SessionId, e.Preset, Sidebar.ActiveSessionId);
         }
 
-        private void OnSettingsSaved(object? sender, EventArgs e)
-        {
-            _providerCatalogController?.Invalidate();
-            _groupedCatalogs?.Invalidate();
-            _ = ReloadProviderSelectionAsync();
-        }
+        private void OnSettingsSaved(object? sender, EventArgs e) =>
+            _ = Shell.ReloadAfterSettingsSavedAsync();
 
-        private async Task ReloadProviderSelectionAsync()
-        {
-            if (_apiService is null) return;
-            try
-            {
-                var settings = await _apiService.GetSettingsAsync();
-                if (settings is null) return;
-                string backend = settings.BackendChoice ?? string.Empty;
-                string model = Models.ProviderModelSelection.GetSelectedModel(settings, backend);
-                _groupedCatalogs?.SetSelection(backend, model);
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Reload provider selection failed: {ex.Message}");
-            }
-        }
-
-        private bool _isSettingsModalOpen;
         private object? _settingsModalPreviousFocus;
 
         private void OnSettingsModalOverlaySizeChanged(object sender, SizeChangedEventArgs e)
@@ -531,9 +476,8 @@ namespace RuApp
 
         private void OpenSettingsPopup()
         {
-            if (!_isSettingsModalOpen)
+            if (Shell.OpenSettings(_chatView?.CurrentAgentPreset))
                 _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
-            _isSettingsModalOpen = true;
             ShellInteractionHost.IsEnabled = false;
             SettingsModalOverlay.Visibility = Visibility.Visible;
             Services.UiMotion.Enter(SettingsModalOverlay);
@@ -542,11 +486,8 @@ namespace RuApp
                 SettingsModalCard.Width = Math.Max(0, Math.Min(880, SettingsModalOverlay.ActualWidth - 48));
                 SettingsModalCard.Height = Math.Max(0, Math.Min(560, SettingsModalOverlay.ActualHeight - 40));
             }
-            _settingsView?.SetCurrentTheme(_currentTheme);
-            if (_chatView is not null)
-            {
-                _settingsView?.SetCurrentPreset(_chatView.CurrentAgentPreset);
-            }
+            _settingsView?.SetCurrentTheme(Shell.Theme);
+            _settingsView?.SetCurrentPreset(Shell.SettingsPreset);
             _ = _settingsView?.RefreshProviderCatalogAsync();
 
             Services.UiMotion.FadeBrush(NavSettings, Control.BackgroundProperty, (Brush)Application.Current.Resources["RuCanvasBrush"]);
@@ -566,9 +507,8 @@ namespace RuApp
 
         private void CloseSettingsPopup()
         {
-            if (!_isSettingsModalOpen) return;
+            if (!Shell.CloseSettings()) return;
 
-            _isSettingsModalOpen = false;
             _settingsView?.DismissFlyouts();
             ShellInteractionHost.IsEnabled = true;
 
@@ -582,7 +522,7 @@ namespace RuApp
             // follow it, unless the modal was reopened while it faded.
             Services.UiMotion.Exit(SettingsModalOverlay, () =>
             {
-                if (_isSettingsModalOpen)
+                if (Shell.IsSettingsOpen)
                 {
                     return;
                 }
@@ -618,7 +558,7 @@ namespace RuApp
             {
                 if (tag == "settings")
                 {
-                    if (_isSettingsModalOpen)
+                    if (Shell.IsSettingsOpen)
                     {
                         CloseSettingsPopup();
                     }
@@ -632,26 +572,30 @@ namespace RuApp
                 CloseSettingsPopup();
                 SetActiveNav(btn);
 
-                var destination = Services.ShellRoutePolicy.Resolve(tag);
-                if (destination != Services.ShellDestination.Chat) LeaveChatSession();
-                SwapNavContent(destination);
-                if (Services.ShellRoutePolicy.KeepsCatalogPolling(tag))
-                {
-                    _ = _chatView?.LoadChatModelsAsync();
-                    _providerCatalogController?.SetPollingActive(true);
-                    _groupedCatalogs?.SetPollingActive(true);
-                    _ = _groupedCatalogs?.RefreshIfDueAsync();
-                    _providerCatalogTimer?.Start();
-                }
-                else
-                {
-                    _providerCatalogController?.SetPollingActive(false);
-                    _groupedCatalogs?.SetPollingActive(false);
-                    _providerCatalogTimer?.Stop();
-                }
-                _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
-                _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
+                ApplyNavigation(Shell.Navigate(tag));
             }
+        }
+
+        private void ApplyNavigation(ShellNavigation navigation)
+        {
+            if (navigation.LeavesChat) LeaveChatSession();
+            SwapNavContent(navigation.Destination);
+            if (navigation.KeepsCatalogPolling)
+            {
+                _ = _chatView?.LoadChatModelsAsync();
+                _providerCatalogController?.SetPollingActive(true);
+                _groupedCatalogs?.SetPollingActive(true);
+                _ = _groupedCatalogs?.RefreshIfDueAsync();
+                _providerCatalogTimer?.Start();
+            }
+            else
+            {
+                _providerCatalogController?.SetPollingActive(false);
+                _groupedCatalogs?.SetPollingActive(false);
+                _providerCatalogTimer?.Stop();
+            }
+            _diagnosticsView?.SetActive(navigation.IsDiagnosticsActive);
+            _logView?.SetActive(navigation.IsLogActive);
         }
 
         private object? ViewFor(Services.ShellDestination destination) => destination switch
@@ -696,22 +640,12 @@ namespace RuApp
                 return;
             }
 
-            _providerCatalogController?.SetPollingActive(false);
-            _groupedCatalogs?.SetPollingActive(false);
-            _providerCatalogTimer?.Stop();
-
-            if (Services.ShellRoutePolicy.Resolve(tag) != Services.ShellDestination.Chat) LeaveChatSession();
-            SwapNavContent(Services.ShellRoutePolicy.Resolve(tag));
-            _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
-            _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
+            ApplyNavigation(Shell.Navigate(tag));
         }
 
         public void NavigateToDiagnostics(string? correlationId = null)
         {
-            LeaveChatSession();
-            SwapNavContent(Services.ShellDestination.Diagnostics);
-            _diagnosticsView?.SetActive(true);
-            _logView?.SetActive(false);
+            ApplyNavigation(Shell.Navigate("diagnostics"));
             if (!string.IsNullOrWhiteSpace(correlationId))
             {
                 _diagnosticsView?.FilterByCorrelation(correlationId);
@@ -719,71 +653,18 @@ namespace RuApp
         }
 
 
-        private void ScheduleReconnect()
+        /// <summary>
+        /// Rebuilds the Host-bound services and views on a reconnected session. The
+        /// shell has already reported the Host ready and refreshes health afterwards.
+        /// </summary>
+        private async Task RebindBackendAsync(BackendSession backendSession)
         {
-            if (_closed || _reconnecting || _composition.IsHarness) return;
-            if (_reconnectTimer == null)
-            {
-                _reconnectTimer = new DispatcherTimer { Interval = Services.UiTiming.ReconnectPoll };
-                _reconnectTimer.Tick += async (_, __) => await TryReconnectBackendAsync();
-            }
-            if (!_reconnectTimer.IsEnabled)
-            {
-                _reconnectTimer.Start();
-            }
-        }
-
-        private async Task<bool> TryReconnectBackendAsync()
-        {
-            if (_closed || _reconnecting) return false;
-            _reconnecting = true;
-            try
-            {
-                string? projectRoot = _composition.IsHarness
-                    ? _composition.HarnessWorkspacePath ?? string.Empty
-                    : ResolveProjectRoot();
-                if (projectRoot == null) return false;
-
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-                var backendSession = await _backendProvider.StartAsync(projectRoot, cts.Token);
-                if (backendSession != null)
-                {
-                    _reconnectTimer?.Stop();
-                    await OnBackendReconnectedAsync(backendSession, projectRoot);
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Reconnect attempt failed: {ex.Message}");
-            }
-            finally
-            {
-                _reconnecting = false;
-            }
-            return false;
-        }
-
-        private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
-        {
-            Sidebar.SetAppRoot(AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness));
-            var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
-            StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
-            StatusDot.Fill = successBrush;
-
             if (_apiService != null)
             {
                 _apiService.SettingsSaved -= OnSettingsSaved;
                 _apiService.Dispose();
             }
-            _apiService = new ApiService(backendSession);
-            _apiService.RequestFailed += (_, args) =>
-            {
-                var err = args.Error;
-                GuiDiagnosticWriter.AppendTraceLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
-                GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
-            };
-            _apiService.SettingsSaved += OnSettingsSaved;
+            _apiService = CreateApiService(backendSession);
 
             if (_providerCatalogController != null)
             {
@@ -814,37 +695,7 @@ namespace RuApp
             _logView?.Initialize(_apiService);
             _diagnosticsView?.Initialize(_apiService);
 
-            _sessionsTimer?.Start();
-            _providerCatalogTimer?.Start();
-
             await Sidebar.RefreshAsync();
-            if (_healthRefreshController != null)
-            {
-                await _healthRefreshController.RefreshAsync();
-            }
-        }
-
-        private void OnBackendExited(object? sender, EventArgs e)
-        {
-            if (DispatcherQueue == null)
-            {
-                return;
-            }
-
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _sessionsTimer?.Stop();
-                _providerCatalogTimer?.Stop();
-
-                var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                StatusText.Text = $"{_backendProvider.DisplayName} Backend stopped. Reconnecting...";
-                StatusDot.Fill = dangerBrush;
-
-                if (!_closed && !_composition.IsHarness)
-                {
-                    ScheduleReconnect();
-                }
-            });
         }
 
         private void OnWindowClosed(object sender, WindowEventArgs args)
@@ -852,13 +703,11 @@ namespace RuApp
             if (_closed) return;
             _closed = true;
             StopSessionTitleWaves();
-            _reconnectTimer?.Stop();
-            _reconnectTimer = null;
+            Shell.Close();
             _startup.Cancel();
             _sessionsTimer?.Stop();
             _providerCatalogTimer?.Stop();
             Sidebar.SetRefreshActive(false);
-            _healthRefreshController?.SetActive(false);
             if (_apiService != null)
             {
                 _apiService.SettingsSaved -= OnSettingsSaved;
@@ -898,8 +747,7 @@ namespace RuApp
             await _startupTask;
             DisposeSafely("startup", _startup.Dispose);
             await DisposeSafelyAsync("sessions sidebar", () => Sidebar.DisposeAsync());
-            await DisposeSafelyAsync("health refresh", () => _healthRefreshController?.DisposeAsync());
-            _healthRefreshController = null;
+            await DisposeSafelyAsync("shell", () => Shell.DisposeAsync());
             await DisposeSafelyAsync("provider catalog", () => _providerCatalogController?.DisposeAsync());
             _providerCatalogController = null;
             await DisposeSafelyAsync("grouped catalogs", () => _groupedCatalogs?.DisposeAsync());
@@ -926,7 +774,6 @@ namespace RuApp
             DisposeSafely("diagnostics view", () => _diagnosticsView?.Dispose());
             DisposeSafely("api service", () => _apiService?.Dispose());
             _healthStatusService = null;
-            _backendProvider.BackendExited -= OnBackendExited;
             DisposeSafely("agent controller", () => _agentController?.Dispose());
             _agentController = null;
 
@@ -1014,63 +861,6 @@ namespace RuApp
 
 
 
-        private async Task UpdateHealthStatusAsync()
-        {
-            if (_healthRefreshController != null)
-            {
-                await _healthRefreshController.RefreshAsync();
-            }
-        }
-
-        private void ApplyHealthStatus(HealthStatusSnapshot snapshot)
-        {
-
-            var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
-            var warningBrush = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
-            var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-
-            // 1. .NET Backend status
-            bool backendRunning = snapshot.BackendRunning;
-
-            // 2. Backend status
-            bool backendHealthy = snapshot.BackendHealthy;
-            string? backendError = snapshot.BackendError;
-
-
-            // Overall summary text
-            if (!backendRunning)
-            {
-                StatusDot.Fill = dangerBrush;
-                StatusText.Text = "Could not connect to .NET Backend!";
-                if (!_closed && !_composition.IsHarness && (_reconnectTimer == null || !_reconnectTimer.IsEnabled))
-                {
-                    ScheduleReconnect();
-                }
-            }
-            else
-            {
-                if (_reconnectTimer?.IsEnabled == true)
-                {
-                    _reconnectTimer.Stop();
-                }
-
-                if (!backendHealthy)
-                {
-                    StatusDot.Fill = warningBrush;
-                    StatusText.Text = backendRunning && backendError != null
-                        ? $"Backend error ({backendError})"
-                        : "Backend starting or not ready yet";
-                }
-                else
-                {
-                    StatusDot.Fill = successBrush;
-                    StatusText.Text = _composition.IsHarness
-                        ? "Harness ready"
-                        : "System ready";
-                }
-            }
-        }
-
         private async void OnNewChatClick(object sender, RoutedEventArgs e)
         {
             if (_apiService == null || _chatView == null) return;
@@ -1083,8 +873,7 @@ namespace RuApp
             {
                 // async void: an unhandled exception here tears the process down.
                 GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] New chat failed: {ex.Message}");
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                StatusText.Text = "Could not create a new chat session";
+                Shell.ReportError("Could not create a new chat session");
             }
         }
 

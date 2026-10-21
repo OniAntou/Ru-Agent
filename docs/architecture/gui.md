@@ -16,7 +16,9 @@ and its delta deduplicator owns delivered-frame/reset tracking.
 ### View models
 
 Views are moving to CommunityToolkit.Mvvm view models under `gui-winui3/ViewModels`,
-one surface at a time. A view model owns a surface's state and decisions, reaches
+one surface at a time. Settings, the sidebar, the `MainWindow` shell, and the chat's
+model picker, run panel, composer and permission preset have moved; the transcript
+load, run adoption and activity feed in `ChatView` have not. A view model owns a surface's state and decisions, reaches
 the Host through a narrow interface (for example `ISettingsBackend` and
 `IProviderCatalogSession`), and receives a dispatch delegate for cross-thread
 updates instead of touching `DispatcherQueue`. It exposes strings, booleans and
@@ -60,8 +62,28 @@ effort, dropped if the session changed meanwhile) and seeds the version cache, s
 next send does not rewrite it; a write that completes after a switch fails as
 `session_changed`. An unknown stored value reads as Standard. Transcript loading, run
 adoption and the activity feed remain in `ChatView` partials and their presenters.
-`ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}` names a
-public member of the bound view model.
+`ShellViewModel` owns the window shell's state and decisions. Startup resolves the
+project root and publishes it before it starts the Host, so the sidebar's section
+chrome never waits for the Host. It owns the status line, which has one writer: startup,
+health, a Host exit and failed session actions all report through it, and the view maps
+its tone to a brush. A Host exit stops the window's polls; a Host exit or an unreachable
+health poll starts one reconnect loop (every three seconds, each attempt bounded to six),
+never before the first start succeeded, for a harness run or for a closed window. A Host that comes back is rebound through
+`IShellBackend.RebindAsync` even if a later step fails, so the retries stop. Navigation
+resolves through `ShellRoutePolicy`; every Chat navigation keeps catalog polling on and
+reloads models, including one to the chat already showing. Settings shows the chat's
+preset, read again on every open because the chat can narrow Full Access without an
+event; an adopted preset repaints Settings only while its session is still active, and a
+preset chosen in Settings is applied to the chat. A settings save invalidates the catalogs
+and only the newest provider-selection reload applies. The view model also owns the
+theme choice and its persistence and the title bar's update and side-panel entries.
+`MainWindow` keeps windowing, the title-bar region, the composition of the Host-bound
+services and views, dialogs, layout and every animation. `HostShellBackend` resolves the
+API service, health service and catalog controllers per call, because a reconnect
+replaces them.
+`ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}`,
+`{x:Bind ModelSelection.X}`, `{x:Bind Composer.X}` and `{x:Bind Shell.X}` names a public
+member of the bound view model.
 
 Shared activity and permission-preset enums belong to `RuAgent.Protocol`.
 Client-side display policy belongs to `RuAgent.Client`; the GUI has no project

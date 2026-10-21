@@ -47,7 +47,8 @@ public sealed class ShellMotionContractTests
         var settingsClose = GuiSource.MethodBody(code, "CloseSettingsPopup");
         Assert.Contains("UiMotion.Exit", settingsClose, StringComparison.Ordinal);
         Assert.Contains("SettingsModalOverlay.Visibility = Visibility.Collapsed", settingsClose, StringComparison.Ordinal);
-        Assert.Contains("_isSettingsModalOpen", settingsClose, StringComparison.Ordinal);
+        // A reopen during the fade keeps the overlay: the callback re-reads the shell.
+        Assert.Contains("Shell.IsSettingsOpen", settingsClose, StringComparison.Ordinal);
         Assert.Contains("Focus", settingsClose, StringComparison.Ordinal);
 
         Assert.Contains("UiMotion.Enter", GuiSource.MethodBody(code, "OpenSettingsPopup"), StringComparison.Ordinal);
@@ -69,13 +70,18 @@ public sealed class ShellMotionContractTests
         Assert.Contains("UiMotion.SwapContent", swap, StringComparison.Ordinal);
         Assert.Contains("_navSwapGeneration", swap, StringComparison.Ordinal);
 
-        // The nav paths go through the swap: neither assigns the frame directly.
+        // The nav paths resolve through the shell and apply through the swap: none
+        // assigns the frame directly.
         foreach (var member in new[] { "OnNavClick", "OnToolsMenuItemClick", "NavigateToDiagnostics" })
         {
             var body = GuiSource.MethodBody(code, member);
-            Assert.Contains("SwapNavContent", body, StringComparison.Ordinal);
+            Assert.Contains("ApplyNavigation(Shell.Navigate(", body, StringComparison.Ordinal);
             Assert.DoesNotContain("ContentFrame.Content =", body, StringComparison.Ordinal);
         }
+
+        var apply = GuiSource.MethodBody(code, "ApplyNavigation");
+        Assert.Contains("SwapNavContent(navigation.Destination)", apply, StringComparison.Ordinal);
+        Assert.DoesNotContain("ContentFrame.Content =", apply, StringComparison.Ordinal);
     }
 
     [Fact]

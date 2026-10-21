@@ -1,7 +1,6 @@
 using System;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using RuApp.Services;
 
@@ -97,20 +96,12 @@ namespace RuApp
         }
 
         /// <summary>
-        /// Keeps the toggle honest about what it can do: enabled only while the
-        /// surface can show, and worded for the action it will take.
+        /// The chat reports whether its side panel can show and whether it is hidden;
+        /// the toggle's enabled state and wording are bound to the shell.
         /// </summary>
         public void UpdateSidePanelToggleState(bool canToggle, bool isHidden)
         {
-            if (SidePanelToggleButton is null)
-            {
-                return;
-            }
-
-            SidePanelToggleButton.IsEnabled = canToggle;
-            string name = isHidden ? "Show side panel" : "Hide side panel";
-            ToolTipService.SetToolTip(SidePanelToggleButton, name);
-            AutomationProperties.SetName(SidePanelToggleButton, name);
+            Shell.SetSidePanelState(canToggle, isHidden);
         }
 
         private void OnSidePanelToggleClick(object sender, RoutedEventArgs e)

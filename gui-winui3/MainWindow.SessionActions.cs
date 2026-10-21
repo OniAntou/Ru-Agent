@@ -278,6 +278,10 @@ namespace RuApp
                 }
                 _chatView?.ForgetSidePanelState(sessionId);
 
+                // The host has confirmed the chat is gone, so drop its row now; the
+                // reload below only reconciles the rest of the list.
+                RemoveSessionRow(sessionId);
+
                 await LoadSessionsAsync();
 
                 // If the deleted session was currently active, switch to another session or create a new one
@@ -308,6 +312,20 @@ namespace RuApp
                 if (outcome.Partial)
                 {
                     await OfferSessionArtifactRetryAsync(sessionId, outcome.Message);
+                }
+            }
+        }
+
+        private void RemoveSessionRow(string sessionId)
+        {
+            for (int i = Sessions.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(Sessions[i].Id, sessionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    Sessions.RemoveAt(i);
+                    RenderWorkspaceSidebar();
+                    RefreshSessionTitleWaves();
+                    return;
                 }
             }
         }

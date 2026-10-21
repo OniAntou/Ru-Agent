@@ -36,6 +36,45 @@ public sealed class RefreshControllerTests
     }
 
     [Fact]
+    public async Task Refresh_latest_supersedes_an_in_flight_fetch_and_discards_its_stale_result()
+    {
+        var staleFetch = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int fetchCount = 0;
+        var applied = new System.Collections.Generic.List<int>();
+        await using var refresh = new RefreshController<int>(
+            _ => ++fetchCount == 1 ? staleFetch.Task : Task.FromResult(2),
+            applied.Add,
+            action => action());
+        refresh.SetActive(true);
+
+        // A poll read the list before a local mutation and is still waiting on the host.
+        var poll = refresh.RefreshAsync();
+        Assert.True(await refresh.RefreshLatestAsync());
+        Assert.Equal(2, fetchCount);
+
+        staleFetch.SetResult(1);
+        Assert.False(await poll);
+        Assert.Equal(new[] { 2 }, applied);
+
+        // The controller stays usable once the superseded run has finished.
+        Assert.True(await refresh.RefreshAsync());
+        Assert.Equal(new[] { 2, 2 }, applied);
+    }
+
+    [Fact]
+    public async Task Refresh_latest_does_not_fetch_while_inactive()
+    {
+        int calls = 0;
+        await using var refresh = new RefreshController<int>(
+            _ => { calls++; return Task.FromResult(1); },
+            _ => throw new InvalidOperationException("inactive apply"),
+            action => action());
+
+        Assert.False(await refresh.RefreshLatestAsync());
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
     public async Task Single_flight_prevents_overlapping_fetches()
     {
         var fetchTcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);

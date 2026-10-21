@@ -14,6 +14,47 @@ public sealed class WindowsDpapiKeyStoreTests
 {
     [Fact]
     [SupportedOSPlatform("windows")]
+    public async Task A_reused_key_survives_callers_zeroing_it_and_follows_a_replaced_key_file()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        var otherRoot = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(otherRoot);
+        var keyPath = Path.Combine(root, "agent_harness.key");
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            var store = new WindowsDpapiKeyStore(keyPath, databasePath);
+            var first = await store.GetOrCreateKeyAsync(CancellationToken.None);
+            var original = first.ToArray();
+            CryptographicOperations.ZeroMemory(first);
+
+            // Callers zero their copy after use; that must not reach the cached key.
+            Assert.Equal(original, await store.GetOrCreateKeyAsync(CancellationToken.None));
+
+            var otherKeyPath = Path.Combine(otherRoot, "agent_harness.key");
+            var replacement = await new WindowsDpapiKeyStore(otherKeyPath, Path.Combine(otherRoot, "agent_harness.db"))
+                .GetOrCreateKeyAsync(CancellationToken.None);
+            File.Copy(otherKeyPath, keyPath, overwrite: true);
+            File.SetLastWriteTimeUtc(keyPath, DateTime.UtcNow.AddMinutes(1));
+
+            // A rewritten key file is read again rather than served from memory.
+            Assert.Equal(replacement, await store.GetOrCreateKeyAsync(CancellationToken.None));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            Directory.Delete(otherRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
     public async Task Key_is_stable_current_user_protected_and_files_have_no_broad_writer()
     {
         if (!OperatingSystem.IsWindows())

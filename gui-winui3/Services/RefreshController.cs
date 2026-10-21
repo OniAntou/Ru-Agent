@@ -119,12 +119,48 @@ public sealed class RefreshController<T> : IAsyncDisposable
         return operationSource.Task;
     }
 
+    /// <summary>
+    /// Refreshes after a local mutation. An in-flight refresh may have read the state
+    /// from before the mutation, so it is superseded: its result is discarded and a
+    /// new fetch starts. Plain <see cref="RefreshAsync"/> would instead return false
+    /// and leave the stale read to be applied.
+    /// </summary>
+    public Task<bool> RefreshLatestAsync()
+    {
+        CancellationTokenSource? toCancel;
+        PendingApply? pendingApply;
+        lock (_gate)
+        {
+            if (_disposed || !_active)
+            {
+                return Task.FromResult(false);
+            }
+
+            _generation++;
+            toCancel = _cts;
+            pendingApply = _pendingApply;
+            // The superseded run still clears only its own operation and token.
+            _operation = null;
+            _cts = null;
+            _pendingApply = null;
+        }
+
+        try { toCancel?.Cancel(); } catch (ObjectDisposedException) { }
+        if (pendingApply?.TryCancelIfQueued() == true)
+        {
+            pendingApply.Completion.TrySetResult(false);
+        }
+
+        return RefreshAsync();
+    }
+
     private async Task RunRefreshAsync(
         CancellationTokenSource requestCts,
         long capturedGeneration,
         TaskCompletionSource<bool> operationSource)
     {
         var requestToken = requestCts.Token;
+        PendingApply? pendingApply = null;
         bool? result = null;
         Exception? failure = null;
         try
@@ -139,7 +175,7 @@ public sealed class RefreshController<T> : IAsyncDisposable
                 return;
             }
 
-            var pendingApply = new PendingApply();
+            pendingApply = new PendingApply();
             lock (_gate)
             {
                 if (!IsCurrentUnderLock(capturedGeneration, requestToken))
@@ -178,7 +214,12 @@ public sealed class RefreshController<T> : IAsyncDisposable
         {
             lock (_gate)
             {
-                _pendingApply = null;
+                // A superseding refresh may already own these slots.
+                if (ReferenceEquals(_pendingApply, pendingApply))
+                {
+                    _pendingApply = null;
+                }
+
                 if (ReferenceEquals(_operation, operationSource.Task))
                 {
                     _operation = null;

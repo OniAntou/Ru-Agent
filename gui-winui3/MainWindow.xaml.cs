@@ -1001,7 +1001,10 @@ namespace RuApp
             if (_apiService == null) return;
             if (_sessionsRefreshController != null)
             {
-                await _sessionsRefreshController.RefreshAsync();
+                // Callers have just changed the session list. A poll already in flight
+                // may have read it before that change; supersede it rather than let the
+                // stale list land and keep a deleted row until the next poll.
+                await _sessionsRefreshController.RefreshLatestAsync();
                 return;
             }
             var result = await _apiService.GetSessionsAsync();

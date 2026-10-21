@@ -28,6 +28,15 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
     private readonly string _databasePath;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    // The key is read once and reused while the key file is unchanged. Every fetch used
+    // to rewrite three ACLs and call DPAPI (~16 ms), and hot paths such as the session
+    // list fetch it once per workspace. A missing or rewritten file still takes the
+    // full path, so a lost key keeps failing closed as harness_key_missing.
+    private byte[]? _cachedKey;
+    private DateTime _cachedKeyWriteTimeUtc;
+    private long _cachedKeyLength;
+    private bool _isDatabaseHardened;
+
     public WindowsDpapiKeyStore(string keyPath, string databasePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
@@ -49,6 +58,24 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            var keyFile = new FileInfo(_keyPath);
+            if (_cachedKey is not null
+                && keyFile.Exists
+                && keyFile.LastWriteTimeUtc == _cachedKeyWriteTimeUtc
+                && keyFile.Length == _cachedKeyLength)
+            {
+                // A database created after the key was cached still gets its ACL once.
+                if (!_isDatabaseHardened && File.Exists(_databasePath))
+                {
+                    HardenFile(_databasePath);
+                    _isDatabaseHardened = true;
+                }
+
+                // Callers zero the key after use, so each one gets its own copy.
+                return (byte[])_cachedKey.Clone();
+            }
+
+            ForgetCachedKey();
             var directory = Path.GetDirectoryName(_keyPath)
                 ?? throw new HarnessStoreException("harness_key_path_invalid");
             Directory.CreateDirectory(directory);
@@ -70,16 +97,36 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
             }
 
             HardenFile(_keyPath);
-            if (File.Exists(_databasePath))
+            _isDatabaseHardened = File.Exists(_databasePath);
+            if (_isDatabaseHardened)
             {
                 HardenFile(_databasePath);
             }
 
-            return await LoadKeyAsync(cancellationToken).ConfigureAwait(false);
+            var key = await LoadKeyAsync(cancellationToken).ConfigureAwait(false);
+            // Read the identity after loading: a legacy key is rewritten in place.
+            keyFile.Refresh();
+            if (keyFile.Exists)
+            {
+                _cachedKey = (byte[])key.Clone();
+                _cachedKeyWriteTimeUtc = keyFile.LastWriteTimeUtc;
+                _cachedKeyLength = keyFile.Length;
+            }
+
+            return key;
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private void ForgetCachedKey()
+    {
+        if (_cachedKey is not null)
+        {
+            CryptographicOperations.ZeroMemory(_cachedKey);
+            _cachedKey = null;
         }
     }
 

@@ -58,6 +58,18 @@ jobs:
       - name: Run all .NET tests
         shell: pwsh
         run: .\scripts\test_dotnet.ps1 -Configuration Debug
+      - name: Agent loop performance and request-prefix gate (synthetic)
+        id: agent_performance
+        shell: pwsh
+        timeout-minutes: 5
+        run: .\scripts\benchmark_agent_loop.ps1
+      - name: Preserve agent performance evidence
+        if: ${{ always() && steps.agent_performance.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-loop-performance
+          path: artifacts/agent-performance/
+          if-no-files-found: ignore
       - run: dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release --nologo
       - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=true
       - name: RPC smoke (scripted model)

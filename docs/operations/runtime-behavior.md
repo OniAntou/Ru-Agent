@@ -441,8 +441,13 @@ as an explicit-rule compatibility reason.
 The model selection channel is active for every Agent run: one budget window
 allows up to 128 model steps and 256 model-initiated tool calls through the
 Broker pipeline. Native batches may contain multiple calls; the scheduler caps
-read-only concurrency at eight and keeps mutations/terminal sequential. Receipts
-retain model order. Exhausting a window moves the run to `WaitingUser`; only an
+read-only concurrency at eight using a rolling pool: a completed read frees a
+slot without waiting for its slowest peer. Mutations/terminal remain sequential
+barriers. Receipts retain model order. An observed unknown outcome stops new
+starts; every already-started read drains, including reads admitted before that
+outcome was known. Cancellation or failure also drains owned work before return.
+See [phase timing and Host benchmarks](agent-performance.md).
+Exhausting a window moves the run to `WaitingUser`; only an
 explicit Continue opens a fresh window, and the TUI offers the same path: the
 parked run shows a `▲ run paused` row plus `resume with Continue (or 'ru
 agent continue <run-id>')`. Typing `Continue` while a parked run is known

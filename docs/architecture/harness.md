@@ -64,6 +64,14 @@ provider continuation data.
 
 ## Agent prompt contract
 
+Context sources may reuse bounded parsed encrypted rows in source-local memory.
+The current key and complete row fingerprint are checked before reuse; the
+database remains authoritative for membership, receipts, compactions and current
+work state. No plaintext cache is persisted. Phase timing distinguishes context,
+preparation, provider output and tool work without recording content or ids.
+See [performance diagnostics](../operations/agent-performance.md) for bounds,
+measurement definitions and the synthetic CI workload.
+
 For every accepted model step, the Host rebuilds a bounded context and the
 in-process step service composes exactly one `system` message. The seven ordered
 blocks are the neutral Ru Agent runtime contract, Agent execution contract,

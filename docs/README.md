@@ -32,6 +32,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
   [Providers](architecture/providers.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
+- [Agent performance diagnostics and offline benchmark](operations/agent-performance.md)
 - [The stdio RPC bridge](operations/rpc.md)
 - [TypeScript SDK for the bridge](../sdk/ru-agent/README.md)
 - [TUI known limitations and debugging](operations/tui-known-limitations.md)

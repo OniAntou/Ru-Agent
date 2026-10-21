@@ -108,6 +108,11 @@ Choose the build target and `-ProjectFilter` for the changed module. Full matric
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
+CI also runs the credential-free Host continuation and request-prefix gate:
+`scripts/benchmark_agent_loop.ps1`. It shares the test-matrix mutex, uses fresh
+sequential 16/32/60-step samples, and retains per-sample evidence. See the
+[workload, comparison mode and latency budget](tools/agent-performance/README.md).
+
 **Run one process/loopback matrix at a time.** The .NET suite launches real
 processes and HTTP hosts; concurrent matrices, publishing or a running app can
 cause environmental failures. Keep the machine-wide lock; the runner exits 75

@@ -227,6 +227,7 @@ DiagnosticEndpoints.Map(app);
 StatusEndpoints.Map(app);
 
 using var telemetryProvider = BackendTelemetry.CreateProvider();
+using var performanceProvider = BackendTelemetry.CreateMetricsProvider();
 
 await app.StartAsync();
 if (isManagedRuntime)

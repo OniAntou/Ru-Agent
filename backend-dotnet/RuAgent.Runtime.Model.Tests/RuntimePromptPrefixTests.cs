@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Diagnostics.Metrics;
+using RuAgent.Harness.Core.Diagnostics;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
@@ -9,6 +11,32 @@ namespace RuAgent.Runtime.Model.Tests;
 
 public sealed class RuntimePromptPrefixTests
 {
+    [Fact]
+    public async Task Usage_and_empty_deltas_do_not_count_as_first_output_tokens()
+    {
+        var owned = new AsyncLocal<bool>();
+        var phases = new List<string>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, owner) =>
+        {
+            if (instrument.Meter.Name == HarnessPerformance.MeterName) owner.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<double>((_, _, tags, _) =>
+        {
+            if (owned.Value) phases.Add((string)tags[0].Value!);
+        });
+        listener.Start();
+        owned.Value = true;
+        using var http = new HttpClient();
+        var provider = new CaptureProvider(new OpenAiCompatibleModelProvider(http), preamble: true);
+        var service = new ModelStepService(provider);
+        await service.RunPreparedAsync(service.PrepareRequest(Request("chat_completions", "runtime")), null, default);
+        Assert.Single(phases, phase => phase == "FirstToken");
+        Assert.Single(phases, phase => phase == "FirstText");
+        Assert.DoesNotContain("FirstReasoning", phases);
+        Assert.DoesNotContain("FirstTool", phases);
+    }
+
     [Theory]
     [InlineData("chat_completions", "messages", "system")]
     [InlineData("openai_responses", "input", "instructions")]
@@ -91,7 +119,7 @@ public sealed class RuntimePromptPrefixTests
             anthropicMessages: protocol == "anthropic_messages" ? anthropicHistory : null);
     }
 
-    private sealed class CaptureProvider(IModelRequestBodyProjector projector) : IModelProvider, IModelRequestBodyProjector
+    private sealed class CaptureProvider(IModelRequestBodyProjector projector, bool preamble = false) : IModelProvider, IModelRequestBodyProjector
     {
         public List<string> Bodies { get; } = [];
         public string ProjectRequestBody(ModelRequest request)
@@ -104,6 +132,11 @@ public sealed class RuntimePromptPrefixTests
         {
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
+            if (preamble)
+            {
+                yield return new ModelDelta(null, [], false, null, usage: new RuAgent.Harness.Core.ModelUsage(10, null, null, null, null));
+                yield return new ModelDelta("", [], false, null, reasoning: "");
+            }
             yield return new ModelDelta("done", [], completed: true, finishReason: "stop");
         }
     }

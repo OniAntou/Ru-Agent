@@ -83,6 +83,12 @@ exception text are forbidden.
 
 ## OpenTelemetry traces (parallel to JSONL)
 
+The Host also exposes the `RuAgent.Performance` meter with bounded phase durations
+and context-cache counters. It uses the same explicit OTLP endpoint setting and
+records no content or identifiers. See [agent performance diagnostics](agent-performance.md)
+for phase definitions, cache bounds and the offline benchmark. This does not add
+metric samples to the activity timeline or JSONL diagnostics routes.
+
 The Host exposes OpenTelemetry spans alongside JSONL for both sources (tool
 execution runs in process, so the broker source is exported by the Host
 provider):

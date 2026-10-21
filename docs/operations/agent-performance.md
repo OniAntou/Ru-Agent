@@ -1,0 +1,54 @@
+# Agent performance diagnostics
+
+The Host exposes the `RuAgent.Performance` .NET meter. The
+`ru.agent.phase.duration` histogram uses milliseconds and exactly one bounded
+`phase` tag. Subscribe with a .NET metrics collector, or use the existing explicit
+`OTEL_EXPORTER_OTLP_ENDPOINT` configuration for OTLP metrics alongside traces.
+No additional endpoint or upload is enabled by default.
+
+| Phase | What is measured |
+| --- | --- |
+| `ContextRead` | Model-context source load, including persisted rows, decryption/cache checks, compaction projection and current work state |
+| `PromptBuild`, `RequestPrepare`, `AdmissionCommit` | Prompt context construction, exact request preparation, and the durable step-start commit |
+| `ProviderGate`, `ProviderStream` | Waiting for the provider semaphore, then consuming the selected provider stream |
+| `FirstToken`, `FirstText`, `FirstReasoning`, `FirstTool` | Time from provider enumeration to the first nonempty token-bearing delta of each kind |
+| `ToolExecution`, `FramePublish` | Each scheduled tool execution and synchronous Host publication of assistant deltas |
+
+First-token timing excludes empty, usage-only and finish chunks. Reasoning and
+tool arguments/names count as model output even before visible assistant text.
+Absent output kinds produce no invented zero sample. `FramePublish` ends at the
+Host buffer; it does not measure GUI receipt, layout or pixels. Some scopes nest,
+so adding every histogram value is not an end-to-end duration. Tool scopes may
+overlap. Durations use a monotonic clock, not wall-clock timestamps.
+
+Only fixed phase/result tags and numeric measurements are emitted: never run or
+session ids, model output, prompts, arguments, paths, key stamps or credentials.
+Metrics/listener failures do not change execution outcomes.
+
+`ru.agent.context.cache.lookups` reports `result=hit|miss` for parsed context rows.
+This is a Host computation cache, unrelated to provider KV-cache hit rate.
+Each context-source instance caches at most 1,024 admitted rows within an
+8 MiB conservative accounting budget. Entries expire after two minutes and are
+evicted on the next cache access; idle instances have no background timer.
+When full, new rows bypass the cache until capacity expires, preventing sequential
+scans larger than the cache from repeatedly evicting the entire admitted prefix.
+The current key store is checked once per nonempty load before cache use.
+The fingerprint covers the run, key identity and every selected encrypted-row,
+context and receipt field. Key failures clear the cache; changed keys/rows cannot
+reuse old entries. Reads still query the database and apply compactions and
+current Session Work State, so deleted runs and replaced summaries remain visible.
+Parsed values stay in managed memory only, scoped to the source lifetime;
+there is no plaintext checkpoint on disk. This is not a memory-zeroization claim.
+
+## Reproducible Host benchmark
+
+Run `scripts/benchmark_agent_loop.ps1` on Windows while other test/process
+matrices are idle. It shares their machine-wide lock and exits 75 on contention.
+See [the workload and commands](../../tools/agent-performance/README.md).
+CI runs the same gate and preserves sample logs plus `report.json` as an artifact.
+
+The fixture uses generated files, synthetic prompt/model data and an in-process
+HTTP handler. Its SQLite, exact preparation, dispatch, Broker reads and receipts
+are real. It measures Host work and message-prefix stability; it does not establish
+provider latency, actual KV-cache hits, model quality or native UI performance.
+Compare matched tasks/provider settings separately when investigating live delays.

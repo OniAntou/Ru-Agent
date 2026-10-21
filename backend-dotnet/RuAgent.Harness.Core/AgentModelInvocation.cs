@@ -73,6 +73,7 @@ internal sealed class AgentModelInvocation
         }
         else try
         {
+            using var timing = Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.PromptBuild);
             promptContext = await _promptContextProvider
                 .BuildAsync(run, context, cancellationToken)
                 .ConfigureAwait(false)
@@ -335,12 +336,15 @@ internal sealed class AgentModelInvocation
         }
         try
         {
-            var promptContext = await _promptContextProvider.BuildAsync(run, context, cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("prompt_context_null");
+            SystemPromptContext promptContext;
+            using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.PromptBuild))
+                promptContext = await _promptContextProvider.BuildAsync(run, context, cancellationToken)
+                    .ConfigureAwait(false) ?? throw new InvalidOperationException("prompt_context_null");
             var request = new ModelStepRequest(run.RunId, modelStepId, context, promptContext,
                 run.Preset, run.PolicySnapshotVersion, run.PolicySnapshotSha256);
-            var prepared = await preparer.PrepareAsync(request, cancellationToken).ConfigureAwait(false);
+            IPreparedModelStep prepared;
+            using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.RequestPrepare))
+                prepared = await preparer.PrepareAsync(request, cancellationToken).ConfigureAwait(false);
             return request.WithPreparation(prepared);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -529,6 +533,7 @@ internal sealed class AgentModelInvocation
         AssistantDelta delta)
     {
         ArgumentNullException.ThrowIfNull(delta);
+        using var timing = Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.FramePublish);
         if (delta.ModelStepId != expectedStepId)
         {
             throw new InvalidOperationException("model_delta_identity_mismatch");

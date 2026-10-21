@@ -12,8 +12,10 @@ public sealed class AgentContextAssembler
         CancellationToken cancellationToken)
     {
         _ = runId.Value;
-        var source = await _source.LoadAsync(runId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("context_source_returned_null");
+        ModelContextSourceSnapshot source;
+        using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.ContextRead))
+            source = await _source.LoadAsync(runId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("context_source_returned_null");
         cancellationToken.ThrowIfCancellationRequested();
 
         RejectDuplicateSequence(source.SessionBase);

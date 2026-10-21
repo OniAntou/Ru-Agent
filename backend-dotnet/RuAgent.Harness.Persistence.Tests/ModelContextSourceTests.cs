@@ -165,8 +165,10 @@ public sealed class ModelContextSourceTests
         Assert.Equal(first.CanonicalUtf8.ToArray(), afterRestart.CanonicalUtf8.ToArray());
     }
 
-    [Fact]
-    public async Task Restart_replays_chained_compactions_by_run_version_when_clock_moves_back()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restart_replays_chained_compactions_by_run_version_when_clock_moves_back(bool warmCache)
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
@@ -186,19 +188,23 @@ public sealed class ModelContextSourceTests
         await fixture.PayloadStore.CaptureBaseContextAsync(
             request.Run.RunId, [], HarnessStoreTestFixture.Timestamp, CancellationToken.None);
 
+        var assembler = new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore));
+        if (warmCache) Assert.Equal("source prompt", Assert.Single((await assembler.AssembleAsync(request.Run.RunId, default)).Entries).Content);
+
         var firstTime = HarnessStoreTestFixture.Timestamp.AddSeconds(20);
         var afterFirst = RunAt(request.Run, 1, 2, firstTime);
         await CommitCompactionAsync(
             eventStore, request.Run.RunId, afterFirst, expectedVersion: 0, eventNumber: 20,
             "compact-a", "first summary", $"event:{request.Events[0].EventId.Value}", firstTime);
+        if (warmCache) Assert.Equal("first summary", Assert.Single((await assembler.AssembleAsync(request.Run.RunId, default)).Entries).Content);
         var secondTime = HarnessStoreTestFixture.Timestamp.AddSeconds(10);
         var afterSecond = RunAt(afterFirst, 2, 3, secondTime);
         await CommitCompactionAsync(
             eventStore, request.Run.RunId, afterSecond, expectedVersion: 1, eventNumber: 21,
             "compact-b", "second summary", "compact-a", secondTime);
 
-        var context = await new AgentContextAssembler(
-                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+        var context = await (warmCache ? assembler : new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)))
             .AssembleAsync(request.Run.RunId, CancellationToken.None);
 
         var summary = Assert.Single(context.Entries);

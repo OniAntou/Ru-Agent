@@ -1,5 +1,6 @@
 using OpenTelemetry;
 using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 using RuAgent.Broker.Diagnostics;
 using RuAgent.Harness.Core.Diagnostics;
 
@@ -15,6 +16,18 @@ namespace RuBackend.Diagnostics;
 /// </summary>
 public static class BackendTelemetry
 {
+    public static MeterProvider? CreateMetricsProvider()
+    {
+        try
+        {
+            var builder = Sdk.CreateMeterProviderBuilder().AddMeter(HarnessPerformance.MeterName);
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(BrokerTelemetry.OtlpEndpointVariable)))
+                builder.AddOtlpExporter();
+            return builder.Build();
+        }
+        catch { return null; }
+    }
+
     public static TracerProvider? CreateProvider()
     {
         try

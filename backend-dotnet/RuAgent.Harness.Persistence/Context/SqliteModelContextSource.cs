@@ -13,15 +13,18 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly SessionWorkStateStore? _workStates;
+    private readonly ContextEntryCache? _entryCache;
 
     public SqliteModelContextSource(
         HarnessSqliteOptions options,
         HarnessPayloadStore payloadStore,
-        SessionWorkStateStore? workStates = null)
+        SessionWorkStateStore? workStates = null,
+        bool enableEntryCache = true)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _workStates = workStates;
+        _entryCache = enableEntryCache ? new ContextEntryCache() : null;
     }
 
     public Task<ModelContextSourceSnapshot> LoadAsync(
@@ -74,9 +77,15 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
         command.Parameters.AddWithValue("$run_id", runId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
+        string? keyStamp = null;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var entry = await ReadEntryAsync(runId, reader, cancellationToken)
+            if (_entryCache is not null && keyStamp is null)
+            {
+                try { keyStamp = await _payloadStore.ReadModelCacheKeyStampAsync(cancellationToken).ConfigureAwait(false); }
+                catch { _entryCache.Clear(); throw; }
+            }
+            var entry = await ReadEntryAsync(runId, reader, cancellationToken, keyStamp)
                 .ConfigureAwait(false);
             if (reader.GetInt32(9) == 0)
             {
@@ -278,7 +287,8 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
     internal async Task<ModelContextEntry> ReadEntryAsync(
         RunId runId,
         SqliteDataReader reader,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? validatedKeyStamp = null)
     {
         var payloadId = new PayloadId(reader.GetString(0));
         var metadata = new HarnessPayloadIntent(
@@ -298,6 +308,23 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
             HarnessSqliteMapper.ReadBoundedBlob(reader, 7, 12, "context_payload_invalid", 12),
             HarnessSqliteMapper.ReadBoundedBlob(reader, 5, metadata.ByteCap, "context_payload_invalid"),
             HarnessSqliteMapper.ReadBoundedBlob(reader, 8, 16, "context_payload_invalid", 16));
+        string? cacheKey = null;
+        if (_entryCache is not null && validatedKeyStamp is not null)
+        {
+            try
+            {
+                _entryCache.UseKeyStamp(validatedKeyStamp);
+                cacheKey = ContextEntryCache.Fingerprint(runId, validatedKeyStamp, reader);
+                if (_entryCache.TryGet(cacheKey, out var cached))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Core.Diagnostics.HarnessPerformance.RecordContextCache(true);
+                    return cached;
+                }
+                Core.Diagnostics.HarnessPerformance.RecordContextCache(false);
+            }
+            catch { _entryCache.Clear(); throw; }
+        }
         var plaintext = await _payloadStore.DecryptAsync(
                 runId,
                 metadata,
@@ -306,7 +333,7 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
             .ConfigureAwait(false);
         try
         {
-            return BuildEntry(
+            var entry = BuildEntry(
                 reader.GetString(10),
                 reader.GetInt64(11),
                 (ModelContextRole)reader.GetInt32(12),
@@ -314,6 +341,8 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
                 metadata,
                 plaintext,
                 reader);
+            if (cacheKey is not null) _entryCache!.Add(cacheKey, entry, encrypted.Ciphertext.Length);
+            return entry;
         }
         catch (Exception exception) when (exception is
             DecoderFallbackException

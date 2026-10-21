@@ -255,6 +255,7 @@ def navigation(staged_root: Path) -> list:
             page("Subagents in depth", "docs/operations/subagents.md"),
             page("Providers and models", "docs/operations/provider-catalog.md"),
             page("Runtime behavior", "docs/operations/runtime-behavior.md"),
+            page("Agent performance", "docs/operations/agent-performance.md"),
             page("Installing and updating", "docs/operations/distribution-and-updates.md"),
             page("stdio RPC bridge", "docs/operations/rpc.md"),
             page("TypeScript SDK", "sdk/ru-agent/README.md"),

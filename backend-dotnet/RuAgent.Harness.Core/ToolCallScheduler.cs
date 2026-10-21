@@ -47,33 +47,17 @@ public sealed class ToolCallScheduler
                 }
 
                 var batch = ordered[index..end];
-                for (var batchIndex = 0; batchIndex < batch.Length; batchIndex += MaxReadConcurrency)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var chunk = batch
-                        .Skip(batchIndex)
-                        .Take(MaxReadConcurrency)
-                        .ToArray();
-                    var tasks = chunk
-                        .Select(call => execute(call, cancellationToken))
-                        .ToArray();
-                    var chunkReceipts = await Task.WhenAll(tasks).ConfigureAwait(false);
-                    for (var chunkIndex = 0; chunkIndex < chunk.Length; chunkIndex++)
-                    {
-                        receipts.Add(ValidateReceipt(chunk[chunkIndex], chunkReceipts[chunkIndex]));
-                    }
-
-                    if (chunkReceipts.Any(receipt => receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown))
-                    {
-                        return new ReadOnlyCollection<ToolExecutionReceipt>(receipts);
-                    }
-                }
+                var readReceipts = await ExecuteReadsAsync(batch, execute, cancellationToken).ConfigureAwait(false);
+                receipts.AddRange(readReceipts);
+                if (readReceipts.Any(receipt => receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown))
+                    return new ReadOnlyCollection<ToolExecutionReceipt>(receipts);
 
                 index = end;
                 continue;
             }
 
             var call = ordered[index];
+            using var timing = Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.ToolExecution);
             var receipt = await execute(call, cancellationToken).ConfigureAwait(false);
             var validatedReceipt = ValidateReceipt(call, receipt);
             receipts.Add(validatedReceipt);
@@ -85,6 +69,54 @@ public sealed class ToolCallScheduler
         }
 
         return new ReadOnlyCollection<ToolExecutionReceipt>(receipts);
+    }
+
+    private static async Task<IReadOnlyList<ToolExecutionReceipt>> ExecuteReadsAsync(
+        PreparedToolExecution[] calls,
+        Func<PreparedToolExecution, CancellationToken, Task<ToolExecutionReceipt>> execute,
+        CancellationToken cancellationToken)
+    {
+        var running = new Dictionary<int, Task<ToolExecutionReceipt>>();
+        var completed = new ToolExecutionReceipt?[calls.Length];
+        int next = 0;
+        bool unknown = false;
+        async Task<ToolExecutionReceipt> RunAsync(PreparedToolExecution call)
+        {
+            using var timing = Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.ToolExecution);
+            return ValidateReceipt(call, await execute(call, cancellationToken).ConfigureAwait(false));
+        }
+
+        try
+        {
+            while (running.Count > 0 || (!unknown && next < calls.Length))
+            {
+                // Observe every currently settled call before admitting more work.
+                // Unknown outcomes stop new starts; every already-started read still drains.
+                foreach (var pair in running.Where(pair => pair.Value.IsCompleted).ToArray())
+                {
+                    var receipt = await pair.Value.ConfigureAwait(false);
+                    completed[pair.Key] = receipt;
+                    unknown |= receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown;
+                    running.Remove(pair.Key);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!unknown && next < calls.Length && running.Count < MaxReadConcurrency)
+                {
+                    running.Add(next, RunAsync(calls[next]));
+                    next++;
+                    continue;
+                }
+                if (running.Count > 0) await Task.WhenAny(running.Values).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Returning/throwing before owned executions settle lets later runs
+            // race their cleanup. Observe all failures without replacing the first.
+            try { await Task.WhenAll(running.Values).ConfigureAwait(false); }
+            catch { }
+        }
+        return completed.Take(next).Select(receipt => receipt!).ToArray();
     }
 
     private static ToolExecutionReceipt ValidateReceipt(

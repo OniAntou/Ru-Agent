@@ -217,7 +217,7 @@ public sealed class ToolCallSchedulerTests
     }
 
     [Fact]
-    public async Task OutcomeUnknown_in_a_read_chunk_stops_later_reads_and_mutations()
+    public async Task OutcomeUnknown_drains_started_reads_and_stops_the_mutation_barrier()
     {
         var scheduler = new ToolCallScheduler();
         var firstChunkStarted = NewSignal();
@@ -254,6 +254,9 @@ public sealed class ToolCallSchedulerTests
                         : Receipt(call);
                 }
 
+                // A rolling pool may admit the ninth read before the first read
+                // reports its unknown outcome. It must still drain that receipt.
+                Assert.Equal(ToolAccessKind.ReadOnly, call.AccessKind);
                 Interlocked.Increment(ref startedAfterChunk);
                 return Receipt(call);
             },
@@ -263,8 +266,9 @@ public sealed class ToolCallSchedulerTests
         releaseFirstChunk.TrySetResult();
         var receipts = await scheduling.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal(0, startedAfterChunk);
-        Assert.Equal(8, receipts.Count);
+        Assert.InRange(startedAfterChunk, 0, 1);
+        Assert.Equal(8 + startedAfterChunk, receipts.Count);
+        Assert.Equal(calls.Take(receipts.Count).Select(call => call.ToolCallId), receipts.Select(receipt => receipt.ToolCallId));
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipts[0].Outcome);
     }
 

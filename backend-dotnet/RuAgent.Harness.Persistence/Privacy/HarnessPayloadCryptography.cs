@@ -120,6 +120,13 @@ public sealed class HarnessPayloadCryptography
         }
     }
 
+    internal async ValueTask<string> ReadModelCacheKeyStampAsync(CancellationToken cancellationToken)
+    {
+        var key = await ReadKeyAsync(cancellationToken).ConfigureAwait(false);
+        try { return Convert.ToHexString(SHA256.HashData(key)); }
+        finally { CryptographicOperations.ZeroMemory(key); }
+    }
+
     private async ValueTask<byte[]> ReadKeyAsync(CancellationToken cancellationToken)
     {
         var key = await _keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);

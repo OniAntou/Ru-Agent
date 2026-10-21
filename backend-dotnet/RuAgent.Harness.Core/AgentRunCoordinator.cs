@@ -229,7 +229,8 @@ public sealed class AgentRunCoordinator
         var startedRun = run.Advance(reservation.NextRun.Status, reservation.NextRun.BudgetWindow,
             reservation.NextRun.ModelStepsInWindow, reservation.NextRun.ToolCallsInWindow,
             startEvents.Count, reservation.NextRun.UpdatedAt, reservation.NextRun.TerminalErrorCode);
-        run = await CommitAsync(
+        using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.AdmissionCommit))
+            run = await CommitAsync(
                 run,
                 startedRun,
                 startEvents,

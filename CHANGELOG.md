@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(agent)**: Refill read-only tool slots as calls complete while preserving the concurrency bound, ordered receipts, mutation barriers and cleanup/reconciliation. Cache bounded parsed context rows in Host memory with current-key and complete encrypted-row checks; compactions and current work state still come from storage.
+- **feat(diagnostics)**: Add content-free phase/first-output timings and Host cache counters, plus a credential-free 16/32/60-step continuation benchmark and CI request-prefix/latency gate. Provider latency and GUI rendering remain separate measurements.
+
 - **perf(agent)**: Preserve the stable prefix of native model requests. Prepared text steps commit changed runtime/workflow snapshots as encrypted model-only history before dispatch and reuse unchanged snapshots after restart. Tool-result continuations preserve prior messages without adding a synthetic prompt. Images and larger context keep the bounded late-context projection; warnings, receipt hashes, provider pins and request-size accounting remain in force.
 - **fix(usage)**: Recognize DeepSeek cache hit/miss counts and distinguish inclusive Chat/Responses input from disjoint Messages buckets. Session usage sums every reported step in the newest eight runs while keeping the context peak separate, displays a token-weighted cache hit with coverage, and avoids double-charging cached input or assigning prices to ambiguous legacy cache reports.
 - **fix(providers)**: New official DeepSeek Chat selections pin full reasoning replay for tool continuations. Full reasoning stays in the encrypted private continuation and is restored only for the exact model and tool batch; display excerpts, existing selections and unknown gateways retain their previous behavior.

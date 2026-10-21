@@ -1,5 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
+using RuAgent.Harness.Core.Diagnostics;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
@@ -299,7 +301,8 @@ public sealed class ModelStepService
         var providerGateEntered = false;
         try
         {
-            await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            using (HarnessPerformance.Measure(HarnessPhase.ProviderGate))
+                await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             providerGateEntered = true;
             var text = new StringBuilder();
             var reasoning = new StringBuilder();
@@ -315,6 +318,9 @@ public sealed class ModelStepService
                 // stream: include_usage sends its tail chunk after finish_reason,
                 // so the enumeration keeps draining until the provider closes,
                 // and only usage information still reaches the step.
+                using var timing = HarnessPerformance.Measure(HarnessPhase.ProviderStream);
+                var providerStarted = Stopwatch.GetTimestamp();
+                bool firstToken = false, firstText = false, firstReasoning = false, firstTool = false;
                 var stepCompleted = false;
                 await foreach (var delta in provider.GenerateAsync(modelRequest, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
@@ -328,6 +334,18 @@ public sealed class ModelStepService
 
                         continue;
                     }
+
+                    var hasText = delta.Text is { Length: > 0 };
+                    var hasReasoning = delta.Reasoning is { Length: > 0 };
+                    var hasTool = delta.ToolFragments.Any(fragment => fragment.ToolName.Length > 0 || fragment.ArgumentsFragment.Length > 0);
+                    if (!firstToken && (hasText || hasReasoning || hasTool))
+                    { HarnessPerformance.RecordElapsed(HarnessPhase.FirstToken, providerStarted); firstToken = true; }
+                    if (!firstText && hasText)
+                    { HarnessPerformance.RecordElapsed(HarnessPhase.FirstText, providerStarted); firstText = true; }
+                    if (!firstReasoning && hasReasoning)
+                    { HarnessPerformance.RecordElapsed(HarnessPhase.FirstReasoning, providerStarted); firstReasoning = true; }
+                    if (!firstTool && hasTool)
+                    { HarnessPerformance.RecordElapsed(HarnessPhase.FirstTool, providerStarted); firstTool = true; }
 
                     if (delta.Text is not null)
                     {

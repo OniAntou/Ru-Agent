@@ -339,6 +339,9 @@ public sealed partial class HarnessPayloadStore
         return content;
     }
 
+    internal ValueTask<string> ReadModelCacheKeyStampAsync(CancellationToken cancellationToken) =>
+        _cryptography.ReadModelCacheKeyStampAsync(cancellationToken);
+
     internal ValueTask<ReadOnlyMemory<byte>> DecryptAsync(
         RunId runId,
         HarnessPayloadIntent metadata,

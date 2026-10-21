@@ -181,3 +181,17 @@ public sealed class KeyboardShortcutWiringTests
         Assert.Contains("TryHandleShellShortcut(e.Key)", GuiSource.MethodBody(GuiSource.Text("MainWindow.Sessions.cs"), "OnShellPreviewKeyDown"), StringComparison.Ordinal);
     }
 }
+
+public sealed class TerminalKeyPassThroughTests
+{
+    [Fact]
+    public void Shell_shortcuts_leave_terminal_editing_keys_to_a_focused_terminal()
+    {
+        // Ctrl+K, Ctrl+L and Ctrl+J are kill-line, clear and newline in a shell.
+        string handler = GuiSource.MethodBody(GuiSource.Text("MainWindow.CommandPalette.cs"), "TryHandleShellShortcut");
+        Assert.Contains("VirtualKey.K or VirtualKey.L or VirtualKey.J && IsFocusInsideTerminal()", handler, StringComparison.Ordinal);
+        string probe = GuiSource.MethodBody(GuiSource.Text("MainWindow.CommandPalette.cs"), "IsFocusInsideTerminal");
+        Assert.Contains("InteractiveTerminalControl", probe, StringComparison.Ordinal);
+        Assert.Contains("TerminalPanelControl", probe, StringComparison.Ordinal);
+    }
+}

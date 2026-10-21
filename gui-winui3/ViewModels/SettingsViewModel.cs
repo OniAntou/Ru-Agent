@@ -567,6 +567,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                     .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 ApplyProviderKeys();
                 SetKeyStatus($"Saved key for {completion.Target.DisplayName}.", ProviderConnectionTest.SuccessTone);
+                await AdoptShownProviderAsync();
                 _ = RefreshCatalogAsync();
                 break;
             case "invalid":
@@ -579,6 +580,24 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                 SetKeyStatus("Could not verify the connection; saved key unchanged. Try again.", ProviderConnectionTest.NeutralTone);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Stores the provider the editor shows when the Host still holds another one. The
+    /// key route stores only the key, so after a first run resolved the Host's keyless
+    /// default to a catalog provider, saving a key for it left the Host on the old
+    /// default and the chat still reported a missing key. A key typed for the provider
+    /// on screen is the user choosing it.
+    /// </summary>
+    private async Task AdoptShownProviderAsync()
+    {
+        if (_lastSettings is not { } stored
+            || string.Equals(ProviderSetupGuidance.NormalizeProviderChoice(stored.BackendChoice), ProviderChoice, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (await SaveSettingsAsync()) stored.BackendChoice = ProviderChoice;
     }
 
     internal async Task<bool> SaveSettingsAsync()
@@ -638,7 +657,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             if (_disposed || (catalog is not null && !ReferenceEquals(catalog, _catalog))) return;
             // A provider with no key cannot list its models; saying "could not reach the
             // provider" sent a new user to check their network instead of the key box.
-            if (IsCurrentProviderKeyMissing())
+            if (IsCurrentProviderKeyMissing() && IsMissingKeyShapedFailure(state.ErrorCode))
             {
                 ShowProviderTest(new ProviderConnectionTest(
                     ProviderConnectionTest.NeutralTone, $"Add a {ProviderButtonText} API key above to load its models."),
@@ -649,6 +668,14 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             ShowProviderTest(outcome, state.ErrorCode);
         });
     }
+
+    /// <summary>
+    /// Failures a missing key produces. A timeout, a rate limit or an unreadable answer
+    /// is a different problem and keeps its own message, even for a provider without a
+    /// stored key.
+    /// </summary>
+    private static bool IsMissingKeyShapedFailure(string? errorCode) =>
+        (errorCode?.Trim() ?? string.Empty) is "" or "catalog_unavailable" or "catalog_configuration_error" or "catalog_unauthorized";
 
     /// <summary>Whether the selected provider needs a key and none is stored.</summary>
     private bool IsCurrentProviderKeyMissing()

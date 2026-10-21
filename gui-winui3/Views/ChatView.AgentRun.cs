@@ -282,12 +282,23 @@ namespace RuApp.Views
             });
             if (prompt.ScopeWarning is { } warning)
             {
-                panel.Children.Add(new TextBlock
+                // Ink text beside a warning glyph: the warning colour fails AA as body
+                // text on the light theme, so it marks the line instead of painting it.
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.Children.Add(new FontIcon
                 {
-                    Text = warning,
-                    TextWrapping = TextWrapping.Wrap,
+                    Glyph = "",
+                    FontSize = 14,
                     Foreground = (Brush)Application.Current.Resources["RuWarningBrush"],
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(0, 2, 0, 0),
                 });
+                var text = new TextBlock { Text = warning, TextWrapping = TextWrapping.Wrap };
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+                panel.Children.Add(row);
             }
 
             return panel;

@@ -68,7 +68,7 @@ public sealed partial class MainWindow
             new("shortcuts", "Keyboard shortcuts", "General",
                 () => _ = ShowShortcutsSheetAsync(),
                 shortcut: KeyboardShortcutCatalog.KeysFor(KeyboardShortcutCatalog.ShowShortcuts), glyph: ""),
-            new("theme", Shell.Theme == UiTheme.Light ? "Switch to dark theme" : "Switch to light theme", "General",
+            new("theme", Shell.Theme == UiTheme.Dark ? "Switch to light theme" : "Switch to dark theme", "General",
                 Shell.ToggleTheme, glyph: ""),
         };
 
@@ -258,12 +258,32 @@ public sealed partial class MainWindow
         }
     }
 
+    private bool IsFocusInsideTerminal()
+    {
+        var element = FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
+        while (element is not null)
+        {
+            if (element is Controls.InteractiveTerminalControl or Controls.TerminalPanelControl) return true;
+            element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element);
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Ctrl shortcuts from <see cref="KeyboardShortcutCatalog"/>. Returns whether the key
     /// was one of them. Ctrl+N, Ctrl+1/2 and Ctrl+arrows keep their own handling.
     /// </summary>
     private bool TryHandleShellShortcut(VirtualKey key)
     {
+        // Ctrl+K, Ctrl+L and Ctrl+J mean kill-line, clear and newline in a shell. The
+        // shell's handler sees keys first (preview events tunnel from the root), so it
+        // leaves them to the integrated terminal while that has focus.
+        if (key is VirtualKey.K or VirtualKey.L or VirtualKey.J && IsFocusInsideTerminal())
+        {
+            return false;
+        }
+
         switch (key)
         {
             case VirtualKey.K:

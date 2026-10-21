@@ -81,6 +81,11 @@ public sealed class SettingsViewModelTests
 
         Assert.Equal("Add a 302.AI API key above to load its models.", viewModel.ProviderTestMessage);
         Assert.Equal(ProviderConnectionTest.NeutralTone, viewModel.ProviderTestTone);
+
+        // A timeout is not a missing key, even for a provider without one.
+        catalog.Raise(new ProviderCatalogState { Status = "error", ErrorCode = "catalog_timeout" });
+        foreach (var action in dispatched.ToArray()) action();
+        Assert.Contains("did not answer in time", viewModel.ProviderTestMessage, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -176,6 +181,45 @@ public sealed class SettingsViewModelTests
         Assert.Equal(string.Empty, viewModel.ModelsDevApiKey);
         Assert.Equal(ProviderConnectionTest.SuccessTone, viewModel.ModelsDevKeyStatusTone);
         Assert.True(viewModel.IsModelsDevSignOutVisible);
+    }
+
+    [Fact]
+    public async Task Saving_a_key_for_the_resolved_provider_also_stores_that_provider()
+    {
+        // The Host's default ("openai", no key) resolves to 302.AI in the editor. The key
+        // route stores only the key, so without this the Host stayed on OpenAI and the
+        // chat kept reporting a missing key.
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "openai" },
+            KeyResult = new ProviderKeyProbeResult("valid"),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
+        await backend.WaitForValidationAsync();
+        await backend.WaitForSaveAsync();
+
+        Assert.Equal("models.dev:302ai", Assert.Single(backend.Saved).BackendChoice);
+    }
+
+    [Fact]
+    public async Task Saving_a_key_for_the_stored_provider_does_not_rewrite_the_settings()
+    {
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "models.dev:openai" },
+            KeyResult = new ProviderKeyProbeResult("valid"),
+        };
+        using var viewModel = NewViewModel();
+        await viewModel.AttachAsync(backend, new FakeCatalog());
+
+        viewModel.ModelsDevApiKey = "sk-synthetic-test-key";
+        await backend.WaitForValidationAsync();
+        await Task.Yield();
+
+        Assert.Empty(backend.Saved);
     }
 
     [Fact]

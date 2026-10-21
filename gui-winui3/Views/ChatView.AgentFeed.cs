@@ -985,14 +985,16 @@ namespace RuApp.Views
 
         private void StartTextSweep(TextBlock textBlock, AgentActivityItem item)
         {
-            // Reduced motion: a static muted tint instead of the 25fps wave.
+            // Reduced motion: a static ink tint instead of the 25fps wave. Settled rows are
+            // muted (ActivityRowTone), so a running row must not be muted too, or the
+            // reader cannot tell which step is still working.
             if (!Services.UiTiming.AnimationsEnabled)
             {
                 StopTextSweep(textBlock);
-                if (Application.Current?.Resources.TryGetValue("RuMutedBrush", out var muted) == true
-                    && muted is Brush mutedBrush)
+                if (Application.Current?.Resources.TryGetValue(Services.ActivityRowTone.Ink, out var ink) == true
+                    && ink is Brush inkBrush)
                 {
-                    textBlock.Foreground = mutedBrush;
+                    textBlock.Foreground = inkBrush;
                 }
 
                 return;

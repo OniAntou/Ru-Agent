@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Command palette (Ctrl+K) for keyboard-first work: new chat, focus the message box, choose model, stop the run, side panel, Settings pages, updates, theme, permission preset and every session by title or workspace. Commands call the same handlers as their buttons; a permission change takes the Settings path and Full Access still asks to confirm before the next turn.
+- **feat(gui)**: Keyboard shortcuts Ctrl+L (message box), Ctrl+J (side panel), Ctrl+, (Settings) and Ctrl+/ (shortcuts sheet), listed with the existing ones in one catalog that the palette and the sheet both read.
+
 - **fix(gui)**: A new profile can enter a provider key. The Host's default (`OpenAI`) has no picker or key row, so a fresh install showed no key box and a false "could not reach the provider" network error. A keyless legacy choice now reads as unset and resolves to a catalog provider with its key box; a stored OpenAI or Anthropic key keeps working. A provider without a key now says to add one instead of blaming the network.
 - **fix(gui)**: The workspace-trust prompt names the folder being trusted (from the Host's session record or the exact path sent for the run) and says plainly when that folder is a drive root or the user profile. The default workspace rule is unchanged.
 - **fix(gui)**: Waiting rows in the activity feed say what the run needs ("Waiting for your answer", "Waiting for your approval", "Waiting for workspace trust") instead of showing raw codes such as `input_required`; explained codes move to the tooltip and unknown codes stay visible.

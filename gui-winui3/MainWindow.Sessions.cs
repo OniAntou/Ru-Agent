@@ -203,6 +203,13 @@ namespace RuApp
 
         private void OnShellPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            if (e.Key == Windows.System.VirtualKey.Escape && Palette.IsOpen)
+            {
+                e.Handled = true;
+                CloseCommandPalette();
+                return;
+            }
+
             if (e.Key == Windows.System.VirtualKey.Escape && _isSessionUsageOpen)
             {
                 e.Handled = true;
@@ -227,6 +234,12 @@ namespace RuApp
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
             if (!ctrlDown) return;
+
+            if (TryHandleShellShortcut(e.Key))
+            {
+                e.Handled = true;
+                return;
+            }
 
             if (e.Key == Windows.System.VirtualKey.N)
             {

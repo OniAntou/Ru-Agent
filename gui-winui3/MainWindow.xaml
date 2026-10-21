@@ -5,7 +5,8 @@
     xmlns:models="using:RuApp.Models"
     xmlns:controls="using:RuApp.Controls"
     xmlns:services="using:RuApp.Services"
-    xmlns:views="using:RuApp.Views">
+    xmlns:views="using:RuApp.Views"
+    xmlns:viewmodels="using:RuApp.ViewModels">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="Base" />
@@ -771,6 +772,132 @@
                             ToolTipService.ToolTip="Close (Esc)">
                         <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!--
+          Command palette (Ctrl+K). It opens near the top so the list grows downward under
+          the query, the way a launcher reads; the transcript stays visible, dimmed, behind it.
+        -->
+        <Grid x:Name="CommandPaletteOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="2"
+              Canvas.ZIndex="520"
+              Visibility="Collapsed"
+              AutomationProperties.Name="Command palette">
+            <Border Background="{StaticResource RuCanvasBrush}"
+                    Opacity="0.6"
+                    PointerPressed="OnCommandPaletteBackdropPointerPressed" />
+            <Border x:Name="CommandPaletteCard"
+                    Width="620"
+                    MaxHeight="480"
+                    Margin="24,88,24,24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderBrush="{StaticResource RuLineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource AppCardCornerRadius}"
+                    Translation="0,0,24"
+                    Shadow="{StaticResource RuRaisedShadow}">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Padding="16,4,12,4">
+                        <FontIcon Glyph="&#xE721;"
+                                  FontSize="14"
+                                  Foreground="{StaticResource RuMutedBrush}"
+                                  VerticalAlignment="Center" />
+                        <TextBox x:Name="CommandPaletteQuery"
+                                 Grid.Column="1"
+                                 Text="{x:Bind Palette.Query, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="Type a command or a session name"
+                                 FontFamily="{StaticResource RuUiFontFamily}"
+                                 FontSize="15"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="10,10,4,10"
+                                 PreviewKeyDown="OnCommandPaletteQueryKeyDown"
+                                 AutomationProperties.Name="Search commands and sessions" />
+                    </Grid>
+                    <Border Grid.Row="1" Height="1" Background="{StaticResource RuLineBrush}" />
+                    <ListView x:Name="CommandPaletteList"
+                              Grid.Row="2"
+                              Padding="6"
+                              ItemsSource="{x:Bind Palette.Results}"
+                              SelectedIndex="{x:Bind Palette.SelectedIndex, Mode=OneWay}"
+                              SelectionMode="Single"
+                              IsItemClickEnabled="True"
+                              ItemClick="OnCommandPaletteItemClick"
+                              IsTabStop="False"
+                              AutomationProperties.Name="Commands">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="MinHeight" Value="40" />
+                                <Setter Property="Padding" Value="10,0" />
+                                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="viewmodels:PaletteCommand">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Padding="0,6">
+                                    <FontIcon Glyph="{x:Bind Glyph}"
+                                              FontSize="14"
+                                              Foreground="{StaticResource RuMutedBrush}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                        <TextBlock Text="{x:Bind Title}"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="13.5"
+                                                   Foreground="{StaticResource RuInkBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxLines="1" />
+                                        <TextBlock Text="{x:Bind Hint}"
+                                                   Visibility="{x:Bind HasHint}"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="11.5"
+                                                   Foreground="{StaticResource RuMutedBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxLines="1" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border Visibility="{x:Bind HasShortcut}"
+                                                Padding="6,2"
+                                                BorderBrush="{StaticResource RuLineBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="{StaticResource AppMicroPillCornerRadius}">
+                                            <TextBlock Text="{x:Bind Shortcut}"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource RuMutedBrush}" />
+                                        </Border>
+                                        <TextBlock Text="{x:Bind Group}"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource RuMutedBrush}"
+                                                   MinWidth="64"
+                                                   TextAlignment="Right" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock Grid.Row="2"
+                               Visibility="{x:Bind Palette.HasNoResults, Mode=OneWay}"
+                               Text="No command or session matches."
+                               Margin="20,16"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="13"
+                               Foreground="{StaticResource RuMutedBrush}" />
+                    <Border Grid.Row="3"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="16,8">
+                        <TextBlock Text="&#x2191; &#x2193; to move &#xB7; Enter to run &#xB7; Esc to close"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+                    </Border>
                 </Grid>
             </Border>
         </Grid>

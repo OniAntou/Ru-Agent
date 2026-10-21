@@ -86,6 +86,13 @@ theme choice and its persistence and the title bar's update and side-panel entri
 services and views, dialogs, layout and every animation. `HostShellBackend` resolves the
 API service, health service and catalog controllers per call, because a reconnect
 replaces them.
+`CommandPaletteViewModel` ranks the shell's commands and sessions for the palette
+(Ctrl+K): characters must match in order, word starts outrank inner matches, and a
+command that cannot run now is left out. The shell builds the list on each open, and
+every entry calls an existing handler (a permission change goes through
+`ShellViewModel.ChoosePresetInSettings`, the Settings path). Shortcuts live in
+`KeyboardShortcutCatalog`, which the shell's key handler, the palette hints and the
+shortcuts sheet share; the composer still carries no permission control.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}`,
 `{x:Bind ModelSelection.X}`, `{x:Bind Composer.X}` and `{x:Bind Shell.X}` names a public
 member of the bound view model.

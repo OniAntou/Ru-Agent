@@ -96,6 +96,7 @@ namespace RuApp
             Shell.PropertyChanged += OnShellPropertyChanged;
             Shell.ProjectRootResolved += OnProjectRootResolved;
             Shell.ChatPresetChosen += preset => _chatView?.SetAgentPreset(preset);
+            InitializeCommandPalette();
             try
             {
                 this.InitializeComponent();

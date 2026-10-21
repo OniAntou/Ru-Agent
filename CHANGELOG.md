@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: A compaction summary can no longer close or reopen its own `[context_compaction … untrusted=true]` frame. Frame markers inside the summarized history or the model checkpoint are neutralized, so text after a forged `[/context_compaction]` stays inside the untrusted block.
+
 - **fix(agent)**: Preserve nested instruction discovery through compaction and restart in image/text-selection runs using original encrypted file receipts. Prefer existing instruction files nearest to touched paths so empty ancestors cannot hide the applicable `AGENTS.md`.
 
 - **feat(agent)**: Generate validated structured checkpoints with the pinned model, reserve auxiliary-call budgets and record reported usage. Retain recent exchanges and original receipts; failed or incomplete checkpoints return named errors.

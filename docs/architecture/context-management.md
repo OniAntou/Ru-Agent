@@ -15,6 +15,9 @@ must be merged with newer facts rather than copied indefinitely.
 
 The summary must be nonempty, contain every section in order with bullet content,
 contain no NUL, and fit 8,000 UTF-16 characters. There is no silent truncation.
+Both checkpoint and deterministic summaries are wrapped by `ContextCompactionFrame`
+in a `[context_compaction … untrusted=true]` frame; frame markers inside the body
+are neutralized so summarized history cannot close or reopen its own frame.
 The auxiliary request has a 60-second deadline and an output cap of at most
 4,096 tokens (never above the pinned cap). Exact request preflight still applies.
 It uses the model's declared lowest reasoning effort when available for this

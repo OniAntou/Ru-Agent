@@ -82,7 +82,7 @@ internal sealed partial class AgentRunCompaction
             if (receiptError is not null) throw new ContextCheckpointException(receiptError);
             if (result.ErrorCode is not null) throw new ContextCheckpointException(result.ErrorCode);
             var text = ContextCheckpoint.Validate(result.Text);
-            var frame = $"[context_compaction id={plan.CompactionId} untrusted=true]\n{text}\n[/context_compaction]";
+            var frame = ContextCompactionFrame.Wrap($"id={plan.CompactionId} untrusted=true", text);
             var projected = plan.ProjectedEntries.Select(entry => entry.SourceId == plan.CompactionId
                 ? ModelContextEntry.Summary(plan.CompactionId, entry.Sequence, frame, plan.CoveredRanges) : entry).ToArray();
             var after = ModelContextSizeEstimator.EstimateTokens(new ModelContextSnapshot(projected, ModelContextSnapshot.Canonicalize(projected)));

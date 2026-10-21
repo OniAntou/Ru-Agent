@@ -163,7 +163,7 @@ public static class ContextCompactionPlanner
             ",",
             ranges.Select(range => $"{range.SourceId}:{range.StartSequence}-{range.EndSequence}"));
         var summaryText = BoundSummary(
-            $"[context_compaction id={compactionId} ranges={rangePrefix} untrusted=true]\n{summary}\n[/context_compaction]",
+            ContextCompactionFrame.Wrap($"id={compactionId} ranges={rangePrefix} untrusted=true", summary),
             maxSummaryChars);
         var summarySequence = covered.Min(entry => entry.Sequence);
         var summaryEntry = ModelContextEntry.Summary(

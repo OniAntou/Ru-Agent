@@ -320,8 +320,8 @@ namespace RuApp.Views
                     message.Attachments?.Where(attachment => !attachment.IsImage)
                         .Sum(attachment => attachment.TextContent?.Length ?? 0) ?? 0)).ToList(),
                 draftText,
-                PendingAttachments.Count(attachment => attachment.IsImage),
-                PendingAttachments.Where(attachment => !attachment.IsImage)
+                Composer.ImageCount,
+                Composer.Attachments.Where(attachment => !attachment.IsImage)
                     .Sum(attachment => attachment.TextContent?.Length ?? 0));
 
             int reportedTokens = 0;
@@ -431,14 +431,7 @@ namespace RuApp.Views
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
         {
-            if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox.Text, PendingAttachments))
-            {
-                ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-            }
-            else if (_localComposerStatus == ComposerDraftStore.RetentionLimitStatus)
-            {
-                ClearComposerStatus();
-            }
+            Composer.EditDraft(_activeSessionId, ChatInputTextBox.Text);
             ScheduleContextMeterUpdate();
         }
 

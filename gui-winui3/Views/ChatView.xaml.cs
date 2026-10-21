@@ -130,14 +130,14 @@ namespace RuApp.Views
         private readonly SessionHistoryPresenter _sessionHistoryPresenter = new();
         private bool _agentActionPending => _sessionHistoryPresenter.IsActionPending;
         private bool _isSendingUserTurn;
-        private readonly AgentTurnQueue _queuedTurns = new();
         /// <summary>
         /// The transcript, bound to the chat list. A batch collection so the two
         /// bulk loads (session open, end-of-turn reload) replace hundreds of rows
         /// with one reset notification instead of one notification per row.
         /// </summary>
         public BatchObservableCollection<ChatMessageItem> Messages { get; } = new();
-        public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
+        /// <summary>The composer's unsent content: attachments, per-session drafts and the turn queue.</summary>
+        public ChatComposerViewModel Composer { get; }
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly AgentActivityFeedPresenter _agentActivityFeed = new();
         private readonly Dictionary<string, int> _activitySplitOffsetById = new(StringComparer.Ordinal);
@@ -164,6 +164,8 @@ namespace RuApp.Views
             });
             ModelSelection.PickerProjectionReady += OnModelSelectionPickerReady;
             ModelSelection.SelectionChanged += OnModelSelectionChanged;
+            Composer = new ChatComposerViewModel(RunPanel);
+            Composer.TextReplaced += OnComposerTextReplaced;
             this.InitializeComponent();
             RunPanel.PropertyChanged += OnRunPanelPropertyChanged;
             RunPanel.ApprovalArrived += OnRunPanelApprovalArrived;
@@ -185,9 +187,9 @@ namespace RuApp.Views
                 ApplyReplySnapshot);
             ChatListView.ItemsSource = Messages;
             InitializeChatScrolling();
-            AttachmentPreviewList.ItemsSource = PendingAttachments;
-            QueuedTurnsList.ItemsSource = _queuedTurns.Items;
-            _queuedTurns.Items.CollectionChanged += OnQueuedTurnsChanged;
+            AttachmentPreviewList.ItemsSource = Composer.Attachments;
+            QueuedTurnsList.ItemsSource = Composer.Queue.Items;
+            Composer.Queue.Items.CollectionChanged += OnQueuedTurnsChanged;
             Messages.CollectionChanged += OnMessagesChanged;
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             ChatListView.ContainerContentChanging += OnChatContainerContentChanging;
@@ -380,7 +382,7 @@ namespace RuApp.Views
             ChatInputTextBox.TextChanged += OnChatInputTyping;
 
             Messages.CollectionChanged += (_, __) => UpdateContextUsage();
-            PendingAttachments.CollectionChanged += (_, __) => UpdateContextUsage();
+            Composer.Attachments.CollectionChanged += (_, __) => UpdateContextUsage();
 
             _ = LoadChatModelsAsync();
         }

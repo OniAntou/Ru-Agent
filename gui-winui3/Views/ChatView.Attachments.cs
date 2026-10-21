@@ -41,8 +41,7 @@ namespace RuApp.Views
             try
             {
                 var props = await file.GetBasicPropertiesAsync();
-                int currentImageCount = PendingAttachments.Count(static attachment => attachment.IsImage);
-                var intake = ChatAttachmentIntakePresenter.Evaluate(file.Name, checked((long)props.Size), currentImageCount);
+                var intake = ChatAttachmentIntakePresenter.Evaluate(file.Name, checked((long)props.Size), Composer.ImageCount);
                 if (!intake.Accepted)
                 {
                     if (intake.Status is not null) ShowAgentInlineStatus(intake.Status);
@@ -157,16 +156,7 @@ namespace RuApp.Views
             }
         }
 
-        private bool CanAcceptImageAttachment()
-        {
-            if (ChatAttachmentIntakePresenter.CanAddImage(PendingAttachments.Count(static attachment => attachment.IsImage)))
-            {
-                return true;
-            }
-
-            ShowAgentInlineStatus(ChatAttachmentPolicy.TooManyImagesStatus);
-            return false;
-        }
+        private bool CanAcceptImageAttachment() => Composer.CanAcceptImage();
 
         private bool TryAddAttachmentToComposer(
             ImageAttachmentItem attachment,
@@ -178,21 +168,7 @@ namespace RuApp.Views
                 return false;
             }
 
-            if (attachment.IsImage && !CanAcceptImageAttachment())
-            {
-                return false;
-            }
-
-            var nextAttachments = PendingAttachments.Append(attachment).ToList();
-            if (!_composerDrafts.TrySave(sessionId, ChatInputTextBox.Text, nextAttachments))
-            {
-                ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-                return false;
-            }
-
-            PendingAttachments.Add(attachment);
-            AttachmentPreviewContainer.Visibility = Visibility.Visible;
-            return true;
+            return Composer.TryAddAttachment(sessionId, ChatInputTextBox.Text, attachment);
         }
 
         private sealed record PreparedImageAttachment(

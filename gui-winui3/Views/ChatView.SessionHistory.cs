@@ -311,30 +311,25 @@ namespace RuApp.Views
         }
 
 
-        // ComposerDraftStore owns unsent text and attachments per session.
-        private readonly ComposerDraftStore _composerDrafts = new();
-
+        // The composer view model owns unsent text and attachments per session.
         private void RestoreComposerDraft(string sessionId)
         {
-            string draft = _composerDrafts.Restore(sessionId);
-            if (ChatInputTextBox is not null
-                && !string.Equals(ChatInputTextBox.Text, draft, StringComparison.Ordinal))
-            {
-                ChatInputTextBox.Text = draft;
-            }
-
-            PendingAttachments.Clear();
-            foreach (var attachment in _composerDrafts.RestoreAttachments(sessionId))
+            Composer.RestoreDraft(sessionId);
+            foreach (var attachment in Composer.Attachments)
             {
                 attachment.EnsurePreviewFromBase64();
-                PendingAttachments.Add(attachment);
             }
-            AttachmentPreviewContainer.Visibility = PendingAttachments.Count > 0
-                ? Visibility.Visible
-                : Visibility.Collapsed;
         }
 
-        private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
+        /// <summary>Writes text the composer view model replaced (a restore or a clear) into the box.</summary>
+        private void OnComposerTextReplaced(string text)
+        {
+            if (ChatInputTextBox is not null
+                && !string.Equals(ChatInputTextBox.Text, text, StringComparison.Ordinal))
+            {
+                ChatInputTextBox.Text = text;
+            }
+        }
 
         private async Task DetachAgentForSessionSwitchAsync()
         {
@@ -362,9 +357,9 @@ namespace RuApp.Views
                 "Stopping Coding Agent…");
             // Stopping is an interrupt: queued turns stay put until the user asks for
             // them, instead of a new run starting underneath the click that meant stop.
-            if (!_queuedTurns.IsEmpty)
+            if (!Composer.Queue.IsEmpty)
             {
-                _queuedTurns.HoldAfterStop();
+                Composer.Queue.HoldAfterStop();
             }
             AbandonActiveAgentReply();
             UpdateSendButtonMode(isAgentRunning: false);
@@ -746,15 +741,8 @@ namespace RuApp.Views
 
         private void ActivateSession(string sessionId) => _sessionPresentation.Activate(sessionId);
 
-        private bool RetainComposerDraft(bool checkOnly)
-        {
-            var text = ChatInputTextBox?.Text ?? string.Empty;
-            bool retained = checkOnly
-                ? _composerDrafts.CanSave(_activeSessionId, text, PendingAttachments.ToList())
-                : _composerDrafts.TrySave(_activeSessionId, text, PendingAttachments);
-            if (!retained) ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-            return retained;
-        }
+        private bool RetainComposerDraft(bool checkOnly) =>
+            Composer.RetainDraft(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty, checkOnly);
 
         private static double HorizontalInsetFor(double width) =>
             width < NarrowWidthThreshold
@@ -937,7 +925,8 @@ namespace RuApp.Views
             }
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
-            _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;
+            Composer.Queue.Items.CollectionChanged -= OnQueuedTurnsChanged;
+            Composer.TextReplaced -= OnComposerTextReplaced;
             Messages.CollectionChanged -= OnMessagesChanged;
             RootGrid.SizeChanged -= OnRootGridSizeChanged;
             ChatListView.ContainerContentChanging -= OnChatContainerContentChanging;

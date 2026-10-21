@@ -96,9 +96,9 @@ public sealed class GuiSourceTests
         // must be extractable, so a failure there is about the view and not the helper.
         var code = GuiSource.ViewText("ChatView");
 
-        Assert.Contains("_composerDrafts", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+        Assert.Contains("Composer.RestoreDraft", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("ChatInputTextBox.Text = text", GuiSource.MethodBody(code, "OnComposerTextReplaced"), StringComparison.Ordinal);
+        Assert.Contains("Composer.EditDraft", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
     }
 
     [Fact]

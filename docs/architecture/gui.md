@@ -34,6 +34,24 @@ list selection, drag visuals, title waves and dialogs; it re-syncs selection on
 `Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
 A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
+`ChatModelPickerViewModel` owns the chat's model and reasoning selection: the
+grouped catalog subscription, debounced picker search, model save (a failed save
+is reported on the composer, not swallowed) and the effort options for the
+selected model. `AgentRunPanelViewModel` owns the composer's run surface: the
+status line, Stop, the send/stop face and placeholder, the approval and question
+cards, and the one-prompt-per-run workspace-trust guard. Its rules stay in
+`AgentInlinePanelPolicy`; it raises `ApprovalArrived` and `QuestionArrived` once
+per prompt id, so the view moves keyboard focus only on a new prompt, and a
+composer-local message (a rejected file, a queue notice) outlives run refreshes
+until it is cleared. `ChatView` still projects the controller into the panel's
+input and keeps animation, scrolling and the trust dialog itself.
+`ChatComposerViewModel` owns the composer's unsent content: attachments, the
+per-session draft (`ComposerDraftStore`), the turn queue and its strip state, and
+the effective prompt that inlines text attachments. The text box stays the live
+source of the typed text, because WinUI raises `TextChanged` after an edit: methods
+that compare or save text take the box's current value, so text typed while a send
+awaits the Host is never cleared by that send. The view model writes text back only
+through `TextReplaced` (restore and clear), never through a two-way binding.
 `ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}` names a
 public member of the bound view model.
 

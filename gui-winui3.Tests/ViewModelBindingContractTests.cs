@@ -15,6 +15,7 @@ public sealed partial class ViewModelBindingContractTests
     [Theory]
     [InlineData("SettingsView.xaml", "ViewModel", typeof(SettingsViewModel))]
     [InlineData("ChatView.xaml", "ModelSelection", typeof(ChatModelPickerViewModel))]
+    [InlineData("ChatView.xaml", "Composer", typeof(ChatComposerViewModel))]
     public void View_bindings_name_public_view_model_members(string view, string property, Type viewModel)
     {
         string markup = GuiSource.Text("Views", view);

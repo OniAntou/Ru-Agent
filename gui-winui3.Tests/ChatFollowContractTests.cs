@@ -151,21 +151,15 @@ public sealed class ChatFollowContractTests
     {
         // Composer drafts are keyed by session, so switching chats must not carry
         // one session's half-typed message into another. The rule lives in
-        // ComposerDraftStore and is asserted there; this checks the view reaches it
-        // rather than keeping a map of its own.
+        // ComposerDraftStore behind ChatComposerViewModel and is asserted by
+        // ChatComposerViewModelTests; this checks the view reaches it rather than
+        // keeping a map of its own.
         var code = GuiSource.ViewText("ChatView");
 
-        var restore = GuiSource.MethodBody(code, "RestoreComposerDraft");
-        Assert.Contains("_composerDrafts", restore, StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.RestoreAttachments", restore, StringComparison.Ordinal);
-
-        // The view moves text; it does not decide what the text is. A body that reads
-        // the box to answer that would be re-deriving the rule the store already owns.
-        Assert.DoesNotContain("_composerDrafts.Save", restore, StringComparison.Ordinal);
-
-        Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+        Assert.DoesNotContain("ComposerDraftStore", code, StringComparison.Ordinal);
+        Assert.Contains("Composer.RestoreDraft", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("Composer.EditDraft", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
         Assert.Contains("RetainComposerDraft(checkOnly: false)", GuiSource.MethodBody(code, "OpenSessionAsync"), StringComparison.Ordinal);
-        Assert.Contains("_composerDrafts.TrySave", GuiSource.MethodBody(code, "RetainComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("Composer.RetainDraft", GuiSource.MethodBody(code, "RetainComposerDraft"), StringComparison.Ordinal);
     }
 }

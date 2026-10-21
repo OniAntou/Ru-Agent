@@ -421,7 +421,7 @@ namespace RuApp.Views
             // The queue belongs to the session that was on screen; a queue that
             // followed the user into another conversation would send a turn into the
             // wrong transcript.
-            _queuedTurns.Clear();
+            Composer.Queue.Clear();
 
             _sessionPresentation.StopMonitoring();
             _sessionHistoryPresenter.SetActionPending(false);
@@ -469,23 +469,7 @@ namespace RuApp.Views
         {
             if (sender is Button btn && btn.Tag is string id)
             {
-                var item = PendingAttachments.FirstOrDefault(a => a.Id == id);
-                if (item != null)
-                {
-                    PendingAttachments.Remove(item);
-                    if (!_composerDrafts.TrySave(_activeSessionId, ChatInputTextBox.Text, PendingAttachments))
-                    {
-                        ShowAgentInlineStatus(ComposerDraftStore.RetentionLimitStatus);
-                    }
-                    else if (_localComposerStatus == ComposerDraftStore.RetentionLimitStatus)
-                    {
-                        ClearComposerStatus();
-                    }
-                }
-                if (PendingAttachments.Count == 0)
-                {
-                    AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
-                }
+                Composer.RemoveAttachment(_activeSessionId, ChatInputTextBox.Text, id);
             }
         }
         private async void OnChatInputPreviewKeyDown(object sender, KeyRoutedEventArgs e)
@@ -636,17 +620,17 @@ namespace RuApp.Views
             long submittedGeneration = _agentTurnGeneration;
             try
             {
-                string text = ChatInputTextBox.Text.Trim();
-                string composerText = ChatInputTextBox.Text;
-                var attachments = PendingAttachments.ToList();
+                var snapshot = Composer.TakeSnapshot(ChatInputTextBox.Text);
+                string text = snapshot.Text;
+                var attachments = snapshot.Attachments.ToList();
 
-                if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
+                if (snapshot.IsEmpty) return;
 
                 if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
                 {
                     // Typed "Continue" resumes a resumable run instead of
                     // starting a new turn; the failure message points here.
-                    ChatInputTextBox.Text = string.Empty;
+                    Composer.ClearText();
                     await RunAgentActionAsync(
                         () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
                         "Resuming Coding Agent…");
@@ -656,8 +640,7 @@ namespace RuApp.Views
                 // The limit is checked before the composer enters its sending face:
                 // bailing out after UpdateSendButtonMode(true) leaves the button showing
                 // Stop with no run behind it, and the next send starts from a broken state.
-                int imageCount = attachments.Count(static attachment => attachment.IsImage);
-                if (ChatAttachmentIntakePresenter.TurnAdmissionStatus(imageCount) is { } admissionStatus)
+                if (ChatAttachmentIntakePresenter.TurnAdmissionStatus(snapshot.ImageCount) is { } admissionStatus)
                 {
                     ShowAgentInlineStatus(admissionStatus);
                     return;
@@ -671,22 +654,15 @@ namespace RuApp.Views
                     () => _activeSessionId);
                 bool accepted = await ChatSubmissionPresenter.SubmitAsync(
                     onAccepted => SendAgentTurnAsync(
-                        BuildEffectivePrompt(text, attachments),
+                        ChatComposerViewModel.BuildEffectivePrompt(text, attachments),
                         CancellationToken.None,
                         attachments: attachments,
                         displayUserText: text,
                         onAccepted: onAccepted),
                     () => submittedGeneration == _agentTurnGeneration
                         && string.Equals(_activeSessionId, submittedSessionId, StringComparison.Ordinal)
-                        && string.Equals(ChatInputTextBox.Text, composerText, StringComparison.Ordinal)
-                        && PendingAttachments.SequenceEqual(attachments),
-                    () =>
-                    {
-                        ChatInputTextBox.Text = string.Empty;
-                        PendingAttachments.Clear();
-                        AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
-                        ClearComposerDraft(submittedSessionId);
-                    });
+                        && Composer.IsUnchangedSince(snapshot, ChatInputTextBox.Text),
+                    () => Composer.ClearAfterSend(submittedSessionId));
                 if (!accepted && submittedGeneration == _agentTurnGeneration)
                 {
                     UpdateSendButtonMode(isAgentRunning: false);
@@ -711,69 +687,11 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// The prompt the Agent actually receives: the typed text with every attached
-        /// document inlined above it as labelled fenced blocks. The send path and the
-        /// queue drain share it, so a turn is inlined the same way however it left
-        /// the composer.
-        /// </summary>
-        private static string BuildEffectivePrompt(string text, IReadOnlyList<ImageAttachmentItem> attachments)
-        {
-            var textAttachments = attachments
-                .Where(attachment => !attachment.IsImage && !string.IsNullOrWhiteSpace(attachment.TextContent))
-                .ToList();
-            if (textAttachments.Count == 0)
-            {
-                return text;
-            }
-
-            var builder = new System.Text.StringBuilder();
-            foreach (var document in textAttachments)
-            {
-                string language = document.FileExtension.TrimStart('.');
-                builder.AppendLine($"[Attached file: {document.FileName} ({document.FormattedSize})]");
-                builder.AppendLine($"```{language}");
-                builder.AppendLine(document.TextContent);
-                builder.AppendLine("```");
-                builder.AppendLine();
-            }
-
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                builder.AppendLine(text);
-            }
-
-            return builder.ToString().TrimEnd();
-        }
-
-        /// <summary>
         /// Takes what the composer holds and puts it behind the run in hand. False
         /// means the text stayed where it was: nothing to queue, or the queue is full.
         /// </summary>
-        private bool QueueCurrentComposerTurn()
-        {
-            string text = ChatInputTextBox?.Text?.Trim() ?? string.Empty;
-            var attachments = PendingAttachments.ToList();
-            if (text.Length == 0 && attachments.Count == 0)
-            {
-                return false;
-            }
-
-            if (!_queuedTurns.TryEnqueue(text, text, attachments))
-            {
-                ShowAgentInlineStatus(AgentComposerPresentation.QueueFullStatus);
-                return false;
-            }
-
-            if (ChatInputTextBox is not null)
-            {
-                ChatInputTextBox.Text = string.Empty;
-            }
-            PendingAttachments.Clear();
-            AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
-            ClearComposerDraft(_activeSessionId);
-            ShowAgentInlineStatus(AgentComposerPresentation.QueuedStatus);
-            return true;
-        }
+        private bool QueueCurrentComposerTurn() =>
+            Composer.QueueCurrent(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty);
 
         /// <summary>
         /// Shows a row's fold chevron while the pointer is on it, or while it holds focus.
@@ -817,7 +735,7 @@ namespace RuApp.Views
         {
             if (sender is Button button && button.Tag is QueuedAgentTurn turn)
             {
-                _queuedTurns.Remove(turn);
+                Composer.Queue.Remove(turn);
             }
         }
 
@@ -827,7 +745,7 @@ namespace RuApp.Views
             {
                 // A hand-driven flush answers this click, so the stop hold that was
                 // guarding the automatic drain no longer applies to what is left.
-                _queuedTurns.ReleaseHold();
+                Composer.Queue.ReleaseHold();
                 await DrainQueuedTurnsAsync(CancellationToken.None);
             }
             catch (Exception exception)
@@ -847,8 +765,8 @@ namespace RuApp.Views
             var generation = _agentTurnGeneration;
             try
             {
-                await _queuedTurns.DrainAsync((next, accepted) => SendAgentTurnAsync(
-                    BuildEffectivePrompt(next.Text, next.Attachments), cancellationToken,
+                await Composer.Queue.DrainAsync((next, accepted) => SendAgentTurnAsync(
+                    ChatComposerViewModel.BuildEffectivePrompt(next.Text, next.Attachments), cancellationToken,
                     attachments: next.Attachments.ToList(), displayUserText: next.DisplayText,
                     onAccepted: accepted));
             }
@@ -865,19 +783,12 @@ namespace RuApp.Views
 
         private void UpdateQueuedTurnsPanel()
         {
-            if (QueuedTurnsPanel is null || QueuedTurnsHeader is null || QueuedTurnsSendButton is null)
+            // Header text and Send now are bound; the strip itself animates in and out.
+            Composer.SetRunInHand(_isSendButtonInStopMode || IsActiveAgentRunPending());
+            if (QueuedTurnsPanel is not null)
             {
-                return;
+                Services.UiMotion.SetVisible(QueuedTurnsPanel, Composer.HasQueuedTurns);
             }
-
-            int count = _queuedTurns.Items.Count;
-            Services.UiMotion.SetVisible(QueuedTurnsPanel, count > 0);
-            QueuedTurnsHeader.Text = count == 1 ? "1 message queued" : $"{count} messages queued";
-
-            // While a run is in hand the queue drains on its own, so offering to send
-            // it by hand would promise a turn boundary the user cannot have yet.
-            bool canSendNow = count > 0 && !_isSendButtonInStopMode && !IsActiveAgentRunPending();
-            QueuedTurnsSendButton.Visibility = canSendNow ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>

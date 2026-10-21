@@ -936,6 +936,7 @@
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock x:Name="QueuedTurnsHeader"
                                            Grid.Column="0"
+                                           Text="{x:Bind Composer.QueueHeaderText, Mode=OneWay}"
                                            FontFamily="{StaticResource RuUiFontFamily}"
                                            FontSize="11"
                                            FontWeight="SemiBold"
@@ -943,7 +944,7 @@
                                            VerticalAlignment="Center" />
                                 <Button x:Name="QueuedTurnsSendButton"
                                         Grid.Column="1"
-                                        Visibility="Collapsed"
+                                        Visibility="{x:Bind Composer.CanSendQueueNow, Mode=OneWay}"
                                         Click="OnSendQueuedTurnsClick"
                                         Style="{StaticResource RuToolbarButtonStyle}"
                                         AutomationProperties.Name="Send queued messages">
@@ -999,7 +1000,7 @@
                                   HorizontalScrollMode="Enabled"
                                   VerticalScrollMode="Disabled"
                                   Margin="0,0,0,8"
-                                  Visibility="Collapsed">
+                                  Visibility="{x:Bind Composer.HasAttachments, Mode=OneWay}">
                         <ItemsControl x:Name="AttachmentPreviewList">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>

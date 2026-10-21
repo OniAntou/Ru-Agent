@@ -65,7 +65,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
             code,
             StringComparison.Ordinal);
         string handover = GuiSource.MethodBody(code, "DrainQueuedTurnsAsync");
-        Assert.Contains("_queuedTurns.DrainAsync", handover, StringComparison.Ordinal);
+        Assert.Contains("Composer.Queue.DrainAsync", handover, StringComparison.Ordinal);
         Assert.Contains("onAccepted: accepted", handover, StringComparison.Ordinal);
         Assert.DoesNotContain("TakeFirst", handover, StringComparison.Ordinal);
     }
@@ -76,7 +76,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
         string code = GuiSource.ViewText("ChatView");
 
         Assert.Contains(
-            "_queuedTurns.Clear",
+            "Composer.Queue.Clear",
             GuiSource.MethodBody(code, "ResetAgentState"),
             StringComparison.Ordinal);
     }

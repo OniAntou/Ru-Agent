@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(gui)**: The composer's attachments, per-session drafts, turn queue and effective prompt move into `ChatComposerViewModel`; the queue strip's header and Send now are bound to it.
+- **refactor(gui)**: The chat's model picker and reasoning selection move into `ChatModelPickerViewModel`, and the composer's run surface (status, Stop, send/stop face, approval and question cards, workspace-trust guard) into `AgentRunPanelViewModel`. Focus moves to an approval or question card once per new prompt, as before.
 - **refactor(gui)**: The sidebar's sessions, workspace groups, search, drafts and delete flow move into `SessionSidebarViewModel`; `MainWindow` keeps native selection, drag visuals and dialogs.
 - **refactor(gui)**: Settings is driven by a `SettingsViewModel` (CommunityToolkit.Mvvm) bound with `x:Bind`; the view keeps only rendering, flyouts and measurement. A stored legacy provider such as `openai` is now named in the picker instead of showing the label of whichever row was rebuilt last.
 - **fix(gui)**: Deleting a chat removes its sidebar row as soon as the Host confirms the delete. The follow-up list refresh now supersedes a sidebar poll already in flight; previously that poll's pre-delete list was applied and the row stayed until the next poll, about three seconds later.

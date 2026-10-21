@@ -13,6 +13,7 @@ using RuAgent.Hosting;
 using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using RuApp.Views;
 
 namespace RuApp
@@ -174,7 +175,7 @@ namespace RuApp
                 return;
             }
 
-            await LoadSessionsAsync();
+            await Sidebar.RefreshLatestAsync();
 
             await ShowNoticeAsync(
                 "Session imported",
@@ -229,128 +230,61 @@ namespace RuApp
 
         private async Task DeleteSessionAsync(object sender)
         {
-            if (sender is FrameworkElement btn && btn.Tag is string sessionId && _apiService != null)
+            if (sender is not FrameworkElement { Tag: string sessionId } || _apiService is null) return;
+
+            var prompts = new SessionDeletionDialogs(this);
+            var result = await Sidebar.DeleteAsync(sessionId, _chatView?.CurrentSessionId, prompts);
+            if (!result.IsRemoved) return;
+
+            _chatView?.ForgetSidePanelState(sessionId);
+            switch (result.FollowUp)
             {
-                if (ShellRoot.XamlRoot != null)
-                {
-                    var dialog = new ContentDialog
+                case SessionDeletionFollowUp.OpenSession open:
+                    SidebarSessionList.SelectedItem = open.Session;
+                    if (_chatView != null)
                     {
-                        Title = "Confirm delete chat",
-                        Content = "Are you sure you want to permanently delete this chat?",
-                        PrimaryButtonText = "Delete",
-                        CloseButtonText = "Cancel",
-                        DefaultButton = ContentDialogButton.Close,
-                        XamlRoot = ShellRoot.XamlRoot
-                    };
-
-                    var result = await ContentDialogGate.ShowAsync(dialog);
-                    if (result != ContentDialogResult.Primary)
-                    {
-                        return;
-                    }
-                }
-
-                var outcome = await _apiService.DeleteSessionAsync(sessionId);
-                if (!outcome.Deleted && !outcome.Partial)
-                {
-                    if (ShellRoot.XamlRoot != null)
-                    {
-                        var errorDialog = new ContentDialog
-                        {
-                            Title = "Could not delete chat",
-                            Content = outcome.Message ?? "Backend failed to delete this chat. Please try again later.",
-                            CloseButtonText = "Close",
-                            DefaultButton = ContentDialogButton.Close,
-                            XamlRoot = ShellRoot.XamlRoot
-                        };
-                        await ContentDialogGate.ShowAsync(errorDialog);
+                        await _chatView.OpenSessionAsync(open.Session.Id, open.Session.Title);
                     }
 
-                    return;
-                }
-
-                bool wasActive = string.Equals(_chatView?.CurrentSessionId, sessionId, StringComparison.OrdinalIgnoreCase);
-
-                if (outcome.Deleted)
-                {
-                    _sessionDrafts.Remove(sessionId);
-                    _sidebarOrganization.Remove(sessionId);
-                }
-                _chatView?.ForgetSidePanelState(sessionId);
-
-                // The host has confirmed the chat is gone, so drop its row now; the
-                // reload below only reconciles the rest of the list.
-                RemoveSessionRow(sessionId);
-
-                await LoadSessionsAsync();
-
-                // If the deleted session was currently active, switch to another session or create a new one
-                if (wasActive)
-                {
-                    if (Sessions.Count > 0)
-                    {
-                        var first = Sessions[0];
-                        SidebarSessionList.SelectedItem = first;
-                        if (_chatView != null)
-                        {
-                            await _chatView.OpenSessionAsync(first.Id, first.Title);
-                        }
-                    }
-                    else
-                    {
-                        OnNewChatClick(this, new RoutedEventArgs());
-                    }
-                }
-                else if (Sessions.Count == 0)
-                {
+                    break;
+                case SessionDeletionFollowUp.StartNewChat:
                     OnNewChatClick(this, new RoutedEventArgs());
-                }
+                    break;
+            }
 
-                // A partial result still deleted the chat: the session file is gone and
-                // only its artifacts are left. The old boolean read the "error" envelope
-                // as a failed delete and told the user the chat was still there.
-                if (outcome.Partial)
-                {
-                    await OfferSessionArtifactRetryAsync(sessionId, outcome.Message);
-                }
+            // A partial result still deleted the chat: only its artifacts are left, so
+            // the offer to retry the cleanup never calls the chat undeleted.
+            if (result.IsPartial)
+            {
+                await Sidebar.RetryCleanupAsync(sessionId, result.PartialMessage, prompts);
             }
         }
 
-        private void RemoveSessionRow(string sessionId)
+        /// <summary>The delete confirmations and notices, as content dialogs on this window.</summary>
+        private sealed class SessionDeletionDialogs(MainWindow window) : ISessionDeletionPrompts
         {
-            for (int i = Sessions.Count - 1; i >= 0; i--)
+            public async Task<bool> ConfirmDeleteAsync()
             {
-                if (string.Equals(Sessions[i].Id, sessionId, StringComparison.OrdinalIgnoreCase))
+                if (window.ShellRoot.XamlRoot is null) return true;
+                var dialog = new ContentDialog
                 {
-                    Sessions.RemoveAt(i);
-                    RenderWorkspaceSidebar();
-                    RefreshSessionTitleWaves();
-                    return;
-                }
-            }
-        }
-
-        /// <summary>
-        /// The chat is already gone; the host could not remove its artifacts. Says so
-        /// and offers the retry the host itself asked for, without ever calling the
-        /// chat undeleted.
-        /// </summary>
-        /// <remarks>
-        /// Retrying only ever re-issues the same DELETE. Once the session file is gone
-        /// the host can no longer report "partial" — it answers "Session không tồn tại"
-        /// whether the artifacts were reclaimed or not — so a retry that is not partial
-        /// ends as unconfirmed cleanup rather than as success or as another failed
-        /// delete. The leftovers are reclaimed on expiry regardless.
-        /// </remarks>
-        private async Task OfferSessionArtifactRetryAsync(string sessionId, string? message)
-        {
-            if (_apiService is null)
-            {
-                return;
+                    Title = "Confirm delete chat",
+                    Content = "Are you sure you want to permanently delete this chat?",
+                    PrimaryButtonText = "Delete",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = window.ShellRoot.XamlRoot,
+                };
+                return await ContentDialogGate.ShowAsync(dialog) == ContentDialogResult.Primary;
             }
 
-            while (ShellRoot.XamlRoot != null)
+            public Task ShowDeleteFailedAsync(string? message) => window.ShowNoticeAsync(
+                "Could not delete chat",
+                message ?? "Backend failed to delete this chat. Please try again later.");
+
+            public async Task<bool> OfferCleanupRetryAsync(string? message)
             {
+                if (window.ShellRoot.XamlRoot is null) return false;
                 var dialog = new ContentDialog
                 {
                     Title = "Chat deleted, cleanup incomplete",
@@ -361,31 +295,15 @@ namespace RuApp
                     PrimaryButtonText = "Retry cleanup",
                     CloseButtonText = "Close",
                     DefaultButton = ContentDialogButton.Close,
-                    XamlRoot = ShellRoot.XamlRoot
+                    XamlRoot = window.ShellRoot.XamlRoot,
                 };
-
-                if (await ContentDialogGate.ShowAsync(dialog) != ContentDialogResult.Primary)
-                {
-                    return;
-                }
-
-                var retry = await _apiService.DeleteSessionAsync(sessionId);
-                if (retry.Deleted)
-                {
-                    return;
-                }
-
-                if (!retry.Partial)
-                {
-                    await ShowNoticeAsync(
-                        "Cleanup not confirmed",
-                        "The chat was deleted. The cleanup ran again, but the host could not confirm the artifacts were removed."
-                            + "\n\nLeftover artifacts are reclaimed automatically when they expire.");
-                    return;
-                }
-
-                message = retry.Message;
+                return await ContentDialogGate.ShowAsync(dialog) == ContentDialogResult.Primary;
             }
+
+            public Task ShowCleanupUnconfirmedAsync() => window.ShowNoticeAsync(
+                "Cleanup not confirmed",
+                "The chat was deleted. The cleanup ran again, but the host could not confirm the artifacts were removed."
+                    + "\n\nLeftover artifacts are reclaimed automatically when they expire.");
         }
 
         private void SessionItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(gui)**: Settings is driven by a `SettingsViewModel` (CommunityToolkit.Mvvm) bound with `x:Bind`; the view keeps only rendering, flyouts and measurement. A stored legacy provider such as `openai` is now named in the picker instead of showing the label of whichever row was rebuilt last.
 - **fix(gui)**: Deleting a chat removes its sidebar row as soon as the Host confirms the delete. The follow-up list refresh now supersedes a sidebar poll already in flight; previously that poll's pre-delete list was applied and the row stayed until the next poll, about three seconds later.
 - **perf(storage)**: The Harness key store reuses the loaded key while the key file is unchanged instead of rewriting three ACLs and calling DPAPI on every fetch. `GET /sessions` on a 294-session profile dropped from 1.4–2.2 s to about 60 ms. A missing or replaced key file still takes the full path, so a lost key keeps failing as `harness_key_missing`.
 - **fix(cli)**: Finish porting the slash-command simplification and render-latency changes into the extracted chat session. `/attach`, `/attachments`, `/paste`, `/detach`, `/continue` and `/quit` now report `unknown_command` instead of still executing; Continue resumes only the tracked parked run; header title reads use their 250 ms bound and turn-end assistant payloads are read concurrently.

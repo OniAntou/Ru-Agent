@@ -366,7 +366,7 @@ public sealed class AgentSessionUiSourceContractTests
         // while session polling may repair the projection later.
         var code = GuiSource.ViewText("MainWindow");
         var startup = GuiSource.MethodBody(code, "InitializeAppAsync");
-        var render = startup.IndexOf("RenderWorkspaceSidebar();", StringComparison.Ordinal);
+        var render = startup.IndexOf("Sidebar.SetAppRoot(", StringComparison.Ordinal);
         var start = startup.IndexOf("_backendProvider.StartAsync", StringComparison.Ordinal);
         Assert.True(render >= 0 && start > render, "Sidebar chrome must render without waiting for backend/session changes.");
     }

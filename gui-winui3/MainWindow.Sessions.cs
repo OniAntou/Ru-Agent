@@ -13,48 +13,27 @@ using RuAgent.Hosting;
 using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using RuApp.Views;
 
 namespace RuApp
 {
     public sealed partial class MainWindow
     {
-        private string _workspaceSearchText = string.Empty;
-        private bool _workspaceFilterActive;
-        private string? _activeSessionId;
-        private string? _selectedWorkspaceKey;
         private bool _suppressSidebarSelection;
-        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _workspaceSearchTimer;
-        private readonly ObservableCollection<object> _sidebarRows = new();
-        private readonly List<WorkspaceGroup> _lastWorkspaceGroups = new();
-        private readonly WorkspaceGroupPreferenceStore _workspaceGroups = new();
-        private readonly WorkspacePinStore _workspacePins = new();
-        private readonly SessionWorkspaceMapStore _sessionWorkspaces = new();
-        private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
 
-        private void RenderWorkspaceSidebar()
+        /// <summary>
+        /// The view model rebuilt the rows: put the native list selection back on the
+        /// open session without letting that programmatic change open it again.
+        /// </summary>
+        private void OnSidebarRendered()
         {
-            var projection = SidebarSessionPresenter.Build(
-                Sessions.ToList(),
-                _workspaceSearchText,
-                _sidebarAppRoot,
-                _sidebarOrganization.Current,
-                _workspacePins.PinnedPaths,
-                _activeSessionId,
-                _workspaceFilterActive,
-                _workspaceGroups.IsExpanded,
-                key => _groupShowAll.Contains(key));
-
             _suppressSidebarSelection = true;
             try
             {
-                _lastWorkspaceGroups.Clear();
-                _lastWorkspaceGroups.AddRange(projection.Groups);
-                ReconcileSidebarRows(projection.Rows);
-
-                if (_activeSessionId is not null)
+                if (Sidebar.ActiveSessionId is { } active)
                 {
-                    SyncSidebarSelection(_activeSessionId);
+                    SyncSidebarSelection(active);
                 }
             }
             finally
@@ -62,49 +41,55 @@ namespace RuApp
                 _suppressSidebarSelection = false;
             }
 
-            WorkspaceSearchCount.Text = projection.MatchCount == 0
-                ? "No matches"
-                : projection.MatchCount == 1 ? "1 result" : $"{projection.MatchCount} results";
-            WorkspaceSearchCount.Visibility = string.IsNullOrWhiteSpace(_workspaceSearchText) ? Visibility.Collapsed : Visibility.Visible;
+            WorkspaceSearchCount.Text = Sidebar.SearchCountText;
+            WorkspaceSearchCount.Visibility = Sidebar.IsSearchCountVisible ? Visibility.Visible : Visibility.Collapsed;
+            var truncation = Sidebar.IsTruncated ? Visibility.Visible : Visibility.Collapsed;
+            if (SidebarSessionTruncationWarning.Visibility != truncation)
+            {
+                SidebarSessionTruncationWarning.Visibility = truncation;
+            }
+
+            _sessionWaveAnimationsEnabled = UiTiming.AnimationsEnabled;
+            RefreshSessionTitleWaves();
+        }
+
+        private void OnSidebarPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(SessionSidebarViewModel.IsSearchOpen))
+            {
+                WorkspaceSearchBox.Visibility = Sidebar.IsSearchOpen ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else if (e.PropertyName == nameof(SessionSidebarViewModel.SearchText)
+                && !string.Equals(WorkspaceSearchBox.Text, Sidebar.SearchText, StringComparison.Ordinal))
+            {
+                WorkspaceSearchBox.Text = Sidebar.SearchText;
+            }
         }
 
         private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
         {
-            WorkspaceSearchBox.Visibility = Visibility.Visible;
+            Sidebar.OpenSearch();
             WorkspaceSearchBox.Focus(FocusState.Programmatic);
         }
 
         private void OnWorkspaceSearchTextChanged(object sender, TextChangedEventArgs e)
         {
-            if (sender is TextBox box)
+            if (sender is TextBox box && !string.Equals(Sidebar.SearchText, box.Text, StringComparison.Ordinal))
             {
-                _workspaceSearchText = box.Text;
+                Sidebar.SearchText = box.Text;
             }
-
-            _workspaceSearchTimer ??= DispatcherQueue.CreateTimer();
-            _workspaceSearchTimer.Interval = TimeSpan.FromMilliseconds(250);
-            _workspaceSearchTimer.Tick -= OnWorkspaceSearchTick;
-            _workspaceSearchTimer.Tick += OnWorkspaceSearchTick;
-            _workspaceSearchTimer.Stop();
-            _workspaceSearchTimer.Start();
-        }
-
-        private void OnWorkspaceSearchTick(Microsoft.UI.Dispatching.DispatcherQueueTimer timer, object args)
-        {
-            timer.Stop();
-            RenderWorkspaceSidebar();
         }
 
         private void OnWorkspaceSearchKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
             if (e.Key == Windows.System.VirtualKey.Escape)
             {
-                ClearWorkspaceSearch();
-                RenderWorkspaceSidebar();
+                Sidebar.ClearSearch();
+                Sidebar.Render();
             }
             else if (e.Key == Windows.System.VirtualKey.Enter)
             {
-                var first = _sidebarRows.OfType<SessionInfo>().FirstOrDefault();
+                var first = Sidebar.Rows.OfType<SessionInfo>().FirstOrDefault();
                 if (first is not null)
                 {
                     SidebarSessionList.SelectedItem = first;
@@ -112,70 +97,41 @@ namespace RuApp
             }
         }
 
-        private void ClearWorkspaceSearch()
-        {
-            _workspaceSearchText = string.Empty;
-            WorkspaceSearchBox.Text = string.Empty;
-            WorkspaceSearchBox.Visibility = Visibility.Collapsed;
-        }
-
-        private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e)
-        {
-            _workspaceFilterActive = !_workspaceFilterActive;
-            RenderWorkspaceSidebar();
-        }
+        private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e) => Sidebar.ToggleFilter();
 
         private void OnWorkspaceGroupClick(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is string key)
+            if (sender is Button { Tag: string key } button)
             {
-                // Flip the row's effective state (not the stored default) and keep the
-                // group-key and path-key flags in sync; otherwise a pinned path flag
-                // left true by OnWorkspaceAddClick pins the group open forever.
-                var expanded = SidebarSessionPresenter.NextExpandedState(
-                    button.CommandParameter as bool?,
-                    _workspaceGroups.IsExpanded(key, defaultExpanded: true));
-                _workspaceGroups.SetExpanded(key, expanded);
-                var path = ResolveWorkspacePath(key);
-                if (!string.IsNullOrEmpty(path))
-                {
-                    _workspaceGroups.SetExpanded(SidebarSessionPresenter.PathStateKey(path), expanded);
-                }
-
-                RenderWorkspaceSidebar();
+                Sidebar.ToggleGroup(key, button.CommandParameter as bool?);
             }
         }
 
         private void OnWorkspaceShowMoreClick(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is string key)
+            if (sender is Button { Tag: string key })
             {
-                _groupShowAll.Add(key);
-                RenderWorkspaceSidebar();
+                Sidebar.ShowAll(key);
             }
         }
 
         /// <summary>Removes a pinned workspace; its folder and sessions stay untouched.</summary>
         private void OnWorkspaceRemoveClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not FrameworkElement element || element.Tag is not string key) return;
-            var path = ResolveWorkspacePath(key);
-            if (path is null) return;
-
-            _workspacePins.Unpin(path);
-            if (_selectedWorkspaceKey == key)
+            if (sender is FrameworkElement { Tag: string key })
             {
-                _selectedWorkspaceKey = null;
+                Sidebar.Unpin(key);
             }
-
-            RenderWorkspaceSidebar();
         }
 
         private async void OnWorkspaceGroupAddClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                await AddSessionToWorkspaceGroupAsync(sender);
+                if (sender is not Button { Tag: string key }) return;
+                var path = Sidebar.ResolveWorkspacePath(key);
+                if (path is null && key != SidebarSessionOrganization.RecentsKey) return;
+                await CreateDraftSessionAsync(key, path);
             }
             catch (Exception ex)
             {
@@ -186,21 +142,18 @@ namespace RuApp
             }
         }
 
-        private async Task AddSessionToWorkspaceGroupAsync(object sender)
-        {
-            if (_apiService == null || _chatView == null) return;
-            if (sender is not Button button || button.Tag is not string key) return;
-            var path = ResolveWorkspacePath(key);
-            if (path is null && key != SidebarSessionOrganization.RecentsKey) return;
-
-            await CreateDraftSessionAsync(key, path);
-        }
-
         private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                await PickAndPinWorkspaceAsync();
+                var picker = new Windows.Storage.Pickers.FolderPicker();
+                picker.FileTypeFilter.Add("*");
+                WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+                var folder = await picker.PickSingleFolderAsync();
+                if (folder is not null)
+                {
+                    Sidebar.Pin(folder.Path);
+                }
             }
             catch (Exception ex)
             {
@@ -209,63 +162,6 @@ namespace RuApp
                 GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Workspace picker failed: {ex.Message}");
                 SetSessionActionError("Could not add the workspace");
             }
-        }
-
-        private async Task PickAndPinWorkspaceAsync()
-        {
-            var picker = new Windows.Storage.Pickers.FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(
-                picker,
-                WinRT.Interop.WindowNative.GetWindowHandle(this));
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder is null)
-            {
-                return;
-            }
-
-            var canonical = WorkspacePinStore.Canonicalize(folder.Path);
-            _workspacePins.Pin(canonical);
-            _workspaceGroups.SetExpanded(SidebarSessionPresenter.PathStateKey(canonical), true);
-            RenderWorkspaceSidebar();
-
-            foreach (var group in _lastWorkspaceGroups)
-            {
-                if (!string.IsNullOrEmpty(group.Path)
-                    && string.Equals(group.Path, canonical, StringComparison.OrdinalIgnoreCase))
-                {
-                    _workspaceGroups.SetExpanded(group.Key, true);
-                    RenderWorkspaceSidebar();
-                    break;
-                }
-            }
-        }
-
-        private string? ResolveWorkspacePath(string key)
-        {
-            if (key == SidebarSessionOrganization.RecentsKey) return _sidebarAppRoot;
-            foreach (var group in _lastWorkspaceGroups)
-            {
-                if (group.Key == key)
-                {
-                    return group.Path;
-                }
-
-                if (!string.IsNullOrEmpty(group.Path) && SidebarSessionPresenter.PathStateKey(group.Path) == key)
-                {
-                    return group.Path;
-                }
-            }
-
-            foreach (var pinned in _workspacePins.PinnedPaths)
-            {
-                if (SidebarSessionPresenter.PathStateKey(pinned) == key)
-                {
-                    return pinned;
-                }
-            }
-
-            return null;
         }
 
         private void WorkspaceGroupToggle_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)

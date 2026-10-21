@@ -73,13 +73,7 @@ public sealed partial class MainWindow
         var row = SidebarSessionList.ItemFromContainer(container);
         var local = ShellRoot.TransformToVisual(container).TransformPoint(point);
         var above = local.Y < container.ActualHeight / 2;
-        var intent = SidebarDragDropPresenter.Resolve(
-            _dragSessionId,
-            row!,
-            above,
-            Sessions.ToList(),
-            _lastWorkspaceGroups,
-            SidebarGroupFor);
+        var intent = Sidebar.ResolveDrop(_dragSessionId, row!, above);
         return intent is null ? null : new(intent.Key, intent.Path, intent.BeforeId, container, intent.InsertAbove);
     }
 
@@ -131,18 +125,8 @@ public sealed partial class MainWindow
 
     private bool MoveSidebarSession(string sessionId, string key, string? path, string? beforeId)
     {
-        if (!SidebarSessionPresenter.TryMove(
-                _sidebarOrganization, Sessions.ToList(), _sidebarOrganization.Current,
-                sessionId, key, path, beforeId))
-        {
-            SetSessionActionError("Could not save the sidebar order. Try again.");
-            return false;
-        }
-        _workspaceGroups.SetExpanded(key, true);
-        _groupShowAll.Add(key);
-        if (_activeSessionId == sessionId) _selectedWorkspaceKey = key;
-        RenderWorkspaceSidebar();
-        var row = _sidebarRows.OfType<SessionInfo>().FirstOrDefault(session => session.Id == sessionId);
+        if (!Sidebar.Move(sessionId, key, path, beforeId)) return false;
+        var row = Sidebar.Rows.OfType<SessionInfo>().FirstOrDefault(session => session.Id == sessionId);
         if (row is not null) SidebarSessionList.ScrollIntoView(row);
         return true;
     }
@@ -169,10 +153,7 @@ public sealed partial class MainWindow
         }
         if (_hoverGroupKey is { } key && DateTimeOffset.UtcNow - _hoverGroupSince > TimeSpan.FromMilliseconds(450))
         {
-            var collapsed = key is SidebarSessionOrganization.RecentsKey or SidebarSessionOrganization.CliKey
-                ? _sidebarRows.OfType<SidebarSectionRow>().Any(row => row.Key == key && !row.IsExpanded)
-                : _sidebarRows.OfType<WorkspaceGroupRow>().Any(row => row.Group.Key == key && !row.IsExpanded);
-            if (collapsed) { _workspaceGroups.SetExpanded(key, true); RenderWorkspaceSidebar(); }
+            Sidebar.ExpandForDrop(key);
         }
         ShowSidebarDropTarget(FindSidebarDropTarget(point));
     }

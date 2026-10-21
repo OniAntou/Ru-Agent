@@ -13,6 +13,7 @@ using RuAgent.Hosting;
 using RuAgent.SessionInterchange;
 using RuApp.Models;
 using RuApp.Services;
+using RuApp.ViewModels;
 using RuApp.Views;
 
 namespace RuApp
@@ -35,7 +36,6 @@ namespace RuApp
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
         private bool _sessionsPollInFlight;
-        private RefreshController<SessionListResponse?>? _sessionsRefreshController;
         private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
         private ProviderCatalogController? _providerCatalogController;
         private GroupedProviderCatalogController? _groupedCatalogs;
@@ -53,7 +53,10 @@ namespace RuApp
         /// <summary>Last applied theme, so views can gate theme-bound decoration.</summary>
         internal static UiTheme CurrentTheme { get; private set; } = UiTheme.Light;
 
-        public ObservableCollection<SessionInfo> Sessions { get; } = new();
+        /// <summary>The sidebar's sessions, groups and session workflows.</summary>
+        internal SessionSidebarViewModel Sidebar { get; }
+
+        public ObservableCollection<SessionInfo> Sessions => Sidebar.Sessions;
 
         public MainWindow()
             : this(RuAppComposition.Production())
@@ -65,6 +68,18 @@ namespace RuApp
             _composition = composition ?? throw new ArgumentNullException(nameof(composition));
             _backendProvider = composition.BackendProvider;
             Instance = this;
+            Sidebar = new SessionSidebarViewModel(
+                new ApiSessionListBackend(() => _apiService),
+                action =>
+                {
+                    if (!DispatcherQueue.TryEnqueue(() => action()))
+                    {
+                        throw new OperationCanceledException("The window dispatcher rejected a sidebar callback.");
+                    }
+                });
+            Sidebar.Rendered += OnSidebarRendered;
+            Sidebar.PropertyChanged += OnSidebarPropertyChanged;
+            Sidebar.ActionFailed += SetSessionActionError;
             try
             {
                 this.InitializeComponent();
@@ -232,7 +247,7 @@ namespace RuApp
 
         private async Task InitializeAppAsync()
         {
-            SidebarSessionList.ItemsSource = _sidebarRows;
+            SidebarSessionList.ItemsSource = Sidebar.Rows;
             StatusText.Text = $"Starting {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
             WelcomeOverlay?.SetStatus($"Starting {_backendProvider.DisplayName}...", isReady: false);
@@ -248,11 +263,10 @@ namespace RuApp
                 return;
             }
 
-            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
             InitializeSidebarMotion();
             // Section chrome and persisted workspace pins do not depend on a
             // successful session fetch or a change in the session fingerprint.
-            RenderWorkspaceSidebar();
+            Sidebar.SetAppRoot(AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness));
 
             BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
             if (backendSession != null)
@@ -291,7 +305,7 @@ namespace RuApp
                     _composition.HarnessEvents,
                     _composition.HarnessScenario,
                     _agentController,
-                    _sidebarAppRoot,
+                    Sidebar.AppRoot,
                     _providerCatalogController,
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
@@ -342,18 +356,8 @@ namespace RuApp
                 _ = _groupedCatalogs?.RefreshIfDueAsync();
                 _providerCatalogTimer.Start();
 
-                _sessionsRefreshController = new RefreshController<SessionListResponse?>(
-                    token => _apiService!.GetSessionsAsync(token),
-                    result => { if (result != null) ApplySessions(result); },
-                    action =>
-                    {
-                        if (!DispatcherQueue.TryEnqueue(() => action()))
-                        {
-                            throw new OperationCanceledException("The window dispatcher rejected a refresh callback.");
-                        }
-                    });
-                _sessionsRefreshController.SetActive(true);
-                await _startup.RunAsync(_ => _sessionsRefreshController.RefreshAsync());
+                Sidebar.SetRefreshActive(true);
+                await _startup.RunAsync(_ => Sidebar.RefreshAsync());
 
                 _healthRefreshController = new RefreshController<HealthStatusSnapshot?>(
                     async token => await _healthStatusService!.GatherAsync(token),
@@ -375,8 +379,7 @@ namespace RuApp
                     _sessionsPollInFlight = true;
                     try
                     {
-                        if (_sessionsRefreshController != null) await _sessionsRefreshController.RefreshAsync();
-                        else await LoadSessionsAsync();
+                        await Sidebar.RefreshAsync();
                         try { await UpdateHealthStatusAsync(); }
                         catch (Exception ex)
                         {
@@ -475,7 +478,7 @@ namespace RuApp
 
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
         {
-            ActivateSessionDrafts(e.SessionId);
+            Sidebar.ActivateDrafts(e.SessionId);
             SyncSidebarSelection(e.SessionId);
         }
 
@@ -484,7 +487,7 @@ namespace RuApp
             // The Settings dropdown shows the durable choice of the session that
             // is open, not the previous session's. The switch may already have
             // moved on when this arrives, so only the active session applies.
-            if (string.Equals(e.SessionId, _activeSessionId, StringComparison.Ordinal))
+            if (string.Equals(e.SessionId, Sidebar.ActiveSessionId, StringComparison.Ordinal))
             {
                 _settingsView?.SetCurrentPreset(e.Preset);
             }
@@ -763,7 +766,7 @@ namespace RuApp
 
         private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
         {
-            _sidebarAppRoot = AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness);
+            Sidebar.SetAppRoot(AgentWorkspaceSelection.DefaultForApplication(projectRoot, _composition.IsHarness));
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
             StatusDot.Fill = successBrush;
@@ -814,10 +817,7 @@ namespace RuApp
             _sessionsTimer?.Start();
             _providerCatalogTimer?.Start();
 
-            if (_sessionsRefreshController != null)
-            {
-                await _sessionsRefreshController.RefreshAsync();
-            }
+            await Sidebar.RefreshAsync();
             if (_healthRefreshController != null)
             {
                 await _healthRefreshController.RefreshAsync();
@@ -857,7 +857,7 @@ namespace RuApp
             _startup.Cancel();
             _sessionsTimer?.Stop();
             _providerCatalogTimer?.Stop();
-            _sessionsRefreshController?.SetActive(false);
+            Sidebar.SetRefreshActive(false);
             _healthRefreshController?.SetActive(false);
             if (_apiService != null)
             {
@@ -897,8 +897,7 @@ namespace RuApp
             await RunOnDispatcherAsync(DisposeWindowResourcesOnUiThread);
             await _startupTask;
             DisposeSafely("startup", _startup.Dispose);
-            await DisposeSafelyAsync("sessions refresh", () => _sessionsRefreshController?.DisposeAsync());
-            _sessionsRefreshController = null;
+            await DisposeSafelyAsync("sessions sidebar", () => Sidebar.DisposeAsync());
             await DisposeSafelyAsync("health refresh", () => _healthRefreshController?.DisposeAsync());
             _healthRefreshController = null;
             await DisposeSafelyAsync("provider catalog", () => _providerCatalogController?.DisposeAsync());
@@ -996,96 +995,10 @@ namespace RuApp
             }
         }
 
-        private async Task LoadSessionsAsync()
-        {
-            if (_apiService == null) return;
-            if (_sessionsRefreshController != null)
-            {
-                // Callers have just changed the session list. A poll already in flight
-                // may have read it before that change; supersede it rather than let the
-                // stale list land and keep a deleted row until the next poll.
-                await _sessionsRefreshController.RefreshLatestAsync();
-                return;
-            }
-            var result = await _apiService.GetSessionsAsync();
-            if (result != null)
-            {
-                ApplySessions(result);
-            }
-        }
-
-        private void ApplySessions(SessionListResponse result)
-        {
-            _sessionWaveAnimationsEnabled = Services.UiTiming.AnimationsEnabled;
-            var warningVisibility = result.SessionsTruncated ? Visibility.Visible : Visibility.Collapsed;
-            if (SidebarSessionTruncationWarning.Visibility != warningVisibility)
-            {
-                SidebarSessionTruncationWarning.Visibility = warningVisibility;
-            }
-
-            // The sessions poll fires every few seconds; rebuilding the sidebar rows
-            // on every poll visibly flickers group chrome, so only re-render when
-            // the list (order, membership, or row content) actually changed.
-            var before = Services.SidebarRowFingerprint.ForSessions(Sessions);
-            var seen = new HashSet<string>();
-            int insertAt = 0;
-            foreach (var incoming in _sessionDrafts.Project(result.Sessions))
-            {
-                seen.Add(incoming.Id);
-                var existing = Sessions.FirstOrDefault(s => s.Id == incoming.Id);
-                if (existing != null)
-                {
-                    existing.Title = incoming.Title;
-                    existing.MessageCount = incoming.MessageCount;
-                    existing.CreatedAt = incoming.CreatedAt;
-                    existing.UpdatedAt = incoming.UpdatedAt;
-                    existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
-                    existing.IsAgentRunning = incoming.IsAgentRunning;
-                    existing.ParentSessionId = incoming.ParentSessionId;
-                    existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
-                    existing.WorkspaceId = incoming.WorkspaceId;
-                    existing.ClientSource = incoming.ClientSource;
-                    existing.WorkspaceLabel = incoming.WorkspaceLabel;
-                    existing.WorkspacePath = incoming.WorkspacePath;
-                    int currentIndex = Sessions.IndexOf(existing);
-                    if (currentIndex != insertAt)
-                    {
-                        Sessions.Move(currentIndex, insertAt);
-                    }
-                }
-                else
-                {
-                    Sessions.Insert(insertAt, incoming);
-                }
-                insertAt++;
-            }
-
-            for (int i = Sessions.Count - 1; i >= 0; i--)
-            {
-                if (!seen.Contains(Sessions[i].Id))
-                {
-                    Sessions.RemoveAt(i);
-                }
-                else if (!string.IsNullOrEmpty(Sessions[i].WorkspacePath))
-                {
-                    _sessionWorkspaces.Remove(Sessions[i].Id);
-                }
-            }
-
-            if (_sidebarRows.Count == 0 || !string.Equals(
-                Services.SidebarRowFingerprint.ForSessions(Sessions),
-                before,
-                StringComparison.Ordinal))
-            {
-                RenderWorkspaceSidebar();
-            }
-            RefreshSessionTitleWaves();
-        }
-
         private void SyncSidebarSelection(string sessionId)
         {
             if (string.IsNullOrEmpty(sessionId)) return;
-            _activeSessionId = sessionId;
+            Sidebar.NoteOpened(sessionId);
             foreach (var item in Sessions)
             {
                 if (item.Id == sessionId)
@@ -1163,8 +1076,7 @@ namespace RuApp
             if (_apiService == null || _chatView == null) return;
             try
             {
-                var target = SidebarSessionPresenter.ResolveNewChatWorkspace(_selectedWorkspaceKey);
-                var path = target is null ? null : ResolveWorkspacePath(target);
+                var (target, path) = Sidebar.NewChatTarget();
                 await CreateDraftSessionAsync(target, path);
             }
             catch (Exception ex)
@@ -1200,27 +1112,7 @@ namespace RuApp
 
             if (SidebarSessionList.SelectedItem is SessionInfo selected && _chatView != null)
             {
-                ++_sessionNavigationGeneration;
-                ActivateSessionDrafts(selected.Id);
-
-                if (!string.IsNullOrWhiteSpace(_workspaceSearchText))
-                {
-                    ClearWorkspaceSearch();
-                    RenderWorkspaceSidebar();
-                }
-
-                var key = SidebarGroupFor(selected).Key;
-                _selectedWorkspaceKey = key;
-                if (!_workspaceGroups.IsExpanded(key, defaultExpanded: true))
-                {
-                    _workspaceGroups.SetExpanded(key, true);
-                    RenderWorkspaceSidebar();
-                }
-
-                _chatView.SetRequestedWorkspace(
-                    !string.IsNullOrEmpty(selected.WorkspacePath)
-                        ? selected.WorkspacePath
-                        : _sessionWorkspaces.Lookup(selected.Id));
+                _chatView.SetRequestedWorkspace(Sidebar.Select(selected));
 
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
@@ -1236,9 +1128,8 @@ namespace RuApp
             }
             else if (SidebarSessionList.SelectedItem is WorkspaceGroupRow groupRow)
             {
-                if (_selectedWorkspaceKey == groupRow.Group.Key)
+                if (!Sidebar.SelectGroup(groupRow.Group.Key))
                 {
-                    _selectedWorkspaceKey = null;
                     _suppressSidebarSelection = true;
                     try
                     {
@@ -1248,10 +1139,6 @@ namespace RuApp
                     {
                         _suppressSidebarSelection = false;
                     }
-                }
-                else
-                {
-                    _selectedWorkspaceKey = groupRow.Group.Key;
                 }
             }
             else if (SidebarSessionList.SelectedItem is not null)

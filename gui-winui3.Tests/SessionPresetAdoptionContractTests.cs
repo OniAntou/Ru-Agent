@@ -57,6 +57,6 @@ public sealed class SessionPresetAdoptionContractTests
         Assert.Contains("SetCurrentPreset", handler, StringComparison.Ordinal);
         // The adoption may arrive after another switch: only the still-active
         // session may repaint the dropdown.
-        Assert.Contains("_activeSessionId", handler, StringComparison.Ordinal);
+        Assert.Contains("Sidebar.ActiveSessionId", handler, StringComparison.Ordinal);
     }
 }

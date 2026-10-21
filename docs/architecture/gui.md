@@ -13,6 +13,23 @@ suppresses feedback after session ownership changes. `AgentRunController` keeps
 HTTP/SSE ownership; its approval/input coordinators capture request identities,
 and its delta deduplicator owns delivered-frame/reset tracking.
 
+### View models
+
+Views are moving to CommunityToolkit.Mvvm view models under `gui-winui3/ViewModels`,
+one surface at a time. A view model owns a surface's state and decisions, reaches
+the Host through a narrow interface (for example `ISettingsBackend` and
+`IProviderCatalogSession`), and receives a dispatch delegate for cross-thread
+updates instead of touching `DispatcherQueue`. It exposes strings, booleans and
+collections only; the view maps tones to brushes and glyphs through `x:Bind`
+functions and keeps flyouts, measurement and composition effects.
+`SettingsViewModel` owns the provider picker, credentials, autosave, key probe,
+sign-out and connection test. A credential stays in a key property only until it
+is saved, validated or removed. Every provider-dependent value (label, key rows,
+sign-out) is derived in one place from the current choice, so resolving an unset
+or legacy stored choice cannot leave a stale label or a hidden key row.
+`ViewModelBindingContractTests` checks that each `{x:Bind ViewModel.X}` names a
+public member of the bound view model.
+
 Shared activity and permission-preset enums belong to `RuAgent.Protocol`.
 Client-side display policy belongs to `RuAgent.Client`; the GUI has no project
 reference to the server's `RuAgent.Harness.Core` domain assembly. Behavioral

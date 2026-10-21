@@ -20,7 +20,8 @@ public sealed record ModelUsage
         int? totalTokens,
         int? cacheReadInputTokens,
         int? cacheWriteInputTokens,
-        string? model = null)
+        string? model = null,
+        bool? inputTokensIncludeCache = null)
     {
         Validate(inputTokens, nameof(inputTokens));
         Validate(outputTokens, nameof(outputTokens));
@@ -42,6 +43,7 @@ public sealed record ModelUsage
         CacheReadInputTokens = cacheReadInputTokens;
         CacheWriteInputTokens = cacheWriteInputTokens;
         Model = Clean(model);
+        InputTokensIncludeCache = inputTokensIncludeCache;
     }
 
     /// <summary>
@@ -76,6 +78,10 @@ public sealed record ModelUsage
     /// </summary>
     public string? Model { get; }
 
+    /// <summary>True for inclusive Chat/Responses input; false for Messages buckets.
+    /// Null preserves legacy records whose accounting was not identified.</summary>
+    public bool? InputTokensIncludeCache { get; }
+
     public void WriteTo(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
@@ -84,6 +90,8 @@ public sealed record ModelUsage
         WriteOptional(writer, "total_tokens", TotalTokens);
         WriteOptional(writer, "cache_read_input_tokens", CacheReadInputTokens);
         WriteOptional(writer, "cache_write_input_tokens", CacheWriteInputTokens);
+        if (InputTokensIncludeCache is { } inclusive)
+            writer.WriteBoolean("input_tokens_include_cache", inclusive);
         if (Model is not null)
         {
             writer.WriteString("model", Model);
@@ -110,7 +118,8 @@ public sealed record ModelUsage
             ReadOptional(element, "total_tokens"),
             ReadOptional(element, "cache_read_input_tokens"),
             ReadOptional(element, "cache_write_input_tokens"),
-            ReadModel(element));
+            ReadModel(element),
+            ReadInputAccounting(element));
         return usage;
     }
 
@@ -120,6 +129,15 @@ public sealed record ModelUsage
         {
             throw new ArgumentOutOfRangeException(name);
         }
+    }
+
+    private static bool? ReadInputAccounting(JsonElement element)
+    {
+        if (!element.TryGetProperty("input_tokens_include_cache", out var value)
+            || value.ValueKind == JsonValueKind.Null) return null;
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new InvalidDataException("model_usage_json_invalid");
+        return value.GetBoolean();
     }
 
     private static void WriteOptional(Utf8JsonWriter writer, string name, int? value)

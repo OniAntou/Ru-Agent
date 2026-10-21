@@ -11,6 +11,33 @@ namespace RuAgent.Harness.Persistence.Tests;
 public sealed class HarnessPayloadStoreTests
 {
     [Fact]
+    public async Task Full_chat_reasoning_round_trips_only_through_the_bound_private_reader()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(73);
+        var step = new ModelStepId("step_" + new string('a', 32));
+        var arguments = System.Text.Json.JsonDocument.Parse("{\"path\":\"file.txt\"}").RootElement.Clone();
+        var continuation = ChatProviderContinuation.Create("fixture", "working", new string('r', 36_000),
+            [new ModelToolCall("read_1", "read", "1.0.0", arguments)]);
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            model_step_id = step.Value, continuation.Provider, continuation.Protocol, continuation.Model,
+            continuation.Version, output_items = continuation.OutputItems,
+        });
+        var payload = new HarnessPayloadIntent(HarnessStoreTestFixture.Payload(73), HarnessPayloadKind.ProviderContinuation,
+            HarnessPayloadAudience.InternalOnly, HarnessPayloadEncoding.Opaque, ProviderContinuation.MaximumEnvelopeBytes, bytes);
+        var request = fixture.NewRun(73, 73, 73, payloads: [payload]);
+        await fixture.CreateEventStore().TryCreateRunAsync(request, default);
+        var restored = await fixture.PayloadStore.ReadProviderContinuationAsync(request.Run.RunId, payload.PayloadId,
+            step, "chat", "chat_completions", "fixture", default);
+        Assert.Equal(bytes, restored.Plaintext.ToArray());
+        Assert.False(HarnessPayloadStore.CanReadForClient(payload));
+        Assert.False(HarnessPayloadStore.CanReadForModel(payload));
+        await Assert.ThrowsAsync<HarnessStoreException>(() => fixture.PayloadStore.ReadProviderContinuationAsync(
+            request.Run.RunId, payload.PayloadId, step, "chat", "chat_completions", "different-model", default));
+    }
+
+    [Fact]
     public async Task Cryptography_zeroes_each_caller_owned_key_after_use()
     {
         var keyStore = new TrackingKeyStore();

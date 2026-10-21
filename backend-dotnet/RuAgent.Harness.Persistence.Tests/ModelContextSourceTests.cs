@@ -11,6 +11,33 @@ namespace RuAgent.Harness.Persistence.Tests;
 public sealed class ModelContextSourceTests
 {
     [Fact]
+    public async Task Runtime_snapshot_restores_as_untrusted_user_context_and_is_not_client_readable()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var store = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await store.TryCreateRunAsync(request, default);
+        await fixture.PayloadStore.CaptureBaseContextAsync(request.Run.RunId, [], HarnessStoreTestFixture.Timestamp, default);
+        var payload = new HarnessPayloadIntent(HarnessStoreTestFixture.Payload(40),
+            HarnessPayloadKind.RuntimeContextSnapshot, HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text, 4096, Encoding.UTF8.GetBytes("snapshot"));
+        Assert.False(HarnessPayloadStore.CanReadForClient(payload));
+        await store.CommitAsync(new HarnessCommit(request.Run.RunId, 0,
+            NextRun(request.Run, version: 1, lastSequence: 2),
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(40), HarnessEventKind.RunNoteAdded,
+                payloadId: payload.PayloadId, safeCode: "runtime_context_snapshot")], [payload], []), default);
+
+        // A fresh source has no in-memory state to supply the snapshot.
+        var context = await new AgentContextAssembler(new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, default);
+        var entry = Assert.Single(context.Entries);
+        Assert.Equal(ModelContextRole.User, entry.Role);
+        Assert.Equal("snapshot", entry.Content);
+        Assert.True(RuAgent.Harness.Core.Prompting.RuntimeContextSnapshot.IsSnapshot(entry));
+    }
+
+    [Fact]
     public async Task Restart_reconstructs_base_user_assistant_step_and_tool_result_in_order()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

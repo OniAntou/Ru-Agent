@@ -95,6 +95,24 @@ object means the provider did not report counts; it is not converted to zero.
 Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
 for backward compatibility and remains an estimate, not a billing record.
 
+New usage records also identify whether input includes cache reads/writes through
+optional `input_tokens_include_cache`: Chat Completions/Responses are inclusive;
+Messages reports disjoint buckets. DeepSeek Chat hit/miss fields are recognized
+alongside OpenAI-style cached-token details; contradictory counts are rejected.
+Legacy records remain readable without inventing an accounting mode. Cached
+legacy reports with unknown accounting are not assigned a guessed price.
+
+The session usage panel covers the newest eight runs and says so. It sums distinct
+durable usage reports within each covered run, including paid steps of running or
+parked runs, while the context peak remains the largest individual step. At most
+4,096 usage payload references per run and four concurrent payload reads are used;
+a failed read makes that run unavailable rather than a cheaper partial total.
+The chat context meter still uses the latest step, not the run's token sum.
+Cache hit is cache-read input divided by total prompt input, weighted by tokens
+and excluding output; coverage names the runs with identified accounting and
+reported cache counts. Missing counts remain unknown and a partial hit is never
+rounded up to a claimed 100%.
+
 Agent generation runs inside the Public Host process through the typed
 `ModelStepService` behind `IModelStepRunner`; the device v1
 runtime/voice/STT/VTS/observation protocol was removed with the media surfaces,

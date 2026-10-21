@@ -215,11 +215,25 @@ public sealed class AgentRunCoordinator
                 : reservation.NextRun.State == HarnessRunState.Failed ? HarnessEventKind.RunFailed : HarnessEventKind.ContinueRequested,
             modelStepId: modelStepId,
             safeCode: reservation.ErrorCode);
+        var startEvents = new List<HarnessEventIntent> { startEvent };
+        var startPayloads = new List<HarnessPayloadIntent>();
+        if (reservation.Granted && preflight.PreparedRequest?.Preparation?.RuntimeContextSnapshot is { } runtimeSnapshot)
+        {
+            var payloadId = _ids.NewPayloadId();
+            startPayloads.Add(new HarnessPayloadIntent(payloadId, HarnessPayloadKind.RuntimeContextSnapshot,
+                HarnessPayloadAudience.ModelContext, HarnessPayloadEncoding.Utf8Text,
+                RuntimeContextSnapshot.MaximumBytes, System.Text.Encoding.UTF8.GetBytes(runtimeSnapshot)));
+            startEvents.Add(new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunNoteAdded,
+                modelStepId: modelStepId, payloadId: payloadId, safeCode: "runtime_context_snapshot"));
+        }
+        var startedRun = run.Advance(reservation.NextRun.Status, reservation.NextRun.BudgetWindow,
+            reservation.NextRun.ModelStepsInWindow, reservation.NextRun.ToolCallsInWindow,
+            startEvents.Count, reservation.NextRun.UpdatedAt, reservation.NextRun.TerminalErrorCode);
         run = await CommitAsync(
                 run,
-                reservation.NextRun,
-                new[] { startEvent },
-                Array.Empty<HarnessPayloadIntent>(),
+                startedRun,
+                startEvents,
+                startPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
                 .ConfigureAwait(false);

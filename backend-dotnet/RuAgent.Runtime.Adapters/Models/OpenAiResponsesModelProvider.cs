@@ -198,6 +198,9 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
             input.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
         }
 
+        if (!string.IsNullOrEmpty(request.RuntimeContext))
+            input.Add(new JsonObject { ["role"] = "user", ["content"] = request.RuntimeContext });
+
         if (request.Images.Count > 0)
         {
             var content = new JsonArray
@@ -214,7 +217,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
             }
             input.Add(new JsonObject { ["role"] = "user", ["content"] = content });
         }
-        else
+        else if (!request.PromptInHistory)
         {
             input.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
         }
@@ -401,7 +404,9 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
                 : throw new ModelProviderException("malformed_payload", false);
         if (input is null && output is null && total is null && cached is null)
             return null;
-        return new ModelUsage(input, output, total, cached, null, model);
+        if (input is { } prompt && cached is { } read && read > prompt)
+            throw new ModelProviderException("malformed_payload", retryable: false);
+        return new ModelUsage(input, output, total, cached, null, model, inputTokensIncludeCache: true);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)

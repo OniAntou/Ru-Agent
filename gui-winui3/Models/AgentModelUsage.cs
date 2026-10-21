@@ -26,8 +26,35 @@ public sealed record AgentModelUsage(
     int? TotalTokens,
     int? CacheReadInputTokens,
     int? CacheWriteInputTokens,
-    string? Model = null)
+    string? Model = null,
+    bool? InputTokensIncludeCache = null)
 {
+    /// <summary>Largest individual report when this value aggregates a run; never a context-window sum.</summary>
+    public int? PeakStepTokens { get; init; }
+    public int? UncachedInputTokens => InputTokens is { } input
+        ? InputTokensIncludeCache == true
+            ? (int)Math.Max(0L, (long)input - (CacheReadInputTokens ?? 0) - (CacheWriteInputTokens ?? 0))
+            : input
+        : null;
+
+    public long? PromptInputTokens => InputTokens is { } input
+        ? InputTokensIncludeCache == true ? input
+            : InputTokensIncludeCache == false && CacheWriteInputTokens is null ? null
+            : (long)input + (CacheReadInputTokens ?? 0) + (CacheWriteInputTokens ?? 0)
+        : null;
+
+    public double? CacheHitPercent => InputTokensIncludeCache is not null
+        && CacheReadInputTokens is { } read && PromptInputTokens is > 0
+        && read <= PromptInputTokens.Value
+        ? read * 100.0 / PromptInputTokens.Value : null;
+
+    public static string FormatCacheHit(double percent)
+    {
+        // Never round a partial hit up to a claimed full hit.
+        double display = Math.Floor(percent * 1000) / 1000;
+        return display.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
     public bool HasAny => InputTokens is not null
         || OutputTokens is not null
         || TotalTokens is not null
@@ -48,7 +75,7 @@ public sealed record AgentModelUsage(
                 return total;
             }
 
-            return (InputTokens ?? 0)
+            return (UncachedInputTokens ?? 0)
                 + (OutputTokens ?? 0)
                 + (CacheReadInputTokens ?? 0)
                 + (CacheWriteInputTokens ?? 0);
@@ -97,7 +124,8 @@ public sealed record AgentModelUsage(
                 // The model is a name rather than a count, so it cannot go through
                 // ReadOptional: a report recorded before the field existed has none and
                 // must still parse, as a run whose price nobody can look up.
-                ReadModel(document.RootElement));
+                ReadModel(document.RootElement),
+                ReadInputAccounting(document.RootElement));
             return usage.HasAny ? usage : null;
         }
         catch (JsonException exception)
@@ -129,6 +157,11 @@ public sealed record AgentModelUsage(
 
         return count;
     }
+
+    private static bool? ReadInputAccounting(JsonElement root) =>
+        root.TryGetProperty("input_tokens_include_cache", out var value)
+            && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean() : null;
 
     /// <summary>
     /// The model a report names, or null when it names none.

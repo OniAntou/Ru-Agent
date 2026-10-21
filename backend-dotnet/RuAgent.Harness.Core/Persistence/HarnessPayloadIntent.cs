@@ -19,6 +19,7 @@ public enum HarnessPayloadKind
     ModelReasoning = 14,
     ProviderContinuation = 15,
     UserInputRequest = 16,
+    RuntimeContextSnapshot = 17,
 }
 
 [Flags]
@@ -144,7 +145,7 @@ public sealed record HarnessPayloadIntent
                 nameof(kind));
         }
 
-        if (kind == HarnessPayloadKind.ModelContextNote
+        if (kind is HarnessPayloadKind.ModelContextNote or HarnessPayloadKind.RuntimeContextSnapshot
             && (audience != HarnessPayloadAudience.ModelContext
                 || encoding != HarnessPayloadEncoding.Utf8Text))
         {

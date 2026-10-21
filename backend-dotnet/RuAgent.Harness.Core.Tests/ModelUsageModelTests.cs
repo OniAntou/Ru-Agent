@@ -16,6 +16,20 @@ namespace RuAgent.Harness.Core.Tests;
 /// </remarks>
 public sealed class ModelUsageModelTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [InlineData(null)]
+    public void Input_accounting_survives_the_durable_usage_round_trip(bool? inclusive)
+    {
+        var step = new AssistantStep("done", [], AssistantFinishReason.Stop, 0,
+            new ModelUsage(100, 1, 101, 99, null, "fixture", inclusive));
+        var restored = AssistantStepJsonCodec.Deserialize(AssistantStepJsonCodec.Serialize(step));
+        Assert.Equal(inclusive, restored.Usage!.InputTokensIncludeCache);
+        Assert.Equal(100, restored.Usage.InputTokens);
+        Assert.Equal(99, restored.Usage.CacheReadInputTokens);
+    }
+
     [Fact]
     public void A_model_survives_the_round_trip()
     {

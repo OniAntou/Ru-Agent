@@ -25,7 +25,8 @@ public sealed record ProviderBootstrapData
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
-        JsonObject? reducedEffortRequestOptions = null)
+        JsonObject? reducedEffortRequestOptions = null,
+        bool replayChatReasoning = false)
     {
         Backend = Require(backend, 128, nameof(backend));
         Protocol = ProviderProtocols.Require(protocol);
@@ -47,6 +48,9 @@ public sealed record ProviderBootstrapData
         if (useMaxCompletionTokens && protocol != ProviderProtocols.ChatCompletions)
             throw new ArgumentException("The selected output-cap field is invalid for this protocol.", nameof(useMaxCompletionTokens));
         UseMaxCompletionTokens = useMaxCompletionTokens;
+        if (replayChatReasoning && Protocol != ProviderProtocols.ChatCompletions)
+            throw new ArgumentException("Chat reasoning replay requires Chat Completions.", nameof(replayChatReasoning));
+        ReplayChatReasoning = replayChatReasoning;
         if (contextWindowTokens is <= 0 or > 10_000_000)
             throw new ArgumentException("Context window metadata is invalid.", nameof(contextWindowTokens));
         ContextWindowTokens = contextWindowTokens;
@@ -96,6 +100,7 @@ public sealed record ProviderBootstrapData
     public int? MaximumOutputTokens { get; }
 
     public bool UseMaxCompletionTokens { get; }
+    public bool ReplayChatReasoning { get; }
 
     public long? ContextWindowTokens { get; }
 

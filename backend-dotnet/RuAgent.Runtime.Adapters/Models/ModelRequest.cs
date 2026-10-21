@@ -24,7 +24,10 @@ public sealed record ModelRequest
         bool nativeToolCalling = false,
         IReadOnlyList<JsonObject>? anthropicMessages = null,
         bool useMaxCompletionTokens = false,
-        string? preparedBodyJson = null)
+        string? preparedBodyJson = null,
+        string? runtimeContext = null,
+        bool promptInHistory = false,
+        bool replayChatReasoning = false)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -52,6 +55,11 @@ public sealed record ModelRequest
         }
 
         ArgumentNullException.ThrowIfNull(turns);
+        if (promptInHistory && (!nativeToolCalling || images is { Count: > 0 }))
+            throw new ArgumentException("History-owned prompts require native text requests.", nameof(promptInHistory));
+        if (runtimeContext is not null && (runtimeContext.Length > ModelInputLimits.MaxSystemPromptChars
+            || runtimeContext.Contains('\0')))
+            throw new ArgumentException("Runtime context exceeds the adapter cap.", nameof(runtimeContext));
         if (turns.Count > MaxModelMessages || turns.Any(turn => turn is null))
         {
             throw new ArgumentException("Model turns exceed the adapter cap.", nameof(turns));
@@ -132,6 +140,9 @@ public sealed record ModelRequest
 
         Model = model;
         SystemPrompt = systemPrompt;
+        RuntimeContext = runtimeContext;
+        PromptInHistory = promptInHistory;
+        ReplayChatReasoning = replayChatReasoning;
         Prompt = prompt;
         Turns = Array.AsReadOnly(turns.ToArray());
         Settings = (JsonObject)settings.DeepClone();
@@ -153,6 +164,11 @@ public sealed record ModelRequest
 
     public string SystemPrompt { get; }
 
+    /// <summary>Bounded untrusted runtime data placed after history, before the current prompt.</summary>
+    public string? RuntimeContext { get; }
+    public bool PromptInHistory { get; }
+    public bool ReplayChatReasoning { get; }
+
     public string Prompt { get; }
 
     public IReadOnlyList<ModelTurn> Turns { get; }
@@ -172,7 +188,7 @@ public sealed record ModelRequest
     public ModelRequest WithPreparedBodyJson(string body) => new(
         Model, SystemPrompt, Prompt, Turns, Settings, Endpoint, Credential, MaximumOutputTokens,
         Images, ResponsesInputItems, NativeToolCalling, AnthropicMessages, UseMaxCompletionTokens,
-        body);
+        body, RuntimeContext, PromptInHistory, ReplayChatReasoning);
 
     public IReadOnlyList<ModelImage> Images { get; }
 

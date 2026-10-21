@@ -20,6 +20,46 @@ namespace RuApp.Tests;
 /// </remarks>
 public sealed class SessionUsagePricingTests
 {
+    [Theory]
+    [InlineData(null, 20, 30)]
+    [InlineData(10, null, 30)]
+    [InlineData(10, 20, null)]
+    public void Aggregated_run_with_an_unreported_billing_bucket_has_no_partial_price(int? output, int? read, int? write)
+    {
+        var usage = RunUsageAccumulator.Sum([new AgentModelUsage(100, output, null, read, write, "vendor/paid", false)]);
+        var prices = SessionUsagePricing.PriceRuns([new SessionUsageRow("run", true, "completed", null, null, usage)],
+            new Dictionary<string, ProviderCatalogCost> { ["vendor/paid"] = Rate(cacheRead: 0.3, cacheWrite: 0.6) });
+        Assert.Null(prices["run"].Dollars);
+    }
+
+    [Fact]
+    public void Legacy_cached_usage_is_readable_but_has_no_guessed_price()
+    {
+        var usage = AgentModelUsage.Parse("""
+            {"input_tokens":1000,"output_tokens":1,"cache_read_input_tokens":998,"model":"vendor/paid"}
+            """);
+        Assert.NotNull(usage);
+        Assert.Null(usage.CacheHitPercent);
+        var prices = SessionUsagePricing.PriceRuns([new SessionUsageRow("run", true, "completed", null, null, usage)],
+            new Dictionary<string, ProviderCatalogCost> { ["vendor/paid"] = Rate(cacheRead: 0.3) });
+        Assert.Null(prices["run"].Dollars);
+    }
+
+    [Fact]
+    public void Inclusive_prompt_counts_do_not_bill_cached_input_at_the_uncached_rate_twice()
+    {
+        var usage = AgentModelUsage.Parse("""
+            {"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":900000,
+             "input_tokens_include_cache":true,"model":"vendor/paid"}
+            """);
+        var row = new SessionUsageRow("run", true, "completed", null, null, usage);
+        var prices = SessionUsagePricing.PriceRuns([row], new Dictionary<string, ProviderCatalogCost>
+        {
+            ["vendor/paid"] = Rate(input: 3, output: 15, cacheRead: 0.3),
+        });
+        Assert.Equal(0.57m, prices["run"].Dollars);
+    }
+
     private static ProviderCatalogCost Rate(
         double input = 3, double output = 15, double? cacheRead = null, double? cacheWrite = null) =>
         new() { Input = input, Output = output, CacheRead = cacheRead, CacheWrite = cacheWrite };
@@ -47,7 +87,7 @@ public sealed class SessionUsagePricingTests
             terminal ? "completed" : "running",
             null,
             null,
-            model is null ? null : new AgentModelUsage(input, output, null, cacheRead, cacheWrite, model));
+            model is null ? null : new AgentModelUsage(input, output, null, cacheRead, cacheWrite, model, InputTokensIncludeCache: false));
 
     [Fact]
     public void A_run_costs_its_tokens_times_its_rates_per_million()

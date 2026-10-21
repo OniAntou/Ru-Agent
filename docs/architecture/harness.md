@@ -69,10 +69,10 @@ in-process step service composes exactly one `system` message. The seven ordered
 blocks are the neutral Ru Agent runtime contract, Agent execution contract,
 environment, profile plus canonical effective policy, root-selected Ru/skill
 instruction blocks, host-derived capabilities, and runtime context.
-The Host persists only the receipt digest metadata in an `InternalOnly`
+For system prompt composition the Host persists receipt digest metadata in an `InternalOnly`
 `PromptReceipt` payload referenced by `model.prompt_composed`; the raw prompt,
 instruction text, tool results, arguments, paths, and provider data do
-not enter history, diagnostics, or public SSE. Public SSE advances over the
+not enter public history, diagnostics, or public SSE. Public SSE advances over the
 internal event without emitting it or its payload reference. The persisted
 receipt carries block ids, block order, and digests, not the prompt, so it
 records which instruction bytes the step was composed against; it is not an

@@ -158,6 +158,10 @@ namespace RuApp.Controls
                 : summary.ReportedRuns == count
                     ? count == 0 ? "no runs" : $"all {count} reported"
                     : $"{summary.ReportedRuns} of {count} reported";
+            if (rows is not null && count > 0)
+                CoverageText.Text = $"Latest {count} runs · {summary.ReportedRuns} reported"
+                    + (summary.CacheHitPercent is { } hit
+                        ? $" · cache hit {AgentModelUsage.FormatCacheHit(hit)} ({summary.CacheReportedRuns} runs)" : string.Empty);
 
             BilledValueText.Text = ModelContextSpecs.FormatTokens(summary.BilledTokens);
             PeakValueText.Text = ModelContextSpecs.FormatTokens(summary.PeakTotal);
@@ -174,20 +178,20 @@ namespace RuApp.Controls
             // cache looks identical to one that mostly paid for fresh input.
             PaintShareCell(
                 InputShareBar, InputValueText,
-                ModelContextSpecs.FormatTokens(summary.TotalInput),
-                summary.InputShare, "RuAccentBrush", summary.HasAny);
+                summary.InputComplete ? ModelContextSpecs.FormatTokens(summary.TotalInput) : "—",
+                summary.InputShare, "RuAccentBrush", summary.HasAny && summary.HasCompleteSplit);
             PaintShareCell(
                 OutputShareBar, OutputValueText,
-                ModelContextSpecs.FormatTokens(summary.TotalOutput),
-                summary.OutputShare, "RuVioletBrush", summary.HasAny);
+                summary.OutputComplete ? ModelContextSpecs.FormatTokens(summary.TotalOutput) : "—",
+                summary.OutputShare, "RuVioletBrush", summary.HasAny && summary.HasCompleteSplit);
             PaintShareCell(
                 CacheReadShareBar, CacheReadValueText,
-                ModelContextSpecs.FormatTokens(summary.CacheRead),
-                summary.CacheReadShare, "RuInfoBrush", summary.CacheRead > 0);
+                summary.CacheReadComplete ? ModelContextSpecs.FormatTokens(summary.CacheRead) : "—",
+                summary.CacheReadShare, "RuInfoBrush", summary.HasCompleteSplit && summary.CacheRead > 0);
             PaintShareCell(
                 CacheWriteShareBar, CacheWriteValueText,
-                ModelContextSpecs.FormatTokens(summary.CacheWrite),
-                summary.CacheWriteShare, "RuPinkBrush", summary.CacheWrite > 0);
+                summary.CacheWriteComplete ? ModelContextSpecs.FormatTokens(summary.CacheWrite) : "—",
+                summary.CacheWriteShare, "RuPinkBrush", summary.HasCompleteSplit && summary.CacheWrite > 0);
 
             RunsHeaderText.Text = count switch
             {

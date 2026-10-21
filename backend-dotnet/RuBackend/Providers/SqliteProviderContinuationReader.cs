@@ -28,6 +28,7 @@ public sealed class SqliteProviderContinuationReader(HarnessSqliteOptions option
         {
             "openai_responses" => "openai",
             "anthropic_messages" => "anthropic",
+            "chat_completions" when bootstrap.ReplayChatReasoning => "chat",
             _ => throw new ProviderCatalogException("provider_continuation_invalid"),
         };
         await using var connection = await options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);

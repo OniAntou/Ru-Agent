@@ -651,6 +651,15 @@ public sealed class TgRunLoopTests
     {
         var app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        // Handover disposes after leaving a running frame. Disposing directly
+        // after Init races the ANSI driver's native input startup on Windows.
+        app.AddTimeout(TimeSpan.FromMilliseconds(100), () =>
+        {
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
         app.Dispose();
         app.Dispose();
     }

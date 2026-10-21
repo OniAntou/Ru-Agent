@@ -268,6 +268,10 @@ public sealed partial class HarnessPayloadStore
                 role = ModelContextRole.System;
                 entryKind = ModelContextEntryKind.Text;
                 break;
+            case HarnessPayloadKind.RuntimeContextSnapshot:
+                role = ModelContextRole.User;
+                entryKind = ModelContextEntryKind.Text;
+                break;
             default:
                 return null;
         }
@@ -289,7 +293,9 @@ public sealed partial class HarnessPayloadStore
         var match = matches[0];
         return new ContextBinding(
             Scope: 1,
-            $"event:{match.Event.EventId.Value}",
+            intent.Kind == HarnessPayloadKind.RuntimeContextSnapshot
+                ? RuAgent.Harness.Core.Prompting.RuntimeContextSnapshot.SourcePrefix + match.Event.EventId.Value
+                : $"event:{match.Event.EventId.Value}",
             checked(firstEventSequence + match.Index),
             role,
             entryKind);

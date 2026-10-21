@@ -4,6 +4,9 @@ public interface IPreparedModelStep
 {
     long EstimatedInputTokens { get; }
     long MaxPromptTokens { get; }
+
+    /// <summary>New context admitted by this exact request; commit with ModelStepStarted, before dispatch.</summary>
+    string? RuntimeContextSnapshot => null;
 }
 
 public interface IModelStepRequestPreparer

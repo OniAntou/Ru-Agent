@@ -230,8 +230,11 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         };
         foreach (var turn in request.Turns)
         {
-            messages.Add(SerializeTurn(turn));
+            messages.Add(SerializeTurn(turn, request.ReplayChatReasoning));
         }
+
+        if (!string.IsNullOrEmpty(request.RuntimeContext))
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.RuntimeContext });
 
         if (request.Images.Count > 0)
         {
@@ -252,7 +255,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             }
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = content });
         }
-        else
+        else if (!request.PromptInHistory)
         {
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
         }
@@ -297,13 +300,15 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
 
-    private static JsonObject SerializeTurn(ModelTurn turn)
+    private static JsonObject SerializeTurn(ModelTurn turn, bool replayReasoning)
     {
         var message = new JsonObject
         {
             ["role"] = turn.Role,
             ["content"] = turn.Content,
         };
+        if (replayReasoning && turn.ReasoningContent is not null)
+            message["reasoning_content"] = turn.ReasoningContent;
         if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)
         {
             var calls = new JsonArray();
@@ -485,9 +490,23 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
             : detailsNode is JsonObject details
                 ? ReadOptionalInt(details["cached_tokens"])
                 : throw new ModelProviderException("malformed_payload", retryable: false);
+        var hit = ReadOptionalInt(usage["prompt_cache_hit_tokens"]);
+        var miss = ReadOptionalInt(usage["prompt_cache_miss_tokens"]);
+        if (hit is not null && cached is not null && hit != cached)
+            throw new ModelProviderException("malformed_payload", retryable: false);
+        cached ??= hit;
+        if (hit is { } h && miss is { } m)
+        {
+            long sum = (long)h + m;
+            if (sum > int.MaxValue || (input is { } reported && reported != sum))
+                throw new ModelProviderException("malformed_payload", retryable: false);
+            input ??= (int)sum;
+        }
+        if (input is { } prompt && cached is { } read && read > prompt)
+            throw new ModelProviderException("malformed_payload", retryable: false);
         if (input is null && output is null && total is null && cached is null)
             return null;
-        return new ModelUsage(input, output, total, cached, null, model);
+        return new ModelUsage(input, output, total, cached, null, model, inputTokensIncludeCache: true);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)

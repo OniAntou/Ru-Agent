@@ -169,6 +169,12 @@ Implementation: [providers](docs/architecture/providers.md#provider-continuation
 _Avoid_: hidden reasoning in chat history or reconstructed prose
 
 
+**Runtime Context Snapshot**:
+A bounded, encrypted model-only record of current runtime and workflow context, admitted before a prepared native text model step. Retained snapshots preserve their historical position; new or cleared state is appended and never grants authority.
+Implementation: [providers](docs/architecture/providers.md#runtime-context-snapshots).
+_Avoid_: mutable context rewritten ahead of retained history or historical observations treated as current permissions
+
+
 **Policy Snapshot**:
 An immutable versioned canonical binding of preset, workspace identity and ordered rules, validated by the execution authority. A new version invalidates stale pending decisions.
 Implementation: [broker](docs/architecture/broker.md#policy-snapshot).

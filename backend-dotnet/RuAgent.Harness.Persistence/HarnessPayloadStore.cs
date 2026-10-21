@@ -150,6 +150,10 @@ public sealed partial class HarnessPayloadStore
                 16 * 1024,
                 HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.RuntimeContextSnapshot] = new(
+                RuAgent.Harness.Core.Prompting.RuntimeContextSnapshot.MaximumBytes,
+                HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.ModelReasoning] = new(
                 32 * 1024,
                 HarnessPayloadAudience.AuthenticatedClient,

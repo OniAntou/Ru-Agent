@@ -7,6 +7,22 @@ namespace RuApp.Tests;
 
 public sealed class SessionUsageSummaryTests
 {
+    [Fact]
+    public void Cache_hit_is_weighted_by_prompt_tokens_and_excludes_output_and_unknown_legacy_accounting()
+    {
+        var summary = SessionUsagePolicy.Summarize([
+            Row("one", true, new AgentModelUsage(1000, 500, null, 998, null, InputTokensIncludeCache: true)),
+            Row("two", true, new AgentModelUsage(10, 500, null, 90, 0, InputTokensIncludeCache: false)),
+            Row("legacy", true, new AgentModelUsage(100, 1, null, 99, null)),
+        ]);
+        Assert.Equal(2, summary.CacheReportedRuns);
+        Assert.Equal(1100, summary.MeasuredCachePromptTokens);
+        Assert.Equal(1088 * 100.0 / 1100, summary.CacheHitPercent!.Value, 6);
+        Assert.Null(new AgentModelUsage(100, 1, null, null, null, InputTokensIncludeCache: true).CacheHitPercent);
+        Assert.Equal("99.999%", AgentModelUsage.FormatCacheHit(99.9999));
+        Assert.Equal(1001, new AgentModelUsage(1000, 1, null, 998, null, InputTokensIncludeCache: true).ResolvedTotal);
+    }
+
     /// <summary>A row with nothing but the fields these tests are about.</summary>
     private static SessionUsageRow Row(string id, bool terminal, AgentModelUsage? usage) =>
         new(id, terminal, terminal ? "completed" : "running", null, null, usage);
@@ -93,15 +109,14 @@ public sealed class SessionUsageSummaryTests
     }
 
     [Fact]
-    public void Billed_tokens_are_input_plus_output_and_the_split_is_a_share_of_measured()
+    public void Billed_tokens_sum_disjoint_input_output_and_cache_buckets()
     {
-        var rows = new[] { Row("run_1", true, new AgentModelUsage(60, 20, 90, 20, null)) };
+        var rows = new[] { Row("run_1", true, new AgentModelUsage(60, 20, 100, 20, 0, InputTokensIncludeCache: false)) };
 
         var summary = SessionUsagePolicy.Summarize(rows);
 
-        // Cache is measured but not billed twice: a cache read is a discount on an input
-        // that was already counted.
-        Assert.Equal(80, summary.BilledTokens);
+        // Legacy fixtures use disjoint buckets. Inclusive reports are normalized first.
+        Assert.Equal(100, summary.BilledTokens);
 
         // 60 input + 20 output + 20 cache read = 100 measured, so the shares add up.
         Assert.Equal(60.0, summary.InputShare, 3);

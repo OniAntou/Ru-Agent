@@ -213,7 +213,8 @@ public sealed class ModelStepService
         {
             var nativeResultIds = request.ModelMessages.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
                 .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
-            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling, nativeResultIds);
+            snapshot = SystemPromptComposer.Compose(request.SystemPromptContext, nativeToolCalling, nativeResultIds,
+                deferRuntimeContext: nativeToolCalling);
             snapshot.Receipt.ValidateAgainst(request.SystemPromptContext, snapshot.Text);
             settings = BuildWireSettings(request.Settings);
             var requestTurns = nativeToolCalling
@@ -232,7 +233,10 @@ public sealed class ModelStepService
                 request.ResponsesInputItems,
                 nativeToolCalling,
                 request.AnthropicMessages,
-                providerBootstrap.UseMaxCompletionTokens);
+                providerBootstrap.UseMaxCompletionTokens,
+                runtimeContext: request.PromptInHistory ? null : snapshot.RuntimeContext,
+                promptInHistory: request.PromptInHistory,
+                replayChatReasoning: nativeToolCalling && providerBootstrap.ReplayChatReasoning);
         }
         catch (ModelStepException)
         {
@@ -299,6 +303,8 @@ public sealed class ModelStepService
             providerGateEntered = true;
             var text = new StringBuilder();
             var reasoning = new StringBuilder();
+            var replayReasoning = modelRequest.ReplayChatReasoning ? new StringBuilder() : null;
+            var replayReasoningBytes = 0;
             var toolFragments = new List<ModelToolFragment>();
             ProviderContinuation? providerContinuation = null;
             string? finishReason = null;
@@ -355,6 +361,13 @@ public sealed class ModelStepService
 
                     if (delta.Reasoning is not null)
                     {
+                        if (replayReasoning is not null)
+                        {
+                            replayReasoningBytes = checked(replayReasoningBytes + Encoding.UTF8.GetByteCount(delta.Reasoning));
+                            if (replayReasoningBytes > ProviderContinuation.MaximumBytes)
+                                throw new ModelStepException("provider_continuation_too_large", false);
+                            replayReasoning.Append(delta.Reasoning);
+                        }
                         reasoning.Append(delta.Reasoning);
                         if (reasoning.Length > MaximumReasoningChars)
                         {
@@ -399,6 +412,19 @@ public sealed class ModelStepService
         if (calls.Count > 0)
         {
             finishReason = "tool_calls";
+        }
+        if (replayReasoning is not null && calls.Count > 0)
+        {
+            if (providerContinuation is not null) throw new ModelStepException("protocol_failure", false);
+            try
+            {
+                providerContinuation = ChatProviderContinuation.Create(providerBootstrap.Model, visibleText,
+                    replayReasoning.ToString(), calls);
+            }
+            catch (ArgumentException error)
+            {
+                throw new ModelStepException("provider_continuation_too_large", false, error);
+            }
         }
         ValidateProviderContinuation(providerBootstrap, providerContinuation, calls);
         if (calls.Count == 0)
@@ -460,6 +486,14 @@ public sealed class ModelStepService
         ProviderContinuation? continuation,
         IReadOnlyList<ModelToolCall> calls)
     {
+        if (bootstrap.ReplayChatReasoning && bootstrap.Protocol == ProviderProtocols.ChatCompletions)
+        {
+            if (calls.Count == 0 && continuation is null) return;
+            if (continuation is null || continuation.Provider != "chat" || continuation.Protocol != bootstrap.Protocol
+                || continuation.Model != bootstrap.Model || calls.Count == 0)
+                throw new ModelStepException("provider_continuation_missing", false);
+            return; // The bounded private message is formed from this step's validated calls above.
+        }
         if (bootstrap.ToolCallingMode != ProviderToolCallingMode.Native
             || bootstrap.Protocol is not (ProviderProtocols.OpenAiResponses or ProviderProtocols.AnthropicMessages))
         {

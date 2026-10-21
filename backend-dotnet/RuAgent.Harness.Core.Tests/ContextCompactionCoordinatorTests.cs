@@ -9,6 +9,33 @@ namespace RuAgent.Harness.Core.Tests;
 
 public sealed class ContextCompactionCoordinatorTests
 {
+    [Fact]
+    public async Task Context_snapshot_is_committed_with_the_prepared_step_before_dispatch()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var source = new ReloadingSource(Snapshot(ModelContextEntry.Text("user", 1, ModelContextRole.User, "task")),
+            Snapshot(ModelContextEntry.Text("user", 1, ModelContextRole.User, "task")));
+        var model = new PreparedFakeModelStepRunner
+        {
+            RuntimeSnapshot = "untrusted context snapshot",
+            EstimatedInputTokensOverride = 100,
+            OnDispatch = () =>
+            {
+                var commit = Assert.Single(store.Commits);
+                Assert.Contains(commit.Events, evt => evt.Kind == HarnessEventKind.ModelStepStarted);
+                var payload = Assert.Single(commit.Payloads);
+                Assert.Equal(HarnessPayloadKind.RuntimeContextSnapshot, payload.Kind);
+                Assert.Equal(HarnessPayloadAudience.ModelContext, payload.Audience);
+            },
+        };
+        var coordinator = new AgentRunCoordinator(model, new FakeToolGateway(), store, new AgentContextAssembler(source),
+            new SequenceIdGenerator(), new IncrementingTimeProvider(Epoch), new ToolCallScheduler(), new TransientFrameBuffer(32),
+            contextLimit: new StaticModelContextLimitProvider(2_000),
+            promptContextProvider: new FakeSystemPromptContextProvider());
+        await coordinator.RunOneStepAsync(RunId(), default);
+        Assert.NotNull(model.DispatchedPreparation);
+    }
     private static readonly DateTimeOffset Epoch =
         new(2026, 8, 24, 8, 0, 0, TimeSpan.Zero);
 
@@ -281,6 +308,9 @@ public sealed class ContextCompactionCoordinatorTests
 
     private sealed class PreparedFakeModelStepRunner : IProviderBackedModelStepRunner, IModelStepRequestPreparer
     {
+        public string? RuntimeSnapshot { get; init; }
+        public int? EstimatedInputTokensOverride { get; init; }
+        public Action? OnDispatch { get; init; }
         public List<ModelStepRequest> PreparedRequests { get; } = [];
         public List<IPreparedModelStep> PreparedProjections { get; } = [];
         public IPreparedModelStep? DispatchedPreparation { get; private set; }
@@ -290,7 +320,7 @@ public sealed class ContextCompactionCoordinatorTests
         {
             PreparedRequests.Add(request);
             IPreparedModelStep prepared = new TestPreparedStep(
-                PreparedRequests.Count == 1 ? 1_800 : 100, 2_000);
+                EstimatedInputTokensOverride ?? (PreparedRequests.Count == 1 ? 1_800 : 100), 2_000, RuntimeSnapshot);
             PreparedProjections.Add(prepared);
             return Task.FromResult(prepared);
         }
@@ -301,13 +331,14 @@ public sealed class ContextCompactionCoordinatorTests
             CancellationToken cancellationToken)
         {
             DispatchedPreparation = request.Preparation;
+            OnDispatch?.Invoke();
             DispatchedPreparationContext = request.Context;
             var receipt = SystemPromptComposer.Compose(request.PromptContext, nativeToolCalling: true).Receipt;
             return Task.FromResult(new ModelStepResult(
                 new AssistantStep("done", Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0), receipt));
         }
 
-        private sealed record TestPreparedStep(long EstimatedInputTokens, long MaxPromptTokens) : IPreparedModelStep;
+        private sealed record TestPreparedStep(long EstimatedInputTokens, long MaxPromptTokens, string? RuntimeContextSnapshot) : IPreparedModelStep;
     }
 
     private sealed class UnpreparedProviderModelStepRunner : IProviderBackedModelStepRunner

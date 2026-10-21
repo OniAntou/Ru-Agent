@@ -90,6 +90,7 @@ public sealed class AgentProviderSnapshotFactory(
         // at the provider with a bounded, named error instead of being quietly downgraded.
         var toolCallingMode = ProviderToolCallingMode.Native;
         var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
+        if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -135,6 +136,7 @@ public sealed class AgentProviderSnapshotFactory(
         {
             throw new ProviderCatalogException("provider_selection_invalid");
         }
+        var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: true,
             allowNativeAnthropic: true,
@@ -142,7 +144,8 @@ public sealed class AgentProviderSnapshotFactory(
                 && selected.Protocol == ProviderProtocols.ChatCompletions,
             contextWindowTokens: pin.ContextWindowTokens,
             outputTokenReserve: pin.OutputTokenReserve,
-            reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options));
+            reducedEffortRequestOptions: ProviderReasoningPreferences.LowestEffortOptions(models, selected.Model, options),
+            replayChatReasoning: replayChatReasoning);
     }
 
     private async Task<string> ReadCredentialAsync(ProviderSelection selected, CancellationToken ct)
@@ -260,7 +263,8 @@ public sealed class AgentProviderSnapshotFactory(
         bool useMaxCompletionTokens = false,
         long? contextWindowTokens = null,
         int? outputTokenReserve = null,
-        JsonObject? reducedEffortRequestOptions = null)
+        JsonObject? reducedEffortRequestOptions = null,
+        bool replayChatReasoning = false)
     {
         try
         {
@@ -278,7 +282,8 @@ public sealed class AgentProviderSnapshotFactory(
                 useMaxCompletionTokens,
                 contextWindowTokens,
                 outputTokenReserve,
-                reducedEffortRequestOptions);
+                reducedEffortRequestOptions,
+                replayChatReasoning);
         }
         catch (ArgumentException)
         {

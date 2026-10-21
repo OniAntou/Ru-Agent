@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 namespace RuApp.Services;
@@ -17,16 +18,19 @@ internal static class SessionUsageReplayPolicy
 
     /// <summary>
     /// The payload ref of the newest usage report in one run's replayed event
-    /// lines, or null when the run reported none. Later lines win: usage
-    /// totals only grow inside a run, so the last report covers the whole
-    /// transcript while an earlier one would under-read the meter.
+    /// lines, or null when the run reported none. This is the latest step's
+    /// context-window reading, not cumulative billing for the run.
     /// </summary>
     /// <param name="eventLines">Raw replay lines, SSE <c>data:</c> or plain JSON.</param>
     public static string? FindLatestUsagePayloadRef(IEnumerable<string> eventLines)
+        => FindUsagePayloadRefs(eventLines).LastOrDefault();
+
+    public static IReadOnlyList<string> FindUsagePayloadRefs(IEnumerable<string> eventLines)
     {
         ArgumentNullException.ThrowIfNull(eventLines);
 
-        string? latest = null;
+        var references = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var line in eventLines)
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -66,10 +70,12 @@ internal static class SessionUsageReplayPolicy
                     continue;
                 }
 
-                latest = payloadRef.GetString();
+                string reference = payloadRef.GetString()!;
+                if (seen.Add(reference)) references.Add(reference);
+                if (references.Count > 4096) throw new System.IO.InvalidDataException("usage_report_limit");
             }
         }
 
-        return latest;
+        return references;
     }
 }

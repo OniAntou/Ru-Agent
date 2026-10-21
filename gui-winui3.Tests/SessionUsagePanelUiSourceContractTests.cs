@@ -297,7 +297,8 @@ public sealed class SessionUsagePanelUiSourceContractTests
         Assert.True(GuiSource.HasMember(history, "ListSessionUsageAsync"));
         string read = GuiSource.MethodBody(history, "ListSessionUsageAsync");
         Assert.Contains("SessionUsagePolicy.MaxReportedRuns", read, StringComparison.Ordinal);
-        // A live run has no durable report yet, so the walk must not ask for one.
+        // Running and parked runs can have paid steps; only never-started states are skipped.
         Assert.Contains("run.IsTerminal", read, StringComparison.Ordinal);
+        Assert.Contains("waiting_workspace_trust", read, StringComparison.Ordinal);
     }
 }

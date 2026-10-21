@@ -149,8 +149,17 @@ public static class SessionUsagePricing
             return 0m;
         }
 
+        // Older reports do not identify whether cached tokens overlap input.
+        // Keep them readable, but do not publish a price based on guessed buckets.
+        if ((usage.InputTokensIncludeCache is null
+                && (usage.CacheReadInputTokens > 0 || usage.CacheWriteInputTokens > 0))
+            || (usage.InputTokensIncludeCache == true && usage.CacheReadInputTokens is null)
+            || (usage.PeakStepTokens is not null && (usage.InputTokens is null || usage.OutputTokens is null
+                || usage.CacheReadInputTokens is null || usage.CacheWriteInputTokens is null)))
+            return null;
+
         var total = 0m;
-        if (!Part(usage.InputTokens, rate.Input, ref total)
+        if (!Part(usage.UncachedInputTokens, rate.Input, ref total)
             || !Part(usage.OutputTokens, rate.Output, ref total)
             || !Part(usage.CacheReadInputTokens, rate.CacheRead, ref total)
             || !Part(usage.CacheWriteInputTokens, rate.CacheWrite, ref total))

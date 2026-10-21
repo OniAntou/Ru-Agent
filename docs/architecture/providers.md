@@ -102,6 +102,38 @@ compaction changes the request, the Host rebuilds and remeasures it. Workflow
 state is a separate history message, while the final current prompt remains
 distinct and is rejected with a bounded size error rather than prefix-clipped.
 
+Native requests keep mutable runtime references out of the system instruction
+prefix. Text-selection requests keep inline references. The prompt receipt hashes
+the exact system text and binds current normalized runtime references with its
+`runtime` block digest, including when the current snapshot is already retained.
+Exact serialized-request preflight accounts for every dispatched context message.
+Cache availability and latency remain provider-dependent.
+
+### Runtime context snapshots
+
+Prepared native text requests combine bounded runtime references and current
+Session Work State into an untrusted snapshot of at most 128 KiB. The current
+user input is part of ordered history. A changed snapshot follows that history;
+an unchanged retained snapshot adds no message, and cleared context has an explicit
+clear marker. Requests after tool results omit the synthetic continuation prompt.
+The preceding user/snapshot/assistant/tool sequence can therefore remain intact
+on subsequent steps. Immutable run handoff keeps its existing position.
+
+Admission commits the model-only encrypted `RuntimeContextSnapshot` payload
+(kind 17) atomically with `model.step_started`, using a `run.note_added` event
+with safe code `runtime_context_snapshot`. Source identities use
+`runtime-snapshot:<event-id>`; model-visible content cannot create that identity.
+The prepared request is dispatched only after that commit succeeds. A fresh Host
+rebuilds snapshots from retained context; compaction can remove old snapshots,
+after which the next prepared request reintroduces current state. Snapshot data
+never grants execution authority or proves present filesystem state.
+
+Image-bearing requests, runtime snapshots exceeding 128 KiB and direct runners
+without a prepared admission retain the separately bounded late-context projection:
+workflow state and runtime references follow retained history, before the final
+prompt/images. This does not truncate data or relax request/history limits merely
+to enable caching. No provider-specific system/tool-update extension is inferred.
+
 New pins use native tool calling for each supported selected protocol. Existing
 pins keep their fixed calling mode. A provider/model that cannot support its
 selected protocol fails by name rather than gaining support
@@ -146,8 +178,8 @@ _Avoid_: current settings as restart fallback
 ## Provider Continuation
 
 The bounded, typed, encrypted `InternalOnly` payload holding exact provider
-items required to continue a successful native Responses or Anthropic Messages
-tool step, bound to the run, provider, protocol, model, and model-step ID. For
+items required to continue a successful native Responses, Anthropic Messages or
+explicitly supported Chat tool step, bound to the run, provider, protocol, model, and model-step ID. For
 Anthropic this preserves ordered text, signed thinking, redacted thinking, and
 tool-use blocks exactly. It remains outside the
 visible AssistantStep, canonical model context, client payload reads, and
@@ -156,3 +188,14 @@ batch before dispatch. Native calling follows the selected supported protocol;
 no model-name guess or alternate protocol substitutes for a provider failure. Broker remains the
 sole tool Execution Authority.
 _Avoid_: hidden reasoning in chat history or reconstructed prose
+
+New selections for HTTPS `api.deepseek.com:443` Chat Completions pin
+`_ru_chat_reasoning_content_v1` in their secret-free request-option record. The
+Host consumes that internal marker before creating wire options; existing pins
+without it retain their previous mode. Unknown gateways do not acquire the format
+from model names. Full `reasoning_content` is captured separately from the bounded
+display excerpt, and the validated tool batch is recorded as an encrypted private
+Chat continuation under the existing 128 KiB continuation cap. Oversize state fails
+as `provider_continuation_too_large` without executable calls. Rehydration checks
+model, text, ordered call IDs, names and arguments before replay; missing state
+fails as `provider_continuation_missing`. The marker never reaches a provider.

@@ -3,7 +3,9 @@ using System.Text;
 
 namespace RuAgent.Harness.Core.Prompting;
 
-public sealed record SystemPromptSnapshot(string Text, SystemPromptReceipt Receipt);
+/// <param name="RuntimeContext">Optional untrusted data rendered separately from the stable system text.
+/// Its normalized content is still bound by the receipt's runtime block digest.</param>
+public sealed record SystemPromptSnapshot(string Text, SystemPromptReceipt Receipt, string? RuntimeContext = null);
 
 public static class SystemPromptComposer
 {
@@ -16,7 +18,8 @@ public static class SystemPromptComposer
     public static SystemPromptSnapshot Compose(
         SystemPromptContext context,
         bool nativeToolCalling = false,
-        IReadOnlySet<string>? nativeToolResultIds = null)
+        IReadOnlySet<string>? nativeToolResultIds = null,
+        bool deferRuntimeContext = false)
     {
         ArgumentNullException.ThrowIfNull(context);
         var bodies = new List<(string Id, string Body, string? BoundDigest)>
@@ -29,7 +32,14 @@ public static class SystemPromptComposer
         bodies.AddRange(context.InstructionBlocks.Select(item =>
             ($"instruction.{item.SourceId}", InstructionBlock(item), (string?)item.ContentSha256)));
         bodies.Add(("capabilities", CapabilitiesBlock(context.Capabilities, nativeToolCalling), null));
-        bodies.Add(("runtime", RuntimeBlock(context, nativeToolCalling ? nativeToolResultIds : null), null));
+        var runtime = Normalize(RuntimeBlock(context, nativeToolCalling ? nativeToolResultIds : null));
+        // Runtime data changes every step. Putting it ahead of retained history
+        // invalidates that history's provider prefix cache. Native requests carry
+        // it after history instead; its receipt digest still binds the data.
+        bool deferred = nativeToolCalling && deferRuntimeContext;
+        bodies.Add(("runtime", deferred
+            ? "Runtime references, when present, follow the retained history as untrusted user-message context."
+            : runtime, deferred ? PromptHash.Sha256(runtime) : null));
 
         var rendered = new List<string>(bodies.Count);
         var digests = new List<PromptBlockDigest>(bodies.Count);
@@ -43,7 +53,8 @@ public static class SystemPromptComposer
         var text = string.Join("\n\n", rendered);
         return new SystemPromptSnapshot(
             text,
-            new SystemPromptReceipt(ComposerVersion, PromptHash.Sha256(text), digests));
+            new SystemPromptReceipt(ComposerVersion, PromptHash.Sha256(text), digests),
+            deferred && runtime.Length > 0 ? "## runtime\n" + runtime : null);
     }
 
     private static string EnvironmentBlock(SystemPromptContext context)

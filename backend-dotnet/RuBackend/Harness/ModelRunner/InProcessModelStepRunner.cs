@@ -182,19 +182,20 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken)
+        var generationRequest = await BuildGenerationRequestAsync(request, null, cancellationToken, preparingSnapshot: true)
             .ConfigureAwait(false);
         var stepRequest = _stepService.PrepareRequest(
             generationRequest, request.ModelStepId.Value, requireExactProjection: true);
         if (stepRequest.EstimatedInputTokens < 0 || stepRequest.MaxPromptTokens <= 0)
             throw new ModelStepException("provider_request_projection_unavailable", retryable: false);
-        return new InProcessPreparedStep(stepRequest);
+        return new InProcessPreparedStep(stepRequest, generationRequest.PendingRuntimeSnapshot);
     }
 
     private async Task<ModelGenerationRequest> BuildGenerationRequestAsync(
         ModelStepRequest request,
         string? selectionFeedbackCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preparingSnapshot = false)
     {
         var bootstrap = await LoadProviderBootstrapAsync(request.RunId, cancellationToken).ConfigureAwait(false);
         // A reply cut off by the output limit usually means the reasoning used the budget: once the
@@ -202,18 +203,53 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         if (AgentRecoveryNotes.NoteCount(request.Context, AgentRecoveryKind.OutputTruncated) > 0)
             bootstrap = bootstrap.WithReducedEffort();
         var images = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
-        var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0);
-        var history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
-            .ConfigureAwait(false);
+        var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep)
+            && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native && images.Count == 0;
+        var (prompt, _, modelMessages) = BuildConversation(request.Context, images.Count > 0, nativeText);
+        string? pendingSnapshot = null;
+        if (nativeText)
+        {
+            var resultIds = modelMessages!.Where(turn => turn.Role == "tool" && turn.ToolCallId is not null)
+                .Select(turn => turn.ToolCallId!).ToHashSet(StringComparer.Ordinal);
+            var runtime = SystemPromptComposer.Compose(request.PromptContext, true, resultIds, deferRuntimeContext: true).RuntimeContext;
+            var workflow = request.Context.Entries.LastOrDefault(entry => entry.SourceId == SessionWorkState.ContextSourceId)?.Content;
+            var rendered = RuntimeContextSnapshot.Render(runtime, workflow);
+            if (RuntimeContextSnapshot.Fits(rendered))
+            {
+                pendingSnapshot = RuntimeContextSnapshot.Pending(request.Context, rendered,
+                    modelMessages!.Where(turn => turn.Role == "user").Select(turn => turn.Content).ToHashSet(StringComparer.Ordinal));
+                (prompt, _, modelMessages) = BuildConversation(request.Context, false, true, pendingSnapshot);
+            }
+            else
+            {
+                // Large/image context retains the existing separately bounded projection.
+                // Do not truncate data or relax the history limits to enable caching.
+                nativeText = false;
+                (prompt, _, modelMessages) = BuildConversation(request.Context, false);
+            }
+        }
         if (selectionFeedbackCode is not null
             && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
+        {
             prompt = ApplySelectionFeedback(prompt, selectionFeedback);
+            if (nativeText) modelMessages = modelMessages!.Append(new ModelTurn("user", selectionFeedback)).ToArray();
+        }
+        if (bootstrap.ReplayChatReasoning && bootstrap.ToolCallingMode == ProviderToolCallingMode.Native)
+        {
+            var continuations = LoadProviderContinuationsAsync is null ? Array.Empty<ProviderContinuation>()
+                : await LoadProviderContinuationsAsync(request.RunId, bootstrap,
+                    RetainedAssistantEventIds(request.Context, modelMessages!), cancellationToken).ConfigureAwait(false);
+            modelMessages = ChatCompletionsHistoryProjector.Project(modelMessages!, continuations, bootstrap.Model);
+        }
+        var history = await BuildNativeHistoryAsync(request, bootstrap, modelMessages!, cancellationToken)
+            .ConfigureAwait(false);
         var settings = BuildSettings(request.PromptContext);
         try
         {
             return new ModelGenerationRequest(prompt, modelMessages!, request.PromptContext,
                 new ModelGenerationSettings(settings["model_tools"] as JsonArray), bootstrap,
-                ParseRunImages(images), history.Responses, history.Anthropic);
+                ParseRunImages(images), history.Responses, history.Anthropic,
+                promptInHistory: nativeText, pendingRuntimeSnapshot: pendingSnapshot);
         }
         catch (ArgumentException error)
         {
@@ -371,11 +407,13 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 
     private static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) BuildConversation(
         ModelContextSnapshot context,
-        bool hasImages)
+        bool hasImages,
+        bool promptInHistory = false,
+        string? pendingSnapshot = null)
     {
         try
         {
-            var (prompt, messages) = BuildTypedConversation(context, hasImages);
+            var (prompt, messages) = BuildTypedConversation(context, hasImages, promptInHistory, pendingSnapshot);
             return (prompt, null, messages);
         }
         catch (ModelRunnerProtocolException)
@@ -413,7 +451,9 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
 
     private static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTypedConversation(
         ModelContextSnapshot context,
-        bool hasImages)
+        bool hasImages,
+        bool promptInHistory,
+        string? pendingSnapshot)
     {
         var units = new List<List<ModelTurn>>();
         var pendingUserBlocks = new List<string>();
@@ -421,6 +461,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
         var providerIdsByToolCall = new Dictionary<string, string>(StringComparer.Ordinal);
         var protectedContextBlocks = new List<string>();
+        var workflowTurns = new List<ModelTurn>();
         foreach (var entry in context.Entries)
         {
             if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System)
@@ -439,11 +480,24 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
                 EnsureNoPendingCalls(pendingCalls);
                 if (!string.IsNullOrWhiteSpace(entry.Content))
                 {
+                    if (promptInHistory && entry.SourceId == SessionWorkState.ContextSourceId) continue;
+                    if (RuntimeContextSnapshot.IsSnapshot(entry))
+                    {
+                        AddPendingUserBlocks(units, pendingUserBlocks);
+                        units.Add([new ModelTurn("user", entry.Content)]);
+                        continue;
+                    }
                     if (entry.SourceId is SessionWorkState.ContextSourceId or SessionRunHandoff.ContextSourceId)
                     {
                         AddPendingUserBlocks(units, pendingUserBlocks);
                         protectedContextBlocks.Add(entry.Content);
-                        units.Add([new ModelTurn("user", entry.Content)]);
+                        // Work state changes during a run. Keep the immutable
+                        // conversation prefix cacheable, while still charging
+                        // and protecting the full current state from trimming.
+                        if (entry.SourceId == SessionWorkState.ContextSourceId)
+                            workflowTurns.Add(new ModelTurn("user", entry.Content));
+                        else
+                            units.Add([new ModelTurn("user", entry.Content)]);
                         continue;
                     }
 
@@ -481,16 +535,28 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
             throw new ModelRunnerProtocolException("model_history_invalid");
         }
 
-        if (pendingUserBlocks.Count > 1)
+        if (pendingUserBlocks.Count > 1 || promptInHistory)
         {
-            foreach (var block in pendingUserBlocks.Take(pendingUserBlocks.Count - 1))
+            foreach (var block in pendingUserBlocks.Take(pendingUserBlocks.Count - (promptInHistory ? 0 : 1)))
                 units.Add([new ModelTurn("user", block)]);
         }
+        if (pendingSnapshot is not null)
+        {
+            units.Add([new ModelTurn("user", pendingSnapshot)]);
+            protectedContextBlocks.Add(pendingSnapshot);
+        }
+        foreach (var workflow in workflowTurns) units.Add([workflow]);
         var messages = FitModelMessagesToBudget(units);
-        var currentPrompt = ResolveCurrentPrompt(pendingUserBlocks, messages, hasImages);
         if (protectedContextBlocks.Any(block => !messages.Any(message => message.Role == "user"
                 && string.Equals(message.Content, block, StringComparison.Ordinal))))
             throw new ModelRunnerProtocolException("request_too_large");
+        // A trailing work-state message is context, never the current request.
+        // In particular, a completed tool batch must still use its normal
+        // durable-results continuation rather than replaying the state as a prompt.
+        var trailingContextCount = workflowTurns.Count + (pendingSnapshot is null ? 0 : 1);
+        var promptHistory = trailingContextCount == 0
+            ? messages : messages.Take(messages.Count - trailingContextCount).ToArray();
+        var currentPrompt = ResolveCurrentPrompt(pendingUserBlocks, promptHistory, hasImages);
         return (currentPrompt, messages);
     }
 
@@ -770,7 +836,7 @@ public sealed class InProcessModelStepRunner : IProviderBackedModelStepRunner, I
         };
     }
 
-    private sealed record InProcessPreparedStep(PreparedModelStep StepRequest)
+    private sealed record InProcessPreparedStep(PreparedModelStep StepRequest, string? RuntimeContextSnapshot)
         : IPreparedModelStep
     {
         public long EstimatedInputTokens => StepRequest.EstimatedInputTokens;

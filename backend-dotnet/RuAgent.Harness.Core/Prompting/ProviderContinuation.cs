@@ -18,9 +18,10 @@ public sealed record ProviderContinuation
 
     public ProviderContinuation(string provider, string protocol, string model, int version, IReadOnlyList<JsonObject> outputItems)
     {
-        if (provider is not ("openai" or "anthropic")
+        if (provider is not ("openai" or "anthropic" or "chat")
             || (provider == "openai" && protocol != "openai_responses")
             || (provider == "anthropic" && protocol != "anthropic_messages")
+            || (provider == "chat" && protocol != "chat_completions")
             || string.IsNullOrWhiteSpace(model) || model.Length > 256 || version != 1)
             throw new ArgumentException("Provider continuation identity is invalid.");
         ArgumentNullException.ThrowIfNull(outputItems);
@@ -55,6 +56,11 @@ public sealed record ProviderContinuation
 
     private static void ValidateOutputItems(string protocol, IReadOnlyList<JsonObject> items)
     {
+        if (protocol == "chat_completions")
+        {
+            ChatProviderContinuation.Validate(items);
+            return;
+        }
         if (protocol == "anthropic_messages")
         {
             ValidateAnthropicBlocks(items);

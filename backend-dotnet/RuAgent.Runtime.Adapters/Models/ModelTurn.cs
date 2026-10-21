@@ -67,7 +67,8 @@ public sealed record ModelTurn
         string content,
         IReadOnlyList<ModelFunctionCall>? toolCalls = null,
         string? toolCallId = null,
-        string? toolResultCode = null)
+        string? toolResultCode = null,
+        string? reasoningContent = null)
     {
         if (role is not ("system" or "user" or "assistant" or "tool"))
         {
@@ -82,11 +83,15 @@ public sealed record ModelTurn
         }
 
         ValidateRoleFields(role, content, calls, toolCallId, toolResultCode);
+        if (reasoningContent is not null && (role != "assistant" || reasoningContent.Contains('\0')
+            || StrictUtf8.GetByteCount(reasoningContent) > RuAgent.Harness.Core.Prompting.ProviderContinuation.MaximumBytes))
+            throw new ArgumentException("Invalid private chat reasoning.", nameof(reasoningContent));
         Role = role;
         Content = content;
         ToolCalls = new ReadOnlyCollection<ModelFunctionCall>(calls);
         ToolCallId = toolCallId;
         ToolResultCode = toolResultCode;
+        ReasoningContent = reasoningContent;
     }
 
     public string Role { get; }
@@ -98,6 +103,7 @@ public sealed record ModelTurn
     public string? ToolCallId { get; }
 
     public string? ToolResultCode { get; }
+    public string? ReasoningContent { get; }
 
     internal JsonObject ToJsonObject()
     {
@@ -106,6 +112,7 @@ public sealed record ModelTurn
             ["role"] = Role,
             ["content"] = Content,
         };
+        if (ReasoningContent is not null) result["reasoning_content"] = ReasoningContent;
         if (Role == "assistant" && ToolCalls.Count > 0)
         {
             var calls = new JsonArray();

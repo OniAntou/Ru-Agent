@@ -269,7 +269,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
         var cacheWrite = ReadOptionalInt(usage["cache_creation_input_tokens"]);
         if (input is null && output is null && cacheRead is null && cacheWrite is null)
             return null;
-        return new ModelUsage(input, output, null, cacheRead, cacheWrite, model);
+        return new ModelUsage(input, output, null, cacheRead, cacheWrite, model, inputTokensIncludeCache: false);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)
@@ -294,7 +294,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             // A streamed request reports usage twice for one model, so both halves
             // name the same one. Keeping the first that named it means a later chunk
             // without the field cannot erase it.
-            first.Model ?? second.Model);
+            first.Model ?? second.Model,
+            inputTokensIncludeCache: false);
     }
 
     private static JsonObject? ReadObject(JsonNode? node)
@@ -332,6 +333,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             }
         }
 
+        if (!string.IsNullOrEmpty(request.RuntimeContext))
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.RuntimeContext });
+
         if (request.Images.Count > 0)
         {
             var content = new JsonArray();
@@ -351,7 +355,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             content.Add(new JsonObject { ["type"] = "text", ["text"] = request.Prompt });
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = content });
         }
-        else
+        else if (!request.PromptInHistory)
         {
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
         }

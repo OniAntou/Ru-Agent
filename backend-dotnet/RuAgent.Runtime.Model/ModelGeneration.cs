@@ -74,7 +74,9 @@ public sealed record ModelGenerationRequest
         ProviderBootstrapData providerBootstrap,
         IReadOnlyList<ModelImage>? images = null,
         IReadOnlyList<JsonObject>? responsesInputItems = null,
-        IReadOnlyList<JsonObject>? anthropicMessages = null)
+        IReadOnlyList<JsonObject>? anthropicMessages = null,
+        bool promptInHistory = false,
+        string? pendingRuntimeSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(modelMessages);
         ArgumentNullException.ThrowIfNull(systemPromptContext);
@@ -105,6 +107,8 @@ public sealed record ModelGenerationRequest
             throw new ArgumentException("Anthropic input history exceeds the generation cap.", nameof(anthropicMessages));
 
         Prompt = prompt;
+        PromptInHistory = promptInHistory;
+        PendingRuntimeSnapshot = pendingRuntimeSnapshot;
         ModelMessages = Array.AsReadOnly(modelMessages.ToArray());
         SystemPromptContext = systemPromptContext;
         Settings = settings;
@@ -129,6 +133,9 @@ public sealed record ModelGenerationRequest
     public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
 
     public IReadOnlyList<JsonObject> AnthropicMessages { get; }
+
+    public bool PromptInHistory { get; }
+    public string? PendingRuntimeSnapshot { get; }
 
     private static void ValidatePrompt(string prompt, bool hasImages)
     {

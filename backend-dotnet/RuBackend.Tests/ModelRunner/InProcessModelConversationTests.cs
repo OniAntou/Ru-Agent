@@ -14,6 +14,43 @@ namespace RuBackend.Tests.ModelRunner;
 public sealed class InProcessModelConversationTests
 {
     [Fact]
+    public void Updating_workflow_state_keeps_the_retained_conversation_before_it_unchanged()
+    {
+        ModelContextSnapshot Context(string state) => Snapshot(
+            ModelContextEntry.Text(SessionWorkState.ContextSourceId, 1, ModelContextRole.User, state),
+            ModelContextEntry.Text("original-user", 2, ModelContextRole.User, "Original task"),
+            ModelContextEntry.Assistant("earlier-answer", 3, new AssistantStep("Earlier answer", [], AssistantFinishReason.Stop, 1)),
+            ModelContextEntry.Text("current-user", 4, ModelContextRole.User, "Continue this task"));
+        var (beforePrompt, _, before) = InProcessModelStepRunner.BuildConversationForTests(Context("old workflow"));
+        var (afterPrompt, _, after) = InProcessModelStepRunner.BuildConversationForTests(Context("new workflow"));
+
+        Assert.Equal("Continue this task", beforePrompt);
+        Assert.Equal(beforePrompt, afterPrompt);
+        Assert.Equal(before!.Count, after!.Count);
+        Assert.Equal(JsonSerializer.Serialize(before.Take(before.Count - 1)),
+            JsonSerializer.Serialize(after.Take(after.Count - 1)));
+        Assert.Equal("old workflow", before[^1].Content);
+        Assert.Equal("new workflow", after[^1].Content);
+    }
+
+    [Fact]
+    public void Late_workflow_state_does_not_replace_the_durable_tool_continuation_prompt()
+    {
+        var context = Snapshot(
+            ModelContextEntry.Text(SessionWorkState.ContextSourceId, 1, ModelContextRole.User, "Current workflow context"),
+            ModelContextEntry.Text("original-user", 2, ModelContextRole.User, "Read a file"),
+            AssistantStepEntry("call", 3, "provider_read", "read", "{\"path\":\"file.txt\"}"),
+            ToolResultEntry("result", 4, "internal_read", "provider_read", "file contents"));
+
+        var (prompt, _, messages) = InProcessModelStepRunner.BuildConversationForTests(context);
+
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Equal("Current workflow context", messages![^1].Content);
+        Assert.Equal("tool", messages[^2].Role);
+        Assert.Equal("provider_read", messages[^2].ToolCallId);
+    }
+
+    [Fact]
     public void Run_handoff_is_context_for_new_model_without_replaying_old_native_calls()
     {
         const string handoff = "[session_run_handoff untrusted=true] proposed tool=edit; prior call=old-call; result=unverified";

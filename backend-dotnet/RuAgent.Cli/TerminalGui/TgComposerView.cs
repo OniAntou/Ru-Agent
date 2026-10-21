@@ -13,7 +13,7 @@ namespace RuAgent.Cli.TerminalGui;
 /// </summary>
 public sealed class TgComposerView : View
 {
-    /// <summary>Rows of an empty composer: blank, input, blank, meta, blank.</summary>
+    /// <summary>Rows of an empty composer: blank, input, images/spacer, meta, blank.</summary>
     public const int RowCount = 5;
 
     /// <summary>Meta row while the draft is one line; it moves down as the editor grows.</summary>
@@ -23,9 +23,10 @@ public sealed class TgComposerView : View
     private readonly Label _ghost;
     private int _maxInputRows = 6;
     private int _inputWidth = 70;
+    private string _imagePreview = string.Empty;
     public int InputHeight { get; private set; } = 1;
 
-    /// <summary>Blank row, input rows, blank row, meta row, blank row.</summary>
+    /// <summary>Blank row, input rows, images/spacer row, meta row, blank row.</summary>
     public int LayoutHeight => InputHeight + 4;
     public event EventHandler? LayoutChanged;
     public string Preset { get; private set; } = string.Empty;
@@ -49,6 +50,19 @@ public sealed class TgComposerView : View
     }
 
     public TgPromptEditor Input { get; }
+
+    /// <summary>Presentation only: image bytes remain owned by the submission state.</summary>
+    public void SetImages(int pendingCount, int retryCount = 0)
+    {
+        static string Labels(int count) => string.Join(" ", Enumerable.Range(1,
+            Math.Clamp(count, 0, Images.CliImagePolicy.MaxImageCount)).Select(index => $"[image {index}]"));
+        var preview = Labels(pendingCount);
+        if (retryCount > 0)
+            preview += (preview.Length > 0 ? " · " : string.Empty) + "/retry: " + Labels(retryCount);
+        if (_imagePreview == preview) return;
+        _imagePreview = preview;
+        SetNeedsDraw();
+    }
 
     public void SetViewportBudget(int width, int maxRows)
     {
@@ -97,8 +111,11 @@ public sealed class TgComposerView : View
         var width = Viewport.Width;
         if (width <= 0 || Viewport.Height <= 0) return true;
 
-        // The block's fill comes from the view's scheme; the meta row is the only row the
-        // composer paints itself.
+        // Reuse the spacer below the draft, keeping the editor and layout height unchanged.
+        if (_imagePreview.Length > 0 && InputHeight + 1 < Viewport.Height)
+            DrawMeta(Inset, _imagePreview, TuiToken.Brand, InputHeight + 1);
+
+        // The block's fill comes from the view's scheme.
         var row = MetaRow;
         if (row >= Viewport.Height) return true;
         var available = Math.Max(0, width - Inset * 2);

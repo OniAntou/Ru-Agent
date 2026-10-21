@@ -24,7 +24,7 @@ public static class TuiSurfaces
     /// <summary>Groups used by both the help panel and the slash dropdown's vocabulary.</summary>
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
-        ("session", ["/new", "/sessions", "/resume", "/delete", "/status"]),
+        ("session", ["/new", "/sessions", "/resume", "/delete", "/status", "/preset"]),
         ("run", ["/follow", "/retry", "/release"]),
         ("model & backend", ["/model", "/backend", "/key", "/reasoning"]),
         ("terminal", ["/clear", "/help", "/update", "/exit"]),
@@ -35,7 +35,7 @@ public static class TuiSurfaces
     /// command can never be listed without its description, and a command added there shows up
     /// here even before it is filed into a group.
     /// </summary>
-    public static IReadOnlyList<string> Help(int width)
+    public static IReadOnlyList<string> Help(int width, bool framed = true)
     {
         var known = ChatCommandCatalog.KnownCommands;
         var knownByCommand = known.ToDictionary(c => c.Command, c => c, StringComparer.OrdinalIgnoreCase);
@@ -64,11 +64,11 @@ public static class TuiSurfaces
                 unfiled.Select(c => new PanelRow(c.Syntax.Length > 0 ? c.Syntax : c.Command, c.Description)).ToList()));
         }
 
-        return TuiPanel.Compose(width, "help", sections, PanelHint);
+        return TuiPanel.Compose(width, "help", sections, PanelHint, framed);
     }
 
     /// <summary>The session card, one section for what, one for where, one for the run.</summary>
-    public static IReadOnlyList<string> Status(int width, TuiStatusSnapshot snapshot)
+    public static IReadOnlyList<string> Status(int width, TuiStatusSnapshot snapshot, bool framed = true)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -105,7 +105,7 @@ public static class TuiSurfaces
                 new PanelSection("model", model),
                 new PanelSection("run", run),
             ],
-            PanelHint);
+            PanelHint, framed);
     }
 
     /// <summary>Backends the CLI can switch between, in the order the docs list them.</summary>

@@ -157,6 +157,7 @@ public sealed partial class AgentCommands
                 hostAccepted = true;
                 if (tgMode) RunOnTgUi(() => tgWindow!.Hints.ClearWorkspaceBusy());
                 submissions.Accept();
+                RefreshAttachmentLabels();
                 tgLoop?.ResumeQueuedSubmissions();
                 runSession.AcceptCreatedRun(resp.RunId);
 
@@ -364,6 +365,12 @@ public sealed partial class AgentCommands
             var slashCmd = parts[0].ToLowerInvariant();
             var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
+            if (slashCmd == "/preset")
+            {
+                await ChangePresetAsync(arg).ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/subagents")
             {
                 await ShowSubagentsAsync(arg, runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId,
@@ -474,6 +481,9 @@ public sealed partial class AgentCommands
             }
 
             var capture = new StringWriter();
+            var previousWidth = _slashCommands.PanelWidth;
+            _slashCommands.PanelWidth = Math.Max(TuiPanel.MinWidth,
+                Math.Min(ChatRenderWidth(), Math.Min(TuiCard.MaxWidth, tgWindow!.Viewport.Width - 4) - TuiCard.PadX * 3 - 2));
             var transcript = humanOut;
             humanOut = capture;
             _slashCommands.HumanOut = capture;
@@ -486,6 +496,7 @@ public sealed partial class AgentCommands
             {
                 humanOut = transcript;
                 _slashCommands.HumanOut = transcript;
+                _slashCommands.PanelWidth = previousWidth;
             }
 
             var body = capture.ToString()

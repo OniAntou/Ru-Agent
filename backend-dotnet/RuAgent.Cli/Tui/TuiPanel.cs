@@ -24,11 +24,13 @@ public static class TuiPanel
         int width,
         string title,
         IReadOnlyList<PanelSection> sections,
-        string? footer = null)
+        string? footer = null,
+        bool framed = true)
     {
         ArgumentNullException.ThrowIfNull(sections);
         var w = Math.Clamp(width, MinWidth, MaxWidth);
-        var lines = new List<string> { Top(w, title) };
+        var lines = framed ? new List<string> { Top(w, title) } : new List<string>();
+        string Row(string text) => framed ? Frame(w, text) : TuiText.Truncate(text, w);
         var firstSection = true;
 
         foreach (var section in sections)
@@ -37,26 +39,27 @@ public static class TuiPanel
             {
                 if (!firstSection)
                 {
-                    lines.Add(Frame(w, string.Empty));
+                    // A space preserves section separation through legacy captures that drop empty records.
+                    lines.Add(framed ? Row(string.Empty) : " ");
                 }
 
-                lines.Add(Frame(w, TuiPalette.Paint("  " + section.Title!.Trim(), TuiToken.Brand2)));
+                lines.Add(Row(TuiPalette.Paint("  " + section.Title!.Trim(), TuiToken.Brand2)));
                 firstSection = false;
             }
 
             foreach (var row in section.Rows)
             {
-                lines.Add(ComposeRow(w, row));
+                lines.Add(ComposeRow(w, row, framed));
             }
         }
 
-        lines.Add(Bottom(w, footer));
+        if (framed) lines.Add(Bottom(w, footer));
         return lines;
     }
 
-    private static string ComposeRow(int width, PanelRow row)
+    private static string ComposeRow(int width, PanelRow row, bool framed)
     {
-        var inner = Math.Max(1, width - 4);
+        var inner = Math.Max(1, width - (framed ? 4 : 0));
         var contentBudget = Math.Max(1, inner - 2);
         var label = TuiText.Pad(row.Label, Math.Min(LabelColumn, contentBudget));
         var labelWidth = TuiText.VisibleWidth(label);
@@ -71,7 +74,7 @@ public static class TuiPanel
                 + " "
                 + TuiPalette.Paint(detail, TuiToken.Ink);
 
-        return Frame(width, "  " + content);
+        return framed ? Frame(width, "  " + content) : "  " + content;
     }
 
     /// <summary>One content row: border, the already-styled content, padding, border.</summary>

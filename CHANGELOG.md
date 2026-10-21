@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(usage)**: Recognize DeepSeek cache hit/miss counts and distinguish inclusive Chat/Responses input from disjoint Messages buckets. Session usage sums every reported step in the newest eight runs while keeping the context peak separate, displays a token-weighted cache hit with coverage, and avoids double-charging cached input or assigning prices to ambiguous legacy cache reports.
 - **fix(providers)**: New official DeepSeek Chat selections pin full reasoning replay for tool continuations. Full reasoning stays in the encrypted private continuation and is restored only for the exact model and tool batch; display excerpts, existing selections and unknown gateways retain their previous behavior.
 
+- **fix(tui)**: Size read-only report popups to their wrapped content instead of a nearly full-height opaque view, preserving the transcript and composer outside the card. Long reports remain scrollable; resized and replaced content remeasures its bounds.
+
+- **feat(tui)**: Choose permissions with `/preset [plan|standard|full_access]` inside Ru. Full Access requires a separate explicit confirmation; changes apply to new turns through the existing policy/snapshot path and are refused while a run is retained or the queue is busy. Native status/help reports omit nested text borders and fit the document width so borders do not wrap into separate lines in the panel or history.
+
+- **fix(cli)**: The repository's `ru` launcher prefers the standalone CLI publish over the desktop's flat package, so rebuilding the CLI does not leave `ru` opening an older desktop copy.
+
+- **fix(tui)**: Import legacy report output as visible text before drawing `/status`, `/help` and other document panels, so ANSI colour sequences do not appear as text. Wrap to the card's actual label width to preserve long-line characters.
+
+- **fix(tui)**: Show pending images as `[image 1] [image 2]` in the composer, including during an active run. Keep failed-send images visibly marked for `/retry`, retain image payloads, and report clipboard image decode/limit failures in the live status row.
+
 - **fix(gui)**: The composer empties as soon as the Host accepts a sent turn instead of when the run ends or parks. Before, the sent text stayed in the box for the whole run, and Enter during the run queued it again with whatever was typed after it (sending "slow run" and then typing "follow up" queued "slow runfollow up"). A send that is never accepted (declined Full Access, a run already in hand, a failure) still keeps its text, and text typed before acceptance is still left alone.
 - **refactor(gui)**: The window shell's startup, Host status line, reconnect and health, navigation, Settings ↔ chat preset and theme sync, and the title bar's update and side-panel entries move into `ShellViewModel`; `MainWindow` keeps windowing, composition, dialogs and animation. Two quick settings saves no longer let the older provider-selection reload overwrite the newer one; a Host that dies during a failed start still leaves the failure on screen and is not reconnected.
 - **refactor(gui)**: The chat's permission preset, its stored-version cache, stored-preset adoption and the Full Access carry rule move into `SessionPresetViewModel`, with behavioral tests in place of source checks.

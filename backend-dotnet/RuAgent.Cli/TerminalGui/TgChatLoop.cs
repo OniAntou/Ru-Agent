@@ -46,6 +46,8 @@ public sealed class TgChatLoop
     private long _queuedSubmissionBytes;
     private Func<string>? _attachmentLabelProvider;
     private Func<int>? _attachmentCountProvider;
+    private Func<int>? _imageCountProvider;
+    private Func<int>? _retryImageCountProvider;
     private Func<Task>? _pasteHandler;
     private Func<string, Task<bool>>? _copyHandler;
     private Func<string, bool>? _dropHandler;
@@ -164,6 +166,12 @@ public sealed class TgChatLoop
     /// <summary>Pending attachment count, used to allow an attachment-only (empty) submit.</summary>
     public void SetAttachmentCountProvider(Func<int> provider) => _attachmentCountProvider = provider;
 
+    public void SetImageCountProvider(Func<int> provider, Func<int>? retryProvider = null)
+    {
+        _imageCountProvider = provider;
+        _retryImageCountProvider = retryProvider;
+    }
+
     /// <summary>Ctrl+V handler (clipboard image/text); wiring happens in the chat command, and the key stays claimed either way.</summary>
     public void SetPasteHandler(Func<Task> handler) => _pasteHandler = handler;
     public void SetCopyHandler(Func<string, Task<bool>> handler) => _copyHandler = handler;
@@ -174,10 +182,11 @@ public sealed class TgChatLoop
     /// </summary>
     public void SetDropHandler(Func<string, bool> handler) => _dropHandler = handler;
 
-    /// <summary>Repaints the idle hint from the provider; a busy turn keeps its spinner.</summary>
+    /// <summary>Refreshes composer images even while busy; a busy turn keeps its spinner.</summary>
     public void RefreshAttachmentLabel() =>
         Dispatch(() =>
         {
+            _window.Composer.SetImages(_imageCountProvider?.Invoke() ?? 0, _retryImageCountProvider?.Invoke() ?? 0);
             if (_attachmentLabelProvider is null || _busy)
             {
                 return;

@@ -29,8 +29,9 @@ internal sealed class ChatSubmissionState : IDisposable
         string backend, string model, bool isParked)
     {
         var isCommand = line.TrimStart().StartsWith('/');
+        var isPresetCommand = line.TrimStart().Split(' ', 2)[0].Equals("/preset", StringComparison.OrdinalIgnoreCase);
         var isParkedContinue = isParked && string.Equals(line, "continue", StringComparison.OrdinalIgnoreCase);
-        if (Count > 0 && isCommand && !ChatSubmissionSnapshot.IsPausedControlCommand(line))
+        if (Count > 0 && isCommand && !ChatSubmissionSnapshot.IsPausedControlCommand(line) && !isPresetCommand)
         {
             return null;
         }

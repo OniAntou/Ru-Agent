@@ -441,7 +441,7 @@ public sealed class PolicyEvaluationTests
     public void An_always_allow_rule_covers_exactly_its_mcp_server_and_tool()
     {
         var rule = PolicyEvalSnapshots.Rule("r-mcp", "allow",
-            PolicyEvalSnapshots.Matcher(toolId: "mcp", resolvedExecutable: "mcp:github", argvPattern: ["create_issue"]));
+            PolicyEvalSnapshots.Matcher(toolId: "mcp", resolvedExecutable: "mcp:github", argvPattern: ["call", "create_issue"]));
         var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
         var evaluator = new PolicySnapshotEvaluator();
         PolicyEvaluation Call(string server, string tool) => evaluator.Evaluate(lease.Snapshot,
@@ -453,10 +453,36 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("ask", Call("other", "create_issue").Decision);
     }
 
+    [Fact]
+    public void A_remembered_list_tools_approval_never_covers_a_call()
+    {
+        // The rule allow_always saves copies the binding's executable and argv; for
+        // list_tools that is ["list_tools"], which must not match any call.
+        var (_, listFactory) = Bind(PolicyEvalSnapshots.Empty());
+        var listed = listFactory.Create("mcp", "1.0.0", new JsonObject { ["op"] = "list_tools", ["server"] = "github" });
+        var rule = PolicyEvalSnapshots.Rule("r-list", "allow", PolicyEvalSnapshots.Matcher(
+            toolId: "mcp", resolvedExecutable: listed.ResolvedExecutable, argvPattern: listed.Argv, operationClass: listed.OperationClass));
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        var evaluator = new PolicySnapshotEvaluator();
+
+        var call = evaluator.Evaluate(lease.Snapshot,
+            factory.Create("mcp", "1.0.0", new JsonObject { ["op"] = "call", ["server"] = "github", ["tool"] = "delete_repo" }),
+            PolicyRequestInvariants.Valid, Now);
+        var relist = evaluator.Evaluate(lease.Snapshot,
+            factory.Create("mcp", "1.0.0", new JsonObject { ["op"] = "list_tools", ["server"] = "github" }),
+            PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal(["list_tools"], listed.Argv);
+        Assert.Equal("ask", call.Decision);
+        Assert.Equal("allow", relist.Decision);
+    }
+
     [Theory]
     [InlineData("""{"op":"run"}""")]
     [InlineData("""{"op":"call","tool":"x"}""")]
     [InlineData("""{"op":"call","server":"github"}""")]
+    [InlineData("""{"op":"call","server":"github","tool":"create_*"}""")]
+    [InlineData("""{"op":"call","server":"Git Hub","tool":"x"}""")]
     public void A_malformed_mcp_call_is_refused(string arguments)
     {
         var (_, factory) = Bind(PolicyEvalSnapshots.Empty());

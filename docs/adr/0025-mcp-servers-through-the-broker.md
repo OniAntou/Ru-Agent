@@ -57,9 +57,13 @@ Four existing constraints shape that design:
    `ExternalTerminal` policy subject: like a terminal launch outside the
    workspace, it runs a user-chosen program with the user's rights. The canonical
    profile therefore needs no new subject or version: `plan` denies every MCP
-   call, `standard` asks for each call, and an approval card names the server,
-   tool and bounded arguments.
-   "Always allow" saves an ordinary policy rule for that server and tool.
+   call, `standard` asks for each call, and an approval card names the server
+   and tool (amended 2026-10-23: the arguments are bound exactly into the
+   single-use approval but are not shown on the card).
+   "Always allow" saves an ordinary policy rule for that server and tool; the
+   rule's argv carries the op first (`list_tools`, or `call` and the tool), so a
+   remembered `list_tools` never covers a call, and server and tool names are
+   restricted to characters that are never rule wildcards.
    `full_access` runs MCP calls without asking. Tool annotations reported by a
    server (for example a read-only hint) are untrusted and never grant
    authority; explicit deny and ask rules still apply in every preset.

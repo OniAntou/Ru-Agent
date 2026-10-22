@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(security)**: "Always allow" on an MCP `list_tools` approval no longer allows every tool on that server. The first `mcp` release saved such a rule with an empty argument pattern, which matched every `call`; the rule now records the op first (`list_tools`, or `call` and the tool), and server and tool names that could act as rule wildcards are refused.
+
 - **feat(agent)**: MCP servers (ADR 0025). Declare stdio servers in `~/.ru/mcp.json` (credentials by Windows Credential Manager entry name) and the agent gets one `mcp` tool: `list_servers`, `list_tools` and `call`. The Broker starts each server once per Host inside a kill-on-close job object; calls are bounded, text-only, untrusted and redacted. Starting or calling a server asks in Standard (`mcp_call_requires_approval`, "Always allow" remembers one server and tool), is denied in Plan and runs in Full Access. Workspace files never declare servers, and subagents do not get the tool.
 
 - **fix(security)**: A workspace's own `Stop` hook no longer runs when the run finished without the workspace being trusted. Declining (or letting expire) the trust prompt finishes the run, and the first release of Stop hooks then ran the cloned repository's `.ru\hooks.json` command at exactly that moment. Trust is now read when the hook fires; an untrusted workspace or a failed lookup runs only the user's own Stop hooks, from the profile folder.

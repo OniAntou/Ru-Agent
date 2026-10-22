@@ -113,6 +113,11 @@ Implementation: [broker](docs/architecture/broker.md#skill-manifest).
 _Avoid_: executable plugin or self-modifying workflow
 
 
+**MCP Server**:
+A stdio Model Context Protocol program the user declares in their own `~/.ru/mcp.json` and the Broker runs on first use, reached by the model through the single `mcp` tool. Starting it or calling one of its tools has terminal-launch authority outside the workspace (`ExternalTerminal`); its output is untrusted and grants nothing.
+Implementation: [agent tools](docs/operations/agent-tools.md#mcp-servers), [ADR 0025](docs/adr/0025-mcp-servers-through-the-broker.md).
+_Avoid_: workspace-declared servers, a per-server tool definition, or a second execution authority
+
 **Subagent**:
 A delegated internal run owned and controlled by the main agent, with bounded family resources and isolated child-private history. Users can observe/export it; only the main agent sends work, cancels or applies results.
 Implementation: [harness](docs/architecture/harness.md#subagent).

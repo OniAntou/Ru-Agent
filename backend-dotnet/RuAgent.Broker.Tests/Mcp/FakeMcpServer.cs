@@ -59,8 +59,9 @@ internal sealed class FakeMcpServer : IAsyncDisposable
                 await _writer.WriteLineAsync(response.ToJsonString());
             }
         }
-        catch (IOException)
+        catch (Exception error) when (error is IOException or ObjectDisposedException)
         {
+            // The test disposed the pipes; the server simply stops.
         }
     }
 

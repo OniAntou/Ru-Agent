@@ -55,6 +55,25 @@ public sealed class ApprovalPatternTests
         Assert.Equal("terminal", matcher.OperationClass);
     }
 
+    [Theory]
+    [InlineData("list_tools", null)]
+    [InlineData("call", "create_issue")]
+    public void An_mcp_rule_remembers_the_op_and_tool_exactly(string op, string? tool)
+    {
+        // An empty argv pattern would match every call on the server, so the remembered
+        // rule must keep the op (and the tool) exactly as the approved call bound them.
+        string[] argv = tool is null ? [op] : [op, tool];
+        var matcher = AgentV1Service.BuildAllowAlwaysMatcher(
+            Binding("mcp", resolvedExecutable: "mcp:github", argv: argv, operationClass: "mutation"),
+            "mcp_call_requires_approval",
+            externalDirectoryRequested: false);
+
+        Assert.NotNull(matcher);
+        Assert.Equal("mcp", matcher!.ToolId);
+        Assert.Equal("mcp:github", matcher.ResolvedExecutable);
+        Assert.Equal(argv, matcher.ArgvPattern);
+    }
+
     [Fact]
     public void Terminal_run_keeps_at_most_two_leading_non_flag_tokens()
     {

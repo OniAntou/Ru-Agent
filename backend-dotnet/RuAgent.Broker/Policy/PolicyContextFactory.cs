@@ -14,6 +14,11 @@ namespace RuAgent.Broker.Policy;
 /// </summary>
 public sealed class PolicyContextFactory
 {
+    private static readonly System.Text.RegularExpressions.Regex McpServerName =
+        new("^[a-z][a-z0-9_-]{0,31}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.RegularExpressions.Regex McpToolName =
+        new("^[A-Za-z0-9_.-]{1,128}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private readonly string _canonicalRoot;
     private readonly string _sessionId;
     private readonly CommandAnalyzerRegistry _commandAnalyzers;
@@ -266,13 +271,30 @@ public sealed class PolicyContextFactory
 
                     if (op != "list_servers")
                     {
-                        var server = OptionalText(arguments, "server")
-                            ?? throw new PolicyContextException("malformed_call", hint: "mcp list_tools and call require server.");
+                        var server = OptionalText(arguments, "server");
+                        if (server is null || !McpServerName.IsMatch(server))
+                        {
+                            throw new PolicyContextException("malformed_call", hint: "mcp list_tools and call require a declared server name.");
+                        }
+
                         resolvedExecutable = "mcp:" + server;
+                        // The op is the first argv token so a remembered list_tools
+                        // approval cannot match a call: an empty argv pattern would
+                        // match every call on the server. Argv patterns are globs, so a
+                        // tool name is limited to characters that are never wildcards.
                         if (op == "call")
                         {
-                            argv = [OptionalText(arguments, "tool")
-                                ?? throw new PolicyContextException("malformed_call", hint: "mcp call requires tool.")];
+                            var tool = OptionalText(arguments, "tool");
+                            if (tool is null || !McpToolName.IsMatch(tool))
+                            {
+                                throw new PolicyContextException("malformed_call", hint: "mcp call requires a tool name from list_tools.");
+                            }
+
+                            argv = ["call", tool];
+                        }
+                        else
+                        {
+                            argv = ["list_tools"];
                         }
                     }
 

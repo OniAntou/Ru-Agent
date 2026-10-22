@@ -46,7 +46,7 @@ public sealed class TuiFeedContinuityTests
     public void RunStatusDoesNotMasqueradeAsTheToolOutcome(string runStatus, AgentActivityState toolState, string glyph)
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
         transcript.ApplyActivity(new AgentActivityModel("read_a", AgentActivityKind.Explore, toolState,
             "sample.txt", null, null, null, null, null, null, 100, "ok", "Read", null, null));
@@ -63,7 +63,7 @@ public sealed class TuiFeedContinuityTests
     public void MetadataBetweenDeltasDoesNotSplitTheSentence(string eventType)
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface));
         transcript.BeginTurn();
         transcript.AppendAssistant("Em đang kiểm");
@@ -98,7 +98,7 @@ public sealed class TuiFeedContinuityTests
     public void PlanProgressIsCompactDeduplicatedAndDoesNotSplitStreamingProse()
     {
         using var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface));
         var plan = new AgentActivityModel("plan", AgentActivityKind.Todo, AgentActivityState.Completed,
             null, null, null, null, null, null, null, null, "ok", null, null, null)

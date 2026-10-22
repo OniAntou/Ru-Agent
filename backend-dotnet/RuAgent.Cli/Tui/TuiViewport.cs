@@ -22,7 +22,7 @@ public static class TuiViewport
     /// <summary>
     /// Raw terminal size (columns, rows) as reported right now, or false when output is
     /// redirected or the console is gone. Values are the terminal's own, transient sizes
-    /// included — callers that repaint must debounce through <see cref="TuiResizeWatcher"/>.
+    /// included.
     /// </summary>
     public static bool TryReadLiveSize(out int columns, out int rows)
     {

@@ -32,7 +32,6 @@ public sealed class TuiStatusLineTests
     public void Reset_clears_counters_from_the_previous_run()
     {
         var status = Create();
-        status.IsLive = true;
         status.SetCounters(12_400, 3);
         status.Reset();
 
@@ -49,8 +48,7 @@ public sealed class TuiStatusLineTests
         try
         {
             var status = new TuiStatusLine(new TuiSurface(new StringWriter()));
-            status.IsLive = true;
-            status.SetState(TuiRunState.Thinking);
+                status.SetState(TuiRunState.Thinking);
             status.SetElapsed(1.5);
             var row = status.Compose(80);
             Assert.Equal(80, TuiText.VisibleWidth(row));
@@ -66,7 +64,6 @@ public sealed class TuiStatusLineTests
     public void Waiting_trust_row_does_not_spin_or_count_up()
     {
         var status = Create();
-        status.IsLive = true;
         status.SetState(TuiRunState.WaitingTrust);
         status.SetDetail(@"C:\untrusted\workspace");
         // A run waiting on trust has executed nothing, so a spinner frame and a running
@@ -87,7 +84,6 @@ public sealed class TuiStatusLineTests
     public void Paused_row_does_not_spin_or_count_up()
     {
         var status = Create();
-        status.IsLive = true;
         status.SetState(TuiRunState.Paused);
         status.SetDetail("model_step_budget_exhausted · Continue");
         // A parked run is waiting on the operator, not on the model: a spinner frame and
@@ -103,18 +99,6 @@ public sealed class TuiStatusLineTests
         Assert.DoesNotContain("Thinking", row);
         Assert.DoesNotContain("⠋", row);
         Assert.Equal(80, TuiText.VisibleWidth(status.Compose(80)));
-    }
-
-    [Fact]
-    public void LiveRow_IsSuppressedInsideTheStickyFooter()
-    {
-        var status = Create();
-        status.IsLive = true;
-
-        Assert.NotNull(status.LiveRow(80));
-
-        status.InFooter = true;
-        Assert.Null(status.LiveRow(80));
     }
 
     [Fact]
@@ -225,31 +209,4 @@ public sealed class TuiStatusLineTests
         Assert.Equal(expected, TuiStatusLine.FormatTokens(tokens));
     }
 
-    [Fact]
-    public void Render_IsSkippedUntilTheRowGoesLive()
-    {
-        TuiPalette.Level = TuiColorLevel.None;
-        var writer = new StringWriter();
-        var status = new TuiStatusLine(new TuiSurface(writer));
-
-        status.Render(80);
-        Assert.Equal(string.Empty, writer.ToString());
-
-        status.IsLive = true;
-        status.Render(80);
-        Assert.NotEqual(string.Empty, writer.ToString());
-    }
-
-    [Fact]
-    public void Clear_ReleasesTheRow()
-    {
-        TuiPalette.Level = TuiColorLevel.None;
-        var writer = new StringWriter();
-        var status = new TuiStatusLine(new TuiSurface(writer)) { IsLive = true };
-
-        status.Clear(80);
-
-        Assert.False(status.IsLive);
-        Assert.Null(status.LiveRow(80));
-    }
 }

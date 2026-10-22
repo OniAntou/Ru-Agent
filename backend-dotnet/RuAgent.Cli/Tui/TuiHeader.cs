@@ -68,87 +68,11 @@ public static class TuiHeader
         return TuiPalette.Paint(builder.ToString(), TuiToken.Meta);
     }
 
-    /// <summary>
-    /// Paints the pinned full-screen header into <paramref name="height"/> absolute rows
-    /// starting at <paramref name="topRow"/> (1-based), then parks the cursor on the first row
-    /// below it so a sequential write continues into the transcript region. Each row is erased
-    /// first: a resize rebuild can otherwise leave old text of a different width behind.
-    /// </summary>
-    public static void RenderPinned(
-        TuiSurface surface,
-        int width,
-        int topRow,
-        string? title,
-        long? tokens,
-        int height,
-        double? contextPercent = null,
-        double? costUsd = null)
-    {
-        ArgumentNullException.ThrowIfNull(surface);
-        var rows = Math.Max(0, height);
-        var first = Math.Max(1, topRow);
-        var lines = new[] { Compose(width, title, tokens, contextPercent, costUsd) };
-        surface.Repaint(writer =>
-        {
-            var builder = new StringBuilder();
-            for (var i = 0; i < rows && i < lines.Length; i++)
-            {
-                builder.Append($"\u001b[{first + i};1H");
-                builder.Append("\u001b[2K");
-                builder.Append(TuiText.Truncate(lines[i], width));
-            }
-
-            builder.Append($"\u001b[{first + rows};1H");
-            writer.Write(builder.ToString());
-        });
-    }
-
-    /// <summary>Rows reserved below the landing block for the composer frame.</summary>
-    public const int ComposerReserveRows = 1 + ComposerBox.StackHeight + 1;
-
     /// <summary>Rows of the block wordmark.</summary>
     public const int WordmarkRows = 3;
 
     /// <summary>Narrowest terminal that fits the aurora block wordmark.</summary>
     public const int MinWordmarkWidth = 35;
-
-    /// <summary>
-    /// The pre-chat home surface, cloned from OpenCode: the centered block wordmark with
-    /// blank space above and below; the composer lives in the pinned footer below it. When
-    /// <paramref name="viewportRows"/> has room to spare the block sits vertically centered.
-    /// </summary>
-    public static IReadOnlyList<string> ComposeLandingScreen(int width, int viewportRows = 0)
-    {
-        if (width <= 0)
-        {
-            return Array.Empty<string>();
-        }
-
-        var w = Math.Clamp(width, 20, 1000);
-        var mark = Wordmark(w);
-        var lines = new List<string>();
-        if (viewportRows > mark.Count + ComposerReserveRows)
-        {
-            var target = viewportRows - ComposerReserveRows;
-            var topPad = (target - mark.Count) / 2;
-            var bottomPad = target - mark.Count - topPad;
-            for (var r = 0; r < topPad; r++)
-            {
-                lines.Add(StarRow(r, w));
-            }
-
-            lines.AddRange(mark);
-            for (var r = 0; r < bottomPad; r++)
-            {
-                lines.Add(StarRow(topPad + mark.Count + r, w));
-            }
-
-            return lines;
-        }
-
-        lines.AddRange(mark);
-        return lines;
-    }
 
     /// <summary>One cell in about this many carries a star: sparse warm sparkles on black.</summary>
     private const int StarDivisor = 140;
@@ -416,18 +340,6 @@ public static class TuiHeader
     /// length to clear the bottom edge before the flight ends.
     /// </summary>
     private const int MeteorExitSteps = MeteorTailSteps + 1;
-
-    private static string StarRow(int row, int width)
-    {
-        var cells = new List<(char Glyph, TuiToken? Token)>(width);
-        for (var col = 0; col < width; col++)
-        {
-            var star = StarCell(col, row);
-            cells.Add(star is { } s ? (s.Glyph, (TuiToken?)s.Token) : (' ', null));
-        }
-
-        return PaintCells(cells);
-    }
 
     /// <summary>
     /// The aurora block wordmark: "ru" in aurora green and "agent" in light gray, lit from

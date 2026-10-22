@@ -18,6 +18,13 @@ Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
 sequential text output and legacy command/diagnostic imports remain separate adapters.
 
+Only Terminal.Gui draws an interactive frame; the append-only adapter is a printer.
+It writes finished rows and keeps a bounded history, with no cursor positioning,
+sticky footer, live-row repaint, resize rebuild or framed composer. Those paths were
+unreachable in production (the CLI suppressed repaints unconditionally), and keeping
+them meant maintaining a second renderer that no terminal could see. The interactive
+engine's live row, footer and panels are unchanged.
+
 Both adapters share one text engine. `TuiText` owns display-cell measurement, rune
 decoding, wrapping and the common truncations; the Terminal.Gui importer and the
 append-only writer call it instead of keeping their own tables. A row measured one

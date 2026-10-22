@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(cli)**: Terminal.Gui is the only interactive terminal engine. The
+  append-only path is now a printer: cursor tracking, sticky footer, live-row repaint,
+  resize rebuild and the three-row composer were unreachable in production (the CLI
+  suppressed repaints unconditionally), so they and their tests are gone. The fallback
+  still prints the same transcript rows, panels and colours; nothing visible to the
+  interactive terminal changed.
+
 - **fix(tui)**: The terminal text layer is now one engine for both sinks. Measurement,
   wrapping and rune decoding live in `TuiText`; the Terminal.Gui importer and the
   append-only writer no longer carry their own width table, rune decoder or escape

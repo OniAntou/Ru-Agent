@@ -101,19 +101,6 @@ public sealed class TuiHeaderTests : IDisposable
         Assert.True(TuiText.VisibleWidth(shortened) <= 10);
     }
 
-    [Theory]
-    [InlineData(40)]
-    [InlineData(80)]
-    [InlineData(120)]
-    public void ComposeLandingScreen_FitsTheViewportWithTheWordmark(int width)
-    {
-        var lines = TuiHeader.ComposeLandingScreen(width);
-
-        var text = string.Join("\n", lines);
-        Assert.Contains("█", text, StringComparison.Ordinal);
-        Assert.All(lines, l => Assert.True(TuiText.VisibleWidth(l) <= width));
-    }
-
     /// <summary>
     /// The wordmark is three block rows. It used to be four, the last one a strip of feet drawn as
     /// top-half blocks, which left every letter seven half-cells tall with an empty band beneath it.
@@ -684,29 +671,4 @@ public sealed class TuiHeaderTests : IDisposable
         }
     }
 
-    [Fact]
-    public void ComposeLandingScreen_PadsWithStarlight()
-    {
-        var lines = TuiHeader.ComposeLandingScreen(80, viewportRows: 60);
-
-        var text = string.Join("\n", lines);
-        Assert.Contains("✦", TuiText.Strip(text), StringComparison.Ordinal);
-        Assert.All(lines, l => Assert.True(TuiText.VisibleWidth(l) <= 80));
-    }
-
-    [Fact]
-    public void ComposeLandingScreen_CentersVerticallyWithRoomToSpare()
-    {
-        var flat = TuiHeader.ComposeLandingScreen(80);
-        var centered = TuiHeader.ComposeLandingScreen(80, viewportRows: 60);
-
-        Assert.True(centered.Count > flat.Count);
-        Assert.All(centered, l => Assert.True(TuiText.VisibleWidth(l) <= 80));
-    }
-
-    [Fact]
-    public void ComposeLandingScreen_ZeroWidthReturnsNothing()
-    {
-        Assert.Empty(TuiHeader.ComposeLandingScreen(0));
-    }
 }

@@ -19,23 +19,11 @@ public sealed class TuiMarkdownStreamingRegressionTests
         Assert.Equal(expected, Render(reply.Select(c => c.ToString())));
     }
 
-    [Fact]
-    public void LongCodeTailSurvivesResize()
-    {
-        using var colors = TuiPalette.PinLevel(TuiColorLevel.None);
-        var surface = new TuiSurface(new StringWriter()) { SuppressRepaints = true };
-        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 40 };
-        transcript.AppendAssistant("```csharp\nvar s = \"" + new string('x', 90) + "TAIL_SENTINEL\";\n```\n");
-        transcript.Flush();
-        transcript.Width = 200;
-        Assert.Contains(transcript.RepaintPreview(), row => row.Contains("TAIL_SENTINEL"));
-    }
-
     private static string Render(IEnumerable<string> chunks)
     {
         using var colors = TuiPalette.PinLevel(TuiColorLevel.None);
         var output = new StringWriter();
-        var surface = new TuiSurface(output) { SuppressRepaints = true };
+        var surface = new TuiSurface(output);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true, Width = 80 };
         foreach (var chunk in chunks) transcript.AppendAssistant(chunk);
         transcript.Flush();

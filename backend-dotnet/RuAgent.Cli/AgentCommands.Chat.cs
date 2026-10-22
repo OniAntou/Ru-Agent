@@ -107,7 +107,6 @@ public sealed partial class AgentCommands
     internal static Tui.TuiSessionRenderer CreateSessionRenderer(TextWriter writer)
     {
         var renderer = new Tui.TuiSessionRenderer(writer);
-        renderer.Surface.SuppressRepaints = true;
         renderer.Transcript.FullScreenCards = writer is TgTranscriptWriter;
         return renderer;
     }

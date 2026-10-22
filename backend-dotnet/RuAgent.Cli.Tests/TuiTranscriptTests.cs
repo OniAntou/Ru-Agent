@@ -350,7 +350,7 @@ public sealed class TuiTranscriptTests
         // turn-end recovery would reprint the whole reply.
         TuiPalette.Level = TuiColorLevel.None;
         var writer = new RewindRecordingWriter();
-        var surface = new TuiSurface(writer) { SuppressRepaints = true };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
         transcript.BeginTurn();
         transcript.AppendAssistant("dead-end answer");
@@ -444,74 +444,7 @@ public sealed class TuiTranscriptTests
         Assert.Equal("fresh retry", transcript.StreamedAssistantText);
     }
 
-    [Fact]
-    public void Repaint_replaces_a_truncated_turn_with_the_complete_answer()
-    {
-        // What the live hub actually costs: the deltas that carried the head were published
-        // before the client subscribed and are gone, so the turn rendered only its tail. A
-        // terminal cannot unprint, so the block is replaced in the surface's recorded lines
-        // and the screen is rebuilt from them -- the path a resize already uses.
-        const string full =
-            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
-        var (transcript, output) = Create();
-        transcript.BeginTurn();
-        transcript.AppendAssistant("running commands, and more.");
-        transcript.Flush();
 
-        Assert.True(transcript.RepaintAssistantText(full));
-        Assert.Equal(full, transcript.StreamedAssistantText);
-
-        // The rebuilt screen must show the head again, from the recorded lines rather than
-        // from a fresh append.
-        var rebuilt = string.Join("\n", transcript.RepaintPreview());
-        Assert.Contains("ready to help you with your workspace", rebuilt, StringComparison.Ordinal);
-        Assert.Contains("running commands, and more", rebuilt, StringComparison.Ordinal);
-        Assert.DoesNotContain("◆", rebuilt, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Repaint_declines_when_nothing_was_streamed_this_turn()
-    {
-        var (transcript, _) = Create();
-        transcript.BeginTurn();
-
-        // Nothing streamed means there is no block to place the answer in; the caller appends
-        // instead, and the repaint must not invent one.
-        Assert.False(transcript.RepaintAssistantText("some text"));
-    }
-
-    [Fact]
-    public void Repaint_marks_a_fresh_block_for_each_turn()
-    {
-        var (transcript, _) = Create();
-        transcript.BeginTurn();
-        transcript.AppendAssistant("first tail");
-        transcript.Flush();
-        Assert.True(transcript.RepaintAssistantText("first head and tail"));
-
-        transcript.EndTurn(TuiTurnOutcome.Completed, null);
-        transcript.BeginTurn();
-
-        // The next turn must not try to repaint the previous turn's rows.
-        Assert.False(transcript.RepaintAssistantText("second turn text"));
-    }
-
-    [Fact]
-    public void Assistant_block_row_count_tracks_recorded_rows_for_paint_diagnosis()
-    {
-        var (transcript, _) = Create();
-        transcript.BeginTurn();
-        Assert.Equal(0, transcript.AssistantBlockRowCount);
-
-        transcript.AppendAssistant("first line\nsecond line\n");
-        // The block mark is taken before the spacer row, so the spacer counts as part of
-        // the turn's block alongside the two body rows.
-        Assert.Equal(3, transcript.AssistantBlockRowCount);
-
-        transcript.EndTurn(TuiTurnOutcome.Completed, null);
-        transcript.BeginTurn();
-        Assert.Equal(0, transcript.AssistantBlockRowCount);
-    }
 
     [Fact]
     public void Replayed_turn_keeps_its_head_on_the_visible_screen()
@@ -524,7 +457,7 @@ public sealed class TuiTranscriptTests
             "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
         TuiPalette.Level = TuiColorLevel.None;
         var writer = new StringWriter();
-        var surface = new TuiSurface(writer) { SuppressRepaints = false };
+        var surface = new TuiSurface(writer);
         var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
 
         transcript.BeginTurn();

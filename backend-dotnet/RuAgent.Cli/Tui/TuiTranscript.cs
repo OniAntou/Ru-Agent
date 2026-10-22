@@ -94,79 +94,17 @@ public sealed partial class TuiTranscript
     public string StreamedAssistantText => _streamedAssistant.ToString();
 
     /// <summary>
-    /// The rows a rebuilt screen would print right now. Exposed so a repaint can be asserted
-    /// on the surface's recorded lines rather than on escape sequences.
-    /// </summary>
-    public IReadOnlyList<string> RepaintPreview(int maxLines = 200) =>
-        _surface.SnapshotTail(maxLines, Width);
-
-    /// <summary>
-    /// The rows behind the last <c>ctrl+o</c> affordance, still palette-painted. The TG
-    /// bridge reads this when a summary row is committed so the transcript can expand the
-    /// block; the classic renderer reads the same list in <see cref="ToggleExpand"/>.
+    /// Rows behind the last <c>ctrl+o</c> affordance, still palette-painted. The Terminal.Gui
+    /// bridge reads this when a summary row is committed so its transcript can expand the
+    /// block; the append-only sink has no collapsed blocks.
     /// </summary>
     public IReadOnlyList<string> RetainedLines => _retained;
 
     /// <summary>
-    /// How many recorded lines this turn's assistant block currently occupies. The surface
-    /// records every finished line even when the screen erases it, so comparing this with
-    /// what is visible tells a paint loss apart from a stream loss.
+    /// Rewrites this turn's assistant rows with the run's complete text through the sink's
+    /// turn rewriter (the Terminal.Gui bridge). Returns false for a plain text sink, which
+    /// cannot unprint rows; the caller then reports the truncation instead of guessing.
     /// </summary>
-    public int AssistantBlockRowCount =>
-        _assistantBlockStartRow < 0 ? 0 : Math.Max(0, _surface.HistoryCount - _assistantBlockStartRow);
-
-    /// <summary>Recorded-line index where this turn's assistant output began, or -1.</summary>
-    private int _assistantBlockStartRow = -1;
-
-    /// <summary>
-    /// Rewrites this turn's assistant block with the run's complete text.
-    ///
-    /// A terminal cannot unprint, so a reply whose head never arrived cannot be repaired by
-    /// appending: the head would land after the tail and the answer would read as garbage.
-    /// The block is instead replaced in the surface's recorded history and the caller
-    /// rebuilds the screen from it, which is the same path a resize already uses.
-    ///
-    /// Returns false when nothing was streamed this turn, or when the rows have already
-    /// scrolled out of the rebuildable window -- in both cases the answer is not lost but
-    /// cannot be placed correctly, and the caller should say so rather than guess.
-    /// </summary>
-    public bool RepaintAssistantText(string fullText)
-    {
-        if (string.IsNullOrEmpty(fullText) || _assistantBlockStartRow < 0)
-        {
-            return false;
-        }
-
-        var width = Width;
-        var rendered = new List<string>();
-        var markdown = new TuiMarkdown { HighlightCode = _fullScreenCards };
-        foreach (var raw in fullText.Replace("\r", string.Empty).Split('\n'))
-        {
-            rendered.AddRange(markdown.RenderLine(raw, width));
-        }
-
-        if (rendered.Count == 0)
-        {
-            return false;
-        }
-
-        // The in-progress line has not been recorded yet, so it is not part of the block.
-        var recorded = _surface.HistoryCount - _assistantBlockStartRow;
-        if (recorded <= 0)
-        {
-            return false;
-        }
-
-        if (!_surface.ReplaceRecordedTail(recorded, rendered))
-        {
-            return false;
-        }
-
-        _streamedAssistant.Clear();
-        _streamedAssistant.Append(fullText);
-        return true;
-    }
-
     public async Task<bool> RecoverAssistantTurnAsync(string fullText)
     {
         if (_surface.Writer is not ITranscriptTurnRewriter screen) return false;
@@ -215,7 +153,7 @@ public sealed partial class TuiTranscript
         {
             foreach (var line in lines) _surface.AppendPresentation(TranscriptLine.Plain(TuiText.Strip(line), TranscriptRole.Meta));
         }
-        else _surface.WriteBlock(lines, _status.LiveRow(Width));
+        else _surface.WriteBlock(lines);
     }
 
     private sealed record ToolDetail(
@@ -255,7 +193,6 @@ public sealed partial class TuiTranscript
         _markdown.Reset();
         _turnWatch.Restart();
         _streamedAssistant.Clear();
-        _assistantBlockStartRow = -1;
 
         // A blank row separates the turn from what came before. It is also the first write
         // of the turn: an output that fails here must still unwind through the restore path
@@ -275,11 +212,6 @@ public sealed partial class TuiTranscript
         }
         if (_status.State == TuiRunState.Thinking) _status.SetResponding();
 
-        if (_assistantBlockStartRow < 0)
-        {
-            _assistantBlockStartRow = _surface.HistoryCount;
-        }
-
         if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)
         {
             _streamedAssistant.Append(text);
@@ -288,10 +220,8 @@ public sealed partial class TuiTranscript
         if (!_hasStreamedDelta)
         {
             _hasStreamedDelta = true;
-            _status.Clear(Width);
             // The spacer row separates this block from what came before (the user block or
-            // a settled tool row) and anchors the recorded history so a truncation repair
-            // can replace the block even before its first line completes.
+            // a settled tool row).
             if (_atLineStart)
             {
                 _surface.Line();
@@ -1338,7 +1268,7 @@ public sealed partial class TuiTranscript
         {
             TuiPalette.Paint("    │ · end of expanded block", TuiToken.Line),
         };
-        _surface.WriteBlock(block, _status.LiveRow(Width));
+        _surface.WriteBlock(block);
     }
 
     private static bool IsDiffLine(string line) =>
@@ -1491,9 +1421,7 @@ public sealed partial class TuiTranscript
                     + TuiPalette.Paint($"{TuiStatusLine.FormatElapsed(seconds)} · cancelled", TuiToken.Meta));
                 break;
             default:
-                _surface.WriteBlock(
-                    ComposeFailure(seconds, errorCode ?? _terminalCode ?? "run_failed"),
-                    _status.LiveRow(Width));
+                _surface.WriteBlock(ComposeFailure(seconds, errorCode ?? _terminalCode ?? "run_failed"));
                 break;
         }
 

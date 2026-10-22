@@ -205,7 +205,14 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(services => new RuBackend.Harness.Hooks.RunLifecycleHooks(
             new RuBackend.Harness.Hooks.HookProcessRunner(),
             services.GetRequiredService<ILogger<RuBackend.Harness.Hooks.RunLifecycleHooks>>(),
-            services.GetRequiredService<IHostApplicationLifetime>()));
+            services.GetRequiredService<IHostApplicationLifetime>(),
+            async (run, cancellationToken) =>
+            {
+                var workspaces = services.GetRequiredService<RuAgent.Harness.Persistence.Workspace.SqliteWorkspaceStore>();
+                var stored = await workspaces.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
+                return stored is not null
+                    && await workspaces.IsTrustedAsync(stored.Identity, run.Preset, cancellationToken).ConfigureAwait(false);
+            }));
         services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
         services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
         services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();

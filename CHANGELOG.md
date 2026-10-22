@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(security)**: A workspace's own `Stop` hook no longer runs when the run finished without the workspace being trusted. Declining (or letting expire) the trust prompt finishes the run, and the first release of Stop hooks then ran the cloned repository's `.ru\hooks.json` command at exactly that moment. Trust is now read when the hook fires; an untrusted workspace or a failed lookup runs only the user's own Stop hooks, from the profile folder.
+
 - **feat(providers)**: New Anthropic runs reserve up to 32,000 output tokens instead of 8,192 when the model's output limit (registry or Models.dev `limit.output`) and its context window are known, held to a quarter of the window. Thinking and large `write` calls no longer run out of room at 8,192; models with an unpublished limit keep 8,192, and existing pins keep the value they were pinned with.
 
 - **feat(agent)**: Two run-level hook events. `UserPromptSubmit` runs before a run is created and can refuse the prompt (exit 2 → HTTP 422 `prompt_blocked_by_hook`, no run written); before a workspace is trusted only the user's own hooks run, from the profile folder. `Stop` runs once when a run finishes and only observes it.

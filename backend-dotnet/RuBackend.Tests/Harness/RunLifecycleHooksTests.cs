@@ -101,6 +101,40 @@ public sealed class RunLifecycleHooksTests : IDisposable
     }
 
     [Fact]
+    public async Task A_declined_workspace_never_runs_its_own_stop_hook()
+    {
+        // Declining trust finishes the run. A cloned repository's Stop hook must not
+        // run at that moment; only the user's own hook runs, from the profile folder.
+        WriteHooks(_workspace, """{"hooks":{"Stop":[{"command":"workspace-hook"}]}}""");
+        WriteHooks(_home, """{"hooks":{"Stop":[{"command":"user-hook"}]}}""");
+        var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
+
+        Hooks(runner, (_, _) => Task.FromResult(false))
+            .RunFinished(Run(HarnessRunState.Cancelled, "workspace_trust_denied"), "cancelled", _workspace);
+
+        var call = await runner.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(200);
+        Assert.Equal("user-hook", Assert.Single(runner.Calls).Command);
+        Assert.Equal(_home, call.WorkingDirectory);
+        using var input = JsonDocument.Parse(call.Input);
+        Assert.False(input.RootElement.GetProperty("workspace_trusted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_failed_trust_lookup_counts_as_untrusted()
+    {
+        WriteHooks(_workspace, """{"hooks":{"Stop":[{"command":"workspace-hook"}]}}""");
+        WriteHooks(_home, """{"hooks":{"Stop":[{"command":"user-hook"}]}}""");
+        var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
+
+        Hooks(runner, (_, _) => throw new InvalidOperationException("store unavailable"))
+            .RunFinished(Run(HarnessRunState.Failed, "approval_denied"), "failed", _workspace);
+
+        await runner.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(200);
+        Assert.Equal("user-hook", Assert.Single(runner.Calls).Command);
+    }
+    [Fact]
     public void A_run_that_has_not_finished_starts_no_stop_hook()
     {
         WriteHooks(_workspace, """{"hooks":{"Stop":[{"command":"notify"}]}}""");
@@ -111,8 +145,9 @@ public sealed class RunLifecycleHooksTests : IDisposable
         Assert.Empty(runner.Calls);
     }
 
-    private RunLifecycleHooks Hooks(IHookRunner runner) =>
-        new(runner, NullLogger<RunLifecycleHooks>.Instance, _home, CancellationToken.None);
+    private RunLifecycleHooks Hooks(IHookRunner runner, Func<AgentRun, CancellationToken, Task<bool>>? isWorkspaceTrusted = null) =>
+        new(runner, NullLogger<RunLifecycleHooks>.Instance, _home, CancellationToken.None,
+            isWorkspaceTrusted ?? ((_, _) => Task.FromResult(true)));
 
     private static void WriteHooks(string root, string json)
     {

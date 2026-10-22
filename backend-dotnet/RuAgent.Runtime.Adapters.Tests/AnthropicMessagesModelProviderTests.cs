@@ -351,13 +351,16 @@ public sealed class AnthropicMessagesModelProviderTests
     }
 
     [Fact]
-    public async Task GenerateAsync_rejects_max_tokens_above_anthropic_cap_as_malformed_payload()
+    public async Task GenerateAsync_sends_output_caps_up_to_the_adapter_limit()
     {
-        // 0 is rejected at ModelRequest ctor (ArgumentException); provider caps at 8192, so 8193 -> malformed_payload
+        // The adapter once capped Anthropic at 8,192, which squeezed thinking and failed
+        // large writes. It now sends up to the shared 128,000 request bound; a larger value
+        // never reaches it because ModelRequest rejects it at construction.
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(FullLifecycle(), Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
-        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(Request(null, 8193), CancellationToken.None)));
-        Assert.Equal("malformed_payload", ex.Code);
+        _ = await CollectAsync(provider.GenerateAsync(Request(null, AnthropicMessagesModelProvider.MaximumSupportedOutputTokens), CancellationToken.None));
+        Assert.Equal(AnthropicMessagesModelProvider.MaximumSupportedOutputTokens, JsonNode.Parse(handler.RequestBody!)!["max_tokens"]!.GetValue<int>());
+        Assert.Throws<ArgumentException>(() => Request(null, AnthropicMessagesModelProvider.MaximumSupportedOutputTokens + 1));
     }
 
     [Fact]

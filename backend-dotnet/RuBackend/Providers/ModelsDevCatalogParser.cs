@@ -53,7 +53,8 @@ internal static class ModelsDevCatalogParser
                     ReadModelReasoning(property.Value),
                     ReadModelCosts(property.Value),
                     ReadModelVision(property.Value),
-                    ReadModelContexts(property.Value)));
+                    ReadModelLimits(property.Value, "context"),
+                    ReadModelLimits(property.Value, "output")));
             }
         }
 
@@ -129,11 +130,11 @@ internal static class ModelsDevCatalogParser
     }
 
     /// <summary>
-    /// Published context windows for a Models.dev provider's own models, keyed by model
-    /// id. Only a positive <c>limit.context</c> is kept; a missing or malformed value
-    /// stays unpublished rather than guessed.
+    /// A published token limit (<c>limit.context</c> or <c>limit.output</c>) for a Models.dev
+    /// provider's own models, keyed by model id. Only a positive value is kept; a missing or
+    /// malformed value stays unpublished rather than guessed.
     /// </summary>
-    private static IReadOnlyDictionary<string, int> ReadModelContexts(JsonElement entry)
+    private static IReadOnlyDictionary<string, int> ReadModelLimits(JsonElement entry, string field)
     {
         var contexts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -152,7 +153,7 @@ internal static class ModelsDevCatalogParser
             if (model.Value.ValueKind == JsonValueKind.Object
                 && model.Value.TryGetProperty("limit", out var limit)
                 && limit.ValueKind == JsonValueKind.Object
-                && limit.TryGetProperty("context", out var context)
+                && limit.TryGetProperty(field, out var context)
                 && context.ValueKind == JsonValueKind.Number
                 && context.TryGetInt64(out var value)
                 && value is > 0 and <= 100_000_000)

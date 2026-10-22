@@ -159,7 +159,8 @@ public sealed partial class HeadlessCodingLoopTests
 
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
         Assert.True(await WaitForStatusAsync(client, runId,
-            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)));
+            new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)),
+            await client.GetStringAsync($"/agent/v1/runs/{runId}"));
 
         Assert.Equal("completed", await GetStatusAsync(client, runId));
         Assert.Equal(2, provider.RequestCount);

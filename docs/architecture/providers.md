@@ -52,8 +52,11 @@ model step's selected-model status. Its bounded cache has a five-minute
 lifetime,
 30-second refresh throttle and provider/endpoint/credential-revision identity.
 OpenAI uses `Authorization: Bearer` plus `store:false`; Anthropic uses
-`x-api-key` and pinned `anthropic-version: 2023-06-01` with internal 8192
-`max_tokens`. Custom uses only its canonical key. The live catalog is
+`x-api-key` and pinned `anthropic-version: 2023-06-01`. A new Anthropic pin reserves
+`max_tokens` = min(model limit, 32,000, a quarter of the context window) when both the
+ model's output limit (registry or Models.dev `limit.output`) and its context window are
+ known, and the earlier 8,192 otherwise; the value travels in `output_token_reserve`,
+ so existing pins keep theirs. Custom uses only its canonical key. The live catalog is
 intersected with a source-dated (`2026-09-01`) exact capability registry; unknown
 IDs are retained as unsupported and never selected. The response adds per-model
 protocol/reasoning metadata, stale/error state and last-success time. See

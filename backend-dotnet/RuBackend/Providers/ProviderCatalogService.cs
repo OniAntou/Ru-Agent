@@ -176,9 +176,11 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
         var reasoning = provider.Reasoning;
         var costs = provider.Costs;
         var contexts = provider.Contexts;
+        var outputLimits = provider.OutputLimits;
         if ((reasoning is null || reasoning.Count == 0)
             && (costs is null || costs.Count == 0)
-            && (contexts is null || contexts.Count == 0))
+            && (contexts is null || contexts.Count == 0)
+            && (outputLimits is null || outputLimits.Count == 0))
         {
             return models;
         }
@@ -214,6 +216,13 @@ public sealed partial class ProviderCatalogService(HttpClient http, ICredentialS
                 && contexts.TryGetValue(model.Id, out var contextLength))
             {
                 model = model with { ContextLength = contextLength };
+            }
+
+            if (model.MaxOutputTokens is null
+                && outputLimits is not null
+                && outputLimits.TryGetValue(model.Id, out var outputLimit))
+            {
+                model = model with { MaxOutputTokens = outputLimit };
             }
 
             rewritten.Add(model);

@@ -13,7 +13,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
     /// the adapter's contract, so the bootstrap validation and the backend's
     /// snapshot factory both reference it instead of repeating the literal.
     /// </summary>
-    public const int MaximumSupportedOutputTokens = 8192;
+    public const int MaximumSupportedOutputTokens = 128_000;
 
     private readonly HttpClient _http;
     private readonly TimeSpan? _requestTimeout;

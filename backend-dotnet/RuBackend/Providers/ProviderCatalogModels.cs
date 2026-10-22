@@ -27,6 +27,9 @@ public sealed record CatalogModel(string Id, bool Supported, string Protocol, Ca
         = new Dictionary<string, JsonObject>();
     public int? ContextLength { get; init; }
 
+    /// <summary>The largest output the model accepts, when its catalog publishes one.</summary>
+    public int? MaxOutputTokens { get; init; }
+
     /// <summary>
     /// The published price, or null when nothing published one. Only Models.dev
     /// supplies this; a provider's own <c>/models</c> list does not.

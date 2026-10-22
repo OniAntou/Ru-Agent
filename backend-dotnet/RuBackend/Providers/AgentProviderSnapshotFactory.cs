@@ -70,7 +70,10 @@ public sealed class AgentProviderSnapshotFactory(
             models,
             selected.Model,
             ProviderReasoningPreferences.EffortOverride() ?? ProviderReasoningPreferences.Read(current, selected));
-        var maximumOutput = ResolveMaximumOutput(selected);
+        RequireRegisteredFixedModel(selected);
+        // New pins leave maximum_output_tokens unset: the column keeps its released
+        // 8,192 bound, and the output cap travels in output_token_reserve.
+        int? maximumOutput = null;
         var modelMetadata = models.Catalog.FirstOrDefault(model =>
             string.Equals(model.Id, selected.Model, StringComparison.OrdinalIgnoreCase));
         var contextWindowTokens = modelMetadata?.ContextLength;
@@ -89,7 +92,10 @@ public sealed class AgentProviderSnapshotFactory(
         // weaker one-object selection protocol; a model that cannot call tools now fails
         // at the provider with a bounded, named error instead of being quietly downgraded.
         var toolCallingMode = ProviderToolCallingMode.Native;
-        var outputTokenReserve = maximumOutput ?? AgentRunProviderSelection.DefaultOutputTokenReserve;
+        var outputTokenReserve = maximumOutput
+            ?? (selected.Protocol == ProviderProtocols.AnthropicMessages
+                ? AnthropicOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens)
+                : AgentRunProviderSelection.DefaultOutputTokenReserve);
         if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
@@ -242,15 +248,17 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_configuration_changed");
     }
 
-    private static int? ResolveMaximumOutput(ProviderSelection selected)
+    private static void RequireRegisteredFixedModel(ProviderSelection selected)
     {
-        if (selected.Alias is not ("openai" or "anthropic")) return null;
-        if (!ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability))
+        if (selected.Alias is ("openai" or "anthropic")
+            && !ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out _))
             throw new ProviderCatalogException("model_unavailable");
-        return selected.Protocol == ProviderProtocols.AnthropicMessages
-            ? Math.Min(capability.DocumentedMaxOutputTokens!.Value, AnthropicMessagesModelProvider.MaximumSupportedOutputTokens)
-            : null;
     }
+
+    private static int? DocumentedOutputLimit(ProviderSelection selected) =>
+        selected.Alias == "anthropic" && ProviderCapabilityRegistry.TryGet(selected.Alias, selected.Model, out var capability)
+            ? capability.DocumentedMaxOutputTokens
+            : null;
 
     private static ProviderBootstrapData CreateSnapshot(
         ProviderSelection selected,

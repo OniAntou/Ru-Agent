@@ -145,7 +145,8 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
 - Anthropic (`anthropic`, `anthropic_messages`, `https://api.anthropic.com/v1`):
   fixed endpoint `https://api.anthropic.com/v1/models` / `https://api.anthropic.com/v1/messages`,
   credential `anthropic_api_key`, `x-api-key` + `anthropic-version: 2023-06-01`,
-  internal `max_tokens = min(documented, 8192)`, registry `claude-fable-5`/
+  `max_tokens` from `AnthropicOutputBudget` (min of the documented limit, 32,000 and a
+  quarter of a known context window; 8,192 when either is unknown), registry `claude-fable-5`/
   `claude-opus-5`/`claude-opus-4-8`/`claude-sonnet-5` (`low`/`medium`/`high`/`xhigh`/`max`,
   adaptive, 128000), `claude-sonnet-4-6` (`low`/`medium`/`high`/`max`, 64000),
   `claude-haiku-4-5-20251001` (Provider default only, 64000) as

@@ -109,6 +109,31 @@ public sealed class CatalogCostTests : IDisposable
         Assert.Equal(131072, root["catalog"]!.AsArray()[0]!["context_length"]!.GetValue<long>());
     }
 
+    [Fact]
+    public async Task A_published_output_limit_lands_on_the_model()
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: """ "vendor/out": { "limit": { "context": 200000, "output": 64000 } } """,
+            providerModels: """{"id":"vendor/out"}""");
+
+        var model = Assert.Single(snapshot.Catalog);
+        Assert.Equal(64000, model.MaxOutputTokens);
+        Assert.Equal(200000, model.ContextLength);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("\"big\"")]
+    public async Task A_nonsense_output_limit_stays_unpublished(string output)
+    {
+        var snapshot = await ReadAsync(
+            modelsDev: $$""" "vendor/bad": { "limit": { "output": {{output}} } } """,
+            providerModels: """{"id":"vendor/bad"}""");
+
+        Assert.Null(Assert.Single(snapshot.Catalog).MaxOutputTokens);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-5")]

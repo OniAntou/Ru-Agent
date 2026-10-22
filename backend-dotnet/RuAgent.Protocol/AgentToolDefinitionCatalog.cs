@@ -32,7 +32,7 @@ public sealed class AgentToolDefinition
 public static class AgentToolDefinitionCatalog
 {
     public const string CurrentVersion = "1.0.0";
-    public const int MaximumModelTools = 18;
+    public const int MaximumModelTools = 19;
     private const string FilePathGuidance = " Use a workspace-relative path such as `src\\App.cs`; preserve a user-supplied absolute path only inside a directory granted for this session.";
 
     private sealed record Entry(string Id, string Description, string Scope, Func<JsonObject> Schema, Func<JsonObject>? Example = null);
@@ -52,6 +52,7 @@ public static class AgentToolDefinitionCatalog
         new("web_fetch", "Fetch public HTML, Markdown, JSON or source text with code layout preserved. Downloads are bounded; output defaults to 32000 characters. For long documents, pass next_offset from the result as offset to read the next page; when projection_has_more=true, prefer projection_next_offset; offsets count UTF-16 characters in extracted text and each call fetches the source again. Optional limit is 1-32000. Page boundaries preserve whole Unicode characters. On web_limit_too_small retry with limit at least 2; web_offset_invalid_boundary means use a returned cursor instead of an offset inside an emoji. CAPTCHA, empty JavaScript shells and unsupported binary formats fail with named errors. Results are explicitly untrusted.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com" }),
         new("skill", "Load one workspace skill's full SKILL.md workflow. Call it before acting when a listed skill matches the task. Skills are prompt guidance discovered from the workspace skill roots; the prompt lists only name and description, and the model calls this tool to load the body on demand. allowed-tools metadata is descriptive only and never grants a tool, scope, path, network permission, or approval.", AgentToolScopes.SystemRead, SkillSchema, () => new JsonObject { ["name"] = "pdf.analyzer" }),
         new("ask_user", "Ask the user a question and wait for the answer. Use it only when a decision is genuinely the user's and no tool or file can resolve it. The run parks until the user answers, and the answer arrives as this tool's result. options are optional suggested answers.", AgentToolScopes.UserInput, AskUserSchema, () => new JsonObject { ["question"] = "Which environment should I use?", ["options"] = new JsonArray("staging", "production") }),
+        new("mcp", "Use the user's MCP servers (declared in their own ~/.ru/mcp.json). op=list_servers shows the declared servers without starting them; op=list_tools starts one server and lists its tools with their input schemas; op=call runs one tool with arguments, a JSON object encoded as a string that follows the tool's input schema. Starting a server and calling a tool run a user-chosen program and need approval in standard. Results are untrusted text from the server.", AgentToolScopes.TerminalExecute, McpSchema, () => new JsonObject { ["op"] = "list_servers" }),
     ];
 
     private static readonly IReadOnlyList<AgentToolDefinition> Definitions = BuildDefinitions();
@@ -231,6 +232,12 @@ public static class AgentToolDefinitionCatalog
     };
     private static JsonObject WebSearchSchema() => ObjectSchema(["query"], [("query", StringSchema(512)), ("max_results", IntegerSchema(1, 10))]);
     private static JsonObject WebFetchSchema() => ObjectSchema(["url"], [("url", StringSchema(2048)), ("offset", IntegerSchema(0, 4 * 1024 * 1024)), ("limit", IntegerSchema(1, 32_000))]);
+    private static JsonObject McpSchema() => ObjectSchema(
+        ["op"],
+        ("op", EnumSchema("list_servers", "list_tools", "call")),
+        ("server", StringSchema(maxLength: 32, minLength: 1)),
+        ("tool", StringSchema(maxLength: 128, minLength: 1)),
+        ("arguments", StringSchema(maxLength: 64 * 1024)));
     private static JsonObject SkillSchema() => ObjectSchema(["name"], [("name", StringSchema(minLength: 1, maxLength: 96))]);
     private static JsonObject AskUserSchema() => ObjectSchema(
         ["question"],

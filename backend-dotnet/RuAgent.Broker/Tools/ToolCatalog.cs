@@ -94,6 +94,8 @@ public sealed class ToolCatalog
         yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("skill", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        // An MCP server is a user-chosen program run with the user's rights (ADR 0025).
+        yield return Manifest("mcp", ToolScope.TerminalExecute, RiskClass.External, "connector", workspace: false, requiresApproval: true);
         foreach (var definition in RuAgent.Protocol.Subagents.SubagentToolDefinitions.Get())
             yield return Manifest(definition.ToolId,
                 definition.ToolId == "agent_apply" ? ToolScope.WorkspaceWrite : ToolScope.SystemRead,

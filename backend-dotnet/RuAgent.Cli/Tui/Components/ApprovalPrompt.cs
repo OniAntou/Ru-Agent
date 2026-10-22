@@ -26,6 +26,7 @@ public sealed class ApprovalPrompt
         "terminal_unknown_executable",
         "terminal_timeout_requires_approval",
         "web_approval_required",
+        "mcp_call_requires_approval",
         "terminal_external_cwd_requires_approval",
         "terminal_cwd_untrusted",
         "terminal_network_requires_approval",

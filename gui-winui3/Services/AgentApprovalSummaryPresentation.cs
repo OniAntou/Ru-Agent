@@ -33,6 +33,7 @@ public static class AgentApprovalSummaryPresentation
     public const string GitConfigOverrideRequiresApproval = "git_config_override_requires_approval";
     public const string GitConfigMutationRequiresApproval = "git_config_mutation_requires_approval";
     public const string RuleAsks = "rule_asks";
+    public const string McpCallRequiresApproval = "mcp_call_requires_approval";
 
     /// <summary>
     /// Every reason code that has dedicated copy. Kept public so a test can assert
@@ -59,6 +60,7 @@ public static class AgentApprovalSummaryPresentation
         GitConfigOverrideRequiresApproval,
         GitConfigMutationRequiresApproval,
         RuleAsks,
+        McpCallRequiresApproval,
     ];
 
     /// <summary>
@@ -81,6 +83,8 @@ public static class AgentApprovalSummaryPresentation
                 "This terminal command runs longer than the standard window.",
             WebApprovalRequired =>
                 "Ru needs approval to fetch this web content.",
+            McpCallRequiresApproval =>
+                "This starts or calls one of your MCP servers, a program that runs with your rights.",
             TerminalUnknownExecutable =>
                 "Ru has not recognized the executable for this terminal command.",
             TerminalProtectedPathRequiresApproval =>

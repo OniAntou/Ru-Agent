@@ -128,7 +128,7 @@ public sealed class BrokerSessionTests
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
             new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
@@ -204,7 +204,7 @@ public sealed class BrokerSessionTests
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
             new[] { "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
+                "bash", "edit", "glob", "grep", "help", "list", "mcp", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 

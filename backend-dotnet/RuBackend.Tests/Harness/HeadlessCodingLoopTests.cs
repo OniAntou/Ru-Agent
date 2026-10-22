@@ -368,7 +368,11 @@ public sealed partial class HeadlessCodingLoopTests
         using var cancelB = await cliClient.PostAsJsonAsync($"/agent/v1/runs/{runId}/cancel", new { });
         Assert.Equal(HttpStatusCode.OK, cancelA.StatusCode);
         Assert.Equal(HttpStatusCode.OK, cancelB.StatusCode);
-        Assert.Equal("cancelled", await GetStatusAsync(desktopClient, runId));
+        // The approved command is running, so the run settles once its worker has
+        // stopped the tool; under load that is not instantaneous.
+        Assert.True(
+            await WaitForStatusAsync(desktopClient, runId, new HashSet<string>(StringComparer.Ordinal) { "cancelled" }, TimeSpan.FromSeconds(30)),
+            "run did not settle as cancelled: " + await GetStatusAsync(desktopClient, runId));
     }
 
     // ------------------------------------------------------------------

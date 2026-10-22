@@ -201,6 +201,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly RuAgent.Harness.Core.Subagents.IAgentFamilyBudget _familyBudget;
     private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox _subagentInbox;
     private readonly ILogger<AgentRuntimeCoordinatorFactory>? _budgetLogger;
+    private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -225,8 +226,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
         IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
         SessionWorkStateStore? workStates = null,
-        ILogger<AgentRuntimeCoordinatorFactory>? logger = null)
+        ILogger<AgentRuntimeCoordinatorFactory>? logger = null,
+        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null)
     {
+        _mcpServers = mcpServers;
         _budgetLogger = logger;
         _familyBudget = familyBudget ?? throw new ArgumentNullException(nameof(familyBudget));
         _subagentInbox = subagentInbox ?? throw new ArgumentNullException(nameof(subagentInbox));
@@ -276,7 +279,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         CancellationToken cancellationToken = default)
     {
         var contextBudgetPolicy = await ResolveBudgetPolicyAsync(_settings, cancellationToken, _budgetLogger).ConfigureAwait(false);
-        var availability = _runtimeAvailability with { ChildRole = null };
+        var availability = _runtimeAvailability with
+        {
+            ChildRole = null,
+            McpEnabled = _mcpServers?.Configuration.IsEmpty == false,
+        };
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null
             || runId is not { } brokerRunId)

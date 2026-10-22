@@ -23,7 +23,10 @@ public sealed partial class SubagentGatewayTests
         foreach (var tool in new[] { "write", "edit", "bash" })
             Assert.Equal(role == SubagentRole.Coding, tools.Contains(tool));
         Assert.Equal(AgentToolDefinitionCatalog.Get().Select(t => t.ToolId),
-            AgentToolRuntimeProjection.Select(new(true, true)).Select(t => t.ToolId));
+            AgentToolRuntimeProjection.Select(new(true, true, McpEnabled: true)).Select(t => t.ToolId));
+        // MCP is advertised only while the user declares a server, and never to a child.
+        Assert.DoesNotContain("mcp", AgentToolRuntimeProjection.Select(new(true, true)).Select(t => t.ToolId));
+        Assert.DoesNotContain("mcp", AgentToolRuntimeProjection.Select(new(true, true, role, McpEnabled: true)).Select(t => t.ToolId));
         Assert.False(SubagentRoleTools.Includes(role, "agent_spawn"));
         Assert.False(SubagentRoleTools.Includes(role, "future_unknown_tool"));
     }

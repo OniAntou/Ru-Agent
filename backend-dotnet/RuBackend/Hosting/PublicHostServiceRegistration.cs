@@ -221,9 +221,15 @@ internal static class PublicHostServiceRegistration
         // never creates the tool service or touches the spool root. The gateway
         // factory is the seam every call site resolves; it takes the lazy
         // runtime so constructing it at host startup does not compose it.
+        // MCP servers (ADR 0025): the user's own ~/.ru/mcp.json, credentials read from
+        // Windows Credential Manager by entry name when a server starts.
+        services.AddSingleton(_ => new RuAgent.Broker.Tools.Mcp.McpServerHost(
+            () => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            name => new RuBackend.Business.Settings.WindowsCredentialApi().Read(name)?.Secret));
         services.AddSingleton(services => new InProcessExecutionAuthority(
             services.GetRequiredService<DataPaths>(),
-            services.GetRequiredService<ILogger<InProcessExecutionAuthority>>()));
+            services.GetRequiredService<ILogger<InProcessExecutionAuthority>>(),
+            mcpServers: services.GetRequiredService<RuAgent.Broker.Tools.Mcp.McpServerHost>()));
         services.AddSingleton<IToolGatewayFactory>(services =>
             new InProcessToolGatewayFactory(
                 services.GetRequiredService<InProcessExecutionAuthority>().Runtime,

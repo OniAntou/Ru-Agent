@@ -9,7 +9,7 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolAcceptanceMatrixTests
 {
     [Theory]
-    [InlineData(17)]
+    [InlineData(18)]
     public void Runtime_catalog_binds_every_available_canonical_definition(
         int expectedBindings)
     {
@@ -33,7 +33,7 @@ public sealed class ToolAcceptanceMatrixTests
 
         var expectedIds = AgentToolDefinitionCatalog.Get()
             // ask_user is Host-intercepted and deliberately has no Broker binding;
-            // the Broker's execution surface is the other seventeen definitions.
+            // the Broker's execution surface is the other eighteen definitions.
             .Where(definition => definition.ToolId is not "ask_user")
             .Select(definition => definition.ToolId)
             .OrderBy(id => id, StringComparer.Ordinal);
@@ -47,7 +47,7 @@ public sealed class ToolAcceptanceMatrixTests
             .Select(definition => definition.ToolId)
             .ToArray();
 
-        Assert.Equal(18, expected.Length);
+        Assert.Equal(19, expected.Length);
         Assert.Equal(expected, AgentModelToolContractCatalog.ToolIds);
     }
 

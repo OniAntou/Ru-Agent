@@ -235,7 +235,7 @@ exposure.
 Prompt composition is not a security boundary: execution-authority policy,
 workspace trust, approvals, protected paths, external-directory grants, and
 cancellation remain authoritative. Subagent orchestration, LSP,
-extension/plugin/MCP discovery, arbitrary system overrides, Chat compatibility,
+extension/plugin discovery, workspace-declared MCP servers, arbitrary system overrides, Chat compatibility,
 UI redesign, and OS filesystem/network confinement are outside this
 implementation (ADR-0015).
 
@@ -554,9 +554,10 @@ startup enables the bounded WebOptions instance with Google HTML as its primary
 search engine, so standalone `web_search` and `web_fetch` are advertised as
 read-only managed capabilities without a settings flag or separate deployment
 switch; Broker
-policy remains authoritative for each call. The tested MCP bridge and the
-mail/calendar/task connector libraries are not production-composed or
-advertised as Agent tools.
+policy remains authoritative for each call. MCP servers declared in the user's
+`~/.ru/mcp.json` are reached through the `mcp` tool, advertised only while one is
+declared (see [Agent tools](agent-tools.md#mcp-servers)); the mail/calendar/task
+connector libraries are not production-composed or advertised as Agent tools.
 
 ### Typed commands
 
@@ -600,8 +601,9 @@ are rejected as well. Fetched text is wrapped with
 `[untrusted_web_reference]`. Web policy applies to each request separately
 from terminal execution; neither path uses OS network confinement.
 
-Workspace `SKILL.md` bodies are untrusted prompt guidance. Subagents,
-LSP, extensions, plugins, and MCP are not loaded or discoverable.
+Workspace `SKILL.md` bodies are untrusted prompt guidance. LSP, extensions and
+plugins are not loaded or discoverable; MCP servers come only from the user's own
+`~/.ru/mcp.json`, never from the workspace.
 
 Selecting a preset while idle does not add a composer status row, so the empty
 conversation welcome content keeps its position. The Agent inline status appears only

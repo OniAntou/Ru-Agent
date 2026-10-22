@@ -336,7 +336,7 @@ public sealed class BrokerSession
     {
         "read" or "grep" or "glob" => [ToolScope.SystemRead, ToolScope.WorkspaceRead],
         "write" or "edit" => [ToolScope.WorkspaceWrite],
-        "bash" => [ToolScope.TerminalExecute],
+        "bash" or "mcp" => [ToolScope.TerminalExecute],
         "web_search" => [ToolScope.WebSearch],
         "web_fetch" => [ToolScope.WebFetch],
         _ => [ToolScope.WorkspaceRead],

@@ -88,6 +88,8 @@ public static class AgentActivityProjector
             ? ExtractTerminalCommand(proposal)
             : proposal.ToolId is "web_search" or "web_fetch"
                 ? ExtractWebTarget(proposal)
+            : proposal.ToolId == "mcp"
+                ? ExtractMcpTarget(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)
                 : null;
@@ -107,6 +109,22 @@ public static class AgentActivityProjector
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay,
             Detail: detail);
+    }
+
+    /// <summary>"server › tool" for an MCP row; arguments stay out of the row.</summary>
+    private static string? ExtractMcpTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object) return null;
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? new string(value.GetString()!.Where(c => !char.IsControl(c)).Take(64).ToArray())
+            : null;
+        return Text("op") switch
+        {
+            "list_servers" => "list servers",
+            "list_tools" when Text("server") is { Length: > 0 } server => server + " › list tools",
+            "call" when Text("server") is { Length: > 0 } server && Text("tool") is { Length: > 0 } tool => server + " › " + tool,
+            _ => null,
+        };
     }
 
     private static string? ExtractWebTarget(ToolProposal proposal)

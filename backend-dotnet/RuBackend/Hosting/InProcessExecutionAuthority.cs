@@ -31,14 +31,17 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
     private ToolExecutionService? _tools;
     private BrokerExecutionRuntime? _composedRuntime;
     private int _disposed;
+    private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
     private readonly object _lifetimeGate = new();
 
     internal InProcessExecutionAuthority(
         DataPaths paths,
         ILogger logger,
         string? spoolRoot = null,
-        Func<string, string?>? readEnvironment = null)
+        Func<string, string?>? readEnvironment = null,
+        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null)
     {
+        _mcpServers = mcpServers;
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(logger);
         TerminalConcurrency = TerminalConcurrencyOptions.FromEnvironment(
@@ -106,6 +109,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
             // The child cleaned its spool root once at startup; the in-process
             // authority does the same on first composition, scoped to its root.
             tools.CleanStaleSpoolFiles();
+            if (_mcpServers is not null) tools.UseMcpServers(_mcpServers);
             _tools = tools;
             _composedRuntime = new BrokerExecutionRuntime(
                 session,
@@ -141,6 +145,7 @@ internal sealed class InProcessExecutionAuthority : IDisposable, IAsyncDisposabl
             tools = _tools;
         }
         if (tools is not null) await tools.DisposeAsync().ConfigureAwait(false);
+        if (_mcpServers is not null) await _mcpServers.DisposeAsync().ConfigureAwait(false);
     }
 
     private static string ResolveSessionRoot(string logRoot)

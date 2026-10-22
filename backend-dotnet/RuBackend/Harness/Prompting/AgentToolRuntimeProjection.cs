@@ -6,7 +6,8 @@ namespace RuBackend.Harness.Prompting;
 public readonly record struct AgentToolRuntimeAvailability(
     bool WebSearchEnabled,
     bool WebFetchEnabled,
-    SubagentRole? ChildRole = null);
+    SubagentRole? ChildRole = null,
+    bool McpEnabled = false);
 
 public static class AgentToolRuntimeProjection
 {
@@ -26,6 +27,8 @@ public static class AgentToolRuntimeProjection
                 "bash" => true,
                 "web_search" => availability.WebSearchEnabled,
                 "web_fetch" => availability.WebFetchEnabled,
+                // Advertised only while the user's ~/.ru/mcp.json declares a server.
+                "mcp" => availability.McpEnabled,
                 _ => true,
             })
             .ToArray();

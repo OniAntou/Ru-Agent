@@ -8,9 +8,9 @@ is actually allowed to select. Those states are not interchangeable.
 
 This checkpoint includes declarative Skills, bounded headless terminal execution
 (`bash` with `mode=run` or `mode=shell`), session rewind, managed
-Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
-is tested infrastructure but is not production-composed; connector libraries are
-not advertised Agent tools.
+Git commit workflow, and dynamic model context compaction. MCP servers the user
+declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
+[MCP servers](#mcp-servers)); connector libraries are not advertised Agent tools.
 
 > **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract. The managed Runtime Worker it describes was retired on 2026-09-30 (model generation runs in the Host process, [ADR 0012](../adr/0012-in-process-model-runner.md)) and the Broker child was retired on 2026-10-10 (tool execution runs in process, [ADR 0014](../adr/0014-in-process-execution-and-terminal-sandbox.md)): the Host has no managed child.
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
@@ -200,7 +200,8 @@ boundary.
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
-| MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
+| `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and tool. See [MCP servers](#mcp-servers) |
+| connector libraries | not advertised | experimental/unwired |
 
 Large structured tool results are projected into bounded prompt references while
 their durable Broker receipts stay unchanged. When a reference carries
@@ -811,6 +812,38 @@ See [Verification](verification.md) for the separate contract, adapter, and
 explicit opt-in native evidence classes. Deterministic evidence does not prove
 that an arbitrary terminal command changed a live external application or
 device.
+
+## MCP servers
+
+[ADR 0025](../adr/0025-mcp-servers-through-the-broker.md) defines this surface. Servers are
+declared only in the user's own `%USERPROFILE%\.ru\mcp.json`; a workspace file is never read,
+and the file is a structured protected path, so the agent cannot change it in `plan` or
+`standard`:
+
+```json
+{"servers":{"github":{"command":"npx.cmd","args":["-y","@modelcontextprotocol/server-github"],
+  "env":{"GITHUB_PERSONAL_ACCESS_TOKEN":{"credential":"ru-mcp-github"}},
+  "description":"GitHub issues and pull requests","timeout_seconds":60}}}
+```
+
+Names are `[a-z][a-z0-9_-]` up to 32 characters; `cwd`, when given, must be absolute;
+`"enabled": false` hides a server; at most 16 servers are read from a file of at most 64 KB.
+An `env` value is literal text or `{"credential": "<name>"}`, a Windows Credential Manager
+generic entry (for example `cmdkey /generic:ru-mcp-github /user:mcp /pass:<token>`) read
+only when the server starts. Resolved credential values are redacted from every result and
+error the tool returns.
+
+The Broker execution runtime starts a server on its first `list_tools` or `call`, at most one
+instance per Host, inside a kill-on-close job object, as the current Windows user with the
+credential-stripped agent environment plus its declared variables. A server whose
+declaration changed or that exited is restarted; all servers stop with the Host. Startup is
+bounded to 20 seconds and each request to the server's `timeout_seconds` (default 60,
+at most 600). `arguments` is a JSON object encoded as a string (at most 64 KB) and follows
+the schema `list_tools` reports. Only text content is returned, bounded to 256 KB and
+marked `untrusted`; other content types are counted, not returned. Failures are named:
+`mcp_server_unknown`, `mcp_server_unavailable` (with the server's last stderr, redacted),
+`mcp_credential_missing`, `mcp_arguments_invalid`, `mcp_timeout`, `mcp_error` and
+`mcp_unavailable`. Ru does not confine what a server does once it runs.
 
 ## Hooks
 

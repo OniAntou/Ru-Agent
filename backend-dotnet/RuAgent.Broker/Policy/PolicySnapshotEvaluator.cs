@@ -268,6 +268,17 @@ public sealed class PolicySnapshotEvaluator
 
     private PolicyEvaluation ProfileFallback(BoundPolicySnapshot snapshot, PolicyContext context)
     {
+        // ADR 0025: starting an MCP server or calling its tool runs a user-chosen program
+        // with the user's rights, the same authority as a terminal launch outside the
+        // workspace, so it takes that subject's decision (plan deny, standard ask,
+        // full_access allow). Listing the declared servers only reads the user's file.
+        if (string.Equals(context.ToolId, "mcp", StringComparison.Ordinal))
+        {
+            return string.Equals(context.ToolOp, "list_servers", StringComparison.Ordinal)
+                ? Allow("mcp_list_servers_allow")
+                : ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "mcp_call_requires_approval");
+        }
+
         if (IsTerminal(context))
         {
             var classification = _terminalClassifier.Classify(context);

@@ -136,7 +136,7 @@ public sealed class ToolBindingRegistryTests
             new[]
             {
                 "agent_apply", "agent_cancel", "agent_send", "agent_spawn", "agent_wait",
-                "bash", "edit", "glob", "grep", "help", "list",
+                "bash", "edit", "glob", "grep", "help", "list", "mcp",
                 "read", "skill", "todo_write", "web_fetch", "web_search", "write",
             },
             bound);
@@ -169,6 +169,7 @@ public sealed class ToolBindingRegistryTests
         ["web_search"] = Succeeded,
         ["web_fetch"] = Succeeded,
         ["skill"] = Succeeded,
+        ["mcp"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

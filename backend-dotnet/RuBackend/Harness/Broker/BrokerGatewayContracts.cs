@@ -86,6 +86,7 @@ internal static class BrokerGatewayContracts
         "terminal_unknown_executable" => "terminal_unknown_executable",
         "terminal_protected_path_requires_approval" => "terminal_protected_path_requires_approval",
         "web_approval_required" => "web_approval_required",
+        "mcp_call_requires_approval" => "mcp_call_requires_approval",
         "subagent_apply_approval_required" => "subagent_apply_approval_required",
         _ => "approval_required",
     };

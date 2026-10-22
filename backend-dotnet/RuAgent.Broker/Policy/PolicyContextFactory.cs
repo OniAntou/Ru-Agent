@@ -252,7 +252,31 @@ public sealed class PolicyContextFactory
                 case "web_fetch":
                     op = "web_fetch";
                     break;
-                case var control when SubagentContractValidator.IsControlTool(control):
+                case "mcp":
+                    // An MCP call is keyed by server and tool, not a path. Server and
+                    // tool travel as executable and argv so an "Always allow" rule can
+                    // remember exactly that pair; the arguments stay in the intent hash.
+                    op = OptionalText(arguments, "op");
+                    if (op is not ("list_servers" or "list_tools" or "call"))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "mcp op must be list_servers, list_tools or call.");
+                    }
+
+                    if (op != "list_servers")
+                    {
+                        var server = OptionalText(arguments, "server")
+                            ?? throw new PolicyContextException("malformed_call", hint: "mcp list_tools and call require server.");
+                        resolvedExecutable = "mcp:" + server;
+                        if (op == "call")
+                        {
+                            argv = [OptionalText(arguments, "tool")
+                                ?? throw new PolicyContextException("malformed_call", hint: "mcp call requires tool.")];
+                        }
+                    }
+
+                    break;                case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
                     break;
                 default:
@@ -339,7 +363,7 @@ public sealed class PolicyContextFactory
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
             TerminalAnalysis: terminalAnalysis,
-            ToolOp: toolId is "read" or "write" ? ReadOpOf(toolId, arguments) : null,
+            ToolOp: toolId is "read" or "write" or "mcp" ? ReadOpOf(toolId, arguments) : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null,
             Background: background);
     }
@@ -393,6 +417,9 @@ public sealed class PolicyContextFactory
         // rules still match by tool id).
         "bash" => IsSpoolRead(arguments) || IsTaskKill(arguments) ? PolicyOperationClasses.Read : PolicyOperationClasses.Terminal,
         "web_search" or "web_fetch" => PolicyOperationClasses.Read,
+        // Listing declared servers reads the user's own file; starting a server or calling
+        // a tool runs a program, which plan denies like any mutation.
+        "mcp" => OptionalText(arguments, "op") == "list_servers" ? PolicyOperationClasses.Read : PolicyOperationClasses.Mutation,
         _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
@@ -414,7 +441,7 @@ public sealed class PolicyContextFactory
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId == "help"
         || toolId == "todo_write"
-        || toolId is "web_search" or "web_fetch"
+        || toolId is "web_search" or "web_fetch" or "mcp"
         || SubagentContractValidator.IsControlTool(toolId)
         // A spool read names a session-scoped output id, not a path; a task
         // kill names a session-scoped task id. The execution leg still fails
@@ -424,7 +451,7 @@ public sealed class PolicyContextFactory
                 || string.Equals(op, "kill", StringComparison.Ordinal)));
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>
-        toolId is "read" or "write" ? OptionalText(arguments, "op") : null;
+        toolId is "read" or "write" or "mcp" ? OptionalText(arguments, "op") : null;
 
     private static string? OptionalText(JsonObject arguments, string key)
     {

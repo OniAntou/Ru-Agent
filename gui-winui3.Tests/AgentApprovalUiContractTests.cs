@@ -66,6 +66,7 @@ public sealed class AgentApprovalUiContractTests
             "git_config_override_requires_approval",
             "git_config_mutation_requires_approval",
             "rule_asks",
+            "mcp_call_requires_approval",
         };
 
         Assert.Equal(

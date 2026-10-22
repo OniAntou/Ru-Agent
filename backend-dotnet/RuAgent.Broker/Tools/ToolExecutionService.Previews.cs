@@ -22,6 +22,7 @@ public sealed partial class ToolExecutionService
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
         "bash" => "Run a terminal action in the workspace.",
+        "mcp" => "Start or call one of your MCP servers.",
         "edit" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
     };
@@ -42,6 +43,10 @@ public sealed partial class ToolExecutionService
                 "bash" => IsShellArgs(arguments)
                     ? ReadOptionalString(arguments, "script") ?? string.Empty
                     : TerminalRunPreview(arguments),
+                // ADR 0025: the card names the server, the tool and the bounded arguments.
+                "mcp" => ReadOptionalString(arguments, "op") == "call"
+                    ? $"{ReadOptionalString(arguments, "server")} > {ReadOptionalString(arguments, "tool")} {Bound(ReadOptionalString(arguments, "arguments") ?? "{}")}"
+                    : $"{ReadOptionalString(arguments, "server")} > list tools",
                 _ => string.Empty,
             };
             return preview.Length <= ApprovalPreviewFields.MaxLength

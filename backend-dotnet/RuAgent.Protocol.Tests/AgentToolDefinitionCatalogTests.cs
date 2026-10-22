@@ -21,6 +21,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "web_fetch",
         "skill",
         "ask_user",
+        "mcp",
         "agent_spawn",
         "agent_send",
         "agent_wait",
@@ -55,7 +56,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(18, definitions.Count);
+        Assert.Equal(19, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

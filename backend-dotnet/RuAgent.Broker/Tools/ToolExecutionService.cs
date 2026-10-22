@@ -197,6 +197,7 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
             ["bash"] = ExecuteBashAsync,
             ["web_search"] = ExecuteWebSearchAsync,
             ["web_fetch"] = ExecuteWebFetchAsync,
+            ["mcp"] = ExecuteMcpAsync,
         };
 
         // Native orchestration consumes exact authorization through Runtime callbacks.

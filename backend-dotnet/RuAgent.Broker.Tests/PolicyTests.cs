@@ -401,6 +401,69 @@ public sealed class PolicyEvaluationTests
         Assert.Equal(reasonCode, evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("plan", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "ask", "mcp_call_requires_approval")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void An_mcp_call_takes_the_external_terminal_decision(string preset, string decision, string reasonCode)
+    {
+        // ADR 0025: starting a server or calling its tool runs a user-chosen program.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var evaluator = new PolicySnapshotEvaluator();
+
+        foreach (var arguments in new[]
+        {
+            new JsonObject { ["op"] = "call", ["server"] = "github", ["tool"] = "create_issue", ["arguments"] = "{}" },
+            new JsonObject { ["op"] = "list_tools", ["server"] = "github" },
+        })
+        {
+            var evaluation = evaluator.Evaluate(lease.Snapshot, factory.Create("mcp", "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+            Assert.Equal(decision, evaluation.Decision);
+            Assert.Equal(reasonCode, evaluation.ReasonCode);
+        }
+    }
+
+    [Theory]
+    [InlineData("plan")]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Listing_declared_mcp_servers_needs_no_approval(string preset)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot, factory.Create("mcp", "1.0.0", new JsonObject { ["op"] = "list_servers" }), PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal("allow", evaluation.Decision);
+    }
+
+    [Fact]
+    public void An_always_allow_rule_covers_exactly_its_mcp_server_and_tool()
+    {
+        var rule = PolicyEvalSnapshots.Rule("r-mcp", "allow",
+            PolicyEvalSnapshots.Matcher(toolId: "mcp", resolvedExecutable: "mcp:github", argvPattern: ["create_issue"]));
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        var evaluator = new PolicySnapshotEvaluator();
+        PolicyEvaluation Call(string server, string tool) => evaluator.Evaluate(lease.Snapshot,
+            factory.Create("mcp", "1.0.0", new JsonObject { ["op"] = "call", ["server"] = server, ["tool"] = tool, ["arguments"] = """{"title":"x"}""" }),
+            PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal("allow", Call("github", "create_issue").Decision);
+        Assert.Equal("ask", Call("github", "delete_repo").Decision);
+        Assert.Equal("ask", Call("other", "create_issue").Decision);
+    }
+
+    [Theory]
+    [InlineData("""{"op":"run"}""")]
+    [InlineData("""{"op":"call","tool":"x"}""")]
+    [InlineData("""{"op":"call","server":"github"}""")]
+    public void A_malformed_mcp_call_is_refused(string arguments)
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        Assert.Throws<PolicyContextException>(() => factory.Create("mcp", "1.0.0", JsonNode.Parse(arguments)!.AsObject()));
+    }
+
     [Fact]
     public void Full_access_allows_terminal_risks_web_and_external()
     {

@@ -21,6 +21,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ISettingsStore? _settingsStore;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
     private readonly HttpMessageHandler? _providerHandler;
+    private readonly Action<IServiceCollection>? _configureServices;
 
     public BackendWebApplicationFactory(
         DataPaths? dataPaths = null,
@@ -28,8 +29,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ISettingsStore? settingsStore = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
-        HttpMessageHandler? providerHandler = null)
+        HttpMessageHandler? providerHandler = null,
+        Action<IServiceCollection>? configureServices = null)
     {
+        _configureServices = configureServices;
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
             : null;
@@ -102,6 +105,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             // The execution authority is the production in-process one
             // (InProcessExecutionAuthority + InProcessToolGatewayFactory);
             // no test seam replaces it.
+            _configureServices?.Invoke(services);
         });
     }
 

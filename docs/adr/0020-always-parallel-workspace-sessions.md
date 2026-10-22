@@ -16,7 +16,10 @@ for an exclusive workspace admission lock, including compatibility hosts that
 do not compose the coordinator store.
 
 The existing membership scheduler bounds execution, with 32 workspace slots by
-default and the unchanged global limit of four drive workers. The concurrency
+default and a global limit of drive workers (four when accepted; sixteen since
+2026-10-22, because a drive worker is held through a whole terminal command and
+four builds stalled every other session and subagent). Model calls keep their
+separate provider-step bound. The concurrency
 API retains its route and fields but accepts only shared mode and capacities
 from 2 to 32. Requests for exclusive mode or one slot fail with the existing
 named policy-validation error. Schema v19 upgrades legacy exclusive/single-slot

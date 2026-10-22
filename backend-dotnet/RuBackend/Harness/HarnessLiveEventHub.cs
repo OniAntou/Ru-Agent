@@ -47,6 +47,10 @@ public sealed class HarnessLiveEventHub
         public long Dropped;
 
         public long ActivityDropped;
+
+        // One pending "durable state changed" mark; further marks collapse into it.
+        public Channel<bool> Changed { get; } = System.Threading.Channels.Channel.CreateBounded<bool>(
+            new BoundedChannelOptions(1) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropWrite });
     }
 
     public HubLease Subscribe(RunId runId)
@@ -78,7 +82,20 @@ public sealed class HarnessLiveEventHub
             Interlocked.Increment(ref _droppedCount);
         });
         _subscriptions[id] = subscription;
-        return new HubLease(this, id, subscription.Channel.Reader, subscription.ActivityChannel.Reader);
+        return new HubLease(this, id, subscription.Channel.Reader, subscription.ActivityChannel.Reader, subscription.Changed.Reader);
+    }
+
+    /// <summary>
+    /// Tells every stream of <paramref name="runId"/> that durable state changed without a
+    /// live frame, so a stream parked on an approval, question or trust card reloads at once
+    /// instead of at its next poll.
+    /// </summary>
+    public void NotifyRunChanged(RunId runId)
+    {
+        foreach (var subscription in _subscriptions.Values)
+        {
+            if (subscription.RunId.Value == runId.Value) subscription.Changed.Writer.TryWrite(true);
+        }
     }
 
     /// <summary>
@@ -165,6 +182,7 @@ public sealed class HarnessLiveEventHub
         private readonly Guid _id;
         public ChannelReader<TransientFrame> Reader { get; }
         public ChannelReader<TransientFrame> ActivityReader { get; }
+        public ChannelReader<bool> ChangedReader { get; }
 
         // Separate capacities protect activity from delta bursts; delivery still
         // follows publication order, so an activity cannot cut earlier prose.
@@ -180,12 +198,18 @@ public sealed class HarnessLiveEventHub
             }
         }
 
-        internal HubLease(HarnessLiveEventHub hub, Guid id, ChannelReader<TransientFrame> reader, ChannelReader<TransientFrame> activityReader)
+        internal HubLease(
+            HarnessLiveEventHub hub,
+            Guid id,
+            ChannelReader<TransientFrame> reader,
+            ChannelReader<TransientFrame> activityReader,
+            ChannelReader<bool> changedReader)
         {
             _hub = hub;
             _id = id;
             Reader = reader;
             ActivityReader = activityReader;
+            ChangedReader = changedReader;
         }
 
         public ValueTask DisposeAsync()
@@ -194,6 +218,7 @@ public sealed class HarnessLiveEventHub
             {
                 subscription.Channel.Writer.TryComplete();
                 subscription.ActivityChannel.Writer.TryComplete();
+                subscription.Changed.Writer.TryComplete();
             }
 
             return ValueTask.CompletedTask;

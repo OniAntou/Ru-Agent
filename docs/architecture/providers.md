@@ -115,7 +115,11 @@ prefix. Text-selection requests keep inline references. The prompt receipt hashe
 the exact system text and binds current normalized runtime references with its
 `runtime` block digest, including when the current snapshot is already retained.
 Exact serialized-request preflight accounts for every dispatched context message.
-Cache availability and latency remain provider-dependent.
+Cache availability and latency remain provider-dependent. Anthropic caches only
+on request: requests to the first-party `https://api.anthropic.com` endpoint carry
+a top-level `cache_control: {"type":"ephemeral"}` so each step reads the stable
+prefix from cache. Anthropic-compatible gateways do not receive the field, since
+one that rejects it would fail the run instead of running uncached.
 
 ### Runtime context snapshots
 

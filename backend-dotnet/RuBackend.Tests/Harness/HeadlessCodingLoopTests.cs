@@ -322,7 +322,15 @@ public sealed partial class HeadlessCodingLoopTests
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
+        // The approved command runs long enough that the cancels below find the run still
+        // working; an approval resumes the run at once, so a command that ends at launch
+        // would finish (or fail) before any client could cancel it.
+        runner.Enqueue(ToolCall("terminal.run", JsonSerializer.Serialize(new
+        {
+            executable = "ping.exe",
+            arguments = new[] { "-n", "30", "127.0.0.1" },
+            working_directory = Path.GetTempPath(),
+        })));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var desktopClient = factory.CreateAuthenticatedClient();

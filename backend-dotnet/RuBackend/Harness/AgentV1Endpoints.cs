@@ -442,6 +442,10 @@ public static partial class AgentV1Endpoints
         // reaches a terminal state, the client disconnects, or the server shuts down.
         // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
         var pollInterval = TimeSpan.FromMilliseconds(100);
+        // A run parked on a card changes only when a client answers it, and that POST
+        // signals the stream (HarnessLiveEventHub.NotifyRunChanged). The slower poll is
+        // the fallback for changes nothing signals, such as a deleted session.
+        var parkedPollInterval = TimeSpan.FromSeconds(1);
         if (!live || isTerminal)
         {
             await context.Response.Body.FlushAsync(ct);
@@ -450,6 +454,11 @@ public static partial class AgentV1Endpoints
 
                 while (!ct.IsCancellationRequested && !isTerminal)
                 {
+                    if (hubLease is { } changedLease)
+                    {
+                        while (changedLease.ChangedReader.TryRead(out _)) { }
+                    }
+
                     var reloadedRun = await store.GetRunAsync(runIdObj, ct);
                     if (reloadedRun is null)
                     {
@@ -495,12 +504,19 @@ public static partial class AgentV1Endpoints
                         if (hubLease is { } activeLease)
                         {
                             using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            pollCts.CancelAfter(pollInterval);
+                            var parked = IsParkedOnClient(run.State);
+                            pollCts.CancelAfter(parked ? parkedPollInterval : pollInterval);
                             try
                             {
                                 var activityWait = activeLease.ActivityReader.WaitToReadAsync(pollCts.Token).AsTask();
                                 var deltaWait = activeLease.Reader.WaitToReadAsync(pollCts.Token).AsTask();
-                                await Task.WhenAny(activityWait, deltaWait).ConfigureAwait(false);
+                                var changedWait = parked
+                                    ? activeLease.ChangedReader.WaitToReadAsync(pollCts.Token).AsTask()
+                                    : Task.Delay(Timeout.Infinite, pollCts.Token);
+                                await Task.WhenAny(activityWait, deltaWait, changedWait).ConfigureAwait(false);
+                                // Release the waits that lost; a waiter left on a quiet
+                                // channel would otherwise stay queued until the stream ends.
+                                await pollCts.CancelAsync().ConfigureAwait(false);
                             }
                             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                             {
@@ -527,13 +543,17 @@ public static partial class AgentV1Endpoints
         {
             // client disconnected
         }
-        catch (Exception)
+        catch (Exception error)
         {
             // Any other mid-stream failure (store, mapper, writer) must not
             // reset the connection: a TCP RST surfaces on clients as an
             // opaque transport error with no resume cursor. Best-effort flush
             // what was already written and close the response cleanly; the
             // client re-attaches with after_sequence when the run is live.
+            // The client sees only a closed stream, so the cause is logged here.
+            context.RequestServices.GetService<ILoggerFactory>()
+                ?.CreateLogger("RuBackend.Harness.AgentEventStream")
+                .LogWarning(error, "agent event stream for run {RunId} closed after a server-side failure", runId);
             try
             {
                 await context.Response.Body.FlushAsync(CancellationToken.None).ConfigureAwait(false);
@@ -551,6 +571,13 @@ public static partial class AgentV1Endpoints
             }
         }
     }
+
+    /// <summary>States that only a client request (a POST to the run) can move on.</summary>
+    private static bool IsParkedOnClient(HarnessRunState state) =>
+        state is HarnessRunState.WaitingWorkspaceTrust
+            or HarnessRunState.WaitingApproval
+            or HarnessRunState.WaitingUser
+            or HarnessRunState.ReconciliationRequired;
 
     private static async Task<IResult> GetPayloadAsync(string runId, string payloadId, AgentRunQueryService service, CancellationToken ct)
     {

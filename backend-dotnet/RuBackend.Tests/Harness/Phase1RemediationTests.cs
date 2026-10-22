@@ -359,7 +359,7 @@ public sealed class Phase1RemediationTests
 
         Assert.True(
             status == "completed",
-            $"final status={status} last_body={lastBody[..Math.Min(300, lastBody.Length)]}");
+            $"final status={status} last_body={lastBody[..Math.Min(1200, lastBody.Length)]}");
 
         using var eventsResp = await client.GetAsync($"/agent/v1/runs/{runId}/events");
         var eventsBody = await eventsResp.Content.ReadAsStringAsync();

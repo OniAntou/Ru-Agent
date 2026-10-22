@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(backend)**: Startup recovery no longer treats a run this Host has just created as orphaned. The sweep can start after the first run of a new Host is already driving, and it failed such a run as `recovery_pre_dispatch` or committed under its first step.
+
+
+- **perf(agent)**: Requests to the first-party Anthropic API ask for prompt caching, so each step of a run reads the unchanged history from cache instead of paying full input price for it again. Anthropic-compatible gateways are unchanged.
+- **perf(backend)**: A run waiting on an approval card no longer costs the Host work while it waits. The runtime loop rebuilt its coordinator and gateway and rewrote the workspace lease four times a second; measured on an isolated Host this was about 17% of a core and 23 disk writes per second (≈230 MB/hour of WAL), now no writes. The loop also idles at one poll per second when every run waits for the user.
+- **perf(backend)**: New runs, trust, approvals, answers and finished steps wake the runtime loop and the run's event streams instead of waiting for the next poll. On an isolated Host with an instant scripted model, trust-to-approval-card fell from 957 ms to about 300 ms and approve-to-done from 312–468 ms to about 270 ms; a warm run completes in about 110 ms.
+- **fix(backend)**: Up to sixteen runs (previously four) are driven at once, so long terminal commands in four sessions no longer stall every other session and subagent; model calls keep their own bound. A run waiting for a slot is logged, and a server-side failure that closes an event stream is now logged instead of swallowed.
+
 - **feat(gui)**: Redesign the context popup with a compact usage header, segmented bar and separate System prompt, Tool definitions and Messages estimates from the prepared request. Restore saved breakdowns with their originating run; explicitly show unknown values for older chats.
 
 - **fix(gui)**: Keep the workspace sidebar between 220 and 360 px for pointer and keyboard resizing across window sizes. Replace the miniature icon rail with complete hide/show that restores the previous width; clean up resize capture on interruption.

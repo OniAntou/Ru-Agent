@@ -50,12 +50,26 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
         AgentRunCoordinator? Coordinator = null);
 
     private readonly ConcurrentDictionary<string, Registration> _roots = new(StringComparer.Ordinal);
+    private readonly AgentRuntimeWakeSignal? _wake;
 
-    public void Register(RunId runId, string workspaceRoot) =>
+    public AgentRuntimeRootRegistry()
+    {
+    }
+
+    /// <param name="wake">Woken on every registration so the loop drives a new run at once.</param>
+    public AgentRuntimeRootRegistry(AgentRuntimeWakeSignal wake)
+    {
+        _wake = wake ?? throw new ArgumentNullException(nameof(wake));
+    }
+
+    public void Register(RunId runId, string workspaceRoot)
+    {
         _roots.AddOrUpdate(
             runId.Value,
             _ => new Registration(workspaceRoot, null),
             (_, existing) => existing with { WorkspaceRoot = workspaceRoot });
+        _wake?.Wake();
+    }
 
     public void Register(RunId runId, string workspaceRoot, PolicySnapshot policySnapshot)
     {
@@ -68,6 +82,7 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
                 WorkspaceRoot = workspaceRoot,
                 PolicySnapshot = policySnapshot,
             });
+        _wake?.Wake();
     }
 
     public bool TryGetRoot(RunId runId, out string? workspaceRoot)
@@ -421,17 +436,23 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
-    /// The interval used when no run is registered. The loop is the only thing that
-    /// can start a registered run, so an idle host must still poll — but at a quarter
-    /// of the active rate. This is a desktop agent that stays open for hours: four
-    /// wakeups per second with a database round trip each, while the user is doing
-    /// something else, is pure idle cost. The cost of the backoff is a sub-second
-    /// delay before a newly created run is picked up, which the user cannot perceive
-    /// because the first model step takes far longer than that.
+    /// The interval used when no registered run can progress on its own: none is
+    /// registered, or every one waits for a client. This is a desktop agent that stays
+    /// open for hours: four wakeups per second with database round trips each, while
+    /// the user is doing something else, is pure idle cost. New runs and client answers
+    /// wake the loop through <see cref="AgentRuntimeWakeSignal"/>, so the slower poll
+    /// is only the fallback for changes nothing signals.
     /// </summary>
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromMilliseconds(1000);
 
-    private const int MaxConcurrentRuns = 4;
+    /// <summary>
+    /// Runs driven at once. A slot is held for a whole drive pass, including a long
+    /// terminal command, so four slots let four builds stall every other session and
+    /// the subagents of a parent. Model calls keep their own, smaller bound
+    /// (<c>RU_MAX_CONCURRENT_MODEL_STEPS</c>); this bound only stops a burst of runs from
+    /// exhausting the host.
+    /// </summary>
+    internal const int MaxConcurrentRuns = 16;
 
     private readonly AgentConversationOutboxDispatcher _dispatcher;
     private readonly IHarnessEventStore _store;
@@ -449,6 +470,16 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly object _workerLock = new();
     private readonly ConcurrentDictionary<string, string> _recoveredApprovalIds =
         new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _parkedApprovalVersions =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Runs the last pass found waiting for a client: on an approval, a question, workspace
+    /// trust or reconciliation. Only a client request moves them on, and that request
+    /// wakes the loop, so a host whose runs all wait here polls at the idle rate.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, byte> _waitingOnClient =
+        new(StringComparer.Ordinal);
 
     private readonly WorkspaceWatchRegistry? _workspaceWatches;
     private readonly Broker.IToolGatewayFactory _brokerGateways;
@@ -460,6 +491,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly Subagents.SubagentContinuationCoordinator? _subagentContinuations;
     private readonly Subagents.SubagentUserApplyCoordinator? _userApplies;
     private readonly Subagents.SubagentLivePublisher? _subagentLive;
+    private readonly AgentRuntimeWakeSignal? _wake;
 
     public AgentRuntimeLoopService(
         AgentConversationOutboxDispatcher dispatcher,
@@ -478,8 +510,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         Subagents.SubagentWaitCoordinator? subagentWaits = null,
         Subagents.SubagentContinuationCoordinator? subagentContinuations = null,
         Subagents.SubagentUserApplyCoordinator? userApplies = null,
-        Subagents.SubagentLivePublisher? subagentLive = null)
+        Subagents.SubagentLivePublisher? subagentLive = null,
+        AgentRuntimeWakeSignal? wake = null)
     {
+        _wake = wake;
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _coordinatorFactory = coordinatorFactory ?? throw new ArgumentNullException(nameof(coordinatorFactory));
@@ -525,7 +559,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     _logger.LogWarning(error, "agent runtime loop iteration failed");
                 }
 
-                await Task.Delay(nextDelay, stoppingToken).ConfigureAwait(false);
+                if (_wake is null) await Task.Delay(nextDelay, stoppingToken).ConfigureAwait(false);
+                else await _wake.WaitAsync(nextDelay, stoppingToken).ConfigureAwait(false);
             }
         }
         finally
@@ -543,8 +578,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     }
 
     /// <summary>
-    /// Runs one iteration. Returns true when at least one run is registered, which is
-    /// the signal the loop uses to choose its next poll interval.
+    /// Runs one iteration. Returns true when a registered run may progress without a
+    /// client request, which is the signal the loop uses to choose its next poll interval.
     /// </summary>
     internal async Task<bool> StepOnceAsync(CancellationToken cancellationToken, bool waitForWorkers = true)
     {
@@ -588,7 +623,14 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     {
                         try
                         {
-                            await _workerGate.WaitAsync(workerToken).ConfigureAwait(false);
+                            if (!_workerGate.Wait(0, CancellationToken.None))
+                            {
+                                _logger.LogInformation(
+                                    "run {RunId} is waiting for one of {Slots} runtime slots",
+                                    registration.RunId,
+                                    MaxConcurrentRuns);
+                                await _workerGate.WaitAsync(workerToken).ConfigureAwait(false);
+                            }
                             try
                             {
                                 var runId = new RunId(registration.RunId);
@@ -610,7 +652,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         }
 
         if (waitForWorkers) await Task.WhenAll(tasks).ConfigureAwait(false);
-        return registrations.Count > 0;
+        // Without a wake signal nothing announces a client's answer, so keep the
+        // active rate for every registered run.
+        return _wake is null
+            ? registrations.Count > 0
+            : registrations.Any(registration => !_waitingOnClient.ContainsKey(registration.RunId));
     }
 
     private async Task DriveRunIfRunningAsync(
@@ -669,14 +715,56 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             if (run.State != HarnessRunState.Running
                 && run.State != HarnessRunState.WaitingApproval)
             {
+                if (run.State is HarnessRunState.WaitingUser
+                    or HarnessRunState.WaitingWorkspaceTrust
+                    or HarnessRunState.ReconciliationRequired)
+                {
+                    _waitingOnClient.TryAdd(runIdValue, 0);
+                }
+                else
+                {
+                    _waitingOnClient.TryRemove(runIdValue, out _);
+                }
+
                 return;
             }
+
+            // A run parked on an approval card has nothing to do until the card is
+            // resolved, and resolving it commits a new run version. Driving it anyway
+            // rebuilt the coordinator and gateway, rehydrated the approval and rewrote the
+            // workspace lease on every tick for as long as the card stayed open. The
+            // expiry checks above still run each tick.
+            if (run.State == HarnessRunState.WaitingApproval
+                && _parkedApprovalVersions.TryGetValue(runIdValue, out var parkedVersion)
+                && parkedVersion == run.Version)
+            {
+                _waitingOnClient.TryAdd(runIdValue, 0);
+                return;
+            }
+
+            _waitingOnClient.TryRemove(runIdValue, out _);
+            _parkedApprovalVersions.TryRemove(runIdValue, out _);
 
             // The run this pass already read is handed to the drive, which would otherwise
             // read the same row again a few lines later. The loop runs every 250 ms per
             // registered run, so that duplicate read is the loop's steady-state database
             // cost: two reads per tick where one is enough.
             await DriveRunAsync(runIdValue, workspaceRoot, policySnapshot, run, cancellationToken).ConfigureAwait(false);
+            var driven = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
+            if (_recoveredApprovalIds.ContainsKey(runIdValue)
+                && driven is { State: HarnessRunState.WaitingApproval })
+            {
+                _parkedApprovalVersions[runIdValue] = driven.Version;
+            }
+
+            // A pass that moved the run on usually leaves outbox work (the history row
+            // a parked or finished run waits for), which only the loop delivers. A pass
+            // that changed nothing, such as one refused a busy workspace lease, must
+            // not wake the loop or it would spin on the same refusal.
+            if (driven is not null && driven.Version != run.Version)
+            {
+                _wake?.Wake();
+            }
         }
         finally
         {
@@ -705,6 +793,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         if (_subagents is not null)
             await _subagents.CancelChildrenBeforeReleaseAsync(runId, this, CancellationToken.None).ConfigureAwait(false);
         _subagentLive?.Forget(runId);
+        _parkedApprovalVersions.TryRemove(runId.Value, out _);
+        _waitingOnClient.TryRemove(runId.Value, out _);
         _roots.Remove(runId);
         if (_brokerGateways is { } gateways)
         {

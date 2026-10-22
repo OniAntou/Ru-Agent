@@ -368,6 +368,8 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
             ["stream"] = true,
             ["max_tokens"] = request.MaximumOutputTokens!.Value,
         };
+        if (UsesAutomaticPromptCache(request.Endpoint))
+            body["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
         if (request.Settings["thinking"] is JsonObject thinking) body["thinking"] = (JsonObject)thinking.DeepClone();
         if (request.Settings["output_config"] is JsonObject oc) body["output_config"] = (JsonObject)oc.DeepClone();
         if (request.NativeToolCalling)
@@ -383,6 +385,17 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider, IModelReque
     }
 
     public string ProjectRequestBody(ModelRequest request) => BuildBody(request);
+
+    /// <summary>
+    /// Anthropic caches a prompt only when the request asks for it. Agent requests keep
+    /// their prefix stable across steps, so a top-level <c>cache_control</c> lets each
+    /// step read the previous history from cache instead of paying for it again. Only
+    /// the first-party endpoint gets the field: Anthropic-compatible gateways are free
+    /// to reject it, and a rejected request would fail the run rather than run uncached.
+    /// </summary>
+    internal static bool UsesAutomaticPromptCache(Uri endpoint) =>
+        endpoint.Scheme == Uri.UriSchemeHttps
+        && string.Equals(endpoint.Host, "api.anthropic.com", StringComparison.OrdinalIgnoreCase);
 
     private static JsonArray BuildTools(JsonArray? modelTools)
     {

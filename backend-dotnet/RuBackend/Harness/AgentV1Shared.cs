@@ -27,6 +27,21 @@ internal static class AgentV1Shared
     internal static AgentServiceResult BusyConflict(string code, string message, AgentRun blocking) =>
         new(409, new AgentErrorResponse(code, message, blocking.RunId.Value, MapRunState(blocking.Status)));
 
+    /// <summary>Parses a route segment as a run id without throwing on a malformed one.</summary>
+    internal static bool TryParseRunId(string? value, out RunId runId)
+    {
+        try
+        {
+            runId = new RunId(value!);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            runId = default;
+            return false;
+        }
+    }
+
     internal static string MapHistoryWaitKind(HistoryWaitKind? kind) => kind switch
     {
         HistoryWaitKind.UserBeforeFirstStep => "user_before_first_step",

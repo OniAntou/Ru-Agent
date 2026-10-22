@@ -62,6 +62,55 @@ public sealed class HarnessRecoveryStartupServiceTests
     }
 
     /// <summary>
+    /// The sweep can start after this process has already created and begun driving a
+    /// run. Such a run is alive, not orphaned: failing it as recovery_pre_dispatch (or
+    /// committing under its first step) broke runs created right after Host start.
+    /// </summary>
+    [Fact]
+    public async Task A_run_this_process_registered_is_not_recovered_as_orphaned()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var orphan = await fixture.SeedRunWithEncryptedWorkspaceAsync(
+                new HarnessRunStatus(HarnessRunState.Running), "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+            var live = await fixture.SeedRunWithEncryptedWorkspaceAsync(
+                new HarnessRunStatus(HarnessRunState.Running), "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
+            var roots = new AgentRuntimeRootRegistry();
+            roots.Register(live.Run.RunId, fixture.RootPath);
+            var service = new HarnessRecoveryStartupService(
+                fixture.EventStore,
+                fixture.Options,
+                NullLogger<HarnessRecoveryStartupService>.Instance,
+                CreateTrustService(fixture),
+                new SqliteWorkspaceStore(fixture.Options),
+                new HarnessPolicySnapshotService(fixture.Options, fixture.KeyStore, new SystemTimeProvider()),
+                roots,
+                new RuAgent.Harness.Persistence.WorkspaceCoordinatorStore(fixture.Options),
+                new RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate(),
+                CreateSubagentRecovery(fixture, roots));
+
+            await service.StartAsync(CancellationToken.None);
+            try
+            {
+                Assert.True(await WaitForTerminalAsync(fixture.EventStore, orphan.Run.RunId, TimeSpan.FromSeconds(15)));
+                Assert.Equal("recovery_pre_dispatch", (await fixture.EventStore.GetRunAsync(orphan.Run.RunId, CancellationToken.None))!.TerminalErrorCode);
+                var after = await fixture.EventStore.GetRunAsync(live.Run.RunId, CancellationToken.None);
+                Assert.Equal(HarnessRunState.Running, after!.State);
+                Assert.Equal(live.Run.Version, after.Version);
+            }
+            finally
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// A parked run that outlived the host must be resumable: after the sweep its root
     /// and policy snapshot are registered, and while it stays parked the drive loop must
     /// leave it alone. Only once Continue moves it to Running may the loop drive it —

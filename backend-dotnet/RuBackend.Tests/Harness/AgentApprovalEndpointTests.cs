@@ -2,7 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness.Policy;
 using Xunit;
@@ -600,6 +603,78 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
+    public async Task A_run_parked_on_an_approval_is_not_rebuilt_on_every_loop_tick_and_resumes_when_approved()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        var counting = new CountingCoordinatorFactory();
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var (fact, client, runId, approvalId) = await StartWaitingApprovalRunAsync(wsPath, dataPaths, counting.Install);
+            factory = fact;
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            var parkedBuilds = counting.Created;
+
+            // Several loop passes. Before the fix each one rebuilt the coordinator and
+            // gateway and rewrote the workspace lease while the card stayed open.
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            Assert.Equal(parkedBuilds, counting.Created);
+            Assert.Equal("waiting_approval", await GetStatusAsync(client, runId));
+
+            using var resp = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "once", decision = "allow" });
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.True(await WaitForStatusAsync(
+                client, runId, new HashSet<string> { "completed", "failed", "cancelled" }, StateDeadline));
+            // The approved call names an executable that does not exist, so reaching
+            // executable_not_found proves the approval resumed the run and ran the call.
+            var final = JsonDocument.Parse(await client.GetStringAsync($"/agent/v1/runs/{runId}")).RootElement;
+            Assert.Equal("failed", final.GetProperty("status").GetString());
+            Assert.Equal("executable_not_found", final.GetProperty("terminal_error_code").GetString());
+            Assert.True(counting.Created > parkedBuilds);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    private sealed class CountingCoordinatorFactory
+    {
+        private int _created;
+
+        public int Created => Volatile.Read(ref _created);
+
+        public void Install(IServiceCollection services)
+        {
+            services.RemoveAll<RuBackend.Harness.IAgentRuntimeCoordinatorFactory>();
+            services.AddSingleton<RuBackend.Harness.AgentRuntimeCoordinatorFactory>();
+            services.AddSingleton<RuBackend.Harness.IAgentRuntimeCoordinatorFactory>(provider =>
+                new Counting(provider.GetRequiredService<RuBackend.Harness.AgentRuntimeCoordinatorFactory>(), this));
+        }
+
+        private sealed class Counting(
+            RuBackend.Harness.IAgentRuntimeCoordinatorFactory inner,
+            CountingCoordinatorFactory owner) : RuBackend.Harness.IAgentRuntimeCoordinatorFactory
+        {
+            public Task<AgentRunCoordinator> CreateAsync(
+                string workspaceRoot,
+                PolicySnapshot? policySnapshot = null,
+                RunId? runId = null,
+                string? agentSessionId = null,
+                CancellationToken cancellationToken = default)
+            {
+                Interlocked.Increment(ref owner._created);
+                return inner.CreateAsync(workspaceRoot, policySnapshot, runId, agentSessionId, cancellationToken);
+            }
+
+            public void DropRetainedApproval(RunId runId) => inner.DropRetainedApproval(runId);
+        }
+    }
+
+    [Fact]
     public async Task Approval_AllowAlways_SavesProjectRule_AndSecondRunSkipsApproval()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
@@ -986,10 +1061,13 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
-    private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(string wsPath, RuBackend.Business.DataPaths dataPaths)
+    private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(
+        string wsPath,
+        RuBackend.Business.DataPaths dataPaths,
+        Action<IServiceCollection>? configureServices = null)
     {
         var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
-        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, configureServices: configureServices);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
         var runBody = new

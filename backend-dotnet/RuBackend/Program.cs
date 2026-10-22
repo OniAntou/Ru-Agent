@@ -217,6 +217,24 @@ app.Use(async (context, next) =>
 
     await next();
 });
+// A POST that moves a run on (trust, approval, answer, continue, cancel) wakes the
+// runtime loop and the run's event streams, so the run proceeds and the change reaches
+// clients now rather than at the next poll.
+app.Use(async (context, next) =>
+{
+    await next();
+    if (HttpMethods.IsPost(context.Request.Method)
+        && context.Request.Path.StartsWithSegments("/agent/v1/runs", StringComparison.OrdinalIgnoreCase, out var rest)
+        && context.Response.StatusCode < StatusCodes.Status400BadRequest)
+    {
+        context.RequestServices.GetService<RuBackend.Harness.AgentRuntimeWakeSignal>()?.Wake();
+        var segment = rest.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (RuBackend.Harness.AgentV1Shared.TryParseRunId(segment, out var runId))
+        {
+            context.RequestServices.GetService<RuBackend.Harness.HarnessLiveEventHub>()?.NotifyRunChanged(runId);
+        }
+    }
+});
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
 

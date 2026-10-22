@@ -74,9 +74,19 @@ The Continue path is the same on both clients: a parked run
 continues or reconciles it.
 
 The runtime polls the conversation outbox and registered runs independently of
-long model/tool work. At most four run workers execute concurrently; each run
-has one scheduled worker, including while it waits for a slot. Session deletion
-cancels its owned worker, and host shutdown waits for workers to unwind.
+long model/tool work. A new registration, a successful client POST to a run
+(trust, approval, answer, continue, cancel) and a drive pass that changed the run
+wake the loop at once; polling (250 ms while a run can progress, one second when
+none is registered or every run waits for a client) is the fallback. A run parked
+on an approval is not rebuilt while it waits; only expiry is checked until its
+version changes. At most sixteen run workers execute concurrently and model calls
+keep their own provider-step bound; each run has one scheduled worker, including
+while it waits for a slot. Session deletion cancels its owned worker, and host
+shutdown waits for workers to unwind.
+A live SSE stream re-reads the run every 100 ms while it can progress and every
+second while it waits for a client; the client POST that answers it signals the
+stream directly. A mid-stream server failure closes the response cleanly and is
+logged with the run id.
 When an SSE poll finds that the durable run row was deleted, the response closes
 cleanly and releases its live subscription. It emits no fabricated terminal
 snapshot; subsequent run reads/reconnects receive the existing not-found response.

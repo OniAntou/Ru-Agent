@@ -386,6 +386,7 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
     private readonly WorkspaceCoordinatorStore _workspaceCoordinatorStore;
     private readonly ReconciliationInspectionGate _inspectionGate;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _registeredBySweep = new(StringComparer.Ordinal);
 
     public HarnessRecoveryStartupService(
         IHarnessEventStore store,
@@ -464,7 +465,13 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
                 return false;
             }
 
-            var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
+            // Runs this process registered itself (created or spawned since the Host
+            // started) are alive, not left over from a previous process. The sweep can
+            // start late, and treating such a run as orphaned failed it as
+            // recovery_pre_dispatch or committed under its in-flight step.
+            var pendingRunIds = (await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false))
+                .Where(runId => !IsLiveInThisProcess(runId))
+                .ToArray();
             var (ordinary, children) = await PartitionSubagentRunsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             var scanned = await ScanRunsStageAsync(ordinary, stoppingToken).ConfigureAwait(false);
             await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
@@ -579,6 +586,13 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
             armed.Count);
     }
 
+    /// <summary>
+    /// Whether this process registered the run for driving other than through this
+    /// sweep: run creation and subagent scheduling register a run before it can run.
+    /// </summary>
+    private bool IsLiveInThisProcess(RunId runId) =>
+        _runtimeRoots.TryGetRoot(runId, out _) && !_registeredBySweep.ContainsKey(runId.Value);
+
     private async Task<bool> ReconcileMembershipsStageAsync(CancellationToken stoppingToken)
     {
         try
@@ -655,6 +669,7 @@ public sealed partial class HarnessRecoveryStartupService : BackgroundService
                 }
 
                 _runtimeRoots.Register(run.RunId, root, snapshot);
+                _registeredBySweep.TryAdd(run.RunId.Value, 0);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {

@@ -79,6 +79,31 @@ public sealed class AnthropicMessagesModelProviderTests
         Assert.NotNull(body["thinking"]);
         Assert.NotNull(body["output_config"]);
         Assert.NotNull(body["messages"]);
+        Assert.False(body.ContainsKey("cache_control"));
+    }
+
+    [Fact]
+    public void ProjectRequestBody_asks_the_first_party_endpoint_to_cache_the_prompt()
+    {
+        var provider = new AnthropicMessagesModelProvider(new HttpClient());
+        var body = JsonNode.Parse(provider.ProjectRequestBody(
+            Request(null, 8192, endpoint: new Uri("https://api.anthropic.com/v1/messages"))))!.AsObject();
+
+        Assert.Equal("ephemeral", body["cache_control"]!["type"]!.GetValue<string>());
+        Assert.Single(body["cache_control"]!.AsObject());
+    }
+
+    [Theory]
+    [InlineData("https://gateway.example.com/anthropic/v1/messages")]
+    [InlineData("http://api.anthropic.com/v1/messages")]
+    [InlineData("https://api.anthropic.com.example.com/v1/messages")]
+    public void ProjectRequestBody_leaves_compatible_endpoints_uncached(string endpoint)
+    {
+        var provider = new AnthropicMessagesModelProvider(new HttpClient());
+        var body = JsonNode.Parse(provider.ProjectRequestBody(
+            Request(null, 8192, endpoint: new Uri(endpoint))))!.AsObject();
+
+        Assert.False(body.ContainsKey("cache_control"));
     }
 
     [Fact]
@@ -757,13 +782,14 @@ public sealed class AnthropicMessagesModelProviderTests
         JsonObject? settings,
         int? maxTokens,
         IReadOnlyList<ModelTurn>? turns = null,
-        bool nativeToolCalling = false) => new(
+        bool nativeToolCalling = false,
+        Uri? endpoint = null) => new(
         "test-model",
         "system prompt",
         "hello",
         turns ?? Array.Empty<ModelTurn>(),
         settings ?? new JsonObject(),
-        new Uri("https://provider.invalid/v1/messages"),
+        endpoint ?? new Uri("https://provider.invalid/v1/messages"),
         "synthetic-anthropic",
         maxTokens,
         nativeToolCalling: nativeToolCalling);

@@ -82,7 +82,7 @@ public sealed class AgentRuntimeSchedulingTests
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var roots = new AgentRuntimeRootRegistry();
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < AgentRuntimeLoopService.MaxConcurrentRuns + 2; i++)
         {
             var run = await fixture.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
                 "run_" + Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
@@ -99,26 +99,26 @@ public sealed class AgentRuntimeSchedulingTests
         await loop.StartAsync(CancellationToken.None);
         try
         {
-            await factory.FourEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await factory.LimitEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await loop.StepOnceAsync(CancellationToken.None, waitForWorkers: false);
-            Assert.Equal(4, factory.Calls);
+            Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Calls);
         }
         finally { await loop.StopAsync(CancellationToken.None); }
-        Assert.Equal(4, factory.Calls);
-        Assert.Equal(4, factory.Cancelled);
+        Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Calls);
+        Assert.Equal(AgentRuntimeLoopService.MaxConcurrentRuns, factory.Cancelled);
     }
 
     private sealed class BlockingFactory(RunId? first) : IAgentRuntimeCoordinatorFactory
     {
         public int Calls;
         public int Cancelled;
-        public TaskCompletionSource<bool> FourEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> LimitEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> TwoEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> FirstEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> SecondEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public async Task<AgentRunCoordinator> CreateAsync(string workspaceRoot, PolicySnapshot? policySnapshot = null, RunId? runId = null, string? agentSessionId = null, CancellationToken cancellationToken = default)        {
             int count = Interlocked.Increment(ref Calls);
-            if (count == 4) FourEntered.TrySetResult(true);
+            if (count == AgentRuntimeLoopService.MaxConcurrentRuns) LimitEntered.TrySetResult(true);
             if (count == 2) TwoEntered.TrySetResult(true);
             if (first is null || runId == first)
             {

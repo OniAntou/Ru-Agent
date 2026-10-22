@@ -69,6 +69,13 @@ public sealed partial class AgentCommands
             this.cancellationToken = cancellationToken;
         }
 
+        /// <summary>
+        /// The transcript renderer writes rows; in --json mode every human row would land on
+        /// the NDJSON stream that owns stdout, so the renderer paints into a null writer while
+        /// still tracking state (streamed text, tool counts) for recovery.
+        /// </summary>
+        TextWriter ResolveRenderWriter() => cmd.Json ? TextWriter.Null : tgWriter ?? (TextWriter)_out;
+
         public async Task<int> RunAsync()
         {
             tgMode = bootstrap.TgMode;
@@ -87,7 +94,7 @@ public sealed partial class AgentCommands
             pendingTexts = submissions.Texts;
             // The loop is created once the run handlers exist (RunTerminalGuiChatAsync);
             // attachment mutations below refresh its hint row through this seam.
-            sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
+            sessionRenderer = CreateSessionRenderer(ResolveRenderWriter());
             if (tgWriter is not null)
             {
                 // Ctrl+O parity: a classic row that advertises expansion (`· ctrl+o`) carries

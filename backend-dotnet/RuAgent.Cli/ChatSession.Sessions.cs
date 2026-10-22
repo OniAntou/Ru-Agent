@@ -197,7 +197,7 @@ public sealed partial class AgentCommands
             submissions.ClearPending();
             RefreshAttachmentLabels();
 
-            sessionRenderer = CreateSessionRenderer(tgWriter ?? (TextWriter)_out);
+            sessionRenderer = CreateSessionRenderer(ResolveRenderWriter());
             sessionRenderer.Width = ChatRenderWidth();
             if (tgMode)
             {

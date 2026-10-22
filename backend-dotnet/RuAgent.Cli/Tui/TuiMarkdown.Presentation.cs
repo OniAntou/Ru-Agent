@@ -17,9 +17,11 @@ public sealed partial class TuiMarkdown
     public IReadOnlyList<TranscriptLine> RenderPresentation(string line, int width)
     {
         ArgumentNullException.ThrowIfNull(line);
-        // Match logical-line imports: the screen needs raw, adjacent pipe rows
-        // (including tables without outer pipes) before it can recognize a table.
-        if (!InFence && line.Contains('|')) return [TranscriptLine.Plain(line)];
+        // The screen needs the raw characters of a table row, including its pipes, before
+        // it can recognize and re-render the table. Only an outer-pipe row qualifies: a
+        // sentence that merely mentions a pipe (a shell command, a regex) used to lose all
+        // of its inline markdown because of this early return.
+        if (!InFence && IsTableCandidate(line)) return [TranscriptLine.Plain(line)];
         if (InFence)
         {
             if (IsFenceLine(line)) { _fence = string.Empty; return []; }

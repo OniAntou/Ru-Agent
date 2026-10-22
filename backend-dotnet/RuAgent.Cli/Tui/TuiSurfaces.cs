@@ -382,7 +382,7 @@ public static class TuiSurfaces
     }
 
     private static string Shorten(string value, int maximum) =>
-        value.Length <= maximum ? value : value[..(maximum - 1)] + "…";
+        value.Length <= maximum ? value : TuiText.SafeCut(value, maximum - 1) + "…";
 
     /// <summary>Workspace path trimmed from the left so the leaf stays readable.</summary>
     private static string ShortenPath(string? path)

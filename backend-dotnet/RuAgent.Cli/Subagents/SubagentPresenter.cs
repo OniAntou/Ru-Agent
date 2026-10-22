@@ -54,7 +54,15 @@ public static class SubagentPresenter
                 int? next = 0;
                 while (next is { } offset)
                 {
-                    var page = (await client.GetSubagentAsync(root, agent, selected, offset, ct: ct)).Result!;
+                    var detailPage = await client.GetSubagentAsync(root, agent, selected, offset, ct: ct);
+                    var page = detailPage.Result;
+                    if (page is null)
+                    {
+                        // The host can return a detail without a result page (expired or
+                        // already collected); dereferencing it used to throw a null NRE that
+                        // escaped the AgentApiException-only handler above.
+                        throw new AgentApiException("subagent_result_unavailable", "The child result page is no longer available.");
+                    }
                     if (json) await output.WriteLineAsync(JsonSerializer.Serialize(page));
                     else await output.WriteAsync(SafeResultText(page.Text));
                     next = page.NextOffset;
@@ -64,6 +72,16 @@ public static class SubagentPresenter
                 return;
             default: throw new AgentApiException("invalid_subagent_arguments", "Use /subagents [agent result].");
         }
-        await output.WriteLineAsync(json ? JsonSerializer.Serialize(result) : JsonSerializer.Serialize(result));
+        // Only the "no result version selected" path reaches here with a value: report the
+        // agent identity from that detail, never a case-local that no longer exists.
+        if (json)
+        {
+            await output.WriteLineAsync(JsonSerializer.Serialize(result));
+            return;
+        }
+
+        var summary = (SubagentDetailResponse)result;
+        await output.WriteLineAsync(
+            $"agent {summary.Agent.AgentId} · {summary.Agent.Role} · {(summary.Agent.Attempts.LastOrDefault()?.Status ?? "no attempt")}");
     }
 }

@@ -180,9 +180,12 @@ public static class Program
         Console.Error.WriteLine("  --image: attach an image file (repeatable, max 4); also drop a file path or use Ctrl+V in chat.");
         Console.Error.WriteLine("  --confirm-full-access: terminal runs as the current Windows user and may access data outside the workspace.");
         Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
+        Console.Error.WriteLine("  --json: NDJSON on stdout; requires --trust-workspace or --confirm-full-access.");
         Console.Error.WriteLine("  agent session list [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent session delete <session-id> [--yes]");
+        Console.Error.WriteLine("  agent session export <session-id> --harness <claude-code|codex> [--out <dir>] [--json]");
+        Console.Error.WriteLine("  agent session import <file> [--harness <claude-code|codex|antigravity|opencode>] [--session <id>] [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
         Console.Error.WriteLine("  agent approve <run-id> <approval-id>");
@@ -191,6 +194,8 @@ public static class Program
         Console.Error.WriteLine("  agent cancel <run-id>");
         Console.Error.WriteLine("  agent continue <run-id>");
         Console.Error.WriteLine("  agent status <run-id> [--json]");
+        Console.Error.WriteLine("  agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256] [--json]");
+        Console.Error.WriteLine("  agent output <run-id> <payload-id> [--json]");
         Console.Error.WriteLine("  agent policy list [--global] [--json]");
         Console.Error.WriteLine("  agent policy import --global FILE");
         Console.Error.WriteLine("  agent policy remove <rule-id>");

@@ -147,7 +147,7 @@ public static class SlashDropdown
         {
             if (hint.Length > 1)
             {
-                hint = hint[..^1];
+                hint = TuiText.SafeCut(hint, hint.Length - 1);
                 right = " " + hint + " ─";
                 continue;
             }

@@ -71,7 +71,7 @@ public static class ModelPrecheck
     private static string SingleLine(string text)
     {
         var flat = text.Replace("\r", " ").Replace("\n", " ");
-        return flat.Length <= MaxModelIdChars ? flat : flat[..(MaxModelIdChars - 1)] + "…";
+        return flat.Length <= MaxModelIdChars ? flat : Tui.TuiText.SafeCut(flat, MaxModelIdChars - 1) + "…";
     }
 
     /// <summary>

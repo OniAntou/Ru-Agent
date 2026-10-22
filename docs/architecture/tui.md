@@ -17,6 +17,16 @@ belongs in the GUI; headless CLI and RPC capabilities are independent of this UI
 Terminal.Gui owns the interactive screen. Shared event and Markdown formatting
 projects semantic transcript rows and styled runs directly to native attributes;
 sequential text output and legacy command/diagnostic imports remain separate adapters.
+
+Both adapters share one text engine. `TuiText` owns display-cell measurement, rune
+decoding, wrapping and the common truncations; the Terminal.Gui importer and the
+append-only writer call it instead of keeping their own tables. A row measured one
+cell short wraps on the real terminal and misplaces every absolute cursor move after
+it, so the table has to be single: CJK and the common emoji blocks measure two cells,
+tabs advance to the same 8-column stops the terminal uses, and an unpaired UTF-16
+surrogate renders as U+FFFD rather than throwing from the paint path. The append-only
+surface bounds its rebuild history by rows and characters (2,000 / 200,000, with a
+16,000-unit per-line cap) exactly like the Terminal.Gui transcript.
 _Avoid_: Requiring GUI feature parity or treating presentation metadata as authority.
 
 Pending images appear as `[image 1] [image 2]` in the composer's spacer row,

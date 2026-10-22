@@ -29,6 +29,21 @@ internal static class TgAnsiPaint
             return (text, null);
         }
 
+        try
+        {
+            return ParseCore(text);
+        }
+        catch (Exception)
+        {
+            // Escape sequences arrive in command output, file previews and model prose.
+            // A paint that cannot be parsed must degrade to plain text, never abort the
+            // current frame: Trim and the extractors call this outside their own guards.
+            return (TuiText.Strip(text), null);
+        }
+    }
+
+    private static (string Clean, IReadOnlyList<TgSpan>? Spans) ParseCore(string text)
+    {
         var clean = new StringBuilder(text.Length);
         var spans = new List<TgSpan>();
         var current = new StringBuilder();
@@ -232,7 +247,10 @@ internal static class TgAnsiPaint
                     var setForeground = code == 38;
                     if (i + 2 < parts.Length && ParseParam(parts[i + 1]) == 2 && i + 4 < parts.Length)
                     {
-                        var rgb = (ParseParam(parts[i + 2]), ParseParam(parts[i + 3]), ParseParam(parts[i + 4]));
+                        var rgb = (
+                            Math.Clamp(ParseParam(parts[i + 2]), 0, 255),
+                            Math.Clamp(ParseParam(parts[i + 3]), 0, 255),
+                            Math.Clamp(ParseParam(parts[i + 4]), 0, 255));
                         if (setForeground) fg = rgb; else bg = rgb;
                         i += 4;
                     }
@@ -271,8 +289,11 @@ internal static class TgAnsiPaint
     private static (int R, int G, int B) Palette256(int index) => index switch
     {
         >= 0 and <= 15 => Basic16(index),
-        <= 231 => Cube(index - 16),
-        _ => Gray(index),
+        > 15 and <= 231 => Cube(index - 16),
+        > 231 and <= 255 => Gray(index),
+        // A malformed or out-of-range operand (including the -1 ParseParam returns for a
+        // non-numeric part) used to reach Color(r,g,b) and throw.
+        _ => DefaultInk,
     };
 
     private static (int R, int G, int B) Cube(int cell)
@@ -433,20 +454,8 @@ internal static class TgAnsiPaint
         return merged;
     }
 
-    private static (int CodePoint, int Consumed) ReadRune(string text, int index)
-    {
-        if (char.IsSurrogatePair(text, index))
-        {
-            return (char.ConvertToUtf32(text, index), 2);
-        }
-
-        if (!char.IsSurrogate(text[index]))
-        {
-            return (text[index], 1);
-        }
-
-        return (0xFFFD, 1);
-    }
+    private static (int CodePoint, int Consumed) ReadRune(string text, int index) =>
+        TuiText.ReadRune(text, index);
 
     /// <summary>
     /// A wrapped row and the slice of its source spans that covers it. The slice preserves

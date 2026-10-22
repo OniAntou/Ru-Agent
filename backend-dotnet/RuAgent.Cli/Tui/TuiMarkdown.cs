@@ -40,7 +40,7 @@ public sealed partial class TuiMarkdown
     public bool HighlightCode { get; set; }
 
     public IReadOnlyList<string> RenderLogicalLine(string line, int width) =>
-        !InFence && line.Contains('|') ? [line]
+        !InFence && IsTableCandidate(line) ? [line]
             : RenderLine(line, TryRule(line, out _) ? width : Math.Max(width, line.Length + 16));
 
     public string PreviewLine(string line, int width)
@@ -237,6 +237,35 @@ public sealed partial class TuiMarkdown
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c is '_' or ')' or ']' or '"' or '\'';
 
     private static bool IsEscapable(char c) => !char.IsLetterOrDigit(c);
+
+     /// <summary>
+    /// A row the transcript's table renderer may group: outer pipes plus at least two
+    /// separators. Inner-pipe prose stays on the normal inline path.
+    /// </summary>
+    private static bool IsTableCandidate(string line)
+    {
+        var trimmed = line.AsSpan().Trim();
+        if (trimmed.Length < 3)
+        {
+            return false;
+        }
+
+        if (trimmed[0] != '|' && trimmed[^1] != '|')
+        {
+            return false;
+        }
+
+        var pipes = 0;
+        foreach (var c in trimmed)
+        {
+            if (c == '|')
+            {
+                pipes++;
+            }
+        }
+
+        return pipes >= 2;
+    }
 
     private static bool IsFenceLine(string line)
     {

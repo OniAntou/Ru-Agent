@@ -103,11 +103,7 @@ public sealed partial class AgentCommands
         Task WriteDiagnosticLineAsync(TextWriter writer, string line) =>
             ResolveDiagnosticWriter(tgMode, tgWriter, writer).WriteLineAsync(line);
 
-        /// <summary>
-        /// Runs one TG view mutation on the Terminal.Gui loop. The frame/probe paths resume
-        /// on thread-pool continuations, so any direct view write from here would race the
-        /// driver's draw; an already-disposed session drops the late mutation instead.
-        /// </summary>
+        /// <summary>Drops the header's live subagent strip; a new turn starts with none.</summary>
         void ClearSubagentStrip()
         {
             subagentTracker.Reset();
@@ -117,6 +113,11 @@ public sealed partial class AgentCommands
             }
         }
 
+        /// <summary>
+        /// Runs one TG view mutation on the Terminal.Gui loop. The frame/probe paths resume
+        /// on thread-pool continuations, so any direct view write from here would race the
+        /// driver's draw; an already-disposed session drops the late mutation instead.
+        /// </summary>
         void RunOnTgUi(Action action)
         {
             try

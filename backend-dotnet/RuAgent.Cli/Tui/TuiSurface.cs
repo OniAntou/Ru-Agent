@@ -16,6 +16,19 @@ public sealed class TuiSurface
     /// <summary>Lines kept so a rebuilt screen can show what it had on it.</summary>
     public const int HistoryCapacity = 2000;
 
+    /// <summary>
+    /// Character budget for the retained history and the cap for one retained line. The
+    /// Terminal.Gui transcript enforces the same two limits; without them the classic
+    /// surface bounded rows but not bytes, so one megabyte-long tool line was retained
+    /// whole and a long session grew without bound.
+    /// </summary>
+    public const int HistoryCharacterCapacity = 200_000;
+
+    /// <summary>Longest single line kept in the rebuild history, in UTF-16 units.</summary>
+    public const int MaxLineCharacters = 16_000;
+
+    private int _historyCharacters;
+
     /// <summary>Recorded lines, for rebuild diagnostics.</summary>
     public int HistoryCount
     {
@@ -198,6 +211,14 @@ public sealed class TuiSurface
                 }
             }
 
+            // The queue was rebuilt by hand above, so recompute the character budget from
+            // what actually survived instead of trying to track every enqueue/dequeue.
+            _historyCharacters = 0;
+            foreach (var line in _history)
+            {
+                _historyCharacters += line.Length;
+            }
+
             return true;
         }
     }
@@ -265,7 +286,7 @@ public sealed class TuiSurface
             var c = text[index];
             if (c == '\u001b')
             {
-                index = SkipEscapeSequence(text, index);
+                index = TuiText.SkipEscapeSequence(text, index);
                 continue;
             }
 
@@ -338,31 +359,6 @@ public sealed class TuiSurface
 
         // At the bottom the region scrolls underneath: the logical row stays put.
         _transcriptCol = 0;
-    }
-
-    private static int SkipEscapeSequence(string text, int index)
-    {
-        var i = index + 1;
-        if (i < text.Length && text[i] == '[')
-        {
-            i++;
-            if (i < text.Length && text[i] == '?')
-            {
-                i++;
-            }
-
-            while (i < text.Length && (char.IsDigit(text[i]) || text[i] == ';'))
-            {
-                i++;
-            }
-
-            if (i < text.Length)
-            {
-                i++;
-            }
-        }
-
-        return i;
     }
 
     /// <summary>
@@ -501,10 +497,19 @@ public sealed class TuiSurface
     private void CompleteLine(string line)
     {
         _pending.Clear();
-        _history.Enqueue(line);
+        var bounded = line.Length > MaxLineCharacters
+            ? TuiText.SafeCut(line, MaxLineCharacters)
+            : line;
+        _history.Enqueue(bounded);
+        _historyCharacters += bounded.Length;
         while (_history.Count > HistoryCapacity)
         {
-            _history.Dequeue();
+            _historyCharacters -= _history.Dequeue().Length;
+        }
+
+        while (_history.Count > 1 && _historyCharacters > HistoryCharacterCapacity)
+        {
+            _historyCharacters -= _history.Dequeue().Length;
         }
     }
 
@@ -549,14 +554,22 @@ public sealed class TuiSurface
                 Writer.Write(SyncStart);
             }
 
-            paint(Writer);
-
-            if (SynchronizedOutput)
+            try
             {
-                Writer.Write(SyncEnd);
+                paint(Writer);
             }
+            finally
+            {
+                // A paint that throws (measurement, encoding, a bad rune) must not leave the
+                // terminal inside an unterminated synchronized-output batch: the frame would
+                // appear frozen and every later batch would nest another start marker.
+                if (SynchronizedOutput)
+                {
+                    Writer.Write(SyncEnd);
+                }
 
-            Writer.Flush();
+                Writer.Flush();
+            }
         }
     }
 

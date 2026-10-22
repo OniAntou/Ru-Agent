@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: The terminal text layer is now one engine for both sinks. Measurement,
+  wrapping and rune decoding live in `TuiText`; the Terminal.Gui importer and the
+  append-only writer no longer carry their own width table, rune decoder or escape
+  skipper. Common emoji (🚀, ✅, ⚡, ⭐) measure two cells instead of one, tabs advance to
+  the shared 8-column stops, and an unpaired UTF-16 surrogate is rendered as U+FFFD
+  instead of throwing: `char.ConvertToUtf32` used to abort the turn from inside the paint
+  path whenever a 500-character summary or a `[..^1]` hint trim split a pair.
+- **fix(cli)**: `agent chat --json` no longer writes to stdout through the transcript
+  renderer. A turn used to emit a blank line (and, on completion, the human footer and
+  the "no text arrived" notice) into the NDJSON stream; the renderer now paints into a
+  null sink while still tracking streamed text for recovery. The stdout-purity test no
+  longer strips empty lines, and a completed-turn case covers it.
+- **fix(cli)**: SGR colours outside the valid range (`38;5;300`, `38;2;999;0;0`, negative
+  operands) are clamped or fall back to the default ink. They used to reach Terminal.Gui's
+  `Color` constructor and throw `OverflowException`/`ArgumentOutOfRangeException` from
+  inside the transcript import, aborting the frame.
+- **fix(cli)**: `agent run`/`agent attach` no longer print a 200-character prefix of a
+  transient frame. The preview carried raw model prose, and its forbidden-field guard was
+  a substring match that also redacted ordinary sentences quoting a field name; transient
+  frames now report only their type and byte count.
+- **fix(cli)**: `agent policy import` rolls back the rules it already created when a later
+  rule fails, and names any rule the rollback could not remove. It used to leave a partial
+  policy the operator never confirmed.
+- **fix(cli)**: `agent session export/import` validate the session id, harness name, file
+  and output paths and reject duplicate switches, like every other parser. `run` and `chat`
+  now share one option parser instead of two drifting copies.
+- **fix(tui)**: A completed streaming row that has become a markdown table is rebuilt
+  instead of appended twice, scrolling down at the tail no longer raises the "new output"
+  hint, ctrl+o retained rows are replaced per affordance and capped at 16,000 units, and
+  the append-only history honours the documented 200,000-character budget and 16,000-unit
+  line cap. The live row says "Writing response" in both engines.
+- **fix(cli)**: A refused composer submission now distinguishes an oversized prompt from a
+  command carrying attachments, the queue releases temp files outside its lock, and a
+  clipboard read abandoned after its 5-second join deletes the temp PNG it produced.
+
 - **feat(providers)**: New Anthropic runs reserve up to 32,000 output tokens instead of 8,192 when the model's output limit (registry or Models.dev `limit.output`) and its context window are known, held to a quarter of the window. Thinking and large `write` calls no longer run out of room at 8,192; models with an unpublished limit keep 8,192, and existing pins keep the value they were pinned with.
 
 - **feat(agent)**: Two run-level hook events. `UserPromptSubmit` runs before a run is created and can refuse the prompt (exit 2 → HTTP 422 `prompt_blocked_by_hook`, no run written); before a workspace is trusted only the user's own hooks run, from the profile folder. `Stop` runs once when a run finishes and only observes it.

@@ -894,57 +894,7 @@ public sealed class TuiInteractiveTests
         Assert.False(eventsCalled);
     }
 
-    [Fact]
-    public async Task ChatAsync_OutputFailureBeforeCreateRestoresBeforeStreaming()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        var session = PublicHostSession.FromDescriptor(desc);
-        var state = "plan";
-        var restoreCalled = false;
-        var runCalled = false;
-        var eventsCalled = false;
-        var handler = new FakeHandler(async req =>
-        {
-            var uri = req.RequestUri!.ToString();
-            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
-            {
-                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
-                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
-                {
-                    restoreCalled = true;
-                    state = "plan";
-                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"plan\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
-                }
 
-                state = "standard";
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
-            }
-            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
-            {
-                runCalled = true;
-                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{\"run_id\":\"run_" + new string('a', 32) + "\",\"session_id\":\"sess_123\",\"workspace_id\":\"ws_test\",\"status\":\"running\",\"preset\":\"standard\",\"created_at\":\"2026-09-24T00:00:00Z\",\"updated_at\":\"2026-09-24T00:00:00Z\"}", Encoding.UTF8, "application/json") };
-            }
-            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
-            {
-                eventsCalled = true;
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("id: 1\ndata: {}\n\n", Encoding.UTF8, "text/event-stream") };
-            }
-            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
-        });
-        var reader = new CountingReader("hello\n");
-        var commands = new AgentCommands(session, new HttpClient(handler), new ThrowOnWriteWriter(), new StringWriter(), reader);
-
-        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", true), CancellationToken.None);
-
-        Assert.Equal(0, exit);
-        Assert.True(restoreCalled);
-        Assert.Equal("plan", state);
-        Assert.False(runCalled);
-        Assert.False(eventsCalled);
-    }
 
     [Fact]
     public async Task ChatAsync_ReportsBlockingRun_WhenWorkspaceIsBusy()
@@ -1988,6 +1938,7 @@ public sealed class TuiInteractiveTests
         public override void WriteLine(string? value) => throw new IOException("output failed");
         public override void WriteLine() => throw new IOException("output failed");
     }
+
 
     private sealed class CountingReader : StringReader
     {

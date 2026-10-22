@@ -194,9 +194,11 @@ public sealed class TuiStatusLine
         switch (_state)
         {
             case TuiRunState.Thinking:
+                // Same wording as Presentation(): the classic row used to keep saying
+                // "Thinking" while the TG row already reported "Writing response".
                 return TuiPalette.Paint(SpinnerFrame, TuiToken.Brand)
                     + " "
-                    + TuiPalette.Paint("Thinking", TuiToken.Meta)
+                    + TuiPalette.Paint(_responding ? "Writing response" : "Thinking", TuiToken.Meta)
                     + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);
             case TuiRunState.Tool:
                 var label = string.IsNullOrWhiteSpace(_activity) ? "Running tool" : _activity;

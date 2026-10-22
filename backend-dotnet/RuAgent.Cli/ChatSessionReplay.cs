@@ -66,7 +66,7 @@ internal static class ChatSessionReplay
             var bounded = text;
             if (bounded.Length > MaxMessageChars)
             {
-                bounded = bounded[..MaxMessageChars].TrimEnd() + " …";
+                bounded = Tui.TuiText.SafeCut(bounded, MaxMessageChars).TrimEnd() + " …";
                 shortened++;
             }
 

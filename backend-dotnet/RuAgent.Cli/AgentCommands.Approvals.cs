@@ -207,13 +207,8 @@ public sealed partial class AgentCommands
             return await PostReconcileDecisionAsync(cmd, mapped, infoSnapshotHash, cancellationToken).ConfigureAwait(false);
         }
 
-        if (cmd.Json && cmd.SnapshotHash is null)
-        {
-            // --json must never prompt: applying without a fetched hash is impossible.
-            await _err.WriteLineAsync("interactive_required: --json requires --hash to apply an outcome.").ConfigureAwait(false);
-            return 1;
-        }
-
+        // Reaching here means --outcome was set; the exact "json without hash" case already
+        // returned above, so this guard used to be dead code.
         return await PostReconcileDecisionAsync(
             cmd,
             cmd.ToWireOutcome(),

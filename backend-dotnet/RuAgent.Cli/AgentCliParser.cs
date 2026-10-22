@@ -200,6 +200,7 @@ public static partial class AgentCliParser
     public const int MaxInputIdLength = 36;
     public const int MaxRuleIdLength = 37;
     public const int MaxFilePathLength = 4096;
+    public const int MaxHarnessLength = 32;
 
     private static readonly Regex RunIdRegex = new(@"^run_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex ApprovalIdRegex = new(@"^apr_[0-9a-f]{32}$", RegexOptions.Compiled);

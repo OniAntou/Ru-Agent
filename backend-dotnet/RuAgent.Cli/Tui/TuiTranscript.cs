@@ -1085,6 +1085,9 @@ public sealed partial class TuiTranscript
 
         if (diffLines.Count > 0)
         {
+            // One affordance owns one block: without this, a second diff-bearing tool
+            // appended its rows to the previous tool's block and ctrl+o showed a mixture.
+            _retained.Clear();
             // The expanded diff keeps its tinted rows between two dim rules, so the
             // block reads as one framed unit instead of loose lines.
             var rule = "    " + RetainedPaint(new string('─', Math.Max(4, Width - 4)), TuiToken.Line);
@@ -1092,7 +1095,7 @@ public sealed partial class TuiTranscript
             foreach (var line in diffLines)
             {
                 _retained.Add("    " + RetainedPaint("│ ", TuiToken.Line)
-                    + (_surface.Presentation is not null ? line : FormatDiffLine(line)));
+                    + (_surface.Presentation is not null ? TuiText.SafeCut(line, 16_000) : FormatDiffLine(line)));
             }
 
             _retained.Add(rule);
@@ -1232,9 +1235,13 @@ public sealed partial class TuiTranscript
             return;
         }
 
+        // Thinking detail belongs to the row that advertises it: replace, never append, so
+        // a later thought does not inherit the previous block.
+        _retained.Clear();
         foreach (var line in flat.Split('\n'))
         {
-            _retained.Add("    " + (_surface.Presentation is not null ? line : TuiPalette.DimPaint(line)));
+            var bounded = TuiText.SafeCut(line, 16_000);
+            _retained.Add("    " + (_surface.Presentation is not null ? bounded : TuiPalette.DimPaint(bounded)));
         }
 
         TrimRetained();
@@ -1560,7 +1567,7 @@ public sealed partial class TuiTranscript
 
         if (text.Length > 500)
         {
-            text = text[..500] + "…";
+            text = TuiText.SafeCut(text, 500) + "…";
         }
 
         return text.Replace("\r", " ").Replace("\n", " ");

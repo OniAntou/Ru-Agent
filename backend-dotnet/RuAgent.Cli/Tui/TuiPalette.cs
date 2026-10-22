@@ -35,15 +35,23 @@ public static class TuiPalette
     public const string Dim = "\u001b[2m";
 
     private static TuiColorLevel? _override;
+    private static TuiColorLevel? _detected;
 
     /// <summary>Active colour level. Assignable so tests and the CLI can pin a depth.</summary>
     public static TuiColorLevel Level
     {
-        get => _override ?? Detect();
+        // Detection reads seven environment variables plus Console.IsOutputRedirected and
+        // used to run again for every painted fragment (per word of inline markdown, per
+        // row of the live line). One process, one console: cache it.
+        get => _override ?? (_detected ??= Detect());
         set => _override = value;
     }
 
-    public static void ResetLevel() => _override = null;
+    public static void ResetLevel()
+    {
+        _override = null;
+        _detected = null;
+    }
 
     /// <summary>
     /// Pins the level for the duration of a scope and restores the previous

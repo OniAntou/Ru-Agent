@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -33,6 +34,7 @@ public static class CliClipboard
         }
 
         ClipboardImage? result = null;
+        var abandoned = new StrongBox<bool>(false);
         try
         {
             var thread = new Thread(() =>
@@ -40,6 +42,12 @@ public static class CliClipboard
                 try
                 {
                     result = ReadSta();
+                    // The caller gave up on the 5s join: nobody will ever consume this
+                    // temp PNG, so the abandoned reader deletes its own output.
+                    if (Volatile.Read(ref abandoned.Value) && result?.Path is { } leftover)
+                    {
+                        try { File.Delete(leftover); } catch (Exception) { }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -53,6 +61,7 @@ public static class CliClipboard
             thread.Start();
             if (!thread.Join(TimeSpan.FromSeconds(5)))
             {
+                Volatile.Write(ref abandoned.Value, true);
                 return new(null, "clipboard_busy: the clipboard did not answer in time");
             }
         }

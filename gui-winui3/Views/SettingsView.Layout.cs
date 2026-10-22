@@ -48,6 +48,7 @@ public sealed partial class SettingsView
         Grid.SetRowSpan(SettingsNavigation, narrow ? 1 : 2);
         SettingsNavigationButtons.Orientation = narrow ? Orientation.Horizontal : Orientation.Vertical;
         SettingsNavigationHeading.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        ProviderActions.Orientation = narrow ? Orientation.Vertical : Orientation.Horizontal;
         Grid.SetColumn(SettingsBody, narrow ? 0 : 1);
         Grid.SetColumnSpan(SettingsBody, narrow ? 2 : 1);
         Grid.SetRow(SettingsBody, narrow ? 1 : 0);

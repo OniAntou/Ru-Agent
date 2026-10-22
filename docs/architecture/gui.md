@@ -29,6 +29,18 @@ sign-out and connection test. A credential stays in a key property only until it
 is saved, validated or removed. Every provider-dependent value (label, key rows,
 sign-out) is derived in one place from the current choice, so resolving an unset
 or legacy stored choice cannot leave a stale label or a hidden key row.
+The Models overview lists configured providers rather than exposing the active
+provider form on entry. Add Provider uses the searchable, virtualized catalog
+without its custom row; Add custom Provider opens the existing OpenAI-compatible
+endpoint directly. Edit opens the same inline editor. Its Back action flushes
+pending settings/key validation before returning; failed saves or rejected keys
+stay in the editor. Stored-key status does not imply a successful connection
+test. The custom endpoint remains the single existing custom configuration;
+model selection stays in the chat composer. Provider management state lives in
+`SettingsViewModel.Providers.cs`, without adding a backend route or credential store.
+Existing legacy credentials remain listed under their original identity; editing
+them does not replace them with a Models.dev provider. New credentials use the
+catalog flow. Back navigation restores keyboard focus to Add Provider.
 `SessionSidebarViewModel` owns the sidebar's session list (server rows merged in
 place with local drafts), workspace grouping, pins, search, manual organization,
 refresh and the create, select and delete workflows. `MainWindow` keeps native

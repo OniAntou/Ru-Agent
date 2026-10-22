@@ -59,7 +59,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ProviderRow> ProviderRows { get; } = new();
 
-    [ObservableProperty] public partial bool IsLoading { get; private set; }
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProviderManagementEnabled))]
+    public partial bool IsLoading { get; private set; }
 
     [ObservableProperty] public partial string ThemeChoice { get; private set; } = "dark";
 
@@ -184,6 +186,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     {
         if (IsLoading || row is null || !ProviderSetupGuidance.IsSelectableProvider(row.Value)) return;
         ChangeProviderChoice(ProviderSetupGuidance.NormalizeProviderChoice(row.Value));
+        IsProviderEditorOpen = true;
         ProviderFilter = string.Empty;
         ProviderPickerCommitted?.Invoke();
         _catalog?.SetBackend(ProviderChoice);
@@ -298,6 +301,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (backend is null) return;
         long request = _presenter.BeginLoad();
         IsLoading = true;
+        ProviderOverviewMessage = string.Empty;
         try
         {
             var load = await _presenter.LoadAsync(
@@ -314,11 +318,15 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             // The catalog is known by now, so the stored choice resolves against it.
             SetCurrentProvider(ProviderSetupGuidance.EffectiveStoredChoice(settings.BackendChoice, settings));
             _catalog?.SetBackend(ProviderChoice);
+            ProviderOverviewMessage = _modelsDevLoadFailed
+                ? "The provider list is unavailable. Your saved providers are still shown. Choose Retry to reload."
+                : string.Empty;
         }
         catch (Exception ex)
         {
             // Loads are fire-and-forget from the view: trace instead of faulting unobserved.
             GuiDiagnosticWriter.AppendTraceLine($"[SettingsViewModel] Settings load failed: {ex.Message}");
+            ProviderOverviewMessage = "Could not load provider settings. Choose Retry to reload.";
         }
         finally
         {
@@ -365,6 +373,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
         ProviderRows.Clear();
         foreach (var row in projection.Rows) ProviderRows.Add(row);
+        CatalogProviderRows.Clear();
+        foreach (var row in projection.Rows.Where(row => row.Value != "custom")) CatalogProviderRows.Add(row);
 
         ChangeProviderChoice(ProviderSetupGuidance.ResolveUnsetChoice(ProviderChoice, catalog));
         ApplyProviderFilter();
@@ -388,6 +398,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             int current = ProviderRows.IndexOf(ordered[index]);
             if (current != index) ProviderRows.Move(current, index);
         }
+        var catalogOrder = ordered.Where(row => row.Value != "custom").ToArray();
+        for (int index = 0; index < catalogOrder.Length; index++)
+        {
+            int current = CatalogProviderRows.IndexOf(catalogOrder[index]);
+            if (current != index) CatalogProviderRows.Move(current, index);
+        }
 
         RefreshProviderPresentation();
     }
@@ -396,7 +412,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     private void ApplyProviderFilter()
     {
-        var projection = SettingsProviderPresenter.Filter(ProviderRows.ToArray(), ProviderFilter, _modelsDevLoadFailed);
+        var projection = SettingsProviderPresenter.Filter(CatalogProviderRows.ToArray(), ProviderFilter, _modelsDevLoadFailed);
         var visible = new HashSet<ProviderRow>(projection.VisibleRows);
         foreach (var row in ProviderRows) row.IsVisible = visible.Contains(row);
         // The count stays visible at zero matches: "PROVIDERS (0 of 191)" says the
@@ -412,6 +428,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         if (!string.Equals(ProviderChoice, choice, StringComparison.OrdinalIgnoreCase))
         {
             _keyProbe.Invalidate();
+            SetKeyStatus(string.Empty, ProviderConnectionTest.NeutralTone);
+            ShowProviderTest(new ProviderConnectionTest(ProviderConnectionTest.NeutralTone,
+                "Not tested yet. The test checks the key and loads the model list."));
         }
 
         ProviderChoice = choice;
@@ -461,6 +480,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         // Signing out only makes sense while a key is stored; the picker's dot reads the same source.
         IsModelsDevSignOutVisible = isModelsDev && SettingsProviderPresenter.IsSignedIn(
             ProviderChoice, _lastSettings?.HasCustomKey == true, _modelsDevKeyIds);
+        RefreshProviderManagement();
     }
 
     partial void OnCustomUrlChanged(string value) => ScheduleAutoSave();

@@ -6,7 +6,7 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-public sealed class SettingsViewModelTests
+public sealed partial class SettingsViewModelTests
 {
     [Fact]
     public void Standard_is_the_default_preset_and_dark_the_default_theme()
@@ -372,6 +372,7 @@ public sealed class SettingsViewModelTests
         public IReadOnlyList<string> KeyIds { get; set; } = [];
 
         public ProviderKeyProbeResult KeyResult { get; set; } = new("valid");
+        public bool SaveResult { get; set; } = true;
 
         public List<ProviderSettingsUpdateDto> Saved { get; } = new();
 
@@ -401,7 +402,7 @@ public sealed class SettingsViewModelTests
         {
             Saved.Add(settings);
             _saved.TrySetResult();
-            return Task.FromResult(true);
+            return Task.FromResult(SaveResult);
         }
 
         public Task<ProviderKeyProbeResult> ValidateAndSaveModelsDevKeyAsync(string providerId, string key, CancellationToken cancellationToken)

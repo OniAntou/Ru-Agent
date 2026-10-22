@@ -120,6 +120,13 @@ namespace RuApp.Views
                 case nameof(SettingsViewModel.PresetChoice):
                     RefreshPresetUI();
                     break;
+                case nameof(SettingsViewModel.IsProviderEditorOpen):
+                    if (ViewModel.IsProviderEditorOpen) FocusProviderEditor();
+                    else DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (!ViewModel.IsProviderEditorOpen && IsLoaded) ProviderButton.Focus(FocusState.Programmatic);
+                    });
+                    break;
             }
         }
 
@@ -309,6 +316,7 @@ namespace RuApp.Views
             {
                 return;
             }
+            ViewModel.ProviderFilter = string.Empty;
 
             double available = double.PositiveInfinity;
             if (ProviderButton.XamlRoot?.Size is { Height: > 0 } root)
@@ -336,7 +344,11 @@ namespace RuApp.Views
         private void OnProviderRowClicked(object sender, ItemClickEventArgs e) =>
             ViewModel.SelectProviderCommand.Execute(e.ClickedItem as ProviderRow);
 
-        private void OnProviderPickerCommitted() => (ProviderButton.Flyout as Flyout)?.Hide();
+        private void OnProviderPickerCommitted()
+        {
+            (ProviderButton.Flyout as Flyout)?.Hide();
+            FocusProviderEditor();
+        }
 
         private void OnThemeOptionClick(object sender, RoutedEventArgs e)
         {

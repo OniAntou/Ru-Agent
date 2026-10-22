@@ -450,35 +450,30 @@
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"
                           Visibility="Collapsed">
-                <StackPanel Spacing="16">
-                    <!-- Main Provider & Keys Card -->
-                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
-                        <StackPanel Spacing="16">
-                            <!-- Provider Dropdown Row -->
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Active Provider" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Choose cloud AI provider or custom server" Style="{StaticResource SettingDescStyle}" />
-                                </StackPanel>
+                <StackPanel Spacing="24">
+                    <StackPanel x:Name="ProviderOverview" Spacing="24"
+                                Visibility="{x:Bind ViewModel.IsProviderOverviewVisible, Mode=OneWay}">
+                        <StackPanel x:Name="ProviderActions" Orientation="Horizontal" Spacing="12">
                                 <Button x:Name="ProviderButton"
-                                        Grid.Column="1"
-                                        Width="260"
+                                        MinWidth="140"
                                         MinHeight="36"
-                                        Style="{StaticResource RuDropdownButtonStyle}"
-                                        AutomationProperties.Name="Active provider">
+                                        Padding="16,8" CornerRadius="8"
+                                        Style="{StaticResource RuPrimaryButtonStyle}"
+                                        IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
+                                        AutomationProperties.Name="Add Provider">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock x:Name="ProviderButtonLabel"
-                                                   Text="{x:Bind ViewModel.ProviderButtonText, Mode=OneWay}"
+                                                   Text="Add Provider"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="13"
                                                    FontWeight="Medium"
-                                                   Foreground="{StaticResource RuInkBrush}"
+                                                   Foreground="{StaticResource RuOnAccentBrush}"
                                                    VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis" />
                                         <FontIcon Grid.Column="1"
                                                   Glyph="&#xE70D;"
                                                   FontSize="9"
-                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  Foreground="{StaticResource RuOnAccentBrush}"
                                                   VerticalAlignment="Center"
                                                   Margin="8,0,0,0" />
                                     </Grid>
@@ -561,7 +556,7 @@
                                                               MaxHeight="200"
                                                               SelectionMode="None"
                                                               IsItemClickEnabled="True"
-                                                              ItemsSource="{x:Bind ViewModel.ProviderRows}"
+                                                              ItemsSource="{x:Bind ViewModel.CatalogProviderRows}"
                                                               ItemClick="OnProviderRowClicked"
                                                               Padding="0,0,0,6"
                                                               ScrollViewer.HorizontalScrollMode="Disabled"
@@ -640,8 +635,83 @@
                                         </Flyout>
                                     </Button.Flyout>
                                 </Button>
-                            </Grid>
-
+                            <Button x:Name="AddCustomProviderButton" Content="Add custom Provider"
+                                    Command="{x:Bind ViewModel.AddCustomProviderCommand}"
+                                    IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
+                                    MinHeight="36" Padding="16,8" CornerRadius="8"
+                                    AutomationProperties.Name="Add custom Provider" />
+                        </StackPanel>
+                        <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
+                                     AutomationProperties.Name="Loading providers" />
+                        <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.HasProviderOverviewMessage, Mode=OneWay}">
+                            <TextBlock Text="{x:Bind ViewModel.ProviderOverviewMessage, Mode=OneWay}"
+                                       Style="{StaticResource SettingDescStyle}"
+                                       AutomationProperties.LiveSetting="Polite" />
+                            <Button Content="Retry" Command="{x:Bind ViewModel.ReloadProvidersCommand}"
+                                    IsEnabled="{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}"
+                                    Style="{StaticResource RuToolbarButtonStyle}" />
+                        </StackPanel>
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Your providers" Style="{StaticResource SettingLabelStyle}" />
+                            <Border x:Name="ProvidersEmptyState" Padding="20" BorderThickness="1"
+                                    BorderBrush="{StaticResource RuLineBrush}" CornerRadius="12"
+                                    Visibility="{x:Bind ViewModel.HasNoConfiguredProviders, Mode=OneWay}">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="No providers added yet" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Add a provider to connect its models, or use a custom OpenAI-compatible server."
+                                               Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <ItemsControl x:Name="ConfiguredProvidersList" ItemsSource="{x:Bind ViewModel.ConfiguredProviders}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="viewmodels:ConfiguredProviderRow">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" Padding="16,14"
+                                              Background="{StaticResource RuCanvasBrush}" CornerRadius="12">
+                                            <StackPanel Spacing="5">
+                                                <TextBlock Text="{x:Bind DisplayName}" FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Border Padding="5,1" CornerRadius="3" BorderThickness="1"
+                                                            BorderBrush="{StaticResource RuLineBrush}" Visibility="{x:Bind IsCustom}">
+                                                        <TextBlock Text="Custom" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+                                                    </Border>
+                                                    <TextBlock Text="{x:Bind Status}" FontSize="12" Foreground="{StaticResource RuMutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="Edit" Tag="{x:Bind Choice}" Click="OnEditProviderClick"
+                                                    Padding="12,5" CornerRadius="6" VerticalAlignment="Center"
+                                                    AutomationProperties.Name="{x:Bind EditAutomationName}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <TextBlock Text="Keys stay in Windows Credential Manager. Choose a model from the chat composer after connecting."
+                                   Style="{StaticResource SettingDescStyle}" />
+                    </StackPanel>
+                    <StackPanel x:Name="ProviderEditor" Spacing="24"
+                                Visibility="{x:Bind ViewModel.IsProviderEditorOpen, Mode=OneWay}">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                            <Button x:Name="ProviderBackButton" Content="Back" Command="{x:Bind ViewModel.ReturnToProvidersCommand}"
+                                    IsEnabled="{x:Bind ViewModel.IsProviderNavigationEnabled, Mode=OneWay}"
+                                    Style="{StaticResource RuToolbarButtonStyle}" AutomationProperties.Name="Back to providers" />
+                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.ProviderButtonText, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                        <Border Style="{StaticResource FluentCardStyle}">
+                            <StackPanel Spacing="16">
+                            <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.IsLegacyProviderVisible, Mode=OneWay}">
+                                <TextBlock Text="This existing provider configuration is preserved. To enter a new key, use Add Provider and choose it from the catalog."
+                                           Style="{StaticResource SettingDescStyle}" />
+                                <Button Content="Remove saved key" Command="{x:Bind ViewModel.SignOutCommand}"
+                                        IsEnabled="{x:Bind ViewModel.IsSignOutEnabled, Mode=OneWay}" />
+                            </StackPanel>
                             <!-- Provider API key row: the key comes before the test. -->
                             <StackPanel x:Name="ModelsDevApiKeyRow" Spacing="16" Visibility="{x:Bind ViewModel.IsModelsDevKeyVisible, Mode=OneWay}">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
@@ -686,42 +756,6 @@
                                 </Grid>
                             </StackPanel>
 
-                            <!--
-                              A stored key is not a working key; this asks the endpoint.
-                              The status sits in the same grid so it reads as the result
-                              of the button beside it.
-                            -->
-                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                    <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-                                        <FontIcon x:Name="ProviderTestStatusIcon"
-                                                  Glyph="{x:Bind ToneGlyph(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                  FontSize="12"
-                                                  Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                  VerticalAlignment="Center" />
-                                        <TextBlock x:Name="ProviderTestStatusText"
-                                                   Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.ProviderTestMessage, Mode=OneWay}"
-                                                   Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
-                                                   ToolTipService.ToolTip="{x:Bind ViewModel.ProviderTestErrorCode, Mode=OneWay}"
-                                                   Style="{StaticResource SettingDescStyle}"
-                                                   TextWrapping="Wrap"
-                                                   AutomationProperties.LiveSetting="Polite" />
-                                    </Grid>
-                                </StackPanel>
-                                <Button x:Name="ProviderTestButton"
-                                        Grid.Column="1"
-                                        Width="260"
-                                        MinHeight="36"
-                                        Content="Test connection"
-                                        HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Center"
-                                        Style="{StaticResource RuPrimaryButtonStyle}"
-                                        AutomationProperties.Name="Test provider connection"
-                                        Command="{x:Bind ViewModel.TestConnectionCommand}" />
-                            </Grid>
-
                             <!-- Custom Endpoint URL Row -->
                             <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="{x:Bind ViewModel.IsCustomProviderVisible, Mode=OneWay}">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
@@ -759,7 +793,8 @@
                                                      CornerRadius="{StaticResource AppControlCornerRadius}"
                                                      PasswordRevealMode="Hidden" />
                                         <Button x:Name="CustomSignOutButton"
-                                                Content="Đăng xuất"
+                                                Visibility="{x:Bind ViewModel.IsCustomSignOutVisible, Mode=OneWay}"
+                                                Content="Remove key"
                                                 Command="{x:Bind ViewModel.RemoveProviderCommand}"
                                                 CommandParameter="custom"
                                                 Height="36"
@@ -769,13 +804,52 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
+                            <!--
+                              A stored key is not a working key; this asks the endpoint.
+                              The status sits in the same grid so it reads as the result
+                              of the button beside it.
+                            -->
+                            <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                        <FontIcon x:Name="ProviderTestStatusIcon"
+                                                  Glyph="{x:Bind ToneGlyph(ViewModel.ProviderTestTone), Mode=OneWay}"
+                                                  FontSize="12"
+                                                  Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
+                                                  VerticalAlignment="Center" />
+                                        <TextBlock x:Name="ProviderTestStatusText"
+                                                   Grid.Column="1"
+                                                   Text="{x:Bind ViewModel.ProviderTestMessage, Mode=OneWay}"
+                                                   Foreground="{x:Bind ToneBrush(ViewModel.ProviderTestTone), Mode=OneWay}"
+                                                   ToolTipService.ToolTip="{x:Bind ViewModel.ProviderTestErrorCode, Mode=OneWay}"
+                                                   Style="{StaticResource SettingDescStyle}"
+                                                   TextWrapping="Wrap"
+                                                   AutomationProperties.LiveSetting="Polite" />
+                                    </Grid>
+                                </StackPanel>
+                                <Button x:Name="ProviderTestButton"
+                                        Grid.Column="1"
+                                        Width="260"
+                                        MinHeight="36"
+                                        Content="Test connection"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Center"
+                                        Style="{StaticResource RuPrimaryButtonStyle}"
+                                        AutomationProperties.Name="Test provider connection"
+                                        Command="{x:Bind ViewModel.TestConnectionCommand}" />
+                            </Grid>
+
                             <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
                             <TextBlock Text="Keys are stored in Windows Credential Manager and sent only to the provider you choose."
                                        Style="{StaticResource SettingDescStyle}"
                                        TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
 
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="Changes save automatically. This provider will be used for new runs; choose its model in chat."
+                                   Style="{StaticResource SettingDescStyle}" />
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
             <!-- Approval rules: what "Always allow" remembered, and the way to forget it. -->

@@ -36,6 +36,9 @@ public sealed class ProviderRow : INotifyPropertyChanged
     /// <summary>The name the picker shows for this provider.</summary>
     public string DisplayName { get; }
 
+    // ListView's item automation peer uses the data object's name as its fallback.
+    public override string ToString() => DisplayName;
+
     public bool IsVisible
     {
         get => _isVisible;

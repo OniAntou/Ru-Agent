@@ -81,7 +81,7 @@ namespace RuApp.Views
             var (title, subtitle, active) = tab switch
             {
                 SettingsTab.General => ("General", "Manage application theme and agent defaults.", NavGeneralBtn),
-                SettingsTab.Models => ("Models & Providers", "Configure cloud AI model providers, API credentials, and server connections.", NavModelsBtn),
+                SettingsTab.Models => ("Models", "Connect providers and manage access to their models.", NavModelsBtn),
                 SettingsTab.Rules => ("Approval rules", "Review and remove the approvals Ru remembers.", NavRulesBtn),
                 SettingsTab.Shortcuts => ("Keyboard shortcuts", "Every shortcut Ru binds. Ctrl+K opens the command palette.", NavShortcutsBtn),
                 _ => ("About", "Application information and updates.", NavAboutBtn),

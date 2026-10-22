@@ -398,7 +398,7 @@ public sealed class ProviderSetupGuidanceTests
 
         Assert.Equal("ListView", list.Name.LocalName);
         Assert.Equal("True", GuiSource.AttributeValue(list, "IsItemClickEnabled"));
-        Assert.Equal("{x:Bind ViewModel.ProviderRows}", GuiSource.AttributeValue(list, "ItemsSource"));
+        Assert.Equal("{x:Bind ViewModel.CatalogProviderRows}", GuiSource.AttributeValue(list, "ItemsSource"));
 
         // The old shape must not come back: a row panel with one Button per provider is
         // what hit the element ceiling.
@@ -425,7 +425,7 @@ public sealed class ProviderSetupGuidanceTests
     public void The_provider_row_template_binds_compiled()
     {
         var settings = GuiSource.Xml("Views", "SettingsView.xaml");
-        var template = settings.Descendants()
+        var template = GuiSource.Require(settings, "ProviderListView").Descendants()
             .First(element => element.Name.LocalName == "DataTemplate");
 
         // x:DataType is namespaced, so it is read from the namespace-qualified name.

@@ -184,6 +184,11 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
     {
         if (frame.IsTransient)
         {
+            if (AgentUsageEstimateModel.TryParse(frame, out _))
+            {
+                await DispatchAsync(() => onEvent(AgentEventModel.FromSseFrame(frame)), cancellationToken).ConfigureAwait(false);
+                return;
+            }
             if (onAssistantDelta is not null
                 && AgentAssistantDeltaModel.TryParse(frame, out var assistantDelta)
                 && assistantDelta is not null)

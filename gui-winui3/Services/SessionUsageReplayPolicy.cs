@@ -8,7 +8,7 @@ namespace RuApp.Services;
 /// <summary>
 /// Finds the usage report to restore when a session is opened. Session
 /// messages persist only role/content, so a freshly opened transcript has no
-/// provider report and the context meter hides its system-plus-tools row.
+/// provider report or request breakdown for the context meter.
 /// The durable run events still carry every <c>model.usage_recorded</c>
 /// report, so the open path replays the newest one instead of guessing.
 /// </summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Client;
 
@@ -19,6 +20,7 @@ public sealed record AgentUsageEstimateModel(
     string ModelStepId,
     long TransientSequence)
 {
+    public ContextTokenBreakdown? ContextTokens { get; init; }
     public static bool TryParse(SseFrame frame, out AgentUsageEstimateModel? estimate)
     {
         estimate = null;
@@ -41,7 +43,7 @@ public sealed record AgentUsageEstimateModel(
             }
 
             using var inner = JsonDocument.Parse(innerJson);
-            if (!TryReadInner(inner.RootElement, out var estimatedInput, out var maxPrompt, out var modelStepId))
+            if (!TryReadInner(inner.RootElement, out var estimatedInput, out var maxPrompt, out var modelStepId, out var contextTokens))
             {
                 return false;
             }
@@ -50,7 +52,7 @@ public sealed record AgentUsageEstimateModel(
                 estimatedInput,
                 maxPrompt,
                 modelStepId,
-                frame.TransientSequence.Value);
+                frame.TransientSequence.Value) { ContextTokens = contextTokens };
             return true;
         }
         catch (JsonException)
@@ -97,11 +99,13 @@ public sealed record AgentUsageEstimateModel(
         JsonElement root,
         out long estimatedInputTokens,
         out long maxPromptTokens,
-        out string modelStepId)
+        out string modelStepId,
+        out ContextTokenBreakdown? contextTokens)
     {
         estimatedInputTokens = 0;
         maxPromptTokens = 0;
         modelStepId = string.Empty;
+        contextTokens = null;
         if (root.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -119,6 +123,11 @@ public sealed record AgentUsageEstimateModel(
 
             switch (property.Name)
             {
+                case "context_tokens" when property.Value.ValueKind == JsonValueKind.Null:
+                    break;
+                case "context_tokens":
+                    if (!ContextTokenBreakdown.TryRead(property.Value, out contextTokens)) return false;
+                    break;
                 case "estimated_input_tokens"
                     when property.Value.ValueKind == JsonValueKind.Number
                         && property.Value.TryGetInt64(out estimatedInputTokens):

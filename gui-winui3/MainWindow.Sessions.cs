@@ -47,8 +47,6 @@ namespace RuApp
                 _suppressSidebarSelection = false;
             }
 
-            WorkspaceSearchCount.Text = Sidebar.SearchCountText;
-            WorkspaceSearchCount.Visibility = Sidebar.IsSearchCountVisible ? Visibility.Visible : Visibility.Collapsed;
             var truncation = Sidebar.IsTruncated ? Visibility.Visible : Visibility.Collapsed;
             if (SidebarSessionTruncationWarning.Visibility != truncation)
             {
@@ -58,52 +56,6 @@ namespace RuApp
             _sessionWaveAnimationsEnabled = UiTiming.AnimationsEnabled;
             RefreshSessionTitleWaves();
         }
-
-        private void OnSidebarPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(SessionSidebarViewModel.IsSearchOpen))
-            {
-                WorkspaceSearchBox.Visibility = Sidebar.IsSearchOpen ? Visibility.Visible : Visibility.Collapsed;
-            }
-            else if (e.PropertyName == nameof(SessionSidebarViewModel.SearchText)
-                && !string.Equals(WorkspaceSearchBox.Text, Sidebar.SearchText, StringComparison.Ordinal))
-            {
-                WorkspaceSearchBox.Text = Sidebar.SearchText;
-            }
-        }
-
-        private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
-        {
-            Sidebar.OpenSearch();
-            WorkspaceSearchBox.Focus(FocusState.Programmatic);
-        }
-
-        private void OnWorkspaceSearchTextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (sender is TextBox box && !string.Equals(Sidebar.SearchText, box.Text, StringComparison.Ordinal))
-            {
-                Sidebar.SearchText = box.Text;
-            }
-        }
-
-        private void OnWorkspaceSearchKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
-        {
-            if (e.Key == Windows.System.VirtualKey.Escape)
-            {
-                Sidebar.ClearSearch();
-                Sidebar.Render();
-            }
-            else if (e.Key == Windows.System.VirtualKey.Enter)
-            {
-                var first = Sidebar.Rows.OfType<SessionInfo>().FirstOrDefault();
-                if (first is not null)
-                {
-                    SidebarSessionList.SelectedItem = first;
-                }
-            }
-        }
-
-        private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e) => Sidebar.ToggleFilter();
 
         private void OnWorkspaceGroupClick(object sender, RoutedEventArgs e)
         {
@@ -268,25 +220,6 @@ namespace RuApp
             }
         }
 
-        private void NudgeSidebarWidth(double delta)
-        {
-            if (_responsiveTier == ResponsiveLayoutTier.Narrow) return;
 
-            double newWidth = SidebarColumn.ActualWidth + delta;
-            if (newWidth <= 150)
-            {
-                SidebarColumn.MinWidth = 72;
-                SidebarColumn.Width = new GridLength(72);
-                ApplySidebarVisualMode(true);
-            }
-            else
-            {
-                SidebarColumn.MinWidth = 72;
-                var clamped = Math.Clamp(newWidth, 180, 400);
-                SidebarColumn.Width = new GridLength(clamped);
-                _lastExpandedSidebarWidth = clamped;
-                ApplySidebarVisualMode(false);
-            }
-        }
     }
 }

@@ -115,6 +115,16 @@
                         Visibility="{x:Bind Shell.IsUpdateAvailable, Mode=OneWay}" Click="OnTitleBarUpdateClick"
                         ToolTipService.ToolTip="Check for updates"
                         AutomationProperties.Name="Check for updates" />
+                <Button x:Name="NavigationSidebarToggleButton"
+                        Click="OnNavigationSidebarToggleClick"
+                        Style="{StaticResource TitleBarIconButtonStyle}"
+                        ToolTipService.ToolTip="Hide workspace sidebar"
+                        AutomationProperties.Name="Hide workspace sidebar">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="M4.5,3.5 H11.5 A2,2 0 0 1 13.5,5.5 V10.5 A2,2 0 0 1 11.5,12.5 H4.5 A2,2 0 0 1 2.5,10.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M5.5,3.5 V12.5"
+                              Stroke="{StaticResource RuInkBrush}" StrokeThickness="1.2" />
+                    </Viewbox>
+                </Button>
                 <Button x:Name="SidePanelToggleButton"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
@@ -159,41 +169,19 @@
                         </VisualState.Setters>
                     </VisualState>
 
-                    <VisualState x:Name="Narrow">
-                        <VisualState.StateTriggers>
-                            <AdaptiveTrigger MinWindowWidth="0"/>
-                        </VisualState.StateTriggers>
-                        <VisualState.Setters>
-                            <Setter Target="LabelNewChat.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelThemeToggle.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
-                            <Setter Target="WorkspaceHeaderPanel.Visibility" Value="Collapsed"/>
-                            <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavChat.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="ThemeToggleButton.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavSettings.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavNewChat.Padding" Value="8"/>
-                            <Setter Target="NavChat.Padding" Value="8"/>
-                            <Setter Target="ThemeToggleButton.Padding" Value="8"/>
-                            <Setter Target="NavSettings.Padding" Value="8"/>
-                            <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
-                             <Setter Target="StatusText.Visibility" Value="Collapsed"/>
-                        </VisualState.Setters>
-                    </VisualState>
                 </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
 
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="72" MaxWidth="400"/>
-                <ColumnDefinition Width="1"/>
+                <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="220" MaxWidth="360"/>
+                <ColumnDefinition x:Name="SidebarDividerColumn" Width="10"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Navigation Sidebar. Asymmetric on purpose: the left edge is the
                  window edge, so only the two corners that meet the content get
                  the control radius. -->
-            <Border Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
+            <Border x:Name="NavigationSidebar" Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
                 <Border.Resources>
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
             <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneWay}"
@@ -396,18 +384,10 @@
         </DataTemplate>
         <DataTemplate x:Key="SidebarWorkspacesTemplate" x:DataType="services:SidebarSectionRow">
             <Grid Margin="6,0">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="2">
                                 <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                                <Button x:Name="WorkspaceSearchButton" Grid.Column="1" Click="OnWorkspaceSearchClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Search sessions" AutomationProperties.Name="Search sessions">
-                                    <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
-                                </Button>
-                                <ToggleButton x:Name="WorkspaceFilterButton" IsChecked="{x:Bind FilterActive}" Grid.Column="2" Click="OnWorkspaceFilterClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="Show only the current session group" AutomationProperties.Name="Filter to current session group">
-                                    <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
-                                </ToggleButton>
-                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                <Button x:Name="WorkspaceNewButton" Grid.Column="1" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
                                         ToolTipService.ToolTip="Add workspace" AutomationProperties.Name="Add workspace">
                                     <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
                                 </Button>
@@ -528,17 +508,7 @@
 
                         <!-- Workspaces Header -->
                         <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,0,14,0">
-                            <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBox x:Name="WorkspaceSearchBox" Grid.Row="1" Margin="0,6,0,0" PlaceholderText="Search sessions"
-                                     AutomationProperties.Name="Search sessions"
-                                     Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
-                            <TextBlock x:Name="WorkspaceSearchCount" Grid.Row="2" Margin="2,4,0,0" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Visibility="Collapsed"/>
-                            <TextBlock x:Name="SidebarSessionTruncationWarning" Grid.Row="3" Margin="2,4,0,0"
+                            <TextBlock x:Name="SidebarSessionTruncationWarning" Margin="2,4,0,0"
                                        Text="Session list is limited; some sessions are hidden."
                                        FontFamily="{StaticResource RuUiFontFamily}" FontSize="11"
                                        Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
@@ -625,16 +595,24 @@
             </Border>
 
             <!-- Sidebar Divider / Resizer (10px hit-target with native SizeWestEast cursor) -->
-            <controls:SidebarResizerControl x:Name="SidebarResizer" Grid.Column="1" Width="10" Margin="-5,0,-5,0" Canvas.ZIndex="10"
+            <controls:SidebarResizerControl x:Name="SidebarResizer" Grid.Column="1" Width="10" Canvas.ZIndex="10"
                   Background="Transparent"
                   PointerEntered="Resizer_PointerEntered"
                   PointerExited="Resizer_PointerExited"
                   PointerPressed="Resizer_PointerPressed"
                   PointerMoved="Resizer_PointerMoved"
                   PointerReleased="Resizer_PointerReleased"
-                  DoubleTapped="Resizer_DoubleTapped">
-                <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
-                        Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
+                  PointerCanceled="Resizer_PointerCanceled"
+                  PointerCaptureLost="Resizer_PointerCaptureLost"
+                  Unloaded="Resizer_Unloaded"
+                  DoubleTapped="Resizer_DoubleTapped"
+                  IsTabStop="True"
+                  UseSystemFocusVisuals="True"
+                  AutomationProperties.Name="Resize workspace sidebar">
+                <Grid Background="Transparent">
+                    <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
+                            Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
+                </Grid>
             </controls:SidebarResizerControl>
 
             <!-- Content Frame with Smooth Native Transition -->

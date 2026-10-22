@@ -69,7 +69,6 @@ public static class WorkspaceSessionProjection
 
     public static WorkspaceProjection Project(
         IReadOnlyList<Models.SessionInfo> sessions,
-        string? search,
         Func<Models.SessionInfo, WorkspaceGroupIdentity>? groupFor = null)
     {
         var groups = new List<WorkspaceGroup>();
@@ -88,10 +87,7 @@ public static class WorkspaceSessionProjection
                 meta[key] = (label, identity is null ? session.WorkspacePath : identity.Path);
             }
 
-            if (Matches(session, label, search))
-            {
-                list.Add(session);
-            }
+            list.Add(session);
         }
 
         foreach (var (key, list) in byKey)
@@ -107,17 +103,7 @@ public static class WorkspaceSessionProjection
         return new WorkspaceProjection(groups);
     }
 
-    private static bool Matches(Models.SessionInfo session, string label, string? search)
-    {
-        if (string.IsNullOrWhiteSpace(search))
-        {
-            return true;
-        }
 
-        return session.Title.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || label.Contains(search, StringComparison.OrdinalIgnoreCase)
-            || (session.WorkspacePath?.Contains(search, StringComparison.OrdinalIgnoreCase) == true);
-    }
 }
 
 public sealed record WorkspaceGroup(
@@ -130,7 +116,7 @@ public sealed record WorkspaceProjection(IReadOnlyList<WorkspaceGroup> Groups);
 
 public sealed record WorkspaceGroupIdentity(string Key, string Label, string? Path);
 
-public sealed record SidebarSectionRow(string Key, string Label, bool IsExpanded = true, bool FilterActive = false)
+public sealed record SidebarSectionRow(string Key, string Label, bool IsExpanded = true)
 {
     public bool IsCli => Key == SidebarSessionOrganization.CliKey;
     public bool IsRecents => Key == SidebarSessionOrganization.RecentsKey;

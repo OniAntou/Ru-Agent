@@ -102,6 +102,14 @@ compaction changes the request, the Host rebuilds and remeasures it. Workflow
 state is a separate history message, while the final current prompt remains
 distinct and is rejected with a bounded size error rather than prefix-clipped.
 
+`RequestContextEstimator` also partitions that prepared JSON into system/developer
+instructions, tool declarations and conversation input for the context popup.
+Optional `context_tokens` metadata (`request-bytes-v1`) carries only bounded counts
+on existing usage estimates and durable model usage. It uses UTF-8 bytes/4 and the
+same image allowance, without altering admission, calibration or provider billing.
+Old records have no breakdown; malformed optional metadata is unavailable rather
+than inferred from usage totals. No prompt text or tool schema enters telemetry.
+
 Native requests keep mutable runtime references out of the system instruction
 prefix. Text-selection requests keep inline references. The prompt receipt hashes
 the exact system text and binds current normalized runtime references with its

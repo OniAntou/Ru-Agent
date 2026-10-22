@@ -173,7 +173,7 @@
                             <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Appearance" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Choose Light, Dark, Meteor Shower, or Starry Night" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Choose Light, Dark, or Meteor Shower" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="ThemeButton"
                                         Grid.Column="1"
@@ -260,29 +260,6 @@
                                                                    VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" />
                                                         <FontIcon x:Name="ThemeDarkMeteorCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ThemeStarryNightOption"
-                                                        Tag="starry-night"
-                                                        Click="OnThemeOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Starry Night theme">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ThemeStarryNightText"
-                                                                   Text="Starry Night"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ThemeStarryNightCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"
                                                                   FontSize="11"

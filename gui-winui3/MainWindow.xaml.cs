@@ -38,8 +38,6 @@ namespace RuApp
         private ProviderCatalogController? _providerCatalogController;
         private GroupedProviderCatalogController? _groupedCatalogs;
         private DispatcherTimer? _providerCatalogTimer;
-        private ResponsiveLayoutTier? _responsiveTier;
-        private double _lastExpandedSidebarWidth = 250;
         private Microsoft.UI.Windowing.AppWindow? _appWindow;
 
         public static MainWindow? Instance { get; private set; }
@@ -75,7 +73,6 @@ namespace RuApp
                     }
                 });
             Sidebar.Rendered += OnSidebarRendered;
-            Sidebar.PropertyChanged += OnSidebarPropertyChanged;
             Sidebar.ActionFailed += SetSessionActionError;
             Shell = new ShellViewModel(
                 new HostShellBackend(
@@ -100,6 +97,7 @@ namespace RuApp
             try
             {
                 this.InitializeComponent();
+            SidebarResizer.WidthRequested += OnSidebarWidthRequested;
                 this.Title = "Ru — Conversational Runtime";
 
                 try
@@ -226,7 +224,7 @@ namespace RuApp
 
             // The pack is written into the active base dictionary, so flip the
             // requested theme around the write: ThemeResource bindings only
-            // re-resolve on a theme change, and Studio Dark and Starry Night
+            // re-resolve on a theme change, and Studio Dark and Meteor Shower
             // share the Dark base.
             if (ShellRoot.RequestedTheme == target)
             {
@@ -966,258 +964,5 @@ namespace RuApp
             ApplyResponsiveShell(e.NewSize.Width);
         }
 
-        private void ApplyResponsiveShell(double width)
-        {
-            var metrics = ResponsiveLayoutPolicy.GetForWidth(width);
-            if (_responsiveTier == metrics.Tier)
-            {
-                return;
-            }
-
-            if (metrics.Tier == ResponsiveLayoutTier.Narrow)
-            {
-                if (_responsiveTier is not null && SidebarColumn.ActualWidth > 0)
-                {
-                    _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
-                }
-
-                SidebarColumn.MinWidth = 72;
-                SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
-                SidebarColumn.Width = new GridLength(metrics.NarrowRailWidth);
-                ApplySidebarVisualMode(true);
-            }
-            else
-            {
-                SidebarColumn.MinWidth = 72;
-                SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
-                var restoredWidth = _responsiveTier == ResponsiveLayoutTier.Narrow
-                    ? _lastExpandedSidebarWidth
-                    : SidebarColumn.ActualWidth > 0 ? SidebarColumn.ActualWidth : metrics.DefaultSidebarWidth;
-                var finalWidth = ResponsiveLayoutPolicy.ClampSidebarWidth(restoredWidth, metrics);
-                SidebarColumn.Width = new GridLength(finalWidth);
-                ApplySidebarVisualMode(finalWidth <= 120);
-            }
-
-            _responsiveTier = metrics.Tier;
-        }
-
-        private bool _isResizing = false;
-        private double _startWidth = 0;
-        private double _startX = 0;
-
-        private void Resizer_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
-        {
-            if (SidebarResizerLine != null)
-            {
-                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
-                SidebarResizerLine.Opacity = Services.UiTiming.ResizerActiveOpacity;
-                SidebarResizerLine.Width = 2;
-            }
-        }
-
-        private void Resizer_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
-        {
-            if (!_isResizing && SidebarResizerLine != null)
-            {
-                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
-                SidebarResizerLine.Opacity = 0.4;
-                SidebarResizerLine.Width = 1;
-            }
-        }
-
-        private void Resizer_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
-        {
-            _isResizing = true;
-            _startX = e.GetCurrentPoint(null).Position.X;
-            _startWidth = SidebarColumn.ActualWidth;
-            if (sender is UIElement element)
-            {
-                element.CapturePointer(e.Pointer);
-            }
-            if (SidebarResizerLine != null)
-            {
-                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
-                SidebarResizerLine.Opacity = 1.0;
-                SidebarResizerLine.Width = 2;
-            }
-        }
-
-        private void Resizer_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
-        {
-            if (_isResizing)
-            {
-                double currentX = e.GetCurrentPoint(null).Position.X;
-                double diff = currentX - _startX;
-                double newWidth = _startWidth + diff;
-
-                if (newWidth <= 150)
-                {
-                    SidebarColumn.MinWidth = 72;
-                    SidebarColumn.Width = new GridLength(72);
-                    ApplySidebarVisualMode(true);
-                }
-                else
-                {
-                    SidebarColumn.MinWidth = 72;
-                    var clamped = Math.Clamp(newWidth, 180, 400);
-                    SidebarColumn.Width = new GridLength(clamped);
-                    _lastExpandedSidebarWidth = clamped;
-                    ApplySidebarVisualMode(false);
-                }
-            }
-        }
-
-        private void Resizer_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
-        {
-            _isResizing = false;
-            if (sender is UIElement element)
-            {
-                element.ReleasePointerCapture(e.Pointer);
-            }
-            if (SidebarResizerLine != null)
-            {
-                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
-                SidebarResizerLine.Opacity = 0.4;
-                SidebarResizerLine.Width = 1;
-            }
-        }
-
-        private void Resizer_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
-        {
-            if (_responsiveTier == ResponsiveLayoutTier.Narrow) return;
-
-            if (SidebarColumn.ActualWidth > 120)
-            {
-                _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
-                SidebarColumn.MinWidth = 72;
-                SidebarColumn.Width = new GridLength(72);
-                ApplySidebarVisualMode(true);
-            }
-            else
-            {
-                var targetWidth = _lastExpandedSidebarWidth >= 180 ? _lastExpandedSidebarWidth : 250;
-                SidebarColumn.MinWidth = 72;
-                SidebarColumn.Width = new GridLength(targetWidth);
-                ApplySidebarVisualMode(false);
-            }
-        }
-
-        private void ApplySidebarVisualMode(bool isNarrow)
-        {
-            var labelVis = isNarrow ? Visibility.Collapsed : Visibility.Visible;
-            if (LabelNewChat != null) LabelNewChat.Visibility = labelVis;
-            if (LabelChat != null) LabelChat.Visibility = labelVis;
-            if (LabelThemeToggle != null) LabelThemeToggle.Visibility = labelVis;
-            if (LabelSettings != null) LabelSettings.Visibility = labelVis;
-            if (WorkspaceHeaderPanel != null) WorkspaceHeaderPanel.Visibility = labelVis;
-            if (StatusText != null) StatusText.Visibility = labelVis;
-            if (SidebarSessionList != null) SidebarSessionList.Visibility = labelVis;
-
-            if (isNarrow)
-            {
-                // Compact Mini Rail Mode (72px centered icon buttons)
-                if (SidebarTopPanel != null)
-                {
-                    SidebarTopPanel.Padding = new Thickness(0, 16, 0, 0);
-                    SidebarTopPanel.HorizontalAlignment = HorizontalAlignment.Center;
-                }
-                if (SidebarBottomPanel != null)
-                {
-                    SidebarBottomPanel.Padding = new Thickness(0, 8, 0, 14);
-                    SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Center;
-                }
-
-                ConfigureMiniButton(NavNewChat, ContentNewChat, IconNewChat);
-                ConfigureMiniButton(NavChat, ContentChat, IconChat);
-                ConfigureMiniButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon);
-                ConfigureMiniButton(NavSettings, ContentSettings, IconSettings);
-
-                if (ShellStatusRow != null)
-                {
-                    ShellStatusRow.Padding = new Thickness(0, 8, 0, 8);
-                    ShellStatusRow.HorizontalAlignment = HorizontalAlignment.Center;
-                    ShellStatusRow.Spacing = 0;
-                }
-            }
-            else
-            {
-                // Full Expanded Mode
-                if (SidebarTopPanel != null)
-                {
-                    SidebarTopPanel.Padding = new Thickness(14, 16, 14, 0);
-                    SidebarTopPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
-                }
-                if (SidebarBottomPanel != null)
-                {
-                    SidebarBottomPanel.Padding = new Thickness(14, 8, 14, 14);
-                    SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
-                }
-
-                ConfigureFullButton(NavNewChat, ContentNewChat, IconNewChat, new Thickness(0, 0, 10, 0));
-                ConfigureFullButton(NavChat, ContentChat, IconChat, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(NavSettings, ContentSettings, IconSettings, new Thickness(0, 0, 12, 0));
-
-                if (ShellStatusRow != null)
-                {
-                    ShellStatusRow.Padding = new Thickness(10, 8, 10, 12);
-                    ShellStatusRow.HorizontalAlignment = HorizontalAlignment.Left;
-                    ShellStatusRow.Spacing = 8;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Collapsed-rail nav item: the icon alone, centred in a square tap target.
-        /// </summary>
-        /// <remarks>
-        /// Same corner as the expanded form. The two layouts are the same button at
-        /// two widths, so a rail item that rounded differently read as a second style.
-        /// </remarks>
-        private static void ConfigureMiniButton(Button? btn, StackPanel? content, FontIcon? icon)
-        {
-            if (btn == null) return;
-            btn.Width = 42;
-            btn.Height = 42;
-            btn.Padding = new Thickness(0);
-            btn.HorizontalAlignment = HorizontalAlignment.Center;
-            btn.HorizontalContentAlignment = HorizontalAlignment.Center;
-            btn.VerticalContentAlignment = VerticalAlignment.Center;
-            btn.CornerRadius = UiCornerRadius.Control;
-            if (content != null)
-            {
-                content.HorizontalAlignment = HorizontalAlignment.Center;
-                content.VerticalAlignment = VerticalAlignment.Center;
-            }
-            if (icon != null)
-            {
-                icon.Margin = new Thickness(0);
-                icon.HorizontalAlignment = HorizontalAlignment.Center;
-                icon.VerticalAlignment = VerticalAlignment.Center;
-            }
-        }
-
-        private static void ConfigureFullButton(Button? btn, StackPanel? content, FontIcon? icon, Thickness iconMargin)
-        {
-            if (btn == null) return;
-            btn.Width = double.NaN;
-            btn.Height = double.NaN;
-            btn.Padding = new Thickness(10, 8, 10, 8);
-            btn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            btn.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            btn.VerticalContentAlignment = VerticalAlignment.Center;
-            btn.CornerRadius = UiCornerRadius.Control;
-            if (content != null)
-            {
-                content.HorizontalAlignment = HorizontalAlignment.Left;
-                content.VerticalAlignment = VerticalAlignment.Center;
-            }
-            if (icon != null)
-            {
-                icon.Margin = iconMargin;
-                icon.HorizontalAlignment = HorizontalAlignment.Left;
-                icon.VerticalAlignment = VerticalAlignment.Center;
-            }
-        }
     }
 }

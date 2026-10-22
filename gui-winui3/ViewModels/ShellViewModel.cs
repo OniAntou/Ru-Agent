@@ -115,7 +115,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty] public partial bool CanToggleSidePanel { get; private set; }
 
-    public bool IsDarkTheme => Theme is UiTheme.Dark or UiTheme.DarkMeteorShower or UiTheme.StarryNight;
+    public bool IsDarkTheme => Theme is UiTheme.Dark or UiTheme.DarkMeteorShower;
 
     public string ThemeToggleLabel => IsDarkTheme ? "Switch to light mode" : "Switch to dark mode";
 
@@ -419,8 +419,7 @@ public sealed partial class ShellViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>
-    /// The theme button flips the plain pair; Light and a themed dark (Meteor Shower,
-    /// Starry Night) both go to plain Dark.
+    /// The theme button flips the plain pair; Light and Meteor Shower go to plain Dark.
     /// </summary>
     internal void ToggleTheme() => ChooseTheme(Theme == UiTheme.Dark ? UiTheme.Light : UiTheme.Dark);
 

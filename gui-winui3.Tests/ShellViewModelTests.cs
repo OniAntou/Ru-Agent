@@ -306,7 +306,6 @@ public sealed class ShellViewModelTests : IDisposable
     [Theory]
     [InlineData(UiTheme.Dark, UiTheme.Light)]
     [InlineData(UiTheme.Light, UiTheme.Dark)]
-    [InlineData(UiTheme.StarryNight, UiTheme.Dark)]
     [InlineData(UiTheme.DarkMeteorShower, UiTheme.Dark)]
     public void The_theme_button_flips_the_plain_pair_and_persists(UiTheme from, UiTheme to)
     {

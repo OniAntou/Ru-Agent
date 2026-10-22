@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core;
 
@@ -81,6 +82,7 @@ public sealed record ModelUsage
     /// <summary>True for inclusive Chat/Responses input; false for Messages buckets.
     /// Null preserves legacy records whose accounting was not identified.</summary>
     public bool? InputTokensIncludeCache { get; }
+    public ContextTokenBreakdown? ContextTokens { get; init; }
 
     public void WriteTo(Utf8JsonWriter writer)
     {
@@ -97,6 +99,11 @@ public sealed record ModelUsage
             writer.WriteString("model", Model);
         }
 
+        if (ContextTokens is not null)
+        {
+            writer.WritePropertyName("context_tokens");
+            JsonSerializer.Serialize(writer, ContextTokens);
+        }
         writer.WriteEndObject();
     }
 
@@ -120,7 +127,7 @@ public sealed record ModelUsage
             ReadOptional(element, "cache_write_input_tokens"),
             ReadModel(element),
             ReadInputAccounting(element));
-        return usage;
+        return usage with { ContextTokens = ContextTokenBreakdown.ReadOptional(element) };
     }
 
     private static void Validate(int? value, string name)

@@ -2,10 +2,10 @@ using RuApp.Models;
 
 namespace RuApp.Services;
 
-internal sealed record SidebarSessionProjection(IReadOnlyList<WorkspaceGroup> Groups, IReadOnlyList<object> Rows, int MatchCount);
+internal sealed record SidebarSessionProjection(IReadOnlyList<WorkspaceGroup> Groups, IReadOnlyList<object> Rows);
 
 /// <summary>
-/// Builds the sidebar's ordered and filtered row model. MainWindow only reconciles
+/// Builds the sidebar's ordered row model. MainWindow only reconciles
 /// the returned rows with WinUI containers and updates selection/scroll state.
 /// </summary>
 internal static class SidebarSessionPresenter
@@ -36,12 +36,10 @@ internal static class SidebarSessionPresenter
 
     internal static SidebarSessionProjection Build(
         IReadOnlyList<SessionInfo> source,
-        string? search,
         string? appRoot,
         SidebarOrganizationPreferences organization,
         IReadOnlyList<string> pinnedPaths,
         string? activeSessionId,
-        bool activeWorkspaceFilter,
         Func<string, bool, bool> expanded,
         Func<string, bool> showAll,
         int pageSize = 5)
@@ -58,27 +56,22 @@ internal static class SidebarSessionPresenter
             SidebarSessionOrganization.GroupFor(session, appRoot, organization);
         var active = sessions.FirstOrDefault(session => session.Id == activeSessionId);
         var activeKey = active is null ? null : GroupFor(active).Key;
-        if (activeWorkspaceFilter && activeKey is not null)
-            sessions = sessions.Where(session => GroupFor(session).Key == activeKey).ToList();
-
-        bool searching = !string.IsNullOrWhiteSpace(search);
-        var projected = WorkspaceSessionProjection.Project(sessions, search, GroupFor);
+        var projected = WorkspaceSessionProjection.Project(sessions, GroupFor);
         var groups = WorkspaceSessionProjection.MergePinned(
             projected.Groups,
             pinnedPaths.Where(path => !SidebarSessionOrganization.SamePath(path, appRoot)).ToArray());
-        if (searching) groups = groups.Where(group => group.Sessions.Count > 0).ToArray();
 
         var rows = new List<object>();
         var recents = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.RecentsKey)
             ?? new WorkspaceGroup(SidebarSessionOrganization.RecentsKey, "Recents", null, []);
-        bool recentExpanded = searching || expanded(recents.Key, true);
-        rows.Add(new SidebarSectionRow(SidebarSessionOrganization.WorkspacesKey, "WORKSPACES", FilterActive: activeWorkspaceFilter));
+        bool recentExpanded = expanded(recents.Key, true);
+        rows.Add(new SidebarSectionRow(SidebarSessionOrganization.WorkspacesKey, "WORKSPACES"));
 
         bool firstWorkspace = true;
         foreach (var group in groups.Where(group => group.Path is not null))
         {
             bool defaultExpanded = activeKey is null ? firstWorkspace : group.Key == activeKey;
-            bool isExpanded = searching || expanded(group.Key, defaultExpanded) ||
+            bool isExpanded = expanded(group.Key, defaultExpanded) ||
                 (group.Path is { Length: > 0 } path && expanded(PathStateKey(path), false));
             firstWorkspace = false;
             rows.Add(new WorkspaceGroupRow(group, isExpanded));
@@ -87,7 +80,7 @@ internal static class SidebarSessionPresenter
 
         // An empty WORKSPACES header with its tools beside it read as a broken section
         // while the chats sat under RECENTS. Say that the section is simply empty.
-        if (firstWorkspace && !searching)
+        if (firstWorkspace)
         {
             rows.Add(new SidebarEmptyRow(SidebarSessionOrganization.WorkspacesKey, NoWorkspacesLabel));
         }
@@ -96,11 +89,11 @@ internal static class SidebarSessionPresenter
         AppendSessions(rows, recents, recentExpanded, showAll(recents.Key), activeSessionId, pageSize);
         var cli = groups.FirstOrDefault(group => group.Key == SidebarSessionOrganization.CliKey)
             ?? new WorkspaceGroup(SidebarSessionOrganization.CliKey, "CLI Session", null, []);
-        bool cliExpanded = searching || expanded(cli.Key, true);
+        bool cliExpanded = expanded(cli.Key, true);
         rows.Add(new SidebarSectionRow(cli.Key, "CLI SESSIONS", cliExpanded));
         AppendSessions(rows, cli, cliExpanded, showAll(cli.Key), activeSessionId, pageSize);
 
-        return new SidebarSessionProjection(groups, rows, rows.OfType<SessionInfo>().Count());
+        return new SidebarSessionProjection(groups, rows);
     }
 
     internal const string NoWorkspacesLabel = "No other project folders yet";

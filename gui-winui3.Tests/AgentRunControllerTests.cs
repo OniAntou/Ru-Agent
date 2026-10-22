@@ -14,6 +14,33 @@ namespace RuApp.Tests;
 public sealed class AgentRunControllerTests
 {
     [Fact]
+    public async Task Request_context_estimate_reaches_its_session_without_entering_durable_history()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var data = JsonSerializer.Serialize(new
+        {
+            kind = "agent.usage_estimate",
+            data = JsonSerializer.Serialize(new
+            {
+                estimated_input_tokens = 900,
+                max_prompt_tokens = 10000,
+                model_step_id = "step_11111111111111111111111111111111",
+                context_tokens = new ContextTokenBreakdown(100, 200, 600),
+            }),
+        });
+        fake.Stream.Add(AgentEventModel.FromSseFrame(new SseFrame(null, "transient", data, true, 1)));
+        var received = new List<AgentContextEstimateEventArgs>();
+        var controller = new AgentRunController(fake);
+        controller.ContextEstimateReceived += (_, item) => received.Add(item);
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "context-estimate"));
+        var estimate = Assert.Single(received);
+        Assert.Equal(RunId, estimate.RunId);
+        Assert.Equal("sess_1", estimate.SessionId);
+        Assert.Equal(600, estimate.Estimate.ContextTokens!.Messages);
+        Assert.Empty(controller.Events);
+    }
+
+    [Fact]
     public async Task Approval_coordinator_uses_the_requested_scope_then_refreshes()
     {
         var state = new AgentRunApprovalCoordinator();

@@ -315,6 +315,7 @@ internal sealed class AgentModelInvocation
             {
                 estimated_input_tokens = prepared.EstimatedInputTokens,
                 max_prompt_tokens = prepared.MaxPromptTokens,
+                context_tokens = prepared.ContextTokens,
                 model_step_id = modelStepId.Value,
             }),
             modelStepId));

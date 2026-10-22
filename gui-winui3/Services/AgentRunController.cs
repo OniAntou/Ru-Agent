@@ -1183,6 +1183,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     {
         if (model.IsTransient)
         {
+            var frame = new SseFrame(null, model.EventType, model.TransientData ?? string.Empty, true, model.TransientSequence);
+            if (AgentUsageEstimateModel.TryParse(frame, out var estimate) && estimate is not null)
+                RunOnUi(() =>
+                {
+                    if (!IsCurrentFeedOwner(runId, ownershipGeneration) || CurrentRun is not { } run
+                        || !string.Equals(run.RunId, runId, StringComparison.Ordinal)) return;
+                    ContextEstimateReceived?.Invoke(this, new AgentContextEstimateEventArgs(runId, run.SessionId, estimate));
+                });
             // Raw transient output is intentionally not part of the durable event
             // collection. AgentActivityModel travels through the separate callback.
             return;
@@ -1595,6 +1603,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentToolOutputModel>? ToolOutputReceived;
 
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
+    public event EventHandler<AgentContextEstimateEventArgs>? ContextEstimateReceived;
 
     public event EventHandler<AgentRunContextCompactedEventArgs>? ContextCompacted;
     public event EventHandler<AgentRunAdoptedEventArgs>? RunAdopted;

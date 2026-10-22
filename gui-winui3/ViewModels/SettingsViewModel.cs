@@ -150,14 +150,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         {
             "dark" => "dark",
             "dark-meteor" => "dark-meteor",
-            "starry-night" => "starry-night",
             _ => "light",
         };
         ThemeChanged?.Invoke(ThemeChoice switch
         {
             "dark" => UiTheme.Dark,
             "dark-meteor" => UiTheme.DarkMeteorShower,
-            "starry-night" => UiTheme.StarryNight,
             _ => UiTheme.Light,
         });
     }
@@ -737,7 +735,6 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     {
         UiTheme.Dark => "dark",
         UiTheme.DarkMeteorShower => "dark-meteor",
-        UiTheme.StarryNight => "starry-night",
         _ => "light",
     };
 

@@ -1,4 +1,6 @@
 using RuApp.Models;
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
 
@@ -16,6 +18,33 @@ public sealed class RetainedContextMeterPresenter
     private int _visibleMessageStart;
     private int? _reportedPromptTokens;
     private bool _hasKnownHistoryBoundary = true;
+    private long _estimateSequence;
+    private int? _preparedInputTokens;
+    public ContextTokenBreakdown? ContextTokens { get; private set; }
+
+    public void RestoreUsage(string runId, string sessionId, string? protocol, AgentModelUsage usage)
+    {
+        if (!Owns(runId, sessionId) || _usageSequence > 0 || _estimateSequence > 0) return;
+        _reportedPromptTokens = ResolvePromptTokens(protocol, usage);
+        ContextTokens = usage.ContextTokens;
+    }
+
+    public bool ObserveEstimate(string runId, string sessionId, AgentUsageEstimateModel estimate)
+    {
+        if (!Owns(runId, sessionId) || estimate.TransientSequence <= _estimateSequence) return false;
+        _estimateSequence = estimate.TransientSequence;
+        _preparedInputTokens = (int)Math.Min(int.MaxValue, estimate.EstimatedInputTokens);
+        _reportedPromptTokens = null;
+        ContextTokens = estimate.ContextTokens;
+        _hasKnownHistoryBoundary = true;
+        return true;
+    }
+
+    private void ClearBreakdown()
+    {
+        _preparedInputTokens = null;
+        ContextTokens = null;
+    }
 
     public void ScopeToRun(AgentRunModel? run, string? activeSessionId)
     {
@@ -33,6 +62,8 @@ public sealed class RetainedContextMeterPresenter
         _sessionId = sessionId;
         _boundarySequence = 0;
         _usageSequence = 0;
+        _estimateSequence = 0;
+        ClearBreakdown();
         _visibleMessageStart = 0;
         _reportedPromptTokens = null;
         _hasKnownHistoryBoundary = true;
@@ -50,6 +81,7 @@ public sealed class RetainedContextMeterPresenter
         _usageSequence = Math.Max(_usageSequence, sequence);
         _reportedPromptTokens = null;
         _hasKnownHistoryBoundary = false;
+        ClearBreakdown();
     }
 
     public bool ObserveCompaction(string runId, string sessionId, long sequence, int visibleMessageCount)
@@ -64,6 +96,7 @@ public sealed class RetainedContextMeterPresenter
         _visibleMessageStart = Math.Max(0, visibleMessageCount);
         _reportedPromptTokens = null;
         _hasKnownHistoryBoundary = true;
+        ClearBreakdown();
         return true;
     }
 
@@ -80,6 +113,8 @@ public sealed class RetainedContextMeterPresenter
 
         _reportedPromptTokens = ResolvePromptTokens(protocol, usage);
         _usageSequence = sequence.Value;
+        _preparedInputTokens = null;
+        ContextTokens = usage.ContextTokens;
         if (_reportedPromptTokens is not null)
         {
             _hasKnownHistoryBoundary = true;
@@ -114,7 +149,7 @@ public sealed class RetainedContextMeterPresenter
         int unsentEstimate = ModelContextSpecs.EstimateTokens(unsentCharacters, unsentImages);
         int reported = _reportedPromptTokens ?? 0;
         int estimate = historyEstimate + unsentEstimate;
-        int used = _reportedPromptTokens is { } promptTokens
+        int used = (_reportedPromptTokens ?? _preparedInputTokens) is { } promptTokens
             ? (int)Math.Min(int.MaxValue, (long)promptTokens + unsentEstimate)
             : estimate;
         return (historyCharacters + unsentCharacters, historyImages + unsentImages, reported, estimate, used, _hasKnownHistoryBoundary);

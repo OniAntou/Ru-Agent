@@ -15,6 +15,29 @@ namespace RuAgent.Runtime.Model.Tests;
 public sealed class ModelStepServiceTests
 {
     [Fact]
+    public async Task Measured_request_parts_attach_to_usage_without_replacing_provider_counts()
+    {
+        var service = new ModelStepService(new OpenAiCompatibleModelProvider(new HttpClient(new ContextUsageHandler())));
+        var bootstrap = new ProviderBootstrapData("fixture", ProviderProtocols.ChatCompletions,
+            new Uri("https://provider.invalid/v1/chat/completions"), "fixture-model", "synthetic");
+        var prepared = service.PrepareRequest(Request(bootstrap: bootstrap));
+        var result = await service.RunPreparedAsync(prepared, null, CancellationToken.None);
+        Assert.NotNull(prepared.ContextTokens);
+        Assert.True(prepared.ContextTokens.SystemPrompt > 0);
+        Assert.Equal(prepared.ContextTokens, result.Usage!.ContextTokens);
+        Assert.Equal(321, result.Usage.InputTokens);
+    }
+
+    private sealed class ContextUsageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":321,\"completion_tokens\":1,\"total_tokens\":322}}\n\ndata: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            });
+    }
+
+    [Fact]
     public async Task Prepared_projection_is_the_exact_dispatched_body_and_counts_images_separately()
     {
         var provider = new ProjectingFakeProvider();

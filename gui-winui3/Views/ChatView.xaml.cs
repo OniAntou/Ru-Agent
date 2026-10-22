@@ -307,8 +307,7 @@ namespace RuApp.Views
 
         /// <summary>
         /// Re-evaluates the welcome decoration after a theme switch. The Meteor
-        /// Shower theme animates the meteor field, Starry Night shows the
-        /// painting; plain Light/Dark stay still.
+        /// Shower theme animates the meteor field; plain Light/Dark stay still.
         /// </summary>
         public void RefreshBackdropEffect()
         {
@@ -318,19 +317,7 @@ namespace RuApp.Views
             {
                 MeteorShowerField.IsActive = show && theme == UiTheme.DarkMeteorShower;
             }
-            bool starry = show && theme == UiTheme.StarryNight;
-            if (StarryPainting != null)
-            {
-                StarryPainting.Visibility = starry ? Visibility.Visible : Visibility.Collapsed;
-            }
-            if (StarryScrim != null)
-            {
-                StarryScrim.Visibility = starry ? Visibility.Visible : Visibility.Collapsed;
-            }
-            if (StarryLivingField != null)
-            {
-                StarryLivingField.IsActive = starry;
-            }
+
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
@@ -374,6 +361,7 @@ namespace RuApp.Views
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
             _agentController?.ContextCompacted += OnAgentContextCompacted;
+            if (_agentController is not null) _agentController.ContextEstimateReceived += OnContextEstimateReceived;
             _agentController?.RunAdopted += OnAgentRunAdopted;
             ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             QuestionPanel.AnswerRequested += OnQuestionAnswerRequested;
@@ -427,6 +415,7 @@ namespace RuApp.Views
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
+                _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
                 _agentController.RunAdopted -= OnAgentRunAdopted;
             }
 
@@ -446,6 +435,7 @@ namespace RuApp.Views
                 _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
                 _agentController.ContextCompacted += OnAgentContextCompacted;
+                _agentController.ContextEstimateReceived += OnContextEstimateReceived;
                 _agentController.RunAdopted += OnAgentRunAdopted;
             }
 

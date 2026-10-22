@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text.Json;
 
 using RuApp.Services;
+using RuAgent.Protocol.Harness;
 
 namespace RuApp.Models;
 
@@ -29,6 +30,8 @@ public sealed record AgentModelUsage(
     string? Model = null,
     bool? InputTokensIncludeCache = null)
 {
+    public ContextTokenBreakdown? ContextTokens { get; init; }
+    public AgentRunModel? ContextSnapshotRun { get; init; }
     /// <summary>Largest individual report when this value aggregates a run; never a context-window sum.</summary>
     public int? PeakStepTokens { get; init; }
     public int? UncachedInputTokens => InputTokens is { } input
@@ -125,7 +128,8 @@ public sealed record AgentModelUsage(
                 // ReadOptional: a report recorded before the field existed has none and
                 // must still parse, as a run whose price nobody can look up.
                 ReadModel(document.RootElement),
-                ReadInputAccounting(document.RootElement));
+                ReadInputAccounting(document.RootElement))
+                { ContextTokens = ContextTokenBreakdown.ReadOptional(document.RootElement) };
             return usage.HasAny ? usage : null;
         }
         catch (JsonException exception)

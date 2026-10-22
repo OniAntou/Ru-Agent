@@ -215,7 +215,8 @@ namespace RuApp.Services
                     var usage = await GetLatestRunUsageAsync(runs[index].RunId, cancellationToken);
                     if (usage is not null)
                     {
-                        return usage;
+                        return usage.ContextTokens is null ? usage
+                            : usage with { ContextSnapshotRun = await GetRunAsync(runs[index].RunId, cancellationToken) };
                     }
                 }
             }

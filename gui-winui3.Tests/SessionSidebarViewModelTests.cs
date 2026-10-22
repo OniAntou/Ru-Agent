@@ -216,29 +216,6 @@ public sealed class SessionSidebarViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Search_renders_after_the_quiet_period_and_reports_the_count()
-    {
-        var backend = new FakeSessions(Session("a", "Fix build"), Session("b", "Write docs"));
-        var delay = new ManualDelay();
-        var viewModel = NewViewModel(backend, delay.WaitAsync);
-        viewModel.SetAppRoot(AppRoot);
-        viewModel.SetRefreshActive(true);
-        await viewModel.RefreshAsync();
-
-        var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        viewModel.Rendered += () => rendered.TrySetResult();
-        viewModel.SearchText = "docs";
-        Assert.False(viewModel.IsSearchCountVisible);
-        delay.Release();
-        await rendered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        Assert.True(viewModel.IsSearchCountVisible);
-        Assert.Equal("1 result", viewModel.SearchCountText);
-        Assert.Contains(viewModel.Rows, row => row is SessionInfo { Id: "b" });
-        Assert.DoesNotContain(viewModel.Rows, row => row is SessionInfo { Id: "a" });
-    }
-
-    [Fact]
     public async Task A_cli_session_can_only_move_within_its_own_group()
     {
         var cli = Session("cli", "Terminal run");
@@ -272,10 +249,26 @@ public sealed class SessionSidebarViewModelTests : IDisposable
         Assert.Contains(viewModel.Groups.Single(candidate => candidate.Key == group.Key).Sessions, session => session.Id == "a");
     }
 
-    private SessionSidebarViewModel NewViewModel(FakeSessions backend, Func<TimeSpan, CancellationToken, Task>? delay = null) =>
+    [Fact]
+    public async Task Section_folding_keeps_all_sessions_and_selecting_one_restores_its_group()
+    {
+        var first = Session("a", "First");
+        var backend = new FakeSessions(first, Session("b", "Second"));
+        await using var vm = NewViewModel(backend);
+        vm.SetAppRoot(AppRoot);
+        vm.SetRefreshActive(true);
+        await vm.RefreshAsync();
+        Assert.Equal(2, vm.Rows.OfType<SessionInfo>().Count());
+        vm.ToggleSection(SidebarSessionOrganization.RecentsKey);
+        Assert.Empty(vm.Rows.OfType<SessionInfo>());
+        Assert.Equal(2, vm.Sessions.Count);
+        vm.Select(first);
+        Assert.Equal(2, vm.Rows.OfType<SessionInfo>().Count());
+    }
+
+    private SessionSidebarViewModel NewViewModel(FakeSessions backend) =>
         new(backend,
             action => action(),
-            delay ?? ((_, _) => Task.CompletedTask),
             new SidebarOrganizationStore(Path.Combine(_root, "organization.json")),
             new WorkspaceGroupPreferenceStore(Path.Combine(_root, "groups.json")),
             new WorkspacePinStore(Path.Combine(_root, "pins.json")),
@@ -363,19 +356,4 @@ public sealed class SessionSidebarViewModelTests : IDisposable
         }
     }
 
-    private sealed class ManualDelay
-    {
-        private TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public async Task WaitAsync(TimeSpan delay, CancellationToken token)
-        {
-            await _gate.Task.WaitAsync(token);
-        }
-
-        public void Release()
-        {
-            _gate.TrySetResult();
-            _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-    }
 }

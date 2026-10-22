@@ -12,11 +12,13 @@ public readonly record struct ResponsiveLayoutMetrics(
     double DefaultSidebarWidth,
     double MinSidebarWidth,
     double MaxSidebarWidth,
-    double NarrowRailWidth,
     double PageHorizontalPadding);
 
 public static class ResponsiveLayoutPolicy
 {
+    public const double MinimumSidebarWidth = 220;
+    public const double MaximumSidebarWidth = 360;
+    public const double DefaultSidebarWidth = 250;
     public static ResponsiveLayoutMetrics GetForWidth(double width)
     {
         if (double.IsNaN(width))
@@ -26,17 +28,19 @@ public static class ResponsiveLayoutPolicy
 
         if (width < 900)
         {
-            return new(ResponsiveLayoutTier.Narrow, 72, 72, 72, 72, 12);
+            return new(ResponsiveLayoutTier.Narrow, DefaultSidebarWidth, MinimumSidebarWidth, MaximumSidebarWidth, 12);
         }
 
         if (width < 1280)
         {
-            return new(ResponsiveLayoutTier.Compact, 210, 180, 320, 72, 24);
+            return new(ResponsiveLayoutTier.Compact, DefaultSidebarWidth, MinimumSidebarWidth, MaximumSidebarWidth, 24);
         }
 
-        return new(ResponsiveLayoutTier.Wide, 250, 180, 400, 72, 36);
+        return new(ResponsiveLayoutTier.Wide, DefaultSidebarWidth, MinimumSidebarWidth, MaximumSidebarWidth, 36);
     }
 
     public static double ClampSidebarWidth(double width, ResponsiveLayoutMetrics metrics)
-        => Math.Clamp(width, metrics.MinSidebarWidth, metrics.MaxSidebarWidth);
+        => double.IsFinite(width)
+            ? Math.Clamp(width, metrics.MinSidebarWidth, metrics.MaxSidebarWidth)
+            : metrics.DefaultSidebarWidth;
 }

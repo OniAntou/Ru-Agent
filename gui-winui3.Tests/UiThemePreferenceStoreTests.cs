@@ -47,14 +47,20 @@ public sealed class UiThemePreferenceStoreTests : IDisposable
         Assert.Equal(UiTheme.DarkMeteorShower, store.Load());
     }
 
-    [Fact]
-    public void TrySave_and_load_round_trip_starry_night_theme()
+    [Theory]
+    [InlineData("StarryNight")]
+    [InlineData("starry-night")]
+    [InlineData(" STARRYNIGHT ")]
+    public void Removed_starry_preferences_resolve_to_dark(string stored)
     {
         var path = Path.Combine(_root, "ui-preferences.json");
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new { theme = stored }));
         var store = new UiThemePreferenceStore(path);
-
-        Assert.True(store.TrySave(UiTheme.StarryNight));
-        Assert.Equal(UiTheme.StarryNight, store.Load());
+        Assert.Equal(UiTheme.Dark, store.Load());
+        Assert.True(store.TrySave(store.Load()));
+        Assert.Contains("Dark", File.ReadAllText(path));
+        Assert.DoesNotContain("Starry", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

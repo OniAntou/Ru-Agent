@@ -22,7 +22,7 @@ public sealed class SidebarOrganizationTests : IDisposable
             Assert.True(SidebarSessionOrganization.CanMoveTo(session, group.Key));
             Assert.False(SidebarSessionOrganization.CanMoveTo(session, SidebarSessionOrganization.RecentsKey));
             Assert.Equal(cwd, session.WorkspacePath);
-            Assert.Single(WorkspaceSessionProjection.Project([session], "CLI Session",
+            Assert.Single(WorkspaceSessionProjection.Project([session],
                 row => SidebarSessionOrganization.GroupFor(row, @"D:\LLM", preferences)).Groups);
         }
         Assert.False(SidebarSessionOrganization.CanMoveTo(new() { ClientSource = "gui" }, SidebarSessionOrganization.CliKey));
@@ -55,7 +55,7 @@ public sealed class SidebarOrganizationTests : IDisposable
         var session = new SessionInfo { Id = "s", WorkspaceId = "actual", WorkspacePath = @"C:\actual", MessageCount = 2 };
         Assert.True(store.Move("s", @"C:\organized", null, ["s", "other"]));
         var reopened = new SidebarOrganizationStore(FilePath);
-        var projection = WorkspaceSessionProjection.Project([session], "", row => SidebarSessionOrganization.GroupFor(row, @"D:\LLM", reopened.Current));
+        var projection = WorkspaceSessionProjection.Project([session], row => SidebarSessionOrganization.GroupFor(row, @"D:\LLM", reopened.Current));
         Assert.Equal(@"C:\organized", Assert.Single(projection.Groups).Path);
         Assert.Same(session, Assert.Single(Assert.Single(projection.Groups).Sessions));
         Assert.Equal(@"C:\actual", session.WorkspacePath);

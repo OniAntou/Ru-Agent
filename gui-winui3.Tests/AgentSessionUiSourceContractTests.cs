@@ -256,7 +256,7 @@ public sealed class AgentSessionUiSourceContractTests
         var header = GuiSource.Require(document, "WorkspaceHeader");
         Assert.Equal("WORKSPACES", GuiSource.AttributeValue(header, "Text"));
 
-        foreach (var name in new[] { "WorkspaceSearchButton", "WorkspaceFilterButton", "WorkspaceNewButton", "WorkspaceSearchBox" })
+        foreach (var name in new[] { "WorkspaceNewButton" })
         {
             Assert.Contains(name, GuiSource.NamedElements(document).Keys);
         }
@@ -356,7 +356,8 @@ public sealed class AgentSessionUiSourceContractTests
             .First(element => element.Name.LocalName == "Setter"
                 && GuiSource.AttributeValue(element, "Property") == "Padding");
         Assert.Equal("0", GuiSource.AttributeValue(paddingSetter, "Value"));
-        Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
+        foreach (var removed in new[] { "WorkspaceSearchButton", "WorkspaceFilterButton", "WorkspaceSearchBox", "WorkspaceSearchCount" })
+            Assert.DoesNotContain(removed, GuiSource.NamedElements(document).Keys);
 
         Assert.Contains("SessionTimeText", GuiSource.NamedElements(document).Keys);
         var timeText = GuiSource.NamedElements(document)["SessionTimeText"];
@@ -394,7 +395,7 @@ public sealed class AgentSessionUiSourceContractTests
     public void Sidebar_controls_remain_wired_to_their_ui_handlers()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        foreach (string name in new[] { "SidebarSessionList", "WorkspaceSearchBox", "WorkspaceGroupToggle" })
+        foreach (string name in new[] { "SidebarSessionList", "WorkspaceGroupToggle" })
         {
             Assert.Contains(name, GuiSource.NamedElements(document).Keys);
         }

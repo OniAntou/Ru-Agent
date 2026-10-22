@@ -6,8 +6,7 @@ public enum UiTheme
 {
     Light,
     Dark,
-    DarkMeteorShower,
-    StarryNight
+    DarkMeteorShower
 }
 
 public sealed class UiThemePreferenceStore
@@ -52,7 +51,7 @@ public sealed class UiThemePreferenceStore
             if (string.Equals(name, "starry-night", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "starrynight", StringComparison.OrdinalIgnoreCase))
             {
-                return UiTheme.StarryNight;
+                return UiTheme.Dark;
             }
 
             if (!Enum.TryParse(name, ignoreCase: true, out UiTheme theme)

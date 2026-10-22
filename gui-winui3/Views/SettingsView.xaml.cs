@@ -188,7 +188,6 @@ namespace RuApp.Views
                 new DropdownOption(ThemeDarkOption, ThemeDarkText, ThemeDarkCheck, "dark"),
                 new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
                 new DropdownOption(ThemeDarkMeteorOption, ThemeDarkMeteorText, ThemeDarkMeteorCheck, "dark-meteor"),
-                new DropdownOption(ThemeStarryNightOption, ThemeStarryNightText, ThemeStarryNightCheck, "starry-night"),
             };
             _presetOptions = new[]
             {

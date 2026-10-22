@@ -11,17 +11,6 @@ namespace RuApp.Tests;
 public sealed class AgentContextMeterPolicyTests
 {
     [Fact]
-    public void The_overhead_is_the_reported_gap_above_the_history_estimate()
-    {
-        // The report covers system prompt, tool definitions and history while
-        // the estimate covers history alone: the gap is the overhead, and no
-        // report means no overhead row instead of a guess.
-        Assert.Equal(40_800, AgentContextMeterPolicy.OverheadTokens(1_200, 42_000));
-        Assert.Null(AgentContextMeterPolicy.OverheadTokens(3_500, 0));
-        Assert.Null(AgentContextMeterPolicy.OverheadTokens(3_500, 3_500));
-    }
-
-    [Fact]
     public void The_provider_report_wins_over_the_character_estimate()
     {
         // The provider total already covers system prompt, tool definitions and
@@ -164,27 +153,16 @@ public sealed class AgentContextMeterPolicyTests
     }
 
     [Fact]
-    public void The_flyout_paints_messages_and_overhead_as_separate_segments()
+    public void The_flyout_paints_three_measured_categories_without_an_inferred_overhead()
     {
-        // One perfectly flat bar: messages solid accent, overhead violet so the
-        // small share still reads. The legend rows stay one per measured part.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var fill = GuiSource.Require(document, "ContextBreakdownFill");
-        var stops = fill.Descendants()
-            .Where(element => element.Name.LocalName == "GradientStop")
-            .ToList();
-
-        Assert.True(stops.Count >= 4);
-        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuAccentColor"));
-        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuVioletColor"));
-
-        GuiSource.Require(document, "ContextOverheadRow");
-        GuiSource.Require(document, "ContextMessagesLabel");
-        GuiSource.Require(document, "ContextOverheadLabel");
-
-        string code = GuiSource.ViewText("ChatView");
-        string update = GuiSource.MethodBody(code, "UpdateContextUsage");
-        Assert.Contains("OverheadTokens", update, StringComparison.Ordinal);
+        var segments = GuiSource.Require(document, "ContextSegments");
+        Assert.Equal(3, segments.Elements().Count(element => element.Name.LocalName == "Border"));
+        foreach (var name in new[] { "ContextSystemLabel", "ContextToolsLabel", "ContextMessagesLabel" })
+            GuiSource.Require(document, name);
+        var update = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateContextUsage");
+        Assert.Contains("ContextPanelPresenter.Project", update);
+        Assert.DoesNotContain("OverheadTokens", update);
     }
 
     [Fact]
@@ -217,10 +195,8 @@ public sealed class AgentContextMeterPolicyTests
         Assert.True(GuiSource.IsDescendantOf(identity, well));
         Assert.Equal("Wrap", GuiSource.AttributeValue(identity, "TextWrapping"));
 
-        var content = well.Parent;
-        Assert.NotNull(content);
-        Assert.Equal("StackPanel", content!.Name.LocalName);
-        Assert.True(GuiSource.IntAttribute(content, "Width") > 0);
+        Assert.True(GuiSource.IntAttribute(identity, "Width") > 0);
+        Assert.Contains("ToolTip", identity.Parent!.Name.LocalName);
 
         string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateContextUsage");
@@ -235,7 +211,7 @@ public sealed class AgentContextMeterPolicyTests
         // the last glyph off the legend value. The content must fit the frame.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var flyout = GuiSource.Require(document, "ContextWindowFlyout");
-        var style = flyout.Descendants().Single(element => element.Name.LocalName == "Style");
+        var style = flyout.Descendants().Single(element => element.Name.LocalName == "Style" && GuiSource.AttributeValue(element, "TargetType") == "FlyoutPresenter");
         double StyleNumber(string property) => double.Parse(
             style.Elements()
                 .Single(element => element.Name.LocalName == "Setter"
@@ -243,7 +219,7 @@ public sealed class AgentContextMeterPolicyTests
                 .Attribute("Value")!.Value.Split(',')[0],
             CultureInfo.InvariantCulture);
 
-        var content = GuiSource.Require(document, "RetainedRunPinWell").Parent!;
+        var content = GuiSource.Require(document, "ContextPanelContent");
         int contentWidth = GuiSource.IntAttribute(content, "Width");
         double innerWidth = StyleNumber("Width")
             - (2 * StyleNumber("Padding"))

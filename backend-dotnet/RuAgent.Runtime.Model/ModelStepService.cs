@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 
@@ -40,6 +41,10 @@ public sealed class PreparedModelStep
         EstimatedInputTokens = estimatedInputTokens;
         MaxPromptTokens = maxPromptTokens;
         ContextScope = contextScope;
+        ContextTokens = request.PreparedBodyJson is { } contextBody
+            ? RequestContextEstimator.Measure(contextBody,
+                request.Images.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data)), request.Images.Count)
+            : null;
         OutputTokenCap = request.MaximumOutputTokens;
         SerializedBodyBytes = request.PreparedBodyJson is { } body
             ? Encoding.UTF8.GetByteCount(body)
@@ -58,6 +63,7 @@ public sealed class PreparedModelStep
     internal string? ContextScope { get; }
     public long EstimatedInputTokens { get; }
     public long MaxPromptTokens { get; }
+    public ContextTokenBreakdown? ContextTokens { get; }
     public int SerializedBodyBytes { get; }
     public string? SerializedBodySha256 { get; }
     public int? OutputTokenCap { get; }
@@ -109,7 +115,7 @@ public sealed class ModelStepService
     /// <summary>Tail-kept provider reasoning per step. The projector clamps
     /// further for the activity wire; this cap bounds in-process memory.</summary>
     private const int MaximumReasoningChars = 8_000;
-    private const int ImageInputTokenAllowance = 4_096;
+    private const int ImageInputTokenAllowance = RequestContextEstimator.ImageInputTokenAllowance;
     private const long UnknownContextWindowTokens = 32_768;
     // Legacy literal: the direct (non-provider) step id is folded into the
     // synthetic provider call id as "ru_call_<step>_1", and that id is durable —
@@ -466,6 +472,7 @@ public sealed class ModelStepService
             && prepared.Source.Images.Count == 0 && prepared.Source.PromptInHistory)
             _tokenAnchors.Observe(scope, body, providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri,
                 providerBootstrap.Model, usage);
+        if (usage is not null) usage = usage with { ContextTokens = prepared.ContextTokens };
         return new ModelStepServiceResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text), providerContinuation);
         }
         catch (OperationCanceledException)

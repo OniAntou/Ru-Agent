@@ -242,9 +242,11 @@ precedence.
 
 The WinUI shell has three presentation tiers based on client width: Wide at
 1280 px and above, Compact from 900 through 1279 px, and Narrow below 900 px.
-Wide keeps the resizable 180–400 px sidebar; Compact keeps labels with tighter
-spacing and 180–320 px bounds; Narrow uses a 72 px icon rail and stacks page
-controls. These transitions are presentation-only and do not call the backend,
+Every tier keeps a full sidebar resizable from 220 to 360 px; Narrow stacks page
+controls without switching to an icon rail. The title-bar workspace-sidebar button
+hides the sidebar completely and restores its last expanded width. Dragging,
+Ctrl+Left/Right, and the splitter's arrows/Home/End share those bounds; double-click
+resets it to 250 px. These transitions are presentation-only and do not call the backend,
 restart polling, or recreate list sources.
 
 Automated tests cover policy boundaries, XAML state markers, vertical-only list
@@ -254,7 +256,7 @@ remains a user-run acceptance check.
 The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
 baseline, a sidebar with `WORKSPACES` above `RECENTS`, collapsible folder
-groups, search, and relative timestamps, and a centered document-style reading column.
+groups and relative timestamps, and a centered document-style reading column.
 Section headings have separate container styling; their spacing sits outside
 the hit area and does not inherit session-row hover or selection fills.
 Sessions whose working directory is the app's default root, or has not yet
@@ -335,7 +337,7 @@ unknown fields, malformed JSON, raw tool output, and replayed sequence keys are
 dropped without changing the durable cursor.
 The measured request size for a model step about to run rides a typed
 `agent.usage_estimate` transient frame (estimated input tokens, the step's prompt
-budget, and the model-step id), published before the step's first token and on the
+budget, model-step id and optional numeric `context_tokens` breakdown), published before the step's first token and on the
 same hub channel as activity rows so a delta burst cannot evict it. Provider usage
 only arrives when a step ends, so this frame is what lets a client's context meter
 move while the model is still working; the reported usage supersedes it.

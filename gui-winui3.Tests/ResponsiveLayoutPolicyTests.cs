@@ -24,9 +24,8 @@ public sealed class ResponsiveLayoutPolicyTests
 
         Assert.Equal(ResponsiveLayoutTier.Wide, metrics.Tier);
         Assert.Equal(250, metrics.DefaultSidebarWidth);
-        Assert.Equal(180, metrics.MinSidebarWidth);
-        Assert.Equal(400, metrics.MaxSidebarWidth);
-        Assert.Equal(72, metrics.NarrowRailWidth);
+        Assert.Equal(220, metrics.MinSidebarWidth);
+        Assert.Equal(360, metrics.MaxSidebarWidth);
         Assert.Equal(36, metrics.PageHorizontalPadding);
     }
 
@@ -35,20 +34,20 @@ public sealed class ResponsiveLayoutPolicyTests
     {
         var compact = ResponsiveLayoutPolicy.GetForWidth(1024);
 
-        Assert.Equal(180, ResponsiveLayoutPolicy.ClampSidebarWidth(100, compact));
+        Assert.Equal(220, ResponsiveLayoutPolicy.ClampSidebarWidth(100, compact));
         Assert.Equal(250, ResponsiveLayoutPolicy.ClampSidebarWidth(250, compact));
-        Assert.Equal(320, ResponsiveLayoutPolicy.ClampSidebarWidth(400, compact));
+        Assert.Equal(360, ResponsiveLayoutPolicy.ClampSidebarWidth(400, compact));
     }
 
     [Fact]
-    public void Narrow_metrics_force_the_icon_rail_width()
+    public void Narrow_metrics_keep_the_full_sidebar_and_the_same_resize_bounds()
     {
         var narrow = ResponsiveLayoutPolicy.GetForWidth(640);
 
-        Assert.Equal(72, narrow.DefaultSidebarWidth);
-        Assert.Equal(72, narrow.MinSidebarWidth);
-        Assert.Equal(72, narrow.MaxSidebarWidth);
+        Assert.Equal(250, narrow.DefaultSidebarWidth);
+        Assert.Equal(220, narrow.MinSidebarWidth);
+        Assert.Equal(360, narrow.MaxSidebarWidth);
         Assert.Equal(12, narrow.PageHorizontalPadding);
-        Assert.Equal(72, ResponsiveLayoutPolicy.ClampSidebarWidth(400, narrow));
+        Assert.Equal(360, ResponsiveLayoutPolicy.ClampSidebarWidth(400, narrow));
     }
 }

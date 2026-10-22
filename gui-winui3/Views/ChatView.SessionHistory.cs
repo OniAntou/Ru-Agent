@@ -516,10 +516,9 @@ namespace RuApp.Views
                     }
                 }
 
-                // Usage lives only in RAM during a turn, so an opened session
-                // has no provider report and the meter hides its system-plus-
-                // tools row. Replay the newest durable report onto the last
-                // assistant bubble; the forced repaint below picks it up.
+                // Restore the latest step's report and optional request breakdown,
+                // not cumulative session billing. The forced repaint below adopts
+                // its originating run's context capacity.
                 var restoredUsage = await _apiService.GetLatestSessionUsageAsync(sessionId, openToken);
                 if (restoredUsage is not null && IsCurrentOpen(generation))
                 {
@@ -950,6 +949,7 @@ namespace RuApp.Views
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
+                _agentController.ContextEstimateReceived -= OnContextEstimateReceived;
                 _agentController.RunAdopted -= OnAgentRunAdopted;
             }
             StopAllTextSweeps();
@@ -963,7 +963,6 @@ namespace RuApp.Views
                 _activityFlushTimer = null;
             }
             MeteorShowerField?.Dispose();
-            StarryLivingField?.Dispose();
         }
 
         private void DetachWaveTimer()

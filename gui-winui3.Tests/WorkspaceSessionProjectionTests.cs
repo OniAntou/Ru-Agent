@@ -18,7 +18,7 @@ public sealed class WorkspaceSessionProjectionTests
             S("u1", "Lost", null, null, null),
         };
 
-        var projection = WorkspaceSessionProjection.Project(sessions, "");
+        var projection = WorkspaceSessionProjection.Project(sessions);
 
         Assert.Equal(3, projection.Groups.Count);
         Assert.Equal("ws_b", projection.Groups[0].Key);
@@ -27,24 +27,6 @@ public sealed class WorkspaceSessionProjectionTests
         Assert.Equal(["a1", "a2"], Ids(projection.Groups[1]));
         Assert.Equal("ungrouped", projection.Groups[2].Key);
         Assert.Equal("Ungrouped", projection.Groups[2].Label);
-    }
-
-    [Theory]
-    [InlineData("alpha", new[] { "a1", "a2" })]
-    [InlineData("B ONE", new[] { "b1" })]
-    [InlineData("zzz", new string[0])]
-    public void Search_filters_across_groups_and_drops_empties(string query, string[] expected)
-    {
-        var sessions = new List<SessionInfo>
-        {
-            S("b1", "B one", "ws_b", "Beta", null),
-            S("a1", "A one", "ws_a", "Alpha", null),
-            S("a2", "A two", "ws_a", "Alpha", null),
-        };
-
-        var projection = WorkspaceSessionProjection.Project(sessions, query);
-
-        Assert.Equal(expected, AllIds(projection));
     }
 
     [Fact]
@@ -58,8 +40,7 @@ public sealed class WorkspaceSessionProjectionTests
     public void MergePinned_puts_pinned_first_and_adds_empty_pinned_groups()
     {
         var server = WorkspaceSessionProjection.Project(
-            new List<SessionInfo> { S("a1", "A one", "ws_a", "Alpha", @"D:\Work\Alpha") },
-            "");
+            new List<SessionInfo> { S("a1", "A one", "ws_a", "Alpha", @"D:\Work\Alpha") });
 
         var merged = WorkspaceSessionProjection.MergePinned(
             server.Groups,
@@ -82,10 +63,4 @@ public sealed class WorkspaceSessionProjectionTests
         return ids;
     }
 
-    private static List<string> AllIds(WorkspaceProjection projection)
-    {
-        var ids = new List<string>();
-        foreach (var g in projection.Groups) ids.AddRange(Ids(g));
-        return ids;
-    }
 }

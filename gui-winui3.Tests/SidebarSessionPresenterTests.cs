@@ -30,8 +30,8 @@ public sealed class SidebarSessionPresenterTests
             new SessionInfo { Id = "draft", Title = "New Session", WorkspacePath = @"C:\project" },
         };
         var result = SidebarSessionPresenter.Build(
-            sessions, null, "C:\\app", new SidebarOrganizationPreferences(), [],
-            activeSessionId: "old", activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
+            sessions, "C:\\app", new SidebarOrganizationPreferences(), [],
+            activeSessionId: "old", expanded: (_, fallback) => fallback, showAll: _ => false);
 
         Assert.Equal(new[] { "WORKSPACES", "project", "RECENTS", "CLI SESSIONS" },
             result.Rows.Select(row => row switch
@@ -44,29 +44,22 @@ public sealed class SidebarSessionPresenterTests
     }
 
     [Fact]
-    public void Search_filters_by_title_workspace_label_and_path_without_empty_groups()
+    public void Active_workspace_does_not_hide_sessions_in_other_groups()
     {
-        var sessions = new[]
-        {
-            new SessionInfo { Id = "one", Title = "API work", WorkspacePath = @"C:\services\one", MessageCount = 1 },
-            new SessionInfo { Id = "two", Title = "Notes", WorkspacePath = @"C:\docs", MessageCount = 1 },
-        };
-
         var result = SidebarSessionPresenter.Build(
-            sessions, "services", null, new SidebarOrganizationPreferences(), [],
-            activeSessionId: null, activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
-
-        Assert.Equal(1, result.MatchCount);
-        Assert.Equal("one", Assert.Single(result.Rows.OfType<SessionInfo>()).Id);
-        Assert.DoesNotContain(result.Groups, group => group.Sessions.Count == 0);
+            [new SessionInfo { Id = "one", Title = "API work", WorkspacePath = @"C:\services\one" },
+             new SessionInfo { Id = "two", Title = "Notes", WorkspacePath = @"C:\docs" }],
+            null, new SidebarOrganizationPreferences(), [], "one", (_, _) => true, _ => false);
+        Assert.Equal(2, result.Groups.Count);
+        Assert.Equal(new[] { "one", "two" }, result.Rows.OfType<SessionInfo>().Select(row => row.Id).Order());
     }
 
     [Fact]
     public void Empty_projection_keeps_the_three_sidebar_section_headers_available()
     {
         var result = SidebarSessionPresenter.Build(
-            [], null, null, new SidebarOrganizationPreferences(), [],
-            activeSessionId: null, activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
+            [], null, new SidebarOrganizationPreferences(), [],
+            activeSessionId: null, expanded: (_, fallback) => fallback, showAll: _ => false);
 
         Assert.Equal(
             new[] { "WORKSPACES", "RECENTS", "CLI SESSIONS" },
@@ -77,13 +70,4 @@ public sealed class SidebarSessionPresenterTests
             result.Rows.OfType<SidebarEmptyRow>().Select(empty => empty.Label));
     }
 
-    [Fact]
-    public void The_workspaces_hint_leaves_once_a_workspace_exists_or_while_searching()
-    {
-        var searching = SidebarSessionPresenter.Build(
-            [], "anything", null, new SidebarOrganizationPreferences(), [],
-            activeSessionId: null, activeWorkspaceFilter: false, expanded: (_, fallback) => fallback, showAll: _ => false);
-
-        Assert.DoesNotContain(searching.Rows.OfType<SidebarEmptyRow>(), empty => empty.Label == SidebarSessionPresenter.NoWorkspacesLabel);
-    }
 }

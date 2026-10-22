@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Redesign the context popup with a compact usage header, segmented bar and separate System prompt, Tool definitions and Messages estimates from the prepared request. Restore saved breakdowns with their originating run; explicitly show unknown values for older chats.
+
+- **fix(gui)**: Keep the workspace sidebar between 220 and 360 px for pointer and keyboard resizing across window sizes. Replace the miniature icon rail with complete hide/show that restores the previous width; clean up resize capture on interruption.
+- **refactor(gui)**: Remove workspace sidebar search/current-group filtering and the Starry Night theme, painting and animation. Existing Starry Night preferences open in Dark.
 - **feat(gui)**: Models settings opens on a provider overview with separate Add Provider and Add custom Provider actions. Saved providers have an Edit action; credentials and connection checks open in an inline editor with Back navigation.
 - **feat(gui)**: Click a workspace file to open a read-only Preview tab, with fullscreen support. Render Word, PowerPoint and Excel through installed Windows preview handlers; render PDF pages, images, Markdown and source text locally. Missing renderers, unsupported formats and oversized files show explicit errors.
 - **fix(gui)**: Keep last known background tasks through refresh failures and retry with backoff. Show subagent refresh failures and preparation/unavailable counts in the card, reader and accessible labels. Make panel resizing keyboard-accessible and end pointer resizing on release, cancellation, capture loss or hiding.

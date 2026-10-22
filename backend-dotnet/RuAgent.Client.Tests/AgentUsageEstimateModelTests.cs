@@ -9,6 +9,19 @@ public sealed class AgentUsageEstimateModelTests
     private const string StepId = "step_0123456789abcdef0123456789abcdef";
 
     [Fact]
+    public void Optional_context_partition_is_validated_and_travels_with_its_step()
+    {
+        var frame = Frame(7, new { estimated_input_tokens = 42, max_prompt_tokens = 100, model_step_id = StepId,
+            context_tokens = new { system_prompt = 10, tool_definitions = 12, messages = 20, estimator = "request-bytes-v1" } });
+        Assert.True(AgentUsageEstimateModel.TryParse(frame, out var estimate));
+        Assert.Equal(42, estimate!.ContextTokens!.Total);
+        Assert.Equal(12, estimate.ContextTokens.ToolDefinitions);
+        var bad = Frame(8, new { estimated_input_tokens = 42, max_prompt_tokens = 100, model_step_id = StepId,
+            context_tokens = new { system_prompt = -1, tool_definitions = 12, messages = 20, estimator = "request-bytes-v1" } });
+        Assert.False(AgentUsageEstimateModel.TryParse(bad, out _));
+    }
+
+    [Fact]
     public void TryParse_accepts_the_measured_request_size_for_a_step()
     {
         var frame = Frame(3, new { estimated_input_tokens = 4_000, max_prompt_tokens = 200_000, model_step_id = StepId });

@@ -2,6 +2,27 @@
 
 Current reference. [System ownership](../architecture.md) · [Domain glossary](../../CONTEXT.md) · [Tool policy](../operations/agent-tools.md).
 
+## Context window popup
+
+The compact composer popup shows used/context capacity, a thin segmented bar and
+three rows: System prompt, Tool definitions and Messages. `ChatView.Context.cs`
+keeps native painting; `ContextPanelPresenter` formats numeric estimates.
+Categories come from the prepared request, never from subtracting provider usage.
+They are approximate (`~`); the current draft is included in Messages. Images use
+a fixed 4,096-token allowance per image rather than provider image tokenization.
+Category proportions describe that estimate; the overall fill follows reported
+prompt usage when available, so category sums need not equal the provider total.
+
+The existing transient usage-estimate frame supplies categories during a run;
+optional metadata on durable model usage restores them when a chat is reopened.
+Restoration reads the originating run's pinned identity and context capacity.
+Missing legacy metadata shows `—` for System prompt and Tool definitions, with
+only a visible-message estimate available. Unknown capacity is stated explicitly.
+Run/session ownership, sequence guards and compaction invalidate stale categories.
+Provider billing and cache counters remain independent of these display estimates.
+The meter button's accessible help includes the total and all three values, so
+the reading remains available even when the flyout opens as a transient hover.
+
 ## Presentation ownership
 
 WinUI-independent presenters own settings load generations and save ordering,
@@ -42,12 +63,23 @@ Existing legacy credentials remain listed under their original identity; editing
 them does not replace them with a Models.dev provider. New credentials use the
 catalog flow. Back navigation restores keyboard focus to Add Provider.
 `SessionSidebarViewModel` owns the sidebar's session list (server rows merged in
-place with local drafts), workspace grouping, pins, search, manual organization,
+place with local drafts), workspace grouping, pins, manual organization,
 refresh and the create, select and delete workflows. `MainWindow` keeps native
 list selection, drag visuals, title waves and dialogs; it re-syncs selection on
 `Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
 A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
+The workspace sidebar has no search or current-workspace filter. Group expansion,
+pins, pagination, drag ordering and active-session visibility stay in its projection.
+`SidebarLayoutState` owns one expanded width in the 220–360 px range for every
+window tier. The title-bar workspace-sidebar toggle hides it completely and
+restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
+capture cancellation and width presentation; the focusable splitter exposes
+RangeValue, arrows and Home/End. Ctrl+Left/Right uses the same bounds; double-click
+resets to 250 px. The splitter has a real 10 px layout column and transparent hit
+surface; a 1 px column with negative margins clips a UserControl's pointer target.
+The removed Starry Night preference resolves to plain Dark;
+only Light, Dark and Meteor Shower remain selectable.
 `ChatModelPickerViewModel` owns the chat's model and reasoning selection: the
 grouped catalog subscription, debounced picker search, model save (a failed save
 is reported on the composer, not swallowed) and the effort options for the

@@ -65,7 +65,7 @@ namespace RuApp.Models
         /// Flat token charge per attached image. An estimate, not a measurement: the
         /// meter exists to warn before a request is rejected, not to bill exactly.
         /// </summary>
-        private const int TokensPerImage = 1000;
+        private const int TokensPerImage = RuAgent.Protocol.Harness.ContextTokenBreakdown.ImageTokenAllowance;
 
         public static int EstimateTokens(string? text)
         {

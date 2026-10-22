@@ -67,7 +67,7 @@ internal sealed record SidebarMoveTarget(string Text, string SessionId, string G
 
 /// <summary>
 /// The sidebar's session list: server rows merged with local drafts, workspace grouping,
-/// search, pins, manual organization, refresh and the create/select/delete workflows.
+/// pins, manual organization, refresh and the create/select/delete workflows.
 /// </summary>
 /// <remarks>
 /// Call members on the UI thread. Refresh results arrive through the dispatch delegate.
@@ -77,10 +77,8 @@ internal sealed record SidebarMoveTarget(string Text, string SessionId, string G
 /// </remarks>
 public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDisposable
 {
-    internal static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(250);
 
     private readonly ISessionListBackend _backend;
-    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly SidebarOrganizationStore _organization;
     private readonly WorkspaceGroupPreferenceStore _groupPreferences;
     private readonly WorkspacePinStore _pins;
@@ -89,14 +87,12 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
     private readonly List<WorkspaceGroup> _groups = new();
     private readonly RefreshController<SessionListResponse?> _refresh;
-    private CancellationTokenSource? _searchDelay;
     private long _navigationGeneration;
     private bool _disposed;
 
     internal SessionSidebarViewModel(
         ISessionListBackend backend,
         Action<Action> dispatch,
-        Func<TimeSpan, CancellationToken, Task>? delay = null,
         SidebarOrganizationStore? organization = null,
         WorkspaceGroupPreferenceStore? groupPreferences = null,
         WorkspacePinStore? pins = null,
@@ -104,7 +100,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         ArgumentNullException.ThrowIfNull(dispatch);
-        _delay = delay ?? Task.Delay;
         _organization = organization ?? new SidebarOrganizationStore();
         _groupPreferences = groupPreferences ?? new WorkspaceGroupPreferenceStore();
         _pins = pins ?? new WorkspacePinStore();
@@ -126,16 +121,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
 
     /// <summary>The flattened sidebar: section headers, workspace groups, sessions and "show more" rows.</summary>
     public ObservableCollection<object> Rows { get; } = new();
-
-    [ObservableProperty] public partial string SearchText { get; set; } = string.Empty;
-
-    [ObservableProperty] public partial bool IsSearchOpen { get; set; }
-
-    [ObservableProperty] public partial string SearchCountText { get; private set; } = string.Empty;
-
-    [ObservableProperty] public partial bool IsSearchCountVisible { get; private set; }
-
-    [ObservableProperty] public partial bool IsFilterActive { get; private set; }
 
     [ObservableProperty] public partial bool IsTruncated { get; private set; }
 
@@ -229,30 +214,21 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         }
     }
 
-    /// <summary>Rebuilds the flattened rows from sessions, groups, pins and search.</summary>
+    /// <summary>Rebuilds the flattened rows from sessions, groups and pins.</summary>
     internal void Render()
     {
         var projection = SidebarSessionPresenter.Build(
             Sessions.ToList(),
-            SearchText,
             AppRoot,
             _organization.Current,
             _pins.PinnedPaths,
             ActiveSessionId,
-            IsFilterActive,
             _groupPreferences.IsExpanded,
             key => _groupShowAll.Contains(key));
 
         _groups.Clear();
         _groups.AddRange(projection.Groups);
         ReconcileRows(projection.Rows);
-        SearchCountText = projection.MatchCount switch
-        {
-            0 => "No matches",
-            1 => "1 result",
-            _ => $"{projection.MatchCount} results",
-        };
-        IsSearchCountVisible = !string.IsNullOrWhiteSpace(SearchText);
         Rendered?.Invoke();
     }
 
@@ -293,49 +269,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         }
 
         while (Rows.Count > desired.Count) Rows.RemoveAt(Rows.Count - 1);
-    }
-
-    partial void OnSearchTextChanged(string value)
-    {
-        CancelSearchDelay();
-        var cancellation = new CancellationTokenSource();
-        _searchDelay = cancellation;
-        _ = RenderAfterSearchDelayAsync(cancellation);
-    }
-
-    private async Task RenderAfterSearchDelayAsync(CancellationTokenSource cancellation)
-    {
-        try
-        {
-            await _delay(SearchDelay, cancellation.Token);
-            if (!cancellation.IsCancellationRequested && !_disposed) Render();
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-        }
-    }
-
-    private void CancelSearchDelay()
-    {
-        var current = _searchDelay;
-        _searchDelay = null;
-        current?.Cancel();
-        current?.Dispose();
-    }
-
-    internal void OpenSearch() => IsSearchOpen = true;
-
-    internal void ClearSearch()
-    {
-        SearchText = string.Empty;
-        CancelSearchDelay();
-        IsSearchOpen = false;
-    }
-
-    internal void ToggleFilter()
-    {
-        IsFilterActive = !IsFilterActive;
-        Render();
     }
 
     /// <summary>
@@ -523,7 +456,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         Sessions.Insert(0, session);
         SelectedWorkspaceKey = workspaceKey;
         _groupPreferences.SetExpanded(GroupFor(session).Key, true);
-        ClearSearch();
         Render();
         return session;
     }
@@ -542,12 +474,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     {
         ++_navigationGeneration;
         ActivateDrafts(session.Id);
-        if (!string.IsNullOrWhiteSpace(SearchText))
-        {
-            ClearSearch();
-            Render();
-        }
-
         var key = GroupFor(session).Key;
         SelectedWorkspaceKey = key;
         if (!_groupPreferences.IsExpanded(key, defaultExpanded: true))
@@ -639,7 +565,6 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     {
         if (_disposed) return;
         _disposed = true;
-        CancelSearchDelay();
         await _refresh.DisposeAsync();
     }
 }

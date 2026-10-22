@@ -50,6 +50,7 @@ namespace RuApp
             if (captionHeight > 0)
             {
                 SidePanelToggleButton.Height = captionHeight;
+                NavigationSidebarToggleButton.Height = captionHeight;
             }
 
             TitleBarActions.Margin = new Thickness(
@@ -93,6 +94,7 @@ namespace RuApp
 
             bool isActive = args.WindowActivationState != WindowActivationState.Deactivated;
             Services.UiMotion.FadeOpacity(SidePanelToggleButton, isActive ? 1 : 0.55);
+            Services.UiMotion.FadeOpacity(NavigationSidebarToggleButton, isActive ? 1 : 0.55);
         }
 
         /// <summary>

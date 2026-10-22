@@ -841,6 +841,7 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
     {
         public long EstimatedInputTokens => StepRequest.EstimatedInputTokens;
         public long MaxPromptTokens => StepRequest.MaxPromptTokens;
+        public RuAgent.Protocol.Harness.ContextTokenBreakdown? ContextTokens => StepRequest.ContextTokens;
     }
 
     private sealed record NativeHistory(

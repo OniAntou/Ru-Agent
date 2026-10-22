@@ -7,7 +7,7 @@ namespace RuApp.Tests;
 public sealed class StudioDarkPaletteConsistencyTests
 {
     [Fact]
-    public void DefaultPacksKeepMeteorAndStarryIndependent()
+    public void DefaultPacksKeepMeteorIndependent()
     {
         var meteor = RuThemePalettes.PaletteFor(UiTheme.DarkMeteorShower);
         string Hex(Windows.UI.Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
@@ -16,7 +16,6 @@ public sealed class StudioDarkPaletteConsistencyTests
         Assert.Equal("#E2E8F0", Hex(meteor.Accent));
         Assert.Same(RuThemePalettes.StudioDark, RuThemePalettes.PaletteFor(UiTheme.Dark));
         Assert.Same(RuThemePalettes.StudioLight, RuThemePalettes.PaletteFor(UiTheme.Light));
-        Assert.Same(RuThemePalettes.StarryNight, RuThemePalettes.PaletteFor(UiTheme.StarryNight));
         Assert.NotEqual(meteor.Canvas, RuThemePalettes.StudioDark.Canvas);
     }
     [Fact]

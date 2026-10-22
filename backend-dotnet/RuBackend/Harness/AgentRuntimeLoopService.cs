@@ -492,6 +492,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
     private readonly Subagents.SubagentUserApplyCoordinator? _userApplies;
     private readonly Subagents.SubagentLivePublisher? _subagentLive;
     private readonly AgentRuntimeWakeSignal? _wake;
+    private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
 
     public AgentRuntimeLoopService(
         AgentConversationOutboxDispatcher dispatcher,
@@ -511,9 +512,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         Subagents.SubagentContinuationCoordinator? subagentContinuations = null,
         Subagents.SubagentUserApplyCoordinator? userApplies = null,
         Subagents.SubagentLivePublisher? subagentLive = null,
-        AgentRuntimeWakeSignal? wake = null)
+        AgentRuntimeWakeSignal? wake = null,
+        Hooks.RunLifecycleHooks? lifecycleHooks = null)
     {
         _wake = wake;
+        _lifecycleHooks = lifecycleHooks;
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _coordinatorFactory = coordinatorFactory ?? throw new ArgumentNullException(nameof(coordinatorFactory));
@@ -685,7 +688,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             if (run.State.IsTerminal())
             {
                 if (_userApplies is not null) await _userApplies.DriveAsync(run, cancellationToken).ConfigureAwait(false);
-                _summaryPublisher?.TryPublishSummary(run);
+                PublishRunFinished(run);
                 await RemoveRunRegistrationAsync(new RunId(runIdValue)).ConfigureAwait(false);
                 return;
             }
@@ -881,7 +884,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
         if (racedRun.State.IsTerminal())
         {
-            _summaryPublisher?.TryPublishSummary(racedRun);
+            PublishRunFinished(racedRun);
             await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
             return (false, null);
         }
@@ -1033,7 +1036,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                 {
                     if (refreshed.Run.State.IsTerminal())
                     {
-                        _summaryPublisher?.TryPublishSummary(refreshed.Run);
+                        PublishRunFinished(refreshed.Run);
                         await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         return;
                     }
@@ -1089,7 +1092,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
             {
                 if (resumed.Run.State.IsTerminal())
                 {
-                    _summaryPublisher?.TryPublishSummary(resumed.Run);
+                    PublishRunFinished(resumed.Run);
                     await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
@@ -1115,7 +1118,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
                     {
                         if (resumedInput.Run.State.IsTerminal())
                         {
-                            _summaryPublisher?.TryPublishSummary(resumedInput.Run);
+                            PublishRunFinished(resumedInput.Run);
                             await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                         }
 
@@ -1184,7 +1187,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
 
                 if (result.Run.State.IsTerminal())
                 {
-                    _summaryPublisher?.TryPublishSummary(result.Run);
+                    PublishRunFinished(result.Run);
                     await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                 }
 
@@ -1440,7 +1443,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         RunId runId,
         CancellationToken cancellationToken)
     {
-        if (_summaryPublisher is null)
+        if (_summaryPublisher is null && _lifecycleHooks is null)
         {
             return;
         }
@@ -1448,7 +1451,23 @@ public sealed class AgentRuntimeLoopService : BackgroundService, RuAgent.Hosting
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run is { } terminal && terminal.State.IsTerminal())
         {
-            _summaryPublisher.TryPublishSummary(terminal);
+            PublishRunFinished(terminal);
+        }
+    }
+
+    /// <summary>
+    /// Publishes a finished run's summary and starts its Stop hooks. Callers reach this
+    /// before the run's registration is released, so its workspace root is still known.
+    /// </summary>
+    private void PublishRunFinished(AgentRun run)
+    {
+        _summaryPublisher?.TryPublishSummary(run);
+        if (_lifecycleHooks is not null
+            && run.State.IsTerminal()
+            && _roots.TryGetRoot(run.RunId, out var workspaceRoot)
+            && workspaceRoot is not null)
+        {
+            _lifecycleHooks.RunFinished(run, AgentV1Shared.MapRunState(run.Status), workspaceRoot);
         }
     }
 }

@@ -7,6 +7,8 @@ public enum HookEvent
 {
     PreToolUse,
     PostToolUse,
+    UserPromptSubmit,
+    Stop,
 }
 
 /// <summary>One user-configured command bound to a tool-id pattern.</summary>
@@ -55,7 +57,12 @@ public sealed class HookConfiguration
 
     public bool Has(HookEvent hookEvent) => _hooks.Any(hook => hook.Event == hookEvent);
 
-    public static HookConfiguration Load(string workspaceRoot, string? userHome)
+    /// <summary>Hooks of a run-level event; a tool matcher has nothing to match there and is ignored.</summary>
+    public IReadOnlyList<HookDefinition> ForEvent(HookEvent hookEvent) =>
+        _hooks.Where(hook => hook.Event == hookEvent).ToArray();
+
+    /// <param name="workspaceRoot">Null loads only the user's hooks, as for a workspace not yet trusted.</param>
+    public static HookConfiguration Load(string? workspaceRoot, string? userHome)
     {
         var hooks = new List<HookDefinition>();
         foreach (var root in new[] { userHome, workspaceRoot })

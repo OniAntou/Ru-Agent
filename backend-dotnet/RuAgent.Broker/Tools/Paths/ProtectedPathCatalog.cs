@@ -2,7 +2,8 @@ namespace RuAgent.Broker.Tools.Paths;
 
 /// <summary>
 /// The catalog-protected paths: the harness's own key material and runtime
-/// descriptors, plus any paths the user adds through
+/// descriptors, Ru configuration that runs programs (<c>.ru\hooks.json</c>,
+/// <c>.ru\mcp.json</c>), plus any paths the user adds through
 /// <see cref="ExtraPathsEnvironmentVariable"/>. Credential stores and developer
 /// files (.ssh, .env, .git, cloud CLI homes) are ordinary paths: they follow the
 /// preset profile like any other target, matching the mainstream agents that
@@ -12,7 +13,7 @@ namespace RuAgent.Broker.Tools.Paths;
 /// </summary>
 public static class ProtectedPathCatalog
 {
-    public const string Version = "2";
+    public const string Version = "3";
 
     /// <summary>Semicolon-separated absolute paths that join the catalog-protected set.</summary>
     public const string ExtraPathsEnvironmentVariable = "RU_PROTECTED_PATHS";
@@ -31,6 +32,20 @@ public static class ProtectedPathCatalog
         "agent_harness",
         "harness_key",
     ];
+
+    /// <summary>
+    /// Ru configuration that runs programs: hooks run a command around tool calls and
+    /// MCP servers are programs Ru starts. Inside any <c>.ru</c> folder (the workspace's
+    /// or the user's) the model must not write them in plan or standard, or a write it
+    /// is allowed to make would run commands that terminal policy never evaluates.
+    /// </summary>
+    private static readonly string[] ProtectedRuConfigFileNames =
+    [
+        "hooks.json",
+        "mcp.json",
+    ];
+
+    private const string RuConfigDirectoryName = ".ru";
 
     public static bool IsProtected(string canonicalPath) =>
         IsProtected(canonicalPath, Environment.GetEnvironmentVariable);
@@ -71,6 +86,13 @@ public static class ProtectedPathCatalog
             {
                 return true;
             }
+        }
+
+        if (segments.Length >= 2
+            && string.Equals(segments[^2].TrimEnd('.', ' '), RuConfigDirectoryName, StringComparison.OrdinalIgnoreCase)
+            && ProtectedRuConfigFileNames.Contains(normalizedFileName, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
         }
 
         return IsExtraProtected(normalized, environment);

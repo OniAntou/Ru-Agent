@@ -97,12 +97,17 @@ project or in `~\.ru\hooks.json`:
 - A `PreToolUse` hook that exits with code **2** blocks the call, and what it writes to standard error is
   shown to the model as the reason. Any other failure, a timeout or a missing script never blocks.
 - A `PostToolUse` hook only observes. It cannot change the result.
+- `UserPromptSubmit` runs when you send a message. Exit code **2** refuses the message with the hook's
+  error text, and no run starts. Before you trust a project, only your own `~\.ru\hooks.json` runs.
+- `Stop` runs once when a run finishes, for example to send yourself a notification. It cannot change
+  the run.
 - Hooks time out after 30 seconds by default and at most 120 seconds. They start with a cleaned
   environment, so API keys are not passed to them.
 
 > [!NOTE]
 > A hook runs a program on your machine, so treat `hooks.json` like any script you run. Reading a hook
 > never widens what Ru may do: a call a hook allows still goes through the permission policy.
+> In Plan and Standard the agent cannot edit `hooks.json` with its file tools; edit it yourself.
 
 ## More
 

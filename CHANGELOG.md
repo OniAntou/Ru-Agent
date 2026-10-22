@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: Two run-level hook events. `UserPromptSubmit` runs before a run is created and can refuse the prompt (exit 2 → HTTP 422 `prompt_blocked_by_hook`, no run written); before a workspace is trusted only the user's own hooks run, from the profile folder. `Stop` runs once when a run finishes and only observes it.
 - **fix(backend)**: Startup recovery no longer treats a run this Host has just created as orphaned. The sweep can start after the first run of a new Host is already driving, and it failed such a run as `recovery_pre_dispatch` or committed under its first step.
 
+- **fix(security)**: The model can no longer write `.ru\hooks.json` (or `.ru\mcp.json`) with its file tools in Plan or Standard. A hook's command runs around later tool calls without terminal policy, so a hook file the agent wrote could run commands that explicit deny/ask rules or external-folder approvals refuse. Full Access is unchanged; the protected-path catalog is now version 3.
 
 - **perf(agent)**: Requests to the first-party Anthropic API ask for prompt caching, so each step of a run reads the unchanged history from cache instead of paying full input price for it again. Anthropic-compatible gateways are unchanged.
 - **perf(backend)**: A run waiting on an approval card no longer costs the Host work while it waits. The runtime loop rebuilt its coordinator and gateway and rewrote the workspace lease four times a second; measured on an isolated Host this was about 17% of a core and 23 disk writes per second (≈230 MB/hour of WAL), now no writes. The loop also idles at one poll per second when every run waits for the user.

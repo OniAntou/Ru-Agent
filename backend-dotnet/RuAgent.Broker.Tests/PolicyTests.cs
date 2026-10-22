@@ -381,6 +381,26 @@ public sealed class PolicyEvaluationTests
         Assert.Equal(reasonCode, evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("plan", "deny", "protected_path")]
+    [InlineData("standard", "deny", "protected_path")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Workspace_hook_configuration_follows_the_protected_path_rule(string preset, string decision, string reasonCode)
+    {
+        // A hook runs its command around later tool calls without terminal policy, so a
+        // model allowed to write it in standard could run what deny and ask rules refuse.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            FileCall(factory, "files.write", @".ru\hooks.json"),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reasonCode, evaluation.ReasonCode);
+    }
+
     [Fact]
     public void Full_access_allows_terminal_risks_web_and_external()
     {

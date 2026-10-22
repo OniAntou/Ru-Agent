@@ -29,7 +29,7 @@ mutation deny outright, read-only; external structured access asks), `standard`
 (bounded-local in-workspace mutation auto; external/escape ask; terminal uses
 the existing classifier and approval rules), and
 `full_access` (external structured files, arbitrary terminal, and structured
-protected paths — harness key/database files and runtime descriptors — are
+protected paths — harness key/database files, runtime descriptors and Ru hook and MCP configuration files — are
 automatic). Full Access terminal runs as
 the current Windows user and may access paths and network resources available
 to that user; there is no OS sandbox. Hard timeout, output cap, cancellation,

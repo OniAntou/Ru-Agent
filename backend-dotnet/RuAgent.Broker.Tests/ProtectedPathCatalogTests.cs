@@ -6,9 +6,32 @@ namespace RuAgent.Broker.Tests;
 public sealed class ProtectedPathCatalogTests
 {
     [Fact]
-    public void Catalog_version_is_locked_at_2()
+    public void Catalog_version_is_locked_at_3()
     {
-        Assert.Equal("2", ProtectedPathCatalog.Version);
+        Assert.Equal("3", ProtectedPathCatalog.Version);
+    }
+
+    [Theory]
+    [InlineData(@"C:\ws\repo\.ru\hooks.json")]
+    [InlineData(@"C:\ws\repo\.RU\Hooks.JSON")]
+    [InlineData(@"C:\ws\repo\.ru\hooks.json.")]
+    [InlineData(@"C:\ws\repo\.ru.\hooks.json")]
+    [InlineData(@"C:\Users\u\.ru\hooks.json")]
+    [InlineData(@"C:\Users\u\.ru\mcp.json")]
+    public void Ru_configuration_that_runs_programs_is_protected(string path)
+    {
+        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => null));
+    }
+
+    [Theory]
+    [InlineData(@"C:\ws\repo\hooks.json")]
+    [InlineData(@"C:\ws\repo\config\hooks.json")]
+    [InlineData(@"C:\ws\repo\.ru\settings.json")]
+    [InlineData(@"C:\ws\repo\.ru\skills\deploy\SKILL.md")]
+    [InlineData(@"C:\ws\repo\.rust\hooks.json")]
+    public void Other_files_named_like_ru_configuration_stay_editable(string path)
+    {
+        Assert.False(ProtectedPathCatalog.IsProtected(path, _ => null));
     }
 
     [Theory]

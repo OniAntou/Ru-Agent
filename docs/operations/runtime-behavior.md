@@ -429,7 +429,8 @@ per-change asks) and asks for external structured access; `standard`
 auto-allows workspace mutation and executable/shell launches from a workspace cwd;
 external structured paths and external launch directories ask; `full_access` is the skip-all mode — external
 structured files, arbitrary terminal, and structured protected paths (harness
-key/database files and runtime descriptors) are automatic, while hard-invalid
+key/database files, runtime descriptors and Ru hook and MCP configuration files) are
+automatic, while hard-invalid
 requests remain denied.
 These defaults do not bypass explicit deny or ask rules: an external folder
 grant or Full Access fallback cannot override a matched ask. Hard invariants,

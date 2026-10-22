@@ -11,7 +11,7 @@ source for the effective-policy prompt projection and Broker fallback:
 | --- | --- |
 | `plan` | Workspace read and Web are automatic; terminal and mutation are denied outright (read-only, no per-change asks); external structured access asks like Standard. |
 | `standard` | Workspace reads, Web, workspace mutations and executable/shell launches from a workspace cwd are automatic; external structured access and external terminal cwd ask. Explicit rules and long foreground approval still apply. |
-| `full_access` | The skip-all mode: external structured files, arbitrary terminal, and structured protected paths (harness key/database files and runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries) are automatic; hard-invalid requests remain denied. |
+| `full_access` | The skip-all mode: external structured files, arbitrary terminal, and structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files, plus user-added `RU_PROTECTED_PATHS` entries) are automatic; hard-invalid requests remain denied. |
 
 These are preset defaults. Explicit deny and ask rules still take precedence,
 including for external files covered by a session folder grant or Full Access.
@@ -316,8 +316,9 @@ argv-path, network-declaration or executable-install-location approval list.
 Both terminal modes run as the Windows user and can affect outside files and the
 network; workspace launch permission is not an OS confinement boundary.
 `full_access` also permits external structured files, arbitrary terminal
-launches, and the structured protected paths (harness key/database files and
-runtime descriptors, plus user-added `RU_PROTECTED_PATHS` entries)
+launches, and the structured protected paths (harness key/database files,
+runtime descriptors and Ru hook and MCP configuration files, plus user-added
+`RU_PROTECTED_PATHS` entries)
 automatically; hard-invalid requests remain denied.
 Explicit deny/ask rules, exact single-use authorization, hard-invalid requests
 and process lifetime/output bounds remain enforced.

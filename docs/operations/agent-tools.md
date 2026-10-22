@@ -308,7 +308,7 @@ targets (`external_directory_rule_allow`); deny and ask rules keep precedence,
 the plan read-only gate still applies, and no grant ever authorizes terminal
 intent. Full Access instead selects an ephemeral nearest external
 ancestor for that structured call and does not persist a folder grant.
-Structured protected paths (harness key/database files and runtime descriptors,
+Structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files,
 plus user-added `RU_PROTECTED_PATHS` entries) are denied in `plan` and
 `standard` and allowed in `full_access`, and canonical, symlink, junction, and
 hard-link checks stay active. An ambiguous
@@ -466,7 +466,7 @@ sockets, including outside the workspace; terminal execution has no OS
 filesystem/network confinement. Repository
 cleanliness is irrelevant. Full Access still has hard timeout, output cap,
 cancellation, redaction, and process-tree cleanup. The structured protected
-paths (harness key/database files and runtime descriptors) are denied in `plan`
+paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files) are denied in `plan`
 and `standard` and allowed in `full_access`, but they never re-impose terminal
 confinement.
 
@@ -630,7 +630,7 @@ external structured targets and external terminal cwd ask. Terminal/git children
 in both execution presets run as the current Windows user without OS
 filesystem/network confinement. Full
 Access is the skip-all mode: external structured files, arbitrary terminal, and
-structured protected paths (harness key/database files and runtime descriptors)
+structured protected paths (harness key/database files, runtime descriptors and Ru hook and MCP configuration files)
 are automatic, while hard-invalid requests remain denied.
 
 Workspace trust is not a preset. It is explicit once per canonical identity:
@@ -823,4 +823,6 @@ device.
 
 `matcher` is a case-insensitive regular expression over the whole tool id (omit or `*` for all tools); `timeout_seconds` is 1-120 (default 30). The Host decorates the tool gateway: a **PreToolUse** hook runs before policy evaluation, and exit code `2` rejects the call with the code `hook_blocked` and its stderr (first 200 characters) as the model-visible hint, so no approval is requested. Any other non-zero exit, a timeout or a start failure never blocks. A **PostToolUse** hook runs after the receipt and cannot change it.
 
-The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary.
+Two run-level events use the same file. **UserPromptSubmit** runs when a run is created, before anything of it is written; exit code `2` refuses the prompt with HTTP 422 `prompt_blocked_by_hook` and the hook's stderr (first 200 characters) as the message, so no run exists. Its stdin carries `event`, `session_id`, `workspace`, `workspace_trusted` and `prompt` (null with `prompt_omitted: true` above 32 KB). Until the workspace is trusted only the user's own `~/.ru/hooks.json` prompt hooks run, and they start in the user's profile folder so `cmd.exe` cannot resolve a bare program name against workspace files. **Stop** runs once when a run finishes, without being waited for, with `event`, `run_id`, `session_id`, `workspace`, `status` and `terminal_error_code`; it cannot change the run. Both ignore `matcher`.
+
+The hook runs through `cmd.exe` in the workspace root with the same credential-stripped environment as agent terminal children plus `RU_HOOK_EVENT`; it receives one JSON object on stdin (`event`, `tool_id`, `tool_call_id`, `run_id`, `workspace`, `arguments` unless larger than 32 KB, and for PostToolUse `outcome` and `code`). Files over 64 KB, links and malformed JSON are ignored; at most 32 hooks per event are read. A workspace `hooks.json` is workspace-supplied code that runs as your Windows user once tools are evaluated, so open only workspaces you trust. Hooks are loaded when a run's gateway is created, apply to subagents, and are not a security boundary. Because a hook's command runs outside terminal policy, `.ru\hooks.json` (in the workspace or the user profile) is a structured protected path: the model's `write`/`edit` are denied in `plan` and `standard`. A terminal command in `standard` can still write the file; that residual is the terminal launch authority `standard` already grants.

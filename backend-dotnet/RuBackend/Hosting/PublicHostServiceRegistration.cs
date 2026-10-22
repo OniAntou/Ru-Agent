@@ -202,6 +202,10 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<AgentRunSummaryLivePublisher>();
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
         services.AddSingleton<AgentRuntimeWakeSignal>();
+        services.AddSingleton(services => new RuBackend.Harness.Hooks.RunLifecycleHooks(
+            new RuBackend.Harness.Hooks.HookProcessRunner(),
+            services.GetRequiredService<ILogger<RuBackend.Harness.Hooks.RunLifecycleHooks>>(),
+            services.GetRequiredService<IHostApplicationLifetime>()));
         services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
         services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
         services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();

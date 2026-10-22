@@ -39,6 +39,7 @@ public sealed class AgentRunCreationService
     private readonly AgentV1SubagentGuard _subagentGuard;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<AgentRunCreationService>? _logger;
+    private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
 
     /// <summary>The selected provider catalog's declaration for image input.</summary>
     public Func<string, CancellationToken, Task<bool?>>? DeclaredVision { get; set; }
@@ -47,8 +48,10 @@ public sealed class AgentRunCreationService
         AgentSessionPermissionStore permissionStore, AgentRunWorkspaceAdmissionService workspaceAdmission,
         IAgentRuntimeRootRegistry runtimeRoots, IIdGenerator ids, ITimeProvider time,
         AgentV1SubagentGuard subagentGuard, ISettingsStore settingsStore,
-        ILogger<AgentRunCreationService>? logger = null)
+        ILogger<AgentRunCreationService>? logger = null,
+        Hooks.RunLifecycleHooks? lifecycleHooks = null)
     {
+        _lifecycleHooks = lifecycleHooks;
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _permissionStore = permissionStore ?? throw new ArgumentNullException(nameof(permissionStore));
@@ -304,6 +307,14 @@ public sealed class AgentRunCreationService
         var pendingTrustRequest = admittedWorkspace.PendingTrustRequest;
         var isTrusted = admittedWorkspace.IsTrusted;
         var policySnapshot = admittedWorkspace.PolicySnapshot;
+
+        // Before anything of the run is written, so a refused prompt leaves no run behind.
+        if (_lifecycleHooks is not null
+            && await _lifecycleHooks.SubmitPromptAsync(prompt, sessionIdRaw, canonicalWorkspacePath, isTrusted, cancellationToken)
+                .ConfigureAwait(false) is { } refusal)
+        {
+            return BoundedError(422, "prompt_blocked_by_hook", refusal);
+        }
 
         var initialState = isTrusted
             ? new HarnessRunStatus(HarnessRunState.WaitingHistory, HistoryWaitKind.UserBeforeFirstStep)

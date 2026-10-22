@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Click a workspace file to open a read-only Preview tab, with fullscreen support. Render Word, PowerPoint and Excel through installed Windows preview handlers; render PDF pages, images, Markdown and source text locally. Missing renderers, unsupported formats and oversized files show explicit errors.
+- **fix(gui)**: Keep last known background tasks through refresh failures and retry with backoff. Show subagent refresh failures and preparation/unavailable counts in the card, reader and accessible labels. Make panel resizing keyboard-accessible and end pointer resizing on release, cancellation, capture loss or hiding.
+- **fix(gui)**: Remove the redundant "Effort" caption beside the composer's reasoning selection.
+
 - **fix(gui)**: Declining workspace trust no longer loses the message (B7). The Host accepts a run before asking for trust and the composer empties on acceptance, so a declined run took the text with it; it now comes back to the composer with its attachments and a note that the run did not start. Text typed since is never overwritten.
 - **feat(gui)**: Settings gains **Approval rules**, listing the rules saved with Always allow (global and per workspace the user has chats in) with Remove, which only narrows what runs without asking, and **Keyboard shortcuts**, the same list as the Ctrl+/ sheet.
 - **feat(gui)**: The empty chat links to Models & Providers while no model is chosen, and the composer shows a read-only **Full Access** notice while that preset is active. Both are owner-approved additions to the minimal empty state and the "no permission control in the composer" rule.

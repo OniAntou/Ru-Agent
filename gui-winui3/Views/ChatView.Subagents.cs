@@ -8,7 +8,7 @@ public sealed partial class ChatView
     private bool IsSubagentOverlay() => RootGrid is not null && Messages.Count > 0 &&
         RootGrid.ActualWidth < SidePanelMinRootWidth &&
         _sidePanelPolicy.GetMode(_activeSessionId) == AgentSidePanelMode.Panel &&
-        _sidePanelPolicy.GetActiveTab(_activeSessionId) == SidePanelTabKind.Subagents;
+        _sidePanelPolicy.GetActiveTab(_activeSessionId) is SidePanelTabKind.Subagents or SidePanelTabKind.Preview;
 
     private void OnSubagentsChanged(object? sender, EventArgs e) => UpdateSubagentPeek();
 

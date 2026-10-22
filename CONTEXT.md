@@ -6,6 +6,13 @@ Distribution and setup: [Windows packages](docs/operations/distribution-and-upda
 
 ## Language
 
+**File Preview**:
+Read-only desktop presentation of a workspace file selected by the user. Local
+renderers or installed Windows document preview handlers own its display; this
+surface adds no model tool, execution permission or document-upload service.
+Implementation: [GUI file preview](docs/architecture/gui.md#file-preview).
+_Avoid_: document editor, model execution authority, cloud Office viewer
+
 
 **Public Host**:
 The authenticated loopback ASP.NET Core process that owns orchestration, persistence, in-process model generation and composition of the execution authority.

@@ -81,4 +81,15 @@ public static class SubagentPresentation
     public static string Usage(SubagentUsageSummary? usage) => usage?.TotalTokens is { } tokens
         ? $"{tokens:N0} tokens reported" + (usage.IsComplete ? "" : " · incomplete")
         : "Token usage unavailable";
+
+    public static string ObserverSummary(SubagentListResponse? snapshot, bool refreshFailed)
+    {
+        var parts = new List<string>();
+        if (refreshFailed) parts.Add("Refresh unavailable");
+        var rows = snapshot?.Agents.Select(Row).ToArray() ?? [];
+        if (snapshot?.Preparations.Count is > 0) parts.Add($"{snapshot.Preparations.Count} preparing");
+        if (snapshot?.UnavailableAttempts is > 0) parts.Add($"{snapshot.UnavailableAttempts} unavailable");
+        if (rows.Length > 0) parts.Add(CompactSummary(rows));
+        return parts.Count > 0 ? string.Join(" · ", parts) : "No subagents yet";
+    }
 }

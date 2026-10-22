@@ -25,6 +25,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     public ObservableCollection<SubagentRow> Attention { get; } = [];
     public ObservableCollection<SubagentRow> Finished { get; } = [];
     public SubagentListResponse? Snapshot => _model.Snapshot;
+    public bool RefreshFailed => _refreshFailed;
     public event EventHandler? SnapshotChanged;
     public event EventHandler? CloseRequested;
 
@@ -96,6 +97,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
                 _refreshFailed = false;
                 ShowFeedback("");
                 RenderSnapshot();
+                SnapshotChanged?.Invoke(this, EventArgs.Empty);
             }
             if (!_model.Apply(ticket, snapshot)) return;
             ShowFeedback("");
@@ -121,9 +123,11 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
 
     private void ReportRefreshFailure()
     {
+        bool changed = !_refreshFailed;
         _refreshFailed = true;
         RenderSnapshot();
         ShowFeedback("Couldn't refresh tasks. Use Refresh to try again.");
+        if (changed) SnapshotChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void RenderSnapshot()
@@ -144,7 +148,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         var loading = snapshot is null && _client is not null && _root.Length > 0;
         EmptyTitle.Text = loading ? _refreshFailed ? "Tasks couldn't be loaded" : "Loading delegated work…" : "No delegated work yet";
         EmptyDescription.Text = loading ? _refreshFailed ? "Refresh to try again." : "Fetching this run's tasks." : "Coding and review tasks appear here when Ru delegates work.";
-        SnapshotSummary.Text = rows.Length > 0 ? SubagentPresentation.Summary(rows) : "";
+        SnapshotSummary.Text = SubagentPresentation.ObserverSummary(snapshot, _refreshFailed);
         var preparation = snapshot?.Preparations.Count ?? 0;
         var unavailable = snapshot?.UnavailableAttempts ?? 0;
         PreparationStatus.Text = (preparation > 0 ? $"Preparing {preparation} task(s). " : "")

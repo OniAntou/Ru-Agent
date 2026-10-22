@@ -184,7 +184,7 @@ public sealed class AgentSidePanelUiContractTests
         var code = GuiSource.Text("Controls", "AgentSidePanelControl.xaml.cs");
         var add = GuiSource.Require(document, "AddTabButton");
         var menuItems = add.Descendants().Where(element => element.Name.LocalName == "MenuFlyoutItem").ToArray();
-        Assert.Equal(new[] { "Files", "Changes", "Tasks", "Subagents", "Terminal" }, menuItems.Select(element => GuiSource.AttributeValue(element, "Tag")));
+        Assert.Equal(new[] { "Files", "Changes", "Tasks", "Subagents", "Preview", "Terminal" }, menuItems.Select(element => GuiSource.AttributeValue(element, "Tag")));
         Assert.All(menuItems, element => Assert.Equal("OnOpenPanelTabClick", GuiSource.AttributeValue(element, "Click")));
         Assert.Contains("OpenPanelTab", GuiSource.MethodBody(code, "OnOpenPanelTabClick"), StringComparison.Ordinal);
 

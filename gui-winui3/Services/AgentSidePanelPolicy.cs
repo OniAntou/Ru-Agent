@@ -10,6 +10,7 @@ public enum SidePanelTabKind
     Files,
     Terminal,
     Subagents,
+    Preview,
 }
 
 /// <summary>

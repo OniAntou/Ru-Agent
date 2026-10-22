@@ -16,7 +16,7 @@ public sealed partial class ChatView
 
     private void UpdateTaskRefreshTimer(bool surfaceVisible)
     {
-        bool hasLiveWork = _sidePanelRunRunning == true || SidePanel.Tasks.Any(row => row.State == "running");
+        bool hasLiveWork = _taskObservation.ShouldPoll(_sidePanelRunRunning == true);
         if (_scrollingDisposed || !surfaceVisible || !hasLiveWork || ResolveSidePanelTaskRunId() is null)
         {
             _sidePanelTaskTimer?.Stop();
@@ -26,9 +26,9 @@ public sealed partial class ChatView
         if (_sidePanelTaskTimer is null)
         {
             _sidePanelTaskTimer = DispatcherQueue.CreateTimer();
-            _sidePanelTaskTimer.Interval = TimeSpan.FromSeconds(2);
             _sidePanelTaskTimer.Tick += OnSidePanelTaskTimerTick;
         }
+        _sidePanelTaskTimer.Interval = _taskObservation.RefreshInterval;
         if (!_sidePanelTaskTimer.IsRunning) _sidePanelTaskTimer.Start();
     }
 

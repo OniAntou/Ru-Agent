@@ -346,4 +346,60 @@ tasks are processes, distinct from the todo plan. Panel mode, active tab and
 fullscreen selection survive temporary hiding on narrow windows. The interactive
 terminal is one user-owned shell that follows the selected workspace, restarting
 on a workspace change; background refreshes do not take input focus.
+`BackgroundTaskObservation` retains last known task identities through read
+failures, labels them stale and retries at 4/8/16/30-second intervals while the
+surface remains visible. An authoritative successful response resets the delay
+and can establish an empty list; a root/session change drops the old observation.
+The subagent observer publishes freshness changes even when snapshot identity is
+unchanged. Card, narrow-window peek and reader share one summary that includes
+preparations and unavailable attempts. The resize grip exposes a RangeValue
+automation peer and arrow/Home/End keys; capture loss, cancellation, hiding and
+unload end the pointer sequence and commit its last clamped width.
 _Avoid_: treating the background-task list as the agent's todo plan
+
+## File preview
+
+Clicking a file in Files opens the Preview tab. Folders retain their lazy tree
+behavior. Preview is user-initiated presentation, not a model tool or a second
+Broker execution path. It adds no Host route, grant or upload service. The
+preview closes on file/session/workspace changes and app shutdown; switching
+tabs or collapsing hides the surface. Narrow windows use the reader overlay.
+
+`FilePreviewSource` opens only a bounded file beneath the selected workspace,
+rejects hidden credential-name paths and reparse points, checks the opened
+handle's final path, and holds a read-only handle without write/delete sharing.
+Documents, PDFs and images have a 64 MiB input cap; text/Markdown have a 1 MiB
+cap. HTML and SVG are source text, never active browser content. Unsupported
+formats are refused rather than opened as executable content.
+
+`DocumentPreviewControl` cancels superseded reads and owns the current result.
+Windows.Data.Pdf rasterizes one selected page at a time, at most 1600×2400
+pixels; page controls and scroll/zoom remain in the panel. Image decoding refuses
+inputs above 40 megapixels and limits decode width. Text and Markdown use the
+existing native presentation stack.
+
+Office-like documents use the extension's registered Windows preview handler
+through `CLSCTX_LOCAL_SERVER`, never an in-process handler DLL or Office editing
+automation. COM calls run on a dedicated pumping STA and opening has a 15-second
+UI wait bound. The Windows/Office renderer remains an optional installed
+component; Ru does not install it or kill a user's Office processes. A stalled
+renderer can delay its STA cleanup, but it does not block the WinUI dispatcher.
+The worker bounds queued work; a timeout disables further Office opens with
+explicit restart feedback, while other preview types remain usable. Non-ZIP
+OOXML files, packages with missing required parts or over 8192 entries are
+rejected before invoking Office. Cleanup retains queue
+admission. A Focus preview action enters the installed document control; native
+images/PDFs have a Fit action in addition to page navigation and scroll/zoom.
+An owned borderless native host tracks the preview rectangle and hides for
+inactive tabs, closed surfaces, other foreground apps, XAML menus/dialogs and
+the main approval/question overlay. It has its own DWM surface because
+PowerPoint's DirectComposition rendering does not paint correctly in a child
+of WinUI's no-redirection HWND. A cached 100 ms visibility observer runs only
+while an Office surface is selected; it restores the preview after popup closure
+even when XAML layout does not change. Showing and positioning never activate
+the host or raise the main window. Tab/Escape from the handler returns focus
+to the preview header.
+Ordinary tooltips do not blank the document surface.
+Renderer availability and fidelity depend on the installed handler. These
+presentation bounds do not claim OS-level confinement of third-party renderers.
+See [ADR 0024](../adr/0024-local-document-preview.md).

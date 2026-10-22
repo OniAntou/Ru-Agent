@@ -35,6 +35,7 @@ namespace RuApp.Controls
             }
 
             _workspacePath = normalized;
+            ClearPreview();
             Files.Clear();
             FilesRootText.Text = normalized ?? "No workspace";
             ToolTipService.SetToolTip(FilesRootText, normalized);
@@ -80,10 +81,18 @@ namespace RuApp.Controls
         {
             try
             {
-                if (e.ClickedItem is not FileTreeRow row || !row.CanExpand)
+                if (e.ClickedItem is not FileTreeRow row || row.IsNote)
                 {
                     return;
                 }
+
+                if (!row.IsDirectory && _workspacePath is { } workspace)
+                {
+                    OpenPanelTab(SidePanelTabKind.Preview);
+                    await FilePreview.OpenAsync(workspace, row.FullPath);
+                    return;
+                }
+                if (!row.CanExpand) return;
 
                 if (row.IsExpanded)
                 {

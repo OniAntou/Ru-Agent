@@ -65,14 +65,13 @@ namespace RuApp.Controls
         private Border? _draggingChip;
         private double _dragStartX;
         private bool _isDragActive;
-        private bool _isResizing;
-        private double _resizeStartWidth;
-        private double _resizeStartX;
 
         public AgentSidePanelControl()
         {
             InitializeComponent();
             InitializeSubagents();
+            PanelResizeGrip.WidthRequested += OnPanelWidthRequested;
+            Unloaded += (_, _) => EndPanelResize();
         }
 
         public void SetSessionTitle(string title) => CardTitleText.Text = title;
@@ -123,6 +122,7 @@ namespace RuApp.Controls
 
             bool showCard = mode == AgentSidePanelMode.Card;
             bool showPanel = mode == AgentSidePanelMode.Panel;
+            if (!showPanel || fullscreen) EndPanelResize();
             CardHost.Visibility = showCard ? Visibility.Visible : Visibility.Collapsed;
             PanelHost.Visibility = showPanel ? Visibility.Visible : Visibility.Collapsed;
 
@@ -131,6 +131,7 @@ namespace RuApp.Controls
             RefreshChip(SubagentsChip, SubagentsTabLabel, SidePanelTabKind.Subagents);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
+            RefreshChip(PreviewChip, PreviewTabLabel, SidePanelTabKind.Preview);
             AddTabButton.Visibility = Visibility.Visible;
             SyncChipOrder(openTabs);
             if (showPanel && (activeTab != previousActive || previous != mode))
@@ -157,6 +158,8 @@ namespace RuApp.Controls
             TasksBody.Visibility = showPanel && activeTab == SidePanelTabKind.Tasks ? Visibility.Visible : Visibility.Collapsed;
             FilesBody.Visibility = showPanel && activeTab == SidePanelTabKind.Files ? Visibility.Visible : Visibility.Collapsed;
             TerminalBody.Visibility = showPanel && activeTab == SidePanelTabKind.Terminal ? Visibility.Visible : Visibility.Collapsed;
+            FilePreview.Visibility = showPanel && activeTab == SidePanelTabKind.Preview ? Visibility.Visible : Visibility.Collapsed;
+            SetPreviewVisibility(Visibility == Visibility.Visible);
 
             if (showPanel && (activeTab != previousActive || previous != AgentSidePanelMode.Panel))
             {
@@ -166,6 +169,7 @@ namespace RuApp.Controls
                     SidePanelTabKind.Tasks => TasksBody,
                     SidePanelTabKind.Subagents => SubagentBrowser,
                     SidePanelTabKind.Files => FilesBody,
+                    SidePanelTabKind.Preview => FilePreview,
                     _ => TerminalBody,
                 });
 
@@ -184,6 +188,7 @@ namespace RuApp.Controls
             if (push)
             {
                 PanelHost.Width = AgentSidePanelPolicy.ClampWidth(panelWidth);
+                PanelResizeGrip.PanelWidth = PanelHost.Width;
             }
             else
             {
@@ -230,6 +235,7 @@ namespace RuApp.Controls
                 SidePanelTabKind.Tasks => _tasksChipHovered,
                 SidePanelTabKind.Subagents => _subagentsChipHovered,
                 SidePanelTabKind.Files => _filesChipHovered,
+                SidePanelTabKind.Preview => _previewChipHovered,
                 _ => _terminalChipHovered,
             };
 
@@ -260,6 +266,9 @@ namespace RuApp.Controls
                 case "Files":
                     _filesChipHovered = hovered;
                     break;
+                case "Preview":
+                    _previewChipHovered = hovered;
+                    break;
                 default:
                     _terminalChipHovered = hovered;
                     break;
@@ -270,6 +279,7 @@ namespace RuApp.Controls
             RefreshChip(SubagentsChip, SubagentsTabLabel, SidePanelTabKind.Subagents);
             RefreshChip(FilesChip, FilesTabLabel, SidePanelTabKind.Files);
             RefreshChip(TerminalChip, TerminalTabLabel, SidePanelTabKind.Terminal);
+            RefreshChip(PreviewChip, PreviewTabLabel, SidePanelTabKind.Preview);
         }
 
         private void SyncChipOrder(IReadOnlyList<SidePanelTabKind> openTabs)
@@ -300,6 +310,7 @@ namespace RuApp.Controls
                 SidePanelTabKind.Tasks => TasksChip,
                 SidePanelTabKind.Subagents => SubagentsChip,
                 SidePanelTabKind.Files => FilesChip,
+                SidePanelTabKind.Preview => PreviewChip,
                 _ => TerminalChip,
             };
 
@@ -310,6 +321,7 @@ namespace RuApp.Controls
                 "Subagents" => SidePanelTabKind.Subagents,
                 "Files" => SidePanelTabKind.Files,
                 "Terminal" => SidePanelTabKind.Terminal,
+                "Preview" => SidePanelTabKind.Preview,
                 _ => SidePanelTabKind.Changes,
             };
 
@@ -481,49 +493,5 @@ namespace RuApp.Controls
         private void OnTasksRefreshClick(object sender, RoutedEventArgs e) =>
             TasksRefreshRequested?.Invoke(this, EventArgs.Empty);
 
-        private void OnGripPointerEntered(object sender, PointerRoutedEventArgs e) =>
-            PanelDivider.Opacity = 0.9;
-
-        private void OnGripPointerExited(object sender, PointerRoutedEventArgs e) =>
-            PanelDivider.Opacity = 0.6;
-
-        private void OnGripPointerPressed(object sender, PointerRoutedEventArgs e)
-        {
-            if (PanelHost.Visibility != Visibility.Visible
-                || PanelHost.HorizontalAlignment != HorizontalAlignment.Right)
-            {
-                return;
-            }
-
-            _isResizing = true;
-            _resizeStartWidth = PanelHost.Width;
-            _resizeStartX = e.GetCurrentPoint(this).Position.X;
-            PanelResizeGrip.CapturePointer(e.Pointer);
-        }
-
-        private void OnGripPointerMoved(object sender, PointerRoutedEventArgs e)
-        {
-            if (!_isResizing)
-            {
-                return;
-            }
-
-            double currentX = e.GetCurrentPoint(this).Position.X;
-            double width = AgentSidePanelPolicy.ClampWidth(_resizeStartWidth + (_resizeStartX - currentX));
-            PanelHost.Width = width;
-            WidthChanged?.Invoke(this, width);
-        }
-
-        private void OnGripPointerReleased(object sender, PointerRoutedEventArgs e)
-        {
-            if (!_isResizing)
-            {
-                return;
-            }
-
-            _isResizing = false;
-            PanelResizeGrip.ReleasePointerCapture(e.Pointer);
-            WidthCommitted?.Invoke(this, PanelHost.Width);
-        }
     }
 }

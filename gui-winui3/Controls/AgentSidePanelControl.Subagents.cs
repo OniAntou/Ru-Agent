@@ -8,8 +8,8 @@ public sealed partial class AgentSidePanelControl
 {
     private bool _subagentsChipHovered;
     public event EventHandler? SubagentsChanged;
-    public bool HasSubagents => SubagentBrowser.Snapshot is { } snapshot &&
-        (snapshot.Agents.Count > 0 || snapshot.Preparations.Count > 0 || snapshot.UnavailableAttempts > 0);
+    public bool HasSubagents => SubagentBrowser.RefreshFailed || (SubagentBrowser.Snapshot is { } snapshot &&
+        (snapshot.Agents.Count > 0 || snapshot.Preparations.Count > 0 || snapshot.UnavailableAttempts > 0));
     public string SubagentSummary { get; private set; } = "No subagents yet";
 
     private void InitializeSubagents()
@@ -25,12 +25,9 @@ public sealed partial class AgentSidePanelControl
     {
         var agents = SubagentBrowser.Snapshot?.Agents;
         var rows = agents?.Select(SubagentPresentation.Row).ToArray() ?? [];
-        SubagentSummary = SubagentPresentation.CompactSummary(rows);
-        if (rows.Length == 0 && SubagentBrowser.Snapshot is { } snapshot)
-            SubagentSummary = snapshot.Preparations.Count > 0 ? $"Preparing {snapshot.Preparations.Count} task(s)"
-                : snapshot.UnavailableAttempts > 0 ? "Tasks unavailable" : SubagentSummary;
+        SubagentSummary = SubagentPresentation.ObserverSummary(SubagentBrowser.Snapshot, SubagentBrowser.RefreshFailed);
         CardSubagentsSummary.Text = SubagentSummary;
-        AutomationProperties.SetName(CardSubagentsRow, "View subagents, " + SubagentPresentation.Summary(rows));
+        AutomationProperties.SetName(CardSubagentsRow, "View subagents, " + SubagentSummary);
         CardSubagentGlyphs.Children.Clear();
         foreach (var row in rows.OrderBy(r => r.Group).Take(4))
             CardSubagentGlyphs.Children.Add(new SubagentGlyph { AgentId = row.AgentId, Role = row.Role, Width = 24, Height = 24 });

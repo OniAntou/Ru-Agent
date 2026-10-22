@@ -22,6 +22,8 @@ public sealed partial class ChatView
     private bool _taskRefreshInProgress;
     private readonly UiRequestLifetime _taskRefreshRequests = new();
     private CancellationTokenSource? _taskRefreshCancellation;
+    private readonly BackgroundTaskObservation _taskObservation = new();
+    private string? _taskObservationRunId;
 
     /// <summary>
     /// Keeps the surface fresh from run-state updates: the title and edit
@@ -93,6 +95,12 @@ public sealed partial class ChatView
         }
 
         var runId = ResolveSidePanelTaskRunId();
+        if (!string.Equals(runId, _taskObservationRunId, StringComparison.Ordinal))
+        {
+            _taskObservationRunId = runId;
+            _taskObservation.Reset();
+            RenderTaskObservation();
+        }
         var controller = _agentController;
         var sessionGeneration = _sessionOpenGeneration;
         bool OwnsRefresh() => !_scrollingDisposed
@@ -102,7 +110,8 @@ public sealed partial class ChatView
             && string.Equals(runId, ResolveSidePanelTaskRunId(), StringComparison.Ordinal);
         if (string.IsNullOrWhiteSpace(runId) || _agentController is null)
         {
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
+            _taskObservation.Reset();
+            RenderTaskObservation();
             return;
         }
 
@@ -116,27 +125,18 @@ public sealed partial class ChatView
             if (!OwnsRefresh()) return;
             if (!string.Equals(response.Status, "succeeded", StringComparison.Ordinal))
             {
-                if (response.Code == "broker_gateway_unavailable" && runId == _sidePanelTasksRunId
-                    && _agentController.CurrentRun?.RunId != runId)
-                {
-                    SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
-                    return;
-                }
-                SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), $"Tasks unavailable ({response.Code}).");
+                _taskObservation.Fail();
+                RenderTaskObservation();
                 return;
             }
 
             RenderAgentTasks(response.Data);
         }
-        catch (AgentApiException error) when (error.ErrorCode == "broker_gateway_unavailable")
-        {
-            if (!OwnsRefresh()) return;
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "No background tasks");
-        }
         catch (Exception)
         {
             if (!OwnsRefresh()) return;
-            SidePanel.RenderTasks(Array.Empty<AgentTaskRow>(), "Tasks unavailable; the host did not answer.");
+            _taskObservation.Fail();
+            RenderTaskObservation();
         }
         finally
         {
@@ -150,8 +150,10 @@ public sealed partial class ChatView
 
     private void RenderAgentTasks(object? data)
     {
-        var projection = AgentTaskProjection.Project(data);
-        SidePanel.RenderTasks(projection.Rows, projection.Status);
+        _taskObservation.Apply(AgentTaskProjection.Project(data));
+        RenderTaskObservation();
     }
+
+    private void RenderTaskObservation() => SidePanel.RenderTasks(_taskObservation.Rows, _taskObservation.Status);
 
 }

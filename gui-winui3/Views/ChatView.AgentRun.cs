@@ -484,6 +484,10 @@ namespace RuApp.Views
         private void ResetAgentState(bool preserveTranscript = false)
         {
             _sidePanelTasksRunId = null;
+            SidePanel.ClearPreview();
+            _taskObservation.Reset();
+            _taskObservationRunId = null;
+            RenderTaskObservation();
             SidePanel.BindSubagents(_agentController?.SubagentClient, null);
             _agentTurnGeneration++;
             if (preserveTranscript)

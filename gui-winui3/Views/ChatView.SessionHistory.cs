@@ -892,6 +892,7 @@ namespace RuApp.Views
             _taskRefreshCancellation = null;
             DisposeChatScrolling();
             SidePanel?.ShutdownTerminal();
+            SidePanel?.ShutdownPreview();
             _sessionPresentation.Dispose();
             if (_contextMeterTimer is not null)
             {

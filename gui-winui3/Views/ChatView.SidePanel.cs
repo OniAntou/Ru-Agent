@@ -43,6 +43,7 @@ public sealed partial class ChatView
         SidePanel.TasksRefreshRequested += OnSidePanelTasksRefreshRequested;
         SidePanel.WidthChanged += OnSidePanelWidthChanged;
         SidePanel.WidthCommitted += OnSidePanelWidthCommitted;
+        SidePanel.SetPreviewOcclusion(() => ApprovalPanel.IsShown || QuestionPanel.IsShown);
     }
 
     /// <summary>Hides or restores the whole surface; the title-bar toggle's action.</summary>
@@ -91,8 +92,9 @@ public sealed partial class ChatView
 
         bool overlay = IsSubagentOverlay();
         bool isVisible = (canShow || overlay) && mode != AgentSidePanelMode.Hidden;
+        SidePanel.SetPreviewVisibility(isVisible);
         bool subagentReaderCoversChat = overlay || (mode == AgentSidePanelMode.Panel
-            && _sidePanelPolicy.GetActiveTab(_activeSessionId) == SidePanelTabKind.Subagents
+            && _sidePanelPolicy.GetActiveTab(_activeSessionId) is SidePanelTabKind.Subagents or SidePanelTabKind.Preview
             && _sidePanelPolicy.IsFullscreen(_activeSessionId));
         // Cover the composer while retaining the main approval/question overlay's priority (20).
         Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(SidePanel, subagentReaderCoversChat ? 10 : 0);
@@ -224,6 +226,7 @@ public sealed partial class ChatView
 
     private void OnSidePanelTabClosed(object? sender, SidePanelTabKind kind)
     {
+        if (kind == SidePanelTabKind.Preview) SidePanel.ClearPreview();
         _sidePanelPolicy.CloseTab(_activeSessionId, kind);
         ApplySidePanelState();
     }

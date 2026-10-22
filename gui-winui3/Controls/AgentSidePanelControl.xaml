@@ -255,11 +255,11 @@
                                        Foreground="{StaticResource RuInkBrush}"
                                        VerticalAlignment="Center" />
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="18,0,0,0">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="18,0,0,0">
                             <StackPanel x:Name="CardSubagentGlyphs" Orientation="Horizontal" Spacing="2" />
-                            <TextBlock x:Name="CardSubagentsSummary" Text="No subagents yet" FontSize="11"
+                            <TextBlock x:Name="CardSubagentsSummary" Grid.Column="1" Text="No subagents yet" FontSize="11"
                                        VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource RuMutedBrush}" />
-                        </StackPanel>
+                        </Grid>
                     </StackPanel>
                 </Button>
                 <Border Height="1" Background="{StaticResource RuLineBrush}" />
@@ -323,16 +323,28 @@
                 <TranslateTransform x:Name="PanelSlide" />
             </Grid.RenderTransform>
 
-            <controls:SidebarResizerControl x:Name="PanelResizeGrip"
-                                            Width="6"
-                                            Margin="-3,0,0,0"
+            <controls:PanelResizerControl x:Name="PanelResizeGrip"
+                                            Width="10" MinWidth="0" Padding="0" BorderThickness="0"
+                                            Canvas.ZIndex="20" IsTabStop="True" UseSystemFocusVisuals="True"
+                                            AutomationProperties.Name="Resize details panel"
+                                            AutomationProperties.HelpText="Left or Up widens; Right or Down narrows; Home and End set width limits."
+                                            Margin="-4,0,0,0"
                                             HorizontalAlignment="Left"
+                                            VerticalAlignment="Stretch" Height="Auto"
                                             Background="Transparent"
                                             PointerEntered="OnGripPointerEntered"
                                             PointerExited="OnGripPointerExited"
                                             PointerPressed="OnGripPointerPressed"
                                             PointerMoved="OnGripPointerMoved"
-                                            PointerReleased="OnGripPointerReleased" />
+                                            PointerReleased="OnGripPointerReleased"
+                                            PointerCanceled="OnGripPointerCanceled"
+                                            PointerCaptureLost="OnGripPointerCanceled">
+                <controls:PanelResizerControl.Template>
+                    <ControlTemplate TargetType="controls:PanelResizerControl">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </controls:PanelResizerControl.Template>
+            </controls:PanelResizerControl>
 
             <Border x:Name="PanelDivider"
                     Width="1"
@@ -515,6 +527,27 @@
                         </StackPanel>
                     </Border>
 
+                    <Border x:Name="PreviewChip" Tag="Preview" VerticalAlignment="Center"
+                            PointerEntered="OnChipPointerEntered" PointerExited="OnChipPointerExited"
+                            PointerPressed="OnChipPointerPressed" PointerMoved="OnChipPointerMoved"
+                            PointerReleased="OnChipPointerReleased" PointerCanceled="OnChipPointerCaptureLost"
+                            PointerCaptureLost="OnChipPointerCaptureLost" CornerRadius="6" BorderThickness="1"
+                            Background="Transparent">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="PreviewTabButton" Click="OnPreviewTabClick" Style="{StaticResource SidePanelChipButtonStyle}"
+                                    AutomationProperties.Name="File preview tab">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE890;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                                    <TextBlock x:Name="PreviewTabLabel" Text="Preview" FontSize="12" Foreground="{StaticResource RuInkBrush}" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="PreviewTabCloseButton" Click="OnPreviewTabCloseClick" Width="24" Padding="0"
+                                    Style="{StaticResource SidePanelChipButtonStyle}" AutomationProperties.Name="Close Preview tab">
+                                <FontIcon Glyph="&#xE711;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
                     <Border x:Name="TerminalChip"
                             Tag="Terminal"
                             VerticalAlignment="Center"
@@ -580,6 +613,7 @@
                                 <MenuFlyoutItem Text="Changes" Tag="Changes" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Changes tab" />
                                 <MenuFlyoutItem Text="Background tasks" Tag="Tasks" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Background tasks tab" />
                                 <MenuFlyoutItem Text="Subagents" Tag="Subagents" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Subagents tab" />
+                                <MenuFlyoutItem Text="Preview" Tag="Preview" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Preview tab" />
                                 <MenuFlyoutSeparator />
                                 <MenuFlyoutItem Text="Terminal" Tag="Terminal" Click="OnOpenPanelTabClick" AutomationProperties.Name="Open Terminal tab" />
                             </MenuFlyout>
@@ -854,6 +888,7 @@
                                                              HorizontalAlignment="Stretch"
                                                              VerticalAlignment="Stretch" />
                     </Grid>
+                    <controls:DocumentPreviewControl x:Name="FilePreview" Visibility="Collapsed" />
                 </Grid>
             </Grid>
         </Grid>

@@ -4,7 +4,7 @@ Ru targets Windows 10 build 17763 or newer on x64. Desktop and CLI are separate
 products with their own matching, self-contained Host. Neither requires a .NET
 SDK on the user's computer. Source builds still use `build.bat`.
 
-Source builds use the shared version `0.1.2` from `Directory.Build.props`,
+Source builds use the shared version `0.1.2-preview.1` from `Directory.Build.props`,
 so CLI `ru --version` and GUI About agree. `RuReleaseVersion` overrides that
 default for Stable or Preview packaging; `package_release.ps1 -Version ...`
 sets it for every published project.
@@ -13,8 +13,9 @@ sets it for every published project.
 
 Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or
 `Ru-CLI-VERSION-win-x64-Setup.exe` from the official
-[releases](https://github.com/OniAntou/Ru-Agent/releases). The first Stable release
-is [0.1.2](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.2).
+[releases](https://github.com/OniAntou/Ru-Agent/releases). The current Preview is
+[0.1.2-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.2-preview.1);
+no Stable release is published yet.
 Default installation roots are `%LOCALAPPDATA%\Programs\Ru\Desktop`
 and `%LOCALAPPDATA%\Programs\Ru\CLI`, without administrator rights. Use a
 dedicated empty directory for a new installation. Desktop adds a Start-menu
@@ -27,7 +28,7 @@ to select the intended command. The installer preserves other PATH entries.
 Install CLI with one command in Command Prompt (also works in PowerShell):
 
 ```cmd
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1')))"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1'))) -Channel Preview"
 ```
 
 This runs the bootstrap from the official repository. To inspect it first, use
@@ -36,12 +37,12 @@ the manual alternative:
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1 -OutFile .\install.ps1
 # Inspect install.ps1 before running it.
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Channel Preview
 ```
 
 The script runs the verified installer silently and adds the CLI to the user
-PATH. Stable is the default; add `-Channel Preview` to opt into prereleases.
-Open a new terminal after installation.
+PATH. Omitting `-Channel Preview` selects Stable, which needs a published Stable
+release. Open a new terminal after installation.
 
 Interactive bootstrap downloads and `ru update` show a progress bar with
 percent, transferred megabytes and average speed. Redirected output stays plain
@@ -120,7 +121,7 @@ before deliberate manual version rollback.
 Build release artifacts with Inno Setup 6.2.2+ available:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.2 -IsccPath C:\Tools\Inno\ISCC.exe
+.\scripts\package_release.ps1 -Version 0.1.2-preview.1 -IsccPath C:\Tools\Inno\ISCC.exe
 ```
 
 Output lives under `artifacts/releases/VERSION`: two Setup executables, two ZIPs,

@@ -19,7 +19,21 @@ namespace RuBackend.Tests.Harness;
 
 internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixture)
 {
+    private IAgentRuntimeRootRegistry? _runtimeRoots;
+    private IHarnessEventStore? _lifecycleStore;
     private RuBackend.Harness.Subagents.SubagentCancellationCoordinator? _subagentCancellation;
+
+    public AgentV1ServiceTestBuilder WithRuntimeRoots(IAgentRuntimeRootRegistry runtimeRoots)
+    {
+        _runtimeRoots = runtimeRoots;
+        return this;
+    }
+
+    public AgentV1ServiceTestBuilder WithLifecycleStore(IHarnessEventStore store)
+    {
+        _lifecycleStore = store;
+        return this;
+    }
 
     public AgentV1ServiceTestBuilder WithSubagentCancellation(
         RuBackend.Harness.Subagents.SubagentCancellationCoordinator coordinator)
@@ -34,7 +48,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var trustRequests = new WorkspaceTrustRequestStore(fixture.Options);
         var resolver = new WindowsWorkspaceIdentityResolver();
         var trust = new WorkspaceTrustService(resolver, workspaces, trustRequests, fixture.KeyStore);
-        var roots = new AgentRuntimeRootRegistry();
+        var roots = _runtimeRoots ?? new AgentRuntimeRootRegistry();
         var gitState = new RuBackend.Harness.Git.SqliteRunGitStateStore(
             Path.Combine(fixture.RootPath, "agent_git_state.db"));
         var snapshots = new WorkspaceStateSnapshotService(
@@ -72,7 +86,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
         var subagentStore = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
         var subagentCancellation = _subagentCancellation ?? new RuBackend.Harness.Subagents.SubagentCancellationCoordinator(
             fixture.EventStore, subagentStore, new NoChildrenCleanup(), time);
-        var lifecycle = new AgentRunLifecycleService(fixture.EventStore, roots, inspectionGate,
+        var lifecycle = new AgentRunLifecycleService(_lifecycleStore ?? fixture.EventStore, roots, inspectionGate,
             ids, time, guard, commands, subagentCancellation);
 
         return new AgentV1ServiceTestBundle(

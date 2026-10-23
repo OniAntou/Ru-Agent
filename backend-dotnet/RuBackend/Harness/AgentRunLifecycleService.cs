@@ -70,18 +70,35 @@ public sealed class AgentRunLifecycleService
         // cancel cannot kill a healthy run's tools.
         await _runtimeRoots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
 
-        var now = _time.UtcNow;
-        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, now, terminalErrorCode: "cancelled");
-
-        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "cancelled");
-        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
-        var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
-        if (result.Outcome != HarnessCommitOutcome.Committed)
+        // Stopping tools can let the worker commit its outcome before this request
+        // resumes. Rebase the cancellation on that projection and preserve a run
+        // another caller has already settled. Never repeat tool shutdown on conflict.
+        const int maximumCommitAttempts = 8;
+        for (var attempt = 0; attempt < maximumCommitAttempts; attempt++)
         {
-            return BoundedError(409, "commit_conflict", "Commit conflict.");
+            cancellationToken.ThrowIfCancellationRequested();
+            run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run is null)
+                return BoundedError(404, "run_not_found", "Run not found.");
+            if (run.State.IsTerminal())
+                return new AgentServiceResult(200, AgentRunQueryService.MapRun(run));
+
+            transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Cancel);
+            if (!transition.Accepted)
+                return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Cancel rejected.");
+
+            var now = _time.UtcNow;
+            var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, now, terminalErrorCode: "cancelled");
+            var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "cancelled");
+            var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+            var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+            if (result.Outcome == HarnessCommitOutcome.Committed)
+                return new AgentServiceResult(200, AgentRunQueryService.MapRun(result.Run!));
+            if (result.Outcome == HarnessCommitOutcome.RunNotFound)
+                return BoundedError(404, "run_not_found", "Run not found.");
         }
 
-        return new AgentServiceResult(200, AgentRunQueryService.MapRun(result.Run!));
+        return BoundedError(409, "commit_conflict", "Commit conflict.");
     }
 
     /// <summary>

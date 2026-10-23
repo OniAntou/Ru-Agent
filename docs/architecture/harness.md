@@ -6,6 +6,11 @@ Subagent apply and inspection share a lock keyed by root run. Operations on the
 same root remain ordered; independent roots can proceed concurrently. Canceled
 waiters release their lock references, and idle keys leave the lock table.
 
+Cancel validates the transition before stopping live tools, then rereads the
+durable run because shutdown may let the worker commit progress. It preserves
+already terminal results and retries version conflicts up to eight times without
+repeating tool shutdown; exhausted contention still reports `commit_conflict`.
+
 The Host validates model/reasoning against that catalog at the first model
 step. Settings changes after the selection is pinned affect the next run.
 That new root run also captures a bounded **Session Run Handoff** from up to four

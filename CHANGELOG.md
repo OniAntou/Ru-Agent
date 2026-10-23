@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Preview Windows x64 Desktop and CLI release. Packages are self-contained
 and unsigned; SHA256SUMS.txt provides download integrity checks.
 
+- **fix(host)**: Cancel rereads the run after stopping tools and retries bounded
+  commit conflicts, preserving a worker's terminal result and repeated-client
+  cancellation instead of returning a spurious conflict during shutdown.
+
 - **feat(cli)**: A failed tool row now carries its reason beneath it (`└ exit 1`), taken
   from the durable event's safe summary; successful tools have no such line because their
   summary is a policy class, not a result.

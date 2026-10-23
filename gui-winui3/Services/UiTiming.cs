@@ -79,7 +79,6 @@ public static class UiTiming
     /// <summary>Fade-and-rise played when a reply block renders its first text.</summary>
     public const double ReplyTextArrivalMilliseconds = 140;
 
-    public const double ResizerActiveOpacity = 0.85;
 
     /// <summary>
     /// Mirrors the OS "show animations" setting (Settings -&gt; Accessibility -&gt;

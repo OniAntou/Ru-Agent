@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using RuApp.Services;
 
 namespace RuApp;
@@ -56,12 +55,6 @@ public sealed partial class MainWindow
 
     private void OnSidebarWidthRequested(object? sender, double width) => SetSidebarWidth(width);
 
-    private void Resizer_PointerEntered(object sender, PointerRoutedEventArgs e) => SetSidebarGripActive(true);
-    private void Resizer_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (_sidebarResizePointerId is null) SetSidebarGripActive(false);
-    }
-
     private void Resizer_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_sidebarLayout.IsHidden || !e.GetCurrentPoint(RootLayoutGrid).Properties.IsLeftButtonPressed) return;
@@ -69,7 +62,6 @@ public sealed partial class MainWindow
         _sidebarResizePointerId = e.Pointer.PointerId;
         _sidebarResizeStartX = e.GetCurrentPoint(RootLayoutGrid).Position.X;
         _sidebarResizeStartWidth = _sidebarLayout.ExpandedWidth;
-        SetSidebarGripActive(true);
         e.Handled = true;
     }
 
@@ -103,7 +95,6 @@ public sealed partial class MainWindow
         if (_sidebarResizePointerId is null) return;
         _sidebarResizePointerId = null;
         SidebarResizer.ReleasePointerCaptures();
-        SetSidebarGripActive(false);
     }
 
     private void Resizer_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -113,10 +104,4 @@ public sealed partial class MainWindow
         e.Handled = true;
     }
 
-    private void SetSidebarGripActive(bool active)
-    {
-        SidebarResizerLine.Background = (Brush)Application.Current.Resources[active ? "RuAccentBrush" : "RuLineBrush"];
-        SidebarResizerLine.Opacity = active ? UiTiming.ResizerActiveOpacity : 0.4;
-        SidebarResizerLine.Width = active ? 2 : 1;
-    }
 }

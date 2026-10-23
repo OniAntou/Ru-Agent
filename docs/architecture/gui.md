@@ -77,7 +77,9 @@ restores its last width. `MainWindow.SidebarLayout.cs` handles pointer identity,
 capture cancellation and width presentation; the focusable splitter exposes
 RangeValue, arrows and Home/End. Ctrl+Left/Right uses the same bounds; double-click
 resets to 250 px. The splitter has a real 10 px layout column and transparent hit
-surface; a 1 px column with negative margins clips a UserControl's pointer target.
+surface, with no visible divider in idle, hover or drag states. The native resize
+cursor and keyboard focus indicator remain available. A 1 px column with negative
+margins clips a UserControl's pointer target.
 The removed Starry Night preference resolves to plain Dark;
 only Light, Dark and Meteor Shower remain selectable.
 `ChatModelPickerViewModel` owns the chat's model and reasoning selection: the

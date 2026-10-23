@@ -594,11 +594,9 @@
                 </Grid>
             </Border>
 
-            <!-- Sidebar Divider / Resizer (10px hit-target with native SizeWestEast cursor) -->
+            <!-- Invisible sidebar resizer: keep the full hit-target and native resize cursor. -->
             <controls:SidebarResizerControl x:Name="SidebarResizer" Grid.Column="1" Width="10" Canvas.ZIndex="10"
                   Background="Transparent"
-                  PointerEntered="Resizer_PointerEntered"
-                  PointerExited="Resizer_PointerExited"
                   PointerPressed="Resizer_PointerPressed"
                   PointerMoved="Resizer_PointerMoved"
                   PointerReleased="Resizer_PointerReleased"
@@ -609,10 +607,7 @@
                   IsTabStop="True"
                   UseSystemFocusVisuals="True"
                   AutomationProperties.Name="Resize workspace sidebar">
-                <Grid Background="Transparent">
-                    <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
-                            Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                </Grid>
+                <Grid Background="Transparent" />
             </controls:SidebarResizerControl>
 
             <!-- Content Frame with Smooth Native Transition -->

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: A retained run without a live tool gateway now reports unavailable
+  background-task status without endlessly promising retries after completion.
+  Known running tasks remain visible and continue refreshing.
+
 - **fix(cli)**: Host bookkeeping events no longer print as feed rows. `run.note_added`
   (runtime-context snapshots, compaction checkpoints, recovery notes, subagent
   inbox/apply records), `context.compacted` and `input.requested` used to fall through to

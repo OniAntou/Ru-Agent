@@ -447,24 +447,15 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
-    [Theory]
-    [InlineData("unknown-tool-xyz.exe", "terminal_external_cwd_requires_approval")]
-    [InlineData("rm.exe", "terminal_external_cwd_requires_approval")]
-    [InlineData("git", "terminal_external_cwd_requires_approval")]
-    public async Task Terminal_reason_reaches_public_api(string executable, string expectedReason)
+    [Fact]
+    public async Task Terminal_reason_reaches_public_api()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
         try
         {
-            var argumentsJson = executable switch
-            {
-                "git" => JsonSerializer.Serialize(new { executable, arguments = new[] { "push" } }),
-                "unknown-tool-xyz.exe" => JsonSerializer.Serialize(new { executable, arguments = new[] { "--query-approval-state" } }),
-                _ => JsonSerializer.Serialize(new { executable, arguments = new[] { "--version" } }),
-            };
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", argumentsJson),
+                ToolCall("terminal.run", FailureCommand()),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -480,7 +471,48 @@ public sealed class AgentApprovalEndpointTests
                 e => e.TryGetProperty("event_type", out var type)
                     && type.GetString() == "approval.requested"
                     && e.TryGetProperty("safe_summary", out var summary)
-                    && summary.GetString() == expectedReason);
+                    && summary.GetString() == "terminal_external_cwd_requires_approval");
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    [Fact]
+    public async Task Missing_terminal_executable_fails_without_requesting_approval()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall(
+                    "terminal.run",
+                    JsonSerializer.Serialize(new
+                    {
+                        mode = "run",
+                        executable = "ru-missing-test-executable-7f3a.exe",
+                        arguments = new[] { "--version" },
+                        working_directory = Path.GetTempPath(),
+                    })),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "missing executable");
+            var runId = created.GetProperty("run_id").GetString()!;
+            Assert.True(
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline),
+                "missing executable run did not finish");
+
+            var final = JsonDocument.Parse(await client.GetStringAsync($"/agent/v1/runs/{runId}")).RootElement;
+            Assert.Equal("failed", final.GetProperty("status").GetString());
+            Assert.Equal("executable_not_found", final.GetProperty("terminal_error_code").GetString());
+            var events = await ReadEventsAsync(client, runId);
+            Assert.DoesNotContain(events, e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested");
         }
         finally
         {
@@ -561,8 +593,8 @@ public sealed class AgentApprovalEndpointTests
             Assert.Equal(
                 1,
                 after.Count(item => item.GetProperty("event_type").GetString() == "approval.requested"));
-            // Batch request, the prose answer after the failed unknown-executable
-            // execution (answered with a recovery note), the corrected read, then
+            // Batch request, the prose answer after cmd.exe exits nonzero
+            // (answered with a recovery note), the corrected read, then
             // the script's final answer after that verified call: the failed tool
             // no longer ends the run and the unverified prose is never accepted.
             Assert.Contains(after, item => item.GetProperty("event_type").GetString() == "run.note_added");
@@ -626,11 +658,11 @@ public sealed class AgentApprovalEndpointTests
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.True(await WaitForStatusAsync(
                 client, runId, new HashSet<string> { "completed", "failed", "cancelled" }, StateDeadline));
-            // The approved call names an executable that does not exist, so reaching
-            // executable_not_found proves the approval resumed the run and ran the call.
+            // cmd.exe exits with status 7, so reaching process_exit_nonzero proves
+            // the approval resumed the run and ran the call.
             var final = JsonDocument.Parse(await client.GetStringAsync($"/agent/v1/runs/{runId}")).RootElement;
             Assert.Equal("failed", final.GetProperty("status").GetString());
-            Assert.Equal("executable_not_found", final.GetProperty("terminal_error_code").GetString());
+            Assert.Equal("process_exit_nonzero", final.GetProperty("terminal_error_code").GetString());
             Assert.True(counting.Created > parkedBuilds);
         }
         finally
@@ -682,7 +714,7 @@ public sealed class AgentApprovalEndpointTests
         try
         {
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""),
+                ToolCall("terminal.run", FailureCommand()),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
@@ -1066,7 +1098,7 @@ public sealed class AgentApprovalEndpointTests
         RuBackend.Business.DataPaths dataPaths,
         Action<IServiceCollection>? configureServices = null)
     {
-        var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
+        var runner = new ScriptedRunner(ToolCall("terminal.run", FailureCommand()));
         var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, configureServices: configureServices);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
@@ -1263,7 +1295,7 @@ public sealed class AgentApprovalEndpointTests
                     "provider-batch-2",
                     "bash",
                     "1.0.0",
-                    JsonDocument.Parse(JsonSerializer.Serialize(new { mode = "run", executable = "unknown-tool-batch.exe", arguments = new[] { "--query-approval-state" }, working_directory = Path.GetTempPath() }))
+                    JsonDocument.Parse(FailureCommand())
                         .RootElement.Clone()),
                 new ModelToolCall(
                     "provider-batch-3",
@@ -1291,6 +1323,9 @@ public sealed class AgentApprovalEndpointTests
 
     private static string Command(string marker) =>
         JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/c", "echo", marker }, working_directory = Path.GetTempPath() });
+
+    private static string FailureCommand() =>
+        JsonSerializer.Serialize(new { mode = "run", executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" }, working_directory = Path.GetTempPath() });
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {

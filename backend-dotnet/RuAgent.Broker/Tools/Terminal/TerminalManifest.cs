@@ -15,7 +15,10 @@ public sealed record TerminalRunRequest(
     string SessionId = "",
     bool ReadOnly = false,
     IReadOnlyList<string>? WriteSet = null,
-    bool Approved = false);
+    bool Approved = false)
+{
+    internal CanonicalCommandIntent? AuthorizedIntent { get; init; }
+}
 
 public sealed record TerminalShellRequest(
     string Shell,
@@ -28,7 +31,10 @@ public sealed record TerminalShellRequest(
     bool ReadOnly = false,
     IReadOnlyList<string>? WriteSet = null,
     bool Approved = false,
-    bool Network = false);
+    bool Network = false)
+{
+    internal CanonicalCommandIntent? AuthorizedIntent { get; init; }
+}
 
 public static class TerminalManifests
 {

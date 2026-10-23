@@ -19,9 +19,10 @@ public sealed class AgentProviderSnapshotFactory(
     Func<RunId, CancellationToken, Task<bool>> isTerminal) : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan SynchronousDisposeTimeout = TimeSpan.FromSeconds(5);
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _cacheGate = new();
     private readonly object _disposeSync = new();
     private readonly Dictionary<RunId, ProviderBootstrapData> _runs = [];
+    private readonly Dictionary<RunId, Task<ProviderBootstrapData>> _inflight = [];
     private Task? _disposeTask;
     private int _disposeRequested;
     private bool _disposed;
@@ -29,25 +30,100 @@ public sealed class AgentProviderSnapshotFactory(
     public async Task<ProviderBootstrapData> GetAsync(RunId runId, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeRequested) != 0, this);
-        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        while (true)
+        {
+            Task<ProviderBootstrapData>? flight = null;
+            TaskCompletionSource<ProviderBootstrapData>? owner = null;
+            while (flight is null)
+            {
+                var shouldEvict = false;
+                lock (_cacheGate)
+                {
+                    ObjectDisposedException.ThrowIf(_disposeRequested != 0 || _disposed, this);
+                    if (_runs.TryGetValue(runId, out var cached)) return cached;
+                    if (_inflight.TryGetValue(runId, out flight)) break;
+                    if (_runs.Count + _inflight.Count < 64)
+                    {
+                        owner = new TaskCompletionSource<ProviderBootstrapData>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        flight = owner.Task;
+                        _inflight.Add(runId, flight);
+                    }
+                    else
+                    {
+                        shouldEvict = true;
+                    }
+                }
+
+                if (shouldEvict)
+                {
+                    await RemoveTerminalSnapshotsAsync(ct).ConfigureAwait(false);
+                    lock (_cacheGate)
+                    {
+                        ObjectDisposedException.ThrowIf(_disposeRequested != 0 || _disposed, this);
+                        if (!_runs.ContainsKey(runId) && !_inflight.ContainsKey(runId)
+                            && _runs.Count + _inflight.Count >= 64)
+                            throw new ProviderCatalogException("provider_snapshot_capacity");
+                    }
+                }
+            }
+
+            if (owner is not null) _ = LoadAndPublishAsync(runId, owner, ct);
+            try
+            {
+                return await flight!.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && flight!.IsCanceled)
+            {
+                // The caller that owned the shared load canceled it. A waiter with its
+                // own live token retries after that flight has been removed.
+            }
+        }
+    }
+
+    private async Task LoadAndPublishAsync(RunId runId,
+        TaskCompletionSource<ProviderBootstrapData> completion, CancellationToken ct)
+    {
+        ProviderBootstrapData? snapshot = null;
+        Exception? failure = null;
         try
         {
-            ObjectDisposedException.ThrowIf(_disposeRequested != 0 || _disposed, this);
-            if (_runs.TryGetValue(runId, out var cached)) return cached;
             await RemoveTerminalSnapshotsAsync(ct).ConfigureAwait(false);
-            if (_runs.Count >= 64) throw new ProviderCatalogException("provider_snapshot_capacity");
-
             var state = await selectionStore.GetAsync(runId, ct).ConfigureAwait(false);
             if (state is null) throw new ProviderCatalogException("provider_selection_missing");
             var current = await settings.ReadAsync(ct).ConfigureAwait(false);
-            var snapshot = state.Selection is null
+            snapshot = state.Selection is null
                 ? await PinCurrentSelectionAsync(runId, current, ct).ConfigureAwait(false)
                 : await BuildPinnedSnapshotAsync(state.Selection, current, ct).ConfigureAwait(false);
-            _runs.Add(runId, snapshot);
             ct.ThrowIfCancellationRequested();
-            return snapshot;
+            lock (_cacheGate)
+            {
+                ObjectDisposedException.ThrowIf(_disposeRequested != 0 || _disposed, this);
+                _runs[runId] = snapshot;
+                if (_inflight.TryGetValue(runId, out var currentFlight)
+                    && ReferenceEquals(currentFlight, completion.Task))
+                    _inflight.Remove(runId);
+            }
         }
-        finally { _gate.Release(); }
+        catch (Exception error)
+        {
+            failure = error;
+        }
+        finally
+        {
+            lock (_cacheGate)
+            {
+                if (_inflight.TryGetValue(runId, out var currentFlight)
+                    && ReferenceEquals(currentFlight, completion.Task))
+                    _inflight.Remove(runId);
+            }
+        }
+
+        if (failure is OperationCanceledException canceled)
+            completion.TrySetCanceled(canceled.CancellationToken);
+        else if (failure is not null)
+            completion.TrySetException(failure);
+        else
+            completion.TrySetResult(snapshot!);
     }
 
     private async Task<ProviderBootstrapData> PinCurrentSelectionAsync(
@@ -301,9 +377,12 @@ public sealed class AgentProviderSnapshotFactory(
 
     private async Task RemoveTerminalSnapshotsAsync(CancellationToken ct)
     {
-        foreach (var id in _runs.Keys.ToArray())
+        RunId[] ids;
+        lock (_cacheGate) ids = _runs.Keys.ToArray();
+        foreach (var id in ids)
         {
-            if (await isTerminal(id, ct).ConfigureAwait(false)) _runs.Remove(id);
+            if (!await isTerminal(id, ct).ConfigureAwait(false)) continue;
+            lock (_cacheGate) _runs.Remove(id);
         }
     }
 
@@ -363,8 +442,15 @@ public sealed class AgentProviderSnapshotFactory(
 
     private async Task DisposeCoreAsync()
     {
-        await _gate.WaitAsync().ConfigureAwait(false);
-        try { _disposed = true; _runs.Clear(); }
-        finally { _gate.Release(); }
+        Task<ProviderBootstrapData>[] inflight;
+        lock (_cacheGate) inflight = _inflight.Values.ToArray();
+        try { await Task.WhenAll(inflight).ConfigureAwait(false); }
+        catch (Exception) { /* In-flight callers receive their own load failures. */ }
+        lock (_cacheGate)
+        {
+            _disposed = true;
+            _runs.Clear();
+            _inflight.Clear();
+        }
     }
 }

@@ -41,7 +41,9 @@ public sealed class TerminalIntentClassifierTests
         Assert.False(PolicyRuleMatcher.Matches(rule, context with { NetworkIntent = "declared" }, now));
         Assert.False(PolicyRuleMatcher.Matches(rule, context, now.AddMinutes(31)));
         args.Remove("shell");
-        Assert.Equal("powershell", factory.Create("bash", "1.0.0", args).ResolvedExecutable);
+        var defaultShell = factory.Create("bash", "1.0.0", args).ResolvedExecutable!;
+        Assert.True(Path.IsPathFullyQualified(defaultShell));
+        Assert.Equal("powershell", Path.GetFileNameWithoutExtension(defaultShell), ignoreCase: true);
     }
 
     [Theory]

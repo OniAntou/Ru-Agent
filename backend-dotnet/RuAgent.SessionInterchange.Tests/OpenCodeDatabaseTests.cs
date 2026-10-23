@@ -110,7 +110,7 @@ public sealed class OpenCodeDatabaseTests : IDisposable
         InvalidDataException error = Assert.Throws<InvalidDataException>(
             () => OpenCodeDatabase.ReadSessionPayload(DatabasePath, "ses_1"));
 
-        Assert.Contains("not an opencode store", error.Message, StringComparison.Ordinal);
+        Assert.Contains("opencode_schema_unsupported", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -123,7 +123,35 @@ public sealed class OpenCodeDatabaseTests : IDisposable
         InvalidDataException error = Assert.Throws<InvalidDataException>(
             () => OpenCodeDatabase.ReadSessionPayload(DatabasePath, "ses_missing"));
 
+        Assert.Contains("opencode_session_missing", error.Message, StringComparison.Ordinal);
         Assert.Contains("ses_missing", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rejects_unsupported_session_v2_schema_with_a_bounded_named_error()
+    {
+        using (var connection = new SqliteConnection($"Data Source={DatabasePath}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TABLE session_v2 (id TEXT PRIMARY KEY)";
+            command.ExecuteNonQuery();
+        }
+
+        var error = Assert.Throws<InvalidDataException>(
+            () => OpenCodeDatabase.ListSessions(DatabasePath));
+
+        Assert.Contains("opencode_schema_unsupported", error.Message, StringComparison.Ordinal);
+        Assert.True(error.Message.Length < 256);
+    }
+
+    [Fact]
+    public void Rejects_session_list_limits_outside_the_supported_range()
+    {
+        var error = Assert.Throws<InvalidDataException>(
+            () => OpenCodeDatabase.ListSessions(DatabasePath, limit: 101));
+
+        Assert.Contains("opencode_input_invalid", error.Message, StringComparison.Ordinal);
     }
 
     private void Seed(string session, IReadOnlyList<(string Message, IReadOnlyList<string> Parts)> messages) =>
@@ -140,11 +168,12 @@ public sealed class OpenCodeDatabaseTests : IDisposable
 
         using (var schema = connection.CreateCommand())
         {
-            // The tables opencode 1.18 creates, trimmed to the columns this reader touches.
+            // Minimal v1 tables matching opencode's scalar session metadata and JSON
+            // message/part payloads. In particular, session has no data column.
             schema.CommandText = """
                 CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, slug TEXT NOT NULL,
-                    directory TEXT NOT NULL, title TEXT NOT NULL, version TEXT NOT NULL,
-                    time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT);
+                    directory TEXT NOT NULL, title TEXT NOT NULL, time_created INTEGER NOT NULL,
+                    time_updated INTEGER NOT NULL, parent_id TEXT, summary TEXT, version TEXT NOT NULL);
                 CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
                     time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL);
                 CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -192,20 +221,25 @@ public sealed class OpenCodeDatabaseTests : IDisposable
     }
 
     /// <summary>
-    /// Writes the columns opencode keeps beside the JSON, taken from the JSON itself: the
-    /// reader orders by <c>time_updated</c>, so a test that left it at a constant would be
-    /// testing the file's insertion order instead of opencode's.
+    /// Writes v1 session scalar metadata. The database keeps no JSON session payload;
+    /// only message and part rows have a data column.
     /// </summary>
     private static void WriteSession(SqliteConnection connection, string id, string session, long updated)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO session (id, project_id, slug, directory, title, version, time_created, time_updated, data)
-            VALUES ($id, 'global', 'slug', 'C:\\Users\\Someone', 'title', '1.18.31', 1, $updated, $data)
+            INSERT INTO session (id, project_id, slug, directory, title, time_created, time_updated, version)
+            VALUES ($id, 'global', 'slug', $directory, $title, $created, $updated, '1.18.31')
             """;
+        using var document = JsonDocument.Parse(session);
+        var record = document.RootElement;
         command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$directory", record.TryGetProperty("directory", out var directory)
+            ? directory.GetString()! : "C:\\Users\\Someone");
+        command.Parameters.AddWithValue("$title", record.TryGetProperty("title", out var title)
+            ? title.GetString()! : "");
+        command.Parameters.AddWithValue("$created", record.GetProperty("time").GetProperty("created").GetInt64());
         command.Parameters.AddWithValue("$updated", updated);
-        command.Parameters.AddWithValue("$data", session);
         command.ExecuteNonQuery();
     }
 

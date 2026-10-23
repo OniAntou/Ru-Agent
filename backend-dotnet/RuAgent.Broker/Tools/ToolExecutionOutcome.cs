@@ -14,7 +14,10 @@ public sealed record ToolExecutionContext(
     bool ConfinementRequired = true,
     IReadOnlySet<string>? SessionScopes = null,
     string RunId = "",
-    bool IsAuthenticatedV2Execution = false);
+    bool IsAuthenticatedV2Execution = false)
+{
+    internal Terminal.CanonicalCommandIntent? AuthorizedTerminalIntent { get; init; }
+}
 
 public sealed record ToolExecutionOutcome(
     string Status,

@@ -50,7 +50,7 @@ rl.on("line", (line) => {
     return;
   }
   if (request.method === "anything") {
-    send({ jsonrpc: "2.0", id: request.id, result: { echoed: request.params ?? {} } });
+    send({ jsonrpc: "2.0", id: request.id, result: { echoed: request.params ?? {}, argv: process.argv.slice(2) } });
     return;
   }
   if (request.method === "run.event.test") {

@@ -69,7 +69,7 @@ public sealed record V2ApprovalBinding
         if (string.IsNullOrWhiteSpace(ToolId) || ToolId.Length > 128) throw new ArgumentException("Tool ID bounded.", nameof(ToolId));
         if (string.IsNullOrWhiteSpace(ToolVersion) || ToolVersion.Length > 32) throw new ArgumentException("ToolVersion bounded.", nameof(ToolVersion));
         if (CanonicalPath is { Length: > 4096 }) throw new ArgumentException("CanonicalPath bounded.", nameof(CanonicalPath));
-        if (ResolvedExecutable is { Length: > 256 }) throw new ArgumentException("Executable bounded.", nameof(ResolvedExecutable));
+        if (ResolvedExecutable is { Length: > TerminalLimits.MaxCanonicalExecutableChars }) throw new ArgumentException("Executable bounded.", nameof(ResolvedExecutable));
         ArgumentNullException.ThrowIfNull(Argv);
         if (Argv.Count > 64 || Argv.Any(a => a is { Length: > 4096 })) throw new ArgumentException("Argv bounded.", nameof(Argv));
         if (Cwd is { Length: > 4096 }) throw new ArgumentException("Cwd bounded.", nameof(Cwd));

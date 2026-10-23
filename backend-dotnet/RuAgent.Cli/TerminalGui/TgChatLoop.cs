@@ -24,7 +24,7 @@ public sealed class TgChatLoop
     private const long MaxQueuedSubmissionBytes = 32L * 1024 * 1024;
     private const int MaxSubmissionPromptChars = 16_000;
 
-    /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing waiters.</summary>
+    /// <summary>How long <see cref="Stop"/> lets an in-flight turn finish before releasing UI waiters.</summary>
     private static readonly TimeSpan StopDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly TgChatWindow _window;
@@ -43,6 +43,7 @@ public sealed class TgChatLoop
     private Func<string, bool>? _stateChangingCommandClassifier;
     private Action<ChatSubmissionSnapshot>? _submissionAccepted;
     private Action<ChatSubmissionSnapshot>? _submissionDiscarded;
+    private Func<Task>? _shutdownSettlement;
     private long _queuedSubmissionBytes;
     private Func<string>? _attachmentLabelProvider;
     private Func<int>? _attachmentCountProvider;
@@ -92,6 +93,14 @@ public sealed class TgChatLoop
     }
 
     public Task Completion => _completion.Task;
+
+    /// <summary>
+    /// Adds session-owned work that must settle before its state can be disposed after
+    /// the UI has stopped. This does not extend the UI completion bound.
+    /// </summary>
+    internal void SetShutdownSettlement(Func<Task> settlement) => _shutdownSettlement = settlement;
+
+    internal Task WaitForShutdownSettlementAsync() => _shutdownSettlement?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>
     /// A snapshot of the bounded prompt history (newest last, matching the classic reader),

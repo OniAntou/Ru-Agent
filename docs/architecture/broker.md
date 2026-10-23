@@ -82,7 +82,12 @@ reconciliation surfaces from Phase 3:
   are not permission gates. User-installed tools resolve through sanitized absolute
   PATH directories without an install-directory allowlist. The real executable,
   argv, cwd, timeout and classified metadata are rebound before consuming each
-  authorization token. No OS confinement is claimed. The structured
+  authorization token. Dispatch receives that resolved intent directly and does not
+  repeat PATH or cwd selection after authorization. Existing bare-name policy rules
+  retain their request-label matching; remembered exact approvals use canonical paths.
+  Deny/ask rules also match the original executable alias, so resolution cannot
+  bypass an existing restriction. Unresolvable executables fail before approval.
+  No OS confinement is claimed. The structured
   protected-path denial holds in `plan` and `standard`, and credential
   storage/redaction are unchanged.
   Terminal children retain the trusted parent's `PSModulePath` for PowerShell
@@ -106,6 +111,12 @@ reconciliation surfaces from Phase 3:
   reading. Full-file hashing observes caller cancellation and a five-second
   deadline (`read_hash_timeout`); mutation preimage hashes remain Host/Broker
   owned and cannot be supplied by the model.
+  On-demand skill bodies also use handle-based final-path and hard-link checks.
+- Cancellation binds tool registrations to the current run-lease lifetime. Revocation
+  cancels existing registrations and makes late registrations already canceled;
+  reopening a run creates a separate lifetime. Cancellation callbacks run outside
+  registry locks. Session folder-grant revocation cancels active tools while leaving
+  the run able to request fresh authority.
 - Existing-file mutation: canonical ancestor handles are retained; one validated target handle excludes competing writes and rename-over through hash validation and update/delete. Updates retain at most 32 MiB of rollback bytes (`file_too_large` above the cap), write in place and flush; ordinary write failures attempt restoration, but power-loss crash atomicity is not claimed. Missing-file creation stays staged with no overwrite. Patch rollback restores only still-matching applied output, preserving intervening editor changes.
 - Client attachments accept images and text/code files only. GUI picker, paste and drop share the same type checks; CLI attachment loading refuses unsupported formats. DOCX/XLSX/PPTX are not extracted or inlined. Document processing uses workspace files through ordinary terminal tools and optional skills with user-provided dependencies; it has no built-in converter or separate execution authority.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.

@@ -49,13 +49,15 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        return MatchesMatcher(rule.Matcher, context, exactShellInvocation: rule.Decision == "allow");
+        return MatchesMatcher(rule.Matcher, context, exactShellInvocation: rule.Decision == "allow",
+            includeRequestedExecutable: rule.Decision != "allow");
     }
 
     public static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context)
         => MatchesMatcher(matcher, context, exactShellInvocation: false);
 
-    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation)
+    private static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context, bool exactShellInvocation,
+        bool includeRequestedExecutable = false)
     {
         if (matcher.ToolId is not null
             && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
@@ -88,9 +90,18 @@ public static class PolicyRuleMatcher
             }
         }
 
-        if (matcher.ResolvedExecutable is not null && !ExecutableMatches(matcher.ResolvedExecutable, context.ResolvedExecutable))
+        // Existing bare-name rules retain their original request-label semantics.
+        // New remembered approvals carry the canonical full path and match that identity.
+        if (matcher.ResolvedExecutable is { } executable)
         {
-            return false;
+            var matches = ExecutableMatches(executable, Path.IsPathFullyQualified(executable)
+                ? context.ResolvedExecutable : context.RequestedExecutable ?? context.ResolvedExecutable);
+            // Canonicalization must not let an alias bypass an existing deny/ask rule.
+            // Allow rules continue to require the selected identity above.
+            if (!matches && includeRequestedExecutable)
+                matches = ExecutableMatches(executable, context.RequestedExecutable)
+                    || ExecutableMatches(executable, context.ResolvedExecutable);
+            if (!matches) return false;
         }
 
         // A shell allow binds program text, not a glob or a command prefix.
@@ -258,7 +269,7 @@ public static class PolicyRuleMatcher
         RequireWellFormed(matcher.ToolId, 128);
         RequireWellFormed(matcher.ToolVersion, 32);
         RequireWellFormed(matcher.CanonicalPathPattern, 4096);
-        RequireWellFormed(matcher.ResolvedExecutable, 256);
+        RequireWellFormed(matcher.ResolvedExecutable, TerminalLimits.MaxCanonicalExecutableChars);
         RequireWellFormed(matcher.CwdPattern, 4096);
 
         if (matcher.ArgvPattern is { } argv)

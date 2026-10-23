@@ -127,7 +127,11 @@ public sealed partial class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("files.edit", $$"""{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"rg","arguments":["--files"]}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
+        runner.Enqueue(ToolCall("terminal.run", JsonSerializer.Serialize(new
+        {
+            executable = "cmd.exe", arguments = new[] { "/d", "/c", "exit", "7" },
+            working_directory = Path.GetTempPath(),
+        })));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
         using var client = factory.CreateAuthenticatedClient();
@@ -148,8 +152,8 @@ public sealed partial class HeadlessCodingLoopTests
         // The unrelated dirty file must still be dirty after the read-only steps.
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
 
-        // Approval resumes the parked call instead of dropping it: the unknown
-        // executable executes exactly once and fails. The failed receipt stays
+        // Approval resumes the parked call instead of dropping it: cmd.exe
+        // executes exactly once and exits nonzero. The failed receipt stays
         // visible behind the recovery note, so the prose is answered with note #1,
         // the corrected read succeeds, and only the prose after that verified
         // call is accepted as the final answer.
@@ -164,7 +168,7 @@ public sealed partial class HeadlessCodingLoopTests
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
         Assert.True(completedSeen, $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
         var terminal = await ReadEventsAsync(client, runId);
-        // The parked unknown executable plus the corrected read both complete:
+        // The parked failing command plus the corrected read both complete:
         // the failed call is not counted as verified and the recovery read is.
         Assert.Equal(
             preApprovalCompletions + 2,
@@ -561,8 +565,6 @@ public sealed partial class HeadlessCodingLoopTests
             case "files.restore": id = "write"; node["op"] = "restore"; break;
             case "terminal.run":
                 id = "bash"; node["mode"] = "run";
-                if (node["executable"]?.GetValue<string>() == "unknown-tool-xyz.exe")
-                    node["working_directory"] = Path.GetTempPath();
                 break;
             case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
             case "web.search": id = "web_search"; node.Remove("op"); break;

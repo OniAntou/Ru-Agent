@@ -36,6 +36,12 @@ sequence number (`{ afterSequence: n }`). It ends on a terminal event; if the
 bridge detaches the subscription first (`run.detached`) or shuts down, the
 iterator throws a bounded `BridgeTransportError` instead of hanging.
 
+On Windows, `.cmd`/`.bat` commands use explicit `cmd.exe` quoting with delayed
+expansion disabled. Paths with spaces, Unicode and ordinary literal arguments
+are supported. Batch command paths containing percent signs, quotes or newlines,
+and arguments containing `%`, `^`, `&`, `|`, `<`, `>`, quotes or newlines are
+rejected before spawning; use an executable command for those literal values.
+
 Each iterator buffers at most 4,096 notifications and 8 MiB of serialized UTF-8,
 including notifications arriving before attach acknowledgement. A slow consumer
 that exceeds either limit stops buffering and receives a

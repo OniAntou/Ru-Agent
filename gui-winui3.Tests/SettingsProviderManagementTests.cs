@@ -7,6 +7,55 @@ namespace RuApp.Tests;
 public sealed partial class SettingsViewModelTests
 {
     [Fact]
+    public async Task Back_keeps_the_provider_editor_disabled_through_save_and_reload()
+    {
+        const string savedUrl = "http://127.0.0.1:8000/v1";
+        var reloadEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseReload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var backend = new FakeBackend
+        {
+            Settings = new AppSettingsDto { BackendChoice = "custom", CustomUrl = savedUrl },
+        };
+        backend.GetSettingsOverride = async read =>
+        {
+            if (read == 2)
+            {
+                reloadEntered.TrySetResult();
+                await releaseReload.Task.ConfigureAwait(false);
+            }
+            return backend.Settings;
+        };
+        using var vm = NewViewModel();
+        await vm.AttachAsync(backend, new FakeCatalog());
+        vm.AddCustomProviderCommand.Execute(null);
+
+        var returning = vm.ReturnToProvidersCommand.ExecuteAsync(null);
+        await reloadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(vm.IsLoading);
+        Assert.True(vm.IsProviderEditorOpen);
+        Assert.False(vm.IsProviderManagementEnabled);
+        Assert.NotEmpty(backend.Saved);
+        Assert.All(backend.Saved, saved => Assert.Equal(savedUrl, saved.CustomUrl));
+
+        releaseReload.TrySetResult();
+        await returning.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(vm.IsProviderOverviewVisible);
+        Assert.Equal(savedUrl, vm.CustomUrl);
+    }
+
+    [Fact]
+    public void Provider_editor_binds_all_controls_to_the_loading_and_navigation_gate()
+    {
+        var editor = GuiSource.NamedElements(GuiSource.Xml("Views", "SettingsView.xaml"))["ProviderEditor"];
+
+        Assert.Equal("ContentControl", editor.Name.LocalName);
+        Assert.Equal("{x:Bind ViewModel.IsProviderManagementEnabled, Mode=OneWay}", editor.Attribute("IsEnabled")?.Value);
+        Assert.Equal("StackPanel", editor.Elements().Single().Name.LocalName);
+    }
+
+    [Fact]
     public async Task Fresh_settings_open_the_overview_and_keep_custom_out_of_the_catalog_picker()
     {
         using var vm = NewViewModel();

@@ -520,7 +520,7 @@ public static class BrokerPolicyContracts
         RequireBounded(matcher.ToolId, 128);
         RequireBounded(matcher.ToolVersion, 32);
         RequireBounded(matcher.CanonicalPathPattern, 4096);
-        RequireBounded(matcher.ResolvedExecutable, 256);
+        RequireBounded(matcher.ResolvedExecutable, TerminalLimits.MaxCanonicalExecutableChars);
         RequireBounded(matcher.CwdPattern, 4096);
 
         if (matcher.OperationClass is not null && !AllowedOperationClasses.Contains(matcher.OperationClass))

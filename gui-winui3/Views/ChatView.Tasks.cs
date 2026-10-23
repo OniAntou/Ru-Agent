@@ -132,6 +132,14 @@ public sealed partial class ChatView
 
             RenderAgentTasks(response.Data);
         }
+        catch (AgentApiException error) when (error.ErrorCode == "broker_gateway_unavailable")
+        {
+            if (!OwnsRefresh()) return;
+            // A retained run may have no live gateway after restart or before its
+            // first tool. Preserve uncertainty; active runs/tasks still drive polling.
+            _taskObservation.Fail(retryable: false);
+            RenderTaskObservation();
+        }
         catch (Exception)
         {
             if (!OwnsRefresh()) return;

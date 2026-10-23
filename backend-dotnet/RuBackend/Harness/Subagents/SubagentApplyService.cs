@@ -12,30 +12,22 @@ public sealed partial class SubagentApplyService(IHarnessEventStore events, Sqli
     SqliteSubagentResultStore results, SqliteSubagentChangeSetStore changes, SqliteSubagentApplyJournal journal,
     IToolGatewayFactory gateways) : IDisposable
 {
-    private readonly SemaphoreSlim _operation = new(1, 1);
+    private readonly KeyedAsyncLock<RunId> _operations = new();
 
     public async Task<ToolProposalDecision> EvaluateAsync(ToolProposal proposal, CancellationToken ct)
     {
-        await _operation.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var frozen = await LoadAsync(proposal, ct).ConfigureAwait(false);
-            return await gateways.EvaluateSubagentApplyAsync(proposal, frozen, ct).ConfigureAwait(false);
-        }
-        finally { _operation.Release(); }
+        using var operation = await _operations.AcquireAsync(proposal.RunId, ct).ConfigureAwait(false);
+        var frozen = await LoadAsync(proposal, ct).ConfigureAwait(false);
+        return await gateways.EvaluateSubagentApplyAsync(proposal, frozen, ct).ConfigureAwait(false);
     }
 
     public async Task<SubagentApplyOutcome> ApplyAsync(ToolProposal proposal, string canonicalIntentToken,
         long? gatewayGeneration, CancellationToken ct)
     {
-        await _operation.WaitAsync(ct).ConfigureAwait(false);
-        try
-        {
-            var frozen = await LoadAsync(proposal, ct).ConfigureAwait(false);
-            return await gateways.ApplySubagentChangesAsync(proposal, frozen, canonicalIntentToken,
-                gatewayGeneration, journal, ct).ConfigureAwait(false);
-        }
-        finally { _operation.Release(); }
+        using var operation = await _operations.AcquireAsync(proposal.RunId, ct).ConfigureAwait(false);
+        var frozen = await LoadAsync(proposal, ct).ConfigureAwait(false);
+        return await gateways.ApplySubagentChangesAsync(proposal, frozen, canonicalIntentToken,
+            gatewayGeneration, journal, ct).ConfigureAwait(false);
     }
 
     private async Task<SubagentChangeSet> LoadAsync(ToolProposal proposal, CancellationToken ct, bool inspection = false)
@@ -65,5 +57,5 @@ public sealed partial class SubagentApplyService(IHarnessEventStore events, Sqli
         return frozen;
     }
 
-    public void Dispose() => _operation.Dispose();
+    public void Dispose() => _operations.Dispose();
 }

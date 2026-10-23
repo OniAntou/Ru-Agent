@@ -61,7 +61,15 @@ public sealed partial class BrokerExecutionRuntime
         {
             BrokerRunLease root;
             SubagentApplyPreparation preparation;
-            await _lifecycleGate.WaitAsync(operation.Token).ConfigureAwait(false);
+            try
+            {
+                await _lifecycleGate.WaitAsync(operation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && operation.Token.IsCancellationRequested)
+            {
+                throw new AgentProtocolException("subagent_apply_denied");
+            }
+
             try
             {
                 root = SubagentApplyRoot(sessionId, runId);

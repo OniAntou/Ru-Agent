@@ -201,6 +201,33 @@ public sealed class SkillBodyToolTests
         }
     }
 
+    [Fact]
+    public void Skill_body_store_denies_a_hard_link_to_an_outside_file()
+    {
+        using var fixture = Fixture.Create();
+        var outside = Path.Combine(Path.GetTempPath(), "ru-skill-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            var secret = Path.Combine(outside, "SKILL.md");
+            File.WriteAllText(secret, "---\nname: linked\ndescription: outside file\n---\n\nSECRET-BODY");
+            var skillDirectory = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "linked")).FullName;
+            var linkedSkill = Path.Combine(skillDirectory, "SKILL.md");
+            if (!FileReadAdapterTests.TryCreateHardLink(linkedSkill, secret))
+            {
+                return;
+            }
+
+            var body = new SkillBodyStore(fixture.Root).LoadBody("linked");
+
+            Assert.Null(body);
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch (IOException) { }
+        }
+    }
+
     private static bool TryCreateJunction(string junctionPath, string targetPath)
     {
         try

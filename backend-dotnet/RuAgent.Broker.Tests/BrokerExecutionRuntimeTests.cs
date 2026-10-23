@@ -826,6 +826,8 @@ public sealed class BrokerExecutionRuntimeTests
     public async Task Terminal_approval_creates_no_reusable_grant()
     {
         using var fixture = new RuntimeFixture();
+        var executable = Path.Combine(fixture.Root, "rm.exe");
+        File.WriteAllText(executable, "synthetic executable identity; never dispatched");
         const string sessionId = "session-runtime-terminal-grant";
         const string runId = "run_terminal11111111111111111111111111";
         var opened = await fixture.Runtime.OpenRunAsync(
@@ -836,7 +838,7 @@ public sealed class BrokerExecutionRuntimeTests
         JsonObject DeleteArguments() => new()
         {
             ["mode"] = "run",
-            ["executable"] = "rm.exe",
+            ["executable"] = executable,
             ["arguments"] = new JsonArray("target.txt"),
             ["working_directory"] = ".",
         };
@@ -1004,6 +1006,43 @@ public sealed class BrokerExecutionRuntimeTests
         Assert.True(
             stopwatch.Elapsed < TimeSpan.FromSeconds(20),
             $"cancel took {stopwatch.Elapsed}; the process was not stopped by the cancel");
+    }
+
+    [Fact]
+    public async Task Cancelled_run_rejects_late_authorized_execution_and_reopen_uses_a_fresh_generation()
+    {
+        using var fixture = new RuntimeFixture();
+        File.WriteAllText(Path.Combine(fixture.Root, "generation.txt"), "fresh generation");
+        const string sessionId = "session-runtime-cancel-generation";
+        const string runId = "run_cancel_generation111111111111111";
+        var opened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default);
+        Assert.Null(opened.Error);
+
+        var arguments = new JsonObject { ["path"] = "generation.txt" };
+        var oldDecision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-cancel-generation-old", sessionId, runId, "read", arguments), default);
+        Assert.Equal("allow", oldDecision.Decision!.Decision);
+
+        fixture.Runtime.CancelRun(runId);
+        var oldExecution = await fixture.Runtime.ExecuteAuthorizedAsync(
+            Execute("execute-cancel-generation-old", sessionId, runId, "read", oldDecision.Decision.AuthorizationToken!, arguments), default);
+        Assert.Equal("run_not_open", oldExecution.ErrorCode);
+
+        var closed = await fixture.Runtime.CloseRunAsync(RunClose("close-cancel-generation", sessionId, runId), default);
+        Assert.True(closed.Closed);
+        var reopened = await fixture.Runtime.OpenRunAsync(
+            RunOpen(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty()), default);
+        Assert.Null(reopened.Error);
+
+        var newDecision = await fixture.Runtime.EvaluateAsync(
+            Evaluate("evaluate-cancel-generation-new", sessionId, runId, "read", arguments), default);
+        Assert.Equal("allow", newDecision.Decision!.Decision);
+        var newExecution = await fixture.Runtime.ExecuteAuthorizedAsync(
+            Execute("execute-cancel-generation-new", sessionId, runId, "read", newDecision.Decision.AuthorizationToken!, arguments), default);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, newExecution.Receipt!.Status);
+        Assert.Equal("fresh generation", newExecution.Receipt.Output["content"]!.GetValue<string>());
     }
 
     [Fact]

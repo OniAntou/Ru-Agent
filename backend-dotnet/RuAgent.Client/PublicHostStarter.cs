@@ -314,6 +314,10 @@ public sealed class PublicHostStarter : IDisposable
             }
             return Task.FromResult(true);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
             return Task.FromResult(false);

@@ -8,6 +8,12 @@ uses catalog details only for rates; sequential/data-only chat skips that lookup
 
 ## Core TUI
 
+Stopping the UI keeps its two-second bound for ordinary turn handlers. The chat
+owner separately retains a pending create request until acknowledgement recovery
+settles and any late accepted run's cancellation request completes. It waits for
+that settlement before disposing the API client; UI completion alone does not
+mean the pending run is unowned.
+
 The terminal is a compact coding surface: chat, inline tool activity and expandable
 errors/diffs, approvals, attachments, session/model selection and run recovery.
 The header retains its live context meter. Plans appear as compact completed/total

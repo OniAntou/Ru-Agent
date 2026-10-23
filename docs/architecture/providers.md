@@ -31,6 +31,11 @@ they arrive, and usage on argument-only chunks remains available.
 
 
 
+Provider snapshot creation shares one in-flight load per run, with short cache locks
+and credential/catalog I/O outside those locks. Unrelated runs and cache hits do not
+wait for a slow run's load. Cached and loading snapshots share the 64-run bound;
+a canceled load can be retried by a waiter whose own token remains live.
+
 Per-run provider snapshot creation reads exactly one canonical credential account:
 Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
 uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`

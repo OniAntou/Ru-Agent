@@ -6,8 +6,26 @@ namespace RuAgent.Broker.Runtime;
 /// </summary>
 internal sealed class BrokerRunLifetime
 {
+    private readonly CancellationTokenSource _revocation = new();
     private int _revoked;
     public string Id { get; } = Guid.NewGuid().ToString("N");
     public bool IsRevoked => Volatile.Read(ref _revoked) != 0;
-    public void Revoke() => Interlocked.Exchange(ref _revoked, 1);
+    public CancellationToken RevocationToken => _revocation.Token;
+
+    public void Revoke()
+    {
+        if (Interlocked.Exchange(ref _revoked, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _revocation.Cancel();
+        }
+        catch (AggregateException)
+        {
+            // All registered operations are signalled even when a callback fails.
+        }
+    }
 }

@@ -2,6 +2,10 @@
 
 Current reference. [System ownership](../architecture.md) · [Domain glossary](../../CONTEXT.md) · [Tool policy](../operations/agent-tools.md).
 
+Subagent apply and inspection share a lock keyed by root run. Operations on the
+same root remain ordered; independent roots can proceed concurrently. Canceled
+waiters release their lock references, and idle keys leave the lock table.
+
 The Host validates model/reasoning against that catalog at the first model
 step. Settings changes after the selection is pinned affect the next run.
 That new root run also captures a bounded **Session Run Handoff** from up to four

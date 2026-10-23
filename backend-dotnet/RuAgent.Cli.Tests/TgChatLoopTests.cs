@@ -10,6 +10,35 @@ namespace RuAgent.Cli.Tests;
 public sealed class TgChatLoopTests
 {
     [Fact]
+    public async Task Stop_keeps_ui_completion_bounded_when_a_generic_handler_ignores_cancellation()
+    {
+        var enteredHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var window = TgChatWindow.Build();
+        var loop = new TgChatLoop(window);
+        loop.SetPromptHandler(async (_, _, _) =>
+        {
+            enteredHandler.TrySetResult();
+            try { await releaseHandler.Task.ConfigureAwait(false); }
+            finally { handlerFinished.TrySetResult(); }
+        });
+
+        window.Composer.Input.Text = "ignore cancellation";
+        loop.Submit();
+        await enteredHandler.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        loop.Stop();
+
+        await loop.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        var handlerWasStillRunning = !handlerFinished.Task.IsCompleted;
+        releaseHandler.TrySetResult();
+        await handlerFinished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(handlerWasStillRunning,
+            "The UI wait remains bounded even when a generic handler ignores cancellation.");
+    }
+
+    [Fact]
     public void DocumentPagingDoesNotScrollTheConversationBehindIt()
     {
         using IApplication app = Application.Create();

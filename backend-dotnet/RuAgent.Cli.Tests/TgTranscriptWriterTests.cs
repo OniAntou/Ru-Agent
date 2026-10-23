@@ -507,7 +507,7 @@ public sealed class TgTranscriptWriterTests
     /// the span transcript must keep that paint instead of stripping it back to plain rows.
     /// </summary>
     [Fact]
-    public async void RecoveredReplyKeepsItsMarkdownSpans()
+    public void RecoveredReplyKeepsItsMarkdownSpans()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);
@@ -566,7 +566,7 @@ public sealed class TgTranscriptWriterTests
 
     /// <summary>Reconciliation of an unpainted reply must not leak raw markdown markers.</summary>
     [Fact]
-    public async void RecoveredPlainReplyStaysPlainWithoutRawMarkers()
+    public void RecoveredPlainReplyStaysPlainWithoutRawMarkers()
     {
         using IApplication app = Application.Create();
         app.Init(DriverRegistry.Names.ANSI);

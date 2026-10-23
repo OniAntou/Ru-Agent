@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { BridgeTransport } from "../src/transport.js";
 import { controlledTransport } from "./controlled-transport.js";
 
@@ -311,6 +313,29 @@ describe("BridgeTransport", () => {
     await transport.close();
   });
 
+  it.skipIf(process.platform !== "win32")("preserves_safe_literal_argv_for_a_cmd_bridge_in_a_path_with_spaces", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "ru sdk bridge "));
+    const command = path.join(directory, "fake-bridge.cmd");
+    let transport: BridgeTransport | undefined;
+    try {
+      copyFileSync(cmdFixture, command);
+      copyFileSync(fixture, path.join(directory, "fake-bridge.mjs"));
+      const args = ["two words", "quoted phrase with spaces", "Tiếng Việt 🧡", "", "literal!bang", "trailing slash\\"];
+      transport = BridgeTransport.spawn({
+        command,
+        args,
+        agentArgs: [],
+        env: { FAKE_BRIDGE_MODE: "echo" },
+      });
+
+      const result = await transport.request<{ argv: string[] }>("anything");
+      expect(result.argv).toEqual(args);
+    } finally {
+      await transport?.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("isolates a throwing notification handler and keeps delivering to the rest", async () => {
     const transport = start();
     const seen: string[] = [];
@@ -332,6 +357,16 @@ describe("BridgeTransport", () => {
       BridgeTransport.spawn({
         command: cmdFixture,
         args: ["%PATH%"],
+        agentArgs: [],
+      }),
+    ).toThrow(/metacharacters/);
+  });
+
+  it.skipIf(process.platform !== "win32")("refuses_embedded_quotes_in_batch_arguments", () => {
+    expect(() =>
+      BridgeTransport.spawn({
+        command: cmdFixture,
+        args: ['embedded"quote'],
         agentArgs: [],
       }),
     ).toThrow(/metacharacters/);

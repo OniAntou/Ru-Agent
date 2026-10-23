@@ -275,7 +275,7 @@ public sealed class AgentPoliciesService
         }
 
         string? resolvedExe = null;
-        if (!TryReadPolicyString(matcherProp, "resolved_executable", 256, out resolvedExe))
+        if (!TryReadPolicyString(matcherProp, "resolved_executable", TerminalLimits.MaxCanonicalExecutableChars, out resolvedExe))
         {
             return BoundedError(400, "invalid_matcher", "resolved_executable must be a non-empty string or null.");
         }

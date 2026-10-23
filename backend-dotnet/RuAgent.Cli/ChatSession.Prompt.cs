@@ -138,10 +138,12 @@ public sealed partial class AgentCommands
             var presetCommitted = false;
             var hostAccepted = false;
             ChatSubmissionState.Transfer? transfer = null;
+            IDisposable? runSettlement = null;
 
             try
             {
                 runSession.BeginNewTurn(ct);
+                runSettlement = runSession.RetainRunSettlement();
                 // Parked state is per-turn: a new prompt starts clean, so the T1 cancel
                 // guard can never POST a cancel against a park left over from a prior turn.
                 sessionRenderer.Width = ChatRenderWidth();
@@ -351,6 +353,7 @@ public sealed partial class AgentCommands
             finally
             {
                 transfer?.Dispose();
+                runSettlement?.Dispose();
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }

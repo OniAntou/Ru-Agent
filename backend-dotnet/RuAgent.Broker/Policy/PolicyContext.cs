@@ -1,5 +1,6 @@
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Broker.Tools.Terminal;
 
 namespace RuAgent.Broker.Policy;
 
@@ -95,4 +96,9 @@ public sealed record PolicyContext(
     bool Background = false)
 {
     public static readonly IReadOnlyList<string> EmptyArgv = Array.Empty<string>();
+
+    // Broker-only dispatch data; never accepted from model arguments or serialized as authority.
+    internal CanonicalCommandIntent? TerminalIntent { get; init; }
+    internal string? TerminalResolutionError { get; init; }
+    internal string? RequestedExecutable { get; init; }
 }

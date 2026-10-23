@@ -55,6 +55,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 
 ## Decisions
 
+- [`read` returns workspace images to vision models](adr/0026-read-returns-workspace-images.md) (proposed)
 - [MCP servers through the Broker behind one `mcp` tool](adr/0025-mcp-servers-through-the-broker.md)
 - [Bounded session-run handoff across model changes](adr/0023-bounded-session-run-handoff.md)
 - [Full access is literally full](adr/0021-full-access-is-literally-full.md)

@@ -52,6 +52,7 @@ public sealed partial class TuiTranscript
     private bool _hasStreamedDelta;
     private string _lineBuffer = string.Empty;
     private readonly StringBuilder _proseLine = new();
+    private readonly List<string> _paragraph = [];
     private long _lastProsePreview;
     private bool _inToolBlock;
     private bool _atLineStart = true;
@@ -192,6 +193,7 @@ public sealed partial class TuiTranscript
         _pausedRunId = null;
         _lastParkReason = null;
         _repeatedPark = false;
+        _paragraph.Clear();
         _pendingTools.Clear();
         _settledActivityIds.Clear();
         _settledToolRows.Clear();
@@ -283,6 +285,7 @@ public sealed partial class TuiTranscript
         // target the whole turn, and the header is not reprinted.
         _lineBuffer = string.Empty;
         _proseLine.Clear();
+        _paragraph.Clear();
         _lastProsePreview = 0;
         _surface.PreviewLine(string.Empty);
         if (clearRawText)
@@ -369,6 +372,10 @@ public sealed partial class TuiTranscript
                 _atLineStart = true;
             }
 
+            // A buffered paragraph must not survive a tool block: its row would land after
+            // the tool rows it preceded.
+            FlushParagraph();
+
             // Prose on both sides of a tool block is independent text: a fence open when the
             // tool call started cannot survive it.
             _markdown.Reset();
@@ -448,9 +455,25 @@ public sealed partial class TuiTranscript
                     if (_surface.HasLineProjection && (_proseLine.Length == text.Length - start
                         || Stopwatch.GetElapsedTime(_lastProsePreview).TotalMilliseconds >= ProsePreviewIntervalMilliseconds))
                     {
+                        var partial = _proseLine.ToString();
                         if (_surface.Presentation is { } presentation)
-                            presentation.PreviewPresentation(_markdown.PreviewPresentation(_proseLine.ToString(), Width));
-                        else _surface.PreviewLine(_markdown.PreviewLine(_proseLine.ToString(), Width));
+                        {
+                            // A paragraph being buffered previews as the whole reflowed block,
+                            // so the row the operator sees is the row the commit will produce.
+                            if (_paragraph.Count > 0
+                                || _markdown.Classify(partial) == TuiMarkdown.TuiLineKind.Paragraph)
+                            {
+                                var joined = _paragraph.Count == 0
+                                    ? partial
+                                    : string.Join(' ', _paragraph.Append(partial));
+                                presentation.PreviewPresentation(_markdown.RenderParagraphPresentation(joined));
+                            }
+                            else
+                            {
+                                presentation.PreviewPresentation(_markdown.PreviewPresentation(partial, Width));
+                            }
+                        }
+                        else _surface.PreviewLine(_markdown.PreviewLine(partial, Width));
                         _lastProsePreview = Stopwatch.GetTimestamp();
                     }
                     _atLineStart = false;
@@ -475,23 +498,55 @@ public sealed partial class TuiTranscript
     {
         // Prose ends a tool block: the summary lands before the first line of the reply.
         CloseToolGroup();
-        if (_surface.Presentation is not null)
+        if (_surface.Presentation is null)
         {
-            _surface.CommitPresentation(_markdown.RenderPresentation(line, Width));
+            var rows = _surface.HasLineProjection
+                ? _markdown.RenderLogicalLine(line, Width)
+                : _markdown.RenderLine(line, Width);
+            _surface.CommitProjectedLine(rows);
             return;
         }
-        var rows = _surface.HasLineProjection
-            ? _markdown.RenderLogicalLine(line, Width)
-            : _markdown.RenderLine(line, Width);
-        _surface.CommitProjectedLine(rows);
 
+        // The screen can replace a paragraph while it grows, so consecutive prose lines are
+        // buffered and rendered once as a reflowed paragraph. Everything else is its own
+        // block and closes the paragraph first.
+        var kind = _markdown.Classify(line);
+        if (kind == TuiMarkdown.TuiLineKind.Paragraph)
+        {
+            _paragraph.Add(line);
+            return;
+        }
+
+        FlushParagraph();
+        _surface.CommitPresentation(_markdown.RenderPresentation(line, Width));
+    }
+
+    /// <summary>
+    /// Commits the buffered paragraph as one row. Soft line breaks become spaces, which is
+    /// what a reflowed paragraph means; the screen wraps the row to its own width.
+    /// </summary>
+    private void FlushParagraph()
+    {
+        if (_paragraph.Count == 0)
+        {
+            return;
+        }
+
+        var text = string.Join(' ', _paragraph);
+        _paragraph.Clear();
+        _surface.CommitPresentation(_markdown.RenderParagraphPresentation(text));
     }
 
     private void FlushProseLine()
     {
-        if (_proseLine.Length == 0) return;
-        WriteCompleteLine(_proseLine.ToString());
-        _proseLine.Clear();
+        if (_proseLine.Length > 0)
+        {
+            WriteCompleteLine(_proseLine.ToString());
+            _proseLine.Clear();
+        }
+
+        // The unfinished line closes with the block it belonged to.
+        FlushParagraph();
         _atLineStart = true;
     }
 

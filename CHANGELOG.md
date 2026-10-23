@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(cli)**: Prose now reflows as a paragraph. Consecutive prose lines render as one
+  screen row (soft breaks join with a space) instead of one row per source line, and every
+  block form — blank line, heading, list, quote, rule, fence, table, tool row, notice, end
+  of turn — closes the paragraph first. The Terminal.Gui sink previews the growing
+  paragraph in place and replaces it on commit; the append-only sink keeps per-line output
+  because it cannot unprint.
+
+- **style(gui)**: Replace the startup console artwork with a centered, smooth Inter
+  Ru Agent wordmark, a short entrance and a gentle loading pulse. Honor reduced
+  motion, reveal the chat as soon as its surface is ready, and keep startup errors
+  visible with an Open app action. Closing the window stops all startup motion.
+
 - **refactor(cli)**: Assistant inline Markdown is parsed by **Markdig** (CommonMark) instead
   of a hand-written scanner. Nested emphasis, escaped markers, autolinks and inline code
   keep their CommonMark boundaries; a link renders its label and drops the URL; an

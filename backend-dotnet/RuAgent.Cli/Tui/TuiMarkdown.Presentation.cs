@@ -13,6 +13,45 @@ public sealed partial class TuiMarkdown
         return copy.RenderPresentation(line, width);
     }
 
+    /// <summary>
+    /// The kind of block a complete raw line starts or continues. The transcript buffers the
+    /// paragraph kinds and commits every other kind immediately, which is what lets a reflowed
+    /// paragraph replace its preview instead of printing one row per source line.
+    /// </summary>
+    internal enum TuiLineKind
+    {
+        Blank,
+        Paragraph,
+        Heading,
+        List,
+        Quote,
+        Rule,
+        Fence,
+        Table,
+    }
+
+    internal TuiLineKind Classify(string line)
+    {
+        if (InFence) return TuiLineKind.Fence;
+        if (line.Length == 0) return TuiLineKind.Blank;
+        if (IsFenceLine(line)) return TuiLineKind.Fence;
+        if (TryRule(line, out _)) return TuiLineKind.Rule;
+        if (TryQuote(line, out _)) return TuiLineKind.Quote;
+        if (TryHeading(line, out _, out _)) return TuiLineKind.Heading;
+        if (IsTableCandidate(line)) return TuiLineKind.Table;
+        if (TryNestedBullet(line, out _) || IsDeeperBullet(line) || TryBullet(line, out _)
+            || TryOrdered(line, out _, out _))
+        {
+            return TuiLineKind.List;
+        }
+
+        return TuiLineKind.Paragraph;
+    }
+
+    /// <summary>One reflowed paragraph: soft line breaks become spaces, inline styles stay.</summary>
+    public IReadOnlyList<TranscriptLine> RenderParagraphPresentation(string text) =>
+        [new(PresentationInline(text))];
+
     /// <summary>Logical display rows with semantic styles; the screen alone wraps them.</summary>
     public IReadOnlyList<TranscriptLine> RenderPresentation(string line, int width)
     {

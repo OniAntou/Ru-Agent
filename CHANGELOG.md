@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **refactor(cli)**: Assistant inline Markdown is parsed by **Markdig** (CommonMark) instead
+  of a hand-written scanner. Nested emphasis, escaped markers, autolinks and inline code
+  keep their CommonMark boundaries; a link renders its label and drops the URL; an
+  unmatched delimiter stays literal. Block classification, table layout and streaming
+  holdback are unchanged.
+
+- **feat(gui)**: Show a change summary beneath each finished assistant turn:
+  unique edited files, recorded line totals, a four-file preview and an expandable
+  list. Open one file or the whole turn in a read-only diff reader. Reopened chats
+  restore summaries from their own run activities; failed edits are excluded and
+  missing line counts stay unknown.
+
+- **style(gui)**: Add grid, history and minimal terminal-prompt icons beside the
+  Workspaces, Recents and CLI Sessions sidebar headings.
+
+- **fix(gui)**: Keep Settings categories scrollable in narrow windows and size the
+  command palette to its viewport. Improve Light-theme warning contrast and
+  composer remove targets. Update session waves when Windows animation preferences
+  change, preserve the current frame when reversing side-panel transitions, and
+  switch the Send/Stop icon immediately with its action.
+
 - **fix(agent)**: Retract streamed text from rejected model steps before recovery
   or failure. Tool-error retries no longer leave both the rejected summary and
   the replacement answer in GUI/TUI; earlier accepted text remains visible.

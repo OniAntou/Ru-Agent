@@ -45,10 +45,17 @@ public sealed class StructuredTranscriptTests
     [InlineData("# ~~a~~~~b~~ tail")]
     public void Adjacent_inline_styles_close_the_enclosing_heading_after_the_first_fragment(string source)
     {
+        // Delimiter pairing is CommonMark's job now: a length-2 backtick run cannot close a
+        // length-1 opener, so the pathological cases are one styled span plus a tail. What
+        // this test pins is the heading's paint boundary: the styled fragment keeps the
+        // heading style, the trailing text must not inherit it.
         var row = Assert.Single(new TuiMarkdown().RenderPresentation(source, 120));
-        Assert.True(Assert.Single(row.Runs, run => run.Text == "a").Bold);
-        Assert.False(Assert.Single(row.Runs, run => run.Text == "b").Bold);
-        Assert.False(Assert.Single(row.Runs, run => run.Text == " tail").Bold);
+        var styled = row.Runs[0];
+        var tail = Assert.Single(row.Runs, run => run.Text == " tail");
+        Assert.True(styled.Bold);
+        Assert.DoesNotContain(" tail", styled.Text, StringComparison.Ordinal);
+        Assert.False(tail.Bold);
+        Assert.False(tail.Dim);
     }
 
     [Theory]

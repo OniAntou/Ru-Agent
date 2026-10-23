@@ -13,6 +13,7 @@
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Markdig" />
     <PackageReference Include="System.Drawing.Common" />
     <PackageReference Include="Terminal.Gui" />
   </ItemGroup>

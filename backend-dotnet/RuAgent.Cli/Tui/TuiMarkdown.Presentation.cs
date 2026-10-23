@@ -71,48 +71,16 @@ public sealed partial class TuiMarkdown
         return [new(PresentationInline(line))];
     }
 
+    /// <summary>
+    /// Inline runs for one fragment. Parsing goes through Markdig (CommonMark), so nesting,
+    /// escapes and delimiters that arrive only half-complete degrade to literal text instead
+    /// of being paired by a scanner.
+    /// </summary>
     internal static IReadOnlyList<TranscriptRun> PresentationInline(string text, bool continuesWord = false)
     {
-        var output = new TranscriptRunBuilder();
-        var index = 0;
-        var previous = continuesWord ? 'x' : ' ';
-        while (index < text.Length)
-        {
-            var c = text[index];
-            if (c == '\\' && index + 1 < text.Length && IsEscapable(text[index + 1]))
-            { output.Append(text[index + 1]); previous = text[index + 1]; index += 2; continue; }
-            if (c == '`')
-            {
-                var close = text.IndexOf('`', index + 1);
-                if (close < 0) { output.Append(text[index..]); break; }
-                output.Append(text[(index + 1)..close], TuiToken.Ok);
-                previous = '`'; index = close + 1; continue;
-            }
-            if ((c == '*' || c == '_') && index + 1 < text.Length && text[index + 1] == c)
-            {
-                if (IsWordChar(previous)) { output.Append(c); previous = c; index++; continue; }
-                var close = FindClose(text, index + 2, c);
-                if (close < 0) { output.Append(text[index..]); break; }
-                output.Append(text[(index + 2)..close], TuiToken.Bright, bold: true);
-                previous = c; index = close + 2; continue;
-            }
-            if (c == '~' && index + 1 < text.Length && text[index + 1] == '~')
-            {
-                var close = text.IndexOf("~~", index + 2, StringComparison.Ordinal);
-                if (close < 0) { output.Append(text[index..]); break; }
-                output.Append(text[(index + 2)..close], dim: true);
-                previous = '~'; index = close + 2; continue;
-            }
-            if (c == '[')
-            {
-                var label = FindLinkLabel(text, index, out var after);
-                if (label is not null)
-                { output.Append(PresentationInline(label)); previous = ']'; index = after; continue; }
-            }
-            output.Append(c);
-            previous = char.IsWhiteSpace(c) ? ' ' : c;
-            index++;
-        }
-        return output.Line().Runs;
+        // Kept for call-site compatibility: the old scanner needed the flag to tell an
+        // emphasis closer from an opener. A real parser resolves that from the delimiters.
+        _ = continuesWord;
+        return MarkdigInline.Parse(text);
     }
 }

@@ -198,45 +198,9 @@ public sealed partial class TuiMarkdown
             : TuiPalette.Paint(run.Bold ? TuiPalette.BoldPaint(run.Text) : run.Text, run.Token)));
     }
 
-    private static int FindClose(string text, int from, char marker)
-    {
-        for (var i = from; i + 1 < text.Length; i++)
-        {
-            if (text[i] == marker && text[i + 1] == marker)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static string? FindLinkLabel(string text, int start, out int after)
-    {
-        var close = text.IndexOf(']', start + 1);
-        if (close < 0 || close + 1 >= text.Length || text[close + 1] != '(')
-        {
-            after = start;
-            return null;
-        }
-
-        var end = text.IndexOf(')', close + 2);
-        if (end < 0)
-        {
-            after = start;
-            return null;
-        }
-
-        after = end + 1;
-        return text[(start + 1)..close];
-    }
-
     private static bool IsMarkerChar(char c) =>
         c is '*' or '_' or '`' or '~' or '[' or ']' or '\\';
 
-    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c is '_' or ')' or ']' or '"' or '\'';
-
-    private static bool IsEscapable(char c) => !char.IsLetterOrDigit(c);
 
      /// <summary>
     /// A row the transcript's table renderer may group: outer pipes plus at least two

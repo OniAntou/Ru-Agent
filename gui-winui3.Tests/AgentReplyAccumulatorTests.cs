@@ -9,6 +9,25 @@ namespace RuApp.Tests;
 
 public sealed class AgentReplyAccumulatorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Tool_recovery_retracts_the_previous_step_before_a_new_step_answers(bool alreadyRendered)
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("session", "run");
+        reply.TryAppend("run", "earlier", 1, "Earlier accepted text.\n");
+        reply.TryAppend("run", "rejected", 2, "Rejected error summary.");
+        if (alreadyRendered) reply.TakeSnapshot();
+
+        Assert.True(reply.TryReset("run", "rejected", 3));
+        Assert.True(reply.TryAppend("run", "replacement", 4, "Final error report."));
+        var snapshot = reply.TakeSnapshot()!;
+
+        Assert.Equal("Earlier accepted text.\nFinal error report.", snapshot.Text);
+        Assert.Equal("Earlier accepted text.\n".Length, snapshot.ResetOffset);
+    }
+
     [Fact]
     public void Retrying_a_later_step_preserves_completed_earlier_step_text()
     {

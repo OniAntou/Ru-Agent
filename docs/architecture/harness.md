@@ -689,6 +689,15 @@ Provider `Length` finishes suppress the whole incomplete step, including any
 partial tool calls, before execution; bounded recovery requests smaller output.
 `ContentFilter` and `Error` finishes fail as `model_content_filtered` and
 `model_reply_error` without recovery. Whitespace-only final text counts as empty.
+
+Streamed text remains provisional until the Harness accepts the step. When a
+step is suppressed (failed-tool recovery, rejected repeated calls, unusable or
+empty output), the Harness retracts that step's text through the existing
+`assistant.delta` reset before publishing recovery feedback or starting another
+step. Retraction follows redaction completion so buffered tails cannot reappear.
+The reset retains the rejected model-step identity and advances its sequence;
+earlier accepted steps and tool receipts remain intact in GUI and TUI.
+
 _Avoid_: fallback answer, substitute model, retry on another backend
 
 ## Repeated Tool Recovery

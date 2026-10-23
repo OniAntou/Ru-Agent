@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: Retract streamed text from rejected model steps before recovery
+  or failure. Tool-error retries no longer leave both the rejected summary and
+  the replacement answer in GUI/TUI; earlier accepted text remains visible.
+
 ## [0.1.2-preview.1] - 2026-10-24
 
 Preview Windows x64 Desktop and CLI release. Packages are self-contained

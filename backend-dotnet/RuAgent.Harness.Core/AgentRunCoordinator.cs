@@ -325,6 +325,7 @@ public sealed class AgentRunCoordinator
         if (step.FinishReason is AssistantFinishReason.Length
             or AssistantFinishReason.ContentFilter or AssistantFinishReason.Error)
         {
+            invocation.RetractAssistantText();
             return await _steps.HandleUnusableModelStepAsync(
                     run, modelStepId, step, modelDroppedCount, context,
                     promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText)
@@ -339,6 +340,7 @@ public sealed class AgentRunCoordinator
                 out var receiptCode);
             if (repetition == RepetitionGuardVerdict.Advise)
             {
+                invocation.RetractAssistantText();
                 return await _steps.HandleRepetitionAdviceStepAsync(
                         run,
                         modelStepId,
@@ -354,6 +356,7 @@ public sealed class AgentRunCoordinator
 
             if (repetition == RepetitionGuardVerdict.Stop)
             {
+                invocation.RetractAssistantText();
                 return await _steps.HandleRepeatedToolStepAsync(
                         run,
                         modelStepId,
@@ -381,6 +384,8 @@ public sealed class AgentRunCoordinator
         if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode)
             || AgentRecoveryNotes.TryReadBlockedReply(step, out _))
         {
+            if (!AgentRecoveryNotes.TryReadBlockedReply(step, out _))
+                invocation.RetractAssistantText();
             return await _steps.HandleUnverifiedFailureStepAsync(
                     run,
                     modelStepId,
@@ -395,6 +400,8 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
+        if (string.IsNullOrWhiteSpace(step.Text))
+            invocation.RetractAssistantText();
         return await _steps.HandleFinalStepAsync(
                 run,
                 modelStepId,

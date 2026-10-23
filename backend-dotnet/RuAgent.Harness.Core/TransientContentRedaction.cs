@@ -44,6 +44,7 @@ internal sealed class TransientContentStream
     private readonly ExecutionId? _executionId;
     private long _sequence;
     private bool _completed;
+    private bool _retracted;
 
     internal TransientContentStream(
         TransientFrameBuffer frames,
@@ -113,6 +114,26 @@ internal sealed class TransientContentStream
                 _modelStepId,
                 _executionId,
                 isReset: true));
+        }
+    }
+
+    /// <summary>
+    /// Retracts a completed stream when the Harness rejects the resulting step.
+    /// Completion has already flushed redaction buffers, so no rejected tail can
+    /// arrive after the reset. An unstreamed step leaves earlier replies intact.
+    /// </summary>
+    internal void Retract()
+    {
+        lock (_gate)
+        {
+            if (!_completed)
+                throw new InvalidOperationException("transient_redaction_not_completed");
+            if (_retracted || _sequence == 0)
+                return;
+            _retracted = true;
+            _frames.TryPublish(new HarnessTransientFrame(
+                _runId, _kind, checked(++_sequence), string.Empty,
+                _modelStepId, _executionId, isReset: true));
         }
     }
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(cli)**: Host bookkeeping events no longer print as feed rows. `run.note_added`
+  (runtime-context snapshots, compaction checkpoints, recovery notes, subagent
+  inbox/apply records), `context.compacted` and `input.requested` used to fall through to
+  the unknown-event fallback and appear as `[seq] run.note_added: runtime_context_snapshot`;
+  every such row also closed the tool block, so the feed summary disappeared and the
+  tools looked like scattered lines. They are now silent (debug log only); the approval
+  and compaction paths keep their own, readable notices.
+
 - **feat(cli)**: The transcript feed reads as a block instead of a log. Consecutive tool
   calls are indented together and close with a summary (`4 tools · 9.6s`, marked `✗` when
   one failed); each tool row orders outcome glyph, muted name, brightest target and

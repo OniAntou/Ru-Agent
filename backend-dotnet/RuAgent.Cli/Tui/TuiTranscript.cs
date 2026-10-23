@@ -777,8 +777,21 @@ public sealed partial class TuiTranscript
 
         if (type is "model.step_started" or "model.step_completed"
             or "prompt_receipt" or "model.usage_recorded" or "model.reasoning_recorded"
-            or "tool.proposed")
+            or "tool.proposed" or "input.requested" or "context.compacted")
         {
+            // Host bookkeeping, not feed rows. input.requested is answered by the approval
+            // path (which prints its own notice) and context.compacted is already surfaced
+            // by the compaction activity; printing the durable envelope too duplicated both.
+            return;
+        }
+
+        if (type == "run.note_added")
+        {
+            // Internal bookkeeping: runtime-context snapshots, compaction checkpoints,
+            // recovery notes and subagent inbox/apply bookkeeping all arrive as run notes.
+            // They are audit records, not messages for the operator, and rendering them
+            // both added noise and broke the feed block (every notice closes it).
+            Tui.TuiDebug.Log("event", $"run.note_added: {summary}");
             return;
         }
 

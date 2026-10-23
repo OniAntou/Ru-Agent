@@ -578,6 +578,44 @@ public sealed class TuiTranscriptTests
         Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("Run", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("run.note_added", "runtime_context_snapshot")]
+    [InlineData("context.compacted", "compacted")]
+    [InlineData("input.requested", "ask_user")]
+    public void HostBookkeepingEventsPrintNoRow(string eventType, string summary)
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable(eventType, "running", summary));
+        transcript.Flush();
+
+        Assert.Equal(string.Empty, TuiText.Strip(output.ToString()).Trim());
+    }
+
+    [Fact]
+    public void InternalRunNotesPrintNoRowAndDoNotSplitTheToolBlock()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Explore, AgentActivityState.Started, "a.cs", toolDisplay: "Read"));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok"));
+        // The Host records a runtime-context snapshot between tool calls.
+        transcript.ApplyDurable(Durable("run.note_added", "running", "runtime_context_snapshot"));
+        transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Started, toolDisplay: "Terminal"));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok"));
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var text = TuiText.Strip(output.ToString());
+        Assert.DoesNotContain("run.note_added", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("runtime_context_snapshot", text, StringComparison.Ordinal);
+        // The note must not split the block: both rows share one summary.
+        var summary = text.Split('\n')
+            .Select(line => line.TrimEnd())
+            .Where(line => line.TrimStart().StartsWith("2 tools ·", StringComparison.Ordinal))
+            .ToList();
+        Assert.Single(summary);
+    }
+
     [Fact]
     public void DurableCompletionWithoutASettledToolNeverLosesTheRecord()
     {

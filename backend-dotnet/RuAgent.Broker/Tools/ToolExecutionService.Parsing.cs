@@ -34,6 +34,15 @@ public sealed partial class ToolExecutionService
                 : throw new ToolExecutionException("invalid_capability_class");
     }
 
+    /// <summary>
+    /// The Host's per-run image-input decision (ADR 0026). It travels on the
+    /// envelope, never in the model's arguments; anything but a literal true is false.
+    /// </summary>
+    private static bool ReadImageInputAccepted(JsonObject payload) =>
+        payload["image_input"] is JsonValue value
+        && value.TryGetValue<bool>(out var accepted)
+        && accepted;
+
     private static string ReadString(JsonObject payload, string key) =>
         payload[key] is JsonValue value
         && value.TryGetValue<string>(out var result)

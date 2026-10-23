@@ -142,6 +142,10 @@ public sealed partial class HarnessPayloadStore
                 HarnessPayloadIntent.MaximumByteCap,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.ToolImage] = new(
+                RuAgent.Protocol.ToolOutputImage.MaximumBytes,
+                HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Opaque]),
             [HarnessPayloadKind.ModelUsage] = new(
                 16 * 1024,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
@@ -209,7 +213,10 @@ public sealed partial class HarnessPayloadStore
             throw new HarnessStoreException("payload_encoding_invalid");
         }
 
-        var protectedPlaintext = intent.Kind is HarnessPayloadKind.RecoveryOpaque or HarnessPayloadKind.ProviderContinuation
+        // Known-secret redaction is text redaction; image bytes are binary (ADR 0026).
+        var protectedPlaintext = intent.Kind is HarnessPayloadKind.RecoveryOpaque
+                or HarnessPayloadKind.ProviderContinuation
+                or HarnessPayloadKind.ToolImage
             ? intent.Plaintext.ToArray()
             : _redactor.RedactPayload(intent.Encoding, intent.Plaintext);
         if (protectedPlaintext.Length > policy.MaximumBytes)

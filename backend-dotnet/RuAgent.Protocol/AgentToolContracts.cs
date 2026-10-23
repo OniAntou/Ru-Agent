@@ -64,7 +64,8 @@ public sealed record ToolResult(
     string VerificationState = ToolVerificationStates.NotRequired,
     string? EndpointRole = null,
     string? EndpointHash = null,
-    bool AdapterInvoked = false);
+    bool AdapterInvoked = false,
+    ToolOutputImage? Image = null);
 
 public sealed record AgentToolCapability(
     string ToolId,

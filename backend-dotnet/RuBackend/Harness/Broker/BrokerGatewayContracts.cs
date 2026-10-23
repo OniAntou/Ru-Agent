@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness.Broker;
@@ -94,7 +95,8 @@ internal static class BrokerGatewayContracts
     internal static ToolExecutionReceipt SucceededReceipt(
         PreparedToolExecution execution,
         JsonObject output,
-        ToolAccessKind accessKind)
+        ToolAccessKind accessKind,
+        ToolOutputImage? image = null)
     {
         return new ToolExecutionReceipt(
             execution.ExecutionId,
@@ -104,7 +106,8 @@ internal static class BrokerGatewayContracts
             null,
             sideEffectsPossible: accessKind != ToolAccessKind.ReadOnly,
             modelContent: Encoding.UTF8.GetBytes(output.ToJsonString()),
-            contentEncoding: HarnessPayloadEncoding.Json);
+            contentEncoding: HarnessPayloadEncoding.Json,
+            image: image);
     }
 
     internal static ToolExecutionReceipt FailedReceipt(

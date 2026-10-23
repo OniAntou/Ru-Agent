@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Protocol;
 
 namespace RuAgent.Harness.Core;
 
@@ -181,10 +182,17 @@ public sealed record ToolExecutionReceipt
         bool sideEffectsPossible,
         ReadOnlyMemory<byte> modelContent = default,
         HarnessPayloadEncoding contentEncoding = HarnessPayloadEncoding.Json,
-        string? providerCallId = null)
+        string? providerCallId = null,
+        ToolOutputImage? image = null)
     {
         _ = executionId.Value;
         _ = toolCallId.Value;
+        // An image travels beside a successful result's metadata (ADR 0026), never alone.
+        if (image is not null && (outcome != ToolExecutionOutcome.Succeeded || modelContent.IsEmpty))
+        {
+            throw new ArgumentException("Only a successful result with content can carry an image.", nameof(image));
+        }
+
         if (resultPayloadId is { } payloadId)
         {
             _ = payloadId.Value;
@@ -224,6 +232,7 @@ public sealed record ToolExecutionReceipt
         ModelContent = modelContent.ToArray();
         ContentEncoding = contentEncoding;
         ProviderCallId = providerCallId;
+        Image = image;
     }
 
     public ExecutionId ExecutionId { get; }
@@ -243,6 +252,9 @@ public sealed record ToolExecutionReceipt
     public HarnessPayloadEncoding ContentEncoding { get; }
 
     public string? ProviderCallId { get; }
+
+    /// <summary>The image a tool returned beside its content, persisted as a <c>ToolImage</c> payload.</summary>
+    public ToolOutputImage? Image { get; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsDeferredSubagentWait { get; private init; }
@@ -265,7 +277,8 @@ public sealed record ToolExecutionReceipt
                 ? providerCallId
                 : string.Equals(ProviderCallId, providerCallId, StringComparison.Ordinal)
                     ? ProviderCallId
-                    : throw new ArgumentException("Provider call identifier mismatch.", nameof(providerCallId)))
+                    : throw new ArgumentException("Provider call identifier mismatch.", nameof(providerCallId)),
+            Image)
         { IsDeferredSubagentWait = IsDeferredSubagentWait };
 
     /// <summary>
@@ -290,7 +303,8 @@ public sealed record ToolExecutionReceipt
             SideEffectsPossible,
             ModelContent,
             ContentEncoding,
-            ProviderCallId);
+            ProviderCallId,
+            Image);
 
     private static bool IsSafeCode(string? value) =>
         value is { Length: >= 1 and <= 64 }

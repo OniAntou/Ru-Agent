@@ -107,6 +107,8 @@ public sealed partial class SqliteModelContextSource : IModelContextSource
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await AttachToolImagesAsync(connection, runId, runLocal, cancellationToken).ConfigureAwait(false);
+
         if (sessionBase.Count != expectedBaseCount)
         {
             throw new HarnessStoreException("context_base_incomplete");

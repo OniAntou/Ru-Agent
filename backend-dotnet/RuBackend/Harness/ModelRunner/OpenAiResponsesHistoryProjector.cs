@@ -18,7 +18,7 @@ internal static class OpenAiResponsesHistoryProjector
             if (turn.Role == "system") continue;
             if (turn.Role == "tool")
             {
-                items.Add(new JsonObject { ["type"] = "function_call_output", ["call_id"] = turn.ToolCallId, ["output"] = turn.Content });
+                items.Add(new JsonObject { ["type"] = "function_call_output", ["call_id"] = turn.ToolCallId, ["output"] = ToolImageProjection.ResponsesOutput(turn) });
                 continue;
             }
             if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)

@@ -228,11 +228,22 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         {
             new JsonObject { ["role"] = "system", ["content"] = request.SystemPrompt },
         };
+        var pendingToolImages = new List<ModelTurn>();
         foreach (var turn in request.Turns)
         {
+            if (turn.Role != "tool")
+            {
+                FlushToolImages(messages, pendingToolImages);
+            }
+            else if (turn.Images.Count > 0)
+            {
+                pendingToolImages.Add(turn);
+            }
+
             messages.Add(SerializeTurn(turn, request.ReplayChatReasoning));
         }
 
+        FlushToolImages(messages, pendingToolImages);
         if (!string.IsNullOrEmpty(request.RuntimeContext))
             messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.RuntimeContext });
 
@@ -298,6 +309,40 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider, IModelReques
         }
 
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    /// <summary>
+    /// Chat Completions accepts only text in <c>tool</c> messages, and nothing may come
+    /// between the tool messages of one batch. Images a batch returned therefore follow
+    /// its last tool message as one user message naming each call (ADR 0026).
+    /// </summary>
+    private static void FlushToolImages(JsonArray messages, List<ModelTurn> pending)
+    {
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        var content = new JsonArray();
+        foreach (var turn in pending)
+        {
+            content.Add(new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = $"Image returned by tool call {turn.ToolCallId}:",
+            });
+            foreach (var image in turn.Images)
+            {
+                content.Add(new JsonObject
+                {
+                    ["type"] = "image_url",
+                    ["image_url"] = new JsonObject { ["url"] = image.DataUrl },
+                });
+            }
+        }
+
+        messages.Add(new JsonObject { ["role"] = "user", ["content"] = content });
+        pending.Clear();
     }
 
     private static JsonObject SerializeTurn(ModelTurn turn, bool replayReasoning)

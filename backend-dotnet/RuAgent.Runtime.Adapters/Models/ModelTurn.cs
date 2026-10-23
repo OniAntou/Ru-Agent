@@ -68,11 +68,19 @@ public sealed record ModelTurn
         IReadOnlyList<ModelFunctionCall>? toolCalls = null,
         string? toolCallId = null,
         string? toolResultCode = null,
-        string? reasoningContent = null)
+        string? reasoningContent = null,
+        IReadOnlyList<ModelImage>? images = null)
     {
         if (role is not ("system" or "user" or "assistant" or "tool"))
         {
             throw new ArgumentException("Model turn role is invalid.", nameof(role));
+        }
+
+        // A tool result may carry the image its tool returned (ADR 0026); no other turn does.
+        var copiedImages = images?.ToArray() ?? Array.Empty<ModelImage>();
+        if (copiedImages.Length > 0 && (role != "tool" || copiedImages.Any(image => image is null)))
+        {
+            throw new ArgumentException("Only tool turns can carry images.", nameof(images));
         }
 
         ValidateContent(content, role, toolCalls is { Count: > 0 });
@@ -92,6 +100,7 @@ public sealed record ModelTurn
         ToolCallId = toolCallId;
         ToolResultCode = toolResultCode;
         ReasoningContent = reasoningContent;
+        Images = Array.AsReadOnly(copiedImages);
     }
 
     public string Role { get; }
@@ -104,6 +113,12 @@ public sealed record ModelTurn
 
     public string? ToolResultCode { get; }
     public string? ReasoningContent { get; }
+
+    /// <summary>
+    /// Images a tool returned. They are not part of <see cref="ToJsonObject"/>, so the
+    /// history byte bound measures text only; <see cref="ModelRequest"/> bounds images.
+    /// </summary>
+    public IReadOnlyList<ModelImage> Images { get; }
 
     internal JsonObject ToJsonObject()
     {

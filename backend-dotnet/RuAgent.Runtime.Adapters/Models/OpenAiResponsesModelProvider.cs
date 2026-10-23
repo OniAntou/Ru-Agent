@@ -183,7 +183,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider, IModelRequest
         {
             if (nativeToolsEnabled && turn.Role == "tool")
             {
-                input.Add(new JsonObject { ["type"] = "function_call_output", ["call_id"] = turn.ToolCallId, ["output"] = turn.Content });
+                input.Add(new JsonObject { ["type"] = "function_call_output", ["call_id"] = turn.ToolCallId, ["output"] = ToolImageProjection.ResponsesOutput(turn) });
                 continue;
             }
             if (nativeToolsEnabled && turn.Role == "assistant" && turn.ToolCalls.Count > 0)

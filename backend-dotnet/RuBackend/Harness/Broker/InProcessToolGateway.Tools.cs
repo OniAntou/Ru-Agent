@@ -216,11 +216,17 @@ public sealed partial class InProcessToolGateway
             return _subagents is null ? BrokerGatewayContracts.FailedReceipt(execution, "phase_not_available")
                 : await _subagents.Value.ApplyAsync(pending.Proposal, execution, cancellationToken).ConfigureAwait(false);
 
+        // Envelope field, never an argument: the model cannot set it, and approval
+        // tokens stay bound to the canonical arguments alone (ADR 0026).
+        var imageInput = pending.ToolId == "read"
+            && _imageInputAccepted is not null
+            && await _imageInputAccepted(_runId, cancellationToken).ConfigureAwait(false);
         var reply = await _runtime
             .ExecuteAuthorizedAsync(
                 Request(sessionId, AgentMessageTypes.ToolExecute, new JsonObject
                 {
                     ["run_id"] = _runId,
+                    ["image_input"] = imageInput,
                     ["tool_id"] = pending.ToolId,
                     ["tool_version"] = pending.ToolVersion,
                     ["authorization_token"] = pending.AuthorizationToken,
@@ -241,7 +247,7 @@ public sealed partial class InProcessToolGateway
         switch (result.Status)
         {
             case ToolResultStatuses.Succeeded:
-                return BrokerGatewayContracts.SucceededReceipt(execution, result.Output, pending.AccessKind);
+                return BrokerGatewayContracts.SucceededReceipt(execution, result.Output, pending.AccessKind, result.Image);
             case ToolResultStatuses.Cancelled:
                 return new ToolExecutionReceipt(
                     execution.ExecutionId,

@@ -657,11 +657,20 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             ClampConversationBlock,
             receipt.ToolCallId.Value,
             providerCallId);
+        // A tool image rides on its result (ADR 0026); one left out of this request says so.
+        if (entry.ToolImageOmitted)
+        {
+            projectedContent += "\n" + RuAgent.Protocol.ToolOutputImage.OmittedNote;
+        }
+
         units[^1].Add(new ModelTurn(
             "tool",
             projectedContent,
             toolCallId: call.Id,
-            toolResultCode: receipt.Code));
+            toolResultCode: receipt.Code,
+            images: entry.ToolImage is { } image
+                ? [new ModelImage(image.MediaType, Convert.ToBase64String(image.Bytes.Span))]
+                : null));
     }
 
     private static string ResolveCurrentPrompt(

@@ -27,13 +27,22 @@ public sealed partial class ToolExecutionService
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        var result = await ResolveTools(context, TargetPathOf(arguments))
-            .Read.ExecuteAsync(arguments, cancellationToken)
-            .ConfigureAwait(false);
+        FileReadResult result;
+        try
+        {
+            result = await ResolveTools(context, TargetPathOf(arguments))
+                .Read.ExecuteAsync(arguments, context.ImageInputAccepted, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (FileReadImageException error)
+        {
+            return ToolExecutionOutcome.Failed(error.Code, error.Hint);
+        }
+
         return ToolExecutionOutcome.Succeeded(
-            result,
+            result.Output,
             ToolVerificationStates.NotRequired,
-            "Workspace file read.");
+            result.Image is null ? "Workspace file read." : "Workspace image read.") with { Image = result.Image };
     }
 
     private ValueTask<ToolExecutionOutcome> ExecuteListAsync(

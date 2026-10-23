@@ -43,7 +43,7 @@ public sealed class PreparedModelStep
         ContextScope = contextScope;
         ContextTokens = request.PreparedBodyJson is { } contextBody
             ? RequestContextEstimator.Measure(contextBody,
-                request.Images.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data)), request.Images.Count)
+                request.AllImages.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data)), request.AllImages.Count())
             : null;
         OutputTokenCap = request.MaximumOutputTokens;
         SerializedBodyBytes = request.PreparedBodyJson is { } body
@@ -283,7 +283,7 @@ public sealed class ModelStepService
             var body = projector.ProjectRequestBody(modelRequest);
             modelRequest = modelRequest.WithPreparedBodyJson(body);
             (estimatedInputTokens, maxPromptTokens) = MeasurePreparedRequest(modelRequest, providerBootstrap);
-            if (contextScope is not null && request.Images.Count == 0 && request.PromptInHistory)
+            if (contextScope is not null && !modelRequest.AllImages.Any() && request.PromptInHistory)
                 estimatedInputTokens = _tokenAnchors.Estimate(contextScope, body,
                     providerBootstrap.Protocol + "|" + providerBootstrap.Endpoint.AbsoluteUri, estimatedInputTokens);
         }
@@ -509,9 +509,9 @@ public sealed class ModelStepService
         var wireBytes = Encoding.UTF8.GetByteCount(body);
         if (wireBytes > ModelRequest.MaximumSerializedBodyBytes)
             throw new ModelStepException("request_too_large", retryable: false);
-        var imageBytes = request.Images.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data));
+        var imageBytes = request.AllImages.Sum(image => (long)Encoding.UTF8.GetByteCount(image.Base64Data));
         var textBytes = Math.Max(0, wireBytes - imageBytes);
-        var imageAllowance = checked((long)request.Images.Count * ImageInputTokenAllowance);
+        var imageAllowance = checked((long)request.AllImages.Count() * ImageInputTokenAllowance);
         var inputTokens = checked((textBytes + 3) / 4 + imageAllowance);
         var windowTokens = bootstrap.ContextWindowTokens ?? UnknownContextWindowTokens;
         var maxPromptTokens = Math.Max(1, windowTokens - bootstrap.OutputTokenReserve);
@@ -1119,6 +1119,12 @@ public sealed class ModelStepService
         var result = new List<ModelTurn>();
         foreach (var message in messages)
         {
+            // Text-only projection has no image part; never drop a tool image silently.
+            if (message.Images.Count > 0)
+            {
+                throw new ModelStepException("image_unsupported_by_model", retryable: false);
+            }
+
             if (message.Role == "assistant")
             {
                 result.Add(new ModelTurn("assistant", ProjectAssistantMessage(message, toolVersions)));

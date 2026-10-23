@@ -68,7 +68,7 @@ internal static class AnthropicMessagesHistoryProjector
             {
                 ["type"] = "tool_result",
                 ["tool_use_id"] = result.ToolCallId,
-                ["content"] = result.Content,
+                ["content"] = ToolImageProjection.AnthropicContent(result),
                 ["is_error"] = result.ToolResultCode != "ok",
             });
             index++;

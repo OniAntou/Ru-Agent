@@ -20,6 +20,7 @@ public enum HarnessPayloadKind
     ProviderContinuation = 15,
     UserInputRequest = 16,
     RuntimeContextSnapshot = 17,
+    ToolImage = 18,
 }
 
 [Flags]
@@ -160,6 +161,15 @@ public sealed record HarnessPayloadIntent
         {
             throw new ArgumentException(
                 "UserImage must be UTF-8 and visible to client and model.",
+                nameof(kind));
+        }
+
+        if (kind == HarnessPayloadKind.ToolImage
+            && (audience != HarnessPayloadAudience.ModelContext
+                || encoding != HarnessPayloadEncoding.Opaque))
+        {
+            throw new ArgumentException(
+                "ToolImage must be opaque and model-only.",
                 nameof(kind));
         }
 

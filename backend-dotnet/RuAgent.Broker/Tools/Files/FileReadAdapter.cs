@@ -1,8 +1,10 @@
 using System.Buffers;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Files;
 
@@ -22,7 +24,18 @@ public sealed class FileReadAdapter
     public JsonObject Execute(JsonObject arguments) =>
         ExecuteAsync(arguments, CancellationToken.None).AsTask().GetAwaiter().GetResult();
 
-    public async ValueTask<JsonObject> ExecuteAsync(JsonObject arguments, CancellationToken cancellationToken)
+    /// <summary>Text-only read: an image file fails with <c>image_unsupported_by_model</c>.</summary>
+    public async ValueTask<JsonObject> ExecuteAsync(JsonObject arguments, CancellationToken cancellationToken) =>
+        (await ExecuteAsync(arguments, imageInputAccepted: false, cancellationToken).ConfigureAwait(false)).Output;
+
+    /// <summary>
+    /// Reads a text file, or an image file when <paramref name="imageInputAccepted"/> says
+    /// the run's model accepts image input (ADR 0026).
+    /// </summary>
+    public async ValueTask<FileReadResult> ExecuteAsync(
+        JsonObject arguments,
+        bool imageInputAccepted,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         cancellationToken.ThrowIfCancellationRequested();
@@ -97,6 +110,11 @@ public sealed class FileReadAdapter
             }
 
             throw new FileNotFoundException("file_not_found");
+        }
+
+        if (WorkspaceImageProbe.HasImageExtension(canonical))
+        {
+            return await ReadImageAsync(canonical, offset, imageInputAccepted, cancellationToken).ConfigureAwait(false);
         }
 
         var sw = Stopwatch.StartNew();
@@ -183,7 +201,104 @@ public sealed class FileReadAdapter
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
             ["sha256"] = sha256,
         };
-        return FileReadOutputBudget.Fit(output);
+        return new FileReadResult(FileReadOutputBudget.Fit(output), null);
+    }
+
+    private async ValueTask<FileReadResult> ReadImageAsync(
+        string canonical,
+        int offset,
+        bool imageInputAccepted,
+        CancellationToken cancellationToken)
+    {
+        if (offset != 0)
+        {
+            throw new FileReadImageException(
+                "image_offset_unsupported",
+                "An image is read whole. Retry without offset.");
+        }
+
+        var sw = Stopwatch.StartNew();
+        byte[] bytes;
+        using (var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        {
+            budget.CancelAfter(FileToolLimits.MaxTimeMs);
+            try
+            {
+                using var stream = HardLinkGuard.OpenRead(
+                    canonical,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                HardLinkGuard.RequireFinalPathMatches(stream.SafeFileHandle, canonical);
+                if (stream.Length > ToolOutputImage.MaximumBytes)
+                {
+                    throw TooLarge();
+                }
+
+                // One byte past the bound detects a file that grew after the length check.
+                var buffer = new byte[ToolOutputImage.MaximumBytes + 1];
+                var length = 0;
+                while (length < buffer.Length)
+                {
+                    var n = await stream.ReadAsync(buffer.AsMemory(length), budget.Token).ConfigureAwait(false);
+                    if (n == 0)
+                    {
+                        break;
+                    }
+
+                    length += n;
+                }
+
+                if (length > ToolOutputImage.MaximumBytes)
+                {
+                    throw TooLarge();
+                }
+
+                bytes = buffer[..length];
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new IOException("read_hash_timeout");
+            }
+        }
+
+        var mediaType = WorkspaceImageProbe.SniffMediaType(bytes) ?? throw InvalidFormat();
+        if (!imageInputAccepted)
+        {
+            throw new FileReadImageException(
+                "image_unsupported_by_model",
+                "This run's model does not accept image input, so the image cannot be shown to it. Tell the user, or ask them to choose a vision model.");
+        }
+
+        var size = WorkspaceImageProbe.ReadDimensions(mediaType, bytes) ?? throw InvalidFormat();
+        if (!WorkspaceImageProbe.IsWithinDimensionBound(size))
+        {
+            throw new FileReadImageException(
+                "image_dimensions_too_large",
+                $"The image is larger than {ToolOutputImage.MaximumDimension} px on a side. Ask the user for a smaller copy.");
+        }
+
+        var output = new JsonObject
+        {
+            ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, canonical),
+            ["media_type"] = mediaType,
+            ["total_bytes"] = bytes.Length,
+            ["width"] = size.Width,
+            ["height"] = size.Height,
+            ["duration_ms"] = (int)sw.ElapsedMilliseconds,
+            ["sha256"] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+        };
+        return new FileReadResult(output, new ToolOutputImage(mediaType, bytes));
+
+        static FileReadImageException TooLarge() => new(
+            "image_too_large",
+            $"The image is larger than {ToolOutputImage.MaximumBytes / (1024 * 1024)} MiB. Ask the user for a smaller copy.");
+
+        static FileReadImageException InvalidFormat() => new(
+            "image_format_invalid",
+            "The file has an image extension but is not a readable PNG, JPEG or WebP image.");
     }
 
     private ResolvedPath ResolveChecked(string input)
@@ -234,4 +349,15 @@ public sealed class FileReadAdapter
 
         throw new ArgumentException($"missing_{key}");
     }
+}
+
+/// <summary>A read's JSON output and, for an image file, the image beside it.</summary>
+public sealed record FileReadResult(JsonObject Output, ToolOutputImage? Image);
+
+/// <summary>A named image-read failure with a repair hint for the model (ADR 0026).</summary>
+public sealed class FileReadImageException(string code, string hint) : IOException(code)
+{
+    public string Code { get; } = code;
+
+    public string Hint { get; } = hint;
 }

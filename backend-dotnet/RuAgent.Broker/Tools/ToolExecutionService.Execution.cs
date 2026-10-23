@@ -517,7 +517,8 @@ public sealed partial class ToolExecutionService
                 isAuthenticatedV2Execution),
             sessionScopes,
             runId,
-            IsAuthenticatedV2Execution: isAuthenticatedV2Execution);
+            IsAuthenticatedV2Execution: isAuthenticatedV2Execution,
+            ImageInputAccepted: ReadImageInputAccepted(contextRequest.Payload));
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (!IsTerminalRunOrShellCall(ReadString(contextRequest.Payload, "tool_id"), arguments))

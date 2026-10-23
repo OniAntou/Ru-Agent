@@ -66,17 +66,23 @@ public sealed record ModelRequest
         }
 
         ValidateModelHistory(turns);
+        // Tool images have their own bound (ADR 0026); the history byte cap measures text,
+        // so the projected histories subtract the image data they embed.
+        var historyImages = turns.SelectMany(turn => turn.Images).ToArray();
+        if (historyImages.Length > RuAgent.Protocol.ToolOutputImage.MaximumInContext)
+            throw new ArgumentException("Model history carries too many images.", nameof(turns));
+        var historyImageChars = historyImages.Sum(image => (long)image.Base64Data.Length);
         if (responsesInputItems is { Count: > MaxModelMessages }
             || responsesInputItems?.Any(item => !IsSupportedResponsesInputItem(item)) == true)
             throw new ArgumentException("Responses input history is invalid.", nameof(responsesInputItems));
         var historyBytes = responsesInputItems is { Count: > 0 }
-            ? MeasureResponsesInputBytes(responsesInputItems)
+            ? MeasureResponsesInputBytes(responsesInputItems) - historyImageChars
             : MeasureModelMessagesBytes(turns);
         if (historyBytes > MaxModelMessagesBytes)
             throw new ArgumentException("Model history exceeds the adapter byte cap.", nameof(responsesInputItems));
         if (anthropicMessages is { Count: > MaxModelMessages }
             || anthropicMessages?.Any(message => !IsSupportedAnthropicMessage(message)) == true
-            || MeasureJsonArrayBytes(anthropicMessages) > MaxModelMessagesBytes)
+            || MeasureJsonArrayBytes(anthropicMessages) - historyImageChars > MaxModelMessagesBytes)
             throw new ArgumentException("Anthropic history exceeds the adapter cap.", nameof(anthropicMessages));
         if (anthropicMessages is { Count: > 0 } && responsesInputItems is { Count: > 0 })
             throw new ArgumentException("Provider history cannot mix protocol shapes.", nameof(anthropicMessages));
@@ -192,6 +198,9 @@ public sealed record ModelRequest
 
     public IReadOnlyList<ModelImage> Images { get; }
 
+    /// <summary>Every image this request sends: the user's attachments and the history's tool images.</summary>
+    public IEnumerable<ModelImage> AllImages => Images.Concat(Turns.SelectMany(turn => turn.Images));
+
     public IReadOnlyList<JsonObject> ResponsesInputItems { get; }
 
     public bool NativeToolCalling { get; }
@@ -252,8 +261,33 @@ public sealed record ModelRequest
                 && block["input"] is JsonObject input && Encoding.UTF8.GetByteCount(input.ToJsonString()) <= MaxNativeArgumentsBytes;
         isToolResult = true;
         return TryGetBoundedString(block["tool_use_id"], 256)
-            && TryGetBoundedString(block["content"], ModelInputLimits.MaxToolResultChars)
+            && (TryGetBoundedString(block["content"], ModelInputLimits.MaxToolResultChars)
+                || IsSupportedToolResultContent(block["content"]))
             && block["is_error"] is JsonValue error && error.TryGetValue<bool>(out _);
+    }
+
+    /// <summary>A tool result with an image (ADR 0026): one text block, then base64 image blocks.</summary>
+    private static bool IsSupportedToolResultContent(JsonNode? node)
+    {
+        if (node is not JsonArray content || content.Count < 2
+            || content[0] is not JsonObject text
+            || !IsSupportedAnthropicBlock("user", text, out _)
+            || text["type"]!.GetValue<string>() != "text")
+            return false;
+        for (var index = 1; index < content.Count; index++)
+        {
+            if (content[index] is not JsonObject image
+                || !image.Select(property => property.Key).Order(StringComparer.Ordinal).SequenceEqual(["source", "type"], StringComparer.Ordinal)
+                || !TryGetString(image["type"], out var type) || type != "image"
+                || image["source"] is not JsonObject source
+                || !source.Select(property => property.Key).Order(StringComparer.Ordinal).SequenceEqual(["data", "media_type", "type"], StringComparer.Ordinal)
+                || !TryGetString(source["type"], out var sourceType) || sourceType != "base64"
+                || !TryGetString(source["media_type"], out var mediaType) || !RuAgent.Protocol.ToolOutputImage.IsSupportedMediaType(mediaType)
+                || !TryGetString(source["data"], out var data) || data.Length is 0 or > ModelImage.MaximumBase64Chars)
+                return false;
+        }
+
+        return true;
     }
 
     private static bool TryGetString(JsonNode? node, out string value)

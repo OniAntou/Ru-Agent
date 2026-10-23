@@ -234,7 +234,12 @@ internal static class PublicHostServiceRegistration
             new InProcessToolGatewayFactory(
                 services.GetRequiredService<InProcessExecutionAuthority>().Runtime,
                 new Lazy<RuBackend.Harness.Subagents.SubagentControlDispatcher>(() =>
-                    services.GetRequiredService<RuBackend.Harness.Subagents.SubagentControlDispatcher>())));
+                    services.GetRequiredService<RuBackend.Harness.Subagents.SubagentControlDispatcher>()))
+            {
+                ImageInputAccepted = async (runId, ct) => RuBackend.Providers.ImageInputPolicy.IsPinned(
+                    (await services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()
+                        .GetAsync(new RunId(runId), ct).ConfigureAwait(false))?.Selection),
+            });
         services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
             Path.Combine(
                 Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,

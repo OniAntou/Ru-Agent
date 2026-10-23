@@ -97,6 +97,8 @@ public sealed class AgentProviderSnapshotFactory(
                 ? AnthropicOutputBudget.For(DocumentedOutputLimit(selected) ?? modelMetadata?.MaxOutputTokens, contextWindowTokens)
                 : AgentRunProviderSelection.DefaultOutputTokenReserve);
         if (ChatReasoningReplayPolicy.Supports(selected)) options[ChatReasoningReplayPolicy.PinField] = true;
+        if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))
+            options[ImageInputPolicy.PinField] = true;
         var proposed = new AgentRunProviderSelection(
             selected.Backend,
             selected.Alias,
@@ -143,6 +145,8 @@ public sealed class AgentProviderSnapshotFactory(
             throw new ProviderCatalogException("provider_selection_invalid");
         }
         var replayChatReasoning = ChatReasoningReplayPolicy.TakePinnedCapability(options, selected);
+        // The image-input decision gates the read tool, not the provider request (ADR 0026).
+        _ = ImageInputPolicy.TakePinnedCapability(options);
         return CreateSnapshot(selected, key, options, pin.MaximumOutputTokens ?? pin.OutputTokenReserve, toolCallingMode,
             allowNativeResponses: true,
             allowNativeAnthropic: true,

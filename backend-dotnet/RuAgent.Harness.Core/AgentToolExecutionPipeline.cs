@@ -736,6 +736,19 @@ internal sealed partial class AgentToolExecutionPipeline
                     receipt.ContentEncoding,
                     receipt.ModelContent.Length,
                     receipt.ModelContent));
+                if (receipt.Image is { } image)
+                {
+                    // Model-only and unbound to a context row: context assembly finds it
+                    // through the id derived from the result payload (ADR 0026).
+                    receiptPayloads.Add(new HarnessPayloadIntent(
+                        ToolImagePayloadId.For(resultPayloadId),
+                        HarnessPayloadKind.ToolImage,
+                        HarnessPayloadAudience.ModelContext,
+                        HarnessPayloadEncoding.Opaque,
+                        image.Bytes.Length,
+                        image.Bytes));
+                }
+
                 receipt = receipt.WithResultPayload(resultPayloadId);
             }
 

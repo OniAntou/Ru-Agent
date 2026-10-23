@@ -1,3 +1,5 @@
+using RuAgent.Protocol;
+
 namespace RuAgent.Harness.Core.Context;
 
 public enum ModelContextEntryKind
@@ -70,6 +72,30 @@ public sealed record ModelContextEntry
     public ToolExecutionReceipt? ToolReceipt { get; }
 
     public IReadOnlyList<ContextEntryRange>? SummaryRanges { get; }
+
+    /// <summary>The image a tool result carries into this request (ADR 0026).</summary>
+    public ToolOutputImage? ToolImage { get; private init; }
+
+    /// <summary>The tool result had an image that was left out of this request by name.</summary>
+    public bool ToolImageOmitted { get; private init; }
+
+    /// <summary>
+    /// The same tool result with its stored image attached, or, when
+    /// <paramref name="image"/> is null, marked as having an omitted image.
+    /// </summary>
+    public ModelContextEntry WithToolImage(ToolOutputImage? image)
+    {
+        if (Kind != ModelContextEntryKind.ToolResult)
+        {
+            throw new InvalidOperationException("Only tool results carry images.");
+        }
+
+        return new ModelContextEntry(SourceId, Sequence, Role, Kind, Content, null, ToolReceipt, null)
+        {
+            ToolImage = image,
+            ToolImageOmitted = image is null,
+        };
+    }
 
     public static ModelContextEntry Text(
         string sourceId,

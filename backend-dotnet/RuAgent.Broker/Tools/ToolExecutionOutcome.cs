@@ -14,7 +14,8 @@ public sealed record ToolExecutionContext(
     bool ConfinementRequired = true,
     IReadOnlySet<string>? SessionScopes = null,
     string RunId = "",
-    bool IsAuthenticatedV2Execution = false);
+    bool IsAuthenticatedV2Execution = false,
+    bool ImageInputAccepted = false);
 
 public sealed record ToolExecutionOutcome(
     string Status,
@@ -24,7 +25,8 @@ public sealed record ToolExecutionOutcome(
     string VerificationState,
     string? EndpointRole = null,
     string? EndpointHash = null,
-    int DurationMs = 0)
+    int DurationMs = 0,
+    ToolOutputImage? Image = null)
 {
     public static ToolExecutionOutcome Succeeded(
         JsonObject output,

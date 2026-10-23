@@ -96,14 +96,18 @@ public sealed record ModelGenerationRequest
 
         ValidatePrompt(prompt, copiedImages.Length > 0);
         ValidateModelMessages(modelMessages);
+        // Projected histories embed tool image data, which has its own bound (ADR 0026).
+        var historyImageChars = modelMessages.SelectMany(message => message.Images)
+            .Sum(image => (long)image.Base64Data.Length);
         if (responsesInputItems is { Count: > ModelGenerationBounds.MaxModelMessages }
             || responsesInputItems?.Any(item => item is null) == true
-            || ModelRequest.MeasureResponsesInputBytes(responsesInputItems)
-                + (responsesInputItems is { Count: > 0 } ? 0 : ModelRequest.MeasureModelMessagesBytes(modelMessages)) > ModelGenerationBounds.MaxModelMessagesBytes)
+            || (responsesInputItems is { Count: > 0 }
+                ? ModelRequest.MeasureResponsesInputBytes(responsesInputItems) - historyImageChars
+                : ModelRequest.MeasureModelMessagesBytes(modelMessages)) > ModelGenerationBounds.MaxModelMessagesBytes)
             throw new ArgumentException("Responses input history exceeds the generation cap.", nameof(responsesInputItems));
         if (anthropicMessages is { Count: > ModelGenerationBounds.MaxModelMessages }
             || anthropicMessages?.Any(message => message is null) == true
-            || ModelRequest.MeasureJsonArrayBytes(anthropicMessages) > ModelGenerationBounds.MaxModelMessagesBytes)
+            || ModelRequest.MeasureJsonArrayBytes(anthropicMessages) - historyImageChars > ModelGenerationBounds.MaxModelMessagesBytes)
             throw new ArgumentException("Anthropic input history exceeds the generation cap.", nameof(anthropicMessages));
 
         Prompt = prompt;

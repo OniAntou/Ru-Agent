@@ -25,6 +25,8 @@ public static class ModelContextSizeEstimator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         var characters = snapshot.CanonicalUtf8.Length;
-        return Math.Max(1, (characters + 3) / 4);
+        // Attached tool images count like user images (ADR 0026): one fixed allowance each.
+        var images = snapshot.Entries.LongCount(entry => entry.ToolImage is not null);
+        return Math.Max(1, (characters + 3) / 4 + images * RuAgent.Protocol.Harness.ContextTokenBreakdown.ImageTokenAllowance);
     }
 }

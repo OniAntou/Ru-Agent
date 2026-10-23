@@ -1624,6 +1624,75 @@ public sealed class ToolExecutionServiceTests
     /// The descriptor-free session the in-process execution authority runs on:
     /// a temp root and a bounded lifetime, no broker.json and no bearer.
     /// </summary>
+    /// <summary>
+    /// ADR 0026: the Host's per-run image-input decision rides on the envelope. With it
+    /// the receipt carries the image beside small JSON; without it, or when only the
+    /// model's arguments claim it, an image read fails by name and returns no bytes.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public async Task Read_returns_an_image_only_when_the_envelope_accepts_image_input(
+        bool envelopeAccepts,
+        bool argumentsClaim)
+    {
+        var fixture = CreateFullAccessService("ru-image-read-");
+        try
+        {
+            var bytes = TestImages.Png(32, 16, totalBytes: 512);
+            File.WriteAllBytes(Path.Combine(fixture.Root, "workspace", "shot.png"), bytes);
+            var arguments = new JsonObject { ["path"] = "shot.png" };
+            if (argumentsClaim)
+            {
+                arguments["image_input"] = true;
+            }
+
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "image-read-1",
+                    AgentMessageTypes.ToolExecute,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["image_input"] = envelopeAccepts,
+                        ["arguments"] = arguments,
+                    }),
+                CancellationToken.None);
+
+            if (envelopeAccepts)
+            {
+                Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+                Assert.Equal(bytes, result.Image!.Bytes.ToArray());
+                Assert.Equal("image/png", result.Output["media_type"]!.GetValue<string>());
+                Assert.False(result.Output.ContainsKey("content"));
+            }
+            else
+            {
+                Assert.NotEqual(ToolResultStatuses.Succeeded, result.Status);
+                Assert.Null(result.Image);
+                // A flag in the model's arguments is not a schema field, so it is rejected
+                // outright rather than read as the Host's decision.
+                Assert.Equal(argumentsClaim ? "invalid_arguments" : "image_unsupported_by_model", result.ErrorCode);
+                if (!argumentsClaim)
+                {
+                    Assert.Contains("does not accept image input", result.SafeSummary, StringComparison.Ordinal);
+                }
+            }
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
     private static BrokerSession CreateSession(string sessionRoot, DateTimeOffset? now = null)
     {
         Directory.CreateDirectory(sessionRoot);

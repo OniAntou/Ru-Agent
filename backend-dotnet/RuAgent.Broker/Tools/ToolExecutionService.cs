@@ -222,7 +222,9 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         outcome.VerificationState,
         outcome.EndpointRole,
         outcome.EndpointHash,
-        adapterInvoked);
+        adapterInvoked,
+        // Only a success carries an image; a failure never returns file bytes.
+        outcome.Status == ToolResultStatuses.Succeeded ? outcome.Image : null);
 
     private static ToolResult Result(
         AgentEnvelope request,

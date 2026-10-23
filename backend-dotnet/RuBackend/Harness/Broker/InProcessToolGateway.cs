@@ -17,6 +17,9 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
     private readonly BrokerApprovalState? _approvals;
     private readonly string _runId;
     private readonly Lazy<Subagents.SubagentControlDispatcher>? _subagents;
+
+    /// <summary>The run's pinned image-input decision (ADR 0026); absent means no images.</summary>
+    private readonly Func<string, CancellationToken, Task<bool>>? _imageInputAccepted;
     private readonly object _sync = new();
     private readonly Dictionary<string, PendingExecution> _pending = new(StringComparer.Ordinal);
     private readonly HashSet<string> _cancelled = new(StringComparer.Ordinal);
@@ -38,7 +41,8 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
         BrokerExecutionRuntime runtime,
         BrokerRunLeaseIdentity lease,
         BrokerApprovalState? approvals = null,
-        Lazy<Subagents.SubagentControlDispatcher>? subagents = null)
+        Lazy<Subagents.SubagentControlDispatcher>? subagents = null,
+        Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
@@ -51,6 +55,7 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
 
         _approvals = approvals;
         _subagents = subagents;
+        _imageInputAccepted = imageInputAccepted;
         _runId = lease.RunId;
         _generation = lease.Generation;
     }

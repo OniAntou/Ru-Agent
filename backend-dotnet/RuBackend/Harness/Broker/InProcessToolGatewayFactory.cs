@@ -66,6 +66,12 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
 
     private BrokerExecutionRuntime Runtime => _runtime.Value;
 
+    /// <summary>
+    /// Resolves a run's pinned image-input decision for <c>read</c> (ADR 0026). Unset,
+    /// as in hosts without provider selections, every image read fails closed.
+    /// </summary>
+    public Func<string, CancellationToken, Task<bool>>? ImageInputAccepted { get; init; }
+
     /// <summary>Always true: the injected runtime is the configured authority.</summary>
     public bool IsConfigured => true;
 
@@ -190,7 +196,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                     else
                     {
                         _gateways.TryRemove(runId.Value, out _);
-                        var created = new InProcessToolGateway(Runtime, lease, _approvals, _subagents);
+                        var created = new InProcessToolGateway(Runtime, lease, _approvals, _subagents, ImageInputAccepted);
                         _gateways[runId.Value] = created;
                         gateway = created;
                     }

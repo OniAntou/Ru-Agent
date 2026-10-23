@@ -123,8 +123,9 @@ outside the decrypted-entry cache. Only the newest **4** tool images of the run'
 own context are decrypted and attached; an older tool result keeps its text and
 gets an explicit note: `[image omitted from this request; read the file again to
 view it]`. Four images of at most 4 MiB keep tool images within 16 MiB decoded
-per request. Session base context, subagent continuations and checkpoint
-summaries carry the receipt's metadata text only; they never carry the image.
+per request. Session base context and subagent continuations carry the receipt's
+metadata text only. A checkpoint summarizer sees the attached images, but the
+text summary that replaces those entries does not carry them.
 
 Image data is excluded from the 8 MiB history measurement and has its own bound
 in `ModelRequest`: at most 4 history images, each a valid `ModelImage`. The

@@ -114,7 +114,9 @@ The immutable Protocol catalog contains 18 model-visible definitions (`read`,
 `web_search`, `web_fetch`, `skill`, `ask_user`, `agent_spawn`, `agent_send`,
 `agent_wait`, `agent_cancel`, `agent_apply`). Each tool has one purpose: `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
-one file. Returned JSON is fitted into 4 MiB, including escaping and metadata;
+one file. A `.png`, `.jpg`, `.jpeg` or `.webp` file is returned as an image
+when the run's model accepts image input (see [Image reads](#image-reads)).
+Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `offset + bytes_read` continues a truncated Broker page, while
 `projection_next_offset` takes precedence when model projection clips it.
 `list` takes `path` with optional
@@ -192,7 +194,7 @@ boundary.
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
 | `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external ask; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, protected paths allowed |
-| `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
+| `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator. An image read also needs the run's pinned model to accept image input, otherwise `image_unsupported_by_model` |
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, protected paths allowed; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: workspace cwd executable/shell auto, external cwd asks; explicit ask/deny and long foreground rules apply; `full_access`: arbitrary current-Windows-user terminal auto. Both presets run children as the current user without OS filesystem/network confinement; obsolete sandbox arguments are rejected by schema. `mode=read_output` pages retained full output of an earlier call in the same session (`execution_id` from its receipt `spool_id`, which is present on successes and on failed terminal receipts, with an `offset`/`limit` window) without re-running; unknown or foreign-session ids fail closed. Output past the 256K-character in-memory window spills to a session-scoped spool file under the Ru data directory (1 GiB UTF-8 byte retention per call, 2 GiB per-session spool quota); the receipt and read pages name `spool_path`, and output past the ceiling reports `spool_truncated`. `background: true` starts the command as a session-scoped background task: the call returns immediately with `execution_id` and `state=running`, `mode=read_output` pages live text plus `state`/`exit_code`, and `mode=kill` stops it by `execution_id` (`unknown_background_task`, `background_task_not_running`, and `background_task_limit_reached` fail closed). Background tasks skip the standard-window approval gate — they do not block the turn — and are bounded by a lifetime (30-minute default, 2-hour ceiling). A foreground command that outlives its approved window is moved to the background instead of being killed (`moved_to_background` with its `execution_id`) and then runs to the same lifetime. |
@@ -257,6 +259,33 @@ Unicode character). An offset inside a UTF-8 character fails as
 `invalid_utf8_offset`; use the returned byte count or projection cursor.
 Malformed UTF-8, including an incomplete final character at EOF, fails as
 `invalid_utf8` instead of producing a page that cannot advance.
+
+### Image reads
+
+[ADR 0026](../adr/0026-read-returns-workspace-images.md) lets `read` show the
+model a workspace image, such as a UI screenshot. A file is an image only when
+its extension is `.png`, `.jpg`, `.jpeg` or `.webp` and its leading bytes are a
+PNG, JPEG or WebP header; the media type comes from the bytes. Any other
+extension keeps the UTF-8 text path. The same path, protected-path, hard-link and
+final-path checks run first.
+
+| Condition | Result |
+| --- | --- |
+| Image, at most 4 MiB and 8000 px a side, model accepts image input | Success. JSON carries `path`, `media_type`, `total_bytes`, `width`, `height`, `sha256` and `duration_ms`; the image travels beside it to the model. |
+| The run's pinned model does not accept image input | `image_unsupported_by_model`; no bytes are returned |
+| Larger than 4 MiB | `image_too_large` (the Broker does not resize) |
+| Wider or taller than 8000 px | `image_dimensions_too_large` |
+| Image extension, but not a readable PNG, JPEG or WebP header | `image_format_invalid` |
+| Non-zero `offset` | `image_offset_unsupported`; `limit` is ignored for images |
+
+Whether the model accepts image input is decided once, when the run's provider
+selection is pinned, by the same rule run creation uses for attachments: the
+catalog's Models.dev declaration, then the model-name fallback. The Host sends
+the decision to the Broker on the `tool.execute` envelope, never in the model's
+arguments. The image is stored as a model-only encrypted `ToolImage` payload;
+only the newest four tool images of a run are sent with a request, and an older
+result says `[image omitted from this request; read the file again to view it]`.
+A later run in the same session sees the metadata, not the image.
 
 Web pages keep UTF-16 offsets but shorten a page by one character when its end
 would split a surrogate pair. Their `next_offset` advances by the actual body

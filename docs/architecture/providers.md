@@ -124,6 +124,28 @@ a top-level `cache_control: {"type":"ephemeral"}` so each step reads the stable
 prefix from cache. Anthropic-compatible gateways do not receive the field, since
 one that rejects it would fail the run instead of running uncached.
 
+### Tool images
+
+A `read` of a workspace image ([ADR 0026](../adr/0026-read-returns-workspace-images.md))
+puts the image on its tool result, in each protocol's native shape:
+
+| Protocol | Tool result with an image |
+| --- | --- |
+| Anthropic Messages | `tool_result.content` is an array: a `text` block with the metadata, then an `image` block with a base64 `source` |
+| OpenAI Responses | `function_call_output.output` is an array: `input_text` with the metadata, then `input_image` with a data URL |
+| Chat Completions | the `tool` message stays text; after the batch's last tool message, one `user` message carries a `text` part naming each call and an `image_url` part per image |
+
+Chat Completions accepts only text in `tool` messages and nothing between the
+tool messages of one batch, so its images arrive one message later in the same
+request. Text-only projections fail with `image_unsupported_by_model` rather than
+drop an image.
+
+Tool images have their own bound: at most four per request, each a valid
+`ModelImage`. The 8 MiB history bound measures text and excludes their data.
+Admission and `RequestContextEstimator` subtract history image base64 from the
+wire bytes and add the same 4,096-token allowance per image as for user images;
+the Core context estimate adds it for every attached tool image.
+
 ### Runtime context snapshots
 
 Prepared native text requests combine bounded runtime references and current

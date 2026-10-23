@@ -113,6 +113,7 @@ The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP
   - Anthropic Messages: `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}`
   - OpenAI-Compatible: `{"type": "image_url", "image_url": {"url": "data:image/..."}}`
   Non-vision models fail closed with `vision_unsupported`.
+- **Workspace images through `read`:** the agent can also look at an image file in the workspace ([ADR 0026](../adr/0026-read-returns-workspace-images.md)). The run's pinned selection records whether its model accepts image input; the in-process gateway sends that decision on the `tool.execute` envelope, and the Broker returns the image beside small JSON metadata or fails with `image_unsupported_by_model`. The pipeline stores it as a model-only, opaque, encrypted `ToolImage` payload (kind 18) whose id is derived from the tool result's payload id, so no event or context row names it. `SqliteModelContextSource` attaches the newest four to their tool results; older results carry an omitted note. See [Providers](providers.md#tool-images) for the per-protocol projection.
 
 
 

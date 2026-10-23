@@ -238,6 +238,12 @@ Implementation: [host](docs/architecture/host.md#multimodal-image-payload).
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 
+**Tool Image**:
+A workspace PNG, JPEG or WebP image that `read` returned beside its JSON metadata, persisted encrypted for the model-context audience only and attached to its tool result in later requests of the same run. Only a run whose pinned model accepts image input receives one; otherwise the read fails by name.
+Implementation: [host](docs/architecture/host.md#multimodal-image-attachments), [ADR 0026](docs/adr/0026-read-returns-workspace-images.md).
+_Avoid_: Returning image bytes as text, server-side resizing, silently dropping an image from a request
+
+
 **Core TUI**:
 The compact Terminal.Gui coding surface for chat, tool activity, approvals, session/model selection and recovery. Headless CLI/RPC capabilities are independent of its presentation scope.
 Implementation: [tui](docs/architecture/tui.md#core-tui).

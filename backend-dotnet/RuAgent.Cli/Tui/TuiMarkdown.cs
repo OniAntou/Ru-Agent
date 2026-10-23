@@ -423,7 +423,9 @@ public sealed partial class TuiMarkdown
     private static string CodeRow(string line, int width)
     {
         var body = TuiText.Truncate(TuiText.Strip(line), Math.Max(1, width - TuiText.VisibleWidth(Gutter)));
-        return TuiPalette.DimPaint(Gutter) + TuiPalette.Paint(body, TuiToken.Meta);
+        // Code is the content the operator came to read: paint it at ink weight and let the
+        // gutter recede, instead of dimming both into one grey band.
+        return TuiPalette.Paint(Gutter, TuiToken.Line) + TuiPalette.Paint(body, TuiToken.Ink);
     }
 
     /// <summary>

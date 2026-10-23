@@ -29,7 +29,6 @@ public sealed partial class TuiTranscript
 {
     private const int MaxDiffLines = 12;
     private const int MaxRetainedLines = 200;
-    private const int VerbColumn = 8;
     private const int ProsePreviewIntervalMilliseconds = 33;
     private const string ToolCallOpen = "<tool_call>";
     private const string ToolCallClose = "</tool_call>";
@@ -68,6 +67,13 @@ public sealed partial class TuiTranscript
     private bool _fullScreenCards;
     private string? _pendingPlanProgress;
     private string? _lastPlanProgress;
+
+    // Tool-call grouping: consecutive settled tool rows form one feed block. The summary is
+    // written when the block closes, because terminal output is append-only in both sinks.
+    private bool _toolGroupOpen;
+    private int _toolGroupCount;
+    private double _toolGroupStarted;
+    private bool _toolGroupFailed;
 
     /// <summary>
     /// Full-screen transcript rendering: tool results become inline <see cref="TuiToolRow"/>
@@ -193,6 +199,9 @@ public sealed partial class TuiTranscript
         _markdown.Reset();
         _turnWatch.Restart();
         _streamedAssistant.Clear();
+        _toolGroupOpen = false;
+        _toolGroupCount = 0;
+        _toolGroupFailed = false;
 
         // A blank row separates the turn from what came before. It is also the first write
         // of the turn: an output that fails here must still unwind through the restore path
@@ -297,6 +306,7 @@ public sealed partial class TuiTranscript
         // existing transcript boundary, retaining counts rather than a second task list.
         if (_pendingPlanProgress is { } progress && progress != _lastPlanProgress)
         {
+            CloseToolGroup();
             if (_surface.Presentation is not null)
                 _surface.AppendPresentation(TranscriptLine.Plain("  · " + progress, TranscriptRole.Meta, TuiToken.Meta));
             else WriteLines(TuiPalette.Paint("  · " + progress, TuiToken.Meta));
@@ -463,6 +473,8 @@ public sealed partial class TuiTranscript
 
     private void WriteCompleteLine(string line)
     {
+        // Prose ends a tool block: the summary lands before the first line of the reply.
+        CloseToolGroup();
         if (_surface.Presentation is not null)
         {
             _surface.CommitPresentation(_markdown.RenderPresentation(line, Width));
@@ -945,7 +957,6 @@ public sealed partial class TuiTranscript
         };
         var failed = status == ToolLineStatus.Failed;
 
-        var meta = ComposeToolMeta(detail?.Added, detail?.Removed, detail?.DurationMs);
         var target = detail?.Target;
 
         // A dropped transient frame leaves no target: the bounded safe code is the only
@@ -970,7 +981,12 @@ public sealed partial class TuiTranscript
         }
         else
         {
-            WriteLines(ComposeToolLine(status, detail?.Verb ?? "tool", target, meta, Width));
+            var display = string.IsNullOrWhiteSpace(detail?.Display)
+                ? TitleCase(detail?.Verb ?? "tool")
+                : detail!.Display!;
+            BeginToolRow(status);
+            WriteLines(TuiToolRow.Compose(status, display, target,
+                detail is null ? null : ToolRowMetrics(detail), Width));
             ApplyDiffText(envelope.SafeSummary, Width);
         }
 
@@ -990,6 +1006,7 @@ public sealed partial class TuiTranscript
     private void WriteToolRow(
         ToolLineStatus status, ToolDetail? detail, string? target, string? diffText)
     {
+        BeginToolRow(status);
         var display = string.IsNullOrWhiteSpace(detail?.Display)
             ? TitleCase(detail?.Verb ?? "tool")
             : detail!.Display!;
@@ -1054,28 +1071,48 @@ public sealed partial class TuiTranscript
 
     private static string? ToolRowMetrics(ToolDetail detail)
     {
-        var meta = ComposeToolRowMeta(detail.Count, detail.Added, detail.Removed);
+        var meta = ComposeToolRowMeta(detail.Count, detail.Added, detail.Removed, detail.Display ?? detail.Verb);
         if (detail.DurationMs is > 0)
             meta = string.IsNullOrWhiteSpace(meta) ? FormatDuration(detail.DurationMs.Value)
                 : meta + " · " + FormatDuration(detail.DurationMs.Value);
         return meta;
     }
 
-    /// <summary>Metrics suffix for an inline tool row: counts and diff stats, no duration.</summary>
-    public static string? ComposeToolRowMeta(int? count, int? added, int? removed)
+    /// <summary>
+    /// Metrics suffix for an inline tool row: counts and diff stats, no duration. The unit
+    /// follows the tool (a read reports lines, a search matches); without a display name the
+    /// historical "matches" wording is kept so the API stays compatible with older callers.
+    /// </summary>
+    public static string? ComposeToolRowMeta(int? count, int? added, int? removed, string? display = null)
     {
         var parts = new List<string>();
-        if (count is { } matches)
+        if (count is { } value)
         {
-            parts.Add(matches == 1 ? "(1 match)" : $"({matches} matches)");
+            parts.Add($"{value} {UnitFor(display, value)}");
         }
 
         if (added is > 0 || removed is > 0)
         {
-            parts.Add($"(+{added ?? 0} -{removed ?? 0})");
+            parts.Add($"+{added ?? 0} −{removed ?? 0}");
         }
 
-        return parts.Count == 0 ? null : string.Join(" ", parts);
+        return parts.Count == 0 ? null : string.Join("  ", parts);
+    }
+
+    private static string UnitFor(string? display, int count)
+    {
+        var name = display?.Trim().ToLowerInvariant();
+        var (singular, plural) = name switch
+        {
+            null => ("match", "matches"),
+            "read" or "view" or "read_file" or "cat" or "open" => ("line", "lines"),
+            "edit" or "edit_file" or "apply_patch" or "write" or "write_file" => ("line", "lines"),
+            "grep" or "search" or "web_search" or "find" => ("match", "matches"),
+            "glob" or "list" or "ls" or "explore" => ("file", "files"),
+            "terminal" or "bash" or "run" or "shell" => ("line", "lines"),
+            _ => ("item", "items"),
+        };
+        return count == 1 ? singular : plural;
     }
 
     private static string TitleCase(string value) =>
@@ -1086,67 +1123,7 @@ public sealed partial class TuiTranscript
             ? []
             : text.Split('\n').Where(IsDiffLine).ToList();
 
-    /// <summary>One settled tool line: glyph, verb column, target, right-aligned meta.</summary>
-    public static string ComposeToolLine(
-        ToolLineStatus status,
-        string verb,
-        string? target,
-        string? meta,
-        int width)
-    {
-        var (glyph, token) = status switch
-        {
-            ToolLineStatus.Ok => ("✓", TuiToken.Ok),
-            ToolLineStatus.Failed => ("✗", TuiToken.Err),
-            ToolLineStatus.Unknown => ("·", TuiToken.Meta),
-            _ => ("▸", TuiToken.Brand),
-        };
 
-        var head = "  "
-            + TuiPalette.Paint("▌", TuiToken.Line)
-            + " "
-            + TuiPalette.Paint(glyph, token)
-            + " "
-            + TuiPalette.Paint(verb.PadRight(VerbColumn), TuiToken.Brand2);
-        var body = head + (target ?? string.Empty);
-        if (string.IsNullOrWhiteSpace(meta))
-        {
-            return TuiText.Pad(body, width);
-        }
-
-        var metaText = TuiPalette.Paint(meta, TuiToken.Meta);
-        var headWidth = TuiText.VisibleWidth(head);
-        var metaWidth = TuiText.VisibleWidth(metaText);
-        var targetRoom = width - headWidth - metaWidth - 2;
-        if (targetRoom < 8)
-        {
-            return TuiText.Pad(body, width);
-        }
-
-        var clippedTarget = TuiText.Pad(target ?? string.Empty, targetRoom);
-        return head + clippedTarget + "  " + metaText;
-    }
-
-    public static string? ComposeToolMeta(int? added, int? removed, int? durationMs)
-    {
-        var parts = new List<string>();
-        if (added is > 0)
-        {
-            parts.Add("+" + added);
-        }
-
-        if (removed is > 0)
-        {
-            parts.Add("-" + removed);
-        }
-
-        if (durationMs is { } duration)
-        {
-            parts.Add(FormatDuration(duration));
-        }
-
-        return parts.Count == 0 ? null : string.Join(" ", parts);
-    }
 
     /// <summary>An operator-facing one-liner (approval outcomes, reconciliation prompts).</summary>
     public void Note(string text, TuiToken token) => Notice(text, token);
@@ -1185,6 +1162,7 @@ public sealed partial class TuiTranscript
 
     private void Notice(string text, TuiToken token)
     {
+        CloseToolGroup();
         Flush();
         if (!_atLineStart)
         {
@@ -1192,9 +1170,79 @@ public sealed partial class TuiTranscript
             _atLineStart = true;
         }
 
+        var body = Escape(text);
+        var bodyToken = token == TuiToken.Line ? TuiToken.Meta : token;
         if (_surface.Presentation is not null)
-            _surface.AppendPresentation(TranscriptLine.Plain("  · " + Escape(text), TranscriptRole.Meta, token));
-        else WriteLines(TuiPalette.Paint("  · " + Escape(text), token));
+        {
+            _surface.AppendPresentation(new TranscriptRunBuilder()
+                .Append("  · ", TuiToken.Line)
+                .Append(body, bodyToken)
+                .Line(TranscriptRole.Meta));
+        }
+        else
+        {
+            WriteLines(TuiPalette.Paint("  · ", TuiToken.Line) + TuiPalette.Paint(body, bodyToken));
+        }
+    }
+
+    /// <summary>
+    /// Opens or extends the current feed block. A block is a run of consecutive settled tool
+    /// rows; prose, a notice, or the end of the turn closes it.
+    /// </summary>
+    private void BeginToolRow(ToolLineStatus status)
+    {
+        if (!_toolGroupOpen)
+        {
+            _toolGroupOpen = true;
+            _toolGroupCount = 0;
+            _toolGroupStarted = _turnWatch.Elapsed.TotalSeconds;
+            _toolGroupFailed = false;
+        }
+
+        _toolGroupCount++;
+        if (status == ToolLineStatus.Failed)
+        {
+            _toolGroupFailed = true;
+        }
+    }
+
+    /// <summary>
+    /// Closes the feed block and, for more than one row, writes its summary line. The summary
+    /// trails the block because a terminal cannot insert a header above rows it already
+    /// printed: both the screen and the redirected sink append.
+    /// </summary>
+    private void CloseToolGroup()
+    {
+        if (!_toolGroupOpen)
+        {
+            return;
+        }
+
+        var count = _toolGroupCount;
+        var failed = _toolGroupFailed;
+        var elapsed = Math.Max(0, _turnWatch.Elapsed.TotalSeconds - _toolGroupStarted);
+        _toolGroupOpen = false;
+        _toolGroupCount = 0;
+        _toolGroupFailed = false;
+        if (count < 2)
+        {
+            return;
+        }
+
+        var mark = failed ? "✗ " : string.Empty;
+        WriteMetaLine($"  {mark}{count} tools · {TuiStatusLine.FormatElapsed(elapsed)}", TuiToken.Meta);
+    }
+
+    private void WriteMetaLine(string text, TuiToken token)
+    {
+        if (_surface.Presentation is not null)
+        {
+            _surface.AppendPresentation(TranscriptLine.Plain(text, TranscriptRole.Meta, token));
+        }
+        else
+        {
+            WriteLines(TuiPalette.Paint(text, token));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1344,6 +1392,7 @@ public sealed partial class TuiTranscript
     /// </summary>
     public void EndTurn()
     {
+        CloseToolGroup();
         Flush();
         if (_terminalCode is not null)
         {
@@ -1375,6 +1424,7 @@ public sealed partial class TuiTranscript
 
     public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
+        CloseToolGroup();
         Flush();
         var streamedText = _hasStreamedDelta;
         if (_hasStreamedDelta)

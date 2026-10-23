@@ -62,7 +62,7 @@ public sealed class TuiActivityPresentationTests
     {
         using var palette = TuiPalette.PinLevel(TuiColorLevel.None);
         var text = TuiToolRow.Compose(ToolLineStatus.Failed, "bash", new string('x', 200), "exit 1", 40);
-        Assert.StartsWith("✗ Run", text);
+        Assert.StartsWith("  ✗ Run", text);
         Assert.EndsWith("failed · exit 1", text);
         Assert.True(TuiText.VisibleWidth(text) <= 40);
     }

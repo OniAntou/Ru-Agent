@@ -27,8 +27,9 @@ public sealed partial class TuiMarkdown
             if (IsFenceLine(line)) { _fence = string.Empty; return []; }
             var code = new TranscriptRunBuilder();
             if (HighlightCode)
-                return [code.Append($"{++_codeLine,3} │ ", dim: true).Append(TuiCodeHighlight.Tokenize(line)).Line()];
-            return [code.Append(Gutter, dim: true).Append(line, TuiToken.Meta).Line()];
+                return [code.Append($"{++_codeLine,3} ", TuiToken.Line).Append("│ ", TuiToken.Line)
+                    .Append(TuiCodeHighlight.Tokenize(line)).Line()];
+            return [code.Append(Gutter, TuiToken.Line).Append(line, TuiToken.Ink).Line()];
         }
         if (IsFenceLine(line))
         {

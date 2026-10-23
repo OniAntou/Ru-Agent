@@ -71,7 +71,7 @@ public sealed class TuiInteractiveTests
 
             var output = sw.ToString();
             Assert.Contains("✓", output, StringComparison.Ordinal);
-            Assert.Contains("tool", output, StringComparison.Ordinal);
+            Assert.Contains("Tool", output, StringComparison.Ordinal);
             // The request line must never be echoed again by the completion.
             Assert.Single(output.Split('\n'), line => line.Contains('✓'));
         }

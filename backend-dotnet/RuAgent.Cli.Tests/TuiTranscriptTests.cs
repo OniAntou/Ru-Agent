@@ -157,55 +157,7 @@ public sealed class TuiTranscriptTests
         string? toolDisplay = null) =>
         new("act_1", kind, state, fileName, lineStart, lineEnd, symbol, count, added, removed, durationMs, safeCode, toolDisplay, null, null);
 
-    [Fact]
-    public void Tool_line_keeps_width_with_accent_bar()
-    {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
-        {
-            var line = TuiTranscript.ComposeToolLine(ToolLineStatus.Ok, "read", "app.cs:12-40", "+12 −4 · 340ms", 100);
-            Assert.Equal(100, TuiText.VisibleWidth(line));
-            Assert.Contains(TuiPalette.Paint("▌", TuiToken.Line), line);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
-    }
 
-    [Fact]
-    public void ComposeToolLine_FillsTheWidthAndAlignsColumns()
-    {
-        var line = TuiTranscript.ComposeToolLine(ToolLineStatus.Ok, "edit", "src/app.cs:12-40", "+12 -4 340ms", 80);
-
-        Assert.Equal(80, TuiText.VisibleWidth(line));
-        Assert.Contains("✓ edit", line, StringComparison.Ordinal);
-        Assert.Contains("src/app.cs:12-40", line, StringComparison.Ordinal);
-        Assert.Contains("+12 -4 340ms", line, StringComparison.Ordinal);
-        Assert.True(line.IndexOf("src/app.cs", StringComparison.Ordinal) < line.IndexOf("+12", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void ComposeToolLine_UsesFailureGlyphAndDropsMetaWithoutRoom()
-    {
-        var failed = TuiTranscript.ComposeToolLine(ToolLineStatus.Failed, "bash", "dotnet test", "exit 1", 40);
-        Assert.Contains("✗ bash", failed, StringComparison.Ordinal);
-
-        var cramped = TuiTranscript.ComposeToolLine(ToolLineStatus.Ok, "read", "a-very-long-target-name", "+1 -1 9ms", 20);
-        Assert.Equal(20, TuiText.VisibleWidth(cramped));
-        Assert.DoesNotContain("9ms", cramped, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(null, null, null, null)]
-    [InlineData(12, 4, null, "+12 -4")]
-    [InlineData(0, 3, 340, "-3 340ms")]
-    [InlineData(null, null, 340, "340ms")]
-    [InlineData(1, null, 1500, "+1 1.5s")]
-    public void ComposeToolMeta_JoinsOnlyThePresentParts(int? added, int? removed, int? durationMs, string? expected)
-    {
-        Assert.Equal(expected, TuiTranscript.ComposeToolMeta(added, removed, durationMs));
-    }
 
     [Fact]
     public void ComposeFailure_RendersTitleCauseAndFix()
@@ -597,9 +549,9 @@ public sealed class TuiTranscriptTests
         var rows = Rows(output);
         var toolRow = Assert.Single(rows, row => row.Contains('✓'));
 
-        Assert.Contains("edit", toolRow, StringComparison.Ordinal);
+        Assert.Contains("Edit", toolRow, StringComparison.Ordinal);
         Assert.Contains("src/app.cs:12-40", toolRow, StringComparison.Ordinal);
-        Assert.Contains("+12 -4 340ms", toolRow, StringComparison.Ordinal);
+        Assert.Contains("+12 −4 · 340ms", toolRow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -611,7 +563,7 @@ public sealed class TuiTranscriptTests
 
         var toolRow = Assert.Single(Rows(output), row => row.Contains('✓'));
 
-        Assert.Contains("tool", toolRow, StringComparison.Ordinal);
+        Assert.Contains("Tool", toolRow, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -623,7 +575,7 @@ public sealed class TuiTranscriptTests
         transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, durationMs: 2300, toolDisplay: "Terminal"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "failed", "exit_1"));
 
-        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("ran", StringComparison.Ordinal));
+        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("Run", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -988,10 +940,10 @@ public sealed class TuiTranscriptTests
 
     [Theory]
     [InlineData(null, null, null, null)]
-    [InlineData(1, null, null, "(1 match)")]
-    [InlineData(18, null, null, "(18 matches)")]
-    [InlineData(null, 3, 1, "(+3 -1)")]
-    [InlineData(2, 3, 1, "(2 matches) (+3 -1)")]
+    [InlineData(1, null, null, "1 match")]
+    [InlineData(18, null, null, "18 matches")]
+    [InlineData(null, 3, 1, "+3 −1")]
+    [InlineData(2, 3, 1, "2 matches  +3 −1")]
     public void ComposeToolRowMeta_RendersCountsAndDiffStatsOnly(
         int? count, int? added, int? removed, string? expected)
     {

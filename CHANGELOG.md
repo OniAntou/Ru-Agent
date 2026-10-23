@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(cli)**: The transcript feed reads as a block instead of a log. Consecutive tool
+  calls are indented together and close with a summary (`4 tools · 9.6s`, marked `✗` when
+  one failed); each tool row orders outcome glyph, muted name, brightest target and
+  receding metrics with a unit that follows the tool (`132 lines`, `3 matches`, `+18 −2`,
+  `1.2s`); notices keep the dim bullet and paint their message in its own tone; fenced
+  code prints at ink weight behind a dim gutter; and the live row shares the tool row's
+  two-cell indent so it settles in place. The summary trails the block because terminal
+  output is append-only in both sinks.
+
+- **fix(broker)**: Skill bodies now use handle-based hard-link checks. Run cancellation
+  revokes the current lease and covers tools registering concurrently; revoking folder
+  grants still permits subsequent approval requests. Terminal approvals bind the resolved
+  executable and cwd, and dispatch uses that same canonical command intent.
+- **fix(host)**: Provider snapshot loads share work per run without blocking unrelated
+  runs or cached reads. Subagent apply/inspection operations serialize per root run
+  instead of across all workspaces.
+- **fix(clients)**: TUI shutdown retains pending run creation through acknowledgement
+  and cancellation settlement. Settings disables provider editing while Back saves and
+  reloads. Public Host startup preserves caller cancellation. The TypeScript SDK can
+  launch Windows batch paths containing spaces and rejects unsafe batch arguments.
+- **fix(import)**: OpenCode SQLite import reads the v1 scalar session columns and
+  validates the schema; unsupported database layouts return a named failure.
+
 - **refactor(cli)**: Terminal.Gui is the only interactive terminal engine. The
   append-only path is now a printer: cursor tracking, sticky footer, live-row repaint,
   resize rebuild and the three-row composer were unreachable in production (the CLI

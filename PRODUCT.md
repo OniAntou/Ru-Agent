@@ -59,7 +59,7 @@ workspace trust).
 
 ## Evidence on Hand
 
-- Public README and docs under `docs/`; Preview release 0.1.1-preview.1.
+- Public README and docs under `docs/`; first Stable release 0.1.2.
 - No customer testimonials, usage metrics or benchmarks of real-provider speed exist;
   do not invent them.
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-24
+
+First Stable Windows x64 Desktop and CLI release. Packages are self-contained
+and unsigned; SHA256SUMS.txt provides download integrity checks.
+
 - **feat(cli)**: A failed tool row now carries its reason beneath it (`└ exit 1`), taken
   from the durable event's safe summary; successful tools have no such line because their
   summary is a policy class, not a result.

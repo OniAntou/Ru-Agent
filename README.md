@@ -37,7 +37,7 @@ a bundled local model.
 ## Install and update
 
 Separate Windows x64 Desktop and CLI installers are available in
-[0.1.1-preview.1](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.1-preview.1). Each includes its
+[0.1.2](https://github.com/OniAntou/Ru-Agent/releases/tag/v0.1.2). Each includes its
 matching backend; the .NET SDK is only needed when building from source. Desktop
 updates from **Settings → About → Updates**; CLI uses `ru update` and TUI uses
 `/update`. Stable is the default, with Preview available by choice.
@@ -47,12 +47,12 @@ for package names, CLI bootstrap instructions and release verification limits.
 Install CLI from Command Prompt:
 
 ```cmd
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1'))) -Channel Preview"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/OniAntou/Ru-Agent/dev/scripts/install.ps1')))"
 ```
 
 Open a new terminal and run `ru`. The script downloads, verifies and installs the
-CLI package without a setup wizard. Preview is opt-in; no Stable release is
-published yet. The initial packages are unsigned.
+CLI package without a setup wizard. Stable is the default; add `-Channel Preview`
+to opt into prereleases. The packages are unsigned.
 
 ## Quick start
 

@@ -38,8 +38,8 @@ repository (README, `docs/`, package READMEs) and is rebuilt on every push to `d
 
 ## Capabilities and Constraints
 
-- Platform: Windows x64 only. Desktop and CLI ship as separate per-user packages; Preview is available,
-  no Stable release is published yet, and the initial packages are unsigned.
+- Platform: Windows x64 only. Desktop and CLI ship as separate per-user packages;
+  0.1.2 is the first Stable release, Preview is opt-in, and the packages are unsigned.
 - Permission presets: `plan` (read-only exploration), `standard`, `full_access`. Workspace trust and
   explicit approvals are part of the workflow. Instructions and skills guide the agent; they never grant
   execution authority.

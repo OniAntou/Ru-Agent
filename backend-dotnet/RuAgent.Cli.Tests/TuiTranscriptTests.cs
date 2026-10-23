@@ -578,6 +578,31 @@ public sealed class TuiTranscriptTests
         Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("Run", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void FailedToolShowsItsSafeResultLine()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Started, toolDisplay: "Terminal"));
+        transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, durationMs: 1200, toolDisplay: "Terminal"));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "failed", "exit_1"));
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.Contains("└ exit 1", TuiText.Strip(output.ToString()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SuccessfulToolHasNoResultLine()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyActivity(Activity(AgentActivityKind.Explore, AgentActivityState.Completed, "a.cs", toolDisplay: "Read"));
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "read_only"));
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.DoesNotContain("└", TuiText.Strip(output.ToString()), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("run.note_added", "runtime_context_snapshot")]
     [InlineData("context.compacted", "compacted")]

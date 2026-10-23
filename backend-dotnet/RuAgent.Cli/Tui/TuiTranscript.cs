@@ -971,6 +971,7 @@ public sealed partial class TuiTranscript
         var failed = status == ToolLineStatus.Failed;
 
         var target = detail?.Target;
+        var resultLine = ResultLine(status, envelope.SafeSummary);
 
         // A dropped transient frame leaves no target: the bounded safe code is the only
         // auditable detail the durable stream carries, so it takes the target column.
@@ -991,6 +992,10 @@ public sealed partial class TuiTranscript
         if (_fullScreenCards || _surface.Presentation is not null)
         {
             WriteToolRow(status, detail, target, envelope.SafeSummary);
+            if (resultLine is not null)
+            {
+                WriteResultLine(resultLine);
+            }
         }
         else
         {
@@ -1000,6 +1005,10 @@ public sealed partial class TuiTranscript
             BeginToolRow(status);
             WriteLines(TuiToolRow.Compose(status, display, target,
                 detail is null ? null : ToolRowMetrics(detail), Width));
+            if (resultLine is not null)
+            {
+                WriteResultLine(resultLine);
+            }
             ApplyDiffText(envelope.SafeSummary, Width);
         }
 
@@ -1244,6 +1253,45 @@ public sealed partial class TuiTranscript
 
         var mark = failed ? "✗ " : string.Empty;
         WriteMetaLine($"  {mark}{count} tools · {TuiStatusLine.FormatElapsed(elapsed)}", TuiToken.Meta);
+    }
+
+    /// <summary>
+    /// The one-line reason under a failed tool. It comes from the durable event's safe
+    /// summary (for example <c>exit_1</c>), which is bounded and never contains output;
+    /// successful tools have no such line because their summary is a policy class, not a
+    /// result.
+    /// </summary>
+    private static string? ResultLine(ToolLineStatus status, string? safeSummary)
+    {
+        if (status != ToolLineStatus.Failed || string.IsNullOrWhiteSpace(safeSummary))
+        {
+            return null;
+        }
+
+        var text = ChatDisplayText.Sanitize(safeSummary.Replace('_', ' '), 80).Trim();
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        return text.ToLowerInvariant() is "failed" or "error" or "tool failed" or "succeeded" or "ok"
+            ? null
+            : text;
+    }
+
+    private void WriteResultLine(string text)
+    {
+        if (_surface.Presentation is not null)
+        {
+            _surface.AppendPresentation(new TranscriptRunBuilder()
+                .Append("    └ ", TuiToken.Line)
+                .Append(text, TuiToken.Meta)
+                .Line(TranscriptRole.Meta));
+        }
+        else
+        {
+            WriteLines(TuiPalette.Paint("    └ ", TuiToken.Line) + TuiPalette.Paint(text, TuiToken.Meta));
+        }
     }
 
     private void WriteMetaLine(string text, TuiToken token)

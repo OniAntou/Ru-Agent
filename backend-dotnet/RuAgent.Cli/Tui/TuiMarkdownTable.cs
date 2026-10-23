@@ -44,6 +44,9 @@ internal static class TuiMarkdownTable
                 int largest = Array.IndexOf(widths, widths.Max());
                 widths[largest]--;
             }
+            var aligns = Enumerable.Range(0, header.Length)
+                .Select(c => AlignmentFor(divider[c], rows.Skip(1).Select(row => row[c])))
+                .ToArray();
             foreach (var row in rows)
             {
                 var wrapped = row.Select((cell, c) => TuiText.Wrap(cell, widths[c])).ToArray();
@@ -53,8 +56,7 @@ internal static class TuiMarkdownTable
                     for (int c = 0; c < widths.Length; c++)
                     {
                         var text = r < wrapped[c].Count ? wrapped[c][r] : string.Empty;
-                        int padding = Math.Max(0, widths[c] - TuiText.VisibleWidth(text));
-                        parts.Add(divider[c].EndsWith(':') ? new string(' ', padding) + text : text + new string(' ', padding));
+                        parts.Add(Align(text, widths[c], aligns[c]));
                     }
                     output.Add(string.Join(" │ ", parts));
                 }
@@ -63,6 +65,69 @@ internal static class TuiMarkdownTable
         }
         rendered = output;
         return true;
+    }
+
+    private enum CellAlign
+    {
+        Left,
+        Right,
+        Center,
+    }
+
+    /// <summary>
+    /// Column alignment: an explicit Markdown marker wins; otherwise a column whose body is
+    /// all numbers is right-aligned. Models routinely emit price and count columns with a
+    /// plain <c>---</c> separator, and left-aligned numbers are the first thing a reader
+    /// notices in a table.
+    /// </summary>
+    private static CellAlign AlignmentFor(string divider, IEnumerable<string> body)
+    {
+        var spec = divider.Trim();
+        if (spec.Length > 1 && spec[0] == ':' && spec[^1] == ':')
+        {
+            return CellAlign.Center;
+        }
+
+        var values = body.Select(value => value.Trim()).Where(value => value.Length > 0).ToList();
+        if (values.Count > 0 && values.All(IsNumeric))
+        {
+            return CellAlign.Right;
+        }
+
+        return spec.EndsWith(':') ? CellAlign.Right : CellAlign.Left;
+    }
+
+    private static bool IsNumeric(string text)
+    {
+        var digits = 0;
+        foreach (var c in text)
+        {
+            if (char.IsAsciiDigit(c))
+            {
+                digits++;
+                continue;
+            }
+
+            if (c is '.' or ',' or '-' or '+' or '%' or ' ' or '\u2212' or '\u00A0')
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return digits > 0;
+    }
+
+    private static string Align(string text, int width, CellAlign align)
+    {
+        var padding = Math.Max(0, width - TuiText.VisibleWidth(text));
+        return align switch
+        {
+            CellAlign.Right => new string(' ', padding) + text,
+            CellAlign.Center => new string(' ', padding / 2) + text + new string(' ', padding - padding / 2),
+            _ => text + new string(' ', padding),
+        };
     }
 
     private static string[] Cells(string line)

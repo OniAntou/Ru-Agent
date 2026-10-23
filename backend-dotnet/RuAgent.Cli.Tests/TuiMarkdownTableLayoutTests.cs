@@ -33,6 +33,35 @@ public sealed class TuiMarkdownTableLayoutTests
     }
 
     [Fact]
+    public void NumericColumnsRightAlignWithoutColonMarkers()
+    {
+        string[] table =
+        [
+            "Mã | Mua | Bán",
+            "--- | --- | ---",
+            "SJC | 139.000 | 142.000",
+            "PNJ | 138.500 | 141.000",
+        ];
+
+        Assert.True(TuiMarkdownTable.TryRender(table, 0, 80, out _, out var rows));
+        var first = rows.First(row => row.Contains("139.000", StringComparison.Ordinal));
+        var second = rows.First(row => row.Contains("138.500", StringComparison.Ordinal));
+        Assert.Equal(
+            first.IndexOf("139.000", StringComparison.Ordinal) + "139.000".Length,
+            second.IndexOf("138.500", StringComparison.Ordinal) + "138.500".Length);
+    }
+
+    [Fact]
+    public void CenterMarkersCenterTheCell()
+    {
+        string[] table = ["A | B", ":---: | ---", "x | y"];
+
+        Assert.True(TuiMarkdownTable.TryRender(table, 0, 40, out _, out var rows));
+        var body = rows.First(row => row.Contains('x', StringComparison.Ordinal));
+        Assert.StartsWith(" ", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void OrdinaryPipeProseIsNotMistakenForATable()
     {
         Assert.False(TuiMarkdownTable.TryRender(["a | b", "regular prose"], 0, 80, out _, out _));

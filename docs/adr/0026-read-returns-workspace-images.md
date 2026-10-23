@@ -161,3 +161,6 @@ invalid. The images therefore arrive in the same request, one message later.
 - Persistence gains one payload kind and no schema change. Readers that do not
   know kind 18 never see it, because nothing binds it to model context or the
   client feed.
+- Each image read stores up to 4 MiB in the harness database, encrypted, until
+  its session is deleted. Only the run that read it uses it again; deleting tool
+  images when their run ends is a possible follow-up.
